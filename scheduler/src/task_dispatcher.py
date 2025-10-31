@@ -9,7 +9,7 @@ from typing import Dict, Any, Optional, TYPE_CHECKING
 import asyncio
 import httpx
 
-from .model import TaskStatus
+from .model import TaskStatus, InstanceQueueExpectError, InstanceQueueProbabilistic
 from .task_registry import TaskRegistry
 from .instance_registry import InstanceRegistry
 from .websocket_manager import ConnectionManager
@@ -171,6 +171,16 @@ class TaskDispatcher:
             if instance:
                 self.instance_registry.increment_completed(instance.instance_id)
 
+            # Update queue information based on actual execution time
+            if instance and execution_time_ms and task.predicted_time_ms is not None:
+                await self._update_queue_on_completion(
+                    instance_id=instance.instance_id,
+                    predicted_time_ms=task.predicted_time_ms,
+                    actual_time_ms=execution_time_ms,
+                    predicted_error_margin_ms=task.predicted_error_margin_ms,
+                    predicted_quantiles=task.predicted_quantiles,
+                )
+
             # Collect training data if enabled
             if self.training_client and instance and execution_time_ms:
                 self.training_client.add_sample(
@@ -226,3 +236,100 @@ class TaskDispatcher:
             task_id: ID of task to dispatch
         """
         asyncio.create_task(self.dispatch_task(task_id))
+
+    async def _update_queue_on_completion(
+        self,
+        instance_id: str,
+        predicted_time_ms: float,
+        actual_time_ms: float,
+        predicted_error_margin_ms: Optional[float] = None,
+        predicted_quantiles: Optional[Dict[float, float]] = None,
+    ) -> None:
+        """
+        Update queue information when a task completes.
+
+        According to the scheduling strategy documentation:
+        - Shortest Queue: Update expect with actual time, keep error unchanged
+        - Probabilistic: Update quantiles using Monte Carlo method
+
+        Args:
+            instance_id: ID of the instance
+            predicted_time_ms: Predicted execution time
+            actual_time_ms: Actual execution time
+            predicted_error_margin_ms: Predicted error margin (for Shortest Queue)
+            predicted_quantiles: Predicted quantiles (for Probabilistic)
+        """
+        current_queue = self.instance_registry.get_queue_info(instance_id)
+        if not current_queue:
+            return
+
+        if isinstance(current_queue, InstanceQueueExpectError):
+            # Shortest Queue strategy: Update expect with actual time, keep error unchanged
+            # Formula: new_expect = old_expect - predicted_time + actual_time
+            new_expected = current_queue.expected_time_ms - predicted_time_ms + actual_time_ms
+            # Ensure non-negative
+            new_expected = max(0.0, new_expected)
+
+            updated_queue = InstanceQueueExpectError(
+                instance_id=instance_id,
+                expected_time_ms=new_expected,
+                error_margin_ms=current_queue.error_margin_ms,  # Keep error unchanged
+            )
+            self.instance_registry.update_queue_info(instance_id, updated_queue)
+
+        elif isinstance(current_queue, InstanceQueueProbabilistic):
+            # Probabilistic strategy: Update quantiles using Monte Carlo method
+            if predicted_quantiles:
+                import numpy as np
+
+                num_samples = 1000
+
+                # Generate random percentiles for sampling
+                random_percentiles = np.random.random(num_samples)
+
+                # Sample from current queue distribution
+                queue_samples = np.interp(
+                    random_percentiles,
+                    current_queue.quantiles,
+                    current_queue.values
+                )
+
+                # Sample from predicted task distribution
+                task_quantiles = sorted(predicted_quantiles.keys())
+                task_values = [predicted_quantiles[q] for q in task_quantiles]
+                task_samples = np.interp(
+                    random_percentiles,
+                    task_quantiles,
+                    task_values
+                )
+
+                # Subtract predicted task time and add actual time
+                # new_queue = old_queue - predicted_task + actual_task
+                updated_samples = queue_samples - task_samples + actual_time_ms
+                # Ensure non-negative
+                updated_samples = np.maximum(updated_samples, 0.0)
+
+                # Compute new quantiles from updated samples
+                updated_values = [
+                    float(np.percentile(updated_samples, q * 100))
+                    for q in current_queue.quantiles
+                ]
+
+                updated_queue = InstanceQueueProbabilistic(
+                    instance_id=instance_id,
+                    quantiles=current_queue.quantiles,
+                    values=updated_values,
+                )
+                self.instance_registry.update_queue_info(instance_id, updated_queue)
+            else:
+                # Fallback: Simple subtraction and addition for all quantiles
+                updated_values = [
+                    max(0.0, current_queue.values[i] - predicted_time_ms + actual_time_ms)
+                    for i in range(len(current_queue.quantiles))
+                ]
+                updated_queue = InstanceQueueProbabilistic(
+                    instance_id=instance_id,
+                    quantiles=current_queue.quantiles,
+                    values=updated_values,
+                )
+                self.instance_registry.update_queue_info(instance_id, updated_queue)

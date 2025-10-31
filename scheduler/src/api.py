@@ -406,7 +406,12 @@ async def submit_task(request: TaskSubmitRequest):
         # Shouldn't happen, but handle gracefully
         selected_instance_id = available_instances[0].instance_id
 
-    # Create task record
+    # Get prediction for selected instance
+    selected_prediction = next(
+        (p for p in predictions if p.instance_id == selected_instance_id), None
+    )
+
+    # Create task record with prediction information
     try:
         task_record = task_registry.create_task(
             task_id=request.task_id,
@@ -414,6 +419,9 @@ async def submit_task(request: TaskSubmitRequest):
             task_input=request.task_input,
             metadata=request.metadata,
             assigned_instance=selected_instance_id,
+            predicted_time_ms=selected_prediction.predicted_time_ms if selected_prediction else None,
+            predicted_error_margin_ms=selected_prediction.error_margin_ms if selected_prediction else None,
+            predicted_quantiles=selected_prediction.quantiles if selected_prediction else None,
         )
     except ValueError as e:
         raise HTTPException(
@@ -424,9 +432,6 @@ async def submit_task(request: TaskSubmitRequest):
     instance_registry.increment_pending(selected_instance_id)
 
     # Update instance queue information based on prediction
-    selected_prediction = next(
-        (p for p in predictions if p.instance_id == selected_instance_id), None
-    )
     if selected_prediction:
         current_queue = instance_registry.get_queue_info(selected_instance_id)
 

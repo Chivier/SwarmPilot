@@ -22,6 +22,9 @@ class TaskRecord:
         task_input: Dict[str, Any],
         metadata: Dict[str, Any],
         assigned_instance: str,
+        predicted_time_ms: Optional[float] = None,
+        predicted_error_margin_ms: Optional[float] = None,
+        predicted_quantiles: Optional[Dict[float, float]] = None,
     ):
         self.task_id = task_id
         self.model_id = model_id
@@ -31,6 +34,11 @@ class TaskRecord:
         self.status = TaskStatus.PENDING
         self.result: Optional[Dict[str, Any]] = None
         self.error: Optional[str] = None
+
+        # Prediction information (for queue updates on task completion)
+        self.predicted_time_ms = predicted_time_ms
+        self.predicted_error_margin_ms = predicted_error_margin_ms
+        self.predicted_quantiles = predicted_quantiles
 
         # Timestamps
         self.submitted_at = datetime.now().isoformat() + "Z"
@@ -72,6 +80,9 @@ class TaskRegistry:
         task_input: Dict[str, Any],
         metadata: Dict[str, Any],
         assigned_instance: str,
+        predicted_time_ms: Optional[float] = None,
+        predicted_error_margin_ms: Optional[float] = None,
+        predicted_quantiles: Optional[Dict[float, float]] = None,
     ) -> TaskRecord:
         """
         Create and register a new task.
@@ -82,6 +93,9 @@ class TaskRegistry:
             task_input: Input data for the task
             metadata: Metadata for prediction
             assigned_instance: Instance assigned to execute this task
+            predicted_time_ms: Predicted execution time in milliseconds
+            predicted_error_margin_ms: Predicted error margin for expect_error strategy
+            predicted_quantiles: Predicted quantiles for probabilistic strategy
 
         Returns:
             Created task record
@@ -99,6 +113,9 @@ class TaskRegistry:
                 task_input=task_input,
                 metadata=metadata,
                 assigned_instance=assigned_instance,
+                predicted_time_ms=predicted_time_ms,
+                predicted_error_margin_ms=predicted_error_margin_ms,
+                predicted_quantiles=predicted_quantiles,
             )
             self._tasks[task_id] = task
             return task
