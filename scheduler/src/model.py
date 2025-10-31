@@ -7,7 +7,7 @@ and data structures throughout the scheduler system.
 
 from typing import Any, Dict, List, Optional
 from enum import Enum
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 # ============================================================================
@@ -27,6 +27,7 @@ class Instance(BaseModel):
     instance_id: str
     model_id: str
     endpoint: str
+    platform_info: Dict[str, str]  # Required: software_name, software_version, hardware_name
 
 
 class InstanceQueueBase(BaseModel):
@@ -38,6 +39,12 @@ class InstanceQueueProbabilistic(InstanceQueueBase):
     """Queue information for probabilistic scheduling strategy."""
     quantiles: List[float]
     values: List[float]
+
+
+class InstanceQueueExpectError(InstanceQueueBase):
+    """Queue information for minimum expected time strategy."""
+    expected_time_ms: float
+    error_margin_ms: float
 
 
 # ============================================================================
@@ -65,6 +72,7 @@ class InstanceRegisterRequest(BaseModel):
     instance_id: str
     model_id: str
     endpoint: str
+    platform_info: Dict[str, str]  # Required: software_name, software_version, hardware_name
 
 
 class InstanceRegisterResponse(BaseModel):
@@ -220,6 +228,25 @@ class HealthErrorResponse(BaseModel):
     status: str
     error: str
     timestamp: str
+
+
+# ============================================================================
+# Callback Models (Instance -> Scheduler)
+# ============================================================================
+
+class TaskResultCallbackRequest(BaseModel):
+    """Request model for task result callback from instance to scheduler."""
+    task_id: str = Field(..., description="ID of the completed task")
+    status: str = Field(..., description="Task status: 'completed' or 'failed'")
+    result: Optional[Dict[str, Any]] = Field(None, description="Task result data (if completed)")
+    error: Optional[str] = Field(None, description="Error message (if failed)")
+    execution_time_ms: Optional[float] = Field(None, description="Execution time in milliseconds")
+
+
+class TaskResultCallbackResponse(BaseModel):
+    """Response model for task result callback."""
+    success: bool
+    message: str
 
 
 # ============================================================================
