@@ -47,7 +47,12 @@ class TestInstanceRegistration:
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
-                "endpoint": "http://localhost:8001"
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hardware"
+                }
             }
         )
 
@@ -65,7 +70,12 @@ class TestInstanceRegistration:
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
-                "endpoint": "http://localhost:8001"
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hardware"
+                }
             }
         )
 
@@ -75,7 +85,12 @@ class TestInstanceRegistration:
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
-                "endpoint": "http://localhost:8001"
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hardware"
+                }
             }
         )
 
@@ -106,7 +121,12 @@ class TestInstanceRemoval:
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
-                "endpoint": "http://localhost:8001"
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hardware"
+                }
             }
         )
 
@@ -138,7 +158,12 @@ class TestInstanceRemoval:
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
-                "endpoint": "http://localhost:8001"
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hardware"
+                }
             }
         )
 
@@ -190,7 +215,12 @@ class TestInstanceList:
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-a",
-                "endpoint": "http://localhost:8001"
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hardware"
+                }
             }
         )
         client.post(
@@ -198,7 +228,12 @@ class TestInstanceList:
             json={
                 "instance_id": "inst-2",
                 "model_id": "model-b",
-                "endpoint": "http://localhost:8002"
+                "endpoint": "http://localhost:8002",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hardware"
+                }
             }
         )
 
@@ -234,7 +269,12 @@ class TestInstanceInfo:
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
-                "endpoint": "http://localhost:8001"
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hardware"
+                }
             }
         )
 
@@ -269,7 +309,12 @@ class TestTaskSubmission:
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
-                "endpoint": "http://localhost:8001"
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hardware"
+                }
             }
         )
 
@@ -314,7 +359,12 @@ class TestTaskSubmission:
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
-                "endpoint": "http://localhost:8001"
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hardware"
+                }
             }
         )
 
@@ -361,7 +411,12 @@ class TestTaskList:
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
-                "endpoint": "http://localhost:8001"
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hardware"
+                }
             }
         )
 
@@ -394,7 +449,12 @@ class TestTaskList:
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
-                "endpoint": "http://localhost:8001"
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hardware"
+                }
             }
         )
 
@@ -442,7 +502,12 @@ class TestTaskInfo:
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
-                "endpoint": "http://localhost:8001"
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hardware"
+                }
             }
         )
 
@@ -500,7 +565,12 @@ class TestHealthCheck:
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
-                "endpoint": "http://localhost:8001"
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hardware"
+                }
             }
         )
 

@@ -37,7 +37,12 @@ def sample_instance() -> Instance:
     return Instance(
         instance_id="test-instance-1",
         model_id="test-model",
-        endpoint="http://localhost:8001"
+        endpoint="http://localhost:8001",
+        platform_info={
+            "software_name": "docker",
+            "software_version": "20.10",
+            "hardware_name": "test-hardware"
+        }
     )
 
 
@@ -48,7 +53,12 @@ def sample_instances() -> List[Instance]:
         Instance(
             instance_id=f"instance-{i}",
             model_id="test-model",
-            endpoint=f"http://localhost:800{i}"
+            endpoint=f"http://localhost:800{i}",
+            platform_info={
+                "software_name": "docker",
+                "software_version": "20.10",
+                "hardware_name": f"test-hardware-{i}"
+            }
         )
         for i in range(1, 4)
     ]
@@ -274,6 +284,32 @@ def test_client(test_app):
     """Create a FastAPI test client."""
     from fastapi.testclient import TestClient
     return TestClient(test_app)
+
+
+@pytest.fixture
+def default_platform_info() -> Dict[str, str]:
+    """Provide default platform info for testing."""
+    return {
+        "software_name": "docker",
+        "software_version": "20.10",
+        "hardware_name": "test-hardware"
+    }
+
+
+def make_register_request(instance_id: str, model_id: str, endpoint: str, platform_info: Dict[str, str] = None) -> Dict[str, Any]:
+    """Helper function to create instance registration request data."""
+    if platform_info is None:
+        platform_info = {
+            "software_name": "docker",
+            "software_version": "20.10",
+            "hardware_name": "test-hardware"
+        }
+    return {
+        "instance_id": instance_id,
+        "model_id": model_id,
+        "endpoint": endpoint,
+        "platform_info": platform_info
+    }
 
 
 # ============================================================================

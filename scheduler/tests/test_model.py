@@ -102,11 +102,7 @@ class TestInstance:
 
     def test_valid_instance(self):
         """Test creating a valid instance."""
-        instance = Instance(
-            instance_id="inst-1",
-            model_id="model-1",
-            endpoint="http://localhost:8000"
-        )
+        instance = Instance(instance_id="inst-1", model_id="model-1", endpoint="http://localhost:8000", platform_info={"software_name": "docker", "software_version": "20.10", "hardware_name": "test-hardware"})
         assert instance.instance_id == "inst-1"
         assert instance.endpoint == "http://localhost:8000"
 
@@ -223,7 +219,8 @@ class TestInstanceRegisterRequest:
         req = InstanceRegisterRequest(
             instance_id="inst-1",
             model_id="model-1",
-            endpoint="http://localhost:8000"
+            endpoint="http://localhost:8000",
+            platform_info={"software_name": "docker", "software_version": "20.10", "hardware_name": "test-hardware"}
         )
         assert req.instance_id == "inst-1"
         assert req.model_id == "model-1"
@@ -235,11 +232,7 @@ class TestInstanceRegisterResponse:
 
     def test_valid_register_response(self):
         """Test valid registration response."""
-        instance = Instance(
-            instance_id="inst-1",
-            model_id="model-1",
-            endpoint="http://localhost:8000"
-        )
+        instance = Instance(instance_id="inst-1", model_id="model-1", endpoint="http://localhost:8000", platform_info={"software_name": "docker", "software_version": "20.10", "hardware_name": "test-hardware"})
         resp = InstanceRegisterResponse(
             success=True,
             message="Registered",
@@ -314,7 +307,7 @@ class TestInstanceInfoResponse:
 
     def test_valid_info_response(self):
         """Test valid info response."""
-        instance = Instance(instance_id="inst-1", model_id="model-1", endpoint="http://test")
+        instance = Instance(instance_id="inst-1", model_id="model-1", endpoint="http://test", platform_info={"software_name": "docker", "software_version": "20.10", "hardware_name": "test-hardware"})
         queue_info = InstanceQueueBase(instance_id="inst-1")
         stats = InstanceStats(pending_tasks=1, completed_tasks=2, failed_tasks=0)
 
@@ -784,18 +777,14 @@ class TestSerialization:
 
     def test_instance_round_trip(self):
         """Test instance serialization and deserialization."""
-        original = Instance(
-            instance_id="inst-1",
-            model_id="model-1",
-            endpoint="http://test"
-        )
+        original = Instance(instance_id="inst-1", model_id="model-1", endpoint="http://test", platform_info={"software_name": "docker", "software_version": "20.10", "hardware_name": "test-hardware"})
         json_str = original.model_dump_json()
         restored = Instance.model_validate_json(json_str)
         assert restored.instance_id == original.instance_id
 
     def test_nested_model_serialization(self):
         """Test serialization of nested models."""
-        instance = Instance(instance_id="inst-1", model_id="model-1", endpoint="http://test")
+        instance = Instance(instance_id="inst-1", model_id="model-1", endpoint="http://test", platform_info={"software_name": "docker", "software_version": "20.10", "hardware_name": "test-hardware"})
         queue = InstanceQueueBase(instance_id="inst-1")
         stats = InstanceStats(pending_tasks=1, completed_tasks=2, failed_tasks=0)
 
