@@ -5,54 +5,96 @@ This module implements various scheduling strategies to select the best
 instance for executing a task based on predictions.
 """
 
-from typing import List, Optional
+from typing import List, Optional, Dict, TYPE_CHECKING
 from abc import ABC, abstractmethod
 
 from .predictor_client import Prediction
+
+if TYPE_CHECKING:
+    from .model import InstanceQueueBase
 
 
 class SchedulingStrategy(ABC):
     """Abstract base class for scheduling strategies."""
 
     @abstractmethod
-    def select_instance(self, predictions: List[Prediction]) -> Optional[str]:
+    def select_instance(
+        self, predictions: List[Prediction], queue_info: Dict[str, "InstanceQueueBase"]
+    ) -> Optional[str]:
         """
         Select the best instance from predictions.
 
         Args:
             predictions: List of predictions for different instances
+            queue_info: Dictionary mapping instance_id to queue information
 
         Returns:
             Selected instance ID, or None if no suitable instance found
         """
         pass
 
+    def get_prediction_type(self) -> str:
+        """
+        Get the prediction type required by this strategy.
+
+        Returns:
+            Prediction type: "expect_error" or "quantile"
+        """
+        # Default to expect_error for simplicity
+        return "expect_error"
+
 
 class MinimumExpectedTimeStrategy(SchedulingStrategy):
     """
-    Strategy that selects the instance with minimum expected execution time.
+    Strategy that selects the instance with minimum expected queue completion time.
 
-    This is a simple greedy strategy that chooses the instance predicted
-    to complete the task fastest.
+    This strategy considers both the current queue state (expected time and error margin)
+    and the predicted time for the new task. It selects the instance that minimizes
+    the total expected completion time including uncertainty.
     """
 
-    def select_instance(self, predictions: List[Prediction]) -> Optional[str]:
-        """Select instance with minimum predicted time."""
+    def select_instance(
+        self, predictions: List[Prediction], queue_info: Dict[str, "InstanceQueueBase"]
+    ) -> Optional[str]:
+        """
+        Select instance with minimum total expected time (queue + new task).
+
+        For each instance, calculates: queue_expected + queue_error + task_expected
+        and selects the instance with the minimum value.
+        """
+        from .model import InstanceQueueExpectError
+
         if not predictions:
             return None
 
-        # Find prediction with minimum predicted time
-        best_prediction = min(predictions, key=lambda p: p.predicted_time_ms)
-        return best_prediction.instance_id
+        best_instance_id = None
+        best_total_time = float("inf")
+
+        for pred in predictions:
+            # Get queue information for this instance
+            queue = queue_info.get(pred.instance_id)
+
+            if queue and isinstance(queue, InstanceQueueExpectError):
+                # Calculate total time: queue expected + queue error + new task expected
+                total_time = queue.expected_time_ms + queue.error_margin_ms + pred.predicted_time_ms
+            else:
+                # Fallback: no queue info, just use prediction
+                total_time = pred.predicted_time_ms
+
+            if total_time < best_total_time:
+                best_total_time = total_time
+                best_instance_id = pred.instance_id
+
+        return best_instance_id
 
 
 class ProbabilisticSchedulingStrategy(SchedulingStrategy):
     """
-    Probabilistic scheduling strategy based on quantile analysis.
+    Probabilistic scheduling strategy based on quantile sampling.
 
-    This strategy considers not just the expected time but also the
-    uncertainty/variance in predictions. It may prefer instances with
-    more consistent performance over those with lower average but higher variance.
+    This strategy considers both the queue distribution and the new task distribution.
+    For each instance, it samples from the queue's quantile distribution to estimate
+    completion time, then selects the instance with the minimum sampled value.
     """
 
     def __init__(self, target_quantile: float = 0.9):
@@ -64,39 +106,69 @@ class ProbabilisticSchedulingStrategy(SchedulingStrategy):
         """
         self.target_quantile = target_quantile
 
-    def select_instance(self, predictions: List[Prediction]) -> Optional[str]:
+    def get_prediction_type(self) -> str:
+        """Probabilistic strategy requires quantile predictions."""
+        return "quantile"
+
+    def select_instance(
+        self, predictions: List[Prediction], queue_info: Dict[str, "InstanceQueueBase"]
+    ) -> Optional[str]:
         """
-        Select instance based on target quantile.
+        Select instance based on sampling from queue quantile distribution.
+
+        For each instance, samples once from its queue distribution by interpolating
+        between quantile values, then selects the instance with minimum sampled time.
 
         Args:
             predictions: List of predictions with quantile information
+            queue_info: Dictionary mapping instance_id to queue information
 
         Returns:
             Selected instance ID
         """
+        import numpy as np
+        from .model import InstanceQueueProbabilistic
+
         if not predictions:
             return None
 
-        # TODO: Implement more sophisticated selection logic based on quantiles
-        # TODO: Consider current queue length on each instance
-        # TODO: Consider historical performance variance
-
-        # Simple implementation: select based on target quantile value
-        best_prediction = None
-        best_quantile_value = float("inf")
+        best_instance_id = None
+        best_sampled_time = float("inf")
 
         for pred in predictions:
-            if pred.quantiles and self.target_quantile in pred.quantiles:
-                quantile_value = pred.quantiles[self.target_quantile]
-                if quantile_value < best_quantile_value:
-                    best_quantile_value = quantile_value
-                    best_prediction = pred
+            # Get queue information for this instance
+            queue = queue_info.get(pred.instance_id)
 
-        # Fallback to minimum expected time if quantile not available
-        if best_prediction is None:
-            return MinimumExpectedTimeStrategy().select_instance(predictions)
+            if queue and isinstance(queue, InstanceQueueProbabilistic):
+                # Sample from queue distribution
+                # Use a random percentile between 0 and 1
+                random_percentile = np.random.random()
 
-        return best_prediction.instance_id
+                # Interpolate queue time from quantiles using numpy
+                queue_time = np.interp(
+                    random_percentile,
+                    queue.quantiles,
+                    queue.values
+                )
+
+                # Sample from task distribution
+                if pred.quantiles:
+                    task_quantiles = sorted(pred.quantiles.keys())
+                    task_values = [pred.quantiles[q] for q in task_quantiles]
+                    task_time = np.interp(random_percentile, task_quantiles, task_values)
+                else:
+                    task_time = pred.predicted_time_ms
+
+                total_time = queue_time + task_time
+            else:
+                # Fallback: no queue info or wrong type
+                total_time = pred.predicted_time_ms
+
+            if total_time < best_sampled_time:
+                best_sampled_time = total_time
+                best_instance_id = pred.instance_id
+
+        return best_instance_id
 
 
 class RoundRobinStrategy(SchedulingStrategy):
@@ -110,7 +182,9 @@ class RoundRobinStrategy(SchedulingStrategy):
     def __init__(self):
         self._counter = 0
 
-    def select_instance(self, predictions: List[Prediction]) -> Optional[str]:
+    def select_instance(
+        self, predictions: List[Prediction], queue_info: Dict[str, "InstanceQueueBase"]
+    ) -> Optional[str]:
         """Select next instance in round-robin order."""
         if not predictions:
             return None
@@ -123,13 +197,17 @@ class RoundRobinStrategy(SchedulingStrategy):
 
 
 # Factory function to get strategy by name
-def get_strategy(strategy_name: str = "probabilistic") -> SchedulingStrategy:
+def get_strategy(
+    strategy_name: str = "probabilistic", **kwargs
+) -> SchedulingStrategy:
     """
     Get scheduling strategy by name.
 
     Args:
         strategy_name: Name of strategy
-                      ("min_time", "probabilistic", "round_robin", "weighted")
+                      ("min_time", "probabilistic", "round_robin")
+        **kwargs: Additional keyword arguments passed to strategy constructor
+                 For probabilistic: target_quantile (default 0.9)
 
     Returns:
         Scheduling strategy instance
@@ -141,4 +219,11 @@ def get_strategy(strategy_name: str = "probabilistic") -> SchedulingStrategy:
     }
 
     strategy_class = strategies.get(strategy_name, ProbabilisticSchedulingStrategy)
-    return strategy_class()
+
+    # Pass kwargs to strategies that support them
+    if strategy_name == "probabilistic" and "target_quantile" in kwargs:
+        return strategy_class(target_quantile=kwargs["target_quantile"])
+    elif strategy_class == MinimumExpectedTimeStrategy or strategy_class == RoundRobinStrategy:
+        return strategy_class()
+    else:
+        return strategy_class()
