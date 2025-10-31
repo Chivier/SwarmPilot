@@ -21,6 +21,8 @@ from .model import (
     Instance,
     InstanceStats,
     InstanceQueueBase,
+    InstanceQueueProbabilistic,
+    InstanceQueueExpectError,
     # Task models
     TaskSubmitRequest,
     TaskSubmitResponse,
@@ -31,6 +33,9 @@ from .model import (
     TaskSummary,
     TaskDetailInfo,
     TaskTimestamps,
+    # Callback models
+    TaskResultCallbackRequest,
+    TaskResultCallbackResponse,
     # Health models
     HealthResponse,
     HealthErrorResponse,
@@ -64,23 +69,54 @@ app = FastAPI(
     version="1.0.0",
 )
 
+# Initialize configuration
+from .config import config
+from .training_client import TrainingClient
+
+# Determine queue info type based on scheduling strategy
+queue_info_type = "expect_error" if config.scheduling.default_strategy == "min_time" else "probabilistic"
+
 # Global state - TODO: Consider dependency injection for better testability
-instance_registry = InstanceRegistry()
+instance_registry = InstanceRegistry(queue_info_type=queue_info_type)
 task_registry = TaskRegistry()
 websocket_manager = ConnectionManager()
 
-# TODO: Get predictor URL from configuration
-predictor_client = PredictorClient(predictor_url="http://predictor:8001")
+predictor_client = PredictorClient(
+    predictor_url=config.predictor.url,
+    timeout=config.predictor.timeout,
+    max_retries=config.predictor.max_retries,
+    retry_delay=config.predictor.retry_delay,
+    cache_ttl=config.predictor.cache_ttl,
+    enable_cache=config.predictor.enable_cache,
+)
+
+# Initialize training client
+training_client = TrainingClient(
+    predictor_url=config.predictor.url,
+    batch_size=config.training.batch_size,
+    min_samples=config.training.min_samples,
+) if config.training.enable_auto_training else None
 
 # Initialize task dispatcher
+# Construct callback base URL from config
+callback_base_url = f"http://{config.server.host}:{config.server.port}"
+if config.server.host == "0.0.0.0":
+    # For 0.0.0.0, use localhost for callbacks
+    callback_base_url = f"http://localhost:{config.server.port}"
+
 task_dispatcher = TaskDispatcher(
     task_registry=task_registry,
     instance_registry=instance_registry,
     websocket_manager=websocket_manager,
+    training_client=training_client,
+    callback_base_url=callback_base_url,
 )
 
-# TODO: Get scheduling strategy from configuration
-scheduling_strategy = get_strategy("probabilistic")
+# Initialize scheduling strategy from configuration
+scheduling_strategy = get_strategy(
+    strategy_name=config.scheduling.default_strategy,
+    target_quantile=config.scheduling.probabilistic_quantile,
+)
 
 
 # ============================================================================
@@ -108,6 +144,18 @@ async def register_instance(request: InstanceRegisterRequest):
             detail={"success": False, "error": "Instance with this ID already exists"},
         )
 
+    # Validate platform_info has required keys
+    required_keys = {"software_name", "software_version", "hardware_name"}
+    if not required_keys.issubset(request.platform_info.keys()):
+        missing_keys = required_keys - request.platform_info.keys()
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "success": False,
+                "error": f"platform_info missing required keys: {missing_keys}",
+            },
+        )
+
     # TODO: Optional - validate that the endpoint is reachable
     # try:
     #     async with httpx.AsyncClient(timeout=5.0) as client:
@@ -124,6 +172,7 @@ async def register_instance(request: InstanceRegisterRequest):
         instance_id=request.instance_id,
         model_id=request.model_id,
         endpoint=request.endpoint,
+        platform_info=request.platform_info,
     )
 
     # Register instance (this also initializes queue info and stats)
@@ -296,27 +345,66 @@ async def submit_task(request: TaskSubmitRequest):
         )
 
     # Get predictions from predictor
-    instance_ids = [inst.instance_id for inst in available_instances]
+    # Determine prediction type based on scheduling strategy
+    prediction_type = scheduling_strategy.get_prediction_type()
 
-    # TODO: Handle predictor errors gracefully
-    # For now, if predictor fails, we could fall back to round-robin
     try:
         predictions = await predictor_client.predict(
             model_id=request.model_id,
             metadata=request.metadata,
-            instance_ids=instance_ids,
+            instances=available_instances,  # Pass full Instance objects
+            prediction_type=prediction_type,  # Use strategy's prediction type
         )
-    except Exception as e:
-        # Fallback: use first available instance
-        # In production, you might want to use a different fallback strategy
-        selected_instance_id = available_instances[0].instance_id
-    else:
-        # Apply scheduling strategy to select best instance
-        selected_instance_id = scheduling_strategy.select_instance(predictions)
+    except httpx.HTTPStatusError as e:
+        # Strict mode: propagate predictor errors to user
+        if e.response.status_code == 404:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "success": False,
+                    "error": "No trained model available for this platform. "
+                    "Please train the model first or use experiment mode.",
+                },
+            )
+        elif e.response.status_code == 400:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "success": False,
+                    "error": f"Invalid task metadata: {e.response.text}",
+                },
+            )
+        else:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "success": False,
+                    "error": f"Predictor service error: {e.response.status_code}",
+                },
+            )
+    except httpx.HTTPError as e:
+        # Network errors
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "success": False,
+                "error": f"Predictor service unavailable: {str(e)}",
+            },
+        )
 
-        if not selected_instance_id:
-            # Shouldn't happen, but handle gracefully
-            selected_instance_id = available_instances[0].instance_id
+    # Collect queue information for all available instances
+    queue_info = {}
+    for instance in available_instances:
+        queue = instance_registry.get_queue_info(instance.instance_id)
+        if queue:
+            queue_info[instance.instance_id] = queue
+
+    # Apply scheduling strategy to select best instance
+    selected_instance_id = scheduling_strategy.select_instance(predictions, queue_info)
+
+    if not selected_instance_id:
+        # Shouldn't happen, but handle gracefully
+        selected_instance_id = available_instances[0].instance_id
 
     # Create task record
     try:
@@ -335,8 +423,91 @@ async def submit_task(request: TaskSubmitRequest):
     # Update instance stats
     instance_registry.increment_pending(selected_instance_id)
 
-    # TODO: Update instance queue information based on prediction
-    # For probabilistic scheduling, you might want to update the quantiles
+    # Update instance queue information based on prediction
+    selected_prediction = next(
+        (p for p in predictions if p.instance_id == selected_instance_id), None
+    )
+    if selected_prediction:
+        current_queue = instance_registry.get_queue_info(selected_instance_id)
+
+        if current_queue and isinstance(current_queue, InstanceQueueExpectError):
+            # MinimumExpectedTimeStrategy: update using error accumulation
+            # Error accumulation formula: sigma_total = sqrt(sigma1^2 + sigma2^2)
+            import math
+
+            # Get task prediction (from expect_error prediction type)
+            task_expected = selected_prediction.predicted_time_ms
+            task_error = selected_prediction.error_margin_ms or 0.0
+
+            # Calculate new queue expected time (simple addition)
+            new_expected = current_queue.expected_time_ms + task_expected
+
+            # Calculate new queue error margin (error accumulation)
+            new_error = math.sqrt(
+                current_queue.error_margin_ms ** 2 + task_error ** 2
+            )
+
+            updated_queue = InstanceQueueExpectError(
+                instance_id=selected_instance_id,
+                expected_time_ms=new_expected,
+                error_margin_ms=new_error,
+            )
+            instance_registry.update_queue_info(selected_instance_id, updated_queue)
+
+        elif current_queue and isinstance(current_queue, InstanceQueueProbabilistic):
+            # ProbabilisticSchedulingStrategy: update using Monte Carlo method
+            if selected_prediction.quantiles:
+                # Monte Carlo method: sample 1000 times and compute new quantiles
+                import numpy as np
+
+                num_samples = 1000
+
+                # Generate random percentiles for sampling
+                random_percentiles = np.random.random(num_samples)
+
+                # Sample from queue distribution using vectorized numpy interpolation
+                queue_samples = np.interp(
+                    random_percentiles,
+                    current_queue.quantiles,
+                    current_queue.values
+                )
+
+                # Sample from task distribution
+                task_quantiles = sorted(selected_prediction.quantiles.keys())
+                task_values = [selected_prediction.quantiles[q] for q in task_quantiles]
+                task_samples = np.interp(
+                    random_percentiles,
+                    task_quantiles,
+                    task_values
+                )
+
+                # Compute total time samples
+                total_samples = queue_samples + task_samples
+
+                # Compute new quantiles from samples using numpy.percentile
+                updated_values = [
+                    float(np.percentile(total_samples, q * 100))
+                    for q in current_queue.quantiles
+                ]
+
+                updated_queue = InstanceQueueProbabilistic(
+                    instance_id=selected_instance_id,
+                    quantiles=current_queue.quantiles,
+                    values=updated_values,
+                )
+                instance_registry.update_queue_info(selected_instance_id, updated_queue)
+            else:
+                # Fallback: use predicted_time_ms for all quantiles
+                updated_values = [
+                    current_queue.values[i] + selected_prediction.predicted_time_ms
+                    for i in range(len(current_queue.quantiles))
+                ]
+                updated_queue = InstanceQueueProbabilistic(
+                    instance_id=selected_instance_id,
+                    quantiles=current_queue.quantiles,
+                    values=updated_values,
+                )
+                instance_registry.update_queue_info(selected_instance_id, updated_queue)
 
     # Dispatch task asynchronously
     task_dispatcher.dispatch_task_async(request.task_id)
@@ -448,6 +619,58 @@ async def get_task_info(task_id: str = Query(...)):
     return TaskDetailResponse(
         success=True,
         task=task_detail,
+    )
+
+
+@app.post("/callback/task_result", response_model=TaskResultCallbackResponse)
+async def callback_task_result(request: TaskResultCallbackRequest):
+    """
+    Callback endpoint for instances to report task completion.
+
+    This endpoint is called by instances when a task completes or fails.
+    The instance sends the task result, and the scheduler updates its state
+    and notifies WebSocket subscribers.
+
+    Args:
+        request: Task result callback data
+
+    Returns:
+        TaskResultCallbackResponse with acknowledgment
+
+    Raises:
+        HTTPException 404: If task not found
+        HTTPException 400: If task status is invalid
+    """
+    # Validate task exists
+    task = task_registry.get(request.task_id)
+    if not task:
+        raise HTTPException(
+            status_code=404,
+            detail={"success": False, "error": "Task not found"},
+        )
+
+    # Validate status
+    if request.status not in ("completed", "failed"):
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "success": False,
+                "error": f"Invalid status: {request.status}. Must be 'completed' or 'failed'",
+            },
+        )
+
+    # Handle task result via task dispatcher
+    await task_dispatcher.handle_task_result(
+        task_id=request.task_id,
+        status=request.status,
+        result=request.result,
+        error=request.error,
+        execution_time_ms=request.execution_time_ms,
+    )
+
+    return TaskResultCallbackResponse(
+        success=True,
+        message="Task result received successfully",
     )
 
 
