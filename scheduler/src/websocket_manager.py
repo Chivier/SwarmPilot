@@ -1,0 +1,183 @@
+"""
+WebSocket connection manager for real-time task result delivery.
+
+This module manages WebSocket connections and task result subscriptions.
+"""
+
+from typing import Set, Dict
+from threading import Lock
+import asyncio
+
+from fastapi import WebSocket
+
+from .model import WSTaskResultMessage, TaskStatus, TaskTimestamps
+
+
+class ConnectionManager:
+    """Manager for WebSocket connections and task subscriptions."""
+
+    def __init__(self):
+        # Map of task_id -> set of websockets subscribed to that task
+        self._subscriptions: Dict[str, Set[WebSocket]] = {}
+        # Map of websocket -> set of task_ids it's subscribed to
+        self._connections: Dict[WebSocket, Set[str]] = {}
+        self._lock = Lock()
+
+    def connect(self, websocket: WebSocket) -> None:
+        """
+        Register a new WebSocket connection.
+
+        Args:
+            websocket: WebSocket connection to register
+        """
+        with self._lock:
+            self._connections[websocket] = set()
+
+    def disconnect(self, websocket: WebSocket) -> None:
+        """
+        Unregister a WebSocket connection and clean up subscriptions.
+
+        Args:
+            websocket: WebSocket connection to unregister
+        """
+        with self._lock:
+            # Get all task IDs this connection was subscribed to
+            task_ids = self._connections.get(websocket, set())
+
+            # Remove this websocket from all task subscriptions
+            for task_id in task_ids:
+                if task_id in self._subscriptions:
+                    self._subscriptions[task_id].discard(websocket)
+                    # Clean up empty subscription sets
+                    if not self._subscriptions[task_id]:
+                        del self._subscriptions[task_id]
+
+            # Remove connection record
+            if websocket in self._connections:
+                del self._connections[websocket]
+
+    def subscribe(self, websocket: WebSocket, task_ids: list[str]) -> None:
+        """
+        Subscribe a WebSocket connection to task result updates.
+
+        Args:
+            websocket: WebSocket connection
+            task_ids: List of task IDs to subscribe to
+        """
+        with self._lock:
+            # Ensure connection is registered
+            if websocket not in self._connections:
+                self._connections[websocket] = set()
+
+            # Add subscriptions
+            for task_id in task_ids:
+                # Add to task -> websocket mapping
+                if task_id not in self._subscriptions:
+                    self._subscriptions[task_id] = set()
+                self._subscriptions[task_id].add(websocket)
+
+                # Add to websocket -> task mapping
+                self._connections[websocket].add(task_id)
+
+    def unsubscribe(self, websocket: WebSocket, task_ids: list[str]) -> None:
+        """
+        Unsubscribe a WebSocket connection from task result updates.
+
+        Args:
+            websocket: WebSocket connection
+            task_ids: List of task IDs to unsubscribe from
+        """
+        with self._lock:
+            for task_id in task_ids:
+                # Remove from task -> websocket mapping
+                if task_id in self._subscriptions:
+                    self._subscriptions[task_id].discard(websocket)
+                    if not self._subscriptions[task_id]:
+                        del self._subscriptions[task_id]
+
+                # Remove from websocket -> task mapping
+                if websocket in self._connections:
+                    self._connections[websocket].discard(task_id)
+
+    def get_subscribed_tasks(self, websocket: WebSocket) -> list[str]:
+        """
+        Get list of task IDs a WebSocket is subscribed to.
+
+        Args:
+            websocket: WebSocket connection
+
+        Returns:
+            List of subscribed task IDs
+        """
+        with self._lock:
+            return list(self._connections.get(websocket, set()))
+
+    def get_subscribers(self, task_id: str) -> list[WebSocket]:
+        """
+        Get list of WebSockets subscribed to a task.
+
+        Args:
+            task_id: Task ID
+
+        Returns:
+            List of WebSocket connections
+        """
+        with self._lock:
+            return list(self._subscriptions.get(task_id, set()))
+
+    async def broadcast_task_result(
+        self,
+        task_id: str,
+        status: TaskStatus,
+        result: dict = None,
+        error: str = None,
+        timestamps: TaskTimestamps = None,
+        execution_time_ms: int = None,
+    ) -> None:
+        """
+        Broadcast task result to all subscribed WebSocket connections.
+
+        Args:
+            task_id: Task ID
+            status: Task status (completed or failed)
+            result: Task result data (if completed)
+            error: Error message (if failed)
+            timestamps: Task timestamps
+            execution_time_ms: Execution time in milliseconds
+        """
+        # Get subscribers (make a copy to avoid holding lock during I/O)
+        subscribers = self.get_subscribers(task_id)
+
+        if not subscribers:
+            return
+
+        # Create result message
+        message = WSTaskResultMessage(
+            task_id=task_id,
+            status=status,
+            result=result,
+            error=error,
+            timestamps=timestamps,
+            execution_time_ms=execution_time_ms,
+        )
+
+        # Send to all subscribers
+        disconnected = []
+        for websocket in subscribers:
+            try:
+                await websocket.send_json(message.model_dump())
+            except Exception:
+                # Mark for cleanup if sending fails
+                disconnected.append(websocket)
+
+        # Clean up disconnected websockets
+        for websocket in disconnected:
+            self.disconnect(websocket)
+
+        # Unsubscribe all connections from this task after broadcasting
+        with self._lock:
+            if task_id in self._subscriptions:
+                for ws in self._subscriptions[task_id].copy():
+                    if ws in self._connections:
+                        self._connections[ws].discard(task_id)
+                del self._subscriptions[task_id]
