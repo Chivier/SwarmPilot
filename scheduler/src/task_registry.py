@@ -1,0 +1,236 @@
+"""
+Task registry for managing task lifecycle and state.
+
+This module provides thread-safe storage and management of tasks
+throughout their execution lifecycle.
+"""
+
+from typing import Dict, List, Optional, Any
+from threading import Lock
+from datetime import datetime
+
+from .model import TaskStatus, TaskTimestamps
+
+
+class TaskRecord:
+    """Internal representation of a task with full state."""
+
+    def __init__(
+        self,
+        task_id: str,
+        model_id: str,
+        task_input: Dict[str, Any],
+        metadata: Dict[str, Any],
+        assigned_instance: str,
+    ):
+        self.task_id = task_id
+        self.model_id = model_id
+        self.task_input = task_input
+        self.metadata = metadata
+        self.assigned_instance = assigned_instance
+        self.status = TaskStatus.PENDING
+        self.result: Optional[Dict[str, Any]] = None
+        self.error: Optional[str] = None
+
+        # Timestamps
+        self.submitted_at = datetime.now().isoformat() + "Z"
+        self.started_at: Optional[str] = None
+        self.completed_at: Optional[str] = None
+
+    @property
+    def execution_time_ms(self) -> Optional[int]:
+        """Calculate execution time in milliseconds."""
+        if self.started_at and self.completed_at:
+            try:
+                start = datetime.fromisoformat(self.started_at.replace("Z", "+00:00"))
+                end = datetime.fromisoformat(self.completed_at.replace("Z", "+00:00"))
+                return int((end - start).total_seconds() * 1000)
+            except Exception:
+                return None
+        return None
+
+    def get_timestamps(self) -> TaskTimestamps:
+        """Get task timestamps as model."""
+        return TaskTimestamps(
+            submitted_at=self.submitted_at,
+            started_at=self.started_at,
+            completed_at=self.completed_at,
+        )
+
+
+class TaskRegistry:
+    """Thread-safe registry for managing tasks."""
+
+    def __init__(self):
+        self._tasks: Dict[str, TaskRecord] = {}
+        self._lock = Lock()
+
+    def create_task(
+        self,
+        task_id: str,
+        model_id: str,
+        task_input: Dict[str, Any],
+        metadata: Dict[str, Any],
+        assigned_instance: str,
+    ) -> TaskRecord:
+        """
+        Create and register a new task.
+
+        Args:
+            task_id: Unique task identifier
+            model_id: Model/tool to use
+            task_input: Input data for the task
+            metadata: Metadata for prediction
+            assigned_instance: Instance assigned to execute this task
+
+        Returns:
+            Created task record
+
+        Raises:
+            ValueError: If task with this ID already exists
+        """
+        with self._lock:
+            if task_id in self._tasks:
+                raise ValueError(f"Task {task_id} already exists")
+
+            task = TaskRecord(
+                task_id=task_id,
+                model_id=model_id,
+                task_input=task_input,
+                metadata=metadata,
+                assigned_instance=assigned_instance,
+            )
+            self._tasks[task_id] = task
+            return task
+
+    def get(self, task_id: str) -> Optional[TaskRecord]:
+        """
+        Get a task by ID.
+
+        Args:
+            task_id: ID of task to retrieve
+
+        Returns:
+            TaskRecord if found, None otherwise
+        """
+        with self._lock:
+            return self._tasks.get(task_id)
+
+    def list_all(
+        self,
+        status: Optional[TaskStatus] = None,
+        model_id: Optional[str] = None,
+        instance_id: Optional[str] = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple[List[TaskRecord], int]:
+        """
+        List tasks with optional filtering and pagination.
+
+        Args:
+            status: Optional status filter
+            model_id: Optional model ID filter
+            instance_id: Optional instance ID filter
+            limit: Maximum number of tasks to return
+            offset: Pagination offset
+
+        Returns:
+            Tuple of (filtered tasks, total count)
+        """
+        with self._lock:
+            tasks = list(self._tasks.values())
+
+            # Apply filters
+            if status:
+                tasks = [t for t in tasks if t.status == status]
+            if model_id:
+                tasks = [t for t in tasks if t.model_id == model_id]
+            if instance_id:
+                tasks = [t for t in tasks if t.assigned_instance == instance_id]
+
+            total = len(tasks)
+
+            # Sort by submission time (newest first)
+            tasks.sort(key=lambda t: t.submitted_at, reverse=True)
+
+            # Apply pagination
+            tasks = tasks[offset : offset + limit]
+
+            return tasks, total
+
+    def update_status(self, task_id: str, status: TaskStatus) -> None:
+        """
+        Update task status.
+
+        Args:
+            task_id: ID of task to update
+            status: New status
+
+        Raises:
+            KeyError: If task not found
+        """
+        with self._lock:
+            if task_id not in self._tasks:
+                raise KeyError(f"Task {task_id} not found")
+
+            task = self._tasks[task_id]
+            task.status = status
+
+            # Update timestamps
+            if status == TaskStatus.RUNNING and task.started_at is None:
+                task.started_at = datetime.now().isoformat() + "Z"
+            elif status in (TaskStatus.COMPLETED, TaskStatus.FAILED):
+                if task.completed_at is None:
+                    task.completed_at = datetime.now().isoformat() + "Z"
+
+    def set_result(self, task_id: str, result: Dict[str, Any]) -> None:
+        """
+        Set task result.
+
+        Args:
+            task_id: ID of task
+            result: Task result data
+
+        Raises:
+            KeyError: If task not found
+        """
+        with self._lock:
+            if task_id not in self._tasks:
+                raise KeyError(f"Task {task_id} not found")
+
+            self._tasks[task_id].result = result
+
+    def set_error(self, task_id: str, error: str) -> None:
+        """
+        Set task error.
+
+        Args:
+            task_id: ID of task
+            error: Error message
+
+        Raises:
+            KeyError: If task not found
+        """
+        with self._lock:
+            if task_id not in self._tasks:
+                raise KeyError(f"Task {task_id} not found")
+
+            self._tasks[task_id].error = error
+
+    def get_count_by_status(self, status: TaskStatus) -> int:
+        """
+        Get count of tasks with specific status.
+
+        Args:
+            status: Status to count
+
+        Returns:
+            Count of tasks with this status
+        """
+        with self._lock:
+            return sum(1 for t in self._tasks.values() if t.status == status)
+
+    def get_total_count(self) -> int:
+        """Get total number of tasks."""
+        with self._lock:
+            return len(self._tasks)
