@@ -1,0 +1,19 @@
+models:
+  - model_id: test-model
+    name: Test Model
+    directory: test_model
+    resource_requirements:
+      memory: "1Gi"
+      cpu: "1"
+
+  - model_id: sleep-model
+    name: Sleep Model
+    directory: sleep_model
+    resource_requirements:
+      memory: "512Mi"
+      cpu: "0.5"
+
+  - model_id: echo-model
+    name: Echo Model
+    directory: echo_model
+    resource_requirements: {}

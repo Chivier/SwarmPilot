@@ -9,7 +9,7 @@ import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, HTTPException, Query, status
+from fastapi import FastAPI, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
 
 from .config import config
@@ -532,7 +532,7 @@ async def get_info():
         503: {"model": HealthResponse},
     },
 )
-async def health_check():
+async def health_check(response: Response):
     """
     Health check endpoint for monitoring and load balancing.
 
@@ -545,11 +545,12 @@ async def health_check():
     if await docker_manager.is_model_running():
         # Check model health
         if not await docker_manager.check_model_health():
+            response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
             return HealthResponse(
                 status="unhealthy",
                 error="Model container is not responding",
                 timestamp=datetime.utcnow().isoformat() + "Z"
-            ), status.HTTP_503_SERVICE_UNAVAILABLE
+            )
 
     # Instance is healthy
     return HealthResponse(

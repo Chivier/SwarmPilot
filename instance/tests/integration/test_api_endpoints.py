@@ -1,0 +1,473 @@
+"""
+Integration tests for API endpoints (src/api.py)
+Tests all API endpoints with various scenarios
+"""
+
+import pytest
+from unittest.mock import AsyncMock, Mock, patch
+from fastapi import status
+from fastapi.testclient import TestClient
+from src.models import Task, TaskStatus, ModelInfo, InstanceStatus
+
+
+@pytest.mark.integration
+class TestModelManagementEndpoints:
+    """Test suite for model management endpoints"""
+
+    def test_start_model_success(self, api_client, mock_docker_manager, mock_model_registry):
+        """Test POST /model/start - successful model start"""
+        # Setup mocks
+        mock_docker_manager.is_model_running.return_value = False
+        mock_model_registry.model_exists.return_value = True
+        mock_docker_manager.start_model.return_value = ModelInfo(
+            model_id="test-model",
+            started_at="2024-01-01T00:00:00Z",
+            parameters={"temp": 0.7}
+        )
+
+        # Make request
+        response = api_client.post(
+            "/model/start",
+            json={"model_id": "test-model", "parameters": {"temp": 0.7}}
+        )
+
+        # Verify response
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["success"] is True
+        assert data["model_id"] == "test-model"
+        assert data["status"] == "running"
+
+    def test_start_model_already_running(self, api_client, mock_docker_manager):
+        """Test POST /model/start - fails when model already running"""
+        # Setup mock
+        mock_docker_manager.is_model_running.return_value = True
+
+        # Make request
+        response = api_client.post(
+            "/model/start",
+            json={"model_id": "test-model"}
+        )
+
+        # Verify response
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "already running" in response.json()["detail"]
+
+    def test_start_model_not_found(self, api_client, mock_docker_manager, mock_model_registry):
+        """Test POST /model/start - model not in registry"""
+        # Setup mocks
+        mock_docker_manager.is_model_running.return_value = False
+        mock_model_registry.model_exists.return_value = False
+
+        # Make request
+        response = api_client.post(
+            "/model/start",
+            json={"model_id": "non-existent-model"}
+        )
+
+        # Verify response
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "not found in registry" in response.json()["detail"]
+
+    def test_start_model_failure(self, api_client, mock_docker_manager, mock_model_registry):
+        """Test POST /model/start - container fails to start"""
+        # Setup mocks
+        mock_docker_manager.is_model_running.return_value = False
+        mock_model_registry.model_exists.return_value = True
+        mock_docker_manager.start_model.side_effect = RuntimeError("Container failed")
+
+        # Make request
+        response = api_client.post(
+            "/model/start",
+            json={"model_id": "test-model"}
+        )
+
+        # Verify response
+        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        assert "Failed to start model" in response.json()["detail"]
+
+    def test_stop_model_success(self, api_client, mock_docker_manager):
+        """Test GET /model/stop - successful model stop"""
+        # Setup mock
+        mock_docker_manager.is_model_running.return_value = True
+        mock_docker_manager.stop_model.return_value = "test-model"
+
+        # Make request
+        response = api_client.get("/model/stop")
+
+        # Verify response
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["success"] is True
+        assert data["model_id"] == "test-model"
+
+    def test_stop_model_not_running(self, api_client, mock_docker_manager):
+        """Test GET /model/stop - no model running"""
+        # Setup mock
+        mock_docker_manager.is_model_running.return_value = False
+
+        # Make request
+        response = api_client.get("/model/stop")
+
+        # Verify response
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "No model is currently running" in response.json()["detail"]
+
+
+@pytest.mark.integration
+class TestTaskManagementEndpoints:
+    """Test suite for task management endpoints"""
+
+    def test_submit_task_success(self, api_client, mock_docker_manager, mock_task_queue):
+        """Test POST /task/submit - successful task submission"""
+        # Setup mocks
+        mock_docker_manager.is_model_running.return_value = True
+        mock_docker_manager.get_current_model.return_value = Mock(model_id="test-model")
+        mock_task_queue.submit_task.return_value = 1
+
+        # Make request
+        response = api_client.post(
+            "/task/submit",
+            json={
+                "task_id": "task-1",
+                "model_id": "test-model",
+                "task_input": {"prompt": "Hello"}
+            }
+        )
+
+        # Verify response
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["success"] is True
+        assert data["task_id"] == "task-1"
+        assert data["position"] == 1
+        assert data["status"] == "queued"
+
+    def test_submit_task_no_model(self, api_client, mock_docker_manager):
+        """Test POST /task/submit - no model running"""
+        # Setup mock
+        mock_docker_manager.is_model_running.return_value = False
+
+        # Make request
+        response = api_client.post(
+            "/task/submit",
+            json={
+                "task_id": "task-1",
+                "model_id": "test-model",
+                "task_input": {"prompt": "Hello"}
+            }
+        )
+
+        # Verify response
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert "No model is currently running" in response.json()["detail"]
+
+    def test_submit_task_model_mismatch(self, api_client, mock_docker_manager):
+        """Test POST /task/submit - model ID mismatch"""
+        # Setup mocks
+        mock_docker_manager.is_model_running.return_value = True
+        mock_docker_manager.get_current_model.return_value = Mock(model_id="different-model")
+
+        # Make request
+        response = api_client.post(
+            "/task/submit",
+            json={
+                "task_id": "task-1",
+                "model_id": "test-model",
+                "task_input": {"prompt": "Hello"}
+            }
+        )
+
+        # Verify response
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert "does not match" in response.json()["detail"]
+
+    def test_submit_task_duplicate(self, api_client, mock_docker_manager, mock_task_queue):
+        """Test POST /task/submit - duplicate task ID"""
+        # Setup mocks
+        mock_docker_manager.is_model_running.return_value = True
+        mock_docker_manager.get_current_model.return_value = Mock(model_id="test-model")
+        mock_task_queue.submit_task.side_effect = ValueError("Task already exists")
+
+        # Make request
+        response = api_client.post(
+            "/task/submit",
+            json={
+                "task_id": "task-1",
+                "model_id": "test-model",
+                "task_input": {"prompt": "Hello"}
+            }
+        )
+
+        # Verify response
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "already exists" in response.json()["detail"]
+
+    def test_list_tasks_no_filter(self, api_client, mock_task_queue):
+        """Test GET /task/list - list all tasks"""
+        # Setup mock
+        task1 = Task(task_id="task-1", model_id="model", task_input={"prompt": "test1"})
+        task2 = Task(task_id="task-2", model_id="model", task_input={"prompt": "test2"})
+        mock_task_queue.list_tasks.return_value = [task1, task2]
+
+        # Make request
+        response = api_client.get("/task/list")
+
+        # Verify response
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["success"] is True
+        assert data["total"] == 2
+        assert len(data["tasks"]) == 2
+
+    def test_list_tasks_with_status_filter(self, api_client, mock_task_queue):
+        """Test GET /task/list?status=completed"""
+        # Setup mock
+        task = Task(task_id="task-1", model_id="model", task_input={"prompt": "test"})
+        task.mark_completed({"output": "result"})
+        mock_task_queue.list_tasks.return_value = [task]
+
+        # Make request
+        response = api_client.get("/task/list?status=completed")
+
+        # Verify response
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["total"] == 1
+        assert data["tasks"][0]["status"] == "completed"
+
+    def test_list_tasks_invalid_status(self, api_client):
+        """Test GET /task/list?status=invalid"""
+        response = api_client.get("/task/list?status=invalid")
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "Invalid status" in response.json()["detail"]
+
+    def test_list_tasks_with_limit(self, api_client, mock_task_queue):
+        """Test GET /task/list?limit=10"""
+        # Setup mock
+        tasks = [
+            Task(task_id=f"task-{i}", model_id="model", task_input={})
+            for i in range(10)
+        ]
+        mock_task_queue.list_tasks.return_value = tasks
+
+        # Make request
+        response = api_client.get("/task/list?limit=10")
+
+        # Verify response
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["total"] == 10
+
+    def test_get_task_exists(self, api_client, mock_task_queue):
+        """Test GET /task/{task_id} - task exists"""
+        # Setup mock
+        task = Task(task_id="task-1", model_id="model", task_input={"prompt": "test"})
+        mock_task_queue.get_task.return_value = task
+
+        # Make request
+        response = api_client.get("/task/task-1")
+
+        # Verify response
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["success"] is True
+        assert data["task"]["task_id"] == "task-1"
+
+    def test_get_task_not_found(self, api_client, mock_task_queue):
+        """Test GET /task/{task_id} - task not found"""
+        # Setup mock
+        mock_task_queue.get_task.return_value = None
+
+        # Make request
+        response = api_client.get("/task/non-existent-task")
+
+        # Verify response
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert "Task not found" in response.json()["detail"]
+
+    def test_delete_task_success(self, api_client, mock_task_queue):
+        """Test DELETE /task/{task_id} - successful deletion"""
+        # Setup mock
+        mock_task_queue.delete_task.return_value = True
+
+        # Make request
+        response = api_client.delete("/task/task-1")
+
+        # Verify response
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["success"] is True
+        assert data["task_id"] == "task-1"
+
+    def test_delete_task_running(self, api_client, mock_task_queue):
+        """Test DELETE /task/{task_id} - cannot delete running task"""
+        # Setup mock
+        mock_task_queue.delete_task.side_effect = ValueError("Cannot delete a running task")
+
+        # Make request
+        response = api_client.delete("/task/task-1")
+
+        # Verify response
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "running" in response.json()["detail"]
+
+    def test_delete_task_not_found(self, api_client, mock_task_queue):
+        """Test DELETE /task/{task_id} - task not found"""
+        # Setup mock
+        mock_task_queue.delete_task.return_value = False
+
+        # Make request
+        response = api_client.delete("/task/non-existent-task")
+
+        # Verify response
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+@pytest.mark.integration
+class TestManagementEndpoints:
+    """Test suite for management endpoints"""
+
+    def test_get_info_idle(self, api_client, mock_docker_manager, mock_task_queue):
+        """Test GET /info - instance is idle (no model running)"""
+        # Setup mocks
+        mock_docker_manager.get_current_model.return_value = None
+        mock_task_queue.get_queue_stats.return_value = {
+            "total": 0,
+            "queued": 0,
+            "running": 0,
+            "completed": 0,
+            "failed": 0
+        }
+
+        # Make request
+        response = api_client.get("/info")
+
+        # Verify response
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["success"] is True
+        assert data["instance"]["status"] == "idle"
+        assert data["instance"]["current_model"] is None
+        assert data["instance"]["task_queue"]["total"] == 0
+
+    def test_get_info_running(self, api_client, mock_docker_manager, mock_task_queue):
+        """Test GET /info - instance is running (model running, no tasks)"""
+        # Setup mocks
+        mock_docker_manager.get_current_model.return_value = ModelInfo(
+            model_id="test-model",
+            started_at="2024-01-01T00:00:00Z",
+            parameters={}
+        )
+        mock_task_queue.get_queue_stats.return_value = {
+            "total": 5,
+            "queued": 2,
+            "running": 0,
+            "completed": 3,
+            "failed": 0
+        }
+
+        # Make request
+        response = api_client.get("/info")
+
+        # Verify response
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["instance"]["status"] == "running"
+        assert data["instance"]["current_model"]["model_id"] == "test-model"
+
+    def test_get_info_busy(self, api_client, mock_docker_manager, mock_task_queue):
+        """Test GET /info - instance is busy (task processing)"""
+        # Setup mocks
+        mock_docker_manager.get_current_model.return_value = ModelInfo(
+            model_id="test-model",
+            started_at="2024-01-01T00:00:00Z",
+            parameters={}
+        )
+        mock_task_queue.get_queue_stats.return_value = {
+            "total": 5,
+            "queued": 2,
+            "running": 1,
+            "completed": 2,
+            "failed": 0
+        }
+
+        # Make request
+        response = api_client.get("/info")
+
+        # Verify response
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["instance"]["status"] == "busy"
+        assert data["instance"]["task_queue"]["running"] == 1
+
+    def test_health_check_healthy(self, api_client, mock_docker_manager):
+        """Test GET /health - instance is healthy"""
+        # Setup mock
+        mock_docker_manager.is_model_running.return_value = False
+
+        # Make request
+        response = api_client.get("/health")
+
+        # Verify response
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["status"] == "healthy"
+
+    def test_health_check_healthy_with_model(self, api_client, mock_docker_manager):
+        """Test GET /health - instance with healthy model"""
+        # Setup mocks
+        mock_docker_manager.is_model_running.return_value = True
+        mock_docker_manager.check_model_health.return_value = True
+
+        # Make request
+        response = api_client.get("/health")
+
+        # Verify response
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["status"] == "healthy"
+
+    def test_health_check_unhealthy(self, api_client, mock_docker_manager):
+        """Test GET /health - model is unhealthy"""
+        # Setup mocks
+        mock_docker_manager.is_model_running.return_value = True
+        mock_docker_manager.check_model_health.return_value = False
+
+        # Make request
+        response = api_client.get("/health")
+
+        # Verify response
+        assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+        data = response.json()
+        assert data["status"] == "unhealthy"
+        assert "error" in data
+
+
+@pytest.mark.integration
+class TestRequestValidation:
+    """Test suite for request validation"""
+
+    def test_start_model_missing_model_id(self, api_client):
+        """Test POST /model/start without model_id"""
+        response = api_client.post("/model/start", json={})
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+    def test_submit_task_missing_fields(self, api_client):
+        """Test POST /task/submit with missing required fields"""
+        # Missing task_input
+        response = api_client.post(
+            "/task/submit",
+            json={"task_id": "task-1", "model_id": "model"}
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+    def test_list_tasks_invalid_limit(self, api_client):
+        """Test GET /task/list with invalid limit"""
+        # Limit too large
+        response = api_client.get("/task/list?limit=2000")
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
