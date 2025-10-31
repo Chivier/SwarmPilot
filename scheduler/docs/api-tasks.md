@@ -1,0 +1,403 @@
+# Task Management API
+
+This document describes the API endpoints for submitting, tracking, and querying tasks.
+
+> **See Also**:
+> - [Data Models](./data-models.md) for request/response model definitions
+> - [WebSocket API](./api-websocket.md) for real-time task result notifications
+
+## Overview
+
+Tasks represent computational work to be executed on instances. The scheduler receives tasks, predicts runtime on available instances, selects the best instance using the configured scheduling strategy, and dispatches the task for execution.
+
+## Task Lifecycle
+
+1. **PENDING** - Task submitted, scheduler is selecting an instance
+2. **RUNNING** - Task dispatched to instance and executing
+3. **COMPLETED** - Task finished successfully with result
+4. **FAILED** - Task failed with error message
+
+## Endpoints
+
+### POST `/task/submit`
+
+Submit a new task to the scheduler for execution.
+
+**Request Body:**
+```json
+{
+  "task_id": "task-ocr-001",
+  "model_id": "easyocr/dec",
+  "task_input": {
+    "image": "base64_encoded_image_data"
+  },
+  "metadata": {
+    "height": 512,
+    "width": 512
+  }
+}
+```
+
+**Field Descriptions:**
+- `task_id`: Unique identifier for this task (must be unique across all tasks)
+- `model_id`: Model or tool to use (must match a registered instance's model_id)
+- `task_input`: Flexible input data passed to the model (structure depends on model requirements)
+- `metadata`: Additional information for runtime prediction (e.g., image dimensions, text length)
+
+**Success Response (200 OK):**
+```json
+{
+  "success": true,
+  "message": "Task submitted successfully",
+  "task": {
+    "task_id": "task-ocr-001",
+    "status": "pending",
+    "assigned_instance": "instance-gpu-0",
+    "submitted_at": "2025-10-31T12:34:56.789Z"
+  }
+}
+```
+
+**Response Fields:**
+- `assigned_instance`: Instance selected by the scheduling strategy
+- `status`: Initially "pending", transitions to "running" when dispatched
+- `submitted_at`: ISO 8601 timestamp with timezone
+
+**Error Responses:**
+
+**400 Bad Request** - Task ID already exists:
+```json
+{
+  "success": false,
+  "error": "Task with this ID already exists"
+}
+```
+
+**404 Not Found** - No instances available for model:
+```json
+{
+  "success": false,
+  "error": "No available instance for model_id: easyocr/dec"
+}
+```
+
+**503 Service Unavailable** - Predictor service error:
+```json
+{
+  "success": false,
+  "error": "Predictor service unavailable: Connection refused"
+}
+```
+
+**How Task Submission Works:**
+
+1. Scheduler validates request and checks for duplicate task_id
+2. Queries available instances for the requested model_id
+3. Calls predictor service to estimate runtime on each instance
+4. Scheduling strategy selects best instance based on predictions and queue state
+5. Task record created and assigned to selected instance
+6. Instance queue updated with predicted task time
+7. Task dispatched asynchronously to instance via HTTP POST
+
+---
+
+### GET `/task/list`
+
+List tasks with optional filtering and pagination.
+
+**Query Parameters:**
+- `status` (optional, enum): Filter by task status (`pending`, `running`, `completed`, `failed`)
+- `model_id` (optional, string): Filter by model ID
+- `instance_id` (optional, string): Filter by assigned instance ID
+- `limit` (optional, integer, default=100, range=1-1000): Maximum tasks to return
+- `offset` (optional, integer, default=0): Pagination offset
+
+**Example Requests:**
+```
+GET /task/list
+GET /task/list?status=completed
+GET /task/list?model_id=easyocr/dec&limit=50
+GET /task/list?instance_id=instance-gpu-0&offset=100&limit=50
+```
+
+**Success Response (200 OK):**
+```json
+{
+  "success": true,
+  "count": 2,
+  "total": 150,
+  "offset": 0,
+  "limit": 100,
+  "tasks": [
+    {
+      "task_id": "task-ocr-001",
+      "model_id": "easyocr/dec",
+      "status": "completed",
+      "assigned_instance": "instance-gpu-0",
+      "submitted_at": "2025-10-31T12:34:56.789Z",
+      "completed_at": "2025-10-31T12:35:01.234Z"
+    },
+    {
+      "task_id": "task-ocr-002",
+      "model_id": "easyocr/dec",
+      "status": "running",
+      "assigned_instance": "instance-gpu-1",
+      "submitted_at": "2025-10-31T12:35:10.456Z",
+      "completed_at": null
+    }
+  ]
+}
+```
+
+**Response Fields:**
+- `count`: Number of tasks in current page
+- `total`: Total tasks matching filter criteria
+- `offset`: Current pagination offset
+- `limit`: Current pagination limit
+- `tasks`: Array of task summaries (ordered by submission time, newest first)
+- `completed_at`: Present only for completed/failed tasks
+
+**Pagination Example:**
+
+To retrieve all tasks in pages of 50:
+```bash
+# Page 1
+curl "http://localhost:8000/task/list?limit=50&offset=0"
+
+# Page 2
+curl "http://localhost:8000/task/list?limit=50&offset=50"
+
+# Page 3
+curl "http://localhost:8000/task/list?limit=50&offset=100"
+```
+
+---
+
+### GET `/task/info`
+
+Get detailed information about a specific task, including input, result, and execution metrics.
+
+**Query Parameters:**
+- `task_id` (required, string): ID of the task to query
+
+**Example Request:**
+```
+GET /task/info?task_id=task-ocr-001
+```
+
+**Success Response (200 OK):**
+```json
+{
+  "success": true,
+  "task": {
+    "task_id": "task-ocr-001",
+    "model_id": "easyocr/dec",
+    "status": "completed",
+    "assigned_instance": "instance-gpu-0",
+    "task_input": {
+      "image": "base64_encoded_image_data"
+    },
+    "metadata": {
+      "height": 512,
+      "width": 512
+    },
+    "result": {
+      "text": "Hello World",
+      "confidence": 0.95,
+      "bounding_boxes": [[10, 20, 100, 50]]
+    },
+    "error": null,
+    "timestamps": {
+      "submitted_at": "2025-10-31T12:34:56.789Z",
+      "started_at": "2025-10-31T12:34:58.123Z",
+      "completed_at": "2025-10-31T12:35:01.234Z"
+    },
+    "execution_time_ms": 3111
+  }
+}
+```
+
+**Response Fields:**
+- `task_input`: Original input provided during submission
+- `metadata`: Original metadata provided during submission
+- `result`: Task output (present only if status is "completed")
+- `error`: Error message (present only if status is "failed")
+- `timestamps`: Task lifecycle timestamps
+  - `submitted_at`: When task was submitted
+  - `started_at`: When instance began executing task (null if still pending)
+  - `completed_at`: When task finished (null if still running)
+- `execution_time_ms`: Actual execution time in milliseconds (calculated from started_at to completed_at)
+
+**Example Response for Failed Task:**
+```json
+{
+  "success": true,
+  "task": {
+    "task_id": "task-ocr-002",
+    "model_id": "easyocr/dec",
+    "status": "failed",
+    "assigned_instance": "instance-gpu-0",
+    "task_input": { "image": "..." },
+    "metadata": { "height": 512, "width": 512 },
+    "result": null,
+    "error": "Invalid image format: expected JPEG or PNG",
+    "timestamps": {
+      "submitted_at": "2025-10-31T12:35:10.456Z",
+      "started_at": "2025-10-31T12:35:12.789Z",
+      "completed_at": "2025-10-31T12:35:13.012Z"
+    },
+    "execution_time_ms": 223
+  }
+}
+```
+
+**Error Response (404 Not Found):**
+```json
+{
+  "success": false,
+  "error": "Task not found"
+}
+```
+
+---
+
+## Task Result Callback
+
+Instances report task completion back to the scheduler via a callback endpoint. This is **internal API** used by instances, not by end users.
+
+### POST `/callback/task_result` (Internal)
+
+**Request Body:**
+```json
+{
+  "task_id": "task-ocr-001",
+  "status": "completed",
+  "result": {
+    "text": "Hello World",
+    "confidence": 0.95
+  },
+  "error": null,
+  "execution_time_ms": 3111.5
+}
+```
+
+**Field Descriptions:**
+- `status`: Must be "completed" or "failed"
+- `result`: Task output (required if status is "completed", null if failed)
+- `error`: Error message (required if status is "failed", null if completed)
+- `execution_time_ms`: Actual execution time
+
+When this callback is received:
+1. Task status updated to COMPLETED or FAILED
+2. Instance queue updated with actual execution time (see [Implementation Details](./implementation.md))
+3. Instance statistics updated (completed/failed count)
+4. Training data collected (if auto-training enabled)
+5. WebSocket subscribers notified
+
+---
+
+## Common Use Cases
+
+### Submit Task and Poll for Result
+
+```bash
+# 1. Submit task
+RESPONSE=$(curl -X POST http://localhost:8000/task/submit \
+  -H "Content-Type: application/json" \
+  -d '{
+    "task_id": "task-001",
+    "model_id": "easyocr/dec",
+    "task_input": {"image": "..."},
+    "metadata": {"height": 512, "width": 512}
+  }')
+
+# 2. Poll for completion (not recommended, use WebSocket instead)
+while true; do
+  TASK_INFO=$(curl "http://localhost:8000/task/info?task_id=task-001")
+  STATUS=$(echo $TASK_INFO | jq -r '.task.status')
+
+  if [ "$STATUS" = "completed" ] || [ "$STATUS" = "failed" ]; then
+    echo "Task finished: $STATUS"
+    echo $TASK_INFO | jq '.task.result'
+    break
+  fi
+
+  sleep 0.5
+done
+```
+
+**Note**: For real-time results, use [WebSocket API](./api-websocket.md) instead of polling.
+
+### Filter Tasks by Status and Time
+
+```bash
+# Get all failed tasks
+curl "http://localhost:8000/task/list?status=failed"
+
+# Get recently completed tasks (newest first)
+curl "http://localhost:8000/task/list?status=completed&limit=10"
+```
+
+### Monitor Instance Load
+
+```bash
+# Get all pending tasks
+curl "http://localhost:8000/task/list?status=pending"
+
+# Get tasks assigned to specific instance
+curl "http://localhost:8000/task/list?instance_id=instance-gpu-0"
+```
+
+---
+
+## Performance Considerations
+
+### Task Submission Latency
+
+Task submission includes:
+1. Validation (< 1ms)
+2. Instance lookup (< 1ms)
+3. **Predictor API call** (~10-100ms depending on network and predictor load)
+4. Strategy selection (< 1ms)
+5. Queue update (< 1ms)
+
+**Optimization**: Enable predictor caching to reduce latency for repeated metadata patterns.
+
+### Result Retrieval Methods
+
+| Method | Latency | Efficiency | Use Case |
+|--------|---------|------------|----------|
+| Polling `/task/info` | 100-500ms avg | Low (wastes requests) | Simple scripts, rare tasks |
+| WebSocket subscription | < 10ms | High (push-based) | Production, high throughput |
+
+**Recommendation**: Always use WebSocket for production workloads.
+
+---
+
+## Error Handling
+
+All endpoints follow a consistent error response format:
+
+```json
+{
+  "success": false,
+  "error": "Error description here"
+}
+```
+
+Common HTTP status codes:
+- **200 OK**: Request succeeded
+- **400 Bad Request**: Invalid request data (duplicate task_id, invalid fields)
+- **404 Not Found**: Task or instance not found
+- **503 Service Unavailable**: Predictor service error
+- **422 Unprocessable Entity**: Validation error
+
+---
+
+## Related Documentation
+
+- [Data Models](./data-models.md) - Model definitions
+- [WebSocket API](./api-websocket.md) - Real-time task results
+- [Instance Management API](./api-instances.md) - Managing compute instances
+- [Scheduling Strategies](./scheduling-strategies.md) - How instances are selected
+- [Implementation Details](./implementation.md) - Task lifecycle and queue updates

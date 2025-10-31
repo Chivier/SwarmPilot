@@ -1,0 +1,329 @@
+# Instance Management API
+
+This document describes the API endpoints for managing compute instances in the scheduler.
+
+> **See Also**: [Data Models](./data-models.md) for request/response model definitions
+
+## Overview
+
+Instances are compute resources (e.g., GPU nodes, CPU workers) that execute tasks. Before submitting tasks, you must register at least one instance with the scheduler.
+
+## Endpoints
+
+### POST `/instance/register`
+
+Register a new instance to the scheduler.
+
+**Request Body:**
+```json
+{
+  "instance_id": "instance-gpu-0",
+  "model_id": "easyocr/dec",
+  "endpoint": "http://192.168.1.100:8300",
+  "platform_info": {
+    "software_name": "docker",
+    "software_version": "20.10",
+    "hardware_name": "nvidia-rtx-3090"
+  }
+}
+```
+
+**Field Descriptions:**
+- `instance_id`: Unique identifier for this instance (must be unique across all instances)
+- `model_id`: Model or tool this instance can execute (e.g., "easyocr/dec", "yolov5")
+- `endpoint`: HTTP endpoint where the instance can receive task requests
+- `platform_info`: Platform information for runtime prediction (required fields: `software_name`, `software_version`, `hardware_name`)
+
+**Success Response (200 OK):**
+```json
+{
+  "success": true,
+  "message": "Instance registered successfully",
+  "instance": {
+    "instance_id": "instance-gpu-0",
+    "model_id": "easyocr/dec",
+    "endpoint": "http://192.168.1.100:8300",
+    "platform_info": {
+      "software_name": "docker",
+      "software_version": "20.10",
+      "hardware_name": "nvidia-rtx-3090"
+    }
+  }
+}
+```
+
+**Error Responses:**
+
+**400 Bad Request** - Instance already exists:
+```json
+{
+  "success": false,
+  "error": "Instance with this ID already exists"
+}
+```
+
+**400 Bad Request** - Missing required platform_info fields:
+```json
+{
+  "success": false,
+  "error": "platform_info missing required keys: {'software_name', 'hardware_name'}"
+}
+```
+
+**Implementation Note:**
+Queue information and statistics are automatically initialized when an instance is registered. The queue type depends on the configured scheduling strategy (see [Scheduling Strategies](./scheduling-strategies.md)).
+
+---
+
+### POST `/instance/remove`
+
+Remove an instance from the scheduler.
+
+**Request Body:**
+```json
+{
+  "instance_id": "instance-gpu-0"
+}
+```
+
+**Success Response (200 OK):**
+```json
+{
+  "success": true,
+  "message": "Instance removed successfully",
+  "instance_id": "instance-gpu-0"
+}
+```
+
+**Error Response (404 Not Found):**
+```json
+{
+  "success": false,
+  "error": "Instance not found"
+}
+```
+
+**Important Notes:**
+- Instances can be removed even with pending tasks
+- Currently, pending tasks are **not** automatically reassigned
+- In production, consider waiting for tasks to complete before removing instances
+
+---
+
+### GET `/instance/list`
+
+List all instances currently registered in the scheduler.
+
+**Query Parameters:**
+- `model_id` (optional, string): Filter instances by model ID
+
+**Example Request:**
+```
+GET /instance/list
+GET /instance/list?model_id=easyocr/dec
+```
+
+**Success Response (200 OK):**
+```json
+{
+  "success": true,
+  "count": 2,
+  "instances": [
+    {
+      "instance_id": "instance-gpu-0",
+      "model_id": "easyocr/dec",
+      "endpoint": "http://192.168.1.100:8300",
+      "platform_info": {
+        "software_name": "docker",
+        "software_version": "20.10",
+        "hardware_name": "nvidia-rtx-3090"
+      }
+    },
+    {
+      "instance_id": "instance-gpu-1",
+      "model_id": "easyocr/dec",
+      "endpoint": "http://192.168.1.101:8300",
+      "platform_info": {
+        "software_name": "docker",
+        "software_version": "20.10",
+        "hardware_name": "nvidia-rtx-3080"
+      }
+    }
+  ]
+}
+```
+
+**Response Fields:**
+- `count`: Number of instances returned (after filtering)
+- `instances`: Array of instance objects
+
+---
+
+### GET `/instance/info`
+
+Get detailed information about a specific instance, including queue state and statistics.
+
+**Query Parameters:**
+- `instance_id` (required, string): ID of the instance to query
+
+**Example Request:**
+```
+GET /instance/info?instance_id=instance-gpu-0
+```
+
+**Success Response (200 OK):**
+```json
+{
+  "success": true,
+  "instance": {
+    "instance_id": "instance-gpu-0",
+    "model_id": "easyocr/dec",
+    "endpoint": "http://192.168.1.100:8300",
+    "platform_info": {
+      "software_name": "docker",
+      "software_version": "20.10",
+      "hardware_name": "nvidia-rtx-3090"
+    }
+  },
+  "queue_info": {
+    "instance_id": "instance-gpu-0",
+    "quantiles": [0.5, 0.9, 0.95, 0.99],
+    "values": [120.5, 250.3, 300.8, 450.2]
+  },
+  "stats": {
+    "pending_tasks": 5,
+    "completed_tasks": 120,
+    "failed_tasks": 2
+  }
+}
+```
+
+**Response Fields:**
+- `instance`: Instance configuration
+- `queue_info`: Current queue state (format depends on scheduling strategy):
+  - **Probabilistic strategy**: `InstanceQueueProbabilistic` with `quantiles` and `values`
+  - **Shortest Queue strategy**: `InstanceQueueExpectError` with `expected_time_ms` and `error_margin_ms`
+- `stats`: Execution statistics:
+  - `pending_tasks`: Tasks assigned but not yet dispatched
+  - `completed_tasks`: Successfully completed tasks
+  - `failed_tasks`: Tasks that failed
+
+**Error Response (404 Not Found):**
+```json
+{
+  "success": false,
+  "error": "Instance not found"
+}
+```
+
+---
+
+## Queue Information by Strategy
+
+The `queue_info` field in the `/instance/info` response varies by scheduling strategy:
+
+### Probabilistic Strategy
+
+```json
+{
+  "instance_id": "instance-gpu-0",
+  "quantiles": [0.5, 0.9, 0.95, 0.99],
+  "values": [120.5, 250.3, 300.8, 450.2]
+}
+```
+
+- `quantiles`: Percentile positions (e.g., 0.5 = 50th percentile = median)
+- `values`: Estimated queue completion time (ms) at each quantile
+
+**Interpretation**: There's a 50% chance the queue will complete in ≤120.5ms, 90% chance in ≤250.3ms, etc.
+
+### Shortest Queue Strategy
+
+```json
+{
+  "instance_id": "instance-gpu-0",
+  "expected_time_ms": 150.5,
+  "error_margin_ms": 25.3
+}
+```
+
+- `expected_time_ms`: Expected queue completion time (mean)
+- `error_margin_ms`: Uncertainty/error margin (standard deviation)
+
+**Interpretation**: Queue is expected to complete in 150.5ms ± 25.3ms.
+
+---
+
+## Common Use Cases
+
+### Registering Multiple Instances
+
+To distribute load across multiple GPUs:
+
+```bash
+# Register GPU 0
+curl -X POST http://localhost:8000/instance/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "instance_id": "instance-gpu-0",
+    "model_id": "easyocr/dec",
+    "endpoint": "http://192.168.1.100:8300",
+    "platform_info": {
+      "software_name": "docker",
+      "software_version": "20.10",
+      "hardware_name": "nvidia-rtx-3090"
+    }
+  }'
+
+# Register GPU 1
+curl -X POST http://localhost:8000/instance/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "instance_id": "instance-gpu-1",
+    "model_id": "easyocr/dec",
+    "endpoint": "http://192.168.1.101:8300",
+    "platform_info": {
+      "software_name": "docker",
+      "software_version": "20.10",
+      "hardware_name": "nvidia-rtx-3080"
+    }
+  }'
+```
+
+### Monitoring Instance Load
+
+Check queue state to identify overloaded instances:
+
+```bash
+curl "http://localhost:8000/instance/info?instance_id=instance-gpu-0"
+```
+
+If `pending_tasks` is high or `expected_time_ms` is large, consider adding more instances.
+
+---
+
+## Error Handling
+
+All endpoints follow a consistent error response format:
+
+```json
+{
+  "success": false,
+  "error": "Error description here"
+}
+```
+
+Common HTTP status codes:
+- **200 OK**: Request succeeded
+- **400 Bad Request**: Invalid request data (e.g., missing fields, duplicate instance_id)
+- **404 Not Found**: Instance not found
+- **422 Unprocessable Entity**: Validation error (e.g., invalid model format)
+
+---
+
+## Related Documentation
+
+- [Data Models](./data-models.md) - Model definitions
+- [Task Management API](./api-tasks.md) - Submitting tasks to instances
+- [Scheduling Strategies](./scheduling-strategies.md) - How instances are selected for tasks
+- [Implementation Details](./implementation.md) - Queue update mechanisms
