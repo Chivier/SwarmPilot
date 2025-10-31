@@ -1,0 +1,8 @@
+models:
+  - model_id: "sleep_model"
+    name: "Sleep Model"
+    directory: "sleep_model"
+    resource_requirements:
+      cpu: "1"
+      memory: "512Mi"
+      gpu: false

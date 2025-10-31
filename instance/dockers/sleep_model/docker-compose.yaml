@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  sleep_model:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ${CONTAINER_NAME:-sleep_model}
+    ports:
+      - "${MODEL_PORT:-8000}:8000"
+    environment:
+      - MODEL_ID=${MODEL_ID:-sleep_model}
+      - INSTANCE_ID=${INSTANCE_ID:-instance-default}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
