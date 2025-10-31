@@ -9,17 +9,25 @@ from typing import Dict, List, Optional
 from threading import Lock
 from datetime import datetime
 
-from .model import Instance, InstanceStats, InstanceQueueBase, InstanceQueueProbabilistic
+from .model import Instance, InstanceStats, InstanceQueueBase, InstanceQueueProbabilistic, InstanceQueueExpectError
 
 
 class InstanceRegistry:
     """Thread-safe registry for managing instances."""
 
-    def __init__(self):
+    def __init__(self, queue_info_type: str = "probabilistic"):
+        """
+        Initialize instance registry.
+
+        Args:
+            queue_info_type: Type of queue information to maintain
+                            ("probabilistic" or "expect_error")
+        """
         self._instances: Dict[str, Instance] = {}
         self._queue_info: Dict[str, InstanceQueueBase] = {}
         self._stats: Dict[str, InstanceStats] = {}
         self._lock = Lock()
+        self._queue_info_type = queue_info_type
 
     def register(self, instance: Instance) -> None:
         """
@@ -37,13 +45,19 @@ class InstanceRegistry:
 
             self._instances[instance.instance_id] = instance
 
-            # TODO: Initialize queue info based on scheduling strategy
-            # For now, initialize with empty probabilistic queue
-            self._queue_info[instance.instance_id] = InstanceQueueProbabilistic(
-                instance_id=instance.instance_id,
-                quantiles=[0.5, 0.9, 0.95, 0.99],
-                values=[0.0, 0.0, 0.0, 0.0],
-            )
+            # Initialize queue info based on scheduling strategy type
+            if self._queue_info_type == "expect_error":
+                self._queue_info[instance.instance_id] = InstanceQueueExpectError(
+                    instance_id=instance.instance_id,
+                    expected_time_ms=0.0,
+                    error_margin_ms=0.0,
+                )
+            else:  # Default to probabilistic
+                self._queue_info[instance.instance_id] = InstanceQueueProbabilistic(
+                    instance_id=instance.instance_id,
+                    quantiles=[0.5, 0.9, 0.95, 0.99],
+                    values=[0.0, 0.0, 0.0, 0.0],
+                )
 
             # Initialize statistics
             self._stats[instance.instance_id] = InstanceStats(
