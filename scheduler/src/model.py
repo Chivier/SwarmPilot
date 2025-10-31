@@ -1,0 +1,272 @@
+"""
+Data models for the scheduler API.
+
+This module defines all Pydantic models used for request/response validation
+and data structures throughout the scheduler system.
+"""
+
+from typing import Any, Dict, List, Optional
+from enum import Enum
+from pydantic import BaseModel
+
+
+# ============================================================================
+# Base Models
+# ============================================================================
+
+class Task(BaseModel):
+    """Task definition for scheduling."""
+    task_id: str
+    model_id: str
+    task_input: Dict[str, Any]
+    metadata: Dict[str, Any]
+
+
+class Instance(BaseModel):
+    """Instance definition for model execution."""
+    instance_id: str
+    model_id: str
+    endpoint: str
+
+
+class InstanceQueueBase(BaseModel):
+    """Base class for instance queue information."""
+    instance_id: str
+
+
+class InstanceQueueProbabilistic(InstanceQueueBase):
+    """Queue information for probabilistic scheduling strategy."""
+    quantiles: List[float]
+    values: List[float]
+
+
+# ============================================================================
+# Common Response Models
+# ============================================================================
+
+class SuccessResponse(BaseModel):
+    """Generic success response."""
+    success: bool
+    message: Optional[str] = None
+
+
+class ErrorResponse(BaseModel):
+    """Generic error response."""
+    success: bool
+    error: str
+
+
+# ============================================================================
+# Instance Management Models
+# ============================================================================
+
+class InstanceRegisterRequest(BaseModel):
+    """Request model for instance registration."""
+    instance_id: str
+    model_id: str
+    endpoint: str
+
+
+class InstanceRegisterResponse(BaseModel):
+    """Response model for instance registration."""
+    success: bool
+    message: str
+    instance: Instance
+
+
+class InstanceRemoveRequest(BaseModel):
+    """Request model for instance removal."""
+    instance_id: str
+
+
+class InstanceRemoveResponse(BaseModel):
+    """Response model for instance removal."""
+    success: bool
+    message: str
+    instance_id: str
+
+
+class InstanceListResponse(BaseModel):
+    """Response model for instance listing."""
+    success: bool
+    count: int
+    instances: List[Instance]
+
+
+class InstanceStats(BaseModel):
+    """Statistics for an instance."""
+    pending_tasks: int
+    completed_tasks: int
+    failed_tasks: int
+
+
+class InstanceInfoResponse(BaseModel):
+    """Response model for detailed instance information."""
+    success: bool
+    instance: Instance
+    queue_info: InstanceQueueBase
+    stats: InstanceStats
+
+
+# ============================================================================
+# Task Management Models
+# ============================================================================
+
+class TaskStatus(str, Enum):
+    """Enumeration of possible task statuses."""
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class TaskSubmitRequest(BaseModel):
+    """Request model for task submission."""
+    task_id: str
+    model_id: str
+    task_input: Dict[str, Any]
+    metadata: Dict[str, Any]
+
+
+class TaskInfo(BaseModel):
+    """Basic task information returned after submission."""
+    task_id: str
+    status: TaskStatus
+    assigned_instance: str
+    submitted_at: str
+
+
+class TaskSubmitResponse(BaseModel):
+    """Response model for task submission."""
+    success: bool
+    message: str
+    task: TaskInfo
+
+
+class TaskSummary(BaseModel):
+    """Summary information for a task."""
+    task_id: str
+    model_id: str
+    status: TaskStatus
+    assigned_instance: str
+    submitted_at: str
+    completed_at: Optional[str] = None
+
+
+class TaskListResponse(BaseModel):
+    """Response model for task listing with pagination."""
+    success: bool
+    count: int
+    total: int
+    offset: int
+    limit: int
+    tasks: List[TaskSummary]
+
+
+class TaskTimestamps(BaseModel):
+    """Timestamp information for a task."""
+    submitted_at: str
+    started_at: Optional[str] = None
+    completed_at: Optional[str] = None
+
+
+class TaskDetailInfo(BaseModel):
+    """Detailed information for a specific task."""
+    task_id: str
+    model_id: str
+    status: TaskStatus
+    assigned_instance: str
+    task_input: Dict[str, Any]
+    metadata: Dict[str, Any]
+    result: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
+    timestamps: TaskTimestamps
+    execution_time_ms: Optional[int] = None
+
+
+class TaskDetailResponse(BaseModel):
+    """Response model for detailed task information."""
+    success: bool
+    task: TaskDetailInfo
+
+
+# ============================================================================
+# Health Check Models
+# ============================================================================
+
+class HealthStats(BaseModel):
+    """Statistics for health check."""
+    total_instances: int
+    active_instances: int
+    total_tasks: int
+    pending_tasks: int
+    running_tasks: int
+    completed_tasks: int
+    failed_tasks: int
+
+
+class HealthResponse(BaseModel):
+    """Response model for health check."""
+    success: bool
+    status: str
+    timestamp: str
+    version: str
+    stats: HealthStats
+
+
+class HealthErrorResponse(BaseModel):
+    """Error response model for health check."""
+    success: bool
+    status: str
+    error: str
+    timestamp: str
+
+
+# ============================================================================
+# WebSocket Models
+# ============================================================================
+
+class WSMessageType(str, Enum):
+    """Enumeration of WebSocket message types."""
+    SUBSCRIBE = "subscribe"
+    UNSUBSCRIBE = "unsubscribe"
+    RESULT = "result"
+    ERROR = "error"
+    ACK = "ack"
+
+
+class WSSubscribeMessage(BaseModel):
+    """WebSocket message for subscribing to task results."""
+    type: WSMessageType = WSMessageType.SUBSCRIBE
+    task_ids: List[str]
+
+
+class WSUnsubscribeMessage(BaseModel):
+    """WebSocket message for unsubscribing from task results."""
+    type: WSMessageType = WSMessageType.UNSUBSCRIBE
+    task_ids: List[str]
+
+
+class WSAckMessage(BaseModel):
+    """WebSocket acknowledgment message."""
+    type: WSMessageType = WSMessageType.ACK
+    message: str
+    subscribed_tasks: List[str]
+
+
+class WSTaskResultMessage(BaseModel):
+    """WebSocket message for task result notification."""
+    type: WSMessageType = WSMessageType.RESULT
+    task_id: str
+    status: TaskStatus
+    result: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
+    timestamps: TaskTimestamps
+    execution_time_ms: Optional[int] = None
+
+
+class WSErrorMessage(BaseModel):
+    """WebSocket error message."""
+    type: WSMessageType = WSMessageType.ERROR
+    error: str
+    task_id: Optional[str] = None
