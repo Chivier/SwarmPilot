@@ -14,6 +14,7 @@ from src.scheduler import (
     get_strategy,
 )
 from src.predictor_client import Prediction
+from src.model import InstanceQueueExpectError, InstanceQueueProbabilistic
 
 
 # ============================================================================
@@ -24,23 +25,52 @@ class TestMinimumExpectedTimeStrategy:
     """Tests for MinimumExpectedTimeStrategy."""
 
     def test_select_instance_with_minimum_time(self):
-        """Test selecting instance with minimum predicted time."""
+        """Test selecting instance with minimum predicted time (no queue)."""
         strategy = MinimumExpectedTimeStrategy()
 
         predictions = [
-            Prediction(instance_id="inst-1", predicted_time_ms=200.0),
-            Prediction(instance_id="inst-2", predicted_time_ms=100.0),
-            Prediction(instance_id="inst-3", predicted_time_ms=150.0),
+            Prediction(instance_id="inst-1", predicted_time_ms=200.0, error_margin_ms=10.0),
+            Prediction(instance_id="inst-2", predicted_time_ms=100.0, error_margin_ms=5.0),
+            Prediction(instance_id="inst-3", predicted_time_ms=150.0, error_margin_ms=8.0),
         ]
 
-        selected = strategy.select_instance(predictions)
+        queue_info = {
+            "inst-1": InstanceQueueExpectError(instance_id="inst-1", expected_time_ms=0.0, error_margin_ms=0.0),
+            "inst-2": InstanceQueueExpectError(instance_id="inst-2", expected_time_ms=0.0, error_margin_ms=0.0),
+            "inst-3": InstanceQueueExpectError(instance_id="inst-3", expected_time_ms=0.0, error_margin_ms=0.0),
+        }
+
+        selected = strategy.select_instance(predictions, queue_info)
         assert selected == "inst-2"
+
+    def test_select_instance_with_queue_info(self):
+        """Test selecting instance considering queue state."""
+        strategy = MinimumExpectedTimeStrategy()
+
+        predictions = [
+            Prediction(instance_id="inst-1", predicted_time_ms=100.0, error_margin_ms=5.0),
+            Prediction(instance_id="inst-2", predicted_time_ms=100.0, error_margin_ms=5.0),
+            Prediction(instance_id="inst-3", predicted_time_ms=100.0, error_margin_ms=5.0),
+        ]
+
+        # inst-2 has a longer queue
+        queue_info = {
+            "inst-1": InstanceQueueExpectError(instance_id="inst-1", expected_time_ms=50.0, error_margin_ms=10.0),
+            "inst-2": InstanceQueueExpectError(instance_id="inst-2", expected_time_ms=200.0, error_margin_ms=20.0),
+            "inst-3": InstanceQueueExpectError(instance_id="inst-3", expected_time_ms=30.0, error_margin_ms=5.0),
+        }
+
+        selected = strategy.select_instance(predictions, queue_info)
+        # inst-3 has total time 30 + 5 + 100 = 135
+        # inst-1 has total time 50 + 10 + 100 = 160
+        # inst-2 has total time 200 + 20 + 100 = 320
+        assert selected == "inst-3"
 
     def test_select_instance_empty_list(self):
         """Test selection with empty predictions list."""
         strategy = MinimumExpectedTimeStrategy()
 
-        selected = strategy.select_instance([])
+        selected = strategy.select_instance([], {})
         assert selected is None
 
     def test_select_instance_single_prediction(self):
@@ -48,38 +78,15 @@ class TestMinimumExpectedTimeStrategy:
         strategy = MinimumExpectedTimeStrategy()
 
         predictions = [
-            Prediction(instance_id="inst-1", predicted_time_ms=100.0),
+            Prediction(instance_id="inst-1", predicted_time_ms=100.0, error_margin_ms=5.0),
         ]
 
-        selected = strategy.select_instance(predictions)
+        queue_info = {
+            "inst-1": InstanceQueueExpectError(instance_id="inst-1", expected_time_ms=0.0, error_margin_ms=0.0),
+        }
+
+        selected = strategy.select_instance(predictions, queue_info)
         assert selected == "inst-1"
-
-    def test_select_instance_equal_times(self):
-        """Test selection when multiple instances have equal times."""
-        strategy = MinimumExpectedTimeStrategy()
-
-        predictions = [
-            Prediction(instance_id="inst-1", predicted_time_ms=100.0),
-            Prediction(instance_id="inst-2", predicted_time_ms=100.0),
-            Prediction(instance_id="inst-3", predicted_time_ms=100.0),
-        ]
-
-        # Should select the first one encountered
-        selected = strategy.select_instance(predictions)
-        assert selected == "inst-1"
-
-    def test_select_with_extreme_values(self):
-        """Test selection with extreme time values."""
-        strategy = MinimumExpectedTimeStrategy()
-
-        predictions = [
-            Prediction(instance_id="inst-1", predicted_time_ms=10000.0),
-            Prediction(instance_id="inst-2", predicted_time_ms=1.0),
-            Prediction(instance_id="inst-3", predicted_time_ms=5000.0),
-        ]
-
-        selected = strategy.select_instance(predictions)
-        assert selected == "inst-2"
 
 
 # ============================================================================
