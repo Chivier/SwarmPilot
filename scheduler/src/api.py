@@ -162,8 +162,11 @@ task_dispatcher = TaskDispatcher(
 )
 
 # Initialize scheduling strategy from configuration
+# Note: strategy now receives predictor_client and instance_registry dependencies
 scheduling_strategy = get_strategy(
     strategy_name=config.scheduling.default_strategy,
+    predictor_client=predictor_client,
+    instance_registry=instance_registry,
     target_quantile=config.scheduling.probabilistic_quantile,
 )
 
@@ -380,15 +383,16 @@ async def submit_task(request: TaskSubmitRequest):
     Raises:
         HTTPException 400: If task with this ID already exists
         HTTPException 404: If no available instance for the model_id
+        HTTPException 503: If predictor service errors
     """
-    # Validate that task doesn't already exist
+    # 1. Validate that task doesn't already exist
     if task_registry.get(request.task_id):
         raise HTTPException(
             status_code=400,
             detail={"success": False, "error": "Task with this ID already exists"},
         )
 
-    # Find available instances for the model
+    # 2. Find available instances for the model
     available_instances = instance_registry.list_all(model_id=request.model_id)
 
     if not available_instances:
@@ -400,20 +404,17 @@ async def submit_task(request: TaskSubmitRequest):
             },
         )
 
-    # Get predictions from predictor
-    # Determine prediction type based on scheduling strategy
-    prediction_type = scheduling_strategy.get_prediction_type()
-
+    # 3. Schedule task using strategy (handles predictions, selection, queue updates)
     try:
-        predictions = await predictor_client.predict(
+        schedule_result = await scheduling_strategy.schedule_task(
             model_id=request.model_id,
             metadata=request.metadata,
-            instances=available_instances,  # Pass full Instance objects
-            prediction_type=prediction_type,  # Use strategy's prediction type
+            available_instances=available_instances,
         )
-    except httpx.HTTPStatusError as e:
-        # Strict mode: propagate predictor errors to user
-        if e.response.status_code == 404:
+    except ValueError as e:
+        # Model not found or invalid metadata
+        error_msg = str(e)
+        if "No trained model" in error_msg or "Model not found" in error_msg:
             raise HTTPException(
                 status_code=404,
                 detail={
@@ -422,24 +423,13 @@ async def submit_task(request: TaskSubmitRequest):
                     "Please train the model first or use experiment mode.",
                 },
             )
-        elif e.response.status_code == 400:
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "success": False,
-                    "error": f"Invalid task metadata: {e.response.text}",
-                },
-            )
         else:
             raise HTTPException(
-                status_code=503,
-                detail={
-                    "success": False,
-                    "error": f"Predictor service error: {e.response.status_code}",
-                },
+                status_code=400,
+                detail={"success": False, "error": f"Invalid task metadata: {error_msg}"},
             )
-    except httpx.HTTPError as e:
-        # Network errors
+    except (ConnectionError, TimeoutError) as e:
+        # Predictor service errors
         raise HTTPException(
             status_code=503,
             detail={
@@ -448,132 +438,32 @@ async def submit_task(request: TaskSubmitRequest):
             },
         )
 
-    # Collect queue information for all available instances
-    queue_info = {}
-    for instance in available_instances:
-        queue = instance_registry.get_queue_info(instance.instance_id)
-        if queue:
-            queue_info[instance.instance_id] = queue
-
-    # Apply scheduling strategy to select best instance
-    selected_instance_id = scheduling_strategy.select_instance(predictions, queue_info)
-
-    if not selected_instance_id:
-        # Shouldn't happen, but handle gracefully
-        selected_instance_id = available_instances[0].instance_id
-
-    # Get prediction for selected instance
-    selected_prediction = next(
-        (p for p in predictions if p.instance_id == selected_instance_id), None
-    )
-
-    # Create task record with prediction information
+    # 4. Create task record with prediction information
+    selected_pred = schedule_result.selected_prediction
     try:
         task_record = task_registry.create_task(
             task_id=request.task_id,
             model_id=request.model_id,
             task_input=request.task_input,
             metadata=request.metadata,
-            assigned_instance=selected_instance_id,
-            predicted_time_ms=selected_prediction.predicted_time_ms if selected_prediction else None,
-            predicted_error_margin_ms=selected_prediction.error_margin_ms if selected_prediction else None,
-            predicted_quantiles=selected_prediction.quantiles if selected_prediction else None,
+            assigned_instance=schedule_result.selected_instance_id,
+            predicted_time_ms=selected_pred.predicted_time_ms if selected_pred else None,
+            predicted_error_margin_ms=selected_pred.error_margin_ms if selected_pred else None,
+            predicted_quantiles=selected_pred.quantiles if selected_pred else None,
         )
     except ValueError as e:
         raise HTTPException(
-            status_code=400, detail={"success": False, "error": str(e)}
+            status_code=400,
+            detail={"success": False, "error": str(e)}
         )
 
-    # Update instance stats
-    instance_registry.increment_pending(selected_instance_id)
+    # 5. Update instance stats
+    instance_registry.increment_pending(schedule_result.selected_instance_id)
 
-    # Update instance queue information based on prediction
-    if selected_prediction:
-        current_queue = instance_registry.get_queue_info(selected_instance_id)
-
-        if current_queue and isinstance(current_queue, InstanceQueueExpectError):
-            # MinimumExpectedTimeStrategy: update using error accumulation
-            # Error accumulation formula: sigma_total = sqrt(sigma1^2 + sigma2^2)
-            import math
-
-            # Get task prediction (from expect_error prediction type)
-            task_expected = selected_prediction.predicted_time_ms
-            task_error = selected_prediction.error_margin_ms or 0.0
-
-            # Calculate new queue expected time (simple addition)
-            new_expected = current_queue.expected_time_ms + task_expected
-
-            # Calculate new queue error margin (error accumulation)
-            new_error = math.sqrt(
-                current_queue.error_margin_ms ** 2 + task_error ** 2
-            )
-
-            updated_queue = InstanceQueueExpectError(
-                instance_id=selected_instance_id,
-                expected_time_ms=new_expected,
-                error_margin_ms=new_error,
-            )
-            instance_registry.update_queue_info(selected_instance_id, updated_queue)
-
-        elif current_queue and isinstance(current_queue, InstanceQueueProbabilistic):
-            # ProbabilisticSchedulingStrategy: update using Monte Carlo method
-            if selected_prediction.quantiles:
-                # Monte Carlo method: sample 1000 times and compute new quantiles
-                import numpy as np
-
-                num_samples = 1000
-
-                # Generate random percentiles for sampling
-                random_percentiles = np.random.random(num_samples)
-
-                # Sample from queue distribution using vectorized numpy interpolation
-                queue_samples = np.interp(
-                    random_percentiles,
-                    current_queue.quantiles,
-                    current_queue.values
-                )
-
-                # Sample from task distribution
-                task_quantiles = sorted(selected_prediction.quantiles.keys())
-                task_values = [selected_prediction.quantiles[q] for q in task_quantiles]
-                task_samples = np.interp(
-                    random_percentiles,
-                    task_quantiles,
-                    task_values
-                )
-
-                # Compute total time samples
-                total_samples = queue_samples + task_samples
-
-                # Compute new quantiles from samples using numpy.percentile
-                updated_values = [
-                    float(np.percentile(total_samples, q * 100))
-                    for q in current_queue.quantiles
-                ]
-
-                updated_queue = InstanceQueueProbabilistic(
-                    instance_id=selected_instance_id,
-                    quantiles=current_queue.quantiles,
-                    values=updated_values,
-                )
-                instance_registry.update_queue_info(selected_instance_id, updated_queue)
-            else:
-                # Fallback: use predicted_time_ms for all quantiles
-                updated_values = [
-                    current_queue.values[i] + selected_prediction.predicted_time_ms
-                    for i in range(len(current_queue.quantiles))
-                ]
-                updated_queue = InstanceQueueProbabilistic(
-                    instance_id=selected_instance_id,
-                    quantiles=current_queue.quantiles,
-                    values=updated_values,
-                )
-                instance_registry.update_queue_info(selected_instance_id, updated_queue)
-
-    # Dispatch task asynchronously
+    # 6. Dispatch task asynchronously
     task_dispatcher.dispatch_task_async(request.task_id)
 
-    # Return task info
+    # 7. Return task info
     task_info = TaskInfo(
         task_id=task_record.task_id,
         status=task_record.status,

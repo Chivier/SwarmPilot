@@ -82,31 +82,25 @@ class TestSuccessfulDispatch:
         )
         instance_registry.increment_pending(sample_instance.instance_id)
 
-        # Mock HTTP response
-        mock_result = {"output": "test output", "tokens": 100}
-        with patch("httpx.AsyncClient") as mock_client_class:
-            mock_client = MagicMock()
-            mock_response = MagicMock()
-            mock_response.json.return_value = mock_result
-            mock_response.raise_for_status = MagicMock()
-            mock_client.post = AsyncMock(return_value=mock_response)
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            mock_client_class.return_value = mock_client
+        # Mock HTTP client
+        mock_client = AsyncMock()
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"success": True, "message": "Task accepted"}
+        mock_response.raise_for_status = MagicMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
 
+        # Mock _get_http_client to return our mock
+        with patch.object(task_dispatcher, '_get_http_client', return_value=mock_client):
             # Execute
             await task_dispatcher.dispatch_task("task-1")
 
-        # Verify task status
+        # Verify task status - should be RUNNING (not COMPLETED - that happens via callback)
         task = task_registry.get("task-1")
-        assert task.status == TaskStatus.COMPLETED
-        assert task.result == mock_result
+        assert task.status == TaskStatus.RUNNING
 
-        # Verify stats
+        # Verify pending was decremented
         stats = instance_registry.get_stats(sample_instance.instance_id)
         assert stats.pending_tasks == 0
-        assert stats.completed_tasks == 1
-        assert stats.failed_tasks == 0
 
     @pytest.mark.asyncio
     async def test_dispatch_updates_status_to_running(
@@ -233,24 +227,22 @@ class TestErrorHandling:
         )
         instance_registry.increment_pending(sample_instance.instance_id)
 
-        with patch("httpx.AsyncClient") as mock_client_class:
-            mock_client = MagicMock()
-            mock_client.post = AsyncMock(
-                side_effect=httpx.HTTPStatusError(
-                    "500 Server Error",
-                    request=MagicMock(),
-                    response=MagicMock()
-                )
+        # Mock HTTP client to raise HTTPStatusError
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(
+            side_effect=httpx.HTTPStatusError(
+                "500 Server Error",
+                request=MagicMock(),
+                response=MagicMock()
             )
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            mock_client_class.return_value = mock_client
+        )
 
+        with patch.object(task_dispatcher, '_get_http_client', return_value=mock_client):
             await task_dispatcher.dispatch_task("task-1")
 
         task = task_registry.get("task-1")
         assert task.status == TaskStatus.FAILED
-        assert "request failed" in task.error
+        assert "500 Server Error" in task.error
 
         stats = instance_registry.get_stats(sample_instance.instance_id)
         assert stats.failed_tasks == 1
@@ -318,16 +310,14 @@ class TestStatsUpdates:
         instance_registry.increment_pending(sample_instance.instance_id)
         instance_registry.increment_pending(sample_instance.instance_id)
 
-        with patch("httpx.AsyncClient") as mock_client_class:
-            mock_client = MagicMock()
-            mock_response = MagicMock()
-            mock_response.json.return_value = {"result": "ok"}
-            mock_response.raise_for_status = MagicMock()
-            mock_client.post = AsyncMock(return_value=mock_response)
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            mock_client_class.return_value = mock_client
+        # Mock HTTP client
+        mock_client = AsyncMock()
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"success": True}
+        mock_response.raise_for_status = MagicMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
 
+        with patch.object(task_dispatcher, '_get_http_client', return_value=mock_client):
             await task_dispatcher.dispatch_task("task-1")
 
         stats = instance_registry.get_stats(sample_instance.instance_id)
@@ -342,7 +332,7 @@ class TestStatsUpdates:
         task_registry,
         sample_instance
     ):
-        """Test that completed count is incremented on success."""
+        """Test that task is dispatched successfully (completion happens via callback)."""
         instance_registry.register(sample_instance)
         task_registry.create_task(
             task_id="task-1",
@@ -351,21 +341,26 @@ class TestStatsUpdates:
             metadata={},
             assigned_instance=sample_instance.instance_id
         )
+        instance_registry.increment_pending(sample_instance.instance_id)
 
-        with patch("httpx.AsyncClient") as mock_client_class:
-            mock_client = MagicMock()
-            mock_response = MagicMock()
-            mock_response.json.return_value = {"result": "ok"}
-            mock_response.raise_for_status = MagicMock()
-            mock_client.post = AsyncMock(return_value=mock_response)
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            mock_client_class.return_value = mock_client
+        # Mock HTTP client
+        mock_client = AsyncMock()
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"success": True}
+        mock_response.raise_for_status = MagicMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
 
+        with patch.object(task_dispatcher, '_get_http_client', return_value=mock_client):
             await task_dispatcher.dispatch_task("task-1")
 
+        # Task should be RUNNING (completion happens via callback, not during dispatch)
+        task = task_registry.get("task-1")
+        assert task.status == TaskStatus.RUNNING
+
+        # Pending should be decremented
         stats = instance_registry.get_stats(sample_instance.instance_id)
-        assert stats.completed_tasks == 1
+        assert stats.pending_tasks == 0
+        assert stats.completed_tasks == 0  # Completion happens via callback
 
     @pytest.mark.asyncio
     async def test_increment_failed_on_error(

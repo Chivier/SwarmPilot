@@ -120,9 +120,14 @@ class TestListOperations:
     def test_list_filtered_by_model_id(self, instance_registry):
         """Test filtering instances by model_id."""
         # Register instances with different model_ids
-        inst1 = Instance(instance_id="inst-1", model_id="model-a", endpoint="http://1")
-        inst2 = Instance(instance_id="inst-2", model_id="model-b", endpoint="http://2")
-        inst3 = Instance(instance_id="inst-3", model_id="model-a", endpoint="http://3")
+        platform_info = {
+            "software_name": "docker",
+            "software_version": "20.10",
+            "hardware_name": "test-hardware"
+        }
+        inst1 = Instance(instance_id="inst-1", model_id="model-a", endpoint="http://1", platform_info=platform_info)
+        inst2 = Instance(instance_id="inst-2", model_id="model-b", endpoint="http://2", platform_info=platform_info)
+        inst3 = Instance(instance_id="inst-3", model_id="model-a", endpoint="http://3", platform_info=platform_info)
 
         instance_registry.register(inst1)
         instance_registry.register(inst2)
@@ -358,7 +363,12 @@ class TestThreadSafety:
                 instance = Instance(
                     instance_id=f"thread-{thread_id}-inst-{i}",
                     model_id="test-model",
-                    endpoint=f"http://localhost:{8000 + thread_id}"
+                    endpoint=f"http://localhost:{8000 + thread_id}",
+                    platform_info={
+                        "software_name": "docker",
+                        "software_version": "20.10",
+                        "hardware_name": "test-hardware"
+                    }
                 )
                 instance_registry.register(instance)
 

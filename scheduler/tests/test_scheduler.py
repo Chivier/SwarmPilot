@@ -5,6 +5,7 @@ Tests all scheduling strategies and the factory function.
 """
 
 import pytest
+from unittest.mock import Mock
 
 from src.scheduler import (
     SchedulingStrategy,
@@ -24,9 +25,9 @@ from src.model import InstanceQueueExpectError, InstanceQueueProbabilistic
 class TestMinimumExpectedTimeStrategy:
     """Tests for MinimumExpectedTimeStrategy."""
 
-    def test_select_instance_with_minimum_time(self):
+    def test_select_instance_with_minimum_time(self, mock_predictor_client, instance_registry):
         """Test selecting instance with minimum predicted time (no queue)."""
-        strategy = MinimumExpectedTimeStrategy()
+        strategy = MinimumExpectedTimeStrategy(mock_predictor_client, instance_registry)
 
         predictions = [
             Prediction(instance_id="inst-1", predicted_time_ms=200.0, error_margin_ms=10.0),
@@ -43,9 +44,9 @@ class TestMinimumExpectedTimeStrategy:
         selected = strategy.select_instance(predictions, queue_info)
         assert selected == "inst-2"
 
-    def test_select_instance_with_queue_info(self):
+    def test_select_instance_with_queue_info(self, mock_predictor_client, instance_registry):
         """Test selecting instance considering queue state."""
-        strategy = MinimumExpectedTimeStrategy()
+        strategy = MinimumExpectedTimeStrategy(mock_predictor_client, instance_registry)
 
         predictions = [
             Prediction(instance_id="inst-1", predicted_time_ms=100.0, error_margin_ms=5.0),
@@ -66,16 +67,16 @@ class TestMinimumExpectedTimeStrategy:
         # inst-2 has total time 200 + 20 + 100 = 320
         assert selected == "inst-3"
 
-    def test_select_instance_empty_list(self):
+    def test_select_instance_empty_list(self, mock_predictor_client, instance_registry):
         """Test selection with empty predictions list."""
-        strategy = MinimumExpectedTimeStrategy()
+        strategy = MinimumExpectedTimeStrategy(mock_predictor_client, instance_registry)
 
         selected = strategy.select_instance([], {})
         assert selected is None
 
-    def test_select_instance_single_prediction(self):
+    def test_select_instance_single_prediction(self, mock_predictor_client, instance_registry):
         """Test selection with single prediction."""
-        strategy = MinimumExpectedTimeStrategy()
+        strategy = MinimumExpectedTimeStrategy(mock_predictor_client, instance_registry)
 
         predictions = [
             Prediction(instance_id="inst-1", predicted_time_ms=100.0, error_margin_ms=5.0),
@@ -96,24 +97,24 @@ class TestMinimumExpectedTimeStrategy:
 class TestProbabilisticSchedulingStrategy:
     """Tests for ProbabilisticSchedulingStrategy."""
 
-    def test_default_target_quantile(self):
+    def test_default_target_quantile(self, mock_predictor_client, instance_registry):
         """Test that default target quantile is 0.9."""
-        strategy = ProbabilisticSchedulingStrategy()
+        strategy = ProbabilisticSchedulingStrategy(mock_predictor_client, instance_registry)
         assert strategy.target_quantile == 0.9
 
-    def test_custom_target_quantile(self):
+    def test_custom_target_quantile(self, mock_predictor_client, instance_registry):
         """Test setting custom target quantile."""
-        strategy = ProbabilisticSchedulingStrategy(target_quantile=0.95)
+        strategy = ProbabilisticSchedulingStrategy(mock_predictor_client, instance_registry, target_quantile=0.95)
         assert strategy.target_quantile == 0.95
 
-    def test_select_based_on_quantile(self):
+    def test_select_based_on_quantile(self, mock_predictor_client, instance_registry):
         """Test selection based on sampling from quantile distribution."""
         import numpy as np
 
         # Set random seed for reproducibility
         np.random.seed(42)
 
-        strategy = ProbabilisticSchedulingStrategy(target_quantile=0.9)
+        strategy = ProbabilisticSchedulingStrategy(mock_predictor_client, instance_registry, target_quantile=0.9)
 
         predictions = [
             Prediction(
@@ -137,16 +138,16 @@ class TestProbabilisticSchedulingStrategy:
         selected = strategy.select_instance(predictions, {})
         assert selected in ["inst-1", "inst-2", "inst-3"]
 
-    def test_select_empty_list(self):
+    def test_select_empty_list(self, mock_predictor_client, instance_registry):
         """Test selection with empty predictions list."""
-        strategy = ProbabilisticSchedulingStrategy()
+        strategy = ProbabilisticSchedulingStrategy(mock_predictor_client, instance_registry)
 
         selected = strategy.select_instance([], {})
         assert selected is None
 
-    def test_fallback_to_min_time(self):
+    def test_fallback_to_min_time(self, mock_predictor_client, instance_registry):
         """Test fallback to minimum expected time when quantile not available."""
-        strategy = ProbabilisticSchedulingStrategy(target_quantile=0.9)
+        strategy = ProbabilisticSchedulingStrategy(mock_predictor_client, instance_registry, target_quantile=0.9)
 
         predictions = [
             Prediction(instance_id="inst-1", predicted_time_ms=200.0),
@@ -158,14 +159,14 @@ class TestProbabilisticSchedulingStrategy:
         selected = strategy.select_instance(predictions, {})
         assert selected == "inst-2"
 
-    def test_partial_quantile_availability(self):
+    def test_partial_quantile_availability(self, mock_predictor_client, instance_registry):
         """Test when only some predictions have quantiles - uses fallback to predicted_time_ms."""
         import numpy as np
 
         # Set seed for reproducibility
         np.random.seed(42)
 
-        strategy = ProbabilisticSchedulingStrategy(target_quantile=0.9)
+        strategy = ProbabilisticSchedulingStrategy(mock_predictor_client, instance_registry, target_quantile=0.9)
 
         predictions = [
             Prediction(instance_id="inst-1", predicted_time_ms=100.0),
@@ -185,9 +186,9 @@ class TestProbabilisticSchedulingStrategy:
         selected = strategy.select_instance(predictions, {})
         assert selected in ["inst-1", "inst-2", "inst-3"]
 
-    def test_quantile_not_in_dict(self):
+    def test_quantile_not_in_dict(self, mock_predictor_client, instance_registry):
         """Test when quantiles exist but target quantile not in them."""
-        strategy = ProbabilisticSchedulingStrategy(target_quantile=0.95)
+        strategy = ProbabilisticSchedulingStrategy(mock_predictor_client, instance_registry, target_quantile=0.95)
 
         predictions = [
             Prediction(
@@ -206,9 +207,9 @@ class TestProbabilisticSchedulingStrategy:
         selected = strategy.select_instance(predictions, {})
         assert selected == "inst-1"
 
-    def test_select_with_equal_quantile_values(self):
+    def test_select_with_equal_quantile_values(self, mock_predictor_client, instance_registry):
         """Test selection when multiple instances have equal quantile values."""
-        strategy = ProbabilisticSchedulingStrategy(target_quantile=0.9)
+        strategy = ProbabilisticSchedulingStrategy(mock_predictor_client, instance_registry, target_quantile=0.9)
 
         predictions = [
             Prediction(
@@ -235,9 +236,9 @@ class TestProbabilisticSchedulingStrategy:
 class TestRoundRobinStrategy:
     """Tests for RoundRobinStrategy."""
 
-    def test_round_robin_cycling(self):
+    def test_round_robin_cycling(self, mock_predictor_client, instance_registry):
         """Test that strategy cycles through instances."""
-        strategy = RoundRobinStrategy()
+        strategy = RoundRobinStrategy(mock_predictor_client, instance_registry)
 
         predictions = [
             Prediction(instance_id="inst-1", predicted_time_ms=100.0),
@@ -261,16 +262,16 @@ class TestRoundRobinStrategy:
         selected4 = strategy.select_instance(predictions, {})
         assert selected4 == "inst-1"
 
-    def test_round_robin_empty_list(self):
+    def test_round_robin_empty_list(self, mock_predictor_client, instance_registry):
         """Test selection with empty predictions list."""
-        strategy = RoundRobinStrategy()
+        strategy = RoundRobinStrategy(mock_predictor_client, instance_registry)
 
         selected = strategy.select_instance([], {})
         assert selected is None
 
-    def test_round_robin_single_instance(self):
+    def test_round_robin_single_instance(self, mock_predictor_client, instance_registry):
         """Test cycling with single instance."""
-        strategy = RoundRobinStrategy()
+        strategy = RoundRobinStrategy(mock_predictor_client, instance_registry)
 
         predictions = [
             Prediction(instance_id="inst-1", predicted_time_ms=100.0),
@@ -281,9 +282,9 @@ class TestRoundRobinStrategy:
         assert strategy.select_instance(predictions, {}) == "inst-1"
         assert strategy.select_instance(predictions, {}) == "inst-1"
 
-    def test_round_robin_counter_persistence(self):
+    def test_round_robin_counter_persistence(self, mock_predictor_client, instance_registry):
         """Test that counter persists across calls."""
-        strategy = RoundRobinStrategy()
+        strategy = RoundRobinStrategy(mock_predictor_client, instance_registry)
 
         predictions = [
             Prediction(instance_id="inst-1", predicted_time_ms=100.0),
@@ -298,9 +299,9 @@ class TestRoundRobinStrategy:
         selected = strategy.select_instance(predictions, {})
         assert selected == "inst-1"
 
-    def test_round_robin_different_list_sizes(self):
+    def test_round_robin_different_list_sizes(self, mock_predictor_client, instance_registry):
         """Test round robin with changing prediction list size."""
-        strategy = RoundRobinStrategy()
+        strategy = RoundRobinStrategy(mock_predictor_client, instance_registry)
 
         # Start with 3 instances
         predictions_3 = [
@@ -330,34 +331,29 @@ class TestRoundRobinStrategy:
 class TestGetStrategy:
     """Tests for get_strategy factory function."""
 
-    def test_get_min_time_strategy(self):
+    def test_get_min_time_strategy(self, mock_predictor_client, instance_registry):
         """Test getting MinimumExpectedTimeStrategy."""
-        strategy = get_strategy("min_time")
+        strategy = get_strategy("min_time", mock_predictor_client, instance_registry)
         assert isinstance(strategy, MinimumExpectedTimeStrategy)
 
-    def test_get_probabilistic_strategy(self):
+    def test_get_probabilistic_strategy(self, mock_predictor_client, instance_registry):
         """Test getting ProbabilisticSchedulingStrategy."""
-        strategy = get_strategy("probabilistic")
+        strategy = get_strategy("probabilistic", mock_predictor_client, instance_registry)
         assert isinstance(strategy, ProbabilisticSchedulingStrategy)
 
-    def test_get_round_robin_strategy(self):
+    def test_get_round_robin_strategy(self, mock_predictor_client, instance_registry):
         """Test getting RoundRobinStrategy."""
-        strategy = get_strategy("round_robin")
+        strategy = get_strategy("round_robin", mock_predictor_client, instance_registry)
         assert isinstance(strategy, RoundRobinStrategy)
 
-    def test_unknown_strategy_defaults_to_probabilistic(self):
+    def test_unknown_strategy_defaults_to_probabilistic(self, mock_predictor_client, instance_registry):
         """Test that unknown strategy name defaults to probabilistic."""
-        strategy = get_strategy("unknown_strategy")
+        strategy = get_strategy("unknown_strategy", mock_predictor_client, instance_registry)
         assert isinstance(strategy, ProbabilisticSchedulingStrategy)
 
-    def test_default_strategy(self):
-        """Test default strategy when no name provided."""
-        strategy = get_strategy()
-        assert isinstance(strategy, ProbabilisticSchedulingStrategy)
-
-    def test_case_sensitivity(self):
+    def test_case_sensitivity(self, mock_predictor_client, instance_registry):
         """Test that strategy names are case-sensitive."""
         # "MIN_TIME" should not match "min_time"
-        strategy = get_strategy("MIN_TIME")
+        strategy = get_strategy("MIN_TIME", mock_predictor_client, instance_registry)
         # Should default to probabilistic
         assert isinstance(strategy, ProbabilisticSchedulingStrategy)

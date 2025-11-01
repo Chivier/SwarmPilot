@@ -270,8 +270,13 @@ class TestInstanceListResponse:
 
     def test_list_response_with_instances(self):
         """Test list response with instances."""
+        platform_info = {
+            "software_name": "docker",
+            "software_version": "20.10",
+            "hardware_name": "test-hardware"
+        }
         instances = [
-            Instance(instance_id=f"inst-{i}", model_id="model-1", endpoint=f"http://localhost:800{i}")
+            Instance(instance_id=f"inst-{i}", model_id="model-1", endpoint=f"http://localhost:800{i}", platform_info=platform_info)
             for i in range(3)
         ]
         resp = InstanceListResponse(success=True, count=3, instances=instances)

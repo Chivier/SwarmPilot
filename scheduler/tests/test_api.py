@@ -195,7 +195,12 @@ class TestInstanceList:
                 json={
                     "instance_id": f"inst-{i}",
                     "model_id": "model-1",
-                    "endpoint": f"http://localhost:800{i}"
+                    "endpoint": f"http://localhost:800{i}",
+                    "platform_info": {
+                        "software_name": "docker",
+                        "software_version": "20.10",
+                        "hardware_name": "test-hardware"
+                    }
                 }
             )
 
