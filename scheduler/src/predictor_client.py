@@ -452,9 +452,9 @@ class PredictorClient:
                         error_margin = data["result"]["error_margin_ms"]
 
                         logger.info(
-                            f"Prediction for platform {representative_instance.platform_info['hardware_name']}: "
-                            f"{predicted_time:.2f}ms ± {error_margin:.2f}ms "
-                            f"(applied to {len(platform_instances)} instances)"
+                            f"Prediction (expect_error) for {representative_instance.platform_info['hardware_name']}: "
+                            f"expected_runtime={predicted_time:.2f}ms, error_margin={error_margin:.2f}ms "
+                            f"({len(platform_instances)} instances)"
                         )
 
                         # Replicate prediction to all instances with this platform
@@ -474,12 +474,12 @@ class PredictorClient:
                         quantiles = {float(k): v for k, v in quantiles_dict.items()}
                         median = quantiles.get(0.5, list(quantiles.values())[0])
 
+                        # Format quantiles as "q=value" pairs
+                        quantile_str = ", ".join([f"{k}={v:.2f}ms" for k, v in sorted(quantiles.items())])
                         logger.info(
-                            f"Prediction for platform {representative_instance.platform_info['hardware_name']}: "
-                            f"P50={quantiles.get(0.5, 'N/A')}ms, "
-                            f"P90={quantiles.get(0.9, 'N/A')}ms, "
-                            f"P99={quantiles.get(0.99, 'N/A')}ms "
-                            f"(applied to {len(platform_instances)} instances)"
+                            f"Prediction (quantile) for {representative_instance.platform_info['hardware_name']}: "
+                            f"quantiles={{{quantile_str}}} "
+                            f"({len(platform_instances)} instances)"
                         )
 
                         # Replicate prediction to all instances with this platform
