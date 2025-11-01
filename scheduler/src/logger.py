@@ -32,7 +32,7 @@ def setup_logger():
         colorize=True,
     )
 
-    # File handler with rotation
+    # File handler with rotation (no colors for clean file output)
     log_dir = Path(config.logging.log_dir)
     log_dir.mkdir(parents=True, exist_ok=True)
 
@@ -44,6 +44,7 @@ def setup_logger():
         retention="30 days",  # Keep logs for 30 days
         compression="zip",  # Compress rotated logs
         encoding="utf-8",
+        colorize=False,  # Disable ANSI color codes in file
     )
 
     # Add JSON file handler for structured logging (optional, can be enabled via config)
