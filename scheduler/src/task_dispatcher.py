@@ -47,6 +47,11 @@ class TaskDispatcher:
         self.training_client = training_client
         self.timeout = timeout
         self.callback_base_url = callback_base_url
+        # Reusable HTTP client with SSL verification disabled for internal network
+        self._http_client = httpx.AsyncClient(
+            timeout=timeout,
+            verify=False,  # Disable SSL verification for internal network usage
+        )
 
     async def dispatch_task(self, task_id: str) -> None:
         """
@@ -84,18 +89,17 @@ class TaskDispatcher:
 
             # Send task to instance for execution
             # Instance will process asynchronously and notify via callback
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.post(
-                    f"{instance.endpoint}/task/submit",
-                    json={
-                        "task_id": task.task_id,
-                        "model_id": task.model_id,
-                        "task_input": task.task_input,
-                        "callback_url": callback_url,
-                    },
-                )
-                response.raise_for_status()
-                submit_result = response.json()
+            response = await self._http_client.post(
+                f"{instance.endpoint}/task/submit",
+                json={
+                    "task_id": task.task_id,
+                    "model_id": task.model_id,
+                    "task_input": task.task_input,
+                    "callback_url": callback_url,
+                },
+            )
+            response.raise_for_status()
+            submit_result = response.json()
 
             # Verify task was accepted by instance
             if not submit_result.get("success", False):
@@ -236,6 +240,14 @@ class TaskDispatcher:
             task_id: ID of task to dispatch
         """
         asyncio.create_task(self.dispatch_task(task_id))
+
+    async def close(self) -> None:
+        """
+        Close the HTTP client and cleanup resources.
+
+        Should be called when shutting down the dispatcher.
+        """
+        await self._http_client.aclose()
 
     async def _update_queue_on_completion(
         self,

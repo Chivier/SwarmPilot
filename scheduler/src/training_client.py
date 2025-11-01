@@ -50,6 +50,12 @@ class TrainingClient:
         # Buffer for collecting training samples
         self._samples_buffer: List[TrainingSample] = []
 
+        # Reusable HTTP client with SSL verification disabled for internal network
+        self._http_client = httpx.AsyncClient(
+            timeout=timeout,
+            verify=False,  # Disable SSL verification for internal network usage
+        )
+
     def add_sample(
         self,
         model_id: str,
@@ -132,48 +138,47 @@ class TrainingClient:
         success_count = 0
         failure_count = 0
 
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            for (model_id, platform_key), samples in grouped_samples.items():
-                try:
-                    platform_info = samples[0].platform_info
+        for (model_id, platform_key), samples in grouped_samples.items():
+            try:
+                platform_info = samples[0].platform_info
 
-                    # Prepare training data
-                    training_data = {
-                        "model_id": model_id,
-                        "platform_info": platform_info,
-                        "samples": [
-                            {
-                                "features": s.features,
-                                "actual_runtime_ms": s.actual_runtime_ms,
-                            }
-                            for s in samples
-                        ],
-                    }
+                # Prepare training data
+                training_data = {
+                    "model_id": model_id,
+                    "platform_info": platform_info,
+                    "samples": [
+                        {
+                            "features": s.features,
+                            "actual_runtime_ms": s.actual_runtime_ms,
+                        }
+                        for s in samples
+                    ],
+                }
 
-                    logger.debug(
-                        f"Training {model_id} on {platform_info['hardware_name']} "
-                        f"with {len(samples)} samples"
-                    )
+                logger.debug(
+                    f"Training {model_id} on {platform_info['hardware_name']} "
+                    f"with {len(samples)} samples"
+                )
 
-                    # Send training request
-                    response = await client.post(
-                        f"{self.predictor_url}/train",
-                        json=training_data,
-                    )
-                    response.raise_for_status()
+                # Send training request
+                response = await self._http_client.post(
+                    f"{self.predictor_url}/train",
+                    json=training_data,
+                )
+                response.raise_for_status()
 
-                    logger.info(
-                        f"Successfully trained {model_id} on "
-                        f"{platform_info['hardware_name']} "
-                        f"with {len(samples)} samples"
-                    )
-                    success_count += 1
+                logger.info(
+                    f"Successfully trained {model_id} on "
+                    f"{platform_info['hardware_name']} "
+                    f"with {len(samples)} samples"
+                )
+                success_count += 1
 
-                except httpx.HTTPError as e:
-                    logger.error(
-                        f"Failed to train {model_id} on {platform_info['hardware_name']}: {e}"
-                    )
-                    failure_count += 1
+            except httpx.HTTPError as e:
+                logger.error(
+                    f"Failed to train {model_id} on {platform_info['hardware_name']}: {e}"
+                )
+                failure_count += 1
 
         # Clear buffer after training attempt
         self._samples_buffer.clear()
@@ -193,3 +198,11 @@ class TrainingClient:
         count = len(self._samples_buffer)
         self._samples_buffer.clear()
         logger.info(f"Cleared {count} training samples from buffer")
+
+    async def close(self) -> None:
+        """
+        Close the HTTP client and cleanup resources.
+
+        Should be called when shutting down the training client.
+        """
+        await self._http_client.aclose()

@@ -832,7 +832,18 @@ async def startup_event():
 async def shutdown_event():
     """Clean up resources on application shutdown."""
     logger.info("Scheduler service shutting down...")
+
+    # Close HTTP clients
+    await task_dispatcher.close()
+    logger.debug("Task dispatcher closed")
+
+    if training_client:
+        await training_client.close()
+        logger.debug("Training client closed")
+
+    await predictor_client.close()
+    logger.debug("Predictor client closed")
+
     # TODO: Persist state if needed
-    # TODO: Close connections to external services
     # TODO: Cancel background tasks
     logger.info("Scheduler service shutdown complete")
