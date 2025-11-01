@@ -4,12 +4,14 @@ Task queue management with FIFO processing
 
 import asyncio
 import logging
+import time
 from collections import deque
 from typing import Dict, List, Optional
 
 from .config import config
 from .docker_manager import get_docker_manager
 from .models import Task, TaskStatus
+from .scheduler_client import get_scheduler_client
 
 logger = logging.getLogger(__name__)
 
@@ -179,6 +181,10 @@ class TaskQueue:
         task.mark_started()
         logger.info(f"Task {task.task_id} started")
 
+        # Track execution time
+        start_time = time.time()
+        execution_time_ms = None
+
         try:
             # Get docker manager
             docker_manager = get_docker_manager()
@@ -198,15 +204,73 @@ class TaskQueue:
             # Invoke inference
             result = await docker_manager.invoke_inference(task.task_input)
 
+            # Calculate execution time
+            execution_time_ms = (time.time() - start_time) * 1000
+
             # Mark task as completed
             task.mark_completed(result)
-            logger.info(f"Task {task.task_id} completed successfully")
+            logger.info(f"Task {task.task_id} completed successfully in {execution_time_ms:.2f}ms")
+
+            # Send callback if URL is provided
+            await self._send_callback(
+                task_id=task.task_id,
+                status="completed",
+                result=result,
+                execution_time_ms=execution_time_ms,
+            )
 
         except Exception as e:
+            # Calculate execution time even for failed tasks
+            execution_time_ms = (time.time() - start_time) * 1000
+
             # Mark task as failed
             error_msg = str(e)
             task.mark_failed(error_msg)
             logger.error(f"Task {task.task_id} failed: {error_msg}")
+
+            # Send callback if URL is provided
+            await self._send_callback(
+                task_id=task.task_id,
+                status="failed",
+                error=error_msg,
+                execution_time_ms=execution_time_ms,
+            )
+
+    async def _send_callback(
+        self,
+        task_id: str,
+        status: str,
+        result: Optional[Dict] = None,
+        error: Optional[str] = None,
+        execution_time_ms: Optional[float] = None,
+    ):
+        """
+        Send task result callback to scheduler.
+
+        Args:
+            task_id: ID of the completed task
+            status: Task status ("completed" or "failed")
+            result: Task result (if completed)
+            error: Error message (if failed)
+            execution_time_ms: Execution time in milliseconds
+        """
+        # Send callback via scheduler client
+        # callback_url will be derived from scheduler_url in the client
+        scheduler_client = get_scheduler_client()
+        try:
+            success = await scheduler_client.send_task_result(
+                task_id=task_id,
+                status=status,
+                result=result,
+                error=error,
+                execution_time_ms=execution_time_ms,
+            )
+            if success:
+                logger.info(f"Callback sent successfully for task {task_id}")
+            else:
+                logger.warning(f"Callback failed for task {task_id}")
+        except Exception as e:
+            logger.error(f"Error sending callback for task {task_id}: {e}")
 
     async def stop_processing(self):
         """Stop queue processing (graceful shutdown)"""
