@@ -5,10 +5,13 @@ This module defines all API endpoints for instance management, task scheduling,
 and WebSocket connections for real-time task result delivery.
 """
 
-from typing import Optional
+from typing import Optional, Callable
 from datetime import datetime
 import httpx
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Query
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Query, Request
+from pyinstrument import Profiler
+from pyinstrument.renderers.html import HTMLRenderer
+from pyinstrument.renderers.speedscope import SpeedscopeRenderer
 
 from .model import (
     # Instance models
@@ -28,6 +31,7 @@ from .model import (
     TaskSubmitResponse,
     TaskListResponse,
     TaskDetailResponse,
+    TaskClearResponse,
     TaskStatus,
     TaskInfo,
     TaskSummary,
@@ -63,11 +67,50 @@ from .task_dispatcher import TaskDispatcher
 # Application Setup
 # ============================================================================
 
+    
+
 app = FastAPI(
     title="Scheduler API",
     description="Task scheduling and instance management service",
     version="1.0.0",
 )
+
+@app.middleware("http")
+async def profile_request(request: Request, call_next: Callable):
+    """Profile the current request
+
+    Taken from https://pyinstrument.readthedocs.io/en/latest/guide.html#profile-a-web-request-in-fastapi
+    with small improvements.
+
+    """
+    # we map a profile type to a file extension, as well as a pyinstrument profile renderer
+    profile_type_to_ext = {"html": "html", "speedscope": "speedscope.json"}
+    profile_type_to_renderer = {
+        "html": HTMLRenderer,
+        "speedscope": SpeedscopeRenderer,
+    }
+
+    # if the `profile=true` HTTP query argument is passed, we profile the request
+    if request.query_params.get("profile", False):
+
+        # The default profile format is speedscope
+        profile_type = request.query_params.get("profile_format", "speedscope")
+
+        # we profile the request along with all additional middlewares, by interrupting
+        # the program every 1ms1 and records the entire stack at that point
+        with Profiler(interval=0.001, async_mode="enabled") as profiler:
+            response = await call_next(request)
+
+        # we dump the profiling into a file
+        extension = profile_type_to_ext[profile_type]
+        renderer = profile_type_to_renderer[profile_type]()
+        with open(f"profile.{extension}", "w") as out:
+            out.write(profiler.output(renderer=renderer))
+        profiler.print()
+        return response
+
+    # Proceed without profiling
+    return await call_next(request)
 
 # Initialize configuration
 from .config import config
@@ -627,6 +670,27 @@ async def get_task_info(task_id: str = Query(...)):
     )
 
 
+@app.post("/task/clear", response_model=TaskClearResponse)
+async def clear_tasks():
+    """
+    Clear all tasks from the scheduler.
+
+    This endpoint removes all task records from the scheduler's registry.
+    Use with caution as this operation cannot be undone.
+
+    Returns:
+        TaskClearResponse with count of cleared tasks
+    """
+    # Clear all tasks from registry
+    cleared_count = task_registry.clear_all()
+
+    return TaskClearResponse(
+        success=True,
+        message=f"Successfully cleared {cleared_count} task(s)",
+        cleared_count=cleared_count,
+    )
+
+
 @app.post("/callback/task_result", response_model=TaskResultCallbackResponse)
 async def callback_task_result(request: TaskResultCallbackRequest):
     """
@@ -837,6 +901,7 @@ async def health_check():
                 "timestamp": datetime.now().isoformat() + "Z",
             },
         )
+
 
 
 # ============================================================================

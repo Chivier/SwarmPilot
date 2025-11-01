@@ -198,6 +198,13 @@ class TaskDetailResponse(BaseModel):
     task: TaskDetailInfo
 
 
+class TaskClearResponse(BaseModel):
+    """Response model for clearing all tasks."""
+    success: bool
+    message: str
+    cleared_count: int
+
+
 # ============================================================================
 # Health Check Models
 # ============================================================================

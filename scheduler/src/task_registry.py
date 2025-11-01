@@ -273,3 +273,15 @@ class TaskRegistry:
         """Get total number of tasks."""
         with self._lock:
             return len(self._tasks)
+
+    def clear_all(self) -> int:
+        """
+        Clear all tasks from the registry.
+
+        Returns:
+            Count of tasks that were cleared
+        """
+        with self._lock:
+            count = len(self._tasks)
+            self._tasks.clear()
+            return count

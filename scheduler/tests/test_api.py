@@ -538,6 +538,68 @@ class TestTaskInfo:
         assert response.status_code == 404
 
 
+class TestTaskClear:
+    """Tests for task clear endpoint."""
+
+    def test_clear_empty_tasks(self, client):
+        """Test clearing tasks when registry is empty."""
+        response = client.post("/task/clear")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["cleared_count"] == 0
+        assert "Successfully cleared 0 task(s)" in data["message"]
+
+    def test_clear_multiple_tasks(self, client):
+        """Test clearing multiple tasks."""
+        # Register instance
+        client.post(
+            "/instance/register",
+            json={
+                "instance_id": "inst-1",
+                "model_id": "model-1",
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hardware"
+                }
+            }
+        )
+
+        # Submit multiple tasks
+        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
+            with patch("src.api.task_dispatcher.dispatch_task_async"):
+                for i in range(3):
+                    client.post(
+                        "/task/submit",
+                        json={
+                            "task_id": f"task-{i}",
+                            "model_id": "model-1",
+                            "task_input": {"test": "data"},
+                            "metadata": {}
+                        }
+                    )
+
+        # Verify tasks exist
+        response = client.get("/task/list")
+        assert response.json()["count"] == 3
+
+        # Clear all tasks
+        response = client.post("/task/clear")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["cleared_count"] == 3
+        assert "Successfully cleared 3 task(s)" in data["message"]
+
+        # Verify tasks are cleared
+        response = client.get("/task/list")
+        assert response.json()["count"] == 0
+
+
 # ============================================================================
 # Health Check Tests
 # ============================================================================
