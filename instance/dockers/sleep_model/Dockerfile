@@ -1,13 +1,17 @@
 FROM python:3.11-slim
 
-# Install uv
-RUN pip install --no-cache-dir uv
+# Install curl for healthcheck and uv for dependency management
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends curl && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* && \
+    pip install --no-cache-dir uv
 
 # Set working directory
 WORKDIR /app
 
 # Copy application files
-COPY pyproject.toml uv.lock ./
+COPY pyproject.toml ./
 COPY main.py ./
 COPY start.sh ./
 
@@ -15,7 +19,7 @@ COPY start.sh ./
 RUN chmod +x start.sh
 
 # Install dependencies using uv
-RUN uv sync --frozen
+RUN uv sync
 
 # Expose port
 EXPOSE 8000

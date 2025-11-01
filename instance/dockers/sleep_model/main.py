@@ -46,8 +46,12 @@ class InferenceRequest(BaseModel):
         ...,
         description="Time to sleep in seconds",
         ge=0,
-        le=60
+        le=60,
+        alias="sleep_duration"  # Accept both sleep_time and sleep_duration
     )
+
+    class Config:
+        populate_by_name = True  # Allow both field name and alias
 
 
 class InferenceResponse(BaseModel):
