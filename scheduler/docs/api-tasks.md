@@ -261,6 +261,66 @@ GET /task/info?task_id=task-ocr-001
 
 ---
 
+### POST `/task/clear`
+
+Clear all tasks from the scheduler's registry.
+
+**Warning**: This operation removes **all** task records permanently and cannot be undone. Use with caution, especially in production environments.
+
+**Request:**
+```
+POST /task/clear
+```
+
+No request body required.
+
+**Success Response (200 OK):**
+```json
+{
+  "success": true,
+  "message": "Successfully cleared 42 task(s)",
+  "cleared_count": 42
+}
+```
+
+**Response Fields:**
+- `cleared_count`: Number of tasks that were removed from the registry
+- `message`: Human-readable confirmation message
+
+**Use Cases:**
+- Cleaning up test data during development
+- Resetting scheduler state between benchmark runs
+- Clearing stale tasks during maintenance windows
+
+**Example Request:**
+```bash
+curl -X POST http://localhost:8000/task/clear
+```
+
+**Important Notes:**
+- This endpoint does **not** cancel running tasks on instances
+- Tasks that are currently executing will continue but cannot be tracked
+- All task history (pending, running, completed, failed) is cleared
+- WebSocket subscribers will not be notified of cleared tasks
+- Instance queue information is **not** reset (use with caution)
+
+**Recommended Workflow for Safe Clearing:**
+```bash
+# 1. Check current task count
+curl "http://localhost:8000/task/list" | jq '.total'
+
+# 2. Review pending/running tasks
+curl "http://localhost:8000/task/list?status=running"
+
+# 3. Clear tasks
+curl -X POST "http://localhost:8000/task/clear"
+
+# 4. Verify clearing
+curl "http://localhost:8000/task/list" | jq '.total'  # Should return 0
+```
+
+---
+
 ## Task Result Callback
 
 Instances report task completion back to the scheduler via a callback endpoint. This is **internal API** used by instances, not by end users.

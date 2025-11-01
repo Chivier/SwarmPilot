@@ -279,6 +279,26 @@ class TaskDetailResponse(BaseModel):
     task: TaskDetailInfo
 ```
 
+### TaskClearResponse
+
+Response from the `/task/clear` endpoint indicating how many tasks were removed.
+
+```python
+class TaskClearResponse(BaseModel):
+    success: bool
+    message: str          # Human-readable confirmation message
+    cleared_count: int    # Number of tasks that were cleared
+```
+
+**Example:**
+```json
+{
+  "success": true,
+  "message": "Successfully cleared 42 task(s)",
+  "cleared_count": 42
+}
+```
+
 ### TaskResultCallbackRequest
 
 Used by instances to report task completion via callback.
