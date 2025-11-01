@@ -3,21 +3,20 @@ Predictor client for getting task execution time predictions.
 
 This module provides an interface to communicate with the predictor service
 to get predictions for task execution times on different instances.
+Uses WebSocket for real-time bidirectional communication.
 """
 
 from typing import Dict, Any, List, Optional, TYPE_CHECKING, Tuple
-import httpx
+import websockets
 from dataclasses import dataclass
-import logging
 import asyncio
 import time
 import hashlib
 import json
+from loguru import logger
 
 if TYPE_CHECKING:
     from .model import Instance
-
-logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -32,7 +31,7 @@ class Prediction:
 
 
 class PredictorClient:
-    """Client for communicating with the predictor service."""
+    """Client for communicating with the predictor service via WebSocket."""
 
     def __init__(
         self,
@@ -47,14 +46,23 @@ class PredictorClient:
         Initialize predictor client.
 
         Args:
-            predictor_url: Base URL of the predictor service
+            predictor_url: Base URL of the predictor service (e.g., "http://localhost:8000")
             timeout: Request timeout in seconds
             max_retries: Maximum number of retry attempts for transient failures
             retry_delay: Initial delay between retries in seconds (uses exponential backoff)
             cache_ttl: Cache time-to-live in seconds
             enable_cache: Whether to enable prediction caching
         """
+        # Convert HTTP URL to WebSocket URL
         self.predictor_url = predictor_url.rstrip("/")
+        if self.predictor_url.startswith("http://"):
+            self.ws_url = self.predictor_url.replace("http://", "ws://", 1)
+        elif self.predictor_url.startswith("https://"):
+            self.ws_url = self.predictor_url.replace("https://", "wss://", 1)
+        else:
+            # Assume it's already a WebSocket URL
+            self.ws_url = self.predictor_url
+
         self.timeout = timeout
         self.max_retries = max_retries
         self.retry_delay = retry_delay
@@ -65,6 +73,11 @@ class PredictorClient:
         self._cache: Dict[str, Tuple[Dict[str, Any], float]] = {}
         self._cache_hits = 0
         self._cache_misses = 0
+
+        # WebSocket connection reuse
+        self._websocket: Optional[websockets.WebSocketClientProtocol] = None
+        self._ws_lock = asyncio.Lock()  # Ensure thread-safe access to websocket
+        self._ws_endpoint = f"{self.ws_url}/ws/predict"
 
     def _make_cache_key(
         self, model_id: str, platform_info: Dict[str, str], features: Dict[str, Any], prediction_type: str
@@ -157,76 +170,194 @@ class PredictorClient:
         self._cache.clear()
         logger.info("Prediction cache cleared")
 
+    async def _ensure_connection(self) -> websockets.WebSocketClientProtocol:
+        """
+        Ensure WebSocket connection is established and healthy.
+
+        Returns:
+            Active WebSocket connection
+
+        Raises:
+            ConnectionError: If connection cannot be established
+        """
+        # Check if connection exists and is not closed
+        if self._websocket is not None:
+            # Check if connection is still open by examining the state
+            # websockets uses close_code to determine if connection is closed
+            if self._websocket.close_code is None:
+                # Connection is still open
+                return self._websocket
+            else:
+                # Connection was closed, clear it
+                logger.debug("Existing WebSocket connection is closed, reconnecting")
+                self._websocket = None
+
+        # Connection doesn't exist or is closed, establish new one
+        try:
+            logger.debug(f"Establishing WebSocket connection to {self._ws_endpoint}")
+            self._websocket = await asyncio.wait_for(
+                websockets.connect(self._ws_endpoint),
+                timeout=self.timeout
+            )
+            logger.info(f"WebSocket connection established to {self._ws_endpoint}")
+            return self._websocket
+        except Exception as e:
+            logger.error(f"Failed to establish WebSocket connection: {e}")
+            self._websocket = None
+            raise ConnectionError(f"Failed to connect to predictor service: {e}")
+
+    async def _close_connection(self) -> None:
+        """Close the WebSocket connection if it exists."""
+        if self._websocket is not None:
+            try:
+                await self._websocket.close()
+                logger.debug("WebSocket connection closed")
+            except Exception as e:
+                logger.debug(f"Error closing WebSocket connection: {e}")
+            finally:
+                self._websocket = None
+
+    async def close(self) -> None:
+        """Close the predictor client and cleanup resources."""
+        async with self._ws_lock:
+            await self._close_connection()
+        logger.info("PredictorClient closed")
+
+    async def __aenter__(self):
+        """Async context manager entry."""
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit."""
+        await self.close()
+
     async def _make_request_with_retry(
         self,
-        client: httpx.AsyncClient,
-        url: str,
+        ws_url: str,
         json_data: Dict[str, Any],
-    ) -> httpx.Response:
+    ) -> Dict[str, Any]:
         """
-        Make HTTP POST request with retry logic for transient failures.
+        Make WebSocket request with retry logic for transient failures.
+
+        This method reuses the WebSocket connection when possible, only reconnecting
+        when the connection is closed or encounters errors.
 
         Args:
-            client: HTTP client
-            url: URL to request
+            ws_url: WebSocket URL to connect to (used for validation, actual endpoint from __init__)
             json_data: JSON data to send
 
         Returns:
-            HTTP response
+            Response data as dictionary
 
         Raises:
-            httpx.HTTPStatusError: For non-retryable errors (4xx, 5xx that shouldn't retry)
-            httpx.HTTPError: After exhausting all retries
+            ConnectionError: For non-retryable connection errors
+            TimeoutError: After exhausting all retries
+            ValueError: For invalid response data
         """
         last_exception = None
 
-        for attempt in range(self.max_retries):
-            try:
-                response = await client.post(url, json=json_data)
-                response.raise_for_status()
-                return response
+        # Use lock to ensure thread-safe access to the shared WebSocket connection
+        async with self._ws_lock:
+            for attempt in range(self.max_retries):
+                try:
+                    # Ensure we have an active connection
+                    websocket = await self._ensure_connection()
 
-            except httpx.HTTPStatusError as e:
-                # Don't retry for client errors (4xx) as they won't succeed on retry
-                if 400 <= e.response.status_code < 500:
-                    logger.debug(f"Non-retryable error (HTTP {e.response.status_code}), not retrying")
+                    # Send request
+                    await asyncio.wait_for(
+                        websocket.send(json.dumps(json_data)),
+                        timeout=self.timeout
+                    )
+
+                    # Receive response
+                    response_text = await asyncio.wait_for(
+                        websocket.recv(),
+                        timeout=self.timeout
+                    )
+
+                    response_data = json.loads(response_text)
+
+                    # Check for error responses
+                    if "error" in response_data:
+                        error_msg = response_data.get("message", "Unknown error")
+                        error_type = response_data.get("error", "Unknown")
+
+                        # Don't retry for client errors (invalid requests)
+                        if error_type in ["Invalid request", "Invalid features", "Model not found", "Prediction type mismatch"]:
+                            logger.debug(f"Non-retryable error ({error_type}), not retrying")
+                            raise ValueError(f"{error_type}: {error_msg}")
+
+                        # Retry for server errors (close connection first)
+                        await self._close_connection()
+                        raise RuntimeError(f"{error_type}: {error_msg}")
+
+                    # Request successful
+                    return response_data
+
+                except (websockets.exceptions.WebSocketException, ConnectionError, OSError) as e:
+                    # Connection error - close and retry
+                    await self._close_connection()
+                    last_exception = e
+
+                    if attempt < self.max_retries - 1:
+                        delay = self.retry_delay * (2 ** attempt)  # Exponential backoff
+                        logger.warning(
+                            f"Predictor WebSocket connection failed ({type(e).__name__}), "
+                            f"retrying in {delay}s (attempt {attempt + 1}/{self.max_retries})"
+                        )
+                        await asyncio.sleep(delay)
+                    else:
+                        logger.error(
+                            f"Predictor request failed after {self.max_retries} attempts"
+                        )
+                        raise ConnectionError(
+                            f"Predictor service unavailable after {self.max_retries} retries: {str(e)}"
+                        )
+
+                except asyncio.TimeoutError as e:
+                    # Timeout - close connection and retry
+                    await self._close_connection()
+                    last_exception = e
+
+                    if attempt < self.max_retries - 1:
+                        delay = self.retry_delay * (2 ** attempt)  # Exponential backoff
+                        logger.warning(
+                            f"Predictor request timeout, "
+                            f"retrying in {delay}s (attempt {attempt + 1}/{self.max_retries})"
+                        )
+                        await asyncio.sleep(delay)
+                    else:
+                        logger.error(
+                            f"Predictor request failed after {self.max_retries} attempts"
+                        )
+                        raise TimeoutError(
+                            f"Predictor service timeout after {self.max_retries} retries"
+                        )
+
+                except (json.JSONDecodeError, ValueError) as e:
+                    # Don't retry for parsing/validation errors
+                    logger.error(f"Invalid response from predictor: {e}")
                     raise
-                # Retry for server errors (5xx)
-                last_exception = e
-                if attempt < self.max_retries - 1:
-                    delay = self.retry_delay * (2 ** attempt)  # Exponential backoff
-                    logger.warning(
-                        f"Predictor request failed (HTTP {e.response.status_code}), "
-                        f"retrying in {delay}s (attempt {attempt + 1}/{self.max_retries})"
-                    )
-                    await asyncio.sleep(delay)
-                else:
-                    logger.error(
-                        f"Predictor request failed after {self.max_retries} attempts"
-                    )
-                    raise
 
-            except (httpx.TimeoutException, httpx.ConnectError, httpx.NetworkError) as e:
-                # Retry for transient network errors
-                last_exception = e
-                if attempt < self.max_retries - 1:
-                    delay = self.retry_delay * (2 ** attempt)  # Exponential backoff
-                    logger.warning(
-                        f"Predictor request failed ({type(e).__name__}), "
-                        f"retrying in {delay}s (attempt {attempt + 1}/{self.max_retries})"
-                    )
-                    await asyncio.sleep(delay)
-                else:
-                    logger.error(
-                        f"Predictor request failed after {self.max_retries} attempts"
-                    )
-                    raise httpx.HTTPError(
-                        f"Predictor service unavailable after {self.max_retries} retries: {str(e)}"
-                    )
+                except RuntimeError as e:
+                    # Server error, retry
+                    last_exception = e
+                    if attempt < self.max_retries - 1:
+                        delay = self.retry_delay * (2 ** attempt)  # Exponential backoff
+                        logger.warning(
+                            f"Predictor request failed (server error), "
+                            f"retrying in {delay}s (attempt {attempt + 1}/{self.max_retries})"
+                        )
+                        await asyncio.sleep(delay)
+                    else:
+                        logger.error(
+                            f"Predictor request failed after {self.max_retries} attempts"
+                        )
+                        raise
 
-        # Should not reach here, but just in case
-        if last_exception:
-            raise last_exception
+            # Should not reach here, but just in case
+            if last_exception:
+                raise last_exception
 
     async def predict(
         self,
@@ -251,8 +382,9 @@ class PredictorClient:
             List of predictions for each instance
 
         Raises:
-            httpx.HTTPStatusError: If predictor returns error (404 for no model, 400 for bad features)
-            httpx.HTTPError: If prediction request fails due to network issues
+            ValueError: If predictor returns error (Model not found, invalid features)
+            ConnectionError: If prediction request fails due to network issues
+            TimeoutError: If request times out
         """
         # Group instances by platform_info to minimize API calls
         from collections import defaultdict
@@ -271,51 +403,48 @@ class PredictorClient:
 
         predictions = []
 
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            # Make one prediction request per unique platform
-            for platform_key, platform_instances in platform_to_instances.items():
-                # Use the first instance as representative for this platform
-                representative_instance = platform_instances[0]
-                try:
-                    # Check cache first
-                    cache_key = self._make_cache_key(
-                        model_id=model_id,
-                        platform_info=representative_instance.platform_info,
-                        features=metadata,
-                        prediction_type=prediction_type,
+        # Make one prediction request per unique platform
+        for platform_key, platform_instances in platform_to_instances.items():
+            # Use the first instance as representative for this platform
+            representative_instance = platform_instances[0]
+            try:
+                # Check cache first
+                cache_key = self._make_cache_key(
+                    model_id=model_id,
+                    platform_info=representative_instance.platform_info,
+                    features=metadata,
+                    prediction_type=prediction_type,
+                )
+                cached_data = self._get_from_cache(cache_key)
+
+                if cached_data is not None:
+                    # Use cached prediction
+                    data = cached_data
+                    logger.debug(
+                        f"Using cached prediction for platform {representative_instance.platform_info['hardware_name']}"
                     )
-                    cached_data = self._get_from_cache(cache_key)
+                else:
+                    # Construct predictor request using representative instance
+                    request_data = {
+                        "model_id": model_id,
+                        "platform_info": representative_instance.platform_info,
+                        "prediction_type": prediction_type,
+                        "features": metadata,
+                    }
 
-                    if cached_data is not None:
-                        # Use cached prediction
-                        data = cached_data
-                        logger.debug(
-                            f"Using cached prediction for platform {representative_instance.platform_info['hardware_name']}"
-                        )
-                    else:
-                        # Construct predictor request using representative instance
-                        request_data = {
-                            "model_id": model_id,
-                            "platform_info": representative_instance.platform_info,
-                            "prediction_type": prediction_type,
-                            "features": metadata,
-                        }
+                    logger.debug(
+                        f"Requesting prediction for platform {representative_instance.platform_info} "
+                        f"(covers {len(platform_instances)} instances)"
+                    )
 
-                        logger.debug(
-                            f"Requesting prediction for platform {representative_instance.platform_info} "
-                            f"(covers {len(platform_instances)} instances)"
-                        )
+                    # Call predictor via WebSocket with retry logic
+                    data = await self._make_request_with_retry(
+                        ws_url=f"{self.ws_url}/ws/predict",
+                        json_data=request_data,
+                    )
 
-                        # Call predictor API with retry logic
-                        response = await self._make_request_with_retry(
-                            client=client,
-                            url=f"{self.predictor_url}/predict",
-                            json_data=request_data,
-                        )
-                        data = response.json()
-
-                        # Cache the response
-                        self._put_in_cache(cache_key, data)
+                    # Cache the response
+                    self._put_in_cache(cache_key, data)
 
                     # Parse response based on prediction type
                     if prediction_type == "expect_error":
@@ -366,62 +495,55 @@ class PredictorClient:
                     else:
                         raise ValueError(f"Unknown prediction type: {prediction_type}")
 
-                except httpx.HTTPStatusError as e:
-                    if e.response.status_code == 404:
-                        # Model not trained for this platform - strict mode, reject task
-                        platform_info = representative_instance.platform_info
-                        logger.error(
-                            f"No trained model for {model_id} on platform "
-                            f"{platform_info}. Task submission rejected."
-                        )
-                        raise httpx.HTTPStatusError(
-                            message=f"No trained model for {model_id} on platform "
-                            f"{platform_info['software_name']}/"
-                            f"{platform_info['hardware_name']}. "
-                            f"Please train the model first or use experiment mode.",
-                            request=e.request,
-                            response=e.response,
-                        )
-                    elif e.response.status_code == 400:
-                        # Invalid features
-                        error_detail = e.response.json() if e.response.text else {}
-                        logger.error(
-                            f"Invalid features for prediction: {error_detail.get('detail', 'Unknown error')}"
-                        )
-                        raise httpx.HTTPStatusError(
-                            message=f"Invalid task metadata: {error_detail.get('detail', 'Bad request')}",
-                            request=e.request,
-                            response=e.response,
-                        )
-                    else:
-                        # Other HTTP errors
-                        logger.error(
-                            f"Predictor service error (HTTP {e.response.status_code}): {e}"
-                        )
-                        raise
+            except ValueError as e:
+                # Model not found, invalid features, or other validation errors
+                platform_info = representative_instance.platform_info
+                error_msg = str(e)
 
-                except httpx.HTTPError as e:
-                    # Network errors, timeouts, etc.
-                    platform_info = representative_instance.platform_info
+                if "Model not found" in error_msg:
                     logger.error(
-                        f"Failed to get prediction for platform {platform_info}: {e}"
+                        f"No trained model for {model_id} on platform "
+                        f"{platform_info}. Task submission rejected."
                     )
-                    raise httpx.HTTPError(
-                        f"Predictor service unavailable: {str(e)}"
+                    raise ValueError(
+                        f"No trained model for {model_id} on platform "
+                        f"{platform_info['software_name']}/"
+                        f"{platform_info['hardware_name']}. "
+                        f"Please train the model first or use experiment mode."
                     )
+                elif "Invalid features" in error_msg or "Invalid request" in error_msg:
+                    logger.error(
+                        f"Invalid features for prediction: {error_msg}"
+                    )
+                    raise ValueError(f"Invalid task metadata: {error_msg}")
+                else:
+                    # Other validation errors
+                    logger.error(f"Prediction validation error: {error_msg}")
+                    raise
+
+            except (ConnectionError, TimeoutError) as e:
+                # Network errors, timeouts, etc.
+                platform_info = representative_instance.platform_info
+                logger.error(
+                    f"Failed to get prediction for platform {platform_info}: {e}"
+                )
+                raise
 
         return predictions
 
     async def health_check(self) -> bool:
         """
-        Check if predictor service is healthy.
+        Check if predictor service is healthy by ensuring WebSocket connection.
 
         Returns:
-            True if service is healthy, False otherwise
+            True if service is healthy and WebSocket is accessible, False otherwise
         """
-        try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.get(f"{self.predictor_url}/health")
-                return response.status_code == 200
-        except Exception:
-            return False
+        async with self._ws_lock:
+            try:
+                # Try to ensure connection exists
+                await self._ensure_connection()
+                return True
+            except Exception as e:
+                logger.debug(f"Health check failed: {e}")
+                await self._close_connection()
+                return False

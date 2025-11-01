@@ -7,8 +7,10 @@ requires-python = ">=3.13"
 dependencies = [
     "fastapi>=0.120.4",
     "httpx>=0.28.1",
+    "loguru>=0.7.0",
     "numpy>=2.0.0",
     "pydantic>=2.12.3",
+    "pyinstrument>=5.1.1",
     "uvicorn>=0.38.0",
     "websockets>=15.0.1",
 ]

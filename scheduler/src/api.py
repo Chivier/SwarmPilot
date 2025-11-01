@@ -12,6 +12,7 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Quer
 from pyinstrument import Profiler
 from pyinstrument.renderers.html import HTMLRenderer
 from pyinstrument.renderers.speedscope import SpeedscopeRenderer
+from loguru import logger
 
 from .model import (
     # Instance models
@@ -62,18 +63,23 @@ from .predictor_client import PredictorClient
 from .scheduler import get_strategy
 from .task_dispatcher import TaskDispatcher
 
+# Import logger configuration to initialize loguru
+from . import logger as logger_module  # noqa: F401
+
 
 # ============================================================================
 # Application Setup
 # ============================================================================
 
-    
+
 
 app = FastAPI(
     title="Scheduler API",
     description="Task scheduling and instance management service",
     version="1.0.0",
 )
+
+logger.info("Initializing Scheduler API")
 
 @app.middleware("http")
 async def profile_request(request: Request, call_next: Callable):
@@ -221,7 +227,12 @@ async def register_instance(request: InstanceRegisterRequest):
     # Register instance (this also initializes queue info and stats)
     try:
         instance_registry.register(instance)
+        logger.info(
+            f"Registered instance {request.instance_id} for model {request.model_id} "
+            f"on {request.platform_info['hardware_name']}"
+        )
     except ValueError as e:
+        logger.warning(f"Failed to register instance {request.instance_id}: {e}")
         raise HTTPException(
             status_code=400, detail={"success": False, "error": str(e)}
         )
@@ -267,7 +278,9 @@ async def remove_instance(request: InstanceRemoveRequest):
     # Remove instance
     try:
         instance_registry.remove(request.instance_id)
+        logger.info(f"Removed instance {request.instance_id}")
     except KeyError:
+        logger.warning(f"Attempted to remove non-existent instance {request.instance_id}")
         raise HTTPException(
             status_code=404,
             detail={"success": False, "error": "Instance not found"},
@@ -683,6 +696,7 @@ async def clear_tasks():
     """
     # Clear all tasks from registry
     cleared_count = task_registry.clear_all()
+    logger.warning(f"Cleared {cleared_count} tasks from registry")
 
     return TaskClearResponse(
         success=True,
@@ -836,9 +850,11 @@ async def websocket_get_result(websocket: WebSocket):
     except WebSocketDisconnect:
         # Clean up subscriptions
         websocket_manager.disconnect(websocket)
+        logger.debug(f"WebSocket client disconnected")
 
     except Exception as e:
-        # TODO: Add proper logging
+        # Log the error
+        logger.error(f"WebSocket error: {e}", exc_info=True)
         # Send error message to client
         try:
             error_msg = WSErrorMessage(error=f"Server error: {str(e)}")
@@ -891,7 +907,8 @@ async def health_check():
         )
 
     except Exception as e:
-        # TODO: Add proper logging
+        # Log the health check failure
+        logger.error(f"Health check failed: {e}", exc_info=True)
         raise HTTPException(
             status_code=503,
             detail={
@@ -911,16 +928,21 @@ async def health_check():
 @app.on_event("startup")
 async def startup_event():
     """Initialize resources on application startup."""
+    logger.info("Scheduler service starting up...")
+    logger.info(f"Configuration: {config}")
+    logger.info(f"Scheduling strategy: {config.scheduling.default_strategy}")
+    logger.info(f"Auto-training enabled: {config.training.enable_auto_training}")
     # TODO: Load persisted state if needed
     # TODO: Initialize background tasks
     # TODO: Connect to external services
-    pass
+    logger.success("Scheduler service started successfully")
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Clean up resources on application shutdown."""
+    logger.info("Scheduler service shutting down...")
     # TODO: Persist state if needed
     # TODO: Close connections to external services
     # TODO: Cancel background tasks
-    pass
+    logger.info("Scheduler service shutdown complete")

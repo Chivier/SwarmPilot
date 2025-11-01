@@ -13,3 +13,7 @@ wheels/
 .coverage
 htmlcov/
 .pytest_cache/
+
+# Logging
+logs/
+*.log

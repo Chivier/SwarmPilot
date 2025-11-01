@@ -66,6 +66,20 @@ class TrainingConfig:
 
 
 @dataclass
+class LoggingConfig:
+    """Configuration for logging behavior."""
+
+    # Log level: TRACE, DEBUG, INFO, SUCCESS, WARNING, ERROR, CRITICAL
+    level: str = os.getenv("SCHEDULER_LOG_LEVEL", "INFO")
+
+    # Directory for log files
+    log_dir: str = os.getenv("SCHEDULER_LOG_DIR", "logs")
+
+    # Enable JSON structured logging
+    enable_json_logs: bool = os.getenv("SCHEDULER_ENABLE_JSON_LOGS", "false").lower() == "true"
+
+
+@dataclass
 class ServerConfig:
     """Configuration for the scheduler server."""
 
@@ -78,9 +92,6 @@ class ServerConfig:
     # Enable CORS
     enable_cors: bool = os.getenv("SCHEDULER_ENABLE_CORS", "true").lower() == "true"
 
-    # Log level: DEBUG, INFO, WARNING, ERROR, CRITICAL
-    log_level: str = os.getenv("SCHEDULER_LOG_LEVEL", "INFO")
-
     # API version
     version: str = "1.0.0"
 
@@ -92,6 +103,7 @@ class Config:
     predictor: PredictorConfig
     scheduling: SchedulingConfig
     training: TrainingConfig
+    logging: LoggingConfig
     server: ServerConfig
 
     @classmethod
@@ -106,6 +118,7 @@ class Config:
             predictor=PredictorConfig(),
             scheduling=SchedulingConfig(),
             training=TrainingConfig(),
+            logging=LoggingConfig(),
             server=ServerConfig(),
         )
 
@@ -116,6 +129,7 @@ class Config:
             f"  predictor=PredictorConfig(url='{self.predictor.url}', ...),\n"
             f"  scheduling=SchedulingConfig(strategy='{self.scheduling.default_strategy}'),\n"
             f"  training=TrainingConfig(auto={self.training.enable_auto_training}),\n"
+            f"  logging=LoggingConfig(level='{self.logging.level}'),\n"
             f"  server=ServerConfig(host='{self.server.host}', port={self.server.port})\n"
             f")"
         )
