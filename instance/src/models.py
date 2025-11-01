@@ -2,7 +2,7 @@
 Core data models for Instance Service
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any, Dict, Optional
 
@@ -33,7 +33,7 @@ class Task(BaseModel):
     status: TaskStatus = Field(default=TaskStatus.QUEUED, description="Current task status")
 
     # Timestamps
-    submitted_at: str = Field(default_factory=lambda: datetime.utcnow().isoformat() + "Z")
+    submitted_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat().replace("+00:00", "Z"))
     started_at: Optional[str] = None
     completed_at: Optional[str] = None
 
@@ -44,18 +44,18 @@ class Task(BaseModel):
     def mark_started(self):
         """Mark task as started"""
         self.status = TaskStatus.RUNNING
-        self.started_at = datetime.utcnow().isoformat() + "Z"
+        self.started_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
     def mark_completed(self, result: Dict[str, Any]):
         """Mark task as completed with result"""
         self.status = TaskStatus.COMPLETED
-        self.completed_at = datetime.utcnow().isoformat() + "Z"
+        self.completed_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
         self.result = result
 
     def mark_failed(self, error: str):
         """Mark task as failed with error"""
         self.status = TaskStatus.FAILED
-        self.completed_at = datetime.utcnow().isoformat() + "Z"
+        self.completed_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
         self.error = error
 
 

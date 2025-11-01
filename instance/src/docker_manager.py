@@ -60,31 +60,36 @@ class DockerManager:
         if not model_dir or not model_dir.exists():
             raise ValueError(f"Model directory not found: {model_dir}")
 
-        # Check if docker-compose.yaml exists
-        docker_compose_file = model_dir / "docker-compose.yaml"
-        if not docker_compose_file.exists():
-            raise ValueError(f"docker-compose.yaml not found in {model_dir}")
+        # Check if Dockerfile exists
+        dockerfile = model_dir / "Dockerfile"
+        if not dockerfile.exists():
+            raise ValueError(f"Dockerfile not found in {model_dir}")
 
-        # Generate container name
+        # Generate container and image names
         container_name = config.get_model_container_name(model_id)
+        image_name = self._get_image_name(model_id)
 
         # Build environment variables
         env_vars = self._build_env_vars(model_id, parameters or {})
 
-        # Add container-specific environment variables
-        env_vars["CONTAINER_NAME"] = container_name
-        env_vars["MODEL_PORT"] = str(config.model_port)
-
         logger.info(f"Starting model container: {container_name}")
         logger.info(f"Model directory: {model_dir}")
         logger.info(f"Container port: {config.model_port}")
+        logger.info(f"Image name: {image_name}")
 
-        # Start Docker container using docker-compose
+        # Build Docker image
         try:
-            await self._run_docker_compose(
-                model_dir,
-                ["up", "-d"],
-                env_vars
+            await self._build_docker_image(model_dir, image_name)
+        except Exception as e:
+            raise RuntimeError(f"Failed to build Docker image: {e}")
+
+        # Run Docker container
+        try:
+            await self._run_docker_container(
+                container_name,
+                image_name,
+                env_vars,
+                config.model_port
             )
             logger.info(f"Docker container started: {container_name}")
         except Exception as e:
@@ -97,16 +102,16 @@ class DockerManager:
             # If health check fails, try to stop the container
             logger.error(f"Health check failed, stopping container: {e}")
             try:
-                await self._run_docker_compose(model_dir, ["down"], env_vars)
+                await self._stop_docker_container(container_name)
             except Exception:
                 pass
             raise
 
         # Create model info
-        from datetime import datetime
+        from datetime import UTC, datetime
         model_info = ModelInfo(
             model_id=model_id,
-            started_at=datetime.utcnow().isoformat() + "Z",
+            started_at=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
             parameters=parameters or {},
             container_name=container_name
         )
@@ -132,38 +137,18 @@ class DockerManager:
 
         logger.info(f"Stopping model container: {container_name}")
 
-        # Get model directory
-        registry = get_registry()
-        model_dir = registry.get_model_directory(model_id)
-
-        if model_dir and model_dir.exists():
-            # Build environment variables (needed for docker-compose)
-            env_vars = self._build_env_vars(model_id, self.current_model.parameters)
-            env_vars["CONTAINER_NAME"] = container_name
-            env_vars["MODEL_PORT"] = str(config.model_port)
-
-            # Stop and remove container using docker-compose
-            try:
-                await self._run_docker_compose(
-                    model_dir,
-                    ["down", "--volumes", "--remove-orphans"],
-                    env_vars
-                )
-                logger.info(f"Docker container stopped: {container_name}")
-            except Exception as e:
-                logger.error(f"Error stopping container: {e}")
-                # Try to force remove the container
-                try:
-                    await self._force_remove_container(container_name)
-                except Exception as e2:
-                    logger.error(f"Failed to force remove container: {e2}")
-                    raise RuntimeError(f"Failed to stop container: {e}")
-        else:
-            logger.warning(f"Model directory not found, attempting force removal")
+        # Stop and remove container using docker commands
+        try:
+            await self._stop_docker_container(container_name)
+            logger.info(f"Docker container stopped: {container_name}")
+        except Exception as e:
+            logger.error(f"Error stopping container: {e}")
+            # Try to force remove the container
             try:
                 await self._force_remove_container(container_name)
-            except Exception as e:
-                logger.error(f"Failed to force remove container: {e}")
+            except Exception as e2:
+                logger.error(f"Failed to force remove container: {e2}")
+                raise RuntimeError(f"Failed to stop container: {e}")
 
         self.current_model = None
         return model_id
@@ -235,6 +220,20 @@ class DockerManager:
         except httpx.RequestError as e:
             raise RuntimeError(f"Inference request failed: {e}")
 
+    def _get_image_name(self, model_id: str) -> str:
+        """
+        Generate Docker image name from model_id.
+
+        Args:
+            model_id: The model identifier
+
+        Returns:
+            Docker image name with tag (e.g., "sleep_model:latest")
+        """
+        # Replace characters that aren't allowed in Docker image names
+        safe_name = model_id.replace("/", "_").replace(":", "_")
+        return f"{safe_name}:latest"
+
     def _build_env_vars(
         self,
         model_id: str,
@@ -260,6 +259,150 @@ class DockerManager:
                 env_vars[env_key] = str(value)
 
         return env_vars
+
+    async def _build_docker_image(
+        self,
+        model_dir: Path,
+        image_name: str
+    ):
+        """
+        Build Docker image from Dockerfile.
+
+        Args:
+            model_dir: Directory containing the Dockerfile
+            image_name: Name and tag for the image
+
+        Raises:
+            RuntimeError: If image build fails
+        """
+        logger.info(f"Building Docker image: {image_name} from {model_dir}")
+
+        cmd = [
+            "docker", "build",
+            "-t", image_name,
+            str(model_dir)
+        ]
+
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+
+        stdout, stderr = await process.communicate()
+
+        if process.returncode != 0:
+            error_msg = stderr.decode().strip() if stderr else "Unknown error"
+            logger.error(f"Docker build failed: {error_msg}")
+            raise RuntimeError(f"Failed to build Docker image: {error_msg}")
+
+        logger.info(f"Docker image built successfully: {image_name}")
+
+    async def _run_docker_container(
+        self,
+        container_name: str,
+        image_name: str,
+        env_vars: Dict[str, str],
+        port: int
+    ):
+        """
+        Run Docker container with specified configuration.
+
+        Args:
+            container_name: Name for the container
+            image_name: Docker image to use
+            env_vars: Environment variables
+            port: Host port to map to container port 8000
+
+        Raises:
+            RuntimeError: If container fails to start
+        """
+        logger.info(f"Running Docker container: {container_name}")
+
+        # Build docker run command
+        cmd = [
+            "docker", "run",
+            "--name", container_name,
+            "--publish", f"{port}:8000",
+            "--detach",
+            "--restart", "unless-stopped",
+            # Add healthcheck configuration
+            "--health-cmd", "curl -f http://localhost:8000/health || exit 1",
+            "--health-interval", "10s",
+            "--health-timeout", "5s",
+            "--health-retries", "3",
+            "--health-start-period", "10s",
+        ]
+
+        # Add environment variables
+        for key, value in env_vars.items():
+            cmd.extend(["--env", f"{key}={value}"])
+
+        # Add image name
+        cmd.append(image_name)
+
+        logger.debug(f"Docker run command: {' '.join(cmd)}")
+
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+
+        stdout, stderr = await process.communicate()
+
+        if process.returncode != 0:
+            error_msg = stderr.decode().strip() if stderr else "Unknown error"
+            logger.error(f"Docker run failed: {error_msg}")
+            raise RuntimeError(f"Failed to run Docker container: {error_msg}")
+
+        logger.info(f"Docker container started: {container_name}")
+
+    async def _stop_docker_container(self, container_name: str):
+        """
+        Stop and remove a Docker container.
+
+        Args:
+            container_name: Name of the container to stop
+
+        Raises:
+            RuntimeError: If stop/remove fails
+        """
+        logger.info(f"Stopping Docker container: {container_name}")
+
+        # Stop container
+        stop_cmd = ["docker", "stop", container_name]
+        process = await asyncio.create_subprocess_exec(
+            *stop_cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await process.communicate()
+
+        if process.returncode != 0:
+            error_msg = stderr.decode().strip() if stderr else "Unknown error"
+            if "No such container" not in error_msg:
+                logger.error(f"Docker stop failed: {error_msg}")
+                raise RuntimeError(f"Failed to stop Docker container: {error_msg}")
+            else:
+                logger.warning(f"Container {container_name} does not exist")
+
+        # Remove container
+        rm_cmd = ["docker", "rm", "-f", container_name]
+        process = await asyncio.create_subprocess_exec(
+            *rm_cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await process.communicate()
+
+        if process.returncode != 0:
+            error_msg = stderr.decode().strip() if stderr else "Unknown error"
+            if "No such container" not in error_msg:
+                logger.error(f"Docker rm failed: {error_msg}")
+                raise RuntimeError(f"Failed to remove Docker container: {error_msg}")
+
+        logger.info(f"Docker container stopped and removed: {container_name}")
 
     async def _wait_for_health(
         self,
@@ -298,51 +441,6 @@ class DockerManager:
         raise RuntimeError(
             f"Model container did not become healthy within {timeout} seconds"
         )
-
-    async def _run_docker_compose(
-        self,
-        working_dir: Path,
-        args: list,
-        env_vars: Dict[str, str]
-    ):
-        """
-        Run docker-compose command.
-
-        Args:
-            working_dir: Directory containing docker-compose.yaml
-            args: Arguments for docker-compose (e.g., ["up", "-d"])
-            env_vars: Environment variables to set
-
-        Raises:
-            RuntimeError: If docker-compose command fails
-        """
-        # Prepare environment
-        env = os.environ.copy()
-        env.update(env_vars)
-
-        # Build command
-        cmd = ["docker-compose"] + args
-
-        logger.info(f"Running docker-compose in {working_dir}: {' '.join(cmd)}")
-
-        # Run command asynchronously
-        process = await asyncio.create_subprocess_exec(
-            *cmd,
-            cwd=str(working_dir),
-            env=env,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-
-        stdout, stderr = await process.communicate()
-
-        if process.returncode != 0:
-            error_msg = stderr.decode().strip() if stderr else "Unknown error"
-            logger.error(f"docker-compose failed: {error_msg}")
-            raise RuntimeError(f"docker-compose command failed: {error_msg}")
-
-        if stdout:
-            logger.debug(f"docker-compose output: {stdout.decode().strip()}")
 
     async def _force_remove_container(self, container_name: str):
         """
