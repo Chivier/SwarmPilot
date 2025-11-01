@@ -45,17 +45,39 @@ class TaskRecord:
         self.started_at: Optional[str] = None
         self.completed_at: Optional[str] = None
 
+        # Actual execution time reported by instance (more accurate than timestamp calculation)
+        self._actual_execution_time_ms: Optional[float] = None
+
     @property
-    def execution_time_ms(self) -> Optional[int]:
-        """Calculate execution time in milliseconds."""
+    def execution_time_ms(self) -> Optional[float]:
+        """
+        Get execution time in milliseconds.
+
+        Returns the actual execution time reported by the instance if available,
+        otherwise calculates from timestamps.
+        """
+        # Prefer actual execution time reported by instance
+        if self._actual_execution_time_ms is not None:
+            return self._actual_execution_time_ms
+
+        # Fallback to timestamp-based calculation
         if self.started_at and self.completed_at:
             try:
                 start = datetime.fromisoformat(self.started_at.replace("Z", "+00:00"))
                 end = datetime.fromisoformat(self.completed_at.replace("Z", "+00:00"))
-                return int((end - start).total_seconds() * 1000)
+                return (end - start).total_seconds() * 1000
             except Exception:
                 return None
         return None
+
+    def set_execution_time(self, execution_time_ms: float) -> None:
+        """
+        Set the actual execution time reported by the instance.
+
+        Args:
+            execution_time_ms: Actual execution time in milliseconds
+        """
+        self._actual_execution_time_ms = execution_time_ms
 
     def get_timestamps(self) -> TaskTimestamps:
         """Get task timestamps as model."""

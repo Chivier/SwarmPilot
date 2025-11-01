@@ -164,8 +164,8 @@ class TaskDispatcher:
             self.task_registry.update_status(task_id, TaskStatus.COMPLETED)
             if result:
                 self.task_registry.set_result(task_id, result)
-            if execution_time_ms:
-                task.execution_time_ms = execution_time_ms
+            if execution_time_ms is not None:
+                task.set_execution_time(execution_time_ms)
 
             # Update instance stats
             if instance:

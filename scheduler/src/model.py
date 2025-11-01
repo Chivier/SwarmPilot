@@ -189,7 +189,7 @@ class TaskDetailInfo(BaseModel):
     result: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
     timestamps: TaskTimestamps
-    execution_time_ms: Optional[int] = None
+    execution_time_ms: Optional[float] = None
 
 
 class TaskDetailResponse(BaseModel):
@@ -289,7 +289,7 @@ class WSTaskResultMessage(BaseModel):
     result: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
     timestamps: TaskTimestamps
-    execution_time_ms: Optional[int] = None
+    execution_time_ms: Optional[float] = None
 
 
 class WSErrorMessage(BaseModel):
