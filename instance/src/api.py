@@ -6,7 +6,8 @@ It provides endpoints for model management, task management, and instance monito
 """
 
 import time
-from datetime import datetime
+from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException, Query, Response, status
@@ -17,6 +18,7 @@ from .docker_manager import get_docker_manager
 from .model_registry import get_registry
 from .models import InstanceStatus, Task, TaskStatus
 from .task_queue import get_task_queue
+from .scheduler_client import get_scheduler_client
 
 # =============================================================================
 # Pydantic Models for Request/Response Schemas
@@ -148,14 +150,64 @@ class ErrorResponse(BaseModel):
 # FastAPI Application
 # =============================================================================
 
+# Track startup time for uptime calculation
+_startup_time = time.time()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage application lifespan: startup and shutdown events."""
+    # Startup
+    global _startup_time
+    _startup_time = time.time()
+
+    print(f"Instance Service starting...")
+    print(f"Instance ID: {config.instance_id}")
+    print(f"Instance Port: {config.instance_port}")
+    print(f"Model Port: {config.model_port}")
+    print(f"Registry Path: {config.registry_path}")
+
+    # Load model registry
+    try:
+        registry = get_registry()
+        print(f"Loaded {len(registry.models)} models from registry")
+    except Exception as e:
+        print(f"Warning: Failed to load model registry: {e}")
+
+    yield
+
+    # Shutdown
+    print("Instance Service shutting down...")
+
+    # Deregister from scheduler if enabled
+    scheduler_client = get_scheduler_client()
+    if scheduler_client.is_enabled:
+        try:
+            await scheduler_client.deregister_instance()
+        except Exception as e:
+            print(f"Warning: Failed to deregister from scheduler: {str(e)}")
+
+    # Stop task processing
+    task_queue = get_task_queue()
+    await task_queue.stop_processing()
+
+    # Stop running model
+    docker_manager = get_docker_manager()
+    if await docker_manager.is_model_running():
+        await docker_manager.stop_model()
+
+    # Close HTTP client
+    await docker_manager.close()
+
+    print("Instance Service stopped")
+
+
 app = FastAPI(
     title="Instance Service API",
     description="API for managing model instances and task queues in SwarmPilot",
     version="1.0.0",
+    lifespan=lifespan,
 )
-
-# Track startup time for uptime calculation
-_startup_time = time.time()
 
 
 # =============================================================================
@@ -202,6 +254,15 @@ async def start_model(request: ModelStartRequest):
             request.parameters
         )
 
+        # Register with scheduler if enabled
+        scheduler_client = get_scheduler_client()
+        if scheduler_client.is_enabled:
+            try:
+                await scheduler_client.register_instance(model_id=request.model_id)
+            except Exception as e:
+                # Log error but don't fail model start
+                print(f"Warning: Failed to register with scheduler: {str(e)}")
+
         return ModelStartResponse(
             success=True,
             message="Model started successfully",
@@ -242,6 +303,15 @@ async def stop_model():
     try:
         model_id = await docker_manager.stop_model()
 
+        # Deregister from scheduler if enabled
+        scheduler_client = get_scheduler_client()
+        if scheduler_client.is_enabled:
+            try:
+                await scheduler_client.deregister_instance()
+            except Exception as e:
+                # Log error but don't fail model stop
+                print(f"Warning: Failed to deregister from scheduler: {str(e)}")
+
         return ModelStopResponse(
             success=True,
             message="Model stopped successfully",
@@ -280,7 +350,7 @@ async def submit_task(request: TaskSubmitRequest):
     # Check if model is running
     if not await docker_manager.is_model_running():
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="No model is currently running"
         )
 
@@ -288,7 +358,7 @@ async def submit_task(request: TaskSubmitRequest):
     current_model = await docker_manager.get_current_model()
     if current_model and current_model.model_id != request.model_id:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=f"Model ID does not match the currently running model. "
                    f"Expected: {current_model.model_id}, Got: {request.model_id}"
         )
@@ -549,58 +619,14 @@ async def health_check(response: Response):
             return HealthResponse(
                 status="unhealthy",
                 error="Model container is not responding",
-                timestamp=datetime.utcnow().isoformat() + "Z"
+                timestamp=datetime.now(UTC).isoformat().replace("+00:00", "Z")
             )
 
     # Instance is healthy
     return HealthResponse(
         status="healthy",
-        timestamp=datetime.utcnow().isoformat() + "Z"
+        timestamp=datetime.now(UTC).isoformat().replace("+00:00", "Z")
     )
-
-
-# =============================================================================
-# Application Startup and Shutdown Events
-# =============================================================================
-
-@app.on_event("startup")
-async def startup_event():
-    """Initialize the instance service on startup."""
-    global _startup_time
-    _startup_time = time.time()
-
-    print(f"Instance Service starting...")
-    print(f"Instance ID: {config.instance_id}")
-    print(f"Instance Port: {config.instance_port}")
-    print(f"Model Port: {config.model_port}")
-    print(f"Registry Path: {config.registry_path}")
-
-    # Load model registry
-    try:
-        registry = get_registry()
-        print(f"Loaded {len(registry.models)} models from registry")
-    except Exception as e:
-        print(f"Warning: Failed to load model registry: {e}")
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Clean up resources on shutdown."""
-    print("Instance Service shutting down...")
-
-    # Stop task processing
-    task_queue = get_task_queue()
-    await task_queue.stop_processing()
-
-    # Stop running model
-    docker_manager = get_docker_manager()
-    if await docker_manager.is_model_running():
-        await docker_manager.stop_model()
-
-    # Close HTTP client
-    await docker_manager.close()
-
-    print("Instance Service stopped")
 
 
 # =============================================================================
