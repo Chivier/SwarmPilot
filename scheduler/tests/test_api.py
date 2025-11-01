@@ -19,11 +19,31 @@ from src.model import TaskStatus
 @pytest.fixture(autouse=True)
 def reset_registries():
     """Reset registries before each test."""
+    from src.api import scheduling_strategy, predictor_client, config
+    from src.scheduler import get_strategy
+    import src.api as api_module
+
     # Clear registries
     instance_registry._instances.clear()
     instance_registry._queue_info.clear()
     instance_registry._stats.clear()
     task_registry._tasks.clear()
+
+    # Reset instance registry queue type to probabilistic (default)
+    instance_registry._queue_info_type = "probabilistic"
+
+    # Reset scheduling strategy to default (probabilistic)
+    api_module.scheduling_strategy = get_strategy(
+        strategy_name="probabilistic",
+        predictor_client=predictor_client,
+        instance_registry=instance_registry,
+        target_quantile=0.9,
+    )
+
+    # Reset config to default
+    config.scheduling.default_strategy = "probabilistic"
+    config.scheduling.probabilistic_quantile = 0.9
+
     yield
 
 
@@ -647,3 +667,283 @@ class TestHealthCheck:
         data = response.json()
         assert data["stats"]["total_instances"] == 1
         assert data["stats"]["active_instances"] == 1
+
+
+# ============================================================================
+# Strategy Management Tests
+# ============================================================================
+
+class TestStrategyManagement:
+    """Tests for strategy management endpoints."""
+
+    def test_get_strategy_default(self, client):
+        """Test getting the default strategy (probabilistic)."""
+        response = client.get("/strategy/get")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["strategy_info"]["strategy_name"] == "probabilistic"
+        assert "target_quantile" in data["strategy_info"]["parameters"]
+        assert data["strategy_info"]["parameters"]["target_quantile"] == 0.9
+
+    def test_set_strategy_to_min_time(self, client):
+        """Test switching to min_time strategy."""
+        response = client.post(
+            "/strategy/set",
+            json={
+                "strategy_name": "min_time"
+            }
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["strategy_info"]["strategy_name"] == "min_time"
+        assert data["cleared_tasks"] == 0
+        assert data["reinitialized_instances"] == 0
+        assert "Successfully switched" in data["message"]
+
+    def test_set_strategy_to_round_robin(self, client):
+        """Test switching to round_robin strategy."""
+        response = client.post(
+            "/strategy/set",
+            json={
+                "strategy_name": "round_robin"
+            }
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["strategy_info"]["strategy_name"] == "round_robin"
+        assert data["strategy_info"]["parameters"] == {}
+
+    def test_set_strategy_to_probabilistic_with_custom_quantile(self, client):
+        """Test switching to probabilistic strategy with custom quantile."""
+        response = client.post(
+            "/strategy/set",
+            json={
+                "strategy_name": "probabilistic",
+                "target_quantile": 0.95
+            }
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["strategy_info"]["strategy_name"] == "probabilistic"
+        assert data["strategy_info"]["parameters"]["target_quantile"] == 0.95
+
+    def test_set_strategy_invalid_name(self, client):
+        """Test setting strategy with invalid name."""
+        response = client.post(
+            "/strategy/set",
+            json={
+                "strategy_name": "invalid_strategy"
+            }
+        )
+
+        assert response.status_code == 422  # Pydantic validation error
+
+    def test_set_strategy_clears_tasks(self, client):
+        """Test that setting strategy clears all tasks."""
+        from src.predictor_client import Prediction
+
+        # Register instance first
+        client.post(
+            "/instance/register",
+            json={
+                "instance_id": "inst-1",
+                "model_id": "model-1",
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hardware"
+                }
+            }
+        )
+
+        # Submit a task (mock predictor)
+        mock_prediction = Prediction(
+            instance_id="inst-1",
+            predicted_time_ms=100.0,
+            quantiles={0.5: 90.0, 0.9: 110.0, 0.95: 120.0, 0.99: 130.0},
+            error_margin_ms=10.0
+        )
+
+        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[mock_prediction])):
+            with patch("src.api.task_dispatcher.dispatch_task_async"):
+                client.post(
+                    "/task/submit",
+                    json={
+                        "task_id": "task-1",
+                        "model_id": "model-1",
+                        "task_input": {"prompt": "test"},
+                        "metadata": {}
+                    }
+                )
+
+        # Switch strategy
+        response = client.post(
+            "/strategy/set",
+            json={
+                "strategy_name": "min_time"
+            }
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["cleared_tasks"] == 1
+
+        # Verify tasks are cleared
+        tasks_response = client.get("/task/list")
+        assert tasks_response.json()["total"] == 0
+
+    def test_set_strategy_reinitializes_instances(self, client):
+        """Test that setting strategy reinitializes instance queues."""
+        # Register two instances
+        for i in range(1, 3):
+            client.post(
+                "/instance/register",
+                json={
+                    "instance_id": f"inst-{i}",
+                    "model_id": "model-1",
+                    "endpoint": f"http://localhost:800{i}",
+                    "platform_info": {
+                        "software_name": "docker",
+                        "software_version": "20.10",
+                        "hardware_name": "test-hardware"
+                    }
+                }
+            )
+
+        # Switch from probabilistic to min_time
+        response = client.post(
+            "/strategy/set",
+            json={
+                "strategy_name": "min_time"
+            }
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["reinitialized_instances"] == 2
+
+        # Verify instances still exist
+        instances_response = client.get("/instance/list")
+        assert instances_response.json()["count"] == 2
+
+        # Verify queue info type changed by checking instance info
+        instance_info = client.get("/instance/info?instance_id=inst-1")
+        assert instance_info.status_code == 200
+        queue_info = instance_info.json()["queue_info"]
+        # For min_time, should have expected_time_ms and error_margin_ms
+        assert "expected_time_ms" in queue_info
+        assert "error_margin_ms" in queue_info
+
+    def test_set_strategy_rejects_when_tasks_running(self, client):
+        """Test that setting strategy is rejected when tasks are running."""
+        from src.predictor_client import Prediction
+
+        # Register instance
+        client.post(
+            "/instance/register",
+            json={
+                "instance_id": "inst-1",
+                "model_id": "model-1",
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hardware"
+                }
+            }
+        )
+
+        # Submit a task
+        mock_prediction = Prediction(
+            instance_id="inst-1",
+            predicted_time_ms=100.0,
+            quantiles={0.5: 90.0, 0.9: 110.0, 0.95: 120.0, 0.99: 130.0},
+            error_margin_ms=10.0
+        )
+
+        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[mock_prediction])):
+            with patch("src.api.task_dispatcher.dispatch_task_async"):
+                client.post(
+                    "/task/submit",
+                    json={
+                        "task_id": "task-1",
+                        "model_id": "model-1",
+                        "task_input": {"prompt": "test"},
+                        "metadata": {}
+                    }
+                )
+
+        # Manually set task to RUNNING status
+        task_registry.update_status("task-1", TaskStatus.RUNNING)
+
+        # Try to switch strategy - should fail
+        response = client.post(
+            "/strategy/set",
+            json={
+                "strategy_name": "min_time"
+            }
+        )
+
+        assert response.status_code == 400
+        data = response.json()
+        assert "Cannot switch strategy while" in data["detail"]["error"]
+
+    def test_strategy_switch_round_trip(self, client):
+        """Test switching between all strategies."""
+        # Start with probabilistic (default)
+        response = client.get("/strategy/get")
+        assert response.json()["strategy_info"]["strategy_name"] == "probabilistic"
+
+        # Switch to min_time
+        response = client.post("/strategy/set", json={"strategy_name": "min_time"})
+        assert response.status_code == 200
+
+        response = client.get("/strategy/get")
+        assert response.json()["strategy_info"]["strategy_name"] == "min_time"
+
+        # Switch to round_robin
+        response = client.post("/strategy/set", json={"strategy_name": "round_robin"})
+        assert response.status_code == 200
+
+        response = client.get("/strategy/get")
+        assert response.json()["strategy_info"]["strategy_name"] == "round_robin"
+
+        # Switch back to probabilistic
+        response = client.post("/strategy/set", json={"strategy_name": "probabilistic", "target_quantile": 0.8})
+        assert response.status_code == 200
+
+        response = client.get("/strategy/get")
+        data = response.json()
+        assert data["strategy_info"]["strategy_name"] == "probabilistic"
+        assert data["strategy_info"]["parameters"]["target_quantile"] == 0.8
+
+    def test_set_strategy_invalid_quantile(self, client):
+        """Test setting strategy with invalid quantile value."""
+        # Quantile > 1.0
+        response = client.post(
+            "/strategy/set",
+            json={
+                "strategy_name": "probabilistic",
+                "target_quantile": 1.5
+            }
+        )
+        assert response.status_code == 422  # Pydantic validation error
+
+        # Quantile < 0.0
+        response = client.post(
+            "/strategy/set",
+            json={
+                "strategy_name": "probabilistic",
+                "target_quantile": -0.1
+            }
+        )
+        assert response.status_code == 422  # Pydantic validation error

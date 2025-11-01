@@ -5,7 +5,7 @@ This module defines all Pydantic models used for request/response validation
 and data structures throughout the scheduler system.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 from enum import Enum
 from pydantic import BaseModel, Field
 
@@ -112,7 +112,7 @@ class InstanceInfoResponse(BaseModel):
     """Response model for detailed instance information."""
     success: bool
     instance: Instance
-    queue_info: InstanceQueueBase
+    queue_info: Union[InstanceQueueProbabilistic, InstanceQueueExpectError]
     stats: InstanceStats
 
 
@@ -235,6 +235,49 @@ class HealthErrorResponse(BaseModel):
     status: str
     error: str
     timestamp: str
+
+
+# ============================================================================
+# Strategy Management Models
+# ============================================================================
+
+class StrategyType(str, Enum):
+    """Enumeration of available scheduling strategies."""
+    MIN_TIME = "min_time"
+    PROBABILISTIC = "probabilistic"
+    ROUND_ROBIN = "round_robin"
+
+
+class StrategySetRequest(BaseModel):
+    """Request model for setting scheduling strategy."""
+    strategy_name: StrategyType = Field(..., description="Name of the scheduling strategy to use")
+    target_quantile: Optional[float] = Field(
+        0.9,
+        description="Target quantile for probabilistic strategy (default: 0.9)",
+        ge=0.0,
+        le=1.0
+    )
+
+
+class StrategyInfo(BaseModel):
+    """Information about the current scheduling strategy."""
+    strategy_name: str
+    parameters: Dict[str, Any] = Field(default_factory=dict, description="Strategy-specific parameters")
+
+
+class StrategySetResponse(BaseModel):
+    """Response model for setting scheduling strategy."""
+    success: bool
+    message: str
+    cleared_tasks: int
+    reinitialized_instances: int
+    strategy_info: StrategyInfo
+
+
+class StrategyGetResponse(BaseModel):
+    """Response model for getting current scheduling strategy."""
+    success: bool
+    strategy_info: StrategyInfo
 
 
 # ============================================================================
