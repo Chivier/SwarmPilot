@@ -249,8 +249,6 @@ class SchedulerClient:
             "software_name": platform.system(),  # e.g., "Linux", "Darwin", "Windows"
             "software_version": platform.release(),  # e.g., "5.15.0-151-generic"
             "hardware_name": platform.machine(),  # e.g., "x86_64", "arm64"
-            "python_version": platform.python_version(),
-            "detected_at": datetime.utcnow().isoformat() + "Z",
         }
 
 
