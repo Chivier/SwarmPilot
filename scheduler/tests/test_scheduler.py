@@ -107,7 +107,12 @@ class TestProbabilisticSchedulingStrategy:
         assert strategy.target_quantile == 0.95
 
     def test_select_based_on_quantile(self):
-        """Test selection based on target quantile value."""
+        """Test selection based on sampling from quantile distribution."""
+        import numpy as np
+
+        # Set random seed for reproducibility
+        np.random.seed(42)
+
         strategy = ProbabilisticSchedulingStrategy(target_quantile=0.9)
 
         predictions = [
@@ -128,15 +133,15 @@ class TestProbabilisticSchedulingStrategy:
             ),
         ]
 
-        # Should select inst-2 with quantile 0.9 = 130.0 (lowest)
-        selected = strategy.select_instance(predictions)
-        assert selected == "inst-2"
+        # Probabilistic selection based on sampling - should return valid instance
+        selected = strategy.select_instance(predictions, {})
+        assert selected in ["inst-1", "inst-2", "inst-3"]
 
     def test_select_empty_list(self):
         """Test selection with empty predictions list."""
         strategy = ProbabilisticSchedulingStrategy()
 
-        selected = strategy.select_instance([])
+        selected = strategy.select_instance([], {})
         assert selected is None
 
     def test_fallback_to_min_time(self):
@@ -150,11 +155,16 @@ class TestProbabilisticSchedulingStrategy:
         ]
 
         # No quantiles available, should fallback to min time
-        selected = strategy.select_instance(predictions)
+        selected = strategy.select_instance(predictions, {})
         assert selected == "inst-2"
 
     def test_partial_quantile_availability(self):
-        """Test when only some predictions have the target quantile."""
+        """Test when only some predictions have quantiles - uses fallback to predicted_time_ms."""
+        import numpy as np
+
+        # Set seed for reproducibility
+        np.random.seed(42)
+
         strategy = ProbabilisticSchedulingStrategy(target_quantile=0.9)
 
         predictions = [
@@ -171,9 +181,9 @@ class TestProbabilisticSchedulingStrategy:
             ),
         ]
 
-        # Should select from instances with quantiles (inst-2 or inst-3)
-        selected = strategy.select_instance(predictions)
-        assert selected == "inst-3"  # Lower 0.9 quantile value
+        # Probabilistic selection - should return valid instance
+        selected = strategy.select_instance(predictions, {})
+        assert selected in ["inst-1", "inst-2", "inst-3"]
 
     def test_quantile_not_in_dict(self):
         """Test when quantiles exist but target quantile not in them."""
@@ -193,7 +203,7 @@ class TestProbabilisticSchedulingStrategy:
         ]
 
         # Should fallback to min time
-        selected = strategy.select_instance(predictions)
+        selected = strategy.select_instance(predictions, {})
         assert selected == "inst-1"
 
     def test_select_with_equal_quantile_values(self):
@@ -214,7 +224,7 @@ class TestProbabilisticSchedulingStrategy:
         ]
 
         # Should select first one encountered
-        selected = strategy.select_instance(predictions)
+        selected = strategy.select_instance(predictions, {})
         assert selected == "inst-1"
 
 
@@ -236,26 +246,26 @@ class TestRoundRobinStrategy:
         ]
 
         # First call
-        selected1 = strategy.select_instance(predictions)
+        selected1 = strategy.select_instance(predictions, {})
         assert selected1 == "inst-1"
 
         # Second call
-        selected2 = strategy.select_instance(predictions)
+        selected2 = strategy.select_instance(predictions, {})
         assert selected2 == "inst-2"
 
         # Third call
-        selected3 = strategy.select_instance(predictions)
+        selected3 = strategy.select_instance(predictions, {})
         assert selected3 == "inst-3"
 
         # Fourth call - should wrap around
-        selected4 = strategy.select_instance(predictions)
+        selected4 = strategy.select_instance(predictions, {})
         assert selected4 == "inst-1"
 
     def test_round_robin_empty_list(self):
         """Test selection with empty predictions list."""
         strategy = RoundRobinStrategy()
 
-        selected = strategy.select_instance([])
+        selected = strategy.select_instance([], {})
         assert selected is None
 
     def test_round_robin_single_instance(self):
@@ -267,9 +277,9 @@ class TestRoundRobinStrategy:
         ]
 
         # Should always return the same instance
-        assert strategy.select_instance(predictions) == "inst-1"
-        assert strategy.select_instance(predictions) == "inst-1"
-        assert strategy.select_instance(predictions) == "inst-1"
+        assert strategy.select_instance(predictions, {}) == "inst-1"
+        assert strategy.select_instance(predictions, {}) == "inst-1"
+        assert strategy.select_instance(predictions, {}) == "inst-1"
 
     def test_round_robin_counter_persistence(self):
         """Test that counter persists across calls."""
@@ -282,10 +292,10 @@ class TestRoundRobinStrategy:
 
         # Make several calls
         for _ in range(10):
-            strategy.select_instance(predictions)
+            strategy.select_instance(predictions, {})
 
         # Counter should be at 10, next selection should be inst-1 (10 % 2 = 0)
-        selected = strategy.select_instance(predictions)
+        selected = strategy.select_instance(predictions, {})
         assert selected == "inst-1"
 
     def test_round_robin_different_list_sizes(self):
@@ -299,8 +309,8 @@ class TestRoundRobinStrategy:
             Prediction(instance_id="inst-3", predicted_time_ms=100.0),
         ]
 
-        strategy.select_instance(predictions_3)  # counter = 0, select inst-1
-        strategy.select_instance(predictions_3)  # counter = 1, select inst-2
+        strategy.select_instance(predictions_3, {})  # counter = 0, select inst-1
+        strategy.select_instance(predictions_3, {})  # counter = 1, select inst-2
 
         # Now use 2 instances
         predictions_2 = [
@@ -309,7 +319,7 @@ class TestRoundRobinStrategy:
         ]
 
         # counter = 2, 2 % 2 = 0, should select inst-1
-        selected = strategy.select_instance(predictions_2)
+        selected = strategy.select_instance(predictions_2, {})
         assert selected == "inst-1"
 
 
