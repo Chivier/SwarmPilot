@@ -385,6 +385,109 @@ class TestTaskQueue:
         # Processing task should be cancelled
         assert queue._processing_task.done()
 
+    async def test_process_queue_handles_execution_error(self):
+        """Test that _process_queue handles task execution errors gracefully"""
+        queue = TaskQueue()
+
+        # Mock _execute_task to raise an exception
+        async def failing_execute(task):
+            raise RuntimeError("Execution error")
+
+        queue._execute_task = failing_execute
+
+        # Submit a task
+        task = Task(task_id="task-1", model_id="model", task_input={})
+        await queue.submit_task(task)
+
+        # Wait for processing
+        await asyncio.sleep(0.1)
+
+        # Task should be marked as failed
+        assert task.status == TaskStatus.FAILED
+        assert "Execution error" in task.error
+
+    async def test_send_callback_success(self, sample_task):
+        """Test successful callback sending"""
+        queue = TaskQueue()
+
+        # Mock scheduler client
+        mock_scheduler_client = AsyncMock()
+        mock_scheduler_client.send_task_result = AsyncMock(return_value=True)
+
+        with patch("src.task_queue.get_scheduler_client", return_value=mock_scheduler_client):
+            await queue._send_callback(
+                sample_task.task_id,
+                "completed",
+                result={"output": "test"},
+                execution_time_ms=100.0
+            )
+
+        # Verify callback was sent (without callback_url parameter)
+        mock_scheduler_client.send_task_result.assert_called_once()
+        call_args = mock_scheduler_client.send_task_result.call_args
+        assert call_args[1]["task_id"] == sample_task.task_id
+        assert call_args[1]["status"] == "completed"
+        assert call_args[1]["result"] == {"output": "test"}
+        assert call_args[1]["execution_time_ms"] == 100.0
+        # callback_url should not be in call args (will be derived from scheduler_url)
+        assert "callback_url" not in call_args[1]
+
+    async def test_send_callback_always_attempted(self, sample_task):
+        """Test callback is always attempted (scheduler_client handles URL derivation)"""
+        queue = TaskQueue()
+
+        # Mock scheduler client
+        mock_scheduler_client = AsyncMock()
+        mock_scheduler_client.send_task_result = AsyncMock(return_value=True)
+
+        with patch("src.task_queue.get_scheduler_client", return_value=mock_scheduler_client):
+            await queue._send_callback(
+                sample_task.task_id,
+                "completed",
+                result={"output": "test"}
+            )
+
+        # Callback should be attempted (scheduler_client will derive URL or skip if not enabled)
+        mock_scheduler_client.send_task_result.assert_called_once()
+
+    async def test_send_callback_failure(self, sample_task):
+        """Test callback handles failure response"""
+        queue = TaskQueue()
+
+        # Mock scheduler client to return False
+        mock_scheduler_client = AsyncMock()
+        mock_scheduler_client.send_task_result = AsyncMock(return_value=False)
+
+        with patch("src.task_queue.get_scheduler_client", return_value=mock_scheduler_client):
+            # Should not raise exception even if callback fails
+            await queue._send_callback(
+                sample_task.task_id,
+                "completed",
+                result={"output": "test"}
+            )
+
+        # Verify callback was attempted
+        mock_scheduler_client.send_task_result.assert_called_once()
+
+    async def test_send_callback_exception(self, sample_task):
+        """Test callback handles exceptions"""
+        queue = TaskQueue()
+
+        # Mock scheduler client to raise exception
+        mock_scheduler_client = AsyncMock()
+        mock_scheduler_client.send_task_result = AsyncMock(side_effect=Exception("Network error"))
+
+        with patch("src.task_queue.get_scheduler_client", return_value=mock_scheduler_client):
+            # Should not raise - just logs error
+            await queue._send_callback(
+                sample_task.task_id,
+                "completed",
+                result={"output": "test"}
+            )
+
+        # Verify callback was attempted
+        mock_scheduler_client.send_task_result.assert_called_once()
+
 
 @pytest.mark.unit
 class TestGetTaskQueue:

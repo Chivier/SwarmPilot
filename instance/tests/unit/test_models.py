@@ -3,7 +3,7 @@ Unit tests for src/models.py
 """
 
 import pytest
-from datetime import datetime
+from datetime import UTC, datetime
 from pydantic import ValidationError
 from src.models import Task, TaskStatus, InstanceStatus, ModelInfo, ModelRegistryEntry
 
@@ -235,7 +235,7 @@ class TestModelInfo:
 
     def test_model_info_creation(self):
         """Test successful ModelInfo instantiation"""
-        started_at = datetime.utcnow().isoformat() + "Z"
+        started_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
         model_info = ModelInfo(
             model_id="test-model",
             started_at=started_at
@@ -251,7 +251,7 @@ class TestModelInfo:
         parameters = {"temperature": 0.8, "max_tokens": 200}
         model_info = ModelInfo(
             model_id="test-model",
-            started_at=datetime.utcnow().isoformat() + "Z",
+            started_at=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
             parameters=parameters
         )
 
@@ -261,7 +261,7 @@ class TestModelInfo:
         """Test ModelInfo with container name"""
         model_info = ModelInfo(
             model_id="test-model",
-            started_at=datetime.utcnow().isoformat() + "Z",
+            started_at=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
             container_name="model_instance_test-model"
         )
 
@@ -271,7 +271,7 @@ class TestModelInfo:
         """Test that ModelInfo validation fails without required fields"""
         # Missing model_id
         with pytest.raises(ValidationError) as exc_info:
-            ModelInfo(started_at=datetime.utcnow().isoformat() + "Z")
+            ModelInfo(started_at=datetime.now(UTC).isoformat().replace("+00:00", "Z"))
         assert "model_id" in str(exc_info.value)
 
         # Missing started_at

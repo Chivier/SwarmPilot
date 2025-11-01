@@ -159,7 +159,7 @@ class TestTaskManagementEndpoints:
         )
 
         # Verify response
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         assert "No model is currently running" in response.json()["detail"]
 
     def test_submit_task_model_mismatch(self, api_client, mock_docker_manager):
@@ -179,7 +179,7 @@ class TestTaskManagementEndpoints:
         )
 
         # Verify response
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         assert "does not match" in response.json()["detail"]
 
     def test_submit_task_duplicate(self, api_client, mock_docker_manager, mock_task_queue):
@@ -453,7 +453,7 @@ class TestRequestValidation:
         """Test POST /model/start without model_id"""
         response = api_client.post("/model/start", json={})
 
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
     def test_submit_task_missing_fields(self, api_client):
         """Test POST /task/submit with missing required fields"""
@@ -463,11 +463,144 @@ class TestRequestValidation:
             json={"task_id": "task-1", "model_id": "model"}
         )
 
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
     def test_list_tasks_invalid_limit(self, api_client):
         """Test GET /task/list with invalid limit"""
         # Limit too large
         response = api_client.get("/task/list?limit=2000")
 
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+
+@pytest.mark.integration
+class TestSchedulerIntegration:
+    """Test suite for scheduler integration in API endpoints"""
+
+    def test_start_model_with_scheduler_registration_success(
+        self, api_client, mock_docker_manager, mock_model_registry
+    ):
+        """Test POST /model/start with successful scheduler registration"""
+        # Setup mocks
+        mock_docker_manager.is_model_running.return_value = False
+        mock_model_registry.model_exists.return_value = True
+        mock_docker_manager.start_model.return_value = ModelInfo(
+            model_id="test-model",
+            started_at="2024-01-01T00:00:00Z",
+            parameters={}
+        )
+
+        # Mock scheduler client
+        mock_scheduler_client = AsyncMock()
+        mock_scheduler_client.is_enabled = True
+        mock_scheduler_client.register_instance = AsyncMock(return_value=True)
+
+        with patch("src.api.get_scheduler_client", return_value=mock_scheduler_client):
+            # Make request
+            response = api_client.post(
+                "/model/start",
+                json={"model_id": "test-model"}
+            )
+
+        # Verify response
+        assert response.status_code == status.HTTP_200_OK
+        mock_scheduler_client.register_instance.assert_called_once_with(model_id="test-model")
+
+    def test_start_model_with_scheduler_registration_failure(
+        self, api_client, mock_docker_manager, mock_model_registry
+    ):
+        """Test POST /model/start when scheduler registration fails (should not fail request)"""
+        # Setup mocks
+        mock_docker_manager.is_model_running.return_value = False
+        mock_model_registry.model_exists.return_value = True
+        mock_docker_manager.start_model.return_value = ModelInfo(
+            model_id="test-model",
+            started_at="2024-01-01T00:00:00Z",
+            parameters={}
+        )
+
+        # Mock scheduler client to raise exception
+        mock_scheduler_client = AsyncMock()
+        mock_scheduler_client.is_enabled = True
+        mock_scheduler_client.register_instance = AsyncMock(side_effect=Exception("Network error"))
+
+        with patch("src.api.get_scheduler_client", return_value=mock_scheduler_client):
+            # Make request - should still succeed even if scheduler fails
+            response = api_client.post(
+                "/model/start",
+                json={"model_id": "test-model"}
+            )
+
+        # Verify response still succeeds
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["success"] is True
+
+    def test_start_model_with_scheduler_disabled(
+        self, api_client, mock_docker_manager, mock_model_registry
+    ):
+        """Test POST /model/start when scheduler is disabled"""
+        # Setup mocks
+        mock_docker_manager.is_model_running.return_value = False
+        mock_model_registry.model_exists.return_value = True
+        mock_docker_manager.start_model.return_value = ModelInfo(
+            model_id="test-model",
+            started_at="2024-01-01T00:00:00Z",
+            parameters={}
+        )
+
+        # Mock scheduler client as disabled
+        mock_scheduler_client = AsyncMock()
+        mock_scheduler_client.is_enabled = False
+
+        with patch("src.api.get_scheduler_client", return_value=mock_scheduler_client):
+            # Make request
+            response = api_client.post(
+                "/model/start",
+                json={"model_id": "test-model"}
+            )
+
+        # Verify response succeeds and scheduler not called
+        assert response.status_code == status.HTTP_200_OK
+        mock_scheduler_client.register_instance.assert_not_called()
+
+    def test_stop_model_with_scheduler_deregistration(
+        self, api_client, mock_docker_manager
+    ):
+        """Test GET /model/stop with scheduler deregistration"""
+        # Setup mocks
+        mock_docker_manager.is_model_running.return_value = True
+        mock_docker_manager.stop_model.return_value = "test-model"
+
+        # Mock scheduler client
+        mock_scheduler_client = AsyncMock()
+        mock_scheduler_client.is_enabled = True
+        mock_scheduler_client.deregister_instance = AsyncMock(return_value=True)
+
+        with patch("src.api.get_scheduler_client", return_value=mock_scheduler_client):
+            # Make request
+            response = api_client.get("/model/stop")
+
+        # Verify response
+        assert response.status_code == status.HTTP_200_OK
+        mock_scheduler_client.deregister_instance.assert_called_once()
+
+    def test_stop_model_with_scheduler_deregistration_failure(
+        self, api_client, mock_docker_manager
+    ):
+        """Test GET /model/stop when scheduler deregistration fails (should not fail request)"""
+        # Setup mocks
+        mock_docker_manager.is_model_running.return_value = True
+        mock_docker_manager.stop_model.return_value = "test-model"
+
+        # Mock scheduler client to raise exception
+        mock_scheduler_client = AsyncMock()
+        mock_scheduler_client.is_enabled = True
+        mock_scheduler_client.deregister_instance = AsyncMock(side_effect=Exception("Network error"))
+
+        with patch("src.api.get_scheduler_client", return_value=mock_scheduler_client):
+            # Make request - should still succeed even if scheduler fails
+            response = api_client.get("/model/stop")
+
+        # Verify response still succeeds
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["success"] is True

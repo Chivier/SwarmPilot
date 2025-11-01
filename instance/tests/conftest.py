@@ -304,19 +304,20 @@ def temp_registry_file(tmp_path, sample_registry_yaml):
 
 @pytest.fixture
 def temp_model_directory(tmp_path):
-    """Fixture providing a temporary model directory with docker-compose.yaml."""
+    """Fixture providing a temporary model directory with Dockerfile."""
     model_dir = tmp_path / "test_dockers" / "test_model"
     model_dir.mkdir(parents=True)
 
-    # Create a sample docker-compose.yaml
-    docker_compose = model_dir / "docker-compose.yaml"
-    docker_compose.write_text("""
-version: '3.8'
-services:
-  model:
-    image: test-model:latest
-    ports:
-      - "${MODEL_PORT}:8080"
+    # Create a sample Dockerfile
+    dockerfile = model_dir / "Dockerfile"
+    dockerfile.write_text("""
+FROM python:3.11-slim
+
+WORKDIR /app
+
+EXPOSE 8000
+
+CMD ["python", "-m", "http.server", "8000"]
 """)
 
     return model_dir
