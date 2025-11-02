@@ -74,6 +74,7 @@ class TaskRecord:
     submit_time: Optional[float] = None
     complete_time: Optional[float] = None
     status: Optional[str] = None
+    assigned_instance: Optional[str] = None
     result: Optional[Dict] = None
     error: Optional[str] = None
     execution_time_ms: Optional[float] = None
@@ -247,14 +248,15 @@ class PoissonTaskSubmitter:
                 time.sleep(wait_time)
 
             # Submit task
-            success, submit_time = self._submit_task(task)
+            success, submit_time, assigned_instance = self._submit_task(task)
 
             if success:
                 self.submitted_tasks.append({
                     "task_id": task.task_id,
                     "sleep_time": task.sleep_time,
                     "exp_runtime": task.exp_runtime,
-                    "submit_time": submit_time
+                    "submit_time": submit_time,
+                    "assigned_instance": assigned_instance
                 })
                 self.last_submit_time = submit_time
 
@@ -267,7 +269,7 @@ class PoissonTaskSubmitter:
         print(f"  Total submission time: {self.last_submit_time - self.first_submit_time:.3f}s")
         print(f"  Actual QPS: {len(self.submitted_tasks) / (self.last_submit_time - self.first_submit_time):.2f}")
 
-    def _submit_task(self, task: TaskData) -> Tuple[bool, float]:
+    def _submit_task(self, task: TaskData) -> Tuple[bool, float, Optional[str]]:
         """
         Submit a single task.
 
@@ -275,7 +277,7 @@ class PoissonTaskSubmitter:
             task: Task data to submit
 
         Returns:
-            Tuple of (success, submit_timestamp)
+            Tuple of (success, submit_timestamp, assigned_instance)
         """
         url = f"{self.scheduler_url}/task/submit"
         payload = {
@@ -293,10 +295,17 @@ class PoissonTaskSubmitter:
             submit_time = time.time()
             response = requests.post(url, json=payload, timeout=10)
             response.raise_for_status()
-            return True, submit_time
+
+            # Parse response to get assigned instance
+            result = response.json()
+            assigned_instance = None
+            if result.get("success") and "task" in result:
+                assigned_instance = result["task"].get("assigned_instance")
+
+            return True, submit_time, assigned_instance
         except Exception as e:
             print(f"✗ Failed to submit task {task.task_id}: {e}")
-            return False, 0.0
+            return False, 0.0, None
 
 
 def generate_task_times(num_tasks: int) -> List[float]:
@@ -481,11 +490,12 @@ def test_strategy_with_poisson(strategy_name: str, tasks: List[TaskData], qps: f
         exp_runtime=task.exp_runtime
     ) for task in tasks}
 
-    # Update submit times
+    # Update submit times and assigned instances
     for submitted in submitter.submitted_tasks:
         task_id = submitted["task_id"]
         if task_id in task_records:
             task_records[task_id].submit_time = submitted["submit_time"]
+            task_records[task_id].assigned_instance = submitted["assigned_instance"]
 
     completed_count = 0
     target_count = len(submitter.submitted_tasks)
@@ -549,22 +559,19 @@ def test_strategy_with_poisson(strategy_name: str, tasks: List[TaskData], qps: f
     last_completion_time = max(record.complete_time for record in successful_tasks)
     total_time = last_completion_time - first_submit_time
 
-    # Get task distribution across instances
-    instance_distribution = {}
+    # Get task distribution across instances (from real-time submission data)
+    instance_distribution_submitted = {}
+    instance_distribution_completed = {}
+
     for task_id, record in task_records.items():
-        if record.status == "completed":
-            try:
-                url = f"{SCHEDULER_URL}/task/info"
-                params = {"task_id": task_id}
-                response = requests.get(url, params=params, timeout=10)
-                response.raise_for_status()
-                info = response.json()
-                if info.get("success"):
-                    task_info = info.get("task", {})
-                    instance_id = task_info.get("assigned_instance_id", "unknown")
-                    instance_distribution[instance_id] = instance_distribution.get(instance_id, 0) + 1
-            except:
-                pass
+        # Count all submitted tasks by assigned instance
+        if record.assigned_instance:
+            instance_id = record.assigned_instance
+            instance_distribution_submitted[instance_id] = instance_distribution_submitted.get(instance_id, 0) + 1
+
+            # Also track completed tasks separately
+            if record.status == "completed":
+                instance_distribution_completed[instance_id] = instance_distribution_completed.get(instance_id, 0) + 1
 
     results = {
         "strategy": strategy_name,
@@ -579,7 +586,8 @@ def test_strategy_with_poisson(strategy_name: str, tasks: List[TaskData], qps: f
         "total_time": total_time,
         "submission_time": submitter.last_submit_time - submitter.first_submit_time,
         "actual_qps": len(submitter.submitted_tasks) / (submitter.last_submit_time - submitter.first_submit_time),
-        "instance_distribution": instance_distribution
+        "instance_distribution_submitted": instance_distribution_submitted,
+        "instance_distribution_completed": instance_distribution_completed
     }
 
     # Print results
@@ -597,10 +605,16 @@ def test_strategy_with_poisson(strategy_name: str, tasks: List[TaskData], qps: f
     print(f"P95 completion time:      {results['p95_completion_time']:.3f}s")
     print(f"P99 completion time:      {results['p99_completion_time']:.3f}s")
     print(f"Total execution time:     {results['total_time']:.3f}s")
-    print(f"\nTask distribution:")
-    for instance_id in sorted(instance_distribution.keys()):
-        count = instance_distribution[instance_id]
-        print(f"  {instance_id}: {count} tasks")
+    print(f"\nTask distribution (submitted):")
+    for instance_id in sorted(instance_distribution_submitted.keys()):
+        count = instance_distribution_submitted[instance_id]
+        percentage = (count / results['num_submitted']) * 100
+        print(f"  {instance_id}: {count} tasks ({percentage:.1f}%)")
+    print(f"\nTask distribution (completed):")
+    for instance_id in sorted(instance_distribution_completed.keys()):
+        count = instance_distribution_completed[instance_id]
+        percentage = (count / results['num_completed']) * 100
+        print(f"  {instance_id}: {count} tasks ({percentage:.1f}%)")
 
     return results
 
