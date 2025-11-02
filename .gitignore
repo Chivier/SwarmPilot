@@ -1,0 +1,65 @@
+# Python-generated files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.dylib
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+.tox/
+.hypothesis/
+*.log
+
+# Profiling
+*.speedscope.json
+profile.*.json
+*.prof
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# uv
+.uv_cache/
+
+# Logs
+logs/
+*.log
+
+# Models and data
+*.pth
+*.pt
+*.ckpt
+*.pkl
+*.joblib
