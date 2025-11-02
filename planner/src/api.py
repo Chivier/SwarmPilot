@@ -1,12 +1,12 @@
 """FastAPI application for the Planner service."""
 
-import logging
 from datetime import datetime, timezone
 from typing import Optional
 import numpy as np
 
 from fastapi import FastAPI, HTTPException, status
 from fastapi.responses import JSONResponse
+from loguru import logger
 
 from .models import (
     PlannerInput,
@@ -21,13 +21,10 @@ from .core.swarm_optimizer import (
     IntegerProgrammingOptimizer,
 )
 from . import __version__
+from .logging_config import setup_logging
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
-logger = logging.getLogger(__name__)
+setup_logging()
 
 # Create FastAPI app
 app = FastAPI(

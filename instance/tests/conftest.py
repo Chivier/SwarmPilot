@@ -42,6 +42,8 @@ def mock_config(monkeypatch):
     config.dockers_dir = Path("/tmp/test_base/test_dockers")
     config.registry_path = Path("/tmp/test_base/test_registry.yaml")
     config.log_level = "INFO"
+    config.log_dir = "logs"
+    config.enable_json_logs = False
     config.get_model_directory = Mock(return_value=Path("/tmp/test_base/test_dockers/test_model"))
     config.get_model_container_name = Mock(return_value="test-instance-test_model")
     return config

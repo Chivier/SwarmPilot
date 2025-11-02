@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
+from loguru import logger
 
 from .config import config
 from .docker_manager import get_docker_manager
@@ -19,6 +20,7 @@ from .model_registry import get_registry
 from .models import InstanceStatus, Task, TaskStatus
 from .task_queue import get_task_queue
 from .scheduler_client import get_scheduler_client
+from . import logger as _  # Import logger module to initialize logging
 
 # =============================================================================
 # Pydantic Models for Request/Response Schemas
@@ -161,23 +163,23 @@ async def lifespan(app: FastAPI):
     global _startup_time
     _startup_time = time.time()
 
-    print(f"Instance Service starting...")
-    print(f"Instance ID: {config.instance_id}")
-    print(f"Instance Port: {config.instance_port}")
-    print(f"Model Port: {config.model_port}")
-    print(f"Registry Path: {config.registry_path}")
+    logger.info("Instance Service starting...")
+    logger.info(f"Instance ID: {config.instance_id}")
+    logger.info(f"Instance Port: {config.instance_port}")
+    logger.info(f"Model Port: {config.model_port}")
+    logger.info(f"Registry Path: {config.registry_path}")
 
     # Load model registry
     try:
         registry = get_registry()
-        print(f"Loaded {len(registry.models)} models from registry")
+        logger.info(f"Loaded {len(registry.models)} models from registry")
     except Exception as e:
-        print(f"Warning: Failed to load model registry: {e}")
+        logger.warning(f"Failed to load model registry: {e}")
 
     yield
 
     # Shutdown
-    print("Instance Service shutting down...")
+    logger.info("Instance Service shutting down...")
 
     # Deregister from scheduler if enabled
     scheduler_client = get_scheduler_client()
@@ -185,7 +187,7 @@ async def lifespan(app: FastAPI):
         try:
             await scheduler_client.deregister_instance()
         except Exception as e:
-            print(f"Warning: Failed to deregister from scheduler: {str(e)}")
+            logger.warning(f"Failed to deregister from scheduler: {str(e)}")
 
     # Stop task processing
     task_queue = get_task_queue()
@@ -199,7 +201,7 @@ async def lifespan(app: FastAPI):
     # Close HTTP client
     await docker_manager.close()
 
-    print("Instance Service stopped")
+    logger.info("Instance Service stopped")
 
 
 app = FastAPI(
@@ -261,7 +263,7 @@ async def start_model(request: ModelStartRequest):
                 await scheduler_client.register_instance(model_id=request.model_id)
             except Exception as e:
                 # Log error but don't fail model start
-                print(f"Warning: Failed to register with scheduler: {str(e)}")
+                logger.warning(f"Failed to register with scheduler: {str(e)}")
 
         return ModelStartResponse(
             success=True,
@@ -310,7 +312,7 @@ async def stop_model():
                 await scheduler_client.deregister_instance()
             except Exception as e:
                 # Log error but don't fail model stop
-                print(f"Warning: Failed to deregister from scheduler: {str(e)}")
+                logger.warning(f"Failed to deregister from scheduler: {str(e)}")
 
         return ModelStopResponse(
             success=True,
@@ -636,9 +638,10 @@ async def health_check(response: Response):
 if __name__ == "__main__":
     import uvicorn
 
+    # Logger is already initialized by the import at the top
     uvicorn.run(
         app,
         host="0.0.0.0",
         port=config.instance_port,
-        log_level=config.log_level.lower()
+        log_config=None  # Disable uvicorn's default logging config, let loguru handle it
     )

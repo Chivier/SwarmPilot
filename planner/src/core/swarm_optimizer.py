@@ -15,11 +15,7 @@ import random
 import math
 from typing import List, Tuple, Optional, Dict, Any
 from abc import ABC, abstractmethod
-import logging
-
-# 配置日志
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 random.seed(42)
 class SwarmOptimizer(ABC):

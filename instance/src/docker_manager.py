@@ -4,19 +4,17 @@ Docker container management for model containers
 
 import asyncio
 import json
-import logging
 import os
 import subprocess
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 import httpx
+from loguru import logger
 
 from .config import config
 from .model_registry import get_registry
 from .models import ModelInfo
-
-logger = logging.getLogger(__name__)
 
 
 class DockerManager:

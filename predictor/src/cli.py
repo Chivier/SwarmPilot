@@ -35,6 +35,7 @@ def start(
     storage_dir: Annotated[Optional[str], Option("--storage-dir", "-s", help="Directory to store models")] = None,
     config_file: Annotated[Optional[Path], Option("--config", "-c", help="Path to configuration file")] = None,
     log_level: Annotated[str, Option("--log-level", "-l", help="Logging level")] = "info",
+    log_dir: Annotated[Optional[str], Option("--log-dir", help="Directory to store log files")] = None,
 ):
     """Start the predictor service.
 
@@ -66,15 +67,25 @@ def start(
         config.storage_dir = storage_dir
     if "--log-level" in sys.argv or "-l" in sys.argv:
         config.log_level = log_level
+    if log_dir is not None:
+        config.log_dir = log_dir
 
     # Set global config
     set_config(config)
+
+    # Initialize logging system before starting the server
+    from .utils.logging import setup_logging
+    setup_logging(
+        log_dir=config.log_dir,
+        log_level=config.log_level
+    )
 
     # Ensure storage directory exists
     storage_path = config.ensure_storage_dir()
 
     typer.echo(f"🚀 Starting {config.app_name} v{config.app_version}")
     typer.echo(f"📁 Storage directory: {storage_path.absolute()}")
+    typer.echo(f"📂 Log directory: {Path(config.log_dir).absolute()}")
     typer.echo(f"🌐 Server: http://{config.host}:{config.port}")
     typer.echo(f"📊 Log level: {config.log_level.upper()}")
 

@@ -141,8 +141,6 @@ predictor_client = PredictorClient(
     timeout=config.predictor.timeout,
     max_retries=config.predictor.max_retries,
     retry_delay=config.predictor.retry_delay,
-    cache_ttl=config.predictor.cache_ttl,
-    enable_cache=config.predictor.enable_cache,
 )
 
 # Initialize training client

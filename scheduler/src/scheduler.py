@@ -79,6 +79,8 @@ class SchedulingStrategy(ABC):
             available_instances=available_instances,
         )
 
+        logger.info(f"Prediction result: {predictions}")
+
         # Step 2: Collect queue information
         queue_info = self.collect_queue_info(available_instances)
 
@@ -146,6 +148,7 @@ class SchedulingStrategy(ABC):
                 instances=available_instances,
                 prediction_type=prediction_type,
             )
+            logger.debug(f"sent prediction request model_id: {model_id}, metadata: {metadata}, instances: {available_instances}, prediction_type={prediction_type}")
             return predictions
 
         except httpx.HTTPStatusError as e:

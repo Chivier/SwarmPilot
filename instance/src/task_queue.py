@@ -3,17 +3,16 @@ Task queue management with FIFO processing
 """
 
 import asyncio
-import logging
 import time
 from collections import deque
 from typing import Dict, List, Optional
+
+from loguru import logger
 
 from .config import config
 from .docker_manager import get_docker_manager
 from .models import Task, TaskStatus
 from .scheduler_client import get_scheduler_client
-
-logger = logging.getLogger(__name__)
 
 
 class TaskQueue:

@@ -4,6 +4,7 @@ CLI entry point for the Planner service.
 Provides the `splanner` command for managing the planner service.
 """
 
+import os
 import typer
 import uvicorn
 from typing import Optional
@@ -67,6 +68,10 @@ def start(
 
     typer.echo(f"Starting Planner service on {host}:{port}")
     typer.echo(f"Log level: {log_level_lower.upper()}")
+
+    # Set PLANNER_LOGURU_LEVEL if not already set
+    if "PLANNER_LOGURU_LEVEL" not in os.environ:
+        os.environ["PLANNER_LOGURU_LEVEL"] = log_level_lower.upper()
 
     # Start the FastAPI application with uvicorn
     uvicorn.run(

@@ -1,13 +1,11 @@
 """Service layer for model deployment to instances."""
 
 import time
-import logging
 from typing import List, Dict, Optional
 import httpx
+from loguru import logger
 
 from .models import DeploymentStatus
-
-logger = logging.getLogger(__name__)
 
 
 class ModelMapper:

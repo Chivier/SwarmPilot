@@ -22,6 +22,9 @@ from .predictor.expect_error import ExpectErrorPredictor
 from .predictor.quantile import QuantilePredictor
 from .utils.experiment import is_experiment_mode, generate_experiment_prediction
 from .config import get_config
+from .utils.logging import get_logger, setup_logging
+
+logger = get_logger()
 
 
 # Initialize storage (will use config when available, otherwise default)
@@ -38,11 +41,15 @@ storage = get_storage()
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown events."""
     # Startup
+    logger.info("FastAPI application starting up")
     storage_info = storage.get_storage_info()
-    print(f"Storage initialized: {storage_info['storage_dir']}")
-    print(f"Found {storage_info['model_count']} existing models")
+    logger.info(f"Storage initialized: {storage_info['storage_dir']}")
+    logger.info(f"Found {storage_info['model_count']} existing models")
+
     yield
+
     # Shutdown (cleanup if needed)
+    logger.info("FastAPI application shutting down")
 
 
 # Initialize FastAPI app with lifespan
@@ -240,6 +247,7 @@ async def predict(request: PredictionRequest):
         # Check if experiment mode
         if is_experiment_mode(request.features, request.platform_info.model_dump()):
             # Generate synthetic prediction
+            logger.debug(f"Got experiment mode request, raw request: {request}")
             try:
                 result = generate_experiment_prediction(
                     prediction_type=request.prediction_type,
@@ -395,10 +403,12 @@ async def websocket_predict(websocket: WebSocket):
                 continue
 
             # Process prediction (reuse logic from POST endpoint)
+            logger.debug(f"ws endpoint /ws/predict got request {request}, try to inference")
             try:
                 # Check if experiment mode
                 if is_experiment_mode(request.features, request.platform_info.model_dump()):
                     # Generate synthetic prediction
+                    logger.debug("request is experiment request")
                     try:
                         result = generate_experiment_prediction(
                             prediction_type=request.prediction_type,
@@ -517,4 +527,13 @@ async def websocket_predict(websocket: WebSocket):
 
 if __name__ == "__main__":
     import uvicorn
+    from .config import get_config
+
+    # Initialize logging when running directly
+    config = get_config()
+    setup_logging(
+        log_dir=config.log_dir,
+        log_level=config.log_level
+    )
+
     uvicorn.run(app, host="0.0.0.0", port=8000)

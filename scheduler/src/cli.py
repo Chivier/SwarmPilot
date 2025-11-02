@@ -188,7 +188,7 @@ def start(
             "src.api:app",
             host=final_host,
             port=final_port,
-            log_level="info",
+            log_config=None,  # Disable uvicorn's default logging, use loguru instead
         )
     except KeyboardInterrupt:
         typer.echo("\nShutting down scheduler service...")
