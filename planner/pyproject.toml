@@ -11,6 +11,7 @@ requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.120.4",
     "httpx>=0.28.1",
+    "loguru>=0.7.3",
     "numpy>=2.3.4",
     "pulp>=3.3.0",
     "pydantic>=2.12.3",
