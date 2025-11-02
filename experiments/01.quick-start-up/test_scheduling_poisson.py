@@ -497,7 +497,9 @@ def test_strategy_with_poisson(strategy_name: str, tasks: List[TaskData], qps: f
             task_records[task_id].submit_time = submitted["submit_time"]
             task_records[task_id].assigned_instance = submitted["assigned_instance"]
 
-    completed_count = 0
+    received_count = 0  # Total results received (success + failed)
+    completed_count = 0  # Successfully completed tasks
+    failed_count = 0     # Failed tasks
     target_count = len(submitter.submitted_tasks)
     last_print_count = 0
 
@@ -505,9 +507,9 @@ def test_strategy_with_poisson(strategy_name: str, tasks: List[TaskData], qps: f
     timeout = 300  # 5 minutes
     start_time = time.time()
 
-    while completed_count < target_count:
+    while received_count < target_count:
         if time.time() - start_time > timeout:
-            print(f"✗ Timeout waiting for results ({completed_count}/{target_count} completed)")
+            print(f"✗ Timeout waiting for results ({received_count}/{target_count} received, {completed_count} completed, {failed_count} failed)")
             break
 
         try:
@@ -522,30 +524,69 @@ def test_strategy_with_poisson(strategy_name: str, tasks: List[TaskData], qps: f
                 task_records[task_id].error = result["error"]
                 task_records[task_id].execution_time_ms = result["execution_time_ms"]
 
-                completed_count += 1
+                received_count += 1
 
-                if completed_count - last_print_count >= 10:
-                    print(f"  Completed {completed_count}/{target_count} tasks")
-                    last_print_count = completed_count
+                if result["status"] == "completed":
+                    completed_count += 1
+                else:
+                    failed_count += 1
+
+                if received_count - last_print_count >= 10:
+                    print(f"  Received {received_count}/{target_count} results ({completed_count} completed, {failed_count} failed)")
+                    last_print_count = received_count
 
         except:
             # Timeout on queue.get, continue waiting
             continue
 
-    print(f"✓ Completed {completed_count}/{target_count} tasks")
+    print(f"✓ Received {received_count}/{target_count} results ({completed_count} completed, {failed_count} failed)")
 
-    # Stop receiver
+    # Stop receiver thread and wait for it to exit
     receiver.stop()
+
+    # Process any remaining results in the queue
+    print(f"  Processing remaining results in queue...")
+    remaining_count = 0
+    while not result_queue.empty():
+        try:
+            result = result_queue.get_nowait()
+            task_id = result["task_id"]
+            if task_id in task_records:
+                # Only update if not already processed
+                if task_records[task_id].status is None:
+                    task_records[task_id].complete_time = result["timestamp"]
+                    task_records[task_id].status = result["status"]
+                    task_records[task_id].result = result["result"]
+                    task_records[task_id].error = result["error"]
+                    task_records[task_id].execution_time_ms = result["execution_time_ms"]
+
+                    received_count += 1
+                    remaining_count += 1
+
+                    if result["status"] == "completed":
+                        completed_count += 1
+                    else:
+                        failed_count += 1
+        except:
+            break
+
+    if remaining_count > 0:
+        print(f"  Processed {remaining_count} remaining results")
+        print(f"✓ Final: {received_count} total ({completed_count} completed, {failed_count} failed)")
 
     # Calculate metrics
     completion_times = []
     successful_tasks = []
+    failed_tasks = []
 
     for task_id, record in task_records.items():
-        if record.submit_time and record.complete_time and record.status == "completed":
-            completion_time = record.complete_time - record.submit_time
-            completion_times.append(completion_time)
-            successful_tasks.append(record)
+        if record.submit_time and record.complete_time:
+            if record.status == "completed":
+                completion_time = record.complete_time - record.submit_time
+                completion_times.append(completion_time)
+                successful_tasks.append(record)
+            else:
+                failed_tasks.append(record)
 
     if not completion_times:
         return {"error": "No tasks completed"}
@@ -579,6 +620,8 @@ def test_strategy_with_poisson(strategy_name: str, tasks: List[TaskData], qps: f
         "num_tasks": len(tasks),
         "num_submitted": len(submitter.submitted_tasks),
         "num_completed": len(successful_tasks),
+        "num_failed": len(failed_tasks),
+        "num_received": len(successful_tasks) + len(failed_tasks),
         "avg_completion_time": avg_completion_time,
         "median_completion_time": median_completion_time,
         "p95_completion_time": p95_completion_time,
@@ -596,7 +639,9 @@ def test_strategy_with_poisson(strategy_name: str, tasks: List[TaskData], qps: f
     print(f"{'='*60}")
     print(f"Total tasks:              {results['num_tasks']}")
     print(f"Submitted tasks:          {results['num_submitted']}")
-    print(f"Completed tasks:          {results['num_completed']}")
+    print(f"Received results:         {results['num_received']}")
+    print(f"  ├─ Completed:           {results['num_completed']}")
+    print(f"  └─ Failed:              {results['num_failed']}")
     print(f"Target QPS:               {results['qps']:.2f}")
     print(f"Actual QPS:               {results['actual_qps']:.2f}")
     print(f"Submission time:          {results['submission_time']:.3f}s")
