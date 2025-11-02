@@ -5,6 +5,7 @@ Allows testing and integration without requiring trained models.
 """
 
 from typing import Any, Dict
+import numpy as np
 
 
 def is_experiment_mode(features: Dict[str, Any], platform_info: Dict[str, str]) -> bool:
@@ -80,50 +81,40 @@ def generate_expect_error_prediction(exp_runtime: float) -> Dict[str, Any]:
 
 def generate_quantile_prediction(exp_runtime: float, quantiles: list = None) -> Dict[str, Any]:
     """
-    Generate synthetic quantile prediction.
+    Generate synthetic quantile prediction using normal distribution.
 
-    Uses fixed multipliers for common quantiles:
-    - 0.5: exp_runtime (median)
-    - 0.9: exp_runtime * 1.05
-    - 0.95: exp_runtime * 1.075
-    - 0.99: exp_runtime * 1.12
+    The function assumes a normal distribution with:
+    - Mean (mu) = exp_runtime
+    - Standard deviation (sigma) = exp_runtime * 0.05 (5% of mean)
 
-    For other quantiles, interpolates between these values.
+    For each quantile, it computes the corresponding value from this normal distribution
+    by generating samples and calculating quantiles using numpy.
 
     Args:
-        exp_runtime: Expected runtime value
-        quantiles: List of quantile levels (optional, for custom quantiles)
+        exp_runtime: Expected runtime value (used as mean of normal distribution)
+        quantiles: List of quantile levels (optional, defaults to [0.5, 0.9, 0.95, 0.99])
 
     Returns:
         Dict with 'quantiles' key containing quantile: value pairs
     """
-    # Default quantiles and their multipliers
-    quantile_multipliers = {
-        0.5: 1.0,
-        0.9: 1.05,
-        0.95: 1.075,
-        0.99: 1.12
-    }
-
     if quantiles is None:
         # Use default quantiles
         quantiles = [0.5, 0.9, 0.95, 0.99]
 
-    results = {}
+    # Define normal distribution parameters
+    # Mean = exp_runtime, Std = 5% of mean
+    mu = exp_runtime
+    sigma = exp_runtime * 0.05
 
-    for q in quantiles:
-        q_float = float(q)
+    # Generate samples from normal distribution
+    # Use a fixed seed for reproducibility and large sample size for accuracy
+    rng = np.random.RandomState(42)
+    samples = rng.normal(loc=mu, scale=sigma, size=2000)
 
-        # Use exact multiplier if available
-        if q_float in quantile_multipliers:
-            multiplier = quantile_multipliers[q_float]
-        else:
-            # Interpolate for custom quantiles
-            # Simple linear interpolation based on quantile value
-            # Lower quantiles get lower multipliers
-            multiplier = 1.0 + (q_float * 0.12)  # 0.12 is the max multiplier at q=1.0
-
-        results[str(q)] = exp_runtime * multiplier
+    # Calculate quantile values using numpy's quantile function
+    # Convert quantile levels to percentages (0-100 scale) for np.percentile
+    quantile_value = np.quantile(samples, quantiles)
+    results = {str(q): float(v) for q, v in zip(quantiles, quantile_value)}
 
     return {
         'quantiles': results

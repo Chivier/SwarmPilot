@@ -125,11 +125,17 @@ class TestQuantilePrediction:
         assert '0.95' in quantiles
         assert '0.99' in quantiles
 
-        # Check values match expected multipliers (using pytest.approx for floating point)
-        assert quantiles['0.5'] == pytest.approx(100.0)  # 1.0x
-        assert quantiles['0.9'] == pytest.approx(105.0)  # 1.05x
-        assert quantiles['0.95'] == pytest.approx(107.5)  # 1.075x
-        assert quantiles['0.99'] == pytest.approx(112.0)  # 1.12x
+        # Check values are based on normal distribution with mu=100, sigma=5
+        # These values come from sampling a normal distribution
+        # 0.5 quantile (median) should be close to mu
+        assert quantiles['0.5'] == pytest.approx(100.0, abs=1.0)
+        # Higher quantiles should be greater than median
+        assert quantiles['0.9'] > quantiles['0.5']
+        assert quantiles['0.95'] > quantiles['0.9']
+        assert quantiles['0.99'] > quantiles['0.95']
+        # All values should be reasonable for N(100, 5)
+        # 0.99 quantile should be around mu + 2.33*sigma ≈ 111.65
+        assert quantiles['0.99'] == pytest.approx(100.0 + 2.33 * 5.0, abs=1.0)
 
     def test_generate_custom_quantiles(self):
         """Should handle custom quantile list."""
