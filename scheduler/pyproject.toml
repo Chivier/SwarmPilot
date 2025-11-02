@@ -11,9 +11,13 @@ dependencies = [
     "numpy>=2.0.0",
     "pydantic>=2.12.3",
     "pyinstrument>=5.1.1",
+    "typer>=0.9.0",
     "uvicorn>=0.38.0",
     "websockets>=15.0.1",
 ]
+
+[project.scripts]
+sscheduler = "src.cli:app"
 
 [dependency-groups]
 dev = [
@@ -65,3 +69,13 @@ exclude_lines = [
     "if TYPE_CHECKING:",
     "@abstractmethod",
 ]
+
+[tool.uv]
+package = true
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]

@@ -102,6 +102,10 @@ class SchedulingStrategy(ABC):
         # Step 5: Update queue information
         if selected_prediction:
             self.update_queue(selected_instance_id, selected_prediction)
+        else:
+            logger.warning(f"No prediction is selected:"
+                           f"predictions: {predictions}"
+                           f"selected_instance_id: {selected_instance_id}")
 
         return ScheduleResult(
             selected_instance_id=selected_instance_id,
