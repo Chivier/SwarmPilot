@@ -402,8 +402,6 @@ async def websocket_predict(websocket: WebSocket):
                 })
                 continue
 
-            # Process prediction (reuse logic from POST endpoint)
-            logger.debug(f"ws endpoint /ws/predict got request {request}, try to inference")
             try:
                 # Check if experiment mode
                 if is_experiment_mode(request.features, request.platform_info.model_dump()):
