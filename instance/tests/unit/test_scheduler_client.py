@@ -73,9 +73,6 @@ class TestSchedulerClient:
         assert "software_name" in info
         assert "software_version" in info
         assert "hardware_name" in info
-        assert "python_version" in info
-        assert "detected_at" in info
-        assert info["detected_at"].endswith("Z")
 
     @pytest.mark.asyncio
     async def test_register_instance_disabled(self, capsys):

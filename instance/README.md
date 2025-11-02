@@ -76,7 +76,9 @@ Configure via environment variables:
 |----------|-------------|---------|
 | `INSTANCE_ID` | Unique instance identifier | `instance-default` |
 | `INSTANCE_PORT` | Instance API server port | `5000` |
-| `LOG_LEVEL` | Logging level | `INFO` |
+| `INSTANCE_LOG_LEVEL` | Logging level (TRACE, DEBUG, INFO, SUCCESS, WARNING, ERROR, CRITICAL) | `INFO` |
+| `INSTANCE_LOG_DIR` | Directory for log files | `logs` |
+| `INSTANCE_ENABLE_JSON_LOGS` | Enable JSON structured logging | `false` |
 | `MAX_QUEUE_SIZE` | Maximum tasks in queue | `100` |
 | `DOCKER_NETWORK` | Docker network name | `instance_network` |
 | `HEALTH_CHECK_INTERVAL` | Health check interval (seconds) | `10` |
@@ -94,6 +96,49 @@ sinstance start [OPTIONS]
   --reload             Enable auto-reload for development
 
 sinstance version      Show version information
+```
+
+### Logging
+
+The Instance Service uses [loguru](https://github.com/Delgan/loguru) for structured logging with support for:
+
+- **Colored console output** - Easy-to-read logs with colored levels
+- **File rotation** - Daily log files with automatic rotation at midnight
+- **Compression** - Old log files are automatically compressed as ZIP files
+- **Retention** - Logs are kept for 30 days by default
+- **JSON logging** - Optional structured JSON output for log aggregation systems
+- **Unified logging** - Intercepts and formats logs from uvicorn, FastAPI, and httpx
+
+#### Log Configuration Examples
+
+```bash
+# Set log level to DEBUG
+INSTANCE_LOG_LEVEL=DEBUG sinstance start
+
+# Custom log directory
+INSTANCE_LOG_DIR=/var/log/instance sinstance start
+
+# Enable JSON structured logs (for log aggregation)
+INSTANCE_ENABLE_JSON_LOGS=true sinstance start
+
+# Combined example
+INSTANCE_LOG_LEVEL=DEBUG \
+INSTANCE_LOG_DIR=/var/log/instance \
+INSTANCE_ENABLE_JSON_LOGS=true \
+sinstance start
+```
+
+#### Log Files
+
+Logs are written to two locations:
+
+1. **Console** (stderr): Colored output for development
+2. **File**: `{INSTANCE_LOG_DIR}/instance_YYYY-MM-DD.log`
+3. **JSON** (optional): `{INSTANCE_LOG_DIR}/instance_YYYY-MM-DD.json`
+
+Log format:
+```
+2025-11-02 15:16:41.173 | INFO     | module:function:line - message
 ```
 
 ---

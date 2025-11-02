@@ -47,6 +47,10 @@ class PredictorConfig(BaseSettings):
         default="info",
         description="Logging level (debug, info, warning, error, critical)"
     )
+    log_dir: str = Field(
+        default="logs",
+        description="Directory to store log files"
+    )
 
     # Application metadata
     app_name: str = Field(
@@ -138,6 +142,7 @@ class PredictorConfig(BaseSettings):
             "workers": self.workers,
             "storage_dir": self.storage_dir,
             "log_level": self.log_level,
+            "log_dir": self.log_dir,
             "app_name": self.app_name,
             "app_version": self.app_version,
         }

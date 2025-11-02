@@ -26,12 +26,6 @@ class PredictorConfig:
     # Initial retry delay in seconds (exponential backoff)
     retry_delay: float = float(os.getenv("PREDICTOR_RETRY_DELAY", "1.0"))
 
-    # Prediction cache TTL in seconds
-    cache_ttl: int = int(os.getenv("PREDICTOR_CACHE_TTL", "300"))  # 5 minutes
-
-    # Enable prediction caching
-    enable_cache: bool = os.getenv("PREDICTOR_ENABLE_CACHE", "true").lower() == "true"
-
 
 @dataclass
 class SchedulingConfig:
@@ -70,7 +64,7 @@ class LoggingConfig:
     """Configuration for logging behavior."""
 
     # Log level: TRACE, DEBUG, INFO, SUCCESS, WARNING, ERROR, CRITICAL
-    level: str = os.getenv("SCHEDULER_LOG_LEVEL", "INFO")
+    level: str = os.getenv("SCHEDULER_LOGURU_LEVEL", "INFO")
 
     # Directory for log files
     log_dir: str = os.getenv("SCHEDULER_LOG_DIR", "logs")

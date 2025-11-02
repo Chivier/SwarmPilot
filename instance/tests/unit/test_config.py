@@ -36,7 +36,9 @@ class TestConfig:
         monkeypatch.setenv("INSTANCE_ID", "custom-instance")
         monkeypatch.setenv("INSTANCE_PORT", "7000")
         monkeypatch.setenv("DOCKER_NETWORK", "custom_network")
-        monkeypatch.setenv("LOG_LEVEL", "DEBUG")
+        monkeypatch.setenv("INSTANCE_LOG_LEVEL", "DEBUG")
+        monkeypatch.setenv("INSTANCE_LOG_DIR", "/custom/logs")
+        monkeypatch.setenv("INSTANCE_ENABLE_JSON_LOGS", "true")
         monkeypatch.setenv("MAX_QUEUE_SIZE", "200")
         monkeypatch.setenv("HEALTH_CHECK_INTERVAL", "15")
         monkeypatch.setenv("HEALTH_CHECK_TIMEOUT", "60")
@@ -47,6 +49,8 @@ class TestConfig:
         assert config.instance_port == 7000
         assert config.docker_network == "custom_network"
         assert config.log_level == "DEBUG"
+        assert config.log_dir == "/custom/logs"
+        assert config.enable_json_logs == True
         assert config.max_queue_size == 200
         assert config.health_check_interval == 15
         assert config.health_check_timeout == 60

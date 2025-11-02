@@ -28,7 +28,11 @@ class Config:
         self.container_name_prefix: str = f"model_{self.instance_id}"
 
         # Logging
-        self.log_level: str = os.getenv("LOG_LEVEL", "INFO")
+        self.log_level: str = os.getenv("INSTANCE_LOG_LEVEL", "INFO")
+        self.log_dir: str = os.getenv("INSTANCE_LOG_DIR", "logs")
+        self.enable_json_logs: bool = (
+            os.getenv("INSTANCE_ENABLE_JSON_LOGS", "false").lower() == "true"
+        )
 
         # Task queue
         self.max_queue_size: int = int(os.getenv("MAX_QUEUE_SIZE", "100"))
