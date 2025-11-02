@@ -1,9 +1,9 @@
 [project]
-name = "instance"
+name = "swarmpilot-instance"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.120.4",
     "pyyaml>=6.0.3",
@@ -23,9 +23,6 @@ packages = ["src"]
 
 [tool.uv]
 package = true
-
-[tool.uv.workspace]
-members = ["dockers/sleep_model"]
 
 [dependency-groups]
 dev = [

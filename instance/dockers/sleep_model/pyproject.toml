@@ -1,5 +1,5 @@
 [project]
-name = "sleep-model"
+name = "swarmpilot-sleep-model"
 version = "0.1.0"
 description = "Example sleep model container for SwarmPilot Instance Service"
 requires-python = ">=3.11"
