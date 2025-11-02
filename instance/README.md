@@ -1,0 +1,101 @@
+# Instance Service
+
+A lightweight execution service for running model containers with task queue management. Each instance serves one model at a time, processing inference requests sequentially via Docker-based isolation.
+
+## Quick Start
+
+### Prerequisites
+
+- Python 3.13+
+- Docker
+- [uv](https://github.com/astral-sh/uv) package manager
+
+### Installation
+
+```bash
+# Clone the repository
+cd instance
+
+# Install dependencies and package
+uv sync
+
+# Or install via pip
+pip install .
+```
+
+### Start the Service
+
+```bash
+# Development mode
+uv run sinstance start
+
+# After pip install
+sinstance start
+
+# With custom configuration
+INSTANCE_ID=my-instance INSTANCE_PORT=8000 sinstance start
+
+# Development mode with auto-reload
+sinstance start --reload
+```
+
+The service starts on `http://localhost:5000` by default.
+
+### Quick Test
+
+```bash
+# 1. Start the service
+sinstance start
+
+# 2. Check health (in another terminal)
+curl http://localhost:5000/health
+
+# 3. Start the sleep model
+curl -X POST http://localhost:5000/model/start \
+  -H "Content-Type: application/json" \
+  -d '{"model_id": "sleep_model", "parameters": {}}'
+
+# 4. Submit a task
+curl -X POST http://localhost:5000/task/submit \
+  -H "Content-Type: application/json" \
+  -d '{
+    "task_id": "task-001",
+    "model_id": "sleep_model",
+    "task_input": {"sleep_time": 3}
+  }'
+
+# 5. Check task status
+curl http://localhost:5000/task/task-001
+```
+
+### Configuration
+
+Configure via environment variables:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `INSTANCE_ID` | Unique instance identifier | `instance-default` |
+| `INSTANCE_PORT` | Instance API server port | `5000` |
+| `LOG_LEVEL` | Logging level | `INFO` |
+| `MAX_QUEUE_SIZE` | Maximum tasks in queue | `100` |
+| `DOCKER_NETWORK` | Docker network name | `instance_network` |
+| `HEALTH_CHECK_INTERVAL` | Health check interval (seconds) | `10` |
+| `HEALTH_CHECK_TIMEOUT` | Health check timeout (seconds) | `30` |
+
+**Note:** Model containers run on `INSTANCE_PORT + 1000`.
+
+### CLI Options
+
+```bash
+sinstance start [OPTIONS]
+  --host, -h           Host to bind (default: 0.0.0.0)
+  --port, -p           Port to bind (default: 5000)
+  --log-level, -l      Logging level (default: INFO)
+  --reload             Enable auto-reload for development
+
+sinstance version      Show version information
+```
+
+---
+
+**Documentation:** See [docs/](./docs/) for detailed guides on API, architecture, and model containers.
