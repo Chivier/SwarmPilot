@@ -9,6 +9,7 @@ dependencies = [
     "swarmpilot-instance",
     "swarmpilot-predictor",
     "swarmpilot-planner",
+    "requests>=2.32.5",
 ]
 
 [project.optional-dependencies]
