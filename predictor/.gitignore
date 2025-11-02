@@ -52,6 +52,9 @@ htmlcov/
 # Models
 models/*.joblib
 
+# Configuration
+predictor.toml
+
 # Logs
 *.log
 

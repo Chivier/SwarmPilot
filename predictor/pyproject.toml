@@ -8,11 +8,17 @@ dependencies = [
     "fastapi>=0.104.0",
     "uvicorn[standard]>=0.24.0",
     "pydantic>=2.5.0",
+    "pydantic-settings>=2.0.0",
     "torch>=2.0.0",
     "numpy>=1.24.0",
     "joblib>=1.3.0",
     "python-dateutil>=2.8.0",
+    "websockets>=12.0",
+    "typer>=0.9.0",
 ]
+
+[project.scripts]
+spredictor = "src.cli:main"
 
 [project.optional-dependencies]
 dev = [

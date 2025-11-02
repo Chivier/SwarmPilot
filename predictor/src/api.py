@@ -4,11 +4,12 @@ FastAPI application for runtime prediction service.
 All API endpoints are implemented in this module.
 """
 
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, status, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 from typing import Dict, Any
 import traceback
+import json
 
 from .models import (
     TrainingRequest, TrainingResponse,
@@ -20,10 +21,17 @@ from .storage.model_storage import ModelStorage
 from .predictor.expect_error import ExpectErrorPredictor
 from .predictor.quantile import QuantilePredictor
 from .utils.experiment import is_experiment_mode, generate_experiment_prediction
+from .config import get_config
 
 
-# Initialize storage
-storage = ModelStorage(storage_dir="models")
+# Initialize storage (will use config when available, otherwise default)
+def get_storage() -> ModelStorage:
+    """Get ModelStorage instance using current configuration."""
+    config = get_config()
+    return ModelStorage(storage_dir=config.storage_dir)
+
+
+storage = get_storage()
 
 
 @asynccontextmanager
@@ -38,12 +46,18 @@ async def lifespan(app: FastAPI):
 
 
 # Initialize FastAPI app with lifespan
-app = FastAPI(
-    title="Runtime Predictor Service",
-    description="MLP-based runtime prediction with expect/error and quantile regression",
-    version="0.1.0",
-    lifespan=lifespan
-)
+def create_app() -> FastAPI:
+    """Create and configure FastAPI application."""
+    config = get_config()
+    return FastAPI(
+        title=config.app_name,
+        description="MLP-based runtime prediction with expect/error and quantile regression",
+        version=config.app_version,
+        lifespan=lifespan
+    )
+
+
+app = create_app()
 
 
 @app.get("/health", response_model=HealthResponse, tags=["Health"])
@@ -339,6 +353,166 @@ async def predict(request: PredictionRequest):
                 "traceback": traceback.format_exc()
             }
         )
+
+
+@app.websocket("/ws/predict")
+async def websocket_predict(websocket: WebSocket):
+    """
+    WebSocket endpoint for real-time runtime predictions.
+
+    Accepts PredictionRequest JSON messages and returns PredictionResponse JSON.
+    Keeps connection open for multiple prediction requests.
+    """
+    await websocket.accept()
+
+    try:
+        while True:
+            # Receive JSON message from client
+            try:
+                data = await websocket.receive_text()
+                request_data = json.loads(data)
+            except json.JSONDecodeError as e:
+                await websocket.send_json({
+                    "error": "Invalid JSON",
+                    "message": f"Failed to parse JSON: {str(e)}"
+                })
+                continue
+            except Exception as e:
+                await websocket.send_json({
+                    "error": "Receive error",
+                    "message": str(e)
+                })
+                continue
+
+            # Validate and parse request
+            try:
+                request = PredictionRequest(**request_data)
+            except Exception as e:
+                await websocket.send_json({
+                    "error": "Invalid request",
+                    "message": f"Failed to validate request: {str(e)}"
+                })
+                continue
+
+            # Process prediction (reuse logic from POST endpoint)
+            try:
+                # Check if experiment mode
+                if is_experiment_mode(request.features, request.platform_info.model_dump()):
+                    # Generate synthetic prediction
+                    try:
+                        result = generate_experiment_prediction(
+                            prediction_type=request.prediction_type,
+                            features=request.features,
+                            config={}
+                        )
+
+                        response = PredictionResponse(
+                            model_id=request.model_id,
+                            platform_info=request.platform_info,
+                            prediction_type=request.prediction_type,
+                            result=result
+                        )
+
+                        await websocket.send_json(response.model_dump())
+                        continue
+
+                    except ValueError as e:
+                        await websocket.send_json({
+                            "error": "Experiment mode error",
+                            "message": str(e)
+                        })
+                        continue
+
+                # Normal mode: load model and predict
+                model_key = storage.generate_model_key(
+                    model_id=request.model_id,
+                    platform_info=request.platform_info.model_dump()
+                )
+
+                # Load model
+                model_data = storage.load_model(model_key)
+                if model_data is None:
+                    await websocket.send_json({
+                        "error": "Model not found",
+                        "message": f"No trained model found for model_id='{request.model_id}' with given platform_info",
+                        "model_id": request.model_id,
+                        "platform_info": request.platform_info.model_dump(),
+                        "model_key": model_key
+                    })
+                    continue
+
+                # Validate prediction type matches
+                stored_prediction_type = model_data['metadata'].get('prediction_type')
+                if stored_prediction_type != request.prediction_type:
+                    await websocket.send_json({
+                        "error": "Prediction type mismatch",
+                        "message": f"Model was trained with prediction_type='{stored_prediction_type}', but request has '{request.prediction_type}'",
+                        "model_prediction_type": stored_prediction_type,
+                        "request_prediction_type": request.prediction_type
+                    })
+                    continue
+
+                # Create predictor and load state
+                if request.prediction_type == "expect_error":
+                    predictor = ExpectErrorPredictor()
+                elif request.prediction_type == "quantile":
+                    predictor = QuantilePredictor()
+                else:
+                    await websocket.send_json({
+                        "error": "Invalid prediction type",
+                        "message": f"prediction_type must be 'expect_error' or 'quantile', got '{request.prediction_type}'"
+                    })
+                    continue
+
+                predictor.load_model_state(model_data['predictor_state'])
+
+                # Make prediction
+                try:
+                    result = predictor.predict(request.features)
+
+                    response = PredictionResponse(
+                        model_id=request.model_id,
+                        platform_info=request.platform_info,
+                        prediction_type=request.prediction_type,
+                        result=result
+                    )
+
+                    await websocket.send_json(response.model_dump())
+
+                except ValueError as e:
+                    # Feature validation errors
+                    await websocket.send_json({
+                        "error": "Invalid features",
+                        "message": str(e)
+                    })
+                except Exception as e:
+                    await websocket.send_json({
+                        "error": "Prediction failed",
+                        "message": str(e),
+                        "traceback": traceback.format_exc()
+                    })
+
+            except Exception as e:
+                await websocket.send_json({
+                    "error": "Unexpected error",
+                    "message": str(e),
+                    "traceback": traceback.format_exc()
+                })
+
+    except WebSocketDisconnect:
+        # Client disconnected, close gracefully
+        pass
+    except Exception as e:
+        # Unexpected error, try to send error message before closing
+        try:
+            await websocket.send_json({
+                "error": "WebSocket error",
+                "message": str(e)
+            })
+        except:
+            pass
+        finally:
+            await websocket.close()
 
 
 if __name__ == "__main__":
