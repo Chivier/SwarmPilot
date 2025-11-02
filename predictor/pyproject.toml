@@ -1,9 +1,9 @@
 [project]
-name = "predictor"
+name = "swarmpilot-predictor"
 version = "0.1.0"
 description = "Runtime prediction service with MLP-based expect/error and quantile regression"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.104.0",
     "uvicorn[standard]>=0.24.0",
