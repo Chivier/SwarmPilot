@@ -1,0 +1,37 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "swarmpilot-planner"
+version = "0.1.0"
+description = "Planner service - Optimize model-to-instance deployment"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.120.4",
+    "httpx>=0.28.1",
+    "numpy>=2.3.4",
+    "pulp>=3.3.0",
+    "pydantic>=2.12.3",
+    "typer>=0.20.0",
+    "uvicorn>=0.38.0",
+]
+
+[project.scripts]
+splanner = "cli:app"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.2",
+    "pytest-asyncio>=1.2.0",
+]
+
+[tool.uv]
+package = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"cli.py" = "cli.py"
