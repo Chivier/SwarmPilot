@@ -384,6 +384,7 @@ async def submit_task(request: TaskSubmitRequest):
             position=position
         )
     except ValueError as e:
+        logger.error(f"Task submission error: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
