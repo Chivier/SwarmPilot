@@ -2,11 +2,16 @@
 Instance Migration Controller for Dynamic Scheduler Rebalancing.
 
 This module handles migrating instances between schedulers while maintaining
-continuous task submission. The migration process:
-1. Drain instances from source scheduler (stop accepting new tasks)
-2. Wait for pending tasks to complete
-3. Wait 50ms delay
-4. Re-register instances to target scheduler
+continuous task submission. The migration process uses instance's /model/restart API:
+1. Call instance's /model/restart with new scheduler URL
+2. Instance handles the full lifecycle internally:
+   - Draining from current scheduler
+   - Waiting for pending tasks to complete
+   - Stopping current model
+   - Deregistering from old scheduler
+   - Starting new model
+   - Registering to new scheduler
+3. Monitor progress via /model/restart/status polling at 500ms intervals
 """
 
 import asyncio
@@ -30,7 +35,7 @@ class MigrationStatus(str, Enum):
 
 @dataclass
 class InstanceMigration:
-    """Tracks migration state for a single instance."""
+    """Tracks migration state for a single instance using /model/restart API."""
     instance_id: str
     source_scheduler_url: str
     target_scheduler_url: str
@@ -39,49 +44,55 @@ class InstanceMigration:
     platform_info: Dict[str, str]
 
     status: MigrationStatus = MigrationStatus.PENDING
-    drain_initiated_at: Optional[float] = None
-    drain_completed_at: Optional[float] = None
-    registration_completed_at: Optional[float] = None
+    operation_id: Optional[str] = None  # Restart operation ID from instance
+    restart_initiated_at: Optional[float] = None
+    restart_completed_at: Optional[float] = None
     error_message: Optional[str] = None
 
-    pending_tasks_at_drain: int = 0
-    drain_poll_count: int = 0
+    pending_tasks_at_start: int = 0
+    pending_tasks_completed: int = 0
 
-    def mark_draining(self, pending_tasks: int) -> None:
-        """Mark migration as draining phase."""
+    def mark_restart_initiated(self, operation_id: str) -> None:
+        """Mark restart operation as initiated."""
         self.status = MigrationStatus.DRAINING
-        self.drain_initiated_at = time.time()
-        self.pending_tasks_at_drain = pending_tasks
+        self.operation_id = operation_id
+        self.restart_initiated_at = time.time()
 
-    def mark_waiting(self) -> None:
-        """Mark migration as waiting for 50ms delay."""
-        self.status = MigrationStatus.WAITING_DELAY
-        self.drain_completed_at = time.time()
+    def update_status_from_restart_api(self, api_status: str, pending_completed: int = 0) -> None:
+        """
+        Update migration status based on restart API status.
 
-    def mark_registering(self) -> None:
-        """Mark migration as re-registering."""
-        self.status = MigrationStatus.REGISTERING
+        Status mapping:
+        - pending/draining/waiting_tasks → DRAINING
+        - stopping_model/deregistering → WAITING_DELAY
+        - starting_model/registering → REGISTERING
+        - completed → COMPLETED
+        - failed → FAILED
+        """
+        self.pending_tasks_completed = pending_completed
 
-    def mark_completed(self) -> None:
-        """Mark migration as successfully completed."""
-        self.status = MigrationStatus.COMPLETED
-        self.registration_completed_at = time.time()
+        if api_status in ["pending", "draining", "waiting_tasks"]:
+            self.status = MigrationStatus.DRAINING
+        elif api_status in ["stopping_model", "deregistering"]:
+            self.status = MigrationStatus.WAITING_DELAY
+        elif api_status in ["starting_model", "registering"]:
+            self.status = MigrationStatus.REGISTERING
+        elif api_status == "completed":
+            self.status = MigrationStatus.COMPLETED
+            self.restart_completed_at = time.time()
+        elif api_status == "failed":
+            self.status = MigrationStatus.FAILED
 
     def mark_failed(self, error: str) -> None:
         """Mark migration as failed."""
         self.status = MigrationStatus.FAILED
         self.error_message = error
-
-    def get_drain_duration_ms(self) -> Optional[float]:
-        """Get drain duration in milliseconds."""
-        if self.drain_initiated_at and self.drain_completed_at:
-            return (self.drain_completed_at - self.drain_initiated_at) * 1000
-        return None
+        self.restart_completed_at = time.time()
 
     def get_total_duration_ms(self) -> Optional[float]:
         """Get total migration duration in milliseconds."""
-        if self.drain_initiated_at and self.registration_completed_at:
-            return (self.registration_completed_at - self.drain_initiated_at) * 1000
+        if self.restart_initiated_at and self.restart_completed_at:
+            return (self.restart_completed_at - self.restart_initiated_at) * 1000
         return None
 
 
@@ -99,11 +110,11 @@ class MigrationController:
     """
     Controls instance migrations between schedulers during phase transitions.
 
-    Handles the complete migration lifecycle:
-    - Initiating drain on source scheduler
-    - Polling drain status until all tasks complete
-    - Waiting 50ms delay
-    - Re-registering to target scheduler
+    Uses instance's /model/restart API to handle the complete migration lifecycle:
+    - Initiating restart operation with new scheduler URL
+    - Polling restart status at 500ms intervals
+    - Tracking migration progress and statistics
+    - Instance handles drain, task completion, stop, deregister, start, register internally
     """
 
     def __init__(
@@ -112,8 +123,8 @@ class MigrationController:
         scheduler_b_url: str,
         instance_port_range: Tuple[int, int],
         model_id: str = "sleep_model",
-        drain_poll_interval_ms: float = 100,
-        max_drain_wait_ms: float = 60000,
+        restart_poll_interval_ms: float = 500,
+        max_restart_wait_ms: float = 60000,
     ):
         """
         Initialize migration controller.
@@ -123,15 +134,15 @@ class MigrationController:
             scheduler_b_url: URL of Scheduler B
             instance_port_range: (start_port, end_port) for instances
             model_id: Model ID for instances
-            drain_poll_interval_ms: How often to check drain status (ms)
-            max_drain_wait_ms: Maximum time to wait for draining (ms)
+            restart_poll_interval_ms: How often to poll restart status (ms), default 500ms
+            max_restart_wait_ms: Maximum time to wait for restart completion (ms)
         """
         self.scheduler_a_url = scheduler_a_url
         self.scheduler_b_url = scheduler_b_url
         self.instance_port_range = instance_port_range
         self.model_id = model_id
-        self.drain_poll_interval_ms = drain_poll_interval_ms
-        self.max_drain_wait_ms = max_drain_wait_ms
+        self.restart_poll_interval_ms = restart_poll_interval_ms
+        self.max_restart_wait_ms = max_restart_wait_ms
 
         # Track migrations
         self.migrations: Dict[str, InstanceMigration] = {}
@@ -197,12 +208,12 @@ class MigrationController:
         target_scheduler_url: str,
     ) -> None:
         """
-        Initiate draining for a list of instances.
+        Initiate model restart for a list of instances using /model/restart API.
 
         Args:
             instance_ids: List of instance IDs to migrate
-            source_scheduler_url: Source scheduler URL
-            target_scheduler_url: Target scheduler URL
+            source_scheduler_url: Source scheduler URL (for metadata only)
+            target_scheduler_url: Target scheduler URL to register to
         """
         for instance_id in instance_ids:
             # Create migration record
@@ -217,35 +228,43 @@ class MigrationController:
             )
             self.migrations[instance_id] = migration
 
-            # Initiate drain
+            # Initiate restart via instance API
             try:
                 response = requests.post(
-                    f"{source_scheduler_url}/instance/drain",
-                    json={"instance_id": instance_id},
-                    timeout=5.0
+                    f"{instance_endpoint}/model/restart",
+                    json={
+                        "model_id": self.model_id,
+                        "parameters": {},
+                        "scheduler_url": target_scheduler_url,
+                    },
+                    timeout=10.0
                 )
                 response.raise_for_status()
                 result = response.json()
 
-                pending_tasks = result.get("pending_tasks", 0)
-                migration.mark_draining(pending_tasks)
-
-                logger.info(
-                    f"Initiated drain for {instance_id} on {source_scheduler_url} "
-                    f"({pending_tasks} pending tasks)"
-                )
+                if result.get("success"):
+                    operation_id = result.get("operation_id")
+                    migration.mark_restart_initiated(operation_id)
+                    logger.info(
+                        f"Initiated restart for {instance_id} (operation_id: {operation_id})"
+                    )
+                else:
+                    error_msg = result.get("error", "Unknown error")
+                    migration.mark_failed(error_msg)
+                    logger.error(f"Failed to restart {instance_id}: {error_msg}")
 
             except Exception as e:
-                error_msg = f"Failed to initiate drain: {e}"
+                error_msg = f"Failed to initiate restart: {e}"
                 migration.mark_failed(error_msg)
-                logger.error(f"Failed to drain {instance_id}: {e}")
+                logger.error(f"Failed to initiate restart for {instance_id}: {e}")
 
     async def monitor_migrations_async(self) -> Dict[str, any]:
         """
-        Monitor all active migrations asynchronously.
+        Monitor all active migrations asynchronously using /model/restart API.
 
-        Polls drain status, waits for completion, applies 50ms delay,
-        and re-registers instances.
+        Polls restart status for each instance and tracks migration progress.
+        This method runs in the background and returns statistics when all
+        migrations are complete.
 
         Returns:
             Statistics about the migration process
@@ -257,45 +276,45 @@ class MigrationController:
 
         logger.info(f"Starting migration monitor for {total_migrations} instances")
 
+        # Use configured poll interval
+        poll_interval_sec = self.restart_poll_interval_ms / 1000.0
+
         while self.migrations:
             # Check each active migration
             for instance_id in list(self.migrations.keys()):
                 migration = self.migrations[instance_id]
 
-                if migration.status == MigrationStatus.DRAINING:
-                    # Poll drain status
-                    await self._check_drain_status_async(migration)
-
-                elif migration.status == MigrationStatus.WAITING_DELAY:
-                    # Apply 50ms delay then re-register
-                    await self._handle_reregistration_async(migration)
-
-                elif migration.status == MigrationStatus.COMPLETED:
+                # Skip if already in terminal state
+                if migration.status in [MigrationStatus.COMPLETED, MigrationStatus.FAILED]:
                     # Move to history and remove from active
                     self.migration_history.append(migration)
                     del self.migrations[instance_id]
-                    completed_count += 1
-                    logger.info(
-                        f"Migration completed for {instance_id} "
-                        f"(total: {migration.get_total_duration_ms():.1f}ms)"
-                    )
 
-                elif migration.status == MigrationStatus.FAILED:
-                    # Move to history and remove from active
-                    self.migration_history.append(migration)
-                    del self.migrations[instance_id]
-                    failed_count += 1
-                    logger.error(f"Migration failed for {instance_id}: {migration.error_message}")
+                    if migration.status == MigrationStatus.COMPLETED:
+                        completed_count += 1
+                        logger.info(
+                            f"Migration completed for {instance_id} "
+                            f"(total: {migration.get_total_duration_ms():.1f}ms, "
+                            f"tasks_completed: {migration.pending_tasks_completed})"
+                        )
+                    else:
+                        failed_count += 1
+                        logger.error(f"Migration failed for {instance_id}: {migration.error_message}")
+                    continue
+
+                # Poll restart status for active migrations
+                if migration.operation_id:
+                    await self._poll_restart_status_async(migration)
 
             # Wait before next poll
-            await asyncio.sleep(self.drain_poll_interval_ms / 1000.0)
+            await asyncio.sleep(poll_interval_sec)
 
             # Check timeout
             elapsed_ms = (time.time() - start_time) * 1000
-            if elapsed_ms > self.max_drain_wait_ms:
+            if elapsed_ms > self.max_restart_wait_ms:
                 logger.error(f"Migration timeout after {elapsed_ms:.1f}ms")
                 for migration in list(self.migrations.values()):
-                    migration.mark_failed("Timeout waiting for drain completion")
+                    migration.mark_failed("Timeout waiting for restart completion")
                     self.migration_history.append(migration)
                     failed_count += 1
                 self.migrations.clear()
@@ -317,88 +336,54 @@ class MigrationController:
 
         return stats
 
-    async def _check_drain_status_async(self, migration: InstanceMigration) -> None:
-        """Check drain status and transition to waiting if complete."""
+    async def _poll_restart_status_async(self, migration: InstanceMigration) -> None:
+        """
+        Poll restart status and update migration state.
+
+        Queries /model/restart/status endpoint and updates migration status
+        based on the restart API's current state.
+        """
         try:
             response = requests.get(
-                f"{migration.source_scheduler_url}/instance/drain/status",
-                params={"instance_id": migration.instance_id},
+                f"{migration.endpoint}/model/restart/status",
+                params={"operation_id": migration.operation_id},
                 timeout=5.0
             )
             response.raise_for_status()
-            status = response.json()
+            result = response.json()
 
-            migration.drain_poll_count += 1
-            pending_tasks = status.get("pending_tasks", 0)
-            can_remove = status.get("can_remove", False)
+            if not result.get("success"):
+                # Operation not found or error
+                error_msg = result.get("error", "Unknown error querying restart status")
+                migration.mark_failed(error_msg)
+                logger.error(f"Restart status error for {migration.instance_id}: {error_msg}")
+                return
 
-            if can_remove:
-                migration.mark_waiting()
+            # Extract status information
+            api_status = result.get("status")
+            pending_completed = result.get("pending_tasks_completed", 0)
+            error = result.get("error")
+
+            # Update migration status based on API status
+            old_status = migration.status
+            migration.update_status_from_restart_api(api_status, pending_completed)
+
+            # Log status changes
+            if migration.status != old_status:
                 logger.info(
-                    f"Instance {migration.instance_id} drain complete "
-                    f"({migration.drain_poll_count} polls, "
-                    f"{migration.get_drain_duration_ms():.1f}ms)"
-                )
-            elif migration.drain_poll_count % 10 == 0:
-                # Log progress every 10 polls
-                logger.debug(
-                    f"Draining {migration.instance_id}: {pending_tasks} tasks remaining "
-                    f"(poll {migration.drain_poll_count})"
+                    f"Instance {migration.instance_id} restart status: {old_status.value} → {migration.status.value} "
+                    f"(API: {api_status}, completed_tasks: {pending_completed})"
                 )
 
-        except Exception as e:
-            error_msg = f"Failed to check drain status: {e}"
-            migration.mark_failed(error_msg)
-            logger.error(f"Error checking drain status for {migration.instance_id}: {e}")
-
-    async def _handle_reregistration_async(self, migration: InstanceMigration) -> None:
-        """
-        Handle instance re-registration using the correct architecture.
-
-        Instead of directly calling scheduler's /instance/register API,
-        we use the instance's own APIs:
-        1. Stop the model (which auto-deregisters from old scheduler)
-        2. Wait 50ms delay
-        3. Start the model with new scheduler_url (which auto-registers to new scheduler)
-        """
-        try:
-            migration.mark_registering()
-
-            # Step 1: Stop the model (auto-deregisters from old scheduler)
-            logger.info(f"Stopping model on {migration.instance_id}")
-            stop_response = requests.get(
-                f"{migration.endpoint}/model/stop",
-                timeout=5.0
-            )
-            stop_response.raise_for_status()
-
-            # Step 2: Wait 50ms delay
-            await asyncio.sleep(0.05)
-
-            # Step 3: Start the model with new scheduler_url (auto-registers to new scheduler)
-            logger.info(
-                f"Starting model on {migration.instance_id} with new scheduler: {migration.target_scheduler_url}"
-            )
-            start_response = requests.post(
-                f"{migration.endpoint}/model/start",
-                json={
-                    "model_id": migration.model_id,
-                    "parameters": {},
-                    "scheduler_url": migration.target_scheduler_url,
-                },
-                timeout=10.0
-            )
-            start_response.raise_for_status()
-
-            migration.mark_completed()
-            logger.info(
-                f"Successfully migrated {migration.instance_id} to {migration.target_scheduler_url}"
-            )
+            # Handle failed status
+            if api_status == "failed" and error:
+                migration.mark_failed(error)
+                logger.error(f"Restart failed for {migration.instance_id}: {error}")
 
         except Exception as e:
-            error_msg = f"Failed to migrate instance: {e}"
+            error_msg = f"Failed to poll restart status: {e}"
             migration.mark_failed(error_msg)
-            logger.error(f"Error migrating {migration.instance_id}: {e}")
+            logger.error(f"Error polling restart status for {migration.instance_id}: {e}")
 
     def _get_port_from_id(self, instance_id: str) -> int:
         """Extract port number from instance ID."""
