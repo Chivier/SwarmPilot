@@ -8,10 +8,22 @@ This script automatically runs all 6 experiment configurations:
 
 For each configuration, it:
 1. Stops all services
-2. Cleans up temporary files
-3. Starts all services
-4. Runs the experiment
-5. Collects results
+2. Archives previous experiment's logs and intermediate results
+3. Cleans up temporary files (service logs, PID files)
+4. Starts all services
+5. Runs the experiment (using new /model/restart API for migrations)
+6. Collects results
+
+Migration Flow (using instance /model/restart API):
+- Experiments with migration enabled use the new restart API
+- Migration runs in background, doesn't block task submission
+- Instance handles drain, task completion, stop, deregister, start, register internally
+- Background monitor polls status at 500ms intervals
+
+Log Management:
+- Experiment logs are archived to archived_logs/<experiment_name>_<timestamp>/
+- Service logs (scheduler, instance, predictor) are cleaned between runs
+- Intermediate results and key logs are preserved for each sub-experiment
 
 Author: Claude Code
 Date: 2025-11-03
@@ -20,6 +32,7 @@ Date: 2025-11-03
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -125,18 +138,35 @@ class ServiceManager:
             logger.error(f"Error stopping services: {e}")
             return False
 
-    def clean_temporary_files(self):
-        """Clean up temporary log files and PIDs."""
+    def clean_temporary_files(self, preserve_experiment_name: Optional[str] = None):
+        """
+        Clean up temporary log files and PIDs, optionally preserving experiment logs.
+
+        Args:
+            preserve_experiment_name: If provided, archive logs for this experiment before cleanup
+        """
         logger.info("Cleaning temporary files...")
 
-        # Remove log files
+        # If we need to preserve experiment logs, archive them first
+        if preserve_experiment_name and self.logs_dir.exists():
+            self._archive_experiment_logs(preserve_experiment_name)
+
+        # Remove service log files (scheduler, instance, predictor logs)
         if self.logs_dir.exists():
-            for log_file in self.logs_dir.glob("*.log"):
-                try:
-                    log_file.unlink()
-                    logger.debug(f"Removed {log_file.name}")
-                except Exception as e:
-                    logger.warning(f"Failed to remove {log_file.name}: {e}")
+            service_log_patterns = [
+                "scheduler-*.log",
+                "instance-*.log",
+                "predictor.log",
+                "experiment_*.log"  # Also remove experiment logs after archiving
+            ]
+
+            for pattern in service_log_patterns:
+                for log_file in self.logs_dir.glob(pattern):
+                    try:
+                        log_file.unlink()
+                        logger.debug(f"Removed {log_file.name}")
+                    except Exception as e:
+                        logger.warning(f"Failed to remove {log_file.name}: {e}")
 
             # Remove PID files
             for pid_file in self.logs_dir.glob("*.pid"):
@@ -147,6 +177,60 @@ class ServiceManager:
                     logger.warning(f"Failed to remove {pid_file.name}: {e}")
 
         logger.info("✓ Cleanup complete")
+
+    def _archive_experiment_logs(self, experiment_name: str):
+        """
+        Archive logs and intermediate results for a completed experiment.
+
+        Args:
+            experiment_name: Name of the experiment (e.g., "min_time_migration")
+        """
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        archive_dir = self.experiment_dir / "archived_logs" / f"{experiment_name}_{timestamp}"
+        archive_dir.mkdir(parents=True, exist_ok=True)
+
+        logger.info(f"Archiving experiment logs to {archive_dir.relative_to(self.experiment_dir)}...")
+
+        # Archive experiment script logs
+        experiment_logs = list(self.logs_dir.glob("experiment_*.log"))
+        for log_file in experiment_logs:
+            try:
+                dest = archive_dir / log_file.name
+                shutil.copy2(log_file, dest)
+                logger.debug(f"  Archived {log_file.name}")
+            except Exception as e:
+                logger.warning(f"  Failed to archive {log_file.name}: {e}")
+
+        # Archive key service logs (scheduler logs contain important scheduling decisions)
+        important_service_logs = [
+            "scheduler-a.log",
+            "scheduler-b.log",
+            "predictor.log"
+        ]
+        for log_name in important_service_logs:
+            log_file = self.logs_dir / log_name
+            if log_file.exists():
+                try:
+                    dest = archive_dir / log_name
+                    shutil.copy2(log_file, dest)
+                    logger.debug(f"  Archived {log_name}")
+                except Exception as e:
+                    logger.warning(f"  Failed to archive {log_name}: {e}")
+
+        # Create a metadata file
+        metadata = {
+            "experiment_name": experiment_name,
+            "timestamp": timestamp,
+            "archived_at": datetime.now().isoformat(),
+        }
+        metadata_file = archive_dir / "metadata.json"
+        try:
+            with open(metadata_file, 'w') as f:
+                json.dump(metadata, f, indent=2)
+        except Exception as e:
+            logger.warning(f"  Failed to write metadata: {e}")
+
+        logger.info(f"  ✓ Archived {len(experiment_logs)} experiment logs")
 
     def start_all_services(self, timeout: int = 120) -> bool:
         """Start all services and wait for health checks."""
@@ -195,11 +279,13 @@ class ComparisonExperimentRunner:
         num_workflows_per_phase: int,
         qps: float,
         output_dir: Optional[Path] = None,
+        experiment_timeout: int = 900,
     ):
         self.experiment_dir = experiment_dir
         self.num_workflows_per_phase = num_workflows_per_phase
         self.qps = qps
         self.output_dir = output_dir or (experiment_dir / "results")
+        self.experiment_timeout = experiment_timeout
 
         self.service_manager = ServiceManager(experiment_dir)
         self.results: List[ExperimentResult] = []
@@ -251,7 +337,7 @@ class ComparisonExperimentRunner:
                     stdout=f,
                     stderr=subprocess.STDOUT,
                     text=True,
-                    timeout=900  # 15 minutes max
+                    timeout=self.experiment_timeout
                 )
 
             result.end_time = datetime.now()
@@ -275,8 +361,8 @@ class ComparisonExperimentRunner:
 
         except subprocess.TimeoutExpired:
             result.end_time = datetime.now()
-            result.error_message = "Timeout (>15 minutes)"
-            logger.error(f"✗ Experiment timed out")
+            result.error_message = f"Timeout (>{self.experiment_timeout}s)"
+            logger.error(f"✗ Experiment timed out (>{self.experiment_timeout}s)")
         except Exception as e:
             result.end_time = datetime.now()
             result.error_message = str(e)
@@ -296,6 +382,8 @@ class ComparisonExperimentRunner:
         logger.info(f"QPS: {self.qps}")
         logger.info(f"Output directory: {self.output_dir}\n")
 
+        previous_experiment_name = None
+
         for idx, config in enumerate(configs, 1):
             logger.info(f"\n[{idx}/{len(configs)}] Preparing: {config.get_name()}")
 
@@ -303,8 +391,8 @@ class ComparisonExperimentRunner:
             if not self.service_manager.stop_all_services():
                 logger.error("Failed to stop services, continuing anyway...")
 
-            # Clean up
-            self.service_manager.clean_temporary_files()
+            # Clean up and archive previous experiment's logs
+            self.service_manager.clean_temporary_files(preserve_experiment_name=previous_experiment_name)
 
             # Wait for ports to be released
             self.service_manager.wait_for_port_release()
@@ -320,18 +408,24 @@ class ComparisonExperimentRunner:
                     error_message="Failed to start services"
                 )
                 self.results.append(result)
+                previous_experiment_name = config.get_name()  # Track even if failed
                 continue
 
             # Run experiment
             result = self.run_single_experiment(config)
             self.results.append(result)
 
+            # Track this experiment for next iteration's archive
+            previous_experiment_name = config.get_name()
+
             # Brief pause between experiments
             time.sleep(2)
 
-        # Final cleanup
+        # Final cleanup - archive the last experiment's logs
         logger.info("\nFinal cleanup...")
         self.service_manager.stop_all_services()
+        if previous_experiment_name:
+            self.service_manager.clean_temporary_files(preserve_experiment_name=previous_experiment_name)
 
         # Print summary
         self.print_summary()
@@ -369,6 +463,7 @@ class ComparisonExperimentRunner:
             "configuration": {
                 "num_workflows_per_phase": self.num_workflows_per_phase,
                 "qps": self.qps,
+                "experiment_timeout": self.experiment_timeout,
             },
             "total_experiments": len(self.results),
             "successful": sum(1 for r in self.results if r.success),
@@ -423,6 +518,12 @@ def main():
         default=None,
         help="Output directory for results (default: ./results)"
     )
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=900,
+        help="Timeout in seconds for each experiment (default: 900)"
+    )
 
     args = parser.parse_args()
 
@@ -444,6 +545,7 @@ def main():
         num_workflows_per_phase=args.num_workflows_per_phase,
         qps=args.qps,
         output_dir=output_dir,
+        experiment_timeout=args.timeout,
     )
 
     try:
