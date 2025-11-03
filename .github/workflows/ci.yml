@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+      fail-fast: false
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Run scheduler tests
+        run: uv run pytest scheduler/tests/ -v --tb=short
+        continue-on-error: false
+
+      - name: Run instance tests
+        run: uv run pytest instance/tests/ -v --tb=short
+        continue-on-error: false
+
+      - name: Run planner tests
+        run: uv run pytest planner/tests/ -v --tb=short
+        continue-on-error: false
+
+      - name: Run predictor tests (if exists)
+        run: |
+          if [ -d "predictor/tests" ]; then
+            uv run pytest predictor/tests/ -v --tb=short
+          else
+            echo "No predictor tests directory found, skipping..."
+          fi
+        continue-on-error: false
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Check Python syntax
+        run: uv run python -m py_compile $(find . -name "*.py" -not -path "./.venv/*" -not -path "./experiments/*")
