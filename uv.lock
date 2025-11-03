@@ -1289,6 +1289,7 @@ dependencies = [
     { name = "swarmpilot-planner" },
     { name = "swarmpilot-predictor" },
     { name = "swarmpilot-scheduler" },
+    { name = "websockets" },
 ]
 
 [package.optional-dependencies]
@@ -1344,6 +1345,7 @@ requires-dist = [
     { name = "swarmpilot-scheduler", editable = "scheduler" },
     { name = "swarmpilot-scheduler", marker = "extra == 'all'", editable = "scheduler" },
     { name = "swarmpilot-scheduler", marker = "extra == 'scheduler'", editable = "scheduler" },
+    { name = "websockets", specifier = ">=15.0.1" },
 ]
 provides-extras = ["scheduler", "instance", "predictor", "planner", "all", "dev"]
 
