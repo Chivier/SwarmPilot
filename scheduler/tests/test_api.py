@@ -134,7 +134,7 @@ class TestInstanceRemoval:
     """Tests for instance removal endpoint."""
 
     def test_remove_instance_success(self, client):
-        """Test successful instance removal."""
+        """Test successful instance removal with drain-before-remove workflow."""
         # Register instance first
         client.post(
             "/instance/register",
@@ -149,6 +149,13 @@ class TestInstanceRemoval:
                 }
             }
         )
+
+        # Drain the instance first (required for safe removal)
+        drain_response = client.post(
+            "/instance/drain",
+            json={"instance_id": "inst-1"}
+        )
+        assert drain_response.status_code == 200
 
         # Remove it
         response = client.post(
@@ -196,7 +203,7 @@ class TestInstanceRemoval:
             json={"instance_id": "inst-1"}
         )
 
-        assert response.status_code == 200
+        assert response.status_code == 400
 
 
 # ============================================================================
