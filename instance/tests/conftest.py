@@ -248,6 +248,23 @@ def mock_task_queue():
     return queue
 
 
+@pytest.fixture
+def mock_scheduler_client():
+    """Fixture providing a mock SchedulerClient."""
+    client = Mock()
+    client.is_enabled = False  # Disabled by default to simplify tests
+    client.scheduler_url = None
+    client._registered = False
+    client.register_instance = AsyncMock(return_value=True)
+    client.deregister_instance = AsyncMock(return_value=True)
+    client.drain_instance = AsyncMock(return_value={
+        "success": True,
+        "status": "draining",
+        "pending_tasks": 0
+    })
+    return client
+
+
 # ============================================================================
 # HTTP Client Fixtures
 # ============================================================================
@@ -279,12 +296,13 @@ def mock_httpx_client():
 # ============================================================================
 
 @pytest.fixture
-def api_client(mock_docker_manager, mock_task_queue, mock_model_registry, monkeypatch):
+def api_client(mock_docker_manager, mock_task_queue, mock_model_registry, mock_scheduler_client, monkeypatch):
     """Fixture providing a FastAPI TestClient with mocked dependencies."""
     # Mock the global instances
     monkeypatch.setattr("src.api.get_docker_manager", lambda: mock_docker_manager)
     monkeypatch.setattr("src.api.get_task_queue", lambda: mock_task_queue)
     monkeypatch.setattr("src.api.get_registry", lambda: mock_model_registry)
+    monkeypatch.setattr("src.api.get_scheduler_client", lambda: mock_scheduler_client)
 
     # Import API after mocking
     from src.api import app
@@ -349,11 +367,16 @@ def reset_singletons():
     import src.model_registry
     import src.task_queue
     import src.docker_manager
+    import src.api
 
     # Reset module-level singleton variables
     src.model_registry._registry_instance = None
     src.task_queue._task_queue_instance = None
     src.docker_manager._docker_manager_instance = None
+
+    # Reset API-level restart operations
+    if hasattr(src.api, '_restart_operations'):
+        src.api._restart_operations.clear()
 
     yield
 
@@ -361,3 +384,7 @@ def reset_singletons():
     src.model_registry._registry_instance = None
     src.task_queue._task_queue_instance = None
     src.docker_manager._docker_manager_instance = None
+
+    # Clear restart operations
+    if hasattr(src.api, '_restart_operations'):
+        src.api._restart_operations.clear()
