@@ -63,3 +63,5 @@ logs/
 *.ckpt
 *.pkl
 *.joblib
+
+results
