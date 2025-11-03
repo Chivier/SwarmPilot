@@ -8,11 +8,18 @@ environment variable management, and command execution.
 import pytest
 import json
 import tomllib
+import re
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 from typer.testing import CliRunner
 
 from src.cli import app, load_config_file, apply_config
+
+
+def strip_ansi_codes(text: str) -> str:
+    """Remove ANSI escape codes from text."""
+    ansi_escape = re.compile(r'\x1b\[[0-9;]*m')
+    return ansi_escape.sub('', text)
 
 
 @pytest.fixture
@@ -384,16 +391,20 @@ class TestCLIHelp:
         result = runner.invoke(app, ["--help"])
 
         assert result.exit_code == 0
-        assert "Scheduler service command-line interface" in result.stdout
-        assert "start" in result.stdout
-        assert "version" in result.stdout
+        # Strip ANSI codes for consistent string matching
+        output = strip_ansi_codes(result.stdout)
+        assert "Scheduler service command-line interface" in output
+        assert "start" in output
+        assert "version" in output
 
     def test_start_command_help(self, runner):
         """Test start command help output."""
         result = runner.invoke(app, ["start", "--help"])
 
         assert result.exit_code == 0
-        assert "Start the scheduler service" in result.stdout
-        assert "--host" in result.stdout
-        assert "--port" in result.stdout
-        assert "--config" in result.stdout
+        # Strip ANSI codes for consistent string matching
+        output = strip_ansi_codes(result.stdout)
+        assert "Start the scheduler service" in output
+        assert "--host" in output
+        assert "--port" in output
+        assert "--config" in output
