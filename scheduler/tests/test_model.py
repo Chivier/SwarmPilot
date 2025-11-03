@@ -313,7 +313,11 @@ class TestInstanceInfoResponse:
     def test_valid_info_response(self):
         """Test valid info response."""
         instance = Instance(instance_id="inst-1", model_id="model-1", endpoint="http://test", platform_info={"software_name": "docker", "software_version": "20.10", "hardware_name": "test-hardware"})
-        queue_info = InstanceQueueBase(instance_id="inst-1")
+        queue_info = InstanceQueueProbabilistic(
+            instance_id="inst-1",
+            quantiles=[0.5, 0.9, 0.95],
+            values=[100.0, 200.0, 300.0]
+        )
         stats = InstanceStats(pending_tasks=1, completed_tasks=2, failed_tasks=0)
 
         resp = InstanceInfoResponse(
@@ -790,7 +794,11 @@ class TestSerialization:
     def test_nested_model_serialization(self):
         """Test serialization of nested models."""
         instance = Instance(instance_id="inst-1", model_id="model-1", endpoint="http://test", platform_info={"software_name": "docker", "software_version": "20.10", "hardware_name": "test-hardware"})
-        queue = InstanceQueueBase(instance_id="inst-1")
+        queue = InstanceQueueProbabilistic(
+            instance_id="inst-1",
+            quantiles=[0.5, 0.9, 0.95],
+            values=[100.0, 200.0, 300.0]
+        )
         stats = InstanceStats(pending_tasks=1, completed_tasks=2, failed_tasks=0)
 
         resp = InstanceInfoResponse(
