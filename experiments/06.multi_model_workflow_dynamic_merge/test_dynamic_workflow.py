@@ -1662,19 +1662,28 @@ def test_strategy_workflow(
     a_tasks: List[WorkflowTaskData] = []
     merge_tasks: List[WorkflowTaskData] = []  # NEW: merge task data
     b_tasks_by_workflow: Dict[str, List[WorkflowTaskData]] = {}
+    
+    exp_task_time_a = np.average(task_times_a)
+    exp_task_time_b = np.average(task_times_b)
 
     for i in range(num_workflows):
         workflow_id = f"wf-{strategy}-{i:04d}"
         a_task_id = a_task_ids[i]
         merge_task_id = merge_task_ids[i]
 
+        if strategy == 'min_time':
+            exp_runtime_a = exp_task_time_a
+            exp_runtime_b = exp_task_time_b
+        else:
+            exp_runtime_a = task_times_a[i] * 1000
+            
         # Create A task
         a_task = WorkflowTaskData(
             task_id=a_task_id,
             workflow_id=workflow_id,
             task_type="A",
             sleep_time=task_times_a[i],
-            exp_runtime=task_times_a[i] * 1000
+            exp_runtime=exp_runtime_a
         )
         a_tasks.append(a_task)
 
@@ -1685,7 +1694,7 @@ def test_strategy_workflow(
             workflow_id=workflow_id,
             task_type="A",  # Submitted to Scheduler A
             sleep_time=merge_sleep_time,
-            exp_runtime=merge_sleep_time * 1000
+            exp_runtime=exp_runtime_a * 0.5
         )
         merge_tasks.append(merge_task)
 
@@ -1697,12 +1706,14 @@ def test_strategy_workflow(
         for j in range(n):
             # Calculate index into task_times_b
             b_task_index = sum(fanout_values[:i]) + j
+            if not strategy == "min_data":
+                exp_runtime_b = task_times_b[b_task_index] * 1000
             b_task = WorkflowTaskData(
                 task_id=b_task_ids[j],
                 workflow_id=workflow_id,
                 task_type="B",
                 sleep_time=task_times_b[b_task_index],
-                exp_runtime=task_times_b[b_task_index] * 1000
+                exp_runtime=exp_runtime_b
             )
             b_tasks.append(b_task)
 
@@ -1942,7 +1953,7 @@ def main(num_workflows: int = 100, qps_a: float = 8.0, seed: int = 42,
         "results": all_results
     }
     
-    if os.path.exists("results"):
+    if not os.path.exists("results"):
         os.makedirs("results", exist_ok=True)
 
     with open(results_file, 'w') as f:
