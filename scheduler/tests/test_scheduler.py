@@ -102,10 +102,6 @@ class TestProbabilisticSchedulingStrategy:
         strategy = ProbabilisticSchedulingStrategy(mock_predictor_client, instance_registry)
         assert strategy.target_quantile == 0.9
 
-    def test_custom_target_quantile(self, mock_predictor_client, instance_registry):
-        """Test setting custom target quantile."""
-        strategy = ProbabilisticSchedulingStrategy(mock_predictor_client, instance_registry, target_quantile=0.95)
-        assert strategy.target_quantile == 0.95
 
     def test_select_based_on_quantile(self, mock_predictor_client, instance_registry):
         """Test selection based on sampling from quantile distribution."""
@@ -114,7 +110,7 @@ class TestProbabilisticSchedulingStrategy:
         # Set random seed for reproducibility
         np.random.seed(42)
 
-        strategy = ProbabilisticSchedulingStrategy(mock_predictor_client, instance_registry, target_quantile=0.9)
+        strategy = ProbabilisticSchedulingStrategy(mock_predictor_client, instance_registry)
 
         predictions = [
             Prediction(
@@ -147,7 +143,7 @@ class TestProbabilisticSchedulingStrategy:
 
     def test_fallback_to_min_time(self, mock_predictor_client, instance_registry):
         """Test fallback to minimum expected time when quantile not available."""
-        strategy = ProbabilisticSchedulingStrategy(mock_predictor_client, instance_registry, target_quantile=0.9)
+        strategy = ProbabilisticSchedulingStrategy(mock_predictor_client, instance_registry)
 
         predictions = [
             Prediction(instance_id="inst-1", predicted_time_ms=200.0),
@@ -166,7 +162,7 @@ class TestProbabilisticSchedulingStrategy:
         # Set seed for reproducibility
         np.random.seed(42)
 
-        strategy = ProbabilisticSchedulingStrategy(mock_predictor_client, instance_registry, target_quantile=0.9)
+        strategy = ProbabilisticSchedulingStrategy(mock_predictor_client, instance_registry)
 
         predictions = [
             Prediction(instance_id="inst-1", predicted_time_ms=100.0),
@@ -188,7 +184,7 @@ class TestProbabilisticSchedulingStrategy:
 
     def test_quantile_not_in_dict(self, mock_predictor_client, instance_registry):
         """Test when quantiles exist but target quantile not in them."""
-        strategy = ProbabilisticSchedulingStrategy(mock_predictor_client, instance_registry, target_quantile=0.95)
+        strategy = ProbabilisticSchedulingStrategy(mock_predictor_client, instance_registry)
 
         predictions = [
             Prediction(
@@ -209,7 +205,7 @@ class TestProbabilisticSchedulingStrategy:
 
     def test_select_with_equal_quantile_values(self, mock_predictor_client, instance_registry):
         """Test selection when multiple instances have equal quantile values."""
-        strategy = ProbabilisticSchedulingStrategy(mock_predictor_client, instance_registry, target_quantile=0.9)
+        strategy = ProbabilisticSchedulingStrategy(mock_predictor_client, instance_registry)
 
         predictions = [
             Prediction(

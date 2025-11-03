@@ -361,7 +361,6 @@ class ProbabilisticSchedulingStrategy(SchedulingStrategy):
         self,
         predictor_client: "PredictorClient",
         instance_registry: "InstanceRegistry",
-        target_quantile: float = 0.9,
     ):
         """
         Initialize probabilistic strategy.
@@ -372,7 +371,6 @@ class ProbabilisticSchedulingStrategy(SchedulingStrategy):
             target_quantile: Quantile to optimize for (default 0.9 = 90th percentile)
         """
         super().__init__(predictor_client, instance_registry)
-        self.target_quantile = target_quantile
 
     def get_prediction_type(self) -> str:
         """Probabilistic strategy requires quantile predictions."""
@@ -602,7 +600,7 @@ def get_strategy(
     elif strategy_name == "probabilistic":
         target_quantile = kwargs.get("target_quantile", 0.9)
         return ProbabilisticSchedulingStrategy(
-            predictor_client, instance_registry, target_quantile
+            predictor_client, instance_registry
         )
     elif strategy_name == "round_robin":
         return RoundRobinStrategy(predictor_client, instance_registry)
@@ -610,5 +608,5 @@ def get_strategy(
         # Default to probabilistic
         target_quantile = kwargs.get("target_quantile", 0.9)
         return ProbabilisticSchedulingStrategy(
-            predictor_client, instance_registry, target_quantile
+            predictor_client, instance_registry
         )
