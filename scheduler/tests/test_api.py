@@ -581,7 +581,7 @@ class TestTaskClear:
         data = response.json()
         assert data["success"] is True
         assert data["cleared_count"] == 0
-        assert "Successfully cleared 0 task(s)" in data["message"]
+        assert "Successfully cleared 0 scheduler task(s)" in data["message"]
 
     def test_clear_multiple_tasks(self, client):
         """Test clearing multiple tasks."""
@@ -625,7 +625,7 @@ class TestTaskClear:
         data = response.json()
         assert data["success"] is True
         assert data["cleared_count"] == 3
-        assert "Successfully cleared 3 task(s)" in data["message"]
+        assert "Successfully cleared 3 scheduler task(s)" in data["message"]
 
         # Verify tasks are cleared
         response = client.get("/task/list")
