@@ -954,3 +954,1098 @@ class TestStrategyManagement:
             }
         )
         assert response.status_code == 422  # Pydantic validation error
+
+
+# ============================================================================
+# Additional Tests for Coverage
+# ============================================================================
+
+class TestInstanceRegistrationValidation:
+    """Additional tests for instance registration validation."""
+
+    def test_register_instance_missing_platform_keys(self, client):
+        """Test registration with incomplete platform_info."""
+        response = client.post(
+            "/instance/register",
+            json={
+                "instance_id": "inst-1",
+                "model_id": "model-1",
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    # Missing software_version and hardware_name
+                }
+            }
+        )
+
+        assert response.status_code == 400
+        data = response.json()
+        assert data["detail"]["success"] is False
+        assert "missing required keys" in data["detail"]["error"]
+
+
+class TestInstanceDrain:
+    """Tests for instance drain endpoint."""
+
+    def test_drain_instance_success(self, client):
+        """Test draining an instance successfully."""
+        # Register instance
+        client.post(
+            "/instance/register",
+            json={
+                "instance_id": "inst-1",
+                "model_id": "model-1",
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hardware"
+                }
+            }
+        )
+
+        # Drain the instance
+        response = client.post(
+            "/instance/drain",
+            json={"instance_id": "inst-1"}
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["instance_id"] == "inst-1"
+        assert data["status"] == "draining"
+        assert "pending_tasks" in data
+
+    def test_drain_nonexistent_instance(self, client):
+        """Test draining non-existent instance returns 404."""
+        response = client.post(
+            "/instance/drain",
+            json={"instance_id": "nonexistent"}
+        )
+
+        assert response.status_code == 404
+
+    def test_drain_instance_with_pending_tasks(self, client):
+        """Test draining instance with pending tasks."""
+        from src.predictor_client import Prediction
+
+        # Register instance
+        client.post(
+            "/instance/register",
+            json={
+                "instance_id": "inst-1",
+                "model_id": "model-1",
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hardware"
+                }
+            }
+        )
+
+        # Submit a task to create pending tasks
+        mock_prediction = Prediction(
+            instance_id="inst-1",
+            predicted_time_ms=100.0,
+            quantiles={0.5: 90.0, 0.9: 110.0, 0.95: 120.0, 0.99: 130.0},
+            error_margin_ms=10.0
+        )
+
+        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[mock_prediction])):
+            with patch("src.api.task_dispatcher.dispatch_task_async"):
+                client.post(
+                    "/task/submit",
+                    json={
+                        "task_id": "task-1",
+                        "model_id": "model-1",
+                        "task_input": {"prompt": "test"},
+                        "metadata": {}
+                    }
+                )
+
+        # Now drain the instance
+        response = client.post(
+            "/instance/drain",
+            json={"instance_id": "inst-1"}
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["pending_tasks"] > 0
+
+    def test_get_drain_status_success(self, client):
+        """Test getting drain status."""
+        # Register and drain instance
+        client.post(
+            "/instance/register",
+            json={
+                "instance_id": "inst-1",
+                "model_id": "model-1",
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hardware"
+                }
+            }
+        )
+
+        client.post(
+            "/instance/drain",
+            json={"instance_id": "inst-1"}
+        )
+
+        # Check drain status
+        response = client.get("/instance/drain/status?instance_id=inst-1")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["instance_id"] == "inst-1"
+        assert data["status"] == "draining"
+        assert "can_remove" in data
+
+    def test_get_drain_status_nonexistent(self, client):
+        """Test getting drain status for non-existent instance."""
+        response = client.get("/instance/drain/status?instance_id=nonexistent")
+
+        assert response.status_code == 404
+
+
+class TestTaskResultCallback:
+    """Tests for task result callback endpoint."""
+
+    def test_callback_task_result_success(self, client):
+        """Test successful task result callback."""
+        from src.predictor_client import Prediction
+
+        # Register instance
+        client.post(
+            "/instance/register",
+            json={
+                "instance_id": "inst-1",
+                "model_id": "model-1",
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hardware"
+                }
+            }
+        )
+
+        # Submit a task
+        mock_prediction = Prediction(
+            instance_id="inst-1",
+            predicted_time_ms=100.0,
+            quantiles={0.5: 90.0, 0.9: 110.0},
+            error_margin_ms=10.0
+        )
+
+        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[mock_prediction])):
+            with patch("src.api.task_dispatcher.dispatch_task_async"):
+                client.post(
+                    "/task/submit",
+                    json={
+                        "task_id": "task-1",
+                        "model_id": "model-1",
+                        "task_input": {"prompt": "test"},
+                        "metadata": {}
+                    }
+                )
+
+        # Send callback
+        with patch("src.api.task_dispatcher.handle_task_result", new=AsyncMock()):
+            response = client.post(
+                "/callback/task_result",
+                json={
+                    "task_id": "task-1",
+                    "status": "completed",
+                    "result": {"output": "test result"},
+                    "execution_time_ms": 150
+                }
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+
+    def test_callback_task_result_task_not_found(self, client):
+        """Test callback for non-existent task."""
+        response = client.post(
+            "/callback/task_result",
+            json={
+                "task_id": "nonexistent",
+                "status": "completed",
+                "result": {"output": "test"},
+                "execution_time_ms": 100
+            }
+        )
+
+        assert response.status_code == 404
+
+    def test_callback_task_result_invalid_status(self, client):
+        """Test callback with invalid status."""
+        from src.predictor_client import Prediction
+
+        # Register instance and submit task
+        client.post(
+            "/instance/register",
+            json={
+                "instance_id": "inst-1",
+                "model_id": "model-1",
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hardware"
+                }
+            }
+        )
+
+        mock_prediction = Prediction(
+            instance_id="inst-1",
+            predicted_time_ms=100.0,
+            quantiles={0.5: 90.0, 0.9: 110.0},
+            error_margin_ms=10.0
+        )
+
+        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[mock_prediction])):
+            with patch("src.api.task_dispatcher.dispatch_task_async"):
+                client.post(
+                    "/task/submit",
+                    json={
+                        "task_id": "task-1",
+                        "model_id": "model-1",
+                        "task_input": {"prompt": "test"},
+                        "metadata": {}
+                    }
+                )
+
+        # Send callback with invalid status
+        response = client.post(
+            "/callback/task_result",
+            json={
+                "task_id": "task-1",
+                "status": "invalid_status",
+                "result": {"output": "test"},
+                "execution_time_ms": 100
+            }
+        )
+
+        assert response.status_code == 400
+
+    def test_callback_task_result_failed(self, client):
+        """Test callback for failed task."""
+        from src.predictor_client import Prediction
+
+        # Register instance and submit task
+        client.post(
+            "/instance/register",
+            json={
+                "instance_id": "inst-1",
+                "model_id": "model-1",
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hardware"
+                }
+            }
+        )
+
+        mock_prediction = Prediction(
+            instance_id="inst-1",
+            predicted_time_ms=100.0,
+            quantiles={0.5: 90.0, 0.9: 110.0},
+            error_margin_ms=10.0
+        )
+
+        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[mock_prediction])):
+            with patch("src.api.task_dispatcher.dispatch_task_async"):
+                client.post(
+                    "/task/submit",
+                    json={
+                        "task_id": "task-1",
+                        "model_id": "model-1",
+                        "task_input": {"prompt": "test"},
+                        "metadata": {}
+                    }
+                )
+
+        # Send callback with failure
+        with patch("src.api.task_dispatcher.handle_task_result", new=AsyncMock()):
+            response = client.post(
+                "/callback/task_result",
+                json={
+                    "task_id": "task-1",
+                    "status": "failed",
+                    "error": "Execution error",
+                    "execution_time_ms": 50
+                }
+            )
+
+        assert response.status_code == 200
+
+
+class TestTaskSubmissionErrors:
+    """Additional tests for task submission error handling."""
+
+    def test_submit_task_predictor_service_unavailable(self, client):
+        """Test task submission when predictor service is unavailable."""
+        # Register instance
+        client.post(
+            "/instance/register",
+            json={
+                "instance_id": "inst-1",
+                "model_id": "model-1",
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hardware"
+                }
+            }
+        )
+
+        # Mock predictor to raise connection error
+        with patch("src.api.scheduling_strategy.schedule_task",
+                   side_effect=ConnectionError("Predictor service unavailable")):
+            response = client.post(
+                "/task/submit",
+                json={
+                    "task_id": "task-1",
+                    "model_id": "model-1",
+                    "task_input": {"prompt": "test"},
+                    "metadata": {}
+                }
+            )
+
+        assert response.status_code == 503
+
+    def test_submit_task_no_trained_model(self, client):
+        """Test task submission when no trained model is available."""
+        # Register instance
+        client.post(
+            "/instance/register",
+            json={
+                "instance_id": "inst-1",
+                "model_id": "model-1",
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hardware"
+                }
+            }
+        )
+
+        # Mock predictor to raise ValueError about missing model
+        with patch("src.api.scheduling_strategy.schedule_task",
+                   side_effect=ValueError("No trained model available")):
+            response = client.post(
+                "/task/submit",
+                json={
+                    "task_id": "task-1",
+                    "model_id": "model-1",
+                    "task_input": {"prompt": "test"},
+                    "metadata": {}
+                }
+            )
+
+        assert response.status_code == 404
+        data = response.json()
+        assert "No trained model" in data["detail"]["error"]
+
+    def test_submit_task_invalid_metadata(self, client):
+        """Test task submission with invalid metadata."""
+        # Register instance
+        client.post(
+            "/instance/register",
+            json={
+                "instance_id": "inst-1",
+                "model_id": "model-1",
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hardware"
+                }
+            }
+        )
+
+        # Mock predictor to raise ValueError about invalid metadata
+        with patch("src.api.scheduling_strategy.schedule_task",
+                   side_effect=ValueError("Invalid metadata format")):
+            response = client.post(
+                "/task/submit",
+                json={
+                    "task_id": "task-1",
+                    "model_id": "model-1",
+                    "task_input": {"prompt": "test"},
+                    "metadata": {"invalid": "data"}
+                }
+            )
+
+        assert response.status_code == 400
+
+
+class TestProfilingMiddleware:
+    """Tests for profiling middleware."""
+
+    def test_profile_request_html_format(self, client):
+        """Test profiling with HTML format."""
+        import os
+
+        # Make a request with profiling enabled (HTML format)
+        response = client.get("/health?profile=true&profile_format=html")
+
+        # Should succeed
+        assert response.status_code == 200
+
+        # Check if profile file was created
+        assert os.path.exists("profile.html")
+
+        # Clean up
+        if os.path.exists("profile.html"):
+            os.remove("profile.html")
+
+    def test_profile_request_speedscope_format(self, client):
+        """Test profiling with speedscope format."""
+        import os
+
+        # Make a request with profiling enabled (speedscope format, default)
+        response = client.get("/health?profile=true&profile_format=speedscope")
+
+        # Should succeed
+        assert response.status_code == 200
+
+        # Check if profile file was created
+        assert os.path.exists("profile.speedscope.json")
+
+        # Clean up
+        if os.path.exists("profile.speedscope.json"):
+            os.remove("profile.speedscope.json")
+
+    def test_profile_request_default_format(self, client):
+        """Test profiling with default format (speedscope)."""
+        import os
+
+        # Make a request with profiling enabled (default format)
+        response = client.get("/health?profile=true")
+
+        # Should succeed
+        assert response.status_code == 200
+
+        # Check if profile file was created
+        assert os.path.exists("profile.speedscope.json")
+
+        # Clean up
+        if os.path.exists("profile.speedscope.json"):
+            os.remove("profile.speedscope.json")
+
+
+class TestDrainEdgeCases:
+    """Additional tests for drain edge cases."""
+
+    def test_drain_instance_with_expect_error_queue(self, client):
+        """Test draining with expect_error queue type."""
+        from src.predictor_client import Prediction
+
+        # Register instance first
+        client.post(
+            "/instance/register",
+            json={
+                "instance_id": "inst-1",
+                "model_id": "model-1",
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hardware"
+                }
+            }
+        )
+
+        # Switch to min_time strategy (uses expect_error queue)
+        client.post("/strategy/set", json={"strategy_name": "min_time"})
+
+        # Register another instance after strategy switch
+        client.post(
+            "/instance/register",
+            json={
+                "instance_id": "inst-2",
+                "model_id": "model-1",
+                "endpoint": "http://localhost:8002",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hardware"
+                }
+            }
+        )
+
+        # Submit a task
+        mock_prediction = Prediction(
+            instance_id="inst-2",
+            predicted_time_ms=100.0,
+            error_margin_ms=10.0
+        )
+
+        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[mock_prediction])):
+            with patch("src.api.task_dispatcher.dispatch_task_async"):
+                client.post(
+                    "/task/submit",
+                    json={
+                        "task_id": "task-1",
+                        "model_id": "model-1",
+                        "task_input": {"prompt": "test"},
+                        "metadata": {}
+                    }
+                )
+
+        # Drain the instance
+        response = client.post(
+            "/instance/drain",
+            json={"instance_id": "inst-2"}
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "estimated_completion_time_ms" in data
+
+    def test_drain_instance_probabilistic_with_median(self, client):
+        """Test draining with probabilistic queue that has median."""
+        from src.predictor_client import Prediction
+
+        # Register instance
+        client.post(
+            "/instance/register",
+            json={
+                "instance_id": "inst-1",
+                "model_id": "model-1",
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hardware"
+                }
+            }
+        )
+
+        # Submit a task to populate queue
+        mock_prediction = Prediction(
+            instance_id="inst-1",
+            predicted_time_ms=100.0,
+            quantiles={0.5: 90.0, 0.9: 110.0, 0.95: 120.0, 0.99: 130.0},
+            error_margin_ms=10.0
+        )
+
+        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[mock_prediction])):
+            with patch("src.api.task_dispatcher.dispatch_task_async"):
+                client.post(
+                    "/task/submit",
+                    json={
+                        "task_id": "task-1",
+                        "model_id": "model-1",
+                        "task_input": {"prompt": "test"},
+                        "metadata": {}
+                    }
+                )
+
+        # Drain the instance
+        response = client.post(
+            "/instance/drain",
+            json={"instance_id": "inst-1"}
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        # Should have estimated time from median quantile (0.5)
+        assert "estimated_completion_time_ms" in data
+
+
+class TestStrategyHelpers:
+    """Tests for strategy helper functions."""
+
+    def test_get_current_strategy_info_unknown(self, client):
+        """Test getting strategy info for unknown strategy."""
+        # This is harder to test directly without modifying global state
+        # But we can at least exercise the code path
+        response = client.get("/strategy/get")
+        assert response.status_code == 200
+
+
+class TestWebSocketEndpoint:
+    """Tests for WebSocket endpoint."""
+
+    def test_websocket_subscribe_and_receive_result(self, client):
+        """Test WebSocket subscribe and receive task result."""
+        from src.predictor_client import Prediction
+
+        # Register instance and submit task
+        client.post(
+            "/instance/register",
+            json={
+                "instance_id": "inst-1",
+                "model_id": "model-1",
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hardware"
+                }
+            }
+        )
+
+        mock_prediction = Prediction(
+            instance_id="inst-1",
+            predicted_time_ms=100.0,
+            quantiles={0.5: 90.0, 0.9: 110.0},
+            error_margin_ms=10.0
+        )
+
+        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[mock_prediction])):
+            with patch("src.api.task_dispatcher.dispatch_task_async"):
+                client.post(
+                    "/task/submit",
+                    json={
+                        "task_id": "task-1",
+                        "model_id": "model-1",
+                        "task_input": {"prompt": "test"},
+                        "metadata": {}
+                    }
+                )
+
+        # Test WebSocket connection
+        with client.websocket_connect("/task/get_result") as websocket:
+            # Subscribe to task
+            websocket.send_json({
+                "type": "subscribe",
+                "task_ids": ["task-1"]
+            })
+
+            # Should receive acknowledgment
+            ack = websocket.receive_json()
+            assert ack["type"] == "ack"
+            assert "task-1" in ack["subscribed_tasks"]
+
+            # Should also receive result immediately since task is pending
+            # (or may receive result first depending on timing)
+
+    def test_websocket_unsubscribe(self, client):
+        """Test WebSocket unsubscribe."""
+        with client.websocket_connect("/task/get_result") as websocket:
+            # Subscribe first
+            websocket.send_json({
+                "type": "subscribe",
+                "task_ids": ["task-1", "task-2"]
+            })
+
+            ack1 = websocket.receive_json()
+            assert len(ack1["subscribed_tasks"]) == 2
+
+            # Unsubscribe from one
+            websocket.send_json({
+                "type": "unsubscribe",
+                "task_ids": ["task-1"]
+            })
+
+            ack2 = websocket.receive_json()
+            assert ack2["type"] == "ack"
+            assert "task-1" not in ack2["subscribed_tasks"]
+            assert "task-2" in ack2["subscribed_tasks"]
+
+    def test_websocket_invalid_message_type(self, client):
+        """Test WebSocket with invalid message type."""
+        with client.websocket_connect("/task/get_result") as websocket:
+            # Send invalid message type
+            websocket.send_json({
+                "type": "invalid_type",
+                "data": "test"
+            })
+
+            # Should receive error message
+            error = websocket.receive_json()
+            assert error["type"] == "error"
+            assert "Unknown message type" in error["error"]
+
+    def test_websocket_invalid_task_ids_format(self, client):
+        """Test WebSocket with invalid task_ids format."""
+        with client.websocket_connect("/task/get_result") as websocket:
+            # Send invalid task_ids (not a list)
+            websocket.send_json({
+                "type": "subscribe",
+                "task_ids": "not-a-list"
+            })
+
+            # Should receive error message
+            error = websocket.receive_json()
+            assert error["type"] == "error"
+            assert "must be a list" in error["error"]
+
+    def test_websocket_multiple_subscriptions(self, client):
+        """Test WebSocket with multiple task subscriptions."""
+        with client.websocket_connect("/task/get_result") as websocket:
+            # Subscribe to multiple tasks
+            websocket.send_json({
+                "type": "subscribe",
+                "task_ids": ["task-1", "task-2", "task-3"]
+            })
+
+            ack = websocket.receive_json()
+            assert ack["type"] == "ack"
+            assert len(ack["subscribed_tasks"]) == 3
+
+
+class TestRemainingErrorHandling:
+    """Tests for remaining error handling paths."""
+
+    def test_register_instance_registry_error(self, client):
+        """Test registration with registry error."""
+        # Try to register with invalid data that causes internal error
+        with patch("src.api.instance_registry.register", side_effect=ValueError("Internal error")):
+            response = client.post(
+                "/instance/register",
+                json={
+                    "instance_id": "inst-1",
+                    "model_id": "model-1",
+                    "endpoint": "http://localhost:8001",
+                    "platform_info": {
+                        "software_name": "docker",
+                        "software_version": "20.10",
+                        "hardware_name": "test-hardware"
+                    }
+                }
+            )
+
+        assert response.status_code == 400
+
+    def test_drain_instance_value_error(self, client):
+        """Test drain with value error."""
+        # Register instance
+        client.post(
+            "/instance/register",
+            json={
+                "instance_id": "inst-1",
+                "model_id": "model-1",
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hardware"
+                }
+            }
+        )
+
+        # Try to drain instance with mocked error
+        with patch("src.api.instance_registry.start_draining", side_effect=ValueError("Cannot drain")):
+            response = client.post(
+                "/instance/drain",
+                json={"instance_id": "inst-1"}
+            )
+
+        assert response.status_code == 400
+
+    def test_submit_task_timeout_error(self, client):
+        """Test task submission with timeout error."""
+        # Register instance
+        client.post(
+            "/instance/register",
+            json={
+                "instance_id": "inst-1",
+                "model_id": "model-1",
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hardware"
+                }
+            }
+        )
+
+        # Mock to raise timeout error
+        with patch("src.api.scheduling_strategy.schedule_task",
+                   side_effect=TimeoutError("Request timeout")):
+            response = client.post(
+                "/task/submit",
+                json={
+                    "task_id": "task-1",
+                    "model_id": "model-1",
+                    "task_input": {"prompt": "test"},
+                    "metadata": {}
+                }
+            )
+
+        assert response.status_code == 503
+
+    def test_task_registry_create_error(self, client):
+        """Test task submission with task registry error."""
+        from src.predictor_client import Prediction
+
+        # Register instance
+        client.post(
+            "/instance/register",
+            json={
+                "instance_id": "inst-1",
+                "model_id": "model-1",
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hardware"
+                }
+            }
+        )
+
+        mock_prediction = Prediction(
+            instance_id="inst-1",
+            predicted_time_ms=100.0
+        )
+
+        from src.scheduler import ScheduleResult
+
+        with patch("src.api.scheduling_strategy.schedule_task",
+                   new=AsyncMock(return_value=ScheduleResult(
+                       selected_instance_id="inst-1",
+                       selected_prediction=mock_prediction
+                   ))):
+            with patch("src.api.task_registry.create_task",
+                       side_effect=ValueError("Task creation error")):
+                response = client.post(
+                    "/task/submit",
+                    json={
+                        "task_id": "task-1",
+                        "model_id": "model-1",
+                        "task_input": {"prompt": "test"},
+                        "metadata": {}
+                    }
+                )
+
+        assert response.status_code == 400
+
+    def test_set_strategy_exception(self, client):
+        """Test set strategy with exception during initialization."""
+        # Mock get_strategy to raise exception
+        with patch("src.api.get_strategy", side_effect=Exception("Strategy init error")):
+            response = client.post(
+                "/strategy/set",
+                json={"strategy_name": "min_time"}
+            )
+
+        assert response.status_code == 500
+
+    def test_health_check_with_exception(self, client):
+        """Test health check when registry has errors."""
+        # Mock to raise exception
+        with patch("src.api.instance_registry.get_total_count", side_effect=Exception("Registry error")):
+            response = client.get("/health")
+
+        assert response.status_code == 503
+
+    def test_remove_instance_key_error(self, client):
+        """Test remove instance with KeyError."""
+        # Try to remove non-existent instance that causes KeyError
+        with patch("src.api.instance_registry.safe_remove", side_effect=KeyError("not found")):
+            response = client.post(
+                "/instance/remove",
+                json={"instance_id": "nonexistent"}
+            )
+
+        assert response.status_code == 404
+
+    def test_remove_instance_value_error(self, client):
+        """Test remove instance with ValueError."""
+        # Register instance first
+        client.post(
+            "/instance/register",
+            json={
+                "instance_id": "inst-1",
+                "model_id": "model-1",
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hardware"
+                }
+            }
+        )
+
+        # Mock to raise ValueError
+        with patch("src.api.instance_registry.safe_remove", side_effect=ValueError("Cannot remove active instance")):
+            response = client.post(
+                "/instance/remove",
+                json={"instance_id": "inst-1"}
+            )
+
+        assert response.status_code == 400
+
+    def test_drain_instance_no_median_quantile(self, client):
+        """Test drain when quantile distribution has no 0.5."""
+        from src.predictor_client import Prediction
+
+        # Register instance
+        client.post(
+            "/instance/register",
+            json={
+                "instance_id": "inst-1",
+                "model_id": "model-1",
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hardware"
+                }
+            }
+        )
+
+        # Submit task with quantiles that do not include 0.5
+        mock_prediction = Prediction(
+            instance_id="inst-1",
+            predicted_time_ms=100.0,
+            quantiles={0.9: 110.0, 0.95: 120.0, 0.99: 130.0},  # No 0.5
+            error_margin_ms=10.0
+        )
+
+        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[mock_prediction])):
+            with patch("src.api.task_dispatcher.dispatch_task_async"):
+                client.post(
+                    "/task/submit",
+                    json={
+                        "task_id": "task-1",
+                        "model_id": "model-1",
+                        "task_input": {"prompt": "test"},
+                        "metadata": {}
+                    }
+                )
+
+        # Drain should handle missing 0.5 quantile gracefully
+        response = client.post(
+            "/instance/drain",
+            json={"instance_id": "inst-1"}
+        )
+
+        assert response.status_code == 200
+
+    def test_instance_info_no_queue_info(self, client):
+        """Test instance info when queue info is missing."""
+        # Register instance
+        client.post(
+            "/instance/register",
+            json={
+                "instance_id": "inst-1",
+                "model_id": "model-1",
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hardware"
+                }
+            }
+        )
+
+        # Mock get_queue_info to return None
+        with patch("src.api.instance_registry.get_queue_info", return_value=None):
+            response = client.get("/instance/info?instance_id=inst-1")
+
+        assert response.status_code == 500
+
+    def test_instance_info_no_stats(self, client):
+        """Test instance info when stats are missing."""
+        # Register instance
+        client.post(
+            "/instance/register",
+            json={
+                "instance_id": "inst-1",
+                "model_id": "model-1",
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hardware"
+                }
+            }
+        )
+
+        # Mock get_stats to return None
+        with patch("src.api.instance_registry.get_stats", return_value=None):
+            response = client.get("/instance/info?instance_id=inst-1")
+
+        assert response.status_code == 500
+
+
+    def test_get_current_strategy_info_round_robin(self, client):
+        """Test getting strategy info for round_robin."""
+        # Switch to round_robin
+        client.post("/strategy/set", json={"strategy_name": "round_robin"})
+
+        response = client.get("/strategy/get")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["strategy_info"]["strategy_name"] == "round_robin"
+        assert data["strategy_info"]["parameters"] == {}
+
+    def test_reinitialize_instance_queues_coverage(self, client):
+        """Test instance queue reinitialization for different strategies."""
+        # Register multiple instances
+        for i in range(1, 4):
+            client.post(
+                "/instance/register",
+                json={
+                    "instance_id": f"inst-{i}",
+                    "model_id": "model-1",
+                    "endpoint": f"http://localhost:800{i}",
+                    "platform_info": {
+                        "software_name": "docker",
+                        "software_version": "20.10",
+                        "hardware_name": "test-hardware"
+                    }
+                }
+            )
+
+        # Switch to min_time (expect_error queues)
+        response = client.post("/strategy/set", json={"strategy_name": "min_time"})
+        assert response.status_code == 200
+        assert response.json()["reinitialized_instances"] == 3
+
+        # Switch to round_robin (probabilistic queues)
+        response = client.post("/strategy/set", json={"strategy_name": "round_robin"})
+        assert response.status_code == 200
+        assert response.json()["reinitialized_instances"] == 3
+
+    def test_model_not_found_error_path(self, client):
+        """Test submit_task with 'Model not found' ValueError."""
+        # Register instance
+        client.post(
+            "/instance/register",
+            json={
+                "instance_id": "inst-1",
+                "model_id": "model-1",
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hardware"
+                }
+            }
+        )
+
+        # Mock to raise ValueError with "Model not found"
+        with patch("src.api.scheduling_strategy.schedule_task",
+                   side_effect=ValueError("Model not found in database")):
+            response = client.post(
+                "/task/submit",
+                json={
+                    "task_id": "task-1",
+                    "model_id": "model-1",
+                    "task_input": {"prompt": "test"},
+                    "metadata": {}
+                }
+            )
+
+        assert response.status_code == 404
+        data = response.json()
+        assert "No trained model" in data["detail"]["error"]

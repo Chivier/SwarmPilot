@@ -5,7 +5,7 @@ Tests all scheduling strategies and the factory function.
 """
 
 import pytest
-from unittest.mock import Mock
+from unittest.mock import Mock, MagicMock
 
 from src.scheduler import (
     SchedulingStrategy,
@@ -353,3 +353,450 @@ class TestGetStrategy:
         strategy = get_strategy("MIN_TIME", mock_predictor_client, instance_registry)
         # Should default to probabilistic
         assert isinstance(strategy, ProbabilisticSchedulingStrategy)
+
+
+# ============================================================================
+# Additional Tests for Coverage
+# ============================================================================
+
+class TestMinimumExpectedTimeStrategyUpdate:
+    """Additional tests for MinimumExpectedTimeStrategy update_queue."""
+
+    def test_update_queue_success(self, mock_predictor_client, instance_registry):
+        """Test successful queue update with error accumulation."""
+        from src.model import InstanceQueueExpectError, Instance
+
+        strategy = MinimumExpectedTimeStrategy(mock_predictor_client, instance_registry)
+
+        # Register an instance with initial queue state
+        instance = Instance(
+            instance_id="inst-1",
+            model_id="model-1",
+            endpoint="http://localhost:8001",
+            platform_info={
+                "software_name": "docker",
+                "software_version": "20.10",
+                "hardware_name": "test-hardware"
+            }
+        )
+        instance_registry.register(instance)
+
+        # Set initial queue info
+        initial_queue = InstanceQueueExpectError(
+            instance_id="inst-1",
+            expected_time_ms=100.0,
+            error_margin_ms=10.0
+        )
+        instance_registry.update_queue_info("inst-1", initial_queue)
+
+        # Create a prediction
+        prediction = Prediction(
+            instance_id="inst-1",
+            predicted_time_ms=50.0,
+            error_margin_ms=5.0
+        )
+
+        # Update queue
+        strategy.update_queue("inst-1", prediction)
+
+        # Verify queue was updated correctly
+        updated_queue = instance_registry.get_queue_info("inst-1")
+        assert isinstance(updated_queue, InstanceQueueExpectError)
+        assert updated_queue.expected_time_ms == 150.0  # 100 + 50
+        import math
+        expected_error = math.sqrt(10.0**2 + 5.0**2)
+        assert abs(updated_queue.error_margin_ms - expected_error) < 0.01
+
+    def test_update_queue_wrong_type(self, mock_predictor_client, instance_registry):
+        """Test update_queue with wrong queue info type."""
+        from src.model import InstanceQueueProbabilistic, Instance
+
+        strategy = MinimumExpectedTimeStrategy(mock_predictor_client, instance_registry)
+
+        # Register instance with probabilistic queue (wrong type)
+        instance = Instance(
+            instance_id="inst-1",
+            model_id="model-1",
+            endpoint="http://localhost:8001",
+            platform_info={
+                "software_name": "docker",
+                "software_version": "20.10",
+                "hardware_name": "test-hardware"
+            }
+        )
+        instance_registry.register(instance)
+
+        prob_queue = InstanceQueueProbabilistic(
+            instance_id="inst-1",
+            quantiles=[0.5, 0.9],
+            values=[100.0, 200.0]
+        )
+        instance_registry.update_queue_info("inst-1", prob_queue)
+
+        # Try to update - should log warning but not crash
+        prediction = Prediction(
+            instance_id="inst-1",
+            predicted_time_ms=50.0,
+            error_margin_ms=5.0
+        )
+
+        strategy.update_queue("inst-1", prediction)
+        # Queue should remain unchanged
+        queue = instance_registry.get_queue_info("inst-1")
+        assert isinstance(queue, InstanceQueueProbabilistic)
+
+
+class TestProbabilisticStrategyUpdate:
+    """Additional tests for ProbabilisticSchedulingStrategy update_queue."""
+
+    def test_update_queue_with_quantiles(self, mock_predictor_client, instance_registry):
+        """Test update_queue with full quantile information."""
+        from src.model import InstanceQueueProbabilistic, Instance
+        import numpy as np
+
+        # Set seed for reproducibility
+        np.random.seed(42)
+
+        strategy = ProbabilisticSchedulingStrategy(mock_predictor_client, instance_registry)
+
+        # Register instance
+        instance = Instance(
+            instance_id="inst-1",
+            model_id="model-1",
+            endpoint="http://localhost:8001",
+            platform_info={
+                "software_name": "docker",
+                "software_version": "20.10",
+                "hardware_name": "test-hardware"
+            }
+        )
+        instance_registry.register(instance)
+
+        # Set initial queue
+        initial_queue = InstanceQueueProbabilistic(
+            instance_id="inst-1",
+            quantiles=[0.5, 0.9, 0.95, 0.99],
+            values=[100.0, 200.0, 300.0, 500.0]
+        )
+        instance_registry.update_queue_info("inst-1", initial_queue)
+
+        # Create prediction with quantiles
+        prediction = Prediction(
+            instance_id="inst-1",
+            predicted_time_ms=50.0,
+            quantiles={0.5: 40.0, 0.9: 60.0, 0.95: 70.0, 0.99: 100.0}
+        )
+
+        # Update queue
+        strategy.update_queue("inst-1", prediction)
+
+        # Verify queue was updated (values should be higher)
+        updated_queue = instance_registry.get_queue_info("inst-1")
+        assert isinstance(updated_queue, InstanceQueueProbabilistic)
+        # Values should be sum of queue + task samples
+        assert all(v > initial_queue.values[i] for i, v in enumerate(updated_queue.values))
+
+    def test_update_queue_without_quantiles(self, mock_predictor_client, instance_registry):
+        """Test update_queue fallback when prediction has no quantiles."""
+        from src.model import InstanceQueueProbabilistic, Instance
+
+        strategy = ProbabilisticSchedulingStrategy(mock_predictor_client, instance_registry)
+
+        # Register instance
+        instance = Instance(
+            instance_id="inst-1",
+            model_id="model-1",
+            endpoint="http://localhost:8001",
+            platform_info={
+                "software_name": "docker",
+                "software_version": "20.10",
+                "hardware_name": "test-hardware"
+            }
+        )
+        instance_registry.register(instance)
+
+        # Set initial queue
+        initial_queue = InstanceQueueProbabilistic(
+            instance_id="inst-1",
+            quantiles=[0.5, 0.9, 0.95, 0.99],
+            values=[100.0, 200.0, 300.0, 500.0]
+        )
+        instance_registry.update_queue_info("inst-1", initial_queue)
+
+        # Create prediction without quantiles
+        prediction = Prediction(
+            instance_id="inst-1",
+            predicted_time_ms=50.0,
+            quantiles=None  # No quantiles
+        )
+
+        # Update queue (should use fallback)
+        strategy.update_queue("inst-1", prediction)
+
+        # Verify queue was updated using predicted_time_ms
+        updated_queue = instance_registry.get_queue_info("inst-1")
+        assert isinstance(updated_queue, InstanceQueueProbabilistic)
+        assert updated_queue.values[0] == 150.0  # 100 + 50
+
+    def test_update_queue_wrong_type(self, mock_predictor_client, instance_registry):
+        """Test update_queue with wrong queue info type."""
+        from src.model import InstanceQueueExpectError, Instance
+
+        strategy = ProbabilisticSchedulingStrategy(mock_predictor_client, instance_registry)
+
+        # Register instance with expect_error queue (wrong type)
+        instance = Instance(
+            instance_id="inst-1",
+            model_id="model-1",
+            endpoint="http://localhost:8001",
+            platform_info={
+                "software_name": "docker",
+                "software_version": "20.10",
+                "hardware_name": "test-hardware"
+            }
+        )
+        instance_registry.register(instance)
+
+        exp_queue = InstanceQueueExpectError(
+            instance_id="inst-1",
+            expected_time_ms=100.0,
+            error_margin_ms=10.0
+        )
+        instance_registry.update_queue_info("inst-1", exp_queue)
+
+        # Try to update - should log warning but not crash
+        prediction = Prediction(
+            instance_id="inst-1",
+            predicted_time_ms=50.0,
+            quantiles={0.5: 40.0, 0.9: 60.0}
+        )
+
+        strategy.update_queue("inst-1", prediction)
+        # Queue should remain unchanged
+        queue = instance_registry.get_queue_info("inst-1")
+        assert isinstance(queue, InstanceQueueExpectError)
+
+    def test_select_with_queue_info(self, mock_predictor_client, instance_registry):
+        """Test selection considering queue information."""
+        import numpy as np
+        from src.model import InstanceQueueProbabilistic
+
+        # Set seed for reproducibility
+        np.random.seed(42)
+
+        strategy = ProbabilisticSchedulingStrategy(mock_predictor_client, instance_registry)
+
+        predictions = [
+            Prediction(
+                instance_id="inst-1",
+                predicted_time_ms=100.0,
+                quantiles={0.5: 80.0, 0.9: 120.0}
+            ),
+            Prediction(
+                instance_id="inst-2",
+                predicted_time_ms=100.0,
+                quantiles={0.5: 80.0, 0.9: 120.0}
+            ),
+        ]
+
+        # Add queue info with different states
+        queue_info = {
+            "inst-1": InstanceQueueProbabilistic(
+                instance_id="inst-1",
+                quantiles=[0.5, 0.9],
+                values=[50.0, 100.0]  # Shorter queue
+            ),
+            "inst-2": InstanceQueueProbabilistic(
+                instance_id="inst-2",
+                quantiles=[0.5, 0.9],
+                values=[200.0, 400.0]  # Longer queue
+            ),
+        }
+
+        # Selection should consider queue state
+        selected = strategy.select_instance(predictions, queue_info)
+        assert selected in ["inst-1", "inst-2"]
+
+
+class TestSchedulingStrategyErrors:
+    """Tests for error handling in scheduling strategies."""
+
+    def test_get_predictions_http_404_error(self, mock_predictor_client, instance_registry):
+        """Test get_predictions with HTTP 404 error (model not found)."""
+        import httpx
+        from src.model import Instance
+
+        strategy = MinimumExpectedTimeStrategy(mock_predictor_client, instance_registry)
+
+        # Mock predictor to raise HTTP 404 error
+        response_mock = MagicMock()
+        response_mock.status_code = 404
+        response_mock.text = "Model not found"
+        mock_predictor_client.predict.side_effect = httpx.HTTPStatusError(
+            "404 Not Found",
+            request=MagicMock(),
+            response=response_mock
+        )
+
+        instances = [
+            Instance(
+                instance_id="inst-1",
+                model_id="model-1",
+                endpoint="http://localhost:8001",
+                platform_info={"software_name": "docker", "software_version": "20.10", "hardware_name": "test"}
+            )
+        ]
+
+        # Should raise ValueError
+        with pytest.raises(ValueError, match="No trained model"):
+            import asyncio
+            asyncio.run(strategy.get_predictions("model-1", {}, instances))
+
+    def test_get_predictions_http_400_error(self, mock_predictor_client, instance_registry):
+        """Test get_predictions with HTTP 400 error (invalid metadata)."""
+        import httpx
+        from src.model import Instance
+
+        strategy = MinimumExpectedTimeStrategy(mock_predictor_client, instance_registry)
+
+        # Mock predictor to raise HTTP 400 error
+        response_mock = MagicMock()
+        response_mock.status_code = 400
+        response_mock.text = "Invalid metadata"
+        mock_predictor_client.predict.side_effect = httpx.HTTPStatusError(
+            "400 Bad Request",
+            request=MagicMock(),
+            response=response_mock
+        )
+
+        instances = [
+            Instance(
+                instance_id="inst-1",
+                model_id="model-1",
+                endpoint="http://localhost:8001",
+                platform_info={"software_name": "docker", "software_version": "20.10", "hardware_name": "test"}
+            )
+        ]
+
+        # Should raise ValueError
+        with pytest.raises(ValueError, match="Invalid task metadata"):
+            import asyncio
+            asyncio.run(strategy.get_predictions("model-1", {}, instances))
+
+    def test_get_predictions_http_500_error(self, mock_predictor_client, instance_registry):
+        """Test get_predictions with HTTP 500 error (server error)."""
+        import httpx
+        from src.model import Instance
+
+        strategy = MinimumExpectedTimeStrategy(mock_predictor_client, instance_registry)
+
+        # Mock predictor to raise HTTP 500 error
+        response_mock = MagicMock()
+        response_mock.status_code = 500
+        response_mock.text = "Internal server error"
+        mock_predictor_client.predict.side_effect = httpx.HTTPStatusError(
+            "500 Internal Server Error",
+            request=MagicMock(),
+            response=response_mock
+        )
+
+        instances = [
+            Instance(
+                instance_id="inst-1",
+                model_id="model-1",
+                endpoint="http://localhost:8001",
+                platform_info={"software_name": "docker", "software_version": "20.10", "hardware_name": "test"}
+            )
+        ]
+
+        # Should raise ConnectionError
+        with pytest.raises(ConnectionError, match="Predictor service error"):
+            import asyncio
+            asyncio.run(strategy.get_predictions("model-1", {}, instances))
+
+    def test_get_predictions_timeout_error(self, mock_predictor_client, instance_registry):
+        """Test get_predictions with timeout error."""
+        import httpx
+        from src.model import Instance
+
+        strategy = MinimumExpectedTimeStrategy(mock_predictor_client, instance_registry)
+
+        # Mock predictor to raise timeout
+        mock_predictor_client.predict.side_effect = httpx.TimeoutException("Request timeout")
+
+        instances = [
+            Instance(
+                instance_id="inst-1",
+                model_id="model-1",
+                endpoint="http://localhost:8001",
+                platform_info={"software_name": "docker", "software_version": "20.10", "hardware_name": "test"}
+            )
+        ]
+
+        # Should raise TimeoutError
+        with pytest.raises(TimeoutError, match="Predictor service timeout"):
+            import asyncio
+            asyncio.run(strategy.get_predictions("model-1", {}, instances))
+
+    def test_get_predictions_connection_error(self, mock_predictor_client, instance_registry):
+        """Test get_predictions with connection error."""
+        import httpx
+        from src.model import Instance
+
+        strategy = MinimumExpectedTimeStrategy(mock_predictor_client, instance_registry)
+
+        # Mock predictor to raise connection error
+        mock_predictor_client.predict.side_effect = httpx.ConnectError("Connection refused")
+
+        instances = [
+            Instance(
+                instance_id="inst-1",
+                model_id="model-1",
+                endpoint="http://localhost:8001",
+                platform_info={"software_name": "docker", "software_version": "20.10", "hardware_name": "test"}
+            )
+        ]
+
+        # Should raise ConnectionError
+        with pytest.raises(ConnectionError, match="Predictor service unavailable"):
+            import asyncio
+            asyncio.run(strategy.get_predictions("model-1", {}, instances))
+
+
+class TestRoundRobinStrategyUpdate:
+    """Additional tests for RoundRobinStrategy."""
+
+    def test_update_queue_noop(self, mock_predictor_client, instance_registry):
+        """Test that RoundRobinStrategy update_queue is a no-op."""
+        from src.model import Instance, InstanceQueueProbabilistic
+
+        strategy = RoundRobinStrategy(mock_predictor_client, instance_registry)
+
+        # Register instance
+        instance = Instance(
+            instance_id="inst-1",
+            model_id="model-1",
+            endpoint="http://localhost:8001",
+            platform_info={
+                "software_name": "docker",
+                "software_version": "20.10",
+                "hardware_name": "test-hardware"
+            }
+        )
+        instance_registry.register(instance)
+
+        # Get initial queue state
+        initial_queue = instance_registry.get_queue_info("inst-1")
+
+        # Create prediction
+        prediction = Prediction(
+            instance_id="inst-1",
+            predicted_time_ms=100.0
+        )
+
+        # Update queue (should be no-op)
+        strategy.update_queue("inst-1", prediction)
+
+        # Verify queue unchanged
+        final_queue = instance_registry.get_queue_info("inst-1")
+        assert final_queue == initial_queue
