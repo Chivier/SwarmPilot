@@ -260,9 +260,24 @@ class TestTaskAssignmentWithDraining:
     @pytest.fixture(autouse=True)
     def setup_mocks(self):
         """Setup mocks for task submission dependencies."""
-        # Mock predictor client
-        with patch('src.api.predictor_client') as mock_predictor:
-            mock_predictor.predict = AsyncMock(return_value=[])
+        from src import api
+        from src.predictor_client import Prediction
+
+        # Mock the predict method on scheduling_strategy's predictor_client
+        # This is necessary because scheduling_strategy holds a reference to predictor_client
+        async def mock_predict(model_id, metadata, instances, prediction_type="quantile"):
+            """Mock predict that returns predictions for all instances."""
+            return [
+                Prediction(
+                    instance_id=inst.instance_id,
+                    predicted_time_ms=1000.0,
+                    confidence=0.9,
+                    quantiles={0.5: 900.0, 0.9: 1100.0, 0.95: 1200.0, 0.99: 1500.0}
+                )
+                for inst in instances
+            ]
+
+        with patch.object(api.scheduling_strategy.predictor_client, 'predict', side_effect=mock_predict):
             yield
 
     @pytest.fixture
