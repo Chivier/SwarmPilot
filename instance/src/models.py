@@ -25,6 +25,19 @@ class InstanceStatus(str, Enum):
     ERROR = "error"
 
 
+class RestartStatus(str, Enum):
+    """Restart operation status enumeration"""
+    PENDING = "pending"
+    DRAINING = "draining"
+    WAITING_TASKS = "waiting_tasks"
+    STOPPING_MODEL = "stopping_model"
+    DEREGISTERING = "deregistering"
+    STARTING_MODEL = "starting_model"
+    REGISTERING = "registering"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
 class Task(BaseModel):
     """Task data model"""
     task_id: str = Field(..., description="Unique identifier for this task")
@@ -73,3 +86,30 @@ class ModelRegistryEntry(BaseModel):
     name: str
     directory: str
     resource_requirements: Dict[str, Any]
+
+
+class RestartOperation(BaseModel):
+    """Tracks the state of a model restart operation"""
+    operation_id: str = Field(..., description="Unique identifier for this restart operation")
+    status: RestartStatus = Field(default=RestartStatus.PENDING, description="Current restart status")
+    old_model_id: Optional[str] = None
+    new_model_id: str
+    new_parameters: Dict[str, Any] = Field(default_factory=dict)
+    new_scheduler_url: Optional[str] = None
+
+    # Timestamps
+    initiated_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat().replace("+00:00", "Z"))
+    completed_at: Optional[str] = None
+
+    # Progress tracking
+    pending_tasks_at_start: int = 0
+    pending_tasks_completed: int = 0
+    error: Optional[str] = None
+
+    def update_status(self, new_status: RestartStatus, error: Optional[str] = None):
+        """Update the operation status"""
+        self.status = new_status
+        if error:
+            self.error = error
+        if new_status in (RestartStatus.COMPLETED, RestartStatus.FAILED):
+            self.completed_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")

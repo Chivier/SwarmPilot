@@ -5,7 +5,9 @@ This module implements the FastAPI application for the Instance Service.
 It provides endpoints for model management, task management, and instance monitoring.
 """
 
+import asyncio
 import time
+import uuid
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Any, Dict, List, Optional
@@ -17,7 +19,7 @@ from loguru import logger
 from .config import config
 from .docker_manager import get_docker_manager
 from .model_registry import get_registry
-from .models import InstanceStatus, Task, TaskStatus
+from .models import InstanceStatus, Task, TaskStatus, RestartOperation, RestartStatus
 from .task_queue import get_task_queue
 from .scheduler_client import get_scheduler_client
 from . import logger as _  # Import logger module to initialize logging
@@ -54,6 +56,41 @@ class ModelStopResponse(BaseModel):
     success: bool
     message: str
     model_id: str
+
+
+class ModelRestartRequest(BaseModel):
+    """Request schema for restarting a model"""
+    model_id: str = Field(..., description="Unique identifier of the new model/tool to start")
+    parameters: Optional[Dict[str, Any]] = Field(
+        default_factory=dict,
+        description="Model-specific initialization parameters"
+    )
+    scheduler_url: Optional[str] = Field(
+        None,
+        description="New scheduler URL to register with (optional)"
+    )
+
+
+class ModelRestartResponse(BaseModel):
+    """Response schema for model restart endpoint"""
+    success: bool
+    message: str
+    operation_id: str = Field(..., description="Unique ID to track this restart operation")
+    status: str = Field(..., description="Initial status (should be 'pending')")
+
+
+class RestartStatusResponse(BaseModel):
+    """Response schema for restart status endpoint"""
+    success: bool
+    operation_id: str
+    status: str = Field(..., description="Current restart status")
+    old_model_id: Optional[str] = None
+    new_model_id: str
+    initiated_at: str
+    completed_at: Optional[str] = None
+    pending_tasks_at_start: int
+    pending_tasks_completed: int
+    error: Optional[str] = None
 
 
 # Task Management Schemas
@@ -158,6 +195,10 @@ class ErrorResponse(BaseModel):
 
 # Track startup time for uptime calculation
 _startup_time = time.time()
+
+# Track restart operations
+_restart_operations: Dict[str, RestartOperation] = {}
+_restart_operation_lock = asyncio.Lock()
 
 
 @asynccontextmanager
@@ -340,6 +381,222 @@ async def stop_model():
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to stop model: {str(e)}"
         )
+
+
+@app.post(
+    "/model/restart",
+    response_model=ModelRestartResponse,
+    status_code=status.HTTP_200_OK,
+    responses={
+        400: {"model": ErrorResponse},
+        409: {"model": ErrorResponse},
+    },
+)
+async def restart_model(request: ModelRestartRequest):
+    """
+    Restart the model with a new model and/or scheduler.
+
+    This is a non-blocking operation that:
+    1. Drains from the current scheduler (stops accepting new tasks)
+    2. Waits for all pending tasks to complete
+    3. Stops the current model
+    4. Deregisters from the current scheduler
+    5. Starts the new model
+    6. Registers with the new scheduler (if URL provided)
+
+    The operation runs in the background. Use GET /model/restart/status to monitor progress.
+    """
+    docker_manager = get_docker_manager()
+    registry = get_registry()
+
+    # Check if a model is running
+    if not await docker_manager.is_model_running():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No model is currently running"
+        )
+
+    # Check if there's already a restart operation in progress
+    async with _restart_operation_lock:
+        for op in _restart_operations.values():
+            if op.status not in (RestartStatus.COMPLETED, RestartStatus.FAILED):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"A restart operation is already in progress (operation_id: {op.operation_id})"
+                )
+
+    # Validate new model exists in registry
+    if not registry.model_exists(request.model_id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Model not found in registry: {request.model_id}"
+        )
+
+    # Get current model info
+    current_model = await docker_manager.get_current_model()
+
+    # Create restart operation
+    operation_id = str(uuid.uuid4())
+    operation = RestartOperation(
+        operation_id=operation_id,
+        old_model_id=current_model.model_id if current_model else None,
+        new_model_id=request.model_id,
+        new_parameters=request.parameters or {},
+        new_scheduler_url=request.scheduler_url,
+    )
+
+    # Store operation
+    async with _restart_operation_lock:
+        _restart_operations[operation_id] = operation
+
+    # Start background task
+    asyncio.create_task(_perform_restart_operation(operation_id))
+
+    logger.info(
+        f"Restart operation {operation_id} initiated: "
+        f"{operation.old_model_id} -> {operation.new_model_id}"
+    )
+
+    return ModelRestartResponse(
+        success=True,
+        message="Model restart operation initiated",
+        operation_id=operation_id,
+        status=operation.status.value,
+    )
+
+
+async def _perform_restart_operation(operation_id: str):
+    """
+    Background task to perform the model restart operation.
+
+    This function executes the following steps:
+    1. Drain from scheduler (if enabled)
+    2. Wait for all pending tasks to complete
+    3. Stop current model
+    4. Deregister from current scheduler
+    5. Start new model
+    6. Register with new scheduler (if URL provided)
+
+    Args:
+        operation_id: Unique identifier for this restart operation
+    """
+    async with _restart_operation_lock:
+        operation = _restart_operations.get(operation_id)
+        if not operation:
+            logger.error(f"Restart operation {operation_id} not found")
+            return
+
+    try:
+        logger.info(f"Starting restart operation {operation_id}")
+        docker_manager = get_docker_manager()
+        scheduler_client = get_scheduler_client()
+        task_queue = get_task_queue()
+
+        # Step 1: Drain from scheduler (if enabled)
+        operation.update_status(RestartStatus.DRAINING)
+        if scheduler_client.is_enabled:
+            try:
+                await scheduler_client.drain_instance()
+                logger.info(f"Instance draining from scheduler")
+            except Exception as e:
+                # Log warning but continue - instance might already be draining or not registered
+                logger.warning(f"Failed to drain from scheduler: {str(e)}")
+        else:
+            logger.info("Scheduler integration disabled, skipping drain step")
+
+        # Step 2: Wait for all pending tasks to complete
+        operation.update_status(RestartStatus.WAITING_TASKS)
+        stats = await task_queue.get_queue_stats()
+        operation.pending_tasks_at_start = stats["queued"] + stats["running"]
+
+        logger.info(f"Waiting for {operation.pending_tasks_at_start} tasks to complete")
+
+        # Poll task queue until all tasks are completed
+        max_wait_time = 300  # 5 minutes timeout
+        start_wait_time = time.time()
+        while True:
+            stats = await task_queue.get_queue_stats()
+            pending = stats["queued"] + stats["running"]
+
+            if pending == 0:
+                operation.pending_tasks_completed = operation.pending_tasks_at_start
+                logger.info("All pending tasks completed")
+                break
+
+            # Check timeout
+            if time.time() - start_wait_time > max_wait_time:
+                raise TimeoutError(
+                    f"Timeout waiting for tasks to complete. "
+                    f"{pending} tasks still pending after {max_wait_time}s"
+                )
+
+            # Update progress
+            operation.pending_tasks_completed = operation.pending_tasks_at_start - pending
+
+            # Wait a bit before checking again
+            await asyncio.sleep(1)
+
+        # Step 3: Stop current model
+        operation.update_status(RestartStatus.STOPPING_MODEL)
+        if await docker_manager.is_model_running():
+            old_model_id = await docker_manager.stop_model()
+            operation.old_model_id = old_model_id
+            logger.info(f"Stopped old model: {old_model_id}")
+        else:
+            logger.warning("No model was running")
+
+        # Step 4: Deregister from current scheduler
+        operation.update_status(RestartStatus.DEREGISTERING)
+        if scheduler_client.is_enabled:
+            try:
+                await scheduler_client.deregister_instance()
+                logger.info("Deregistered from scheduler")
+            except Exception as e:
+                # Log warning but continue
+                logger.warning(f"Failed to deregister: {str(e)}")
+
+        # Step 5: Start new model
+        operation.update_status(RestartStatus.STARTING_MODEL)
+        registry = get_registry()
+
+        # Validate model exists
+        if not registry.model_exists(operation.new_model_id):
+            raise ValueError(f"Model not found in registry: {operation.new_model_id}")
+
+        model_info = await docker_manager.start_model(
+            operation.new_model_id,
+            operation.new_parameters
+        )
+        logger.info(f"Started new model: {operation.new_model_id}")
+
+        # Step 6: Register with new scheduler (if URL provided)
+        operation.update_status(RestartStatus.REGISTERING)
+
+        # Update scheduler URL if provided
+        if operation.new_scheduler_url:
+            logger.info(f"Updating scheduler URL to: {operation.new_scheduler_url}")
+            scheduler_client.scheduler_url = operation.new_scheduler_url
+            scheduler_client._registered = False
+
+        # Register with scheduler if enabled
+        if scheduler_client.is_enabled:
+            try:
+                await scheduler_client.register_instance(model_id=operation.new_model_id)
+                logger.info(f"Registered with scheduler: {scheduler_client.scheduler_url}")
+            except Exception as e:
+                # Log warning but mark operation as completed
+                logger.warning(f"Failed to register with scheduler: {str(e)}")
+
+        # Mark operation as completed
+        operation.update_status(RestartStatus.COMPLETED)
+        logger.info(f"Restart operation {operation_id} completed successfully")
+
+    except Exception as e:
+        logger.error(f"Restart operation {operation_id} failed: {str(e)}")
+        async with _restart_operation_lock:
+            operation = _restart_operations.get(operation_id)
+            if operation:
+                operation.update_status(RestartStatus.FAILED, error=str(e))
 
 
 # =============================================================================
@@ -610,6 +867,44 @@ async def get_info():
     return InfoResponse(
         success=True,
         instance=instance_info
+    )
+
+
+@app.get(
+    "/model/restart/status",
+    response_model=RestartStatusResponse,
+    status_code=status.HTTP_200_OK,
+    responses={
+        404: {"model": ErrorResponse},
+    },
+)
+async def get_restart_status(operation_id: str = Query(..., description="Restart operation ID")):
+    """
+    Get the status of a model restart operation.
+
+    Returns the current state of the restart operation including progress,
+    status, and any errors that occurred.
+    """
+    async with _restart_operation_lock:
+        operation = _restart_operations.get(operation_id)
+
+    if not operation:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Restart operation not found: {operation_id}"
+        )
+
+    return RestartStatusResponse(
+        success=True,
+        operation_id=operation.operation_id,
+        status=operation.status.value,
+        old_model_id=operation.old_model_id,
+        new_model_id=operation.new_model_id,
+        initiated_at=operation.initiated_at,
+        completed_at=operation.completed_at,
+        pending_tasks_at_start=operation.pending_tasks_at_start,
+        pending_tasks_completed=operation.pending_tasks_completed,
+        error=operation.error,
     )
 
 

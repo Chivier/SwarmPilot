@@ -161,6 +161,49 @@ class SchedulerClient:
             print(f"Unexpected error during deregistration: {str(e)}")
             return False
 
+    async def drain_instance(self) -> Dict[str, Any]:
+        """
+        Request the scheduler to drain this instance (stop assigning new tasks).
+
+        Returns:
+            Dictionary with drain status information including:
+            - success: bool
+            - status: str (should be "draining" after successful call)
+            - pending_tasks: int
+            - estimated_completion_time_ms: Optional[float]
+
+        Raises:
+            Exception: If drain request fails
+        """
+        if not self.is_enabled:
+            raise Exception("Scheduler integration disabled (SCHEDULER_URL not set)")
+
+        drain_data = {
+            "instance_id": self.instance_id,
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.post(
+                    f"{self.scheduler_url}/instance/drain",
+                    json=drain_data,
+                )
+                response.raise_for_status()
+                result = response.json()
+
+            if result.get("success", False):
+                print(f"Instance {self.instance_id} is now draining")
+                return result
+            else:
+                error_msg = result.get("error", "Unknown error")
+                raise Exception(f"Drain request failed: {error_msg}")
+
+        except httpx.HTTPError as e:
+            raise Exception(f"Failed to drain instance: {str(e)}")
+
+        except Exception as e:
+            raise Exception(f"Unexpected error during drain: {str(e)}")
+
     async def send_task_result(
         self,
         task_id: str,
