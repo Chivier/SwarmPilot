@@ -5,7 +5,10 @@ Unit tests for src/models.py
 import pytest
 from datetime import UTC, datetime
 from pydantic import ValidationError
-from src.models import Task, TaskStatus, InstanceStatus, ModelInfo, ModelRegistryEntry
+from src.models import (
+    Task, TaskStatus, InstanceStatus, ModelInfo, ModelRegistryEntry,
+    RestartStatus, RestartOperation
+)
 
 
 @pytest.mark.unit
@@ -363,3 +366,160 @@ class TestModelRegistryEntry:
         assert entry_dict["name"] == "Test Model"
         assert entry_dict["directory"] == "test_model"
         assert entry_dict["resource_requirements"] == {"memory": "2Gi"}
+
+
+@pytest.mark.unit
+class TestRestartStatus:
+    """Test suite for RestartStatus enum"""
+
+    def test_restart_status_values(self):
+        """Test that RestartStatus has all required values"""
+        assert RestartStatus.PENDING == "pending"
+        assert RestartStatus.DRAINING == "draining"
+        assert RestartStatus.WAITING_TASKS == "waiting_tasks"
+        assert RestartStatus.STOPPING_MODEL == "stopping_model"
+        assert RestartStatus.DEREGISTERING == "deregistering"
+        assert RestartStatus.STARTING_MODEL == "starting_model"
+        assert RestartStatus.REGISTERING == "registering"
+        assert RestartStatus.COMPLETED == "completed"
+        assert RestartStatus.FAILED == "failed"
+
+    def test_restart_status_membership(self):
+        """Test that all expected statuses are members of the enum"""
+        expected_statuses = [
+            "pending", "draining", "waiting_tasks", "stopping_model",
+            "deregistering", "starting_model", "registering", "completed", "failed"
+        ]
+        actual_statuses = [status.value for status in RestartStatus]
+        assert set(actual_statuses) == set(expected_statuses)
+
+
+@pytest.mark.unit
+class TestRestartOperation:
+    """Test suite for RestartOperation model"""
+
+    def test_restart_operation_creation(self):
+        """Test creating a RestartOperation with required fields"""
+        operation = RestartOperation(
+            operation_id="test-op-123",
+            new_model_id="new-model"
+        )
+
+        assert operation.operation_id == "test-op-123"
+        assert operation.new_model_id == "new-model"
+        assert operation.status == RestartStatus.PENDING
+        assert operation.old_model_id is None
+        assert operation.new_parameters == {}
+        assert operation.new_scheduler_url is None
+        assert operation.pending_tasks_at_start == 0
+        assert operation.pending_tasks_completed == 0
+        assert operation.error is None
+
+    def test_restart_operation_with_all_fields(self):
+        """Test creating a RestartOperation with all fields"""
+        operation = RestartOperation(
+            operation_id="test-op-456",
+            old_model_id="old-model",
+            new_model_id="new-model",
+            new_parameters={"key": "value"},
+            new_scheduler_url="http://scheduler:8000",
+            pending_tasks_at_start=5,
+            pending_tasks_completed=3
+        )
+
+        assert operation.operation_id == "test-op-456"
+        assert operation.old_model_id == "old-model"
+        assert operation.new_model_id == "new-model"
+        assert operation.new_parameters == {"key": "value"}
+        assert operation.new_scheduler_url == "http://scheduler:8000"
+        assert operation.pending_tasks_at_start == 5
+        assert operation.pending_tasks_completed == 3
+
+    def test_restart_operation_update_status(self):
+        """Test updating operation status"""
+        operation = RestartOperation(
+            operation_id="test-op-789",
+            new_model_id="new-model"
+        )
+
+        # Update to draining
+        operation.update_status(RestartStatus.DRAINING)
+        assert operation.status == RestartStatus.DRAINING
+        assert operation.error is None
+        assert operation.completed_at is None
+
+        # Update to completed
+        operation.update_status(RestartStatus.COMPLETED)
+        assert operation.status == RestartStatus.COMPLETED
+        assert operation.completed_at is not None
+
+    def test_restart_operation_update_status_with_error(self):
+        """Test updating operation status with error"""
+        operation = RestartOperation(
+            operation_id="test-op-error",
+            new_model_id="new-model"
+        )
+
+        # Update to failed with error
+        error_msg = "Model not found in registry"
+        operation.update_status(RestartStatus.FAILED, error=error_msg)
+
+        assert operation.status == RestartStatus.FAILED
+        assert operation.error == error_msg
+        assert operation.completed_at is not None
+
+    def test_restart_operation_timestamps(self):
+        """Test that timestamps are set correctly"""
+        operation = RestartOperation(
+            operation_id="test-op-time",
+            new_model_id="new-model"
+        )
+
+        # Check initiated_at is set
+        assert operation.initiated_at is not None
+        assert "Z" in operation.initiated_at  # ISO format with Z
+
+        # completed_at should be None initially
+        assert operation.completed_at is None
+
+        # Update to completed
+        operation.update_status(RestartStatus.COMPLETED)
+        assert operation.completed_at is not None
+        assert "Z" in operation.completed_at
+
+    def test_restart_operation_validation(self):
+        """Test RestartOperation field validation"""
+        # Missing required fields should raise ValidationError
+        with pytest.raises(ValidationError) as exc_info:
+            RestartOperation(
+                operation_id="test-op"
+                # Missing new_model_id
+            )
+        assert "new_model_id" in str(exc_info.value)
+
+        with pytest.raises(ValidationError) as exc_info:
+            RestartOperation(
+                # Missing operation_id
+                new_model_id="new-model"
+            )
+        assert "operation_id" in str(exc_info.value)
+
+    def test_restart_operation_json_serialization(self):
+        """Test that RestartOperation can be serialized to JSON"""
+        operation = RestartOperation(
+            operation_id="test-op-json",
+            old_model_id="old-model",
+            new_model_id="new-model",
+            new_parameters={"temp": 0.7},
+            new_scheduler_url="http://scheduler:8000"
+        )
+
+        # Convert to dict
+        op_dict = operation.model_dump()
+
+        assert op_dict["operation_id"] == "test-op-json"
+        assert op_dict["old_model_id"] == "old-model"
+        assert op_dict["new_model_id"] == "new-model"
+        assert op_dict["new_parameters"] == {"temp": 0.7}
+        assert op_dict["new_scheduler_url"] == "http://scheduler:8000"
+        assert op_dict["status"] == "pending"
