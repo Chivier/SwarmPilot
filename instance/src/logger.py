@@ -73,7 +73,7 @@ def setup_logger():
     log_dir.mkdir(parents=True, exist_ok=True)
 
     logger.add(
-        log_dir / "instance_{time:YYYY-MM-DD}.log",
+        log_dir / "instance_{time}.log",
         format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} - {message}",
         level=config.log_level,
         rotation="00:00",  # Rotate at midnight
@@ -86,7 +86,7 @@ def setup_logger():
     # Add JSON file handler for structured logging (optional, can be enabled via config)
     if config.enable_json_logs:
         logger.add(
-            log_dir / "instance_{time:YYYY-MM-DD}.json",
+            log_dir / "instance_{time}.json",
             format="{message}",
             level=config.log_level,
             rotation="00:00",
