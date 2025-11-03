@@ -700,26 +700,71 @@ async def get_task_info(task_id: str = Query(...)):
 @app.post("/task/clear", response_model=TaskClearResponse)
 async def clear_tasks():
     """
-    Clear all tasks from the scheduler.
+    Clear all tasks from the scheduler and all registered instances.
 
-    This endpoint removes all task records from the scheduler's registry
-    and resets the pending_tasks counter for all instances.
+    This endpoint:
+    1. Clears all task records from the scheduler's registry
+    2. Calls /task/clear on all registered instances to clear their task queues
+    3. Resets the pending_tasks counter for all instances
+
     Use with caution as this operation cannot be undone.
 
     Returns:
-        TaskClearResponse with count of cleared tasks
+        TaskClearResponse with count of cleared tasks from scheduler
     """
-    # Clear all tasks from registry
+    # Clear all tasks from scheduler registry
     cleared_count = task_registry.clear_all()
-    logger.warning(f"Cleared {cleared_count} tasks from registry")
+    logger.warning(f"Cleared {cleared_count} tasks from scheduler registry")
+
+    # Get all registered instances
+    all_instances = instance_registry.list_all()
+
+    # Clear tasks from each instance
+    instance_clear_results = []
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        for instance in all_instances:
+            try:
+                # Call instance's /task/clear endpoint
+                response = await client.post(f"{instance.endpoint}/task/clear")
+                response.raise_for_status()
+                result = response.json()
+
+                instance_clear_results.append({
+                    "instance_id": instance.instance_id,
+                    "success": True,
+                    "cleared": result.get("cleared_count", {}).get("total", 0)
+                })
+                logger.info(
+                    f"Cleared {result.get('cleared_count', {}).get('total', 0)} tasks "
+                    f"from instance {instance.instance_id}"
+                )
+            except Exception as e:
+                instance_clear_results.append({
+                    "instance_id": instance.instance_id,
+                    "success": False,
+                    "error": str(e)
+                })
+                logger.warning(
+                    f"Failed to clear tasks from instance {instance.instance_id}: {e}"
+                )
 
     # Reset pending_tasks counter for all instances to maintain consistency
     reset_count = instance_registry.reset_all_pending_tasks()
     logger.info(f"Reset pending_tasks counter for {reset_count} instance(s)")
 
+    # Log summary
+    successful_clears = sum(1 for r in instance_clear_results if r["success"])
+    total_instance_tasks = sum(
+        r.get("cleared", 0) for r in instance_clear_results if r["success"]
+    )
+    logger.info(
+        f"Successfully cleared tasks from {successful_clears}/{len(all_instances)} instances "
+        f"(total {total_instance_tasks} instance tasks)"
+    )
+
     return TaskClearResponse(
         success=True,
-        message=f"Successfully cleared {cleared_count} task(s)",
+        message=f"Successfully cleared {cleared_count} scheduler task(s) and tasks from {successful_clears}/{len(all_instances)} instance(s)",
         cleared_count=cleared_count,
     )
 
