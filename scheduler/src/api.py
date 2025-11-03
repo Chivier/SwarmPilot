@@ -20,9 +20,13 @@ from .model import (
     InstanceRegisterResponse,
     InstanceRemoveRequest,
     InstanceRemoveResponse,
+    InstanceDrainRequest,
+    InstanceDrainResponse,
+    InstanceDrainStatusResponse,
     InstanceListResponse,
     InstanceInfoResponse,
     Instance,
+    InstanceStatus,
     InstanceStats,
     InstanceQueueBase,
     InstanceQueueProbabilistic,
@@ -254,7 +258,10 @@ async def register_instance(request: InstanceRegisterRequest):
 @app.post("/instance/remove", response_model=InstanceRemoveResponse)
 async def remove_instance(request: InstanceRemoveRequest):
     """
-    Remove an instance from the scheduler.
+    Safely remove an instance from the scheduler.
+
+    The instance must be in DRAINING state with no pending tasks.
+    Use /instance/drain first, then check /instance/drain/status before removing.
 
     Args:
         request: Instance removal request with instance_id
@@ -264,6 +271,7 @@ async def remove_instance(request: InstanceRemoveRequest):
 
     Raises:
         HTTPException 404: If instance not found
+        HTTPException 400: If instance cannot be safely removed
     """
     # Check if instance exists
     if not instance_registry.get(request.instance_id):
@@ -272,25 +280,25 @@ async def remove_instance(request: InstanceRemoveRequest):
             detail={"success": False, "error": "Instance not found"},
         )
 
-    # TODO: Optional - check if instance has pending tasks and warn or reject
-    stats = instance_registry.get_stats(request.instance_id)
-    if stats and stats.pending_tasks > 0:
-        # For now, we allow removal even with pending tasks
-        # In production, you might want to:
-        # - Reject the removal
-        # - Reassign pending tasks to other instances
-        # - Wait for tasks to complete
-        pass
-
-    # Remove instance
+    # Use safe_remove which validates draining state and pending tasks
     try:
-        instance_registry.remove(request.instance_id)
-        logger.info(f"Removed instance {request.instance_id}")
+        instance_registry.safe_remove(request.instance_id)
+        logger.info(f"Safely removed instance {request.instance_id}")
     except KeyError:
         logger.warning(f"Attempted to remove non-existent instance {request.instance_id}")
         raise HTTPException(
             status_code=404,
             detail={"success": False, "error": "Instance not found"},
+        )
+    except ValueError as e:
+        logger.warning(f"Cannot safely remove instance {request.instance_id}: {e}")
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "success": False,
+                "error": str(e),
+                "hint": "Use /instance/drain first and wait for tasks to complete"
+            }
         )
 
     return InstanceRemoveResponse(
@@ -298,6 +306,117 @@ async def remove_instance(request: InstanceRemoveRequest):
         message="Instance removed successfully",
         instance_id=request.instance_id,
     )
+
+
+@app.post("/instance/drain", response_model=InstanceDrainResponse)
+async def drain_instance(request: InstanceDrainRequest):
+    """
+    Start draining an instance - stop assigning new tasks.
+
+    The instance will continue processing existing tasks but will not receive
+    new task assignments. Use /instance/drain/status to check when safe to remove.
+
+    Args:
+        request: Instance drain request with instance_id
+
+    Returns:
+        InstanceDrainResponse with drain status and pending task count
+
+    Raises:
+        HTTPException 404: If instance not found
+        HTTPException 400: If instance is not in ACTIVE state
+    """
+    if not instance_registry.get(request.instance_id):
+        raise HTTPException(
+            status_code=404,
+            detail={"success": False, "error": "Instance not found"},
+        )
+
+    try:
+        instance = instance_registry.start_draining(request.instance_id)
+        drain_status = instance_registry.get_drain_status(request.instance_id)
+
+        # Estimate completion time based on queue info
+        queue_info = instance_registry.get_queue_info(request.instance_id)
+        estimated_time = None
+        if queue_info:
+            if isinstance(queue_info, InstanceQueueExpectError):
+                estimated_time = queue_info.expected_time_ms
+            elif isinstance(queue_info, InstanceQueueProbabilistic):
+                # Use median (0.5 quantile) if available
+                if queue_info.quantiles and queue_info.values:
+                    try:
+                        median_idx = queue_info.quantiles.index(0.5)
+                        estimated_time = queue_info.values[median_idx]
+                    except (ValueError, IndexError):
+                        # Fall back to first value if 0.5 quantile not available
+                        estimated_time = queue_info.values[0] if queue_info.values else None
+
+        logger.info(
+            f"Started draining instance {request.instance_id} "
+            f"with {drain_status['pending_tasks']} pending tasks"
+        )
+
+        return InstanceDrainResponse(
+            success=True,
+            message="Instance is now draining. No new tasks will be assigned.",
+            instance_id=instance.instance_id,
+            status=instance.status,
+            pending_tasks=drain_status["pending_tasks"],
+            running_tasks=0,
+            estimated_completion_time_ms=estimated_time,
+        )
+
+    except ValueError as e:
+        logger.warning(f"Failed to drain instance {request.instance_id}: {e}")
+        raise HTTPException(
+            status_code=400,
+            detail={"success": False, "error": str(e)}
+        )
+
+
+@app.get("/instance/drain/status", response_model=InstanceDrainStatusResponse)
+async def get_drain_status(instance_id: str = Query(..., description="ID of the instance to check")):
+    """
+    Check draining status of an instance.
+
+    Returns whether the instance is ready for safe removal (all tasks completed).
+
+    Args:
+        instance_id: ID of the instance to check
+
+    Returns:
+        InstanceDrainStatusResponse with current status and whether safe to remove
+
+    Raises:
+        HTTPException 404: If instance not found
+    """
+    try:
+        drain_status = instance_registry.get_drain_status(instance_id)
+
+        logger.debug(
+            f"Drain status for {instance_id}: "
+            f"status={drain_status['status']}, "
+            f"pending={drain_status['pending_tasks']}, "
+            f"can_remove={drain_status['can_remove']}"
+        )
+
+        return InstanceDrainStatusResponse(
+            success=True,
+            instance_id=instance_id,
+            status=drain_status["status"],
+            pending_tasks=drain_status["pending_tasks"],
+            running_tasks=0,
+            can_remove=drain_status["can_remove"],
+            drain_initiated_at=drain_status.get("drain_initiated_at"),
+        )
+
+    except KeyError:
+        logger.warning(f"Attempted to check drain status for non-existent instance {instance_id}")
+        raise HTTPException(
+            status_code=404,
+            detail={"success": False, "error": "Instance not found"}
+        )
 
 
 @app.get("/instance/list", response_model=InstanceListResponse)
@@ -396,8 +515,8 @@ async def submit_task(request: TaskSubmitRequest):
             detail={"success": False, "error": "Task with this ID already exists"},
         )
 
-    # 2. Find available instances for the model
-    available_instances = instance_registry.list_all(model_id=request.model_id)
+    # 2. Find available instances for the model (only ACTIVE instances)
+    available_instances = instance_registry.list_active(model_id=request.model_id)
 
     if not available_instances:
         raise HTTPException(

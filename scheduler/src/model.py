@@ -22,12 +22,21 @@ class Task(BaseModel):
     metadata: Dict[str, Any]
 
 
+class InstanceStatus(str, Enum):
+    """Enumeration of possible instance statuses."""
+    ACTIVE = "active"        # Normal operation, accepts new tasks
+    DRAINING = "draining"    # No new tasks, waiting for existing tasks to complete
+    REMOVING = "removing"    # All tasks complete, safe to remove
+
+
 class Instance(BaseModel):
     """Instance definition for model execution."""
     instance_id: str
     model_id: str
     endpoint: str
     platform_info: Dict[str, str]  # Required: software_name, software_version, hardware_name
+    status: InstanceStatus = InstanceStatus.ACTIVE  # Instance lifecycle status
+    drain_initiated_at: Optional[str] = None  # ISO timestamp when draining started
 
 
 class InstanceQueueBase(BaseModel):
@@ -114,6 +123,33 @@ class InstanceInfoResponse(BaseModel):
     instance: Instance
     queue_info: Union[InstanceQueueProbabilistic, InstanceQueueExpectError]
     stats: InstanceStats
+
+
+class InstanceDrainRequest(BaseModel):
+    """Request model for starting instance draining."""
+    instance_id: str
+
+
+class InstanceDrainResponse(BaseModel):
+    """Response model for starting instance draining."""
+    success: bool
+    message: str
+    instance_id: str
+    status: InstanceStatus
+    pending_tasks: int
+    running_tasks: int
+    estimated_completion_time_ms: Optional[float] = None
+
+
+class InstanceDrainStatusResponse(BaseModel):
+    """Response model for checking instance drain status."""
+    success: bool
+    instance_id: str
+    status: InstanceStatus
+    pending_tasks: int
+    running_tasks: int
+    can_remove: bool
+    drain_initiated_at: Optional[str] = None
 
 
 # ============================================================================

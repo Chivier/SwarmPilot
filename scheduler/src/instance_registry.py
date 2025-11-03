@@ -9,7 +9,14 @@ from typing import Dict, List, Optional
 from threading import Lock
 from datetime import datetime
 
-from .model import Instance, InstanceStats, InstanceQueueBase, InstanceQueueProbabilistic, InstanceQueueExpectError
+from .model import (
+    Instance,
+    InstanceStatus,
+    InstanceStats,
+    InstanceQueueBase,
+    InstanceQueueProbabilistic,
+    InstanceQueueExpectError,
+)
 
 
 class InstanceRegistry:
@@ -183,6 +190,140 @@ class InstanceRegistry:
         with self._lock:
             if instance_id in self._stats:
                 self._stats[instance_id].failed_tasks += 1
+
+    def start_draining(self, instance_id: str) -> Instance:
+        """
+        Mark instance as draining - stops accepting new tasks.
+
+        Args:
+            instance_id: ID of instance to start draining
+
+        Returns:
+            The instance being drained
+
+        Raises:
+            KeyError: If instance not found
+            ValueError: If instance is not in ACTIVE state
+        """
+        with self._lock:
+            if instance_id not in self._instances:
+                raise KeyError(f"Instance {instance_id} not found")
+
+            instance = self._instances[instance_id]
+            if instance.status != InstanceStatus.ACTIVE:
+                raise ValueError(
+                    f"Instance {instance_id} is already in {instance.status} state"
+                )
+
+            instance.status = InstanceStatus.DRAINING
+            instance.drain_initiated_at = datetime.utcnow().isoformat() + "Z"
+            return instance
+
+    def get_drain_status(self, instance_id: str) -> Dict:
+        """
+        Get draining status for an instance.
+
+        Args:
+            instance_id: ID of instance
+
+        Returns:
+            Dictionary with drain status information
+
+        Raises:
+            KeyError: If instance not found
+        """
+        with self._lock:
+            instance = self._instances.get(instance_id)
+            if not instance:
+                raise KeyError(f"Instance {instance_id} not found")
+
+            stats = self._stats.get(instance_id)
+            if not stats:
+                return {
+                    "instance_id": instance_id,
+                    "status": instance.status,
+                    "pending_tasks": 0,
+                    "running_tasks": 0,
+                    "can_remove": True,
+                    "drain_initiated_at": instance.drain_initiated_at
+                }
+
+            can_remove = (
+                instance.status == InstanceStatus.DRAINING
+                and stats.pending_tasks == 0
+            )
+
+            return {
+                "instance_id": instance_id,
+                "status": instance.status,
+                "pending_tasks": stats.pending_tasks,
+                "running_tasks": 0,  # pending_tasks includes running
+                "can_remove": can_remove,
+                "drain_initiated_at": instance.drain_initiated_at
+            }
+
+    def list_active(self, model_id: Optional[str] = None) -> List[Instance]:
+        """
+        List only ACTIVE instances (excludes draining/removing).
+
+        Args:
+            model_id: Optional model ID filter
+
+        Returns:
+            List of active instances
+        """
+        with self._lock:
+            instances = [
+                i for i in self._instances.values()
+                if i.status == InstanceStatus.ACTIVE
+            ]
+
+            if model_id:
+                instances = [i for i in instances if i.model_id == model_id]
+
+            return instances
+
+    def safe_remove(self, instance_id: str) -> Instance:
+        """
+        Safely remove an instance - only if draining and no pending tasks.
+
+        Args:
+            instance_id: ID of instance to remove
+
+        Returns:
+            The removed instance
+
+        Raises:
+            KeyError: If instance not found
+            ValueError: If instance cannot be safely removed
+        """
+        with self._lock:
+            if instance_id not in self._instances:
+                raise KeyError(f"Instance {instance_id} not found")
+
+            instance = self._instances[instance_id]
+            stats = self._stats.get(instance_id)
+
+            # Check if safe to remove
+            if instance.status != InstanceStatus.DRAINING:
+                raise ValueError(
+                    f"Instance must be in DRAINING state. "
+                    f"Current state: {instance.status}. "
+                    f"Use /instance/drain endpoint first."
+                )
+
+            if stats and stats.pending_tasks > 0:
+                raise ValueError(
+                    f"Instance has {stats.pending_tasks} pending tasks. "
+                    f"Wait for completion before removing."
+                )
+
+            # Safe to remove
+            instance = self._instances.pop(instance_id)
+            self._queue_info.pop(instance_id, None)
+            self._stats.pop(instance_id, None)
+
+            return instance
 
     def get_total_count(self) -> int:
         """Get total number of registered instances."""
