@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Experiment 06: Multi-Model Workflow with Dynamic Fanout (1-to-n)
+Experiment 04: Multi-Model Workflow with Dynamic Fanout (1-to-n)
 
 This experiment tests workflow dependencies where each A task generates
 a variable number (n) of B tasks that execute in parallel. A workflow
@@ -1445,7 +1445,7 @@ def test_strategy_workflow(
 def main(num_workflows: int = 100, qps_a: float = 8.0, seed: int = 42,
          strategies: List[str] = None):
     """
-    Main entry point for experiment 06.
+    Main entry point for experiment 04.
 
     Args:
         num_workflows: Number of workflows to generate and execute per strategy
@@ -1457,7 +1457,7 @@ def main(num_workflows: int = 100, qps_a: float = 8.0, seed: int = 42,
         strategies = ["min_time", "round_robin", "probabilistic"]
 
     logger = logging.getLogger("Main")
-    logger.info("Starting Experiment 06: Multi-Model Workflow with Dynamic Fanout")
+    logger.info("Starting Experiment 04: Multi-Model Workflow with Dynamic Fanout")
     logger.info(f"Configuration: {num_workflows} workflows, QPS={qps_a}, seed={seed}")
     logger.info(f"Strategies to test: {', '.join(strategies)}")
 
@@ -1508,7 +1508,7 @@ def main(num_workflows: int = 100, qps_a: float = 8.0, seed: int = 42,
     results_file = f"results/results_workflow_dynamic_{timestamp}.json"
 
     output_data = {
-        "experiment": "06.multi_model_workflow_dynamic",
+        "experiment": "04.multi_model_workflow_dynamic",
         "timestamp": datetime.now().isoformat(),
         "config": {
             "num_workflows": NUM_WORKFLOWS,
@@ -1520,6 +1520,9 @@ def main(num_workflows: int = 100, qps_a: float = 8.0, seed: int = 42,
         },
         "results": all_results
     }
+    
+    if os.path.exists("results"):
+        os.makedirs("results", exist_ok=True)
 
     with open(results_file, 'w') as f:
         json.dump(output_data, f, indent=2)
@@ -1551,7 +1554,7 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="Experiment 06: Multi-Model Workflow with Dynamic Fanout (1-to-n)",
+        description="Experiment 04: Multi-Model Workflow with Dynamic Fanout (1-to-n)",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
 
