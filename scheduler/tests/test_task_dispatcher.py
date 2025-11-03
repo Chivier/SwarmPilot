@@ -513,3 +513,454 @@ class TestWebSocketNotification:
         task_registry.update_status("task-1", TaskStatus.COMPLETED)
         await task_dispatcher._notify_task_completion("task-1")
         mock_websocket.send_json.assert_called_once()
+
+
+# ============================================================================
+# Handle Task Result Tests
+# ============================================================================
+
+class TestHandleTaskResult:
+    """Tests for handle_task_result callback handler."""
+
+    @pytest.mark.asyncio
+    async def test_handle_completed_task(
+        self,
+        task_dispatcher,
+        task_registry,
+        instance_registry,
+        sample_instance,
+        websocket_manager
+    ):
+        """Test handling a completed task result."""
+        # Setup
+        instance_registry.register(sample_instance)
+        task = task_registry.create_task(
+            task_id="task-1",
+            model_id="model-1",
+            task_input={"prompt": "test"},
+            metadata={"input_size": 1000},
+            assigned_instance="inst-1"
+        )
+        task.predicted_time_ms = 100.0
+
+        # Handle completion
+        await task_dispatcher.handle_task_result(
+            task_id="task-1",
+            status="completed",
+            result={"output": "result"},
+            execution_time_ms=120.0
+        )
+
+        # Verify task was updated
+        updated_task = task_registry.get("task-1")
+        assert updated_task.status == TaskStatus.COMPLETED
+        assert updated_task.result == {"output": "result"}
+        assert updated_task.execution_time_ms == 120.0
+
+        # Verify instance stats were updated
+        instance = instance_registry.get("inst-1")
+        assert instance.completed_tasks == 1
+
+    @pytest.mark.asyncio
+    async def test_handle_completed_with_training_data(
+        self,
+        task_dispatcher,
+        task_registry,
+        instance_registry,
+        sample_instance
+    ):
+        """Test that training data is collected on completion."""
+        # Setup with training client
+        mock_training_client = MagicMock()
+        mock_training_client.add_sample = MagicMock()
+        mock_training_client.flush_if_ready = AsyncMock()
+        task_dispatcher.training_client = mock_training_client
+
+        instance_registry.register(sample_instance)
+        task = task_registry.create_task(
+            task_id="task-1",
+            model_id="model-1",
+            task_input={},
+            metadata={"input_size": 1000},
+            assigned_instance="inst-1"
+        )
+
+        # Handle completion
+        await task_dispatcher.handle_task_result(
+            task_id="task-1",
+            status="completed",
+            execution_time_ms=150.0
+        )
+
+        # Verify training data was collected
+        mock_training_client.add_sample.assert_called_once_with(
+            model_id="model-1",
+            platform_info=sample_instance.platform_info,
+            features={"input_size": 1000},
+            actual_runtime_ms=150.0
+        )
+        mock_training_client.flush_if_ready.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_handle_completed_without_training(
+        self,
+        task_dispatcher,
+        task_registry,
+        instance_registry,
+        sample_instance
+    ):
+        """Test completion without training client (no errors)."""
+        task_dispatcher.training_client = None
+
+        instance_registry.register(sample_instance)
+        task_registry.create_task(
+            task_id="task-1",
+            model_id="model-1",
+            task_input={},
+            metadata={},
+            assigned_instance="inst-1"
+        )
+
+        # Should not raise error
+        await task_dispatcher.handle_task_result(
+            task_id="task-1",
+            status="completed",
+            execution_time_ms=150.0
+        )
+
+    @pytest.mark.asyncio
+    async def test_handle_failed_task(
+        self,
+        task_dispatcher,
+        task_registry,
+        instance_registry,
+        sample_instance
+    ):
+        """Test handling a failed task result."""
+        instance_registry.register(sample_instance)
+        task_registry.create_task(
+            task_id="task-1",
+            model_id="model-1",
+            task_input={},
+            metadata={},
+            assigned_instance="inst-1"
+        )
+
+        # Handle failure
+        await task_dispatcher.handle_task_result(
+            task_id="task-1",
+            status="failed",
+            error="Task execution failed"
+        )
+
+        # Verify task was marked as failed
+        task = task_registry.get("task-1")
+        assert task.status == TaskStatus.FAILED
+        assert task.error == "Task execution failed"
+
+        # Verify instance failed count increased
+        instance = instance_registry.get("inst-1")
+        assert instance.failed_tasks == 1
+
+    @pytest.mark.asyncio
+    async def test_handle_nonexistent_task(
+        self,
+        task_dispatcher,
+        task_registry
+    ):
+        """Test handling result for nonexistent task."""
+        # Should not raise error
+        await task_dispatcher.handle_task_result(
+            task_id="nonexistent",
+            status="completed"
+        )
+
+    @pytest.mark.asyncio
+    async def test_handle_triggers_queue_update(
+        self,
+        task_dispatcher,
+        task_registry,
+        instance_registry,
+        sample_instance
+    ):
+        """Test that queue update is triggered on completion."""
+        from src.model import InstanceQueueExpectError
+
+        instance_registry.register(sample_instance)
+        instance_registry.update_queue_info(
+            "inst-1",
+            InstanceQueueExpectError(
+                instance_id="inst-1",
+                expected_time_ms=200.0,
+                error_margin_ms=50.0
+            )
+        )
+
+        task = task_registry.create_task(
+            task_id="task-1",
+            model_id="model-1",
+            task_input={},
+            metadata={},
+            assigned_instance="inst-1"
+        )
+        task.predicted_time_ms = 100.0
+
+        # Handle completion
+        await task_dispatcher.handle_task_result(
+            task_id="task-1",
+            status="completed",
+            execution_time_ms=120.0
+        )
+
+        # Verify queue was updated
+        queue = instance_registry.get_queue_info("inst-1")
+        # Expected: 200 - 100 + 120 = 220
+        assert queue.expected_time_ms == 220.0
+
+
+# ============================================================================
+# Queue Update on Completion Tests
+# ============================================================================
+
+class TestQueueUpdateOnCompletion:
+    """Tests for _update_queue_on_completion method."""
+
+    @pytest.mark.asyncio
+    async def test_update_expect_error_queue(
+        self,
+        task_dispatcher,
+        instance_registry,
+        sample_instance
+    ):
+        """Test updating ExpectError queue on completion."""
+        from src.model import InstanceQueueExpectError
+
+        instance_registry.register(sample_instance)
+        instance_registry.update_queue_info(
+            "inst-1",
+            InstanceQueueExpectError(
+                instance_id="inst-1",
+                expected_time_ms=300.0,
+                error_margin_ms=50.0
+            )
+        )
+
+        # Update: predicted=150ms, actual=180ms
+        await task_dispatcher._update_queue_on_completion(
+            instance_id="inst-1",
+            predicted_time_ms=150.0,
+            actual_time_ms=180.0,
+            predicted_error_margin_ms=30.0
+        )
+
+        # Verify: 300 - 150 + 180 = 330
+        queue = instance_registry.get_queue_info("inst-1")
+        assert queue.expected_time_ms == 330.0
+        assert queue.error_margin_ms == 50.0  # Error unchanged
+
+    @pytest.mark.asyncio
+    async def test_update_expect_error_queue_ensures_non_negative(
+        self,
+        task_dispatcher,
+        instance_registry,
+        sample_instance
+    ):
+        """Test that queue update ensures non-negative values."""
+        from src.model import InstanceQueueExpectError
+
+        instance_registry.register(sample_instance)
+        instance_registry.update_queue_info(
+            "inst-1",
+            InstanceQueueExpectError(
+                instance_id="inst-1",
+                expected_time_ms=50.0,
+                error_margin_ms=10.0
+            )
+        )
+
+        # Predicted > actual, would result in negative
+        await task_dispatcher._update_queue_on_completion(
+            instance_id="inst-1",
+            predicted_time_ms=100.0,
+            actual_time_ms=30.0
+        )
+
+        # Should be clamped to 0
+        queue = instance_registry.get_queue_info("inst-1")
+        assert queue.expected_time_ms == 0.0
+
+    @pytest.mark.asyncio
+    async def test_update_probabilistic_queue_with_quantiles(
+        self,
+        task_dispatcher,
+        instance_registry,
+        sample_instance
+    ):
+        """Test updating Probabilistic queue with Monte Carlo."""
+        from src.model import InstanceQueueProbabilistic
+
+        instance_registry.register(sample_instance)
+        instance_registry.update_queue_info(
+            "inst-1",
+            InstanceQueueProbabilistic(
+                instance_id="inst-1",
+                quantiles=[0.5, 0.9, 0.95],
+                values=[100.0, 200.0, 250.0]
+            )
+        )
+
+        # Update with quantiles (triggers Monte Carlo)
+        await task_dispatcher._update_queue_on_completion(
+            instance_id="inst-1",
+            predicted_time_ms=80.0,
+            actual_time_ms=100.0,
+            predicted_quantiles={0.5: 70.0, 0.9: 90.0, 0.95: 100.0}
+        )
+
+        # Verify queue was updated
+        queue = instance_registry.get_queue_info("inst-1")
+        assert isinstance(queue, InstanceQueueProbabilistic)
+        assert len(queue.values) == 3
+        # Values should be updated (difficult to test exact values due to Monte Carlo)
+        assert all(v >= 0 for v in queue.values)
+
+    @pytest.mark.asyncio
+    async def test_update_probabilistic_queue_fallback(
+        self,
+        task_dispatcher,
+        instance_registry,
+        sample_instance
+    ):
+        """Test Probabilistic queue update without quantiles (fallback)."""
+        from src.model import InstanceQueueProbabilistic
+
+        instance_registry.register(sample_instance)
+        instance_registry.update_queue_info(
+            "inst-1",
+            InstanceQueueProbabilistic(
+                instance_id="inst-1",
+                quantiles=[0.5, 0.9, 0.95],
+                values=[150.0, 250.0, 300.0]
+            )
+        )
+
+        # Update without quantiles (triggers fallback)
+        await task_dispatcher._update_queue_on_completion(
+            instance_id="inst-1",
+            predicted_time_ms=100.0,
+            actual_time_ms=120.0
+        )
+
+        # Verify simple subtraction/addition: values - 100 + 120 = values + 20
+        queue = instance_registry.get_queue_info("inst-1")
+        assert queue.values[0] == 170.0  # 150 - 100 + 120
+        assert queue.values[1] == 270.0  # 250 - 100 + 120
+        assert queue.values[2] == 320.0  # 300 - 100 + 120
+
+    @pytest.mark.asyncio
+    async def test_update_missing_queue_info(
+        self,
+        task_dispatcher,
+        instance_registry,
+        sample_instance
+    ):
+        """Test queue update when no queue info exists."""
+        instance_registry.register(sample_instance)
+        # No queue info set
+
+        # Should not raise error
+        await task_dispatcher._update_queue_on_completion(
+            instance_id="inst-1",
+            predicted_time_ms=100.0,
+            actual_time_ms=120.0
+        )
+
+    @pytest.mark.asyncio
+    async def test_update_without_predictions(
+        self,
+        task_dispatcher,
+        instance_registry,
+        sample_instance
+    ):
+        """Test that update handles missing prediction data gracefully."""
+        from src.model import InstanceQueueExpectError
+
+        instance_registry.register(sample_instance)
+        instance_registry.update_queue_info(
+            "inst-1",
+            InstanceQueueExpectError(
+                instance_id="inst-1",
+                expected_time_ms=200.0,
+                error_margin_ms=50.0
+            )
+        )
+
+        # Update with minimal data
+        await task_dispatcher._update_queue_on_completion(
+            instance_id="inst-1",
+            predicted_time_ms=100.0,
+            actual_time_ms=110.0
+        )
+
+        # Should still update
+        queue = instance_registry.get_queue_info("inst-1")
+        assert queue.expected_time_ms == 210.0
+
+
+# ============================================================================
+# Async Dispatch Tests
+# ============================================================================
+
+class TestAsyncDispatch:
+    """Tests for async dispatch functionality."""
+
+    @pytest.mark.asyncio
+    async def test_dispatch_task_async_creates_task(
+        self,
+        task_dispatcher,
+        task_registry,
+        instance_registry,
+        sample_instance
+    ):
+        """Test that dispatch_task_async creates an async task."""
+        instance_registry.register(sample_instance)
+        task_registry.create_task(
+            task_id="task-1",
+            model_id="model-1",
+            task_input={},
+            metadata={},
+            assigned_instance="inst-1"
+        )
+
+        # Mock dispatch_task to track if it was called
+        with patch.object(task_dispatcher, 'dispatch_task', new=AsyncMock()) as mock_dispatch:
+            # Call async dispatch
+            task_dispatcher.dispatch_task_async("task-1")
+
+            # Wait a bit for the task to be created
+            import asyncio
+            await asyncio.sleep(0.1)
+
+            # Verify dispatch_task was called
+            mock_dispatch.assert_called_once_with("task-1")
+
+
+# ============================================================================
+# Close Tests
+# ============================================================================
+
+class TestClose:
+    """Tests for resource cleanup."""
+
+    @pytest.mark.asyncio
+    async def test_close_http_client(
+        self,
+        task_dispatcher
+    ):
+        """Test that close properly closes the HTTP client."""
+        # Mock the aclose method
+        task_dispatcher._http_client.aclose = AsyncMock()
+
+        await task_dispatcher.close()
+
+        task_dispatcher._http_client.aclose.assert_called_once()
