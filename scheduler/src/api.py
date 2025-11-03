@@ -575,6 +575,7 @@ async def submit_task(request: TaskSubmitRequest):
             predicted_quantiles=selected_pred.quantiles if selected_pred else None,
         )
     except ValueError as e:
+        logger.error(str(e))
         raise HTTPException(
             status_code=400,
             detail={"success": False, "error": str(e)}
@@ -701,7 +702,8 @@ async def clear_tasks():
     """
     Clear all tasks from the scheduler.
 
-    This endpoint removes all task records from the scheduler's registry.
+    This endpoint removes all task records from the scheduler's registry
+    and resets the pending_tasks counter for all instances.
     Use with caution as this operation cannot be undone.
 
     Returns:
@@ -710,6 +712,10 @@ async def clear_tasks():
     # Clear all tasks from registry
     cleared_count = task_registry.clear_all()
     logger.warning(f"Cleared {cleared_count} tasks from registry")
+
+    # Reset pending_tasks counter for all instances to maintain consistency
+    reset_count = instance_registry.reset_all_pending_tasks()
+    logger.info(f"Reset pending_tasks counter for {reset_count} instance(s)")
 
     return TaskClearResponse(
         success=True,

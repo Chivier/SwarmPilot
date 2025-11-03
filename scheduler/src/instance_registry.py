@@ -191,6 +191,24 @@ class InstanceRegistry:
             if instance_id in self._stats:
                 self._stats[instance_id].failed_tasks += 1
 
+    def reset_all_pending_tasks(self) -> int:
+        """
+        Reset pending_tasks counter to 0 for all instances.
+
+        This should be called when clearing all tasks from the task registry
+        to ensure instance stats remain consistent.
+
+        Returns:
+            Count of instances whose pending_tasks were reset
+        """
+        with self._lock:
+            count = 0
+            for stats in self._stats.values():
+                if stats.pending_tasks > 0:
+                    stats.pending_tasks = 0
+                    count += 1
+            return count
+
     def start_draining(self, instance_id: str) -> Instance:
         """
         Mark instance as draining - stops accepting new tasks.
