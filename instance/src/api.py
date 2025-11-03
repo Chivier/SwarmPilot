@@ -143,6 +143,16 @@ class TaskDeleteResponse(BaseModel):
     task_id: str
 
 
+class TaskClearResponse(BaseModel):
+    """Response schema for clearing all tasks"""
+    success: bool
+    message: str
+    cleared_count: Dict[str, int] = Field(
+        ...,
+        description="Number of tasks cleared by status (queued, completed, failed, total)"
+    )
+
+
 # Management Schemas
 class ModelInfo(BaseModel):
     """Current model information"""
@@ -804,6 +814,46 @@ async def delete_task(task_id: str):
             task_id=task_id
         )
     except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+
+@app.post(
+    "/task/clear",
+    response_model=TaskClearResponse,
+    status_code=status.HTTP_200_OK,
+    responses={
+        400: {"model": ErrorResponse},
+    },
+)
+async def clear_tasks():
+    """
+    Clear all tasks from the instance.
+
+    This will remove all tasks from the queue and task storage, regardless
+    of their status (queued, completed, failed). Running tasks cannot be
+    cleared - the endpoint will return an error if there are running tasks.
+
+    This is useful for:
+    - Cleaning up completed/failed task history
+    - Resetting the instance state before starting new work
+    - Removing queued tasks that are no longer needed
+
+    Returns the count of tasks that were cleared by status.
+    """
+    task_queue = get_task_queue()
+
+    try:
+        cleared_count = await task_queue.clear_all_tasks()
+
+        return TaskClearResponse(
+            success=True,
+            message=f"Successfully cleared {cleared_count['total']} task(s)",
+            cleared_count=cleared_count
+        )
+    except RuntimeError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)

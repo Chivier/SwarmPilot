@@ -324,6 +324,79 @@ class TestTaskManagementEndpoints:
         # Verify response
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
+    def test_clear_tasks_success_empty(self, api_client, mock_task_queue):
+        """Test POST /task/clear - successfully clear empty queue"""
+        # Setup mock
+        mock_task_queue.clear_all_tasks.return_value = {
+            "queued": 0,
+            "completed": 0,
+            "failed": 0,
+            "total": 0
+        }
+
+        # Make request
+        response = api_client.post("/task/clear")
+
+        # Verify response
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["success"] is True
+        assert data["message"] == "Successfully cleared 0 task(s)"
+        assert data["cleared_count"]["total"] == 0
+
+    def test_clear_tasks_success_with_tasks(self, api_client, mock_task_queue):
+        """Test POST /task/clear - successfully clear queue with tasks"""
+        # Setup mock
+        mock_task_queue.clear_all_tasks.return_value = {
+            "queued": 5,
+            "completed": 10,
+            "failed": 2,
+            "total": 17
+        }
+
+        # Make request
+        response = api_client.post("/task/clear")
+
+        # Verify response
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["success"] is True
+        assert data["message"] == "Successfully cleared 17 task(s)"
+        assert data["cleared_count"]["queued"] == 5
+        assert data["cleared_count"]["completed"] == 10
+        assert data["cleared_count"]["failed"] == 2
+        assert data["cleared_count"]["total"] == 17
+
+    def test_clear_tasks_with_running_task(self, api_client, mock_task_queue):
+        """Test POST /task/clear - fails when tasks are running"""
+        # Setup mock to raise RuntimeError
+        mock_task_queue.clear_all_tasks.side_effect = RuntimeError(
+            "Cannot clear tasks while 1 task(s) are running. "
+            "Wait for running tasks to complete or stop processing first."
+        )
+
+        # Make request
+        response = api_client.post("/task/clear")
+
+        # Verify response
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "Cannot clear tasks while 1 task(s) are running" in response.json()["detail"]
+
+    def test_clear_tasks_with_multiple_running_tasks(self, api_client, mock_task_queue):
+        """Test POST /task/clear - fails when multiple tasks are running"""
+        # Setup mock to raise RuntimeError
+        mock_task_queue.clear_all_tasks.side_effect = RuntimeError(
+            "Cannot clear tasks while 3 task(s) are running. "
+            "Wait for running tasks to complete or stop processing first."
+        )
+
+        # Make request
+        response = api_client.post("/task/clear")
+
+        # Verify response
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "Cannot clear tasks while 3 task(s) are running" in response.json()["detail"]
+
 
 @pytest.mark.integration
 class TestManagementEndpoints:

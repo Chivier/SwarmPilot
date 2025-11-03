@@ -244,6 +244,12 @@ def mock_task_queue():
         "completed": 0,
         "failed": 0,
     })
+    queue.clear_all_tasks = AsyncMock(return_value={
+        "queued": 0,
+        "completed": 0,
+        "failed": 0,
+        "total": 0,
+    })
     queue.stop_processing = AsyncMock()
     return queue
 

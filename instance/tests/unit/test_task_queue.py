@@ -488,6 +488,170 @@ class TestTaskQueue:
         # Verify callback was attempted
         mock_scheduler_client.send_task_result.assert_called_once()
 
+    async def test_clear_all_tasks_empty_queue(self):
+        """Test clearing tasks when queue is empty"""
+        queue = TaskQueue()
+
+        result = await queue.clear_all_tasks()
+
+        assert result["total"] == 0
+        assert result["queued"] == 0
+        assert result["completed"] == 0
+        assert result["failed"] == 0
+        assert len(queue.tasks) == 0
+        assert len(queue.queue) == 0
+
+    async def test_clear_all_tasks_with_queued_tasks(self):
+        """Test clearing tasks with queued tasks"""
+        queue = TaskQueue()
+
+        # Mock _process_queue to prevent tasks from executing
+        with patch.object(queue, '_process_queue', new=AsyncMock()):
+            # Add some queued tasks
+            task1 = Task(task_id="task-1", model_id="model", task_input={})
+            task2 = Task(task_id="task-2", model_id="model", task_input={})
+            task3 = Task(task_id="task-3", model_id="model", task_input={})
+
+            await queue.submit_task(task1)
+            await queue.submit_task(task2)
+            await queue.submit_task(task3)
+
+            result = await queue.clear_all_tasks()
+
+            assert result["total"] == 3
+            assert result["queued"] == 3
+            assert result["completed"] == 0
+            assert result["failed"] == 0
+            assert len(queue.tasks) == 0
+            assert len(queue.queue) == 0
+
+    async def test_clear_all_tasks_with_mixed_statuses(self):
+        """Test clearing tasks with mixed statuses"""
+        queue = TaskQueue()
+
+        # Create tasks with different statuses
+        task1 = Task(task_id="task-1", model_id="model", task_input={})
+        task2 = Task(task_id="task-2", model_id="model", task_input={})
+        task3 = Task(task_id="task-3", model_id="model", task_input={})
+        task4 = Task(task_id="task-4", model_id="model", task_input={})
+
+        await queue.submit_task(task1)
+        await queue.submit_task(task2)
+        await queue.submit_task(task3)
+        await queue.submit_task(task4)
+
+        # Mark tasks with different statuses
+        task2.mark_completed({"result": "success"})
+        task3.mark_failed("error")
+        # task1 and task4 remain queued
+
+        result = await queue.clear_all_tasks()
+
+        assert result["total"] == 4
+        assert result["queued"] == 2
+        assert result["completed"] == 1
+        assert result["failed"] == 1
+        assert len(queue.tasks) == 0
+        assert len(queue.queue) == 0
+
+    async def test_clear_all_tasks_with_running_task(self):
+        """Test that clearing tasks fails when there are running tasks"""
+        queue = TaskQueue()
+
+        # Create and submit a task
+        task = Task(task_id="task-1", model_id="model", task_input={})
+        await queue.submit_task(task)
+
+        # Mark task as running
+        task.mark_started()
+
+        # Attempt to clear - should raise RuntimeError
+        with pytest.raises(RuntimeError) as exc_info:
+            await queue.clear_all_tasks()
+
+        assert "Cannot clear tasks while 1 task(s) are running" in str(exc_info.value)
+
+        # Task should still exist
+        assert len(queue.tasks) == 1
+        assert task.task_id in queue.tasks
+
+    async def test_clear_all_tasks_multiple_running_tasks(self):
+        """Test that clearing tasks fails when there are multiple running tasks"""
+        queue = TaskQueue()
+
+        # Create tasks
+        task1 = Task(task_id="task-1", model_id="model", task_input={})
+        task2 = Task(task_id="task-2", model_id="model", task_input={})
+        task3 = Task(task_id="task-3", model_id="model", task_input={})
+
+        await queue.submit_task(task1)
+        await queue.submit_task(task2)
+        await queue.submit_task(task3)
+
+        # Mark multiple tasks as running (shouldn't happen in real scenarios, but test it)
+        task1.mark_started()
+        task2.mark_started()
+
+        # Attempt to clear - should raise RuntimeError
+        with pytest.raises(RuntimeError) as exc_info:
+            await queue.clear_all_tasks()
+
+        assert "Cannot clear tasks while 2 task(s) are running" in str(exc_info.value)
+
+        # All tasks should still exist
+        assert len(queue.tasks) == 3
+
+    async def test_clear_all_tasks_returns_correct_counts(self):
+        """Test that clear_all_tasks returns accurate counts"""
+        queue = TaskQueue()
+
+        # Mock _process_queue to prevent tasks from executing
+        with patch.object(queue, '_process_queue', new=AsyncMock()):
+            # Create a realistic scenario with various task statuses
+            for i in range(5):
+                task = Task(task_id=f"queued-{i}", model_id="model", task_input={})
+                await queue.submit_task(task)
+
+            for i in range(3):
+                task = Task(task_id=f"completed-{i}", model_id="model", task_input={})
+                await queue.submit_task(task)
+                task.mark_completed({"result": "success"})
+
+            for i in range(2):
+                task = Task(task_id=f"failed-{i}", model_id="model", task_input={})
+                await queue.submit_task(task)
+                task.mark_failed("error")
+
+            result = await queue.clear_all_tasks()
+
+            assert result["queued"] == 5
+            assert result["completed"] == 3
+            assert result["failed"] == 2
+            assert result["total"] == 10
+
+    async def test_clear_all_tasks_clears_queue_and_storage(self):
+        """Test that clear_all_tasks clears both queue and task storage"""
+        queue = TaskQueue()
+
+        # Mock _process_queue to prevent tasks from executing
+        with patch.object(queue, '_process_queue', new=AsyncMock()):
+            # Add tasks
+            for i in range(5):
+                task = Task(task_id=f"task-{i}", model_id="model", task_input={})
+                await queue.submit_task(task)
+
+            # Verify tasks exist before clearing
+            assert len(queue.tasks) == 5
+            assert len(queue.queue) == 5
+
+            # Clear tasks
+            await queue.clear_all_tasks()
+
+            # Verify everything is cleared
+            assert len(queue.tasks) == 0
+            assert len(queue.queue) == 0
+            assert queue.current_task_id is None
+
 
 @pytest.mark.unit
 class TestGetTaskQueue:

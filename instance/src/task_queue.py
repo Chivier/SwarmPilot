@@ -271,6 +271,52 @@ class TaskQueue:
         except Exception as e:
             logger.error(f"Error sending callback for task {task_id}: {e}")
 
+    async def clear_all_tasks(self) -> Dict[str, int]:
+        """
+        Clear all tasks from the queue and task storage.
+
+        This will remove all tasks regardless of their status (queued, running,
+        completed, or failed). Running tasks will be cleared after they are marked
+        as failed.
+
+        Returns:
+            Dictionary with counts of cleared tasks by status
+
+        Raises:
+            RuntimeError: If there are currently running tasks
+        """
+        # Get stats before clearing
+        stats = await self.get_queue_stats()
+
+        # Check if there are running tasks
+        if stats["running"] > 0:
+            raise RuntimeError(
+                f"Cannot clear tasks while {stats['running']} task(s) are running. "
+                "Wait for running tasks to complete or stop processing first."
+            )
+
+        # Clear the queue
+        self.queue.clear()
+
+        # Clear all tasks
+        cleared_count = {
+            "queued": stats["queued"],
+            "completed": stats["completed"],
+            "failed": stats["failed"],
+            "total": stats["total"]
+        }
+
+        self.tasks.clear()
+
+        logger.info(
+            f"Cleared all tasks: {cleared_count['total']} total "
+            f"(queued: {cleared_count['queued']}, "
+            f"completed: {cleared_count['completed']}, "
+            f"failed: {cleared_count['failed']})"
+        )
+
+        return cleared_count
+
     async def stop_processing(self):
         """Stop queue processing (graceful shutdown)"""
         if self._processing_task and not self._processing_task.done():
