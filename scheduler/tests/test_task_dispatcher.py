@@ -83,16 +83,13 @@ class TestSuccessfulDispatch:
         instance_registry.increment_pending(sample_instance.instance_id)
 
         # Mock HTTP client
-        mock_client = AsyncMock()
         mock_response = MagicMock()
         mock_response.json.return_value = {"success": True, "message": "Task accepted"}
         mock_response.raise_for_status = MagicMock()
-        mock_client.post = AsyncMock(return_value=mock_response)
+        task_dispatcher._http_client.post = AsyncMock(return_value=mock_response)
 
-        # Mock _get_http_client to return our mock
-        with patch.object(task_dispatcher, '_get_http_client', return_value=mock_client):
-            # Execute
-            await task_dispatcher.dispatch_task("task-1")
+        # Execute
+        await task_dispatcher.dispatch_task("task-1")
 
         # Verify task status - should be RUNNING (not COMPLETED - that happens via callback)
         task = task_registry.get("task-1")
@@ -228,8 +225,7 @@ class TestErrorHandling:
         instance_registry.increment_pending(sample_instance.instance_id)
 
         # Mock HTTP client to raise HTTPStatusError
-        mock_client = AsyncMock()
-        mock_client.post = AsyncMock(
+        task_dispatcher._http_client.post = AsyncMock(
             side_effect=httpx.HTTPStatusError(
                 "500 Server Error",
                 request=MagicMock(),
@@ -237,8 +233,7 @@ class TestErrorHandling:
             )
         )
 
-        with patch.object(task_dispatcher, '_get_http_client', return_value=mock_client):
-            await task_dispatcher.dispatch_task("task-1")
+        await task_dispatcher.dispatch_task("task-1")
 
         task = task_registry.get("task-1")
         assert task.status == TaskStatus.FAILED
@@ -311,14 +306,12 @@ class TestStatsUpdates:
         instance_registry.increment_pending(sample_instance.instance_id)
 
         # Mock HTTP client
-        mock_client = AsyncMock()
         mock_response = MagicMock()
         mock_response.json.return_value = {"success": True}
         mock_response.raise_for_status = MagicMock()
-        mock_client.post = AsyncMock(return_value=mock_response)
+        task_dispatcher._http_client.post = AsyncMock(return_value=mock_response)
 
-        with patch.object(task_dispatcher, '_get_http_client', return_value=mock_client):
-            await task_dispatcher.dispatch_task("task-1")
+        await task_dispatcher.dispatch_task("task-1")
 
         stats = instance_registry.get_stats(sample_instance.instance_id)
         # Started with 2, decremented to 1
@@ -344,14 +337,12 @@ class TestStatsUpdates:
         instance_registry.increment_pending(sample_instance.instance_id)
 
         # Mock HTTP client
-        mock_client = AsyncMock()
         mock_response = MagicMock()
         mock_response.json.return_value = {"success": True}
         mock_response.raise_for_status = MagicMock()
-        mock_client.post = AsyncMock(return_value=mock_response)
+        task_dispatcher._http_client.post = AsyncMock(return_value=mock_response)
 
-        with patch.object(task_dispatcher, '_get_http_client', return_value=mock_client):
-            await task_dispatcher.dispatch_task("task-1")
+        await task_dispatcher.dispatch_task("task-1")
 
         # Task should be RUNNING (completion happens via callback, not during dispatch)
         task = task_registry.get("task-1")
@@ -526,15 +517,12 @@ class TestHandleTaskResult:
     async def test_handle_completed_task(
         self,
         task_dispatcher,
-        task_registry,
-        instance_registry,
-        sample_instance,
-        websocket_manager
+        sample_instance
     ):
         """Test handling a completed task result."""
         # Setup
-        instance_registry.register(sample_instance)
-        task = task_registry.create_task(
+        task_dispatcher.instance_registry.register(sample_instance)
+        task = task_dispatcher.task_registry.create_task(
             task_id="task-1",
             model_id="model-1",
             task_input={"prompt": "test"},
@@ -552,21 +540,19 @@ class TestHandleTaskResult:
         )
 
         # Verify task was updated
-        updated_task = task_registry.get("task-1")
+        updated_task = task_dispatcher.task_registry.get("task-1")
         assert updated_task.status == TaskStatus.COMPLETED
         assert updated_task.result == {"output": "result"}
         assert updated_task.execution_time_ms == 120.0
 
         # Verify instance stats were updated
-        instance = instance_registry.get("inst-1")
-        assert instance.completed_tasks == 1
+        stats = task_dispatcher.instance_registry.get_stats("inst-1")
+        assert stats.completed_tasks == 1
 
     @pytest.mark.asyncio
     async def test_handle_completed_with_training_data(
         self,
         task_dispatcher,
-        task_registry,
-        instance_registry,
         sample_instance
     ):
         """Test that training data is collected on completion."""
@@ -576,8 +562,8 @@ class TestHandleTaskResult:
         mock_training_client.flush_if_ready = AsyncMock()
         task_dispatcher.training_client = mock_training_client
 
-        instance_registry.register(sample_instance)
-        task = task_registry.create_task(
+        task_dispatcher.instance_registry.register(sample_instance)
+        task = task_dispatcher.task_registry.create_task(
             task_id="task-1",
             model_id="model-1",
             task_input={},
@@ -605,15 +591,13 @@ class TestHandleTaskResult:
     async def test_handle_completed_without_training(
         self,
         task_dispatcher,
-        task_registry,
-        instance_registry,
         sample_instance
     ):
         """Test completion without training client (no errors)."""
         task_dispatcher.training_client = None
 
-        instance_registry.register(sample_instance)
-        task_registry.create_task(
+        task_dispatcher.instance_registry.register(sample_instance)
+        task_dispatcher.task_registry.create_task(
             task_id="task-1",
             model_id="model-1",
             task_input={},
@@ -632,13 +616,11 @@ class TestHandleTaskResult:
     async def test_handle_failed_task(
         self,
         task_dispatcher,
-        task_registry,
-        instance_registry,
         sample_instance
     ):
         """Test handling a failed task result."""
-        instance_registry.register(sample_instance)
-        task_registry.create_task(
+        task_dispatcher.instance_registry.register(sample_instance)
+        task_dispatcher.task_registry.create_task(
             task_id="task-1",
             model_id="model-1",
             task_input={},
@@ -654,13 +636,13 @@ class TestHandleTaskResult:
         )
 
         # Verify task was marked as failed
-        task = task_registry.get("task-1")
+        task = task_dispatcher.task_registry.get("task-1")
         assert task.status == TaskStatus.FAILED
         assert task.error == "Task execution failed"
 
         # Verify instance failed count increased
-        instance = instance_registry.get("inst-1")
-        assert instance.failed_tasks == 1
+        stats = task_dispatcher.instance_registry.get_stats("inst-1")
+        assert stats.failed_tasks == 1
 
     @pytest.mark.asyncio
     async def test_handle_nonexistent_task(
@@ -679,15 +661,13 @@ class TestHandleTaskResult:
     async def test_handle_triggers_queue_update(
         self,
         task_dispatcher,
-        task_registry,
-        instance_registry,
         sample_instance
     ):
         """Test that queue update is triggered on completion."""
         from src.model import InstanceQueueExpectError
 
-        instance_registry.register(sample_instance)
-        instance_registry.update_queue_info(
+        task_dispatcher.instance_registry.register(sample_instance)
+        task_dispatcher.instance_registry.update_queue_info(
             "inst-1",
             InstanceQueueExpectError(
                 instance_id="inst-1",
@@ -696,7 +676,7 @@ class TestHandleTaskResult:
             )
         )
 
-        task = task_registry.create_task(
+        task = task_dispatcher.task_registry.create_task(
             task_id="task-1",
             model_id="model-1",
             task_input={},
@@ -713,7 +693,7 @@ class TestHandleTaskResult:
         )
 
         # Verify queue was updated
-        queue = instance_registry.get_queue_info("inst-1")
+        queue = task_dispatcher.instance_registry.get_queue_info("inst-1")
         # Expected: 200 - 100 + 120 = 220
         assert queue.expected_time_ms == 220.0
 
@@ -729,14 +709,14 @@ class TestQueueUpdateOnCompletion:
     async def test_update_expect_error_queue(
         self,
         task_dispatcher,
-        instance_registry,
         sample_instance
     ):
         """Test updating ExpectError queue on completion."""
         from src.model import InstanceQueueExpectError
 
-        instance_registry.register(sample_instance)
-        instance_registry.update_queue_info(
+        # Use task_dispatcher's instance_registry to ensure consistency
+        task_dispatcher.instance_registry.register(sample_instance)
+        task_dispatcher.instance_registry.update_queue_info(
             "inst-1",
             InstanceQueueExpectError(
                 instance_id="inst-1",
@@ -754,7 +734,7 @@ class TestQueueUpdateOnCompletion:
         )
 
         # Verify: 300 - 150 + 180 = 330
-        queue = instance_registry.get_queue_info("inst-1")
+        queue = task_dispatcher.instance_registry.get_queue_info("inst-1")
         assert queue.expected_time_ms == 330.0
         assert queue.error_margin_ms == 50.0  # Error unchanged
 
@@ -762,14 +742,13 @@ class TestQueueUpdateOnCompletion:
     async def test_update_expect_error_queue_ensures_non_negative(
         self,
         task_dispatcher,
-        instance_registry,
         sample_instance
     ):
         """Test that queue update ensures non-negative values."""
         from src.model import InstanceQueueExpectError
 
-        instance_registry.register(sample_instance)
-        instance_registry.update_queue_info(
+        task_dispatcher.instance_registry.register(sample_instance)
+        task_dispatcher.instance_registry.update_queue_info(
             "inst-1",
             InstanceQueueExpectError(
                 instance_id="inst-1",
@@ -786,21 +765,20 @@ class TestQueueUpdateOnCompletion:
         )
 
         # Should be clamped to 0
-        queue = instance_registry.get_queue_info("inst-1")
+        queue = task_dispatcher.instance_registry.get_queue_info("inst-1")
         assert queue.expected_time_ms == 0.0
 
     @pytest.mark.asyncio
     async def test_update_probabilistic_queue_with_quantiles(
         self,
         task_dispatcher,
-        instance_registry,
         sample_instance
     ):
         """Test updating Probabilistic queue with Monte Carlo."""
         from src.model import InstanceQueueProbabilistic
 
-        instance_registry.register(sample_instance)
-        instance_registry.update_queue_info(
+        task_dispatcher.instance_registry.register(sample_instance)
+        task_dispatcher.instance_registry.update_queue_info(
             "inst-1",
             InstanceQueueProbabilistic(
                 instance_id="inst-1",
@@ -818,7 +796,7 @@ class TestQueueUpdateOnCompletion:
         )
 
         # Verify queue was updated
-        queue = instance_registry.get_queue_info("inst-1")
+        queue = task_dispatcher.instance_registry.get_queue_info("inst-1")
         assert isinstance(queue, InstanceQueueProbabilistic)
         assert len(queue.values) == 3
         # Values should be updated (difficult to test exact values due to Monte Carlo)
@@ -828,14 +806,13 @@ class TestQueueUpdateOnCompletion:
     async def test_update_probabilistic_queue_fallback(
         self,
         task_dispatcher,
-        instance_registry,
         sample_instance
     ):
         """Test Probabilistic queue update without quantiles (fallback)."""
         from src.model import InstanceQueueProbabilistic
 
-        instance_registry.register(sample_instance)
-        instance_registry.update_queue_info(
+        task_dispatcher.instance_registry.register(sample_instance)
+        task_dispatcher.instance_registry.update_queue_info(
             "inst-1",
             InstanceQueueProbabilistic(
                 instance_id="inst-1",
@@ -852,7 +829,7 @@ class TestQueueUpdateOnCompletion:
         )
 
         # Verify simple subtraction/addition: values - 100 + 120 = values + 20
-        queue = instance_registry.get_queue_info("inst-1")
+        queue = task_dispatcher.instance_registry.get_queue_info("inst-1")
         assert queue.values[0] == 170.0  # 150 - 100 + 120
         assert queue.values[1] == 270.0  # 250 - 100 + 120
         assert queue.values[2] == 320.0  # 300 - 100 + 120
@@ -879,14 +856,13 @@ class TestQueueUpdateOnCompletion:
     async def test_update_without_predictions(
         self,
         task_dispatcher,
-        instance_registry,
         sample_instance
     ):
         """Test that update handles missing prediction data gracefully."""
         from src.model import InstanceQueueExpectError
 
-        instance_registry.register(sample_instance)
-        instance_registry.update_queue_info(
+        task_dispatcher.instance_registry.register(sample_instance)
+        task_dispatcher.instance_registry.update_queue_info(
             "inst-1",
             InstanceQueueExpectError(
                 instance_id="inst-1",
@@ -903,7 +879,7 @@ class TestQueueUpdateOnCompletion:
         )
 
         # Should still update
-        queue = instance_registry.get_queue_info("inst-1")
+        queue = task_dispatcher.instance_registry.get_queue_info("inst-1")
         assert queue.expected_time_ms == 210.0
 
 
