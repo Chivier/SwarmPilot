@@ -604,3 +604,209 @@ class TestSchedulerIntegration:
         # Verify response still succeeds
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["success"] is True
+
+    def test_start_model_with_scheduler_url_parameter(
+        self, api_client, mock_docker_manager, mock_model_registry
+    ):
+        """Test POST /model/start with scheduler_url parameter updates scheduler configuration"""
+        # Setup mocks
+        mock_docker_manager.is_model_running.return_value = False
+        mock_model_registry.model_exists.return_value = True
+        mock_docker_manager.start_model.return_value = ModelInfo(
+            model_id="test-model",
+            started_at="2024-01-01T00:00:00Z",
+            parameters={}
+        )
+
+        # Mock scheduler client
+        mock_scheduler_client = AsyncMock()
+        mock_scheduler_client.is_enabled = True
+        mock_scheduler_client.scheduler_url = "http://old-scheduler:8000"
+        mock_scheduler_client._registered = True
+        mock_scheduler_client.register_instance = AsyncMock(return_value=True)
+
+        with patch("src.api.get_scheduler_client", return_value=mock_scheduler_client):
+            # Make request with new scheduler_url
+            new_scheduler_url = "http://new-scheduler:8100"
+            response = api_client.post(
+                "/model/start",
+                json={
+                    "model_id": "test-model",
+                    "scheduler_url": new_scheduler_url
+                }
+            )
+
+        # Verify response
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["success"] is True
+
+        # Verify scheduler_url was updated
+        assert mock_scheduler_client.scheduler_url == new_scheduler_url
+
+        # Verify registration status was reset
+        assert mock_scheduler_client._registered is False
+
+        # Verify register_instance was called with the new scheduler
+        mock_scheduler_client.register_instance.assert_called_once_with(model_id="test-model")
+
+    def test_start_model_with_scheduler_url_no_previous_scheduler(
+        self, api_client, mock_docker_manager, mock_model_registry
+    ):
+        """Test POST /model/start with scheduler_url when no previous scheduler configured"""
+        # Setup mocks
+        mock_docker_manager.is_model_running.return_value = False
+        mock_model_registry.model_exists.return_value = True
+        mock_docker_manager.start_model.return_value = ModelInfo(
+            model_id="test-model",
+            started_at="2024-01-01T00:00:00Z",
+            parameters={}
+        )
+
+        # Mock scheduler client with no scheduler configured (None)
+        mock_scheduler_client = AsyncMock()
+        mock_scheduler_client.scheduler_url = None
+        mock_scheduler_client.is_enabled = False  # Will become True after setting URL
+        mock_scheduler_client._registered = False
+        mock_scheduler_client.register_instance = AsyncMock(return_value=True)
+
+        with patch("src.api.get_scheduler_client", return_value=mock_scheduler_client):
+            # Make request with scheduler_url
+            new_scheduler_url = "http://new-scheduler:8100"
+            response = api_client.post(
+                "/model/start",
+                json={
+                    "model_id": "test-model",
+                    "scheduler_url": new_scheduler_url
+                }
+            )
+
+        # Verify response
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["success"] is True
+
+        # Verify scheduler_url was set
+        assert mock_scheduler_client.scheduler_url == new_scheduler_url
+
+    def test_start_model_without_scheduler_url_uses_existing(
+        self, api_client, mock_docker_manager, mock_model_registry
+    ):
+        """Test POST /model/start without scheduler_url uses existing scheduler configuration"""
+        # Setup mocks
+        mock_docker_manager.is_model_running.return_value = False
+        mock_model_registry.model_exists.return_value = True
+        mock_docker_manager.start_model.return_value = ModelInfo(
+            model_id="test-model",
+            started_at="2024-01-01T00:00:00Z",
+            parameters={}
+        )
+
+        # Mock scheduler client with existing scheduler
+        existing_scheduler_url = "http://existing-scheduler:8000"
+        mock_scheduler_client = AsyncMock()
+        mock_scheduler_client.is_enabled = True
+        mock_scheduler_client.scheduler_url = existing_scheduler_url
+        mock_scheduler_client._registered = False
+        mock_scheduler_client.register_instance = AsyncMock(return_value=True)
+
+        with patch("src.api.get_scheduler_client", return_value=mock_scheduler_client):
+            # Make request WITHOUT scheduler_url parameter
+            response = api_client.post(
+                "/model/start",
+                json={"model_id": "test-model"}
+            )
+
+        # Verify response
+        assert response.status_code == status.HTTP_200_OK
+
+        # Verify scheduler_url remains unchanged
+        assert mock_scheduler_client.scheduler_url == existing_scheduler_url
+
+        # Verify register_instance was called
+        mock_scheduler_client.register_instance.assert_called_once_with(model_id="test-model")
+
+    def test_start_model_with_scheduler_url_and_parameters(
+        self, api_client, mock_docker_manager, mock_model_registry
+    ):
+        """Test POST /model/start with both scheduler_url and model parameters"""
+        # Setup mocks
+        mock_docker_manager.is_model_running.return_value = False
+        mock_model_registry.model_exists.return_value = True
+        model_params = {"temp": 0.7, "max_tokens": 100}
+        mock_docker_manager.start_model.return_value = ModelInfo(
+            model_id="test-model",
+            started_at="2024-01-01T00:00:00Z",
+            parameters=model_params
+        )
+
+        # Mock scheduler client
+        mock_scheduler_client = AsyncMock()
+        mock_scheduler_client.is_enabled = True
+        mock_scheduler_client.scheduler_url = "http://old-scheduler:8000"
+        mock_scheduler_client._registered = True
+        mock_scheduler_client.register_instance = AsyncMock(return_value=True)
+
+        with patch("src.api.get_scheduler_client", return_value=mock_scheduler_client):
+            # Make request with both scheduler_url and parameters
+            new_scheduler_url = "http://new-scheduler:8100"
+            response = api_client.post(
+                "/model/start",
+                json={
+                    "model_id": "test-model",
+                    "parameters": model_params,
+                    "scheduler_url": new_scheduler_url
+                }
+            )
+
+        # Verify response
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["success"] is True
+
+        # Verify scheduler_url was updated
+        assert mock_scheduler_client.scheduler_url == new_scheduler_url
+
+        # Verify both model parameters and scheduler update worked
+        mock_docker_manager.start_model.assert_called_once_with("test-model", model_params)
+        mock_scheduler_client.register_instance.assert_called_once_with(model_id="test-model")
+
+    def test_start_model_with_scheduler_url_registration_fails(
+        self, api_client, mock_docker_manager, mock_model_registry
+    ):
+        """Test POST /model/start with scheduler_url when registration fails (should not fail request)"""
+        # Setup mocks
+        mock_docker_manager.is_model_running.return_value = False
+        mock_model_registry.model_exists.return_value = True
+        mock_docker_manager.start_model.return_value = ModelInfo(
+            model_id="test-model",
+            started_at="2024-01-01T00:00:00Z",
+            parameters={}
+        )
+
+        # Mock scheduler client with registration failure
+        mock_scheduler_client = AsyncMock()
+        mock_scheduler_client.is_enabled = True
+        mock_scheduler_client.scheduler_url = "http://old-scheduler:8000"
+        mock_scheduler_client._registered = True
+        mock_scheduler_client.register_instance = AsyncMock(
+            side_effect=Exception("Network error - new scheduler unreachable")
+        )
+
+        with patch("src.api.get_scheduler_client", return_value=mock_scheduler_client):
+            # Make request with new scheduler_url
+            new_scheduler_url = "http://new-scheduler:8100"
+            response = api_client.post(
+                "/model/start",
+                json={
+                    "model_id": "test-model",
+                    "scheduler_url": new_scheduler_url
+                }
+            )
+
+        # Verify response still succeeds even though registration failed
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["success"] is True
+
+        # Verify scheduler_url was updated (even though registration failed)
+        assert mock_scheduler_client.scheduler_url == new_scheduler_url
+
+        # Verify registration was attempted
+        mock_scheduler_client.register_instance.assert_called_once()

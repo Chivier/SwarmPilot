@@ -35,6 +35,10 @@ class ModelStartRequest(BaseModel):
         default_factory=dict,
         description="Model-specific initialization parameters"
     )
+    scheduler_url: Optional[str] = Field(
+        None,
+        description="Scheduler URL to register with (updates current scheduler if provided)"
+    )
 
 
 class ModelStartResponse(BaseModel):
@@ -231,6 +235,9 @@ async def start_model(request: ModelStartRequest):
 
     Each instance can only serve one model at a time. If a model is already
     running, it must be stopped before starting a new one.
+
+    If scheduler_url is provided, the instance will update its scheduler configuration
+    and register with the new scheduler instead of the current one.
     """
     docker_manager = get_docker_manager()
     registry = get_registry()
@@ -256,11 +263,20 @@ async def start_model(request: ModelStartRequest):
             request.parameters
         )
 
-        # Register with scheduler if enabled
+        # Update scheduler URL if provided and register with scheduler
         scheduler_client = get_scheduler_client()
+
+        # If new scheduler_url is provided, update the scheduler configuration
+        if request.scheduler_url:
+            logger.info(f"Updating scheduler URL to: {request.scheduler_url}")
+            scheduler_client.scheduler_url = request.scheduler_url
+            scheduler_client._registered = False  # Reset registration status
+
+        # Register with scheduler if enabled
         if scheduler_client.is_enabled:
             try:
                 await scheduler_client.register_instance(model_id=request.model_id)
+                logger.info(f"Successfully registered with scheduler: {scheduler_client.scheduler_url}")
             except Exception as e:
                 # Log error but don't fail model start
                 logger.warning(f"Failed to register with scheduler: {str(e)}")
