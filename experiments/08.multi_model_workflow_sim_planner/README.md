@@ -120,44 +120,67 @@ The experiment now supports **comparison testing** of 6 different configurations
 
 ### Migration Workflow
 
+**New approach using `/model/restart` API:**
+
 ```
-1. Submit workflows until phase target reached
-2. Trigger migration controller
+1. Submit all workflows for current phase (all A and B tasks)
+2. Trigger migration controller IMMEDIATELY after B tasks submitted
+   → Migration runs IN PARALLEL with current phase task execution
 3. For each instance to migrate:
-   ┌──────────────────────────────────────┐
-   │ POST /instance/drain                 │
-   │   → Mark instance as DRAINING        │
-   │   → Stop accepting new tasks         │
-   └──────────────────────────────────────┘
+   ┌─────────────────────────────────────────────┐
+   │ POST /model/restart                         │
+   │   → Initiates restart with new scheduler    │
+   │   → Returns operation_id immediately        │
+   └─────────────────────────────────────────────┘
                   │
-   ┌──────────────▼───────────────────────┐
-   │ Poll GET /instance/drain/status      │
-   │   → Wait for pending_tasks = 0       │
-   │   → Monitor drain progress           │
-   └──────────────────────────────────────┘
+   ┌──────────────▼──────────────────────────────┐
+   │ Instance handles internally (background):   │
+   │   1. Drain from current scheduler           │
+   │   2. Wait for all pending tasks to complete │
+   │   3. Stop current model container           │
+   │   4. Deregister from old scheduler          │
+   │   5. Start new model container              │
+   │   6. Register to new scheduler              │
+   └─────────────────────────────────────────────┘
                   │
-   ┌──────────────▼──────────────────────────────────┐
-   │ Wait 50ms delay (Simulation of startup overhead)│
-   └─────────────────────────────────────────────────┘
-                  │
-   ┌──────────────▼───────────────────────┐
-   │ POST /instance/register              │
-   │   → Register to new scheduler        │
-   └──────────────────────────────────────┘
-4. Continue submitting next phase workflows
+   ┌──────────────▼──────────────────────────────┐
+   │ Background monitor polls status (500ms):    │
+   │ GET /model/restart/status?operation_id=xxx  │
+   │   → Track progress through states           │
+   │   → Collect completion metrics              │
+   └─────────────────────────────────────────────┘
+4. Wait for current phase tasks to complete (parallel with migration)
+5. Continue to next phase (migration may still be running)
+6. Wait for all migrations to complete before experiment ends
 ```
+
+**Key improvements:**
+- Single API call initiates entire migration lifecycle
+- Instance manages its own state transitions
+- **Migration triggers immediately after B tasks submitted** (not after completion)
+  - Allows migration to overlap with task execution
+  - Reduces overall experiment time
+  - Better resource utilization
+- Migration runs in background, doesn't block task submission
+- Better task completion handling (waits for actual queue emptiness)
+- More detailed progress tracking via state machine
 
 ## Prerequisites
 
-### 1. Scheduler with Safe Removal API
+### 1. Instance with Model Restart API
 
-**Important:** This experiment requires the scheduler to have the safe instance removal API implemented. The following endpoints must be available:
+**Important:** This experiment requires instances to have the `/model/restart` API implemented. The following endpoints must be available:
 
-- `POST /instance/drain` - Start draining an instance
-- `GET /instance/drain/status` - Check drain status
-- `POST /instance/remove` - Safely remove drained instance
+- `POST /model/restart` - Initiate graceful model restart with scheduler migration
+- `GET /model/restart/status` - Monitor restart operation progress
 
-These APIs have been added to `scheduler/src/api.py` as part of this experiment.
+The restart API handles the complete migration lifecycle internally:
+- Draining from current scheduler
+- Waiting for pending tasks to complete
+- Stopping and starting model containers
+- Scheduler deregistration and registration
+
+These APIs have been added to `instance/src/api.py` and are documented in the [API Reference](../../instance/docs/5.API_REFERENCE.md).
 
 ### 2. Services Running
 
@@ -557,15 +580,17 @@ This experiment adds a comprehensive comparison testing framework:
 
 ### Safe Instance Migration
 
-Implements production-ready instance migration:
-- Drain-based approach (no task loss)
-- Continuous task submission during migration
-- Health checks and retry logic
-- Detailed migration metrics
+Implements production-ready instance migration using `/model/restart` API:
+- Graceful restart with automatic draining (no task loss)
+- Continuous task submission during migration (non-blocking)
+- Instance-managed state transitions with progress tracking
+- Background monitoring at 500ms intervals
+- Detailed migration metrics (total duration, tasks completed)
 
 ## References
 
-- Scheduler safe removal API: `scheduler/src/api.py`
+- Instance restart API: `instance/src/api.py`
+- API documentation: `instance/docs/5.API_REFERENCE.md`
 - Migration controller: `migration_controller.py`
 - Workload generator: `workload_generator.py`
 - Comparison framework: `run_comparison_experiments.py`, `analyze_comparison_results.py`
