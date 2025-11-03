@@ -342,8 +342,17 @@ class DynamicMigrationExperiment:
         logger.info(f"Scheduler A: {len(self.current_instances_a)} instances")
         logger.info(f"Scheduler B: {len(self.current_instances_b)} instances")
 
-    async def run_phase(self, phase_idx: int) -> PhaseResults:
-        """Run a single phase of the experiment."""
+    async def run_phase(self, phase_idx: int, next_phase_idx: Optional[int] = None) -> Tuple[PhaseResults, Optional[asyncio.Task]]:
+        """
+        Run a single phase of the experiment.
+
+        Args:
+            phase_idx: Index of the current phase
+            next_phase_idx: Index of the next phase (for migration triggering)
+
+        Returns:
+            Tuple of (PhaseResults, migration_task or None)
+        """
         phase_config = PHASE_CONFIGS[phase_idx]
         self.current_phase = phase_idx
 
@@ -381,6 +390,13 @@ class DynamicMigrationExperiment:
         # Submit all workflows
         await self._submit_workflows_for_phase(phase_config, phase_result)
 
+        # Trigger migration for next phase (if applicable) immediately after B tasks submitted
+        # This allows migration to run in parallel with task execution
+        migration_task = None
+        if self.enable_migration and next_phase_idx is not None:
+            logger.info(f"\n→ All B tasks submitted - triggering migration to Phase {next_phase_idx + 1}")
+            migration_task = await self.migrate_instances(phase_idx, next_phase_idx)
+
         # Wait for all workflows to complete
         completed_count = await monitor.wait_for_phase_completion(
             expected_workflows=phase_config.num_workflows,
@@ -404,7 +420,7 @@ class DynamicMigrationExperiment:
         phase_result.phase_end_time = time.time()
         logger.info(f"✓ Phase {phase_config.phase_id} complete: {phase_result.workflows_completed}/{phase_config.num_workflows} workflows\n")
 
-        return phase_result
+        return phase_result, migration_task
 
     def _generate_task_ids_for_phase(self, phase_config: PhaseConfig):
         """Pre-generate all task IDs for a phase."""
@@ -512,12 +528,18 @@ class DynamicMigrationExperiment:
                 logger.error(f"Error submitting B task {b_task_id}: {e}")
 
     async def migrate_instances(self, from_phase_idx: int, to_phase_idx: int):
-        """Migrate instances between phases."""
+        """
+        Initiate non-blocking instance migration between phases.
+
+        Returns a background task that monitors migration progress.
+        This allows the next phase to begin task submission immediately
+        while migrations are still in progress.
+        """
         from_phase = PHASE_CONFIGS[from_phase_idx]
         to_phase = PHASE_CONFIGS[to_phase_idx]
 
         logger.info(f"\n{'='*70}")
-        logger.info(f"Migrating: Phase {from_phase.phase_id} → Phase {to_phase.phase_id}")
+        logger.info(f"Initiating Migration: Phase {from_phase.phase_id} → Phase {to_phase.phase_id}")
         logger.info(f"{'='*70}\n")
 
         # Plan migration
@@ -528,9 +550,9 @@ class DynamicMigrationExperiment:
             self.current_instances_b,
         )
 
-        # Execute migrations
+        # Initiate migrations (non-blocking - calls /model/restart and returns immediately)
         if instances_a_to_b:
-            logger.info(f"Migrating {len(instances_a_to_b)} instances: A → B")
+            logger.info(f"Initiating restart for {len(instances_a_to_b)} instances: A → B")
             self.migration_controller.initiate_migration(
                 instances_a_to_b,
                 SCHEDULER_A_URL,
@@ -538,29 +560,38 @@ class DynamicMigrationExperiment:
             )
 
         if instances_b_to_a:
-            logger.info(f"Migrating {len(instances_b_to_a)} instances: B → A")
+            logger.info(f"Initiating restart for {len(instances_b_to_a)} instances: B → A")
             self.migration_controller.initiate_migration(
                 instances_b_to_a,
                 SCHEDULER_B_URL,
                 SCHEDULER_A_URL,
             )
 
-        # Monitor migrations
-        logger.info("Monitoring migration progress...")
-        migration_stats = await self.migration_controller.monitor_migrations_async()
+        # Create background task to monitor migrations
+        async def monitor_and_update():
+            """Background task to monitor migration and update instance tracking."""
+            logger.info("Starting background migration monitor...")
+            migration_stats = await self.migration_controller.monitor_migrations_async()
 
-        # Update instance tracking
-        for inst_id in instances_a_to_b:
-            self.current_instances_a.remove(inst_id)
-            self.current_instances_b.append(inst_id)
+            # Update instance tracking after migrations complete
+            for inst_id in instances_a_to_b:
+                if inst_id in self.current_instances_a:
+                    self.current_instances_a.remove(inst_id)
+                    self.current_instances_b.append(inst_id)
 
-        for inst_id in instances_b_to_a:
-            self.current_instances_b.remove(inst_id)
-            self.current_instances_a.append(inst_id)
+            for inst_id in instances_b_to_a:
+                if inst_id in self.current_instances_b:
+                    self.current_instances_b.remove(inst_id)
+                    self.current_instances_a.append(inst_id)
 
-        logger.info(f"✓ Migration complete: {migration_stats['completed']}/{migration_stats['total_migrations']} successful")
+            logger.info(f"✓ Migration complete: {migration_stats['completed']}/{migration_stats['total_migrations']} successful")
+            return migration_stats
 
-        return migration_stats
+        # Start background task and return it
+        migration_task = asyncio.create_task(monitor_and_update())
+        logger.info("✓ Migration initiated - task submission will continue in parallel")
+
+        return migration_task
 
     async def run_experiment(self):
         """Run the complete experiment."""
@@ -577,21 +608,40 @@ class DynamicMigrationExperiment:
         self.initialize_instances()
 
         # Run phases
-        all_migration_stats = []
+        migration_tasks = []  # Background tasks for migration monitoring
 
         for phase_idx in range(len(PHASE_CONFIGS)):
-            # Run phase
-            phase_result = await self.run_phase(phase_idx)
+            # Determine next phase index for migration
+            next_phase_idx = phase_idx + 1 if phase_idx < len(PHASE_CONFIGS) - 1 else None
+
+            # Run phase - migration will be triggered after all B tasks are submitted
+            phase_result, migration_task = await self.run_phase(phase_idx, next_phase_idx)
             self.phase_results.append(phase_result)
 
-            # Migrate instances (except after last phase, and only if migration is enabled)
-            if self.enable_migration and phase_idx < len(PHASE_CONFIGS) - 1:
-                migration_stats = await self.migrate_instances(phase_idx, phase_idx + 1)
-                all_migration_stats.append(migration_stats)
-            elif not self.enable_migration and phase_idx < len(PHASE_CONFIGS) - 1:
+            # Collect migration task if one was created
+            if migration_task is not None:
+                migration_tasks.append(migration_task)
+            elif not self.enable_migration and next_phase_idx is not None:
                 logger.info(f"\n{'='*70}")
                 logger.info(f"Migration disabled - keeping static instance distribution")
                 logger.info(f"{'='*70}\n")
+
+        # Wait for all background migrations to complete
+        all_migration_stats = []
+        if migration_tasks:
+            logger.info(f"\n{'='*70}")
+            logger.info(f"Waiting for {len(migration_tasks)} background migrations to complete...")
+            logger.info(f"{'='*70}\n")
+
+            migration_results = await asyncio.gather(*migration_tasks, return_exceptions=True)
+
+            for idx, result in enumerate(migration_results):
+                if isinstance(result, Exception):
+                    logger.error(f"Migration {idx + 1} failed with exception: {result}")
+                else:
+                    all_migration_stats.append(result)
+
+            logger.info("✓ All migrations completed")
 
         # Print results
         self.print_results(all_migration_stats)
