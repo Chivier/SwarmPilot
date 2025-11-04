@@ -57,19 +57,41 @@ stop_service() {
 
 # Stop all services
 if [ -d "$LOG_DIR" ]; then
-    # Stop instances first
+    pids=()
+
+    # Stop instances first (in parallel)
+    echo "Stopping instance services (parallel)..."
     for pid_file in "$LOG_DIR"/instance-*.pid; do
         if [ -f "$pid_file" ]; then
             instance_name=$(basename "$pid_file" .pid)
-            stop_service "$instance_name"
+            stop_service "$instance_name" &
+            pids+=($!)
         fi
     done
 
-    # Stop both schedulers
-    stop_service "scheduler-a"
-    stop_service "scheduler-b"
+    # Wait for all instances to stop
+    for pid in "${pids[@]}"; do
+        wait $pid
+    done
+    echo -e "${GREEN}All instances stopped${NC}"
+
+    # Stop both schedulers (in parallel)
+    echo ""
+    echo "Stopping scheduler services (parallel)..."
+    pids=()
+    stop_service "scheduler-a" &
+    pids+=($!)
+    stop_service "scheduler-b" &
+    pids+=($!)
+
+    # Wait for schedulers to stop
+    for pid in "${pids[@]}"; do
+        wait $pid
+    done
+    echo -e "${GREEN}All schedulers stopped${NC}"
 
     # Stop predictor
+    echo ""
     stop_service "predictor"
 else
     echo -e "${YELLOW}Log directory not found. No services to stop.${NC}"
