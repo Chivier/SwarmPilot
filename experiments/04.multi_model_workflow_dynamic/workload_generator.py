@@ -32,21 +32,31 @@ PARETO_MAX = 10.0
 PARETO_ALPHA = 1.5  # Shape parameter (smaller = more skewed/long-tail)
 
 # B task bimodal distribution parameters
-B_LEFT_PEAK_MIN = 1.0
-B_LEFT_PEAK_MAX = 3.0
-B_LEFT_PEAK_MEAN = 2.0
-B_LEFT_PEAK_STD = 0.4
+B_1ST_PEAK_MIN = 1.0
+B_1ST_PEAK_MAX = 3.0
+B_1ST_PEAK_MEAN = 2.0
+B_1ST_PEAK_STD = 0.4
 
-B_RIGHT_PEAK_MIN = 8.0
-B_RIGHT_PEAK_MAX = 12.0
-B_RIGHT_PEAK_MEAN = 10.0
-B_RIGHT_PEAK_STD = 0.6
+B_2ND_PEAK_MIN = 5.0
+B_2ND_PEAK_MAX = 8.0
+B_2ND_PEAK_MEAN = 6.5
+B_2ND_PEAK_STD = 0.4
 
-B_PEAK_RATIO = 0.5  # 50% left peak (2.0s), 50% right peak (10.0s)
+B_3RD_PEAK_MIN = 10
+B_3RD_PEAK_MAX = 30
+B_3RD_PEAK_MEAN = 20
+B_3RD_PEAK_STD = 1
+
+B_4TH_PEAK_MIN = 60
+B_4TH_PEAK_MAX = 120
+B_4TH_PEAK_MEAN = 100
+B_4TH_PEAK_STD = 0.4
+
+B_PEAK_RATIO = 0.25  # 50% left peak (2.0s), 50% right peak (10.0s)
 
 # Fanout distribution parameters
-FANOUT_MIN = 3  # Minimum number of B tasks per A task
-FANOUT_MAX = 8  # Maximum number of B tasks per A task
+FANOUT_MIN = 5  # Minimum number of B tasks per A task
+FANOUT_MAX = 15  # Maximum number of B tasks per A task
 
 
 @dataclass
@@ -201,19 +211,23 @@ def generate_b_task_bimodal_distribution(num_tasks: int, seed: int = 42) -> tupl
     np.random.seed(seed)
 
     # Calculate number of tasks for each peak
-    num_left_peak = int(num_tasks * B_PEAK_RATIO)
-    num_right_peak = num_tasks - num_left_peak
+    num_each_peak = int(num_tasks * (B_PEAK_RATIO + 0.5))
 
-    # Generate left peak
-    left_times = np.random.normal(B_LEFT_PEAK_MEAN, B_LEFT_PEAK_STD, num_left_peak)
-    left_times = np.clip(left_times, B_LEFT_PEAK_MIN, B_LEFT_PEAK_MAX)
 
-    # Generate right peak
-    right_times = np.random.normal(B_RIGHT_PEAK_MEAN, B_RIGHT_PEAK_STD, num_right_peak)
-    right_times = np.clip(right_times, B_RIGHT_PEAK_MIN, B_RIGHT_PEAK_MAX)
+    peak_1st_times = np.random.normal(B_1ST_PEAK_MEAN, B_1ST_PEAK_STD, num_each_peak)
+    peak_1st_times = np.clip(peak_1st_times, B_1ST_PEAK_MIN, B_1ST_PEAK_MAX)
+
+    peak_2nd_times = np.random.normal(B_2ND_PEAK_MEAN, B_2ND_PEAK_STD, num_each_peak)
+    peak_2nd_times = np.clip(peak_2nd_times, B_2ND_PEAK_MIN, B_2ND_PEAK_MAX)
+    
+    peak_3rd_times = np.random.normal(B_3RD_PEAK_MEAN, B_3RD_PEAK_STD, num_each_peak)
+    peak_3rd_times = np.clip(peak_3rd_times, B_3RD_PEAK_MIN, B_3RD_PEAK_MAX)
+    
+    peak_4th_times = np.random.normal(B_4TH_PEAK_MEAN, B_4TH_PEAK_STD, num_each_peak)
+    peak_4th_times = np.clip(peak_4th_times, B_4TH_PEAK_MIN, B_4TH_PEAK_MAX)
 
     # Combine and shuffle
-    times = np.concatenate([left_times, right_times])
+    times = np.concatenate([peak_1st_times, peak_2nd_times, peak_3rd_times, peak_4th_times])
     np.random.shuffle(times)
 
     # Calculate statistics
@@ -222,11 +236,11 @@ def generate_b_task_bimodal_distribution(num_tasks: int, seed: int = 42) -> tupl
 
     config = WorkloadConfig(
         name="b_task_bimodal",
-        min_time=B_LEFT_PEAK_MIN,
-        max_time=B_RIGHT_PEAK_MAX,
+        min_time=B_1ST_PEAK_MIN,
+        max_time=B_4TH_PEAK_MAX,
         mean_time=mean_time,
         std_time=std_time,
-        description=f"B-task Bimodal: {B_PEAK_RATIO:.0%} at {B_LEFT_PEAK_MEAN}s, {1-B_PEAK_RATIO:.0%} at {B_RIGHT_PEAK_MEAN}s"
+        description=f"B-task 4 peaks"
     )
 
     return times.tolist(), config
