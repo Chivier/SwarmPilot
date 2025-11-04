@@ -414,7 +414,7 @@ class TestWebSocketNotification:
 
         mock_websocket = MagicMock()
         mock_websocket.send_json = AsyncMock()
-        websocket_manager.subscribe(mock_websocket, ["task-1"])
+        await websocket_manager.subscribe(mock_websocket, ["task-1"])
 
         with patch("httpx.AsyncClient") as mock_client_class:
             mock_client = MagicMock()
@@ -452,7 +452,7 @@ class TestWebSocketNotification:
 
         mock_websocket = MagicMock()
         mock_websocket.send_json = AsyncMock()
-        websocket_manager.subscribe(mock_websocket, ["task-1"])
+        await websocket_manager.subscribe(mock_websocket, ["task-1"])
 
         with patch("httpx.AsyncClient") as mock_client_class:
             mock_client = MagicMock()
