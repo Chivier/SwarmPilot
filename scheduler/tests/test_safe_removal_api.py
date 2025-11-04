@@ -60,7 +60,7 @@ def register_test_instance(client):
 class TestDrainEndpoint:
     """Tests for POST /instance/drain endpoint."""
 
-    def test_drain_active_instance_success(self, client, register_test_instance):
+    async def test_drain_active_instance_success(self, client, register_test_instance):
         """Test draining an active instance."""
         register_test_instance("inst-1", 9001)
 
@@ -74,7 +74,7 @@ class TestDrainEndpoint:
         assert data["pending_tasks"] == 0
         assert data["running_tasks"] == 0
 
-    def test_drain_nonexistent_instance(self, client):
+    async def test_drain_nonexistent_instance(self, client):
         """Test draining non-existent instance returns 404."""
         response = client.post("/instance/drain", json={"instance_id": "nonexistent"})
 
@@ -83,7 +83,7 @@ class TestDrainEndpoint:
         assert data["detail"]["success"] is False
         assert "not found" in data["detail"]["error"].lower()
 
-    def test_drain_already_draining_fails(self, client, register_test_instance):
+    async def test_drain_already_draining_fails(self, client, register_test_instance):
         """Test draining already draining instance returns 400."""
         register_test_instance("inst-1", 9001)
 
@@ -97,7 +97,7 @@ class TestDrainEndpoint:
         data = response2.json()
         assert data["detail"]["success"] is False
 
-    def test_drain_includes_estimated_time(self, client, register_test_instance):
+    async def test_drain_includes_estimated_time(self, client, register_test_instance):
         """Test drain response includes estimated completion time."""
         register_test_instance("inst-1", 9001)
 
@@ -129,7 +129,7 @@ class TestDrainEndpoint:
 class TestDrainStatusEndpoint:
     """Tests for GET /instance/drain/status endpoint."""
 
-    def test_get_status_active_instance(self, client, register_test_instance):
+    async def test_get_status_active_instance(self, client, register_test_instance):
         """Test getting drain status for active instance."""
         register_test_instance("inst-1", 9001)
 
@@ -143,7 +143,7 @@ class TestDrainStatusEndpoint:
         assert data["pending_tasks"] == 0
         assert data["can_remove"] is False
 
-    def test_get_status_draining_no_tasks(self, client, register_test_instance):
+    async def test_get_status_draining_no_tasks(self, client, register_test_instance):
         """Test drain status for draining instance with no pending tasks."""
         register_test_instance("inst-1", 9001)
 
@@ -160,7 +160,7 @@ class TestDrainStatusEndpoint:
         assert data["can_remove"] is True
         assert data["drain_initiated_at"] is not None
 
-    def test_get_status_draining_with_tasks(self, client, register_test_instance):
+    async def test_get_status_draining_with_tasks(self, client, register_test_instance):
         """Test drain status for draining instance with pending tasks."""
         from src import api
 
@@ -182,7 +182,7 @@ class TestDrainStatusEndpoint:
         assert data["pending_tasks"] == 2
         assert data["can_remove"] is False
 
-    def test_get_status_nonexistent_instance(self, client):
+    async def test_get_status_nonexistent_instance(self, client):
         """Test getting status for non-existent instance returns 404."""
         response = client.get("/instance/drain/status", params={"instance_id": "nonexistent"})
 
@@ -196,7 +196,7 @@ class TestDrainStatusEndpoint:
 class TestSafeRemoveEndpoint:
     """Tests for updated POST /instance/remove endpoint."""
 
-    def test_remove_draining_instance_no_tasks(self, client, register_test_instance):
+    async def test_remove_draining_instance_no_tasks(self, client, register_test_instance):
         """Test safe removal of draining instance with no tasks."""
         register_test_instance("inst-1", 9001)
 
@@ -216,7 +216,7 @@ class TestSafeRemoveEndpoint:
         instances = list_response.json()["instances"]
         assert "inst-1" not in [i["instance_id"] for i in instances]
 
-    def test_remove_active_instance_fails(self, client, register_test_instance):
+    async def test_remove_active_instance_fails(self, client, register_test_instance):
         """Test removing active instance without draining fails."""
         register_test_instance("inst-1", 9001)
 
@@ -229,7 +229,7 @@ class TestSafeRemoveEndpoint:
         assert "DRAINING state" in data["detail"]["error"]
         assert "hint" in data["detail"]
 
-    def test_remove_draining_instance_with_tasks_fails(self, client, register_test_instance):
+    async def test_remove_draining_instance_with_tasks_fails(self, client, register_test_instance):
         """Test removing draining instance with pending tasks fails."""
         from src import api
 
@@ -287,7 +287,7 @@ class TestTaskAssignmentWithDraining:
             mock_dispatcher.dispatch_task = AsyncMock()
             yield mock_dispatcher
 
-    def test_task_not_assigned_to_draining_instance(
+    async def test_task_not_assigned_to_draining_instance(
         self, client, register_test_instance, mock_task_dispatcher
     ):
         """Test that tasks are not assigned to draining instances."""
@@ -330,7 +330,7 @@ class TestTaskAssignmentWithDraining:
         assert assigned_instance in ["inst-2", "inst-3"]
         assert assigned_instance != "inst-1"
 
-    def test_no_available_instances_when_all_draining(
+    async def test_no_available_instances_when_all_draining(
         self, client, register_test_instance, mock_task_dispatcher
     ):
         """Test task submission fails when all instances are draining."""
@@ -354,7 +354,7 @@ class TestTaskAssignmentWithDraining:
         data = response.json()
         assert "No available instance" in data["detail"]["error"]
 
-    def test_instance_becomes_available_after_drain_completes(
+    async def test_instance_becomes_available_after_drain_completes(
         self, client, register_test_instance, mock_task_dispatcher
     ):
         """Test workflow: drain → tasks complete → remove → re-register."""
@@ -431,7 +431,7 @@ class TestCompleteRemovalWorkflow:
                 mock_dispatcher.dispatch_task = AsyncMock()
                 yield
 
-    def test_complete_workflow(self, client, register_test_instance):
+    async def test_complete_workflow(self, client, register_test_instance):
         """
         Test complete workflow:
         1. Register instance

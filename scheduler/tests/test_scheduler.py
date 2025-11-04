@@ -25,7 +25,7 @@ from src.model import InstanceQueueExpectError, InstanceQueueProbabilistic
 class TestMinimumExpectedTimeStrategy:
     """Tests for MinimumExpectedTimeStrategy."""
 
-    def test_select_instance_with_minimum_time(self, mock_predictor_client, instance_registry):
+    async def test_select_instance_with_minimum_time(self, mock_predictor_client, instance_registry):
         """Test selecting instance with minimum predicted time (no queue)."""
         strategy = MinimumExpectedTimeStrategy(mock_predictor_client, instance_registry)
 
@@ -44,7 +44,7 @@ class TestMinimumExpectedTimeStrategy:
         selected = strategy.select_instance(predictions, queue_info)
         assert selected == "inst-2"
 
-    def test_select_instance_with_queue_info(self, mock_predictor_client, instance_registry):
+    async def test_select_instance_with_queue_info(self, mock_predictor_client, instance_registry):
         """Test selecting instance considering queue state."""
         strategy = MinimumExpectedTimeStrategy(mock_predictor_client, instance_registry)
 
@@ -67,14 +67,14 @@ class TestMinimumExpectedTimeStrategy:
         # inst-2 has total time 200 + 20 + 100 = 320
         assert selected == "inst-3"
 
-    def test_select_instance_empty_list(self, mock_predictor_client, instance_registry):
+    async def test_select_instance_empty_list(self, mock_predictor_client, instance_registry):
         """Test selection with empty predictions list."""
         strategy = MinimumExpectedTimeStrategy(mock_predictor_client, instance_registry)
 
         selected = strategy.select_instance([], {})
         assert selected is None
 
-    def test_select_instance_single_prediction(self, mock_predictor_client, instance_registry):
+    async def test_select_instance_single_prediction(self, mock_predictor_client, instance_registry):
         """Test selection with single prediction."""
         strategy = MinimumExpectedTimeStrategy(mock_predictor_client, instance_registry)
 
@@ -97,13 +97,13 @@ class TestMinimumExpectedTimeStrategy:
 class TestProbabilisticSchedulingStrategy:
     """Tests for ProbabilisticSchedulingStrategy."""
 
-    def test_default_target_quantile(self, mock_predictor_client, instance_registry):
+    async def test_default_target_quantile(self, mock_predictor_client, instance_registry):
         """Test that default target quantile is 0.9."""
         strategy = ProbabilisticSchedulingStrategy(mock_predictor_client, instance_registry)
         assert strategy.target_quantile == 0.9
 
 
-    def test_select_based_on_quantile(self, mock_predictor_client, instance_registry):
+    async def test_select_based_on_quantile(self, mock_predictor_client, instance_registry):
         """Test selection based on sampling from quantile distribution."""
         import numpy as np
 
@@ -134,14 +134,14 @@ class TestProbabilisticSchedulingStrategy:
         selected = strategy.select_instance(predictions, {})
         assert selected in ["inst-1", "inst-2", "inst-3"]
 
-    def test_select_empty_list(self, mock_predictor_client, instance_registry):
+    async def test_select_empty_list(self, mock_predictor_client, instance_registry):
         """Test selection with empty predictions list."""
         strategy = ProbabilisticSchedulingStrategy(mock_predictor_client, instance_registry)
 
         selected = strategy.select_instance([], {})
         assert selected is None
 
-    def test_fallback_to_min_time(self, mock_predictor_client, instance_registry):
+    async def test_fallback_to_min_time(self, mock_predictor_client, instance_registry):
         """Test fallback to minimum expected time when quantile not available."""
         strategy = ProbabilisticSchedulingStrategy(mock_predictor_client, instance_registry)
 
@@ -155,7 +155,7 @@ class TestProbabilisticSchedulingStrategy:
         selected = strategy.select_instance(predictions, {})
         assert selected == "inst-2"
 
-    def test_partial_quantile_availability(self, mock_predictor_client, instance_registry):
+    async def test_partial_quantile_availability(self, mock_predictor_client, instance_registry):
         """Test when only some predictions have quantiles - uses fallback to predicted_time_ms."""
         import numpy as np
 
@@ -182,7 +182,7 @@ class TestProbabilisticSchedulingStrategy:
         selected = strategy.select_instance(predictions, {})
         assert selected in ["inst-1", "inst-2", "inst-3"]
 
-    def test_quantile_not_in_dict(self, mock_predictor_client, instance_registry):
+    async def test_quantile_not_in_dict(self, mock_predictor_client, instance_registry):
         """Test when quantiles exist but target quantile not in them."""
         strategy = ProbabilisticSchedulingStrategy(mock_predictor_client, instance_registry)
 
@@ -203,7 +203,7 @@ class TestProbabilisticSchedulingStrategy:
         selected = strategy.select_instance(predictions, {})
         assert selected == "inst-1"
 
-    def test_select_with_equal_quantile_values(self, mock_predictor_client, instance_registry):
+    async def test_select_with_equal_quantile_values(self, mock_predictor_client, instance_registry):
         """Test selection when multiple instances have equal quantile values."""
         strategy = ProbabilisticSchedulingStrategy(mock_predictor_client, instance_registry)
 
@@ -232,7 +232,7 @@ class TestProbabilisticSchedulingStrategy:
 class TestRoundRobinStrategy:
     """Tests for RoundRobinStrategy."""
 
-    def test_round_robin_cycling(self, mock_predictor_client, instance_registry):
+    async def test_round_robin_cycling(self, mock_predictor_client, instance_registry):
         """Test that strategy cycles through instances."""
         strategy = RoundRobinStrategy(mock_predictor_client, instance_registry)
 
@@ -258,14 +258,14 @@ class TestRoundRobinStrategy:
         selected4 = strategy.select_instance(predictions, {})
         assert selected4 == "inst-1"
 
-    def test_round_robin_empty_list(self, mock_predictor_client, instance_registry):
+    async def test_round_robin_empty_list(self, mock_predictor_client, instance_registry):
         """Test selection with empty predictions list."""
         strategy = RoundRobinStrategy(mock_predictor_client, instance_registry)
 
         selected = strategy.select_instance([], {})
         assert selected is None
 
-    def test_round_robin_single_instance(self, mock_predictor_client, instance_registry):
+    async def test_round_robin_single_instance(self, mock_predictor_client, instance_registry):
         """Test cycling with single instance."""
         strategy = RoundRobinStrategy(mock_predictor_client, instance_registry)
 
@@ -278,7 +278,7 @@ class TestRoundRobinStrategy:
         assert strategy.select_instance(predictions, {}) == "inst-1"
         assert strategy.select_instance(predictions, {}) == "inst-1"
 
-    def test_round_robin_counter_persistence(self, mock_predictor_client, instance_registry):
+    async def test_round_robin_counter_persistence(self, mock_predictor_client, instance_registry):
         """Test that counter persists across calls."""
         strategy = RoundRobinStrategy(mock_predictor_client, instance_registry)
 
@@ -295,7 +295,7 @@ class TestRoundRobinStrategy:
         selected = strategy.select_instance(predictions, {})
         assert selected == "inst-1"
 
-    def test_round_robin_different_list_sizes(self, mock_predictor_client, instance_registry):
+    async def test_round_robin_different_list_sizes(self, mock_predictor_client, instance_registry):
         """Test round robin with changing prediction list size."""
         strategy = RoundRobinStrategy(mock_predictor_client, instance_registry)
 
@@ -327,27 +327,27 @@ class TestRoundRobinStrategy:
 class TestGetStrategy:
     """Tests for get_strategy factory function."""
 
-    def test_get_min_time_strategy(self, mock_predictor_client, instance_registry):
+    async def test_get_min_time_strategy(self, mock_predictor_client, instance_registry):
         """Test getting MinimumExpectedTimeStrategy."""
         strategy = get_strategy("min_time", mock_predictor_client, instance_registry)
         assert isinstance(strategy, MinimumExpectedTimeStrategy)
 
-    def test_get_probabilistic_strategy(self, mock_predictor_client, instance_registry):
+    async def test_get_probabilistic_strategy(self, mock_predictor_client, instance_registry):
         """Test getting ProbabilisticSchedulingStrategy."""
         strategy = get_strategy("probabilistic", mock_predictor_client, instance_registry)
         assert isinstance(strategy, ProbabilisticSchedulingStrategy)
 
-    def test_get_round_robin_strategy(self, mock_predictor_client, instance_registry):
+    async def test_get_round_robin_strategy(self, mock_predictor_client, instance_registry):
         """Test getting RoundRobinStrategy."""
         strategy = get_strategy("round_robin", mock_predictor_client, instance_registry)
         assert isinstance(strategy, RoundRobinStrategy)
 
-    def test_unknown_strategy_defaults_to_probabilistic(self, mock_predictor_client, instance_registry):
+    async def test_unknown_strategy_defaults_to_probabilistic(self, mock_predictor_client, instance_registry):
         """Test that unknown strategy name defaults to probabilistic."""
         strategy = get_strategy("unknown_strategy", mock_predictor_client, instance_registry)
         assert isinstance(strategy, ProbabilisticSchedulingStrategy)
 
-    def test_case_sensitivity(self, mock_predictor_client, instance_registry):
+    async def test_case_sensitivity(self, mock_predictor_client, instance_registry):
         """Test that strategy names are case-sensitive."""
         # "MIN_TIME" should not match "min_time"
         strategy = get_strategy("MIN_TIME", mock_predictor_client, instance_registry)
@@ -362,7 +362,7 @@ class TestGetStrategy:
 class TestMinimumExpectedTimeStrategyUpdate:
     """Additional tests for MinimumExpectedTimeStrategy update_queue."""
 
-    def test_update_queue_success(self, mock_predictor_client, instance_registry):
+    async def test_update_queue_success(self, mock_predictor_client, instance_registry):
         """Test successful queue update with error accumulation."""
         from src.model import InstanceQueueExpectError, Instance
 
@@ -379,7 +379,7 @@ class TestMinimumExpectedTimeStrategyUpdate:
                 "hardware_name": "test-hardware"
             }
         )
-        instance_registry.register(instance)
+        await instance_registry.register(instance)
 
         # Set initial queue info
         initial_queue = InstanceQueueExpectError(
@@ -387,7 +387,7 @@ class TestMinimumExpectedTimeStrategyUpdate:
             expected_time_ms=100.0,
             error_margin_ms=10.0
         )
-        instance_registry.update_queue_info("inst-1", initial_queue)
+        await instance_registry.update_queue_info("inst-1", initial_queue)
 
         # Create a prediction
         prediction = Prediction(
@@ -397,17 +397,17 @@ class TestMinimumExpectedTimeStrategyUpdate:
         )
 
         # Update queue
-        strategy.update_queue("inst-1", prediction)
+        await strategy.update_queue("inst-1", prediction)
 
         # Verify queue was updated correctly
-        updated_queue = instance_registry.get_queue_info("inst-1")
+        updated_queue = await instance_registry.get_queue_info("inst-1")
         assert isinstance(updated_queue, InstanceQueueExpectError)
         assert updated_queue.expected_time_ms == 150.0  # 100 + 50
         import math
         expected_error = math.sqrt(10.0**2 + 5.0**2)
         assert abs(updated_queue.error_margin_ms - expected_error) < 0.01
 
-    def test_update_queue_wrong_type(self, mock_predictor_client, instance_registry):
+    async def test_update_queue_wrong_type(self, mock_predictor_client, instance_registry):
         """Test update_queue with wrong queue info type."""
         from src.model import InstanceQueueProbabilistic, Instance
 
@@ -424,14 +424,14 @@ class TestMinimumExpectedTimeStrategyUpdate:
                 "hardware_name": "test-hardware"
             }
         )
-        instance_registry.register(instance)
+        await instance_registry.register(instance)
 
         prob_queue = InstanceQueueProbabilistic(
             instance_id="inst-1",
             quantiles=[0.5, 0.9],
             values=[100.0, 200.0]
         )
-        instance_registry.update_queue_info("inst-1", prob_queue)
+        await instance_registry.update_queue_info("inst-1", prob_queue)
 
         # Try to update - should log warning but not crash
         prediction = Prediction(
@@ -440,16 +440,16 @@ class TestMinimumExpectedTimeStrategyUpdate:
             error_margin_ms=5.0
         )
 
-        strategy.update_queue("inst-1", prediction)
+        await strategy.update_queue("inst-1", prediction)
         # Queue should remain unchanged
-        queue = instance_registry.get_queue_info("inst-1")
+        queue = await instance_registry.get_queue_info("inst-1")
         assert isinstance(queue, InstanceQueueProbabilistic)
 
 
 class TestProbabilisticStrategyUpdate:
     """Additional tests for ProbabilisticSchedulingStrategy update_queue."""
 
-    def test_update_queue_with_quantiles(self, mock_predictor_client, instance_registry):
+    async def test_update_queue_with_quantiles(self, mock_predictor_client, instance_registry):
         """Test update_queue with full quantile information."""
         from src.model import InstanceQueueProbabilistic, Instance
         import numpy as np
@@ -470,7 +470,7 @@ class TestProbabilisticStrategyUpdate:
                 "hardware_name": "test-hardware"
             }
         )
-        instance_registry.register(instance)
+        await instance_registry.register(instance)
 
         # Set initial queue
         initial_queue = InstanceQueueProbabilistic(
@@ -478,7 +478,7 @@ class TestProbabilisticStrategyUpdate:
             quantiles=[0.5, 0.9, 0.95, 0.99],
             values=[100.0, 200.0, 300.0, 500.0]
         )
-        instance_registry.update_queue_info("inst-1", initial_queue)
+        await instance_registry.update_queue_info("inst-1", initial_queue)
 
         # Create prediction with quantiles
         prediction = Prediction(
@@ -488,15 +488,15 @@ class TestProbabilisticStrategyUpdate:
         )
 
         # Update queue
-        strategy.update_queue("inst-1", prediction)
+        await strategy.update_queue("inst-1", prediction)
 
         # Verify queue was updated (values should be higher)
-        updated_queue = instance_registry.get_queue_info("inst-1")
+        updated_queue = await instance_registry.get_queue_info("inst-1")
         assert isinstance(updated_queue, InstanceQueueProbabilistic)
         # Values should be sum of queue + task samples
         assert all(v > initial_queue.values[i] for i, v in enumerate(updated_queue.values))
 
-    def test_update_queue_without_quantiles(self, mock_predictor_client, instance_registry):
+    async def test_update_queue_without_quantiles(self, mock_predictor_client, instance_registry):
         """Test update_queue fallback when prediction has no quantiles."""
         from src.model import InstanceQueueProbabilistic, Instance
 
@@ -513,7 +513,7 @@ class TestProbabilisticStrategyUpdate:
                 "hardware_name": "test-hardware"
             }
         )
-        instance_registry.register(instance)
+        await instance_registry.register(instance)
 
         # Set initial queue
         initial_queue = InstanceQueueProbabilistic(
@@ -521,7 +521,7 @@ class TestProbabilisticStrategyUpdate:
             quantiles=[0.5, 0.9, 0.95, 0.99],
             values=[100.0, 200.0, 300.0, 500.0]
         )
-        instance_registry.update_queue_info("inst-1", initial_queue)
+        await instance_registry.update_queue_info("inst-1", initial_queue)
 
         # Create prediction without quantiles
         prediction = Prediction(
@@ -531,14 +531,14 @@ class TestProbabilisticStrategyUpdate:
         )
 
         # Update queue (should use fallback)
-        strategy.update_queue("inst-1", prediction)
+        await strategy.update_queue("inst-1", prediction)
 
         # Verify queue was updated using predicted_time_ms
-        updated_queue = instance_registry.get_queue_info("inst-1")
+        updated_queue = await instance_registry.get_queue_info("inst-1")
         assert isinstance(updated_queue, InstanceQueueProbabilistic)
         assert updated_queue.values[0] == 150.0  # 100 + 50
 
-    def test_update_queue_wrong_type(self, mock_predictor_client, instance_registry):
+    async def test_update_queue_wrong_type(self, mock_predictor_client, instance_registry):
         """Test update_queue with wrong queue info type."""
         from src.model import InstanceQueueExpectError, Instance
 
@@ -555,14 +555,14 @@ class TestProbabilisticStrategyUpdate:
                 "hardware_name": "test-hardware"
             }
         )
-        instance_registry.register(instance)
+        await instance_registry.register(instance)
 
         exp_queue = InstanceQueueExpectError(
             instance_id="inst-1",
             expected_time_ms=100.0,
             error_margin_ms=10.0
         )
-        instance_registry.update_queue_info("inst-1", exp_queue)
+        await instance_registry.update_queue_info("inst-1", exp_queue)
 
         # Try to update - should log warning but not crash
         prediction = Prediction(
@@ -571,12 +571,12 @@ class TestProbabilisticStrategyUpdate:
             quantiles={0.5: 40.0, 0.9: 60.0}
         )
 
-        strategy.update_queue("inst-1", prediction)
+        await strategy.update_queue("inst-1", prediction)
         # Queue should remain unchanged
-        queue = instance_registry.get_queue_info("inst-1")
+        queue = await instance_registry.get_queue_info("inst-1")
         assert isinstance(queue, InstanceQueueExpectError)
 
-    def test_select_with_queue_info(self, mock_predictor_client, instance_registry):
+    async def test_select_with_queue_info(self, mock_predictor_client, instance_registry):
         """Test selection considering queue information."""
         import numpy as np
         from src.model import InstanceQueueProbabilistic
@@ -621,7 +621,7 @@ class TestProbabilisticStrategyUpdate:
 class TestSchedulingStrategyErrors:
     """Tests for error handling in scheduling strategies."""
 
-    def test_get_predictions_http_404_error(self, mock_predictor_client, instance_registry):
+    async def test_get_predictions_http_404_error(self, mock_predictor_client, instance_registry):
         """Test get_predictions with HTTP 404 error (model not found)."""
         import httpx
         from src.model import Instance
@@ -652,7 +652,7 @@ class TestSchedulingStrategyErrors:
             import asyncio
             asyncio.run(strategy.get_predictions("model-1", {}, instances))
 
-    def test_get_predictions_http_400_error(self, mock_predictor_client, instance_registry):
+    async def test_get_predictions_http_400_error(self, mock_predictor_client, instance_registry):
         """Test get_predictions with HTTP 400 error (invalid metadata)."""
         import httpx
         from src.model import Instance
@@ -683,7 +683,7 @@ class TestSchedulingStrategyErrors:
             import asyncio
             asyncio.run(strategy.get_predictions("model-1", {}, instances))
 
-    def test_get_predictions_http_500_error(self, mock_predictor_client, instance_registry):
+    async def test_get_predictions_http_500_error(self, mock_predictor_client, instance_registry):
         """Test get_predictions with HTTP 500 error (server error)."""
         import httpx
         from src.model import Instance
@@ -714,7 +714,7 @@ class TestSchedulingStrategyErrors:
             import asyncio
             asyncio.run(strategy.get_predictions("model-1", {}, instances))
 
-    def test_get_predictions_timeout_error(self, mock_predictor_client, instance_registry):
+    async def test_get_predictions_timeout_error(self, mock_predictor_client, instance_registry):
         """Test get_predictions with timeout error."""
         import httpx
         from src.model import Instance
@@ -738,7 +738,7 @@ class TestSchedulingStrategyErrors:
             import asyncio
             asyncio.run(strategy.get_predictions("model-1", {}, instances))
 
-    def test_get_predictions_connection_error(self, mock_predictor_client, instance_registry):
+    async def test_get_predictions_connection_error(self, mock_predictor_client, instance_registry):
         """Test get_predictions with connection error."""
         import httpx
         from src.model import Instance
@@ -766,7 +766,7 @@ class TestSchedulingStrategyErrors:
 class TestRoundRobinStrategyUpdate:
     """Additional tests for RoundRobinStrategy."""
 
-    def test_update_queue_noop(self, mock_predictor_client, instance_registry):
+    async def test_update_queue_noop(self, mock_predictor_client, instance_registry):
         """Test that RoundRobinStrategy update_queue is a no-op."""
         from src.model import Instance, InstanceQueueProbabilistic
 
@@ -783,10 +783,10 @@ class TestRoundRobinStrategyUpdate:
                 "hardware_name": "test-hardware"
             }
         )
-        instance_registry.register(instance)
+        await instance_registry.register(instance)
 
         # Get initial queue state
-        initial_queue = instance_registry.get_queue_info("inst-1")
+        initial_queue = await instance_registry.get_queue_info("inst-1")
 
         # Create prediction
         prediction = Prediction(
@@ -795,8 +795,8 @@ class TestRoundRobinStrategyUpdate:
         )
 
         # Update queue (should be no-op)
-        strategy.update_queue("inst-1", prediction)
+        await strategy.update_queue("inst-1", prediction)
 
         # Verify queue unchanged
-        final_queue = instance_registry.get_queue_info("inst-1")
+        final_queue = await instance_registry.get_queue_info("inst-1")
         assert final_queue == initial_queue

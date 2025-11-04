@@ -19,7 +19,7 @@ from src.model import TaskStatus
 class TestTaskDispatcherInit:
     """Tests for TaskDispatcher initialization."""
 
-    def test_initialization(
+    async def test_initialization(
         self,
         task_registry,
         instance_registry,
@@ -38,7 +38,7 @@ class TestTaskDispatcherInit:
         assert dispatcher.websocket_manager == websocket_manager
         assert dispatcher.timeout == 30.0
 
-    def test_default_timeout(
+    async def test_default_timeout(
         self,
         task_registry,
         instance_registry,
@@ -72,15 +72,15 @@ class TestSuccessfulDispatch:
     ):
         """Test dispatching a task successfully."""
         # Setup
-        instance_registry.register(sample_instance)
-        task = task_registry.create_task(
+        await instance_registry.register(sample_instance)
+        task = await task_registry.create_task(
             task_id="task-1",
             model_id="model-1",
             task_input={"prompt": "test"},
             metadata={},
             assigned_instance=sample_instance.instance_id
         )
-        instance_registry.increment_pending(sample_instance.instance_id)
+        await instance_registry.increment_pending(sample_instance.instance_id)
 
         # Mock HTTP client
         mock_response = MagicMock()
@@ -92,11 +92,11 @@ class TestSuccessfulDispatch:
         await task_dispatcher.dispatch_task("task-1")
 
         # Verify task status - should be RUNNING (not COMPLETED - that happens via callback)
-        task = task_registry.get("task-1")
+        task = await task_registry.get("task-1")
         assert task.status == TaskStatus.RUNNING
 
         # Verify pending was decremented
-        stats = instance_registry.get_stats(sample_instance.instance_id)
+        stats = await instance_registry.get_stats(sample_instance.instance_id)
         assert stats.pending_tasks == 0
 
     @pytest.mark.asyncio
@@ -108,15 +108,15 @@ class TestSuccessfulDispatch:
         sample_instance
     ):
         """Test that task status is updated to RUNNING before execution."""
-        instance_registry.register(sample_instance)
-        task_registry.create_task(
+        await instance_registry.register(sample_instance)
+        await task_registry.create_task(
             task_id="task-1",
             model_id="model-1",
             task_input={},
             metadata={},
             assigned_instance=sample_instance.instance_id
         )
-        instance_registry.increment_pending(sample_instance.instance_id)
+        await instance_registry.increment_pending(sample_instance.instance_id)
 
         with patch("httpx.AsyncClient") as mock_client_class:
             mock_client = MagicMock()
@@ -130,7 +130,7 @@ class TestSuccessfulDispatch:
 
             await task_dispatcher.dispatch_task("task-1")
 
-        task = task_registry.get("task-1")
+        task = await task_registry.get("task-1")
         assert task.started_at is not None
 
 
@@ -155,7 +155,7 @@ class TestErrorHandling:
         websocket_manager
     ):
         """Test dispatching when assigned instance doesn't exist."""
-        task_registry.create_task(
+        await task_registry.create_task(
             task_id="task-1",
             model_id="model-1",
             task_input={},
@@ -165,7 +165,7 @@ class TestErrorHandling:
 
         await task_dispatcher.dispatch_task("task-1")
 
-        task = task_registry.get("task-1")
+        task = await task_registry.get("task-1")
         assert task.status == TaskStatus.FAILED
         assert "not found" in task.error
 
@@ -178,15 +178,15 @@ class TestErrorHandling:
         sample_instance
     ):
         """Test handling task execution timeout."""
-        instance_registry.register(sample_instance)
-        task_registry.create_task(
+        await instance_registry.register(sample_instance)
+        await task_registry.create_task(
             task_id="task-1",
             model_id="model-1",
             task_input={},
             metadata={},
             assigned_instance=sample_instance.instance_id
         )
-        instance_registry.increment_pending(sample_instance.instance_id)
+        await instance_registry.increment_pending(sample_instance.instance_id)
 
         with patch("httpx.AsyncClient") as mock_client_class:
             mock_client = MagicMock()
@@ -197,12 +197,12 @@ class TestErrorHandling:
 
             await task_dispatcher.dispatch_task("task-1")
 
-        task = task_registry.get("task-1")
+        task = await task_registry.get("task-1")
         assert task.status == TaskStatus.FAILED
         # The dispatcher catches all exceptions and returns a generic error
         assert "Task dispatch failed" in task.error or "Timeout" in task.error
 
-        stats = instance_registry.get_stats(sample_instance.instance_id)
+        stats = await instance_registry.get_stats(sample_instance.instance_id)
         assert stats.pending_tasks == 0
         assert stats.failed_tasks == 1
 
@@ -215,15 +215,15 @@ class TestErrorHandling:
         sample_instance
     ):
         """Test handling HTTP errors from instance."""
-        instance_registry.register(sample_instance)
-        task_registry.create_task(
+        await instance_registry.register(sample_instance)
+        await task_registry.create_task(
             task_id="task-1",
             model_id="model-1",
             task_input={},
             metadata={},
             assigned_instance=sample_instance.instance_id
         )
-        instance_registry.increment_pending(sample_instance.instance_id)
+        await instance_registry.increment_pending(sample_instance.instance_id)
 
         # Mock HTTP client to raise HTTPStatusError
         task_dispatcher._http_client.post = AsyncMock(
@@ -236,11 +236,11 @@ class TestErrorHandling:
 
         await task_dispatcher.dispatch_task("task-1")
 
-        task = task_registry.get("task-1")
+        task = await task_registry.get("task-1")
         assert task.status == TaskStatus.FAILED
         assert "500 Server Error" in task.error
 
-        stats = instance_registry.get_stats(sample_instance.instance_id)
+        stats = await instance_registry.get_stats(sample_instance.instance_id)
         assert stats.failed_tasks == 1
 
     @pytest.mark.asyncio
@@ -252,15 +252,15 @@ class TestErrorHandling:
         sample_instance
     ):
         """Test handling unexpected errors."""
-        instance_registry.register(sample_instance)
-        task_registry.create_task(
+        await instance_registry.register(sample_instance)
+        await task_registry.create_task(
             task_id="task-1",
             model_id="model-1",
             task_input={},
             metadata={},
             assigned_instance=sample_instance.instance_id
         )
-        instance_registry.increment_pending(sample_instance.instance_id)
+        await instance_registry.increment_pending(sample_instance.instance_id)
 
         with patch("httpx.AsyncClient") as mock_client_class:
             mock_client = MagicMock()
@@ -271,12 +271,12 @@ class TestErrorHandling:
 
             await task_dispatcher.dispatch_task("task-1")
 
-        task = task_registry.get("task-1")
+        task = await task_registry.get("task-1")
         assert task.status == TaskStatus.FAILED
         # The dispatcher catches all exceptions and returns a generic error
         assert "Task dispatch failed" in task.error or "Unexpected error" in task.error
 
-        stats = instance_registry.get_stats(sample_instance.instance_id)
+        stats = await instance_registry.get_stats(sample_instance.instance_id)
         assert stats.failed_tasks == 1
 
 
@@ -296,16 +296,16 @@ class TestStatsUpdates:
         sample_instance
     ):
         """Test that pending count is decremented when task starts."""
-        instance_registry.register(sample_instance)
-        task_registry.create_task(
+        await instance_registry.register(sample_instance)
+        await task_registry.create_task(
             task_id="task-1",
             model_id="model-1",
             task_input={},
             metadata={},
             assigned_instance=sample_instance.instance_id
         )
-        instance_registry.increment_pending(sample_instance.instance_id)
-        instance_registry.increment_pending(sample_instance.instance_id)
+        await instance_registry.increment_pending(sample_instance.instance_id)
+        await instance_registry.increment_pending(sample_instance.instance_id)
 
         # Mock HTTP client
         mock_response = MagicMock()
@@ -315,7 +315,7 @@ class TestStatsUpdates:
 
         await task_dispatcher.dispatch_task("task-1")
 
-        stats = instance_registry.get_stats(sample_instance.instance_id)
+        stats = await instance_registry.get_stats(sample_instance.instance_id)
         # Started with 2, decremented to 1
         assert stats.pending_tasks == 1
 
@@ -328,15 +328,15 @@ class TestStatsUpdates:
         sample_instance
     ):
         """Test that task is dispatched successfully (completion happens via callback)."""
-        instance_registry.register(sample_instance)
-        task_registry.create_task(
+        await instance_registry.register(sample_instance)
+        await task_registry.create_task(
             task_id="task-1",
             model_id="model-1",
             task_input={},
             metadata={},
             assigned_instance=sample_instance.instance_id
         )
-        instance_registry.increment_pending(sample_instance.instance_id)
+        await instance_registry.increment_pending(sample_instance.instance_id)
 
         # Mock HTTP client
         mock_response = MagicMock()
@@ -347,11 +347,11 @@ class TestStatsUpdates:
         await task_dispatcher.dispatch_task("task-1")
 
         # Task should be RUNNING (completion happens via callback, not during dispatch)
-        task = task_registry.get("task-1")
+        task = await task_registry.get("task-1")
         assert task.status == TaskStatus.RUNNING
 
         # Pending should be decremented
-        stats = instance_registry.get_stats(sample_instance.instance_id)
+        stats = await instance_registry.get_stats(sample_instance.instance_id)
         assert stats.pending_tasks == 0
         assert stats.completed_tasks == 0  # Completion happens via callback
 
@@ -364,8 +364,8 @@ class TestStatsUpdates:
         sample_instance
     ):
         """Test that failed count is incremented on error."""
-        instance_registry.register(sample_instance)
-        task_registry.create_task(
+        await instance_registry.register(sample_instance)
+        await task_registry.create_task(
             task_id="task-1",
             model_id="model-1",
             task_input={},
@@ -382,7 +382,7 @@ class TestStatsUpdates:
 
             await task_dispatcher.dispatch_task("task-1")
 
-        stats = instance_registry.get_stats(sample_instance.instance_id)
+        stats = await instance_registry.get_stats(sample_instance.instance_id)
         assert stats.failed_tasks == 1
 
 
@@ -403,8 +403,8 @@ class TestWebSocketNotification:
         websocket_manager
     ):
         """Test WebSocket notification on task completion."""
-        instance_registry.register(sample_instance)
-        task_registry.create_task(
+        await instance_registry.register(sample_instance)
+        await task_registry.create_task(
             task_id="task-1",
             model_id="model-1",
             task_input={},
@@ -441,8 +441,8 @@ class TestWebSocketNotification:
         websocket_manager
     ):
         """Test WebSocket notification on task failure."""
-        instance_registry.register(sample_instance)
-        task_registry.create_task(
+        await instance_registry.register(sample_instance)
+        await task_registry.create_task(
             task_id="task-1",
             model_id="model-1",
             task_input={},
@@ -481,7 +481,7 @@ class TestWebSocketNotification:
         task_registry
     ):
         """Test that notification only happens for terminal states."""
-        task_registry.create_task(
+        await task_registry.create_task(
             task_id="task-1",
             model_id="model-1",
             task_input={},
@@ -498,12 +498,12 @@ class TestWebSocketNotification:
         mock_websocket.send_json.assert_not_called()
 
         # Update to RUNNING - should not notify
-        task_registry.update_status("task-1", TaskStatus.RUNNING)
+        await task_registry.update_status("task-1", TaskStatus.RUNNING)
         await task_dispatcher._notify_task_completion("task-1")
         mock_websocket.send_json.assert_not_called()
 
         # Update to COMPLETED - should notify
-        task_registry.update_status("task-1", TaskStatus.COMPLETED)
+        await task_registry.update_status("task-1", TaskStatus.COMPLETED)
         await task_dispatcher._notify_task_completion("task-1")
         mock_websocket.send_json.assert_called_once()
 
@@ -542,13 +542,13 @@ class TestHandleTaskResult:
         )
 
         # Verify task was updated
-        updated_task = task_dispatcher.task_registry.get("task-1")
+        updated_task = await task_dispatcher.task_registry.get("task-1")
         assert updated_task.status == TaskStatus.COMPLETED
         assert updated_task.result == {"output": "result"}
         assert updated_task.execution_time_ms == 120.0
 
         # Verify instance stats were updated
-        stats = task_dispatcher.instance_registry.get_stats(sample_instance.instance_id)
+        stats = await task_dispatcher.instance_registry.get_stats(sample_instance.instance_id)
         assert stats.completed_tasks == 1
 
     @pytest.mark.asyncio
@@ -638,12 +638,12 @@ class TestHandleTaskResult:
         )
 
         # Verify task was marked as failed
-        task = task_dispatcher.task_registry.get("task-1")
+        task = await task_dispatcher.task_registry.get("task-1")
         assert task.status == TaskStatus.FAILED
         assert task.error == "Task execution failed"
 
         # Verify instance failed count increased
-        stats = task_dispatcher.instance_registry.get_stats(sample_instance.instance_id)
+        stats = await task_dispatcher.instance_registry.get_stats(sample_instance.instance_id)
         assert stats.failed_tasks == 1
 
     @pytest.mark.asyncio
@@ -844,7 +844,7 @@ class TestQueueUpdateOnCompletion:
         sample_instance
     ):
         """Test queue update when no queue info exists."""
-        instance_registry.register(sample_instance)
+        await instance_registry.register(sample_instance)
         # No queue info set
 
         # Should not raise error
@@ -901,8 +901,8 @@ class TestAsyncDispatch:
         sample_instance
     ):
         """Test that dispatch_task_async creates an async task."""
-        instance_registry.register(sample_instance)
-        task_registry.create_task(
+        await instance_registry.register(sample_instance)
+        await task_registry.create_task(
             task_id="task-1",
             model_id="model-1",
             task_input={},
