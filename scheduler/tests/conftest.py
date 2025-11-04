@@ -6,7 +6,7 @@ scheduler system including registries, clients, and sample data.
 """
 
 import pytest
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, List
 from unittest.mock import AsyncMock, MagicMock, Mock
 
@@ -351,7 +351,7 @@ def failed_task_response():
 @pytest.fixture
 def current_timestamp() -> str:
     """Get current ISO formatted timestamp."""
-    return datetime.utcnow().isoformat()
+    return datetime.now(timezone.utc).isoformat()
 
 
 @pytest.fixture

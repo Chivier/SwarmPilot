@@ -62,11 +62,11 @@ class PredictorClient:
         self.retry_delay = retry_delay
 
         # WebSocket connection reuse
-        self._websocket: Optional[websockets.WebSocketClientProtocol] = None
+        self._websocket: Optional[Any] = None
         self._ws_lock = asyncio.Lock()  # Ensure thread-safe access to websocket
         self._ws_endpoint = f"{self.ws_url}/ws/predict"
 
-    async def _ensure_connection(self) -> websockets.WebSocketClientProtocol:
+    async def _ensure_connection(self) -> Any:
         """
         Ensure WebSocket connection is established and healthy.
 

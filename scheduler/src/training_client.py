@@ -8,7 +8,7 @@ predictor service for model training.
 from typing import Dict, Any, List
 import httpx
 from dataclasses import dataclass, asdict
-from datetime import datetime
+from datetime import datetime, timezone
 from loguru import logger
 
 
@@ -77,7 +77,7 @@ class TrainingClient:
             platform_info=platform_info,
             features=features,
             actual_runtime_ms=actual_runtime_ms,
-            timestamp=datetime.utcnow().isoformat(),
+            timestamp=datetime.now(timezone.utc).isoformat(),
         )
         self._samples_buffer.append(sample)
 

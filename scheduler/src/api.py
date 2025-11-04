@@ -7,6 +7,7 @@ and WebSocket connections for real-time task result delivery.
 
 from typing import Optional, Callable
 from datetime import datetime
+from contextlib import asynccontextmanager
 import asyncio
 import json
 import httpx
@@ -86,12 +87,51 @@ from . import logger as logger_module  # noqa: F401
 # Application Setup
 # ============================================================================
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage application lifespan: startup and shutdown."""
+    # Startup
+    logger.info("Scheduler service starting up...")
+
+    # Import config here to access global state
+    from .config import config
+    logger.info(f"Configuration: {config}")
+    logger.info(f"Scheduling strategy: {config.scheduling.default_strategy}")
+    logger.info(f"Auto-training enabled: {config.training.enable_auto_training}")
+
+    # TODO: Load persisted state if needed
+    # TODO: Connect to external services
+    logger.success("Scheduler service started successfully")
+
+    yield
+
+    # Shutdown
+    logger.info("Scheduler service shutting down...")
+
+    # Shutdown background scheduler (wait for active tasks to complete)
+    await background_scheduler.shutdown()
+    logger.debug("Background scheduler shutdown complete")
+
+    # Close HTTP clients
+    await task_dispatcher.close()
+    logger.debug("Task dispatcher closed")
+
+    if training_client:
+        await training_client.close()
+        logger.debug("Training client closed")
+
+    await predictor_client.close()
+    logger.debug("Predictor client closed")
+
+    # TODO: Persist state if needed
+    logger.info("Scheduler service shutdown complete")
 
 
 app = FastAPI(
     title="Scheduler API",
     description="Task scheduling and instance management service",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 logger.info("Initializing Scheduler API")
@@ -1245,41 +1285,5 @@ async def health_check():
 
 
 # ============================================================================
-# Lifecycle Events
+# Lifecycle Events (now handled by lifespan context manager)
 # ============================================================================
-
-@app.on_event("startup")
-async def startup_event():
-    """Initialize resources on application startup."""
-    logger.info("Scheduler service starting up...")
-    logger.info(f"Configuration: {config}")
-    logger.info(f"Scheduling strategy: {config.scheduling.default_strategy}")
-    logger.info(f"Auto-training enabled: {config.training.enable_auto_training}")
-
-    # TODO: Load persisted state if needed
-    # TODO: Connect to external services
-    logger.success("Scheduler service started successfully")
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Clean up resources on application shutdown."""
-    logger.info("Scheduler service shutting down...")
-
-    # Shutdown background scheduler (wait for active tasks to complete)
-    await background_scheduler.shutdown()
-    logger.debug("Background scheduler shutdown complete")
-
-    # Close HTTP clients
-    await task_dispatcher.close()
-    logger.debug("Task dispatcher closed")
-
-    if training_client:
-        await training_client.close()
-        logger.debug("Training client closed")
-
-    await predictor_client.close()
-    logger.debug("Predictor client closed")
-
-    # TODO: Persist state if needed
-    logger.info("Scheduler service shutdown complete")

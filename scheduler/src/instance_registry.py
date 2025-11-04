@@ -7,7 +7,7 @@ that can execute tasks.
 
 from typing import Dict, List, Optional
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 
 from .model import (
     Instance,
@@ -234,7 +234,7 @@ class InstanceRegistry:
                 )
 
             instance.status = InstanceStatus.DRAINING
-            instance.drain_initiated_at = datetime.utcnow().isoformat() + "Z"
+            instance.drain_initiated_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
             return instance
 
     async def get_drain_status(self, instance_id: str) -> Dict:

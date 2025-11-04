@@ -90,7 +90,7 @@ class TestAddSample:
         self, mock_datetime, training_client, platform_info, features
     ):
         """Test adding a single training sample."""
-        mock_datetime.utcnow.return_value.isoformat.return_value = "2024-01-01T00:00:00"
+        mock_datetime.now.return_value.isoformat.return_value = "2024-01-01T00:00:00"
 
         training_client.add_sample(
             model_id="model-1",
@@ -113,7 +113,7 @@ class TestAddSample:
         self, mock_datetime, training_client, platform_info, features
     ):
         """Test adding multiple training samples."""
-        mock_datetime.utcnow.return_value.isoformat.return_value = "2024-01-01T00:00:00"
+        mock_datetime.now.return_value.isoformat.return_value = "2024-01-01T00:00:00"
 
         for i in range(5):
             training_client.add_sample(
@@ -133,7 +133,7 @@ class TestAddSample:
     @patch("src.training_client.datetime")
     def test_add_sample_different_platforms(self, mock_datetime, training_client, features):
         """Test adding samples from different platforms."""
-        mock_datetime.utcnow.return_value.isoformat.return_value = "2024-01-01T00:00:00"
+        mock_datetime.now.return_value.isoformat.return_value = "2024-01-01T00:00:00"
 
         platform1 = {"software_name": "docker", "software_version": "20.10", "hardware_name": "hw1"}
         platform2 = {"software_name": "docker", "software_version": "20.10", "hardware_name": "hw2"}
