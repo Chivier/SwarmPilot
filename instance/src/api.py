@@ -854,7 +854,10 @@ async def clear_tasks():
     docker_manager = get_docker_manager()
 
     try:
-        # Step 1: Restart Docker container if a model is running
+        # Step 1: Clear all tasks
+        cleared_count = await task_queue.clear_all_tasks()
+        
+        # Step 2: Restart Docker container if a model is running
         if await docker_manager.is_model_running():
             logger.info("Restarting Docker container before clearing tasks")
             try:
@@ -867,9 +870,6 @@ async def clear_tasks():
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail=f"Failed to restart Docker container: {str(e)}"
                 )
-
-        # Step 2: Clear all tasks
-        cleared_count = await task_queue.clear_all_tasks()
 
         return TaskClearResponse(
             success=True,
