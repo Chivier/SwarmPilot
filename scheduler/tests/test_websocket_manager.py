@@ -18,14 +18,14 @@ from src.model import TaskStatus, TaskTimestamps
 class TestConnectionManagement:
     """Tests for connection registration and cleanup."""
 
-    def test_connect_websocket(self, websocket_manager, mock_websocket):
+    async def test_connect_websocket(self, websocket_manager, mock_websocket):
         """Test registering a WebSocket connection."""
         websocket_manager.connect(mock_websocket)
 
         subscribed = websocket_manager.get_subscribed_tasks(mock_websocket)
         assert subscribed == []
 
-    def test_disconnect_websocket(self, websocket_manager, mock_websocket):
+    async def test_disconnect_websocket(self, websocket_manager, mock_websocket):
         """Test disconnecting a WebSocket."""
         websocket_manager.connect(mock_websocket)
         websocket_manager.subscribe(mock_websocket, ["task-1", "task-2"])
@@ -40,7 +40,7 @@ class TestConnectionManagement:
         assert websocket_manager.get_subscribers("task-1") == []
         assert websocket_manager.get_subscribers("task-2") == []
 
-    def test_disconnect_cleans_up_subscriptions(self, websocket_manager, mock_websocket):
+    async def test_disconnect_cleans_up_subscriptions(self, websocket_manager, mock_websocket):
         """Test that disconnect removes all subscriptions."""
         websocket_manager.connect(mock_websocket)
         websocket_manager.subscribe(mock_websocket, ["task-1", "task-2", "task-3"])
@@ -52,12 +52,12 @@ class TestConnectionManagement:
         assert websocket_manager.get_subscribers("task-2") == []
         assert websocket_manager.get_subscribers("task-3") == []
 
-    def test_disconnect_nonexistent_connection(self, websocket_manager, mock_websocket):
+    async def test_disconnect_nonexistent_connection(self, websocket_manager, mock_websocket):
         """Test disconnecting a connection that doesn't exist."""
         # Should not raise error
         websocket_manager.disconnect(mock_websocket)
 
-    def test_multiple_connections(self, websocket_manager):
+    async def test_multiple_connections(self, websocket_manager):
         """Test managing multiple WebSocket connections."""
         ws1 = MagicMock()
         ws2 = MagicMock()
@@ -83,7 +83,7 @@ class TestConnectionManagement:
 class TestSubscriptionManagement:
     """Tests for subscribing and unsubscribing."""
 
-    def test_subscribe_to_tasks(self, websocket_manager, mock_websocket):
+    async def test_subscribe_to_tasks(self, websocket_manager, mock_websocket):
         """Test subscribing to task updates."""
         websocket_manager.subscribe(mock_websocket, ["task-1", "task-2"])
 
@@ -93,7 +93,7 @@ class TestSubscriptionManagement:
         assert mock_websocket in websocket_manager.get_subscribers("task-1")
         assert mock_websocket in websocket_manager.get_subscribers("task-2")
 
-    def test_subscribe_auto_registers_connection(self, websocket_manager, mock_websocket):
+    async def test_subscribe_auto_registers_connection(self, websocket_manager, mock_websocket):
         """Test that subscribe automatically registers connection if needed."""
         # Don't call connect() first
         websocket_manager.subscribe(mock_websocket, ["task-1"])
@@ -101,7 +101,7 @@ class TestSubscriptionManagement:
         subscribed = websocket_manager.get_subscribed_tasks(mock_websocket)
         assert "task-1" in subscribed
 
-    def test_subscribe_multiple_times(self, websocket_manager, mock_websocket):
+    async def test_subscribe_multiple_times(self, websocket_manager, mock_websocket):
         """Test subscribing to additional tasks."""
         websocket_manager.subscribe(mock_websocket, ["task-1"])
         websocket_manager.subscribe(mock_websocket, ["task-2", "task-3"])
@@ -109,7 +109,7 @@ class TestSubscriptionManagement:
         subscribed = websocket_manager.get_subscribed_tasks(mock_websocket)
         assert set(subscribed) == {"task-1", "task-2", "task-3"}
 
-    def test_subscribe_to_same_task_twice(self, websocket_manager, mock_websocket):
+    async def test_subscribe_to_same_task_twice(self, websocket_manager, mock_websocket):
         """Test subscribing to the same task multiple times."""
         websocket_manager.subscribe(mock_websocket, ["task-1"])
         websocket_manager.subscribe(mock_websocket, ["task-1"])
@@ -118,7 +118,7 @@ class TestSubscriptionManagement:
         subscribers = websocket_manager.get_subscribers("task-1")
         assert subscribers.count(mock_websocket) == 1
 
-    def test_unsubscribe_from_tasks(self, websocket_manager, mock_websocket):
+    async def test_unsubscribe_from_tasks(self, websocket_manager, mock_websocket):
         """Test unsubscribing from task updates."""
         websocket_manager.subscribe(mock_websocket, ["task-1", "task-2", "task-3"])
         websocket_manager.unsubscribe(mock_websocket, ["task-1", "task-3"])
@@ -130,7 +130,7 @@ class TestSubscriptionManagement:
         assert mock_websocket in websocket_manager.get_subscribers("task-2")
         assert mock_websocket not in websocket_manager.get_subscribers("task-3")
 
-    def test_unsubscribe_from_non_subscribed_task(self, websocket_manager, mock_websocket):
+    async def test_unsubscribe_from_non_subscribed_task(self, websocket_manager, mock_websocket):
         """Test unsubscribing from a task not subscribed to."""
         websocket_manager.subscribe(mock_websocket, ["task-1"])
 
@@ -140,7 +140,7 @@ class TestSubscriptionManagement:
         subscribed = websocket_manager.get_subscribed_tasks(mock_websocket)
         assert subscribed == ["task-1"]
 
-    def test_unsubscribe_all(self, websocket_manager, mock_websocket):
+    async def test_unsubscribe_all(self, websocket_manager, mock_websocket):
         """Test unsubscribing from all tasks."""
         websocket_manager.subscribe(mock_websocket, ["task-1", "task-2"])
         websocket_manager.unsubscribe(mock_websocket, ["task-1", "task-2"])
@@ -148,14 +148,14 @@ class TestSubscriptionManagement:
         subscribed = websocket_manager.get_subscribed_tasks(mock_websocket)
         assert subscribed == []
 
-    def test_subscribe_empty_list(self, websocket_manager, mock_websocket):
+    async def test_subscribe_empty_list(self, websocket_manager, mock_websocket):
         """Test subscribing to empty task list."""
         websocket_manager.subscribe(mock_websocket, [])
 
         subscribed = websocket_manager.get_subscribed_tasks(mock_websocket)
         assert subscribed == []
 
-    def test_multiple_subscribers_per_task(self, websocket_manager):
+    async def test_multiple_subscribers_per_task(self, websocket_manager):
         """Test multiple WebSockets subscribing to same task."""
         ws1 = MagicMock()
         ws2 = MagicMock()
@@ -171,12 +171,12 @@ class TestSubscriptionManagement:
         assert ws2 in subscribers
         assert ws3 in subscribers
 
-    def test_get_subscribed_tasks_nonexistent_connection(self, websocket_manager, mock_websocket):
+    async def test_get_subscribed_tasks_nonexistent_connection(self, websocket_manager, mock_websocket):
         """Test getting subscribed tasks for connection that doesn't exist."""
         subscribed = websocket_manager.get_subscribed_tasks(mock_websocket)
         assert subscribed == []
 
-    def test_get_subscribers_nonexistent_task(self, websocket_manager):
+    async def test_get_subscribers_nonexistent_task(self, websocket_manager):
         """Test getting subscribers for task with no subscribers."""
         subscribers = websocket_manager.get_subscribers("nonexistent-task")
         assert subscribers == []

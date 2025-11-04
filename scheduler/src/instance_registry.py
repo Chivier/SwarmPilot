@@ -6,7 +6,7 @@ that can execute tasks.
 """
 
 from typing import Dict, List, Optional
-from threading import Lock
+import asyncio
 from datetime import datetime
 
 from .model import (
@@ -33,10 +33,10 @@ class InstanceRegistry:
         self._instances: Dict[str, Instance] = {}
         self._queue_info: Dict[str, InstanceQueueBase] = {}
         self._stats: Dict[str, InstanceStats] = {}
-        self._lock = Lock()
+        self._lock = asyncio.Lock()
         self._queue_info_type = queue_info_type
 
-    def register(self, instance: Instance) -> None:
+    async def register(self, instance: Instance) -> None:
         """
         Register a new instance.
 
@@ -46,7 +46,7 @@ class InstanceRegistry:
         Raises:
             ValueError: If instance with this ID already exists
         """
-        with self._lock:
+        async with self._lock:
             if instance.instance_id in self._instances:
                 raise ValueError(f"Instance {instance.instance_id} already exists")
 
@@ -73,7 +73,7 @@ class InstanceRegistry:
                 failed_tasks=0,
             )
 
-    def remove(self, instance_id: str) -> Instance:
+    async def remove(self, instance_id: str) -> Instance:
         """
         Remove an instance from the registry.
 
@@ -86,7 +86,7 @@ class InstanceRegistry:
         Raises:
             KeyError: If instance not found
         """
-        with self._lock:
+        async with self._lock:
             if instance_id not in self._instances:
                 raise KeyError(f"Instance {instance_id} not found")
 
@@ -96,7 +96,7 @@ class InstanceRegistry:
 
             return instance
 
-    def get(self, instance_id: str) -> Optional[Instance]:
+    async def get(self, instance_id: str) -> Optional[Instance]:
         """
         Get an instance by ID.
 
@@ -106,10 +106,10 @@ class InstanceRegistry:
         Returns:
             Instance if found, None otherwise
         """
-        with self._lock:
+        async with self._lock:
             return self._instances.get(instance_id)
 
-    def list_all(self, model_id: Optional[str] = None) -> List[Instance]:
+    async def list_all(self, model_id: Optional[str] = None) -> List[Instance]:
         """
         List all instances, optionally filtered by model_id.
 
@@ -119,7 +119,7 @@ class InstanceRegistry:
         Returns:
             List of instances
         """
-        with self._lock:
+        async with self._lock:
             instances = list(self._instances.values())
 
             if model_id:
@@ -127,7 +127,7 @@ class InstanceRegistry:
 
             return instances
 
-    def get_queue_info(self, instance_id: str) -> Optional[InstanceQueueBase]:
+    async def get_queue_info(self, instance_id: str) -> Optional[InstanceQueueBase]:
         """
         Get queue information for an instance.
 
@@ -137,10 +137,10 @@ class InstanceRegistry:
         Returns:
             Queue information if found, None otherwise
         """
-        with self._lock:
+        async with self._lock:
             return self._queue_info.get(instance_id)
 
-    def update_queue_info(self, instance_id: str, queue_info: InstanceQueueBase) -> None:
+    async def update_queue_info(self, instance_id: str, queue_info: InstanceQueueBase) -> None:
         """
         Update queue information for an instance.
 
@@ -148,11 +148,11 @@ class InstanceRegistry:
             instance_id: ID of instance
             queue_info: New queue information
         """
-        with self._lock:
+        async with self._lock:
             if instance_id in self._instances:
                 self._queue_info[instance_id] = queue_info
 
-    def get_stats(self, instance_id: str) -> Optional[InstanceStats]:
+    async def get_stats(self, instance_id: str) -> Optional[InstanceStats]:
         """
         Get statistics for an instance.
 
@@ -162,36 +162,36 @@ class InstanceRegistry:
         Returns:
             Statistics if found, None otherwise
         """
-        with self._lock:
+        async with self._lock:
             return self._stats.get(instance_id)
 
-    def increment_pending(self, instance_id: str) -> None:
+    async def increment_pending(self, instance_id: str) -> None:
         """Increment pending task count for an instance."""
-        with self._lock:
+        async with self._lock:
             if instance_id in self._stats:
                 self._stats[instance_id].pending_tasks += 1
 
-    def decrement_pending(self, instance_id: str) -> None:
+    async def decrement_pending(self, instance_id: str) -> None:
         """Decrement pending task count for an instance."""
-        with self._lock:
+        async with self._lock:
             if instance_id in self._stats:
                 self._stats[instance_id].pending_tasks = max(
                     0, self._stats[instance_id].pending_tasks - 1
                 )
 
-    def increment_completed(self, instance_id: str) -> None:
+    async def increment_completed(self, instance_id: str) -> None:
         """Increment completed task count for an instance."""
-        with self._lock:
+        async with self._lock:
             if instance_id in self._stats:
                 self._stats[instance_id].completed_tasks += 1
 
-    def increment_failed(self, instance_id: str) -> None:
+    async def increment_failed(self, instance_id: str) -> None:
         """Increment failed task count for an instance."""
-        with self._lock:
+        async with self._lock:
             if instance_id in self._stats:
                 self._stats[instance_id].failed_tasks += 1
 
-    def reset_all_pending_tasks(self) -> int:
+    async def reset_all_pending_tasks(self) -> int:
         """
         Reset pending_tasks counter to 0 for all instances.
 
@@ -201,7 +201,7 @@ class InstanceRegistry:
         Returns:
             Count of instances whose pending_tasks were reset
         """
-        with self._lock:
+        async with self._lock:
             count = 0
             for stats in self._stats.values():
                 if stats.pending_tasks > 0:
@@ -209,7 +209,7 @@ class InstanceRegistry:
                     count += 1
             return count
 
-    def start_draining(self, instance_id: str) -> Instance:
+    async def start_draining(self, instance_id: str) -> Instance:
         """
         Mark instance as draining - stops accepting new tasks.
 
@@ -223,7 +223,7 @@ class InstanceRegistry:
             KeyError: If instance not found
             ValueError: If instance is not in ACTIVE state
         """
-        with self._lock:
+        async with self._lock:
             if instance_id not in self._instances:
                 raise KeyError(f"Instance {instance_id} not found")
 
@@ -237,7 +237,7 @@ class InstanceRegistry:
             instance.drain_initiated_at = datetime.utcnow().isoformat() + "Z"
             return instance
 
-    def get_drain_status(self, instance_id: str) -> Dict:
+    async def get_drain_status(self, instance_id: str) -> Dict:
         """
         Get draining status for an instance.
 
@@ -250,7 +250,7 @@ class InstanceRegistry:
         Raises:
             KeyError: If instance not found
         """
-        with self._lock:
+        async with self._lock:
             instance = self._instances.get(instance_id)
             if not instance:
                 raise KeyError(f"Instance {instance_id} not found")
@@ -280,7 +280,7 @@ class InstanceRegistry:
                 "drain_initiated_at": instance.drain_initiated_at
             }
 
-    def list_active(self, model_id: Optional[str] = None) -> List[Instance]:
+    async def list_active(self, model_id: Optional[str] = None) -> List[Instance]:
         """
         List only ACTIVE instances (excludes draining/removing).
 
@@ -290,7 +290,7 @@ class InstanceRegistry:
         Returns:
             List of active instances
         """
-        with self._lock:
+        async with self._lock:
             instances = [
                 i for i in self._instances.values()
                 if i.status == InstanceStatus.ACTIVE
@@ -301,7 +301,7 @@ class InstanceRegistry:
 
             return instances
 
-    def safe_remove(self, instance_id: str) -> Instance:
+    async def safe_remove(self, instance_id: str) -> Instance:
         """
         Safely remove an instance - only if draining and no pending tasks.
 
@@ -315,7 +315,7 @@ class InstanceRegistry:
             KeyError: If instance not found
             ValueError: If instance cannot be safely removed
         """
-        with self._lock:
+        async with self._lock:
             if instance_id not in self._instances:
                 raise KeyError(f"Instance {instance_id} not found")
 
@@ -343,13 +343,13 @@ class InstanceRegistry:
 
             return instance
 
-    def get_total_count(self) -> int:
+    async def get_total_count(self) -> int:
         """Get total number of registered instances."""
-        with self._lock:
+        async with self._lock:
             return len(self._instances)
 
-    def get_active_count(self) -> int:
+    async def get_active_count(self) -> int:
         """Get count of active instances (instances with no failed status)."""
         # TODO: Implement health checking mechanism
         # For now, assume all registered instances are active
-        return self.get_total_count()
+        return await self.get_total_count()

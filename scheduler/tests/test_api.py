@@ -177,7 +177,7 @@ class TestInstanceRemoval:
 
         assert response.status_code == 404
 
-    def test_remove_instance_with_pending_tasks(self, client):
+    async def test_remove_instance_with_pending_tasks(self, client):
         """Test removing instance with pending tasks (allowed)."""
         # Register instance
         client.post(
@@ -195,7 +195,7 @@ class TestInstanceRemoval:
         )
 
         # Add pending task
-        instance_registry.increment_pending("inst-1")
+        await instance_registry.increment_pending("inst-1")
 
         # Should still allow removal
         response = client.post(
@@ -850,7 +850,7 @@ class TestStrategyManagement:
         assert "expected_time_ms" in queue_info
         assert "error_margin_ms" in queue_info
 
-    def test_set_strategy_rejects_when_tasks_running(self, client):
+    async def test_set_strategy_rejects_when_tasks_running(self, client):
         """Test that setting strategy is rejected when tasks are running."""
         from src.predictor_client import Prediction
 
@@ -890,7 +890,7 @@ class TestStrategyManagement:
                 )
 
         # Manually set task to RUNNING status
-        task_registry.update_status("task-1", TaskStatus.RUNNING)
+        await task_registry.update_status("task-1", TaskStatus.RUNNING)
 
         # Try to switch strategy - should fail
         response = client.post(

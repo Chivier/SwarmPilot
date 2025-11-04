@@ -5,7 +5,6 @@ This module manages WebSocket connections and task result subscriptions.
 """
 
 from typing import Set, Dict
-from threading import Lock
 import asyncio
 
 from fastapi import WebSocket
@@ -21,26 +20,26 @@ class ConnectionManager:
         self._subscriptions: Dict[str, Set[WebSocket]] = {}
         # Map of websocket -> set of task_ids it's subscribed to
         self._connections: Dict[WebSocket, Set[str]] = {}
-        self._lock = Lock()
+        self._lock = asyncio.Lock()
 
-    def connect(self, websocket: WebSocket) -> None:
+    async def connect(self, websocket: WebSocket) -> None:
         """
         Register a new WebSocket connection.
 
         Args:
             websocket: WebSocket connection to register
         """
-        with self._lock:
+        async with self._lock:
             self._connections[websocket] = set()
 
-    def disconnect(self, websocket: WebSocket) -> None:
+    async def disconnect(self, websocket: WebSocket) -> None:
         """
         Unregister a WebSocket connection and clean up subscriptions.
 
         Args:
             websocket: WebSocket connection to unregister
         """
-        with self._lock:
+        async with self._lock:
             # Get all task IDs this connection was subscribed to
             task_ids = self._connections.get(websocket, set())
 
@@ -56,7 +55,7 @@ class ConnectionManager:
             if websocket in self._connections:
                 del self._connections[websocket]
 
-    def subscribe(self, websocket: WebSocket, task_ids: list[str]) -> None:
+    async def subscribe(self, websocket: WebSocket, task_ids: list[str]) -> None:
         """
         Subscribe a WebSocket connection to task result updates.
 
@@ -64,7 +63,7 @@ class ConnectionManager:
             websocket: WebSocket connection
             task_ids: List of task IDs to subscribe to
         """
-        with self._lock:
+        async with self._lock:
             # Ensure connection is registered
             if websocket not in self._connections:
                 self._connections[websocket] = set()
@@ -79,7 +78,7 @@ class ConnectionManager:
                 # Add to websocket -> task mapping
                 self._connections[websocket].add(task_id)
 
-    def unsubscribe(self, websocket: WebSocket, task_ids: list[str]) -> None:
+    async def unsubscribe(self, websocket: WebSocket, task_ids: list[str]) -> None:
         """
         Unsubscribe a WebSocket connection from task result updates.
 
@@ -87,7 +86,7 @@ class ConnectionManager:
             websocket: WebSocket connection
             task_ids: List of task IDs to unsubscribe from
         """
-        with self._lock:
+        async with self._lock:
             for task_id in task_ids:
                 # Remove from task -> websocket mapping
                 if task_id in self._subscriptions:
@@ -99,7 +98,7 @@ class ConnectionManager:
                 if websocket in self._connections:
                     self._connections[websocket].discard(task_id)
 
-    def get_subscribed_tasks(self, websocket: WebSocket) -> list[str]:
+    async def get_subscribed_tasks(self, websocket: WebSocket) -> list[str]:
         """
         Get list of task IDs a WebSocket is subscribed to.
 
@@ -109,10 +108,10 @@ class ConnectionManager:
         Returns:
             List of subscribed task IDs
         """
-        with self._lock:
+        async with self._lock:
             return list(self._connections.get(websocket, set()))
 
-    def get_subscribers(self, task_id: str) -> list[WebSocket]:
+    async def get_subscribers(self, task_id: str) -> list[WebSocket]:
         """
         Get list of WebSockets subscribed to a task.
 
@@ -122,7 +121,7 @@ class ConnectionManager:
         Returns:
             List of WebSocket connections
         """
-        with self._lock:
+        async with self._lock:
             return list(self._subscriptions.get(task_id, set()))
 
     async def broadcast_task_result(
@@ -146,7 +145,7 @@ class ConnectionManager:
             execution_time_ms: Execution time in milliseconds
         """
         # Get subscribers (make a copy to avoid holding lock during I/O)
-        subscribers = self.get_subscribers(task_id)
+        subscribers = await self.get_subscribers(task_id)
 
         if not subscribers:
             return
@@ -172,10 +171,10 @@ class ConnectionManager:
 
         # Clean up disconnected websockets
         for websocket in disconnected:
-            self.disconnect(websocket)
+            await self.disconnect(websocket)
 
         # Unsubscribe all connections from this task after broadcasting
-        with self._lock:
+        async with self._lock:
             if task_id in self._subscriptions:
                 for ws in self._subscriptions[task_id].copy():
                     if ws in self._connections:

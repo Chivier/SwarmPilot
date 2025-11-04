@@ -551,6 +551,7 @@ class DynamicMigrationExperiment:
                 "workflow_id": workflow_state.workflow_id,
                 "task_type": "A",
                 "phase": workflow_state.phase,
+                "is_warmup": workflow_state.is_warmup
             }
         }
 
@@ -579,6 +580,7 @@ class DynamicMigrationExperiment:
                     "workflow_id": workflow_state.workflow_id,
                     "task_type": "B",
                     "phase": workflow_state.phase,
+                    "is_warmup": workflow_state.is_warmup
                 }
             }
 
@@ -866,6 +868,20 @@ def main():
         default=None,
         help="Phase configurations as comma-separated string: 'phase_id:fanout:a_inst:b_inst,...' "
              "(e.g., '1:3:4:12,2:8:2:14,3:1:8:8'). If not provided, uses default 16-instance config."
+    )
+
+    parser.add_argument(
+        "--gqps",
+        type=float,
+        default=None,
+        help="Global QPS limit for both A and B task submissions (overrides --qps if set)"
+    )
+
+    parser.add_argument(
+        "--warmup",
+        type=float,
+        default=0.0,
+        help="Warmup task ratio (0.0-1.0). E.g., 0.2 means 20%% warmup tasks before actual workload. Warmup tasks are excluded from statistics."
     )
 
     args = parser.parse_args()

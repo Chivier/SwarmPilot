@@ -14,6 +14,16 @@ For each configuration, it:
 5. Runs the experiment (using new /model/restart API for migrations)
 6. Collects results
 
+Flexible Instance Configuration:
+- Configurable number of test instances via --total-instances (default: 16)
+- Configurable port range via --instance-start-port (default: 8210)
+- Instances will use ports [start_port, start_port + total_instances - 1]
+- Port range validation ensures no overflow beyond 65535
+- Phase configurations are automatically calculated to maintain original ratios:
+  * Phase 1: A=25%, B=75% (fanout=3)
+  * Phase 2: A=12.5%, B=87.5% (fanout=8)
+  * Phase 3: A=50%, B=50% (fanout=1)
+
 Migration Flow (using instance /model/restart API):
 - Experiments with migration enabled use the new restart API
 - Migration runs in background, doesn't block task submission
@@ -24,6 +34,23 @@ Log Management:
 - Experiment logs are archived to archived_logs/<experiment_name>_<timestamp>/
 - Service logs (scheduler, instance, predictor) are cleaned between runs
 - Intermediate results and key logs are preserved for each sub-experiment
+
+Usage Examples:
+  # Default: 16 instances on ports 8210-8225
+  # Phase configs: P1(A=4,B=12), P2(A=2,B=14), P3(A=8,B=8)
+  python3 run_comparison_experiments.py
+
+  # Small scale: 8 instances on ports 9000-9007
+  # Phase configs: P1(A=2,B=6), P2(A=1,B=7), P3(A=4,B=4)
+  python3 run_comparison_experiments.py --total-instances 8 --instance-start-port 9000
+
+  # Large scale: 32 instances with higher QPS
+  # Phase configs: P1(A=8,B=24), P2(A=4,B=28), P3(A=16,B=16)
+  python3 run_comparison_experiments.py --total-instances 32 --qps 5.0
+
+  # Quick test: 4 instances with fewer workflows
+  # Phase configs: P1(A=1,B=3), P2(A=1,B=3), P3(A=2,B=2)
+  python3 run_comparison_experiments.py --total-instances 4 --num-workflows-per-phase 20
 
 Author: Claude Code
 Date: 2025-11-03
@@ -48,6 +75,52 @@ from loguru import logger
 # Configuration
 # ============================================================================
 
+def calculate_phase_configs(total_instances: int) -> List[tuple]:
+    """
+    Calculate phase configurations based on total number of instances.
+
+    Maintains the original ratios from the 16-instance baseline:
+    - Phase 1: A=25%, B=75% (fanout=3)
+    - Phase 2: A=12.5%, B=87.5% (fanout=8)
+    - Phase 3: A=50%, B=50% (fanout=1)
+
+    Args:
+        total_instances: Total number of instances available
+
+    Returns:
+        List of tuples: [(phase_id, fanout, scheduler_a_instances, scheduler_b_instances), ...]
+    """
+    # Original ratios based on 16 instances
+    phase_ratios = [
+        (1, 3, 0.25, 0.75),    # Phase 1: A=4, B=12 (fanout=3)
+        (2, 8, 0.125, 0.875),  # Phase 2: A=2, B=14 (fanout=8)
+        (3, 1, 0.5, 0.5),      # Phase 3: A=8, B=8 (fanout=1)
+    ]
+
+    phase_configs = []
+    for phase_id, fanout, ratio_a, ratio_b in phase_ratios:
+        # Calculate instances for each scheduler
+        instances_a = round(total_instances * ratio_a)
+        instances_b = round(total_instances * ratio_b)
+
+        # Ensure at least 1 instance per scheduler and total equals total_instances
+        instances_a = max(1, instances_a)
+        instances_b = max(1, instances_b)
+
+        # Adjust if rounding caused mismatch
+        current_total = instances_a + instances_b
+        if current_total != total_instances:
+            # Adjust the larger scheduler to match total
+            if instances_b > instances_a:
+                instances_b = total_instances - instances_a
+            else:
+                instances_a = total_instances - instances_b
+
+        phase_configs.append((phase_id, fanout, instances_a, instances_b))
+
+    return phase_configs
+
+
 @dataclass
 class ExperimentConfig:
     """Configuration for a single experiment run."""
@@ -57,6 +130,7 @@ class ExperimentConfig:
     qps: float
     total_instances: int
     instance_start_port: int
+    phase_configs: List[tuple] = field(default_factory=list)
 
     def get_name(self) -> str:
         """Get a descriptive name for this configuration."""
@@ -73,6 +147,15 @@ class ExperimentConfig:
             "--total-instances", str(self.total_instances),
             "--instance-start-port", str(self.instance_start_port),
         ]
+
+        # Add phase configurations as comma-separated string
+        # Format: "phase_id:fanout:a_instances:b_instances,..."
+        if self.phase_configs:
+            phase_str = ",".join(
+                f"{pid}:{fan}:{a_inst}:{b_inst}"
+                for pid, fan, a_inst, b_inst in self.phase_configs
+            )
+            args.extend(["--phase-configs", phase_str])
 
         if self.enable_migration:
             args.append("--enable-migration")
@@ -278,12 +361,16 @@ class ComparisonExperimentRunner:
         experiment_dir: Path,
         num_workflows_per_phase: int,
         qps: float,
+        total_instances: int = 16,
+        instance_start_port: int = 8210,
         output_dir: Optional[Path] = None,
         experiment_timeout: int = 900,
     ):
         self.experiment_dir = experiment_dir
         self.num_workflows_per_phase = num_workflows_per_phase
         self.qps = qps
+        self.total_instances = total_instances
+        self.instance_start_port = instance_start_port
         self.output_dir = output_dir or (experiment_dir / "results")
         self.experiment_timeout = experiment_timeout
 
@@ -291,9 +378,16 @@ class ComparisonExperimentRunner:
         self.results: List[ExperimentResult] = []
 
     def generate_configurations(self) -> List[ExperimentConfig]:
-        """Generate all 6 experiment configurations."""
+        """Generate all 6 experiment configurations with dynamic phase configs."""
         strategies = ["min_time", "probabilistic", "round_robin"]
         migration_modes = [True, False]
+
+        # Calculate phase configurations based on total instances
+        phase_configs = calculate_phase_configs(self.total_instances)
+
+        logger.info(f"Calculated phase configurations for {self.total_instances} instances:")
+        for phase_id, fanout, a_inst, b_inst in phase_configs:
+            logger.info(f"  Phase {phase_id}: fanout={fanout}, A={a_inst}, B={b_inst} (total={a_inst+b_inst})")
 
         configs = []
         for strategy in strategies:
@@ -303,8 +397,9 @@ class ComparisonExperimentRunner:
                     enable_migration=enable_migration,
                     num_workflows_per_phase=self.num_workflows_per_phase,
                     qps=self.qps,
-                    total_instances=16,
-                    instance_start_port=8210,
+                    total_instances=self.total_instances,
+                    instance_start_port=self.instance_start_port,
+                    phase_configs=phase_configs,
                 )
                 configs.append(config)
 
@@ -380,6 +475,8 @@ class ComparisonExperimentRunner:
         logger.info(f"Total configurations: {len(configs)}")
         logger.info(f"Workflows per phase: {self.num_workflows_per_phase}")
         logger.info(f"QPS: {self.qps}")
+        logger.info(f"Total instances: {self.total_instances}")
+        logger.info(f"Instance port range: {self.instance_start_port}-{self.instance_start_port + self.total_instances - 1}")
         logger.info(f"Output directory: {self.output_dir}\n")
 
         previous_experiment_name = None
@@ -463,6 +560,9 @@ class ComparisonExperimentRunner:
             "configuration": {
                 "num_workflows_per_phase": self.num_workflows_per_phase,
                 "qps": self.qps,
+                "total_instances": self.total_instances,
+                "instance_start_port": self.instance_start_port,
+                "instance_port_range": f"{self.instance_start_port}-{self.instance_start_port + self.total_instances - 1}",
                 "experiment_timeout": self.experiment_timeout,
             },
             "total_experiments": len(self.results),
@@ -498,7 +598,26 @@ class ComparisonExperimentRunner:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Run all comparison experiments (6 configurations)"
+        description="Run all comparison experiments (6 configurations)",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Run with default settings (16 instances on ports 8210-8225)
+  python3 run_comparison_experiments.py
+
+  # Run with 8 instances on ports 9000-9007
+  python3 run_comparison_experiments.py --total-instances 8 --instance-start-port 9000
+
+  # Run with custom workflow count and QPS
+  python3 run_comparison_experiments.py --num-workflows-per-phase 200 --qps 5.0
+
+  # Run with all custom settings
+  python3 run_comparison_experiments.py \\
+    --total-instances 32 \\
+    --instance-start-port 8300 \\
+    --num-workflows-per-phase 150 \\
+    --qps 3.0
+        """
     )
     parser.add_argument(
         "--num-workflows-per-phase",
@@ -511,6 +630,20 @@ def main():
         type=float,
         default=2.0,
         help="QPS for task submission (default: 2.0)"
+    )
+    parser.add_argument(
+        "--total-instances",
+        type=int,
+        default=16,
+        help="Total number of model instances to use (default: 16). "
+             "Phase configurations will be automatically calculated to maintain the original ratios: "
+             "P1(A=25%%, B=75%%), P2(A=12.5%%, B=87.5%%), P3(A=50%%, B=50%%)"
+    )
+    parser.add_argument(
+        "--instance-start-port",
+        type=int,
+        default=8210,
+        help="Starting port for instance range (default: 8210). Instances will use ports [start, start+total-1]"
     )
     parser.add_argument(
         "--output-dir",
@@ -526,6 +659,17 @@ def main():
     )
 
     args = parser.parse_args()
+
+    # Validate instance configuration
+    if args.total_instances < 1:
+        parser.error("--total-instances must be at least 1")
+    if args.instance_start_port < 1024 or args.instance_start_port > 65535:
+        parser.error("--instance-start-port must be in range [1024, 65535]")
+
+    end_port = args.instance_start_port + args.total_instances - 1
+    if end_port > 65535:
+        parser.error(f"Port range [{args.instance_start_port}, {end_port}] exceeds maximum port 65535. "
+                    f"Reduce --total-instances or lower --instance-start-port")
 
     # Configure logging
     logger.remove()
@@ -544,6 +688,8 @@ def main():
         experiment_dir=experiment_dir,
         num_workflows_per_phase=args.num_workflows_per_phase,
         qps=args.qps,
+        total_instances=args.total_instances,
+        instance_start_port=args.instance_start_port,
         output_dir=output_dir,
         experiment_timeout=args.timeout,
     )

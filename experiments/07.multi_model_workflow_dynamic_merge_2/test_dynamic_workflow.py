@@ -65,6 +65,61 @@ SCHEDULER_B_WS = "ws://localhost:8200/task/get_result"
 
 
 # ============================================================================
+# Rate Limiter
+# ============================================================================
+
+class RateLimiter:
+    """
+    Thread-safe rate limiter using token bucket algorithm.
+
+    Used to control global QPS across multiple threads submitting tasks.
+    """
+
+    def __init__(self, rate: float):
+        """
+        Initialize rate limiter.
+
+        Args:
+            rate: Target rate in requests per second (e.g., 10.0 for 10 QPS)
+        """
+        self.rate = rate
+        self.tokens = 0.0  # Start with 0 tokens to enforce strict rate limit from beginning
+        self.max_tokens = rate
+        self.last_update = time.time()
+        self.lock = threading.Lock()
+
+    def acquire(self, tokens: int = 1) -> float:
+        """
+        Acquire tokens from the bucket, blocking if necessary.
+
+        Args:
+            tokens: Number of tokens to acquire (default: 1)
+
+        Returns:
+            Time spent waiting in seconds
+        """
+        wait_start = time.time()
+
+        while True:
+            with self.lock:
+                now = time.time()
+                elapsed = now - self.last_update
+
+                # Refill tokens based on elapsed time
+                self.tokens = min(self.max_tokens, self.tokens + elapsed * self.rate)
+                self.last_update = now
+
+                # If enough tokens available, consume and return
+                if self.tokens >= tokens:
+                    self.tokens -= tokens
+                    wait_time = time.time() - wait_start
+                    return wait_time
+
+            # Not enough tokens, sleep briefly and retry
+            time.sleep(0.01)
+
+
+# ============================================================================
 # Data Structures
 # ============================================================================
 
@@ -77,6 +132,7 @@ class WorkflowTaskData:
     sleep_time: float
     exp_runtime: float  # Expected runtime in milliseconds
     b_index: Optional[int] = None  # Index for B1/B2 pairing (0-based)
+    is_warmup: bool = False  # Whether this is a warmup task
 
 
 @dataclass
@@ -104,6 +160,9 @@ class TaskRecord:
     # B1/B2 pairing
     b_index: Optional[int] = None  # Index for B1/B2 pairing (0-based)
 
+    # Warmup flag
+    is_warmup: bool = False
+
 
 @dataclass
 class WorkflowState:
@@ -118,6 +177,7 @@ class WorkflowState:
     total_b2_tasks: int
     completed_b1_tasks: int = 0
     completed_b2_tasks: int = 0
+    is_warmup: bool = False  # Whether this is a warmup workflow
 
     # Timestamps
     a_submit_time: Optional[float] = None
@@ -186,6 +246,7 @@ class WorkflowCompletionEvent:
     merge_submit_time: float  # when merge task was submitted
     merge_complete_time: float  # when merge task completed
     workflow_complete_time: float  # Same as merge_complete_time
+    is_warmup: bool = False  # Whether this is a warmup workflow
 
 
 # ============================================================================
@@ -205,22 +266,25 @@ class PoissonTaskSubmitter:
                  tasks: List[WorkflowTaskData],
                  qps: float,
                  workflow_states: Dict[str, WorkflowState],
-                 model_id: str = "sleep_model"):
+                 model_id: str = "sleep_model",
+                 rate_limiter: Optional[RateLimiter] = None):
         """
         Initialize Poisson task submitter.
 
         Args:
             scheduler_url: Scheduler A URL (e.g., http://localhost:8100)
             tasks: List of pre-generated A task data
-            qps: Target queries per second (e.g., 8.0)
+            qps: Target queries per second (e.g., 8.0) - ignored if rate_limiter is provided
             workflow_states: Shared workflow state dictionary
             model_id: Model ID to use for tasks
+            rate_limiter: Optional shared rate limiter for global QPS control
         """
         self.scheduler_url = scheduler_url
         self.tasks = tasks
         self.qps = qps
         self.workflow_states = workflow_states
         self.model_id = model_id
+        self.rate_limiter = rate_limiter
         self.logger = logging.getLogger("Thread1.ATaskSubmitter")
 
         # Tracking
@@ -251,7 +315,8 @@ class PoissonTaskSubmitter:
             "metadata": {
                 "exp_runtime": task_data.exp_runtime,
                 "workflow_id": task_data.workflow_id,
-                "task_type": "A"
+                "task_type": "A",
+                "is_warmup": task_data.is_warmup
             }
         }
 
@@ -284,7 +349,8 @@ class PoissonTaskSubmitter:
                     exp_runtime=task_data.exp_runtime,
                     submit_time=submit_time,
                     status="submit_failed",
-                    error=error_detail
+                    error=error_detail,
+                    is_warmup=task_data.is_warmup
                 )
 
             result = response.json()
@@ -302,7 +368,8 @@ class PoissonTaskSubmitter:
                     exp_runtime=task_data.exp_runtime,
                     submit_time=submit_time,
                     status="submit_failed",
-                    error=f"Rejected: {error_msg}"
+                    error=f"Rejected: {error_msg}",
+                    is_warmup=task_data.is_warmup
                 )
 
             # Update workflow state with A task submit time
@@ -318,7 +385,8 @@ class PoissonTaskSubmitter:
                 sleep_time=task_data.sleep_time,
                 exp_runtime=task_data.exp_runtime,
                 submit_time=submit_time,
-                assigned_instance=result.get("task", {}).get("assigned_instance")
+                assigned_instance=result.get("task", {}).get("assigned_instance"),
+                is_warmup=task_data.is_warmup
             )
 
             return record
@@ -334,7 +402,8 @@ class PoissonTaskSubmitter:
                 exp_runtime=task_data.exp_runtime,
                 submit_time=submit_time,
                 status="submit_failed",
-                error=error_msg
+                error=error_msg,
+                is_warmup=task_data.is_warmup
             )
         except requests.exceptions.ConnectionError as e:
             error_msg = f"Connection error: {str(e)}"
@@ -347,7 +416,8 @@ class PoissonTaskSubmitter:
                 exp_runtime=task_data.exp_runtime,
                 submit_time=submit_time,
                 status="submit_failed",
-                error=error_msg
+                error=error_msg,
+                is_warmup=task_data.is_warmup
             )
         except Exception as e:
             error_msg = f"Unexpected error: {type(e).__name__}: {str(e)}"
@@ -360,13 +430,21 @@ class PoissonTaskSubmitter:
                 exp_runtime=task_data.exp_runtime,
                 submit_time=submit_time,
                 status="submit_failed",
-                error=error_msg
+                error=error_msg,
+                is_warmup=task_data.is_warmup
             )
 
     def _run(self):
-        """Main submission loop with Poisson inter-arrival times."""
-        self.logger.info(f"Starting Poisson submission: {len(self.tasks)} A tasks at {self.qps} QPS")
+        """Main submission loop with Poisson inter-arrival times or rate limiting."""
+        if self.rate_limiter is not None:
+            self.logger.info(f"Starting submission: {len(self.tasks)} A tasks with global rate limiter")
+            self._run_with_rate_limiter()
+        else:
+            self.logger.info(f"Starting Poisson submission: {len(self.tasks)} A tasks at {self.qps} QPS")
+            self._run_poisson()
 
+    def _run_poisson(self):
+        """Poisson submission without rate limiter."""
         # Generate inter-arrival times (exponential distribution)
         lambda_rate = self.qps
         inter_arrival_times = np.random.exponential(1.0 / lambda_rate, len(self.tasks))
@@ -381,6 +459,32 @@ class PoissonTaskSubmitter:
             # Wait for inter-arrival time
             if i > 0:
                 time.sleep(wait_time)
+
+            # Submit task
+            record = self._submit_task(task_data)
+            self.submitted_tasks.append(record)
+
+            if (i + 1) % 20 == 0:
+                self.logger.info(f"Submitted {i + 1}/{len(self.tasks)} A tasks")
+
+        self.submission_end_time = time.time()
+        submission_duration = self.submission_end_time - self.submission_start_time
+        actual_qps = len(self.tasks) / submission_duration
+
+        self.logger.info(f"Submission complete: {len(self.submitted_tasks)} tasks in {submission_duration:.2f}s "
+                        f"(actual QPS: {actual_qps:.2f})")
+
+    def _run_with_rate_limiter(self):
+        """Submission with shared rate limiter."""
+        self.submission_start_time = time.time()
+
+        for i, task_data in enumerate(self.tasks):
+            if not self.running:
+                self.logger.warning("Submission stopped early")
+                break
+
+            # Acquire token from rate limiter (blocks if necessary)
+            self.rate_limiter.acquire(1)
 
             # Submit task
             record = self._submit_task(task_data)
@@ -465,6 +569,8 @@ class ATaskReceiver:
         # Tracking
         self.a_results: List[TaskRecord] = []
         self.b1_submitted: List[TaskRecord] = []
+        self.received_a_task_count = 0  # Track number of A tasks received
+        self.expected_a_task_count = len(a_task_ids)  # Total A tasks expected
 
         # Thread control
         self.thread: Optional[threading.Thread] = None
@@ -491,7 +597,8 @@ class ATaskReceiver:
                 "exp_runtime": task_data.exp_runtime,
                 "workflow_id": task_data.workflow_id,
                 "task_type": "B1",
-                "b_index": task_data.b_index
+                "b_index": task_data.b_index,
+                "is_warmup": task_data.is_warmup
             }
         }
 
@@ -525,7 +632,8 @@ class ATaskReceiver:
                     submit_time=submit_time,
                     status="submit_failed",
                     error=error_detail,
-                    b_index=task_data.b_index
+                    b_index=task_data.b_index,
+                    is_warmup=task_data.is_warmup
                 )
 
             result = response.json()
@@ -544,7 +652,8 @@ class ATaskReceiver:
                     submit_time=submit_time,
                     status="submit_failed",
                     error=f"Rejected: {error_msg}",
-                    b_index=task_data.b_index
+                    b_index=task_data.b_index,
+                    is_warmup=task_data.is_warmup
                 )
 
             record = TaskRecord(
@@ -572,7 +681,8 @@ class ATaskReceiver:
                 submit_time=submit_time,
                 status="submit_failed",
                 error=error_msg,
-                b_index=task_data.b_index
+                b_index=task_data.b_index,
+                    is_warmup=task_data.is_warmup
             )
         except requests.exceptions.ConnectionError as e:
             error_msg = f"Connection error: {str(e)}"
@@ -586,7 +696,8 @@ class ATaskReceiver:
                 submit_time=submit_time,
                 status="submit_failed",
                 error=error_msg,
-                b_index=task_data.b_index
+                b_index=task_data.b_index,
+                    is_warmup=task_data.is_warmup
             )
         except Exception as e:
             error_msg = f"Unexpected error: {type(e).__name__}: {str(e)}"
@@ -600,7 +711,8 @@ class ATaskReceiver:
                 submit_time=submit_time,
                 status="submit_failed",
                 error=error_msg,
-                b_index=task_data.b_index
+                b_index=task_data.b_index,
+                    is_warmup=task_data.is_warmup
             )
 
     async def _run_async(self):
@@ -608,7 +720,12 @@ class ATaskReceiver:
         self.logger.info(f"Connecting to Scheduler A WebSocket: {self.scheduler_a_ws}")
 
         try:
-            async with websockets.connect(self.scheduler_a_ws) as websocket:
+            async with websockets.connect(
+                self.scheduler_a_ws,
+                ping_interval=20,  # Send ping every 20 seconds
+                ping_timeout=10,   # Wait up to 10 seconds for pong
+                close_timeout=10   # Wait up to 10 seconds for close handshake
+            ) as websocket:
                 # Subscribe to all A task IDs
                 subscribe_msg = {
                     "type": "subscribe",
@@ -624,6 +741,14 @@ class ATaskReceiver:
 
                 # Receive A task results
                 while self.running:
+                    # Check if all A tasks have been received
+                    if self.received_a_task_count >= self.expected_a_task_count:
+                        self.logger.info(
+                            f"All {self.expected_a_task_count} A tasks received and B1 tasks submitted. "
+                            f"Gracefully closing WebSocket connection."
+                        )
+                        break
+
                     try:
                         message = await asyncio.wait_for(websocket.recv(), timeout=1.0)
                         data = json.loads(message)
@@ -638,6 +763,10 @@ class ATaskReceiver:
                     except Exception as e:
                         self.logger.error(f"Error receiving message: {e}")
                         break
+
+                # Gracefully close the WebSocket connection
+                await websocket.close(code=1000, reason="All tasks completed")
+                self.logger.info("WebSocket connection closed gracefully")
 
         except Exception as e:
             self.logger.error(f"WebSocket connection error: {e}")
@@ -686,6 +815,12 @@ class ATaskReceiver:
             await self._submit_b1_tasks_for_workflow(workflow_id)
         else:
             self.logger.warning(f"A task {task_id} failed, skipping B1 task submission")
+
+        # Increment received count after handling the result
+        self.received_a_task_count += 1
+        self.logger.debug(
+            f"Received A task {self.received_a_task_count}/{self.expected_a_task_count}"
+        )
 
     async def _submit_b1_tasks_for_workflow(self, workflow_id: str):
         """
@@ -827,7 +962,8 @@ class B1TaskReceiver:
                 "exp_runtime": task_data.exp_runtime,
                 "workflow_id": task_data.workflow_id,
                 "task_type": "B2",
-                "b_index": task_data.b_index
+                "b_index": task_data.b_index,
+                "is_warmup": task_data.is_warmup
             }
         }
 
@@ -859,7 +995,8 @@ class B1TaskReceiver:
                     submit_time=submit_time,
                     status="submit_failed",
                     error=error_detail,
-                    b_index=task_data.b_index
+                    b_index=task_data.b_index,
+                    is_warmup=task_data.is_warmup
                 )
 
             result = response.json()
@@ -877,7 +1014,8 @@ class B1TaskReceiver:
                     submit_time=submit_time,
                     status="submit_failed",
                     error=f"Rejected: {error_msg}",
-                    b_index=task_data.b_index
+                    b_index=task_data.b_index,
+                    is_warmup=task_data.is_warmup
                 )
 
             record = TaskRecord(
@@ -905,7 +1043,8 @@ class B1TaskReceiver:
                 submit_time=submit_time,
                 status="submit_failed",
                 error=error_msg,
-                b_index=task_data.b_index
+                b_index=task_data.b_index,
+                    is_warmup=task_data.is_warmup
             )
         except requests.exceptions.ConnectionError as e:
             error_msg = f"Connection error: {str(e)}"
@@ -919,7 +1058,8 @@ class B1TaskReceiver:
                 submit_time=submit_time,
                 status="submit_failed",
                 error=error_msg,
-                b_index=task_data.b_index
+                b_index=task_data.b_index,
+                    is_warmup=task_data.is_warmup
             )
         except Exception as e:
             error_msg = f"Unexpected error: {type(e).__name__}: {str(e)}"
@@ -933,7 +1073,8 @@ class B1TaskReceiver:
                 submit_time=submit_time,
                 status="submit_failed",
                 error=error_msg,
-                b_index=task_data.b_index
+                b_index=task_data.b_index,
+                    is_warmup=task_data.is_warmup
             )
 
     async def _run_async(self):
@@ -1352,7 +1493,8 @@ class MergeTaskSubmitter:
                 "metadata": {
                     "exp_runtime": merge_task.exp_runtime,
                     "workflow_id": merge_task.workflow_id,
-                    "task_type": "B"
+                    "task_type": "B",
+                    "is_warmup": merge_task.is_warmup
                 }
             }
 
@@ -1586,7 +1728,8 @@ class MergeTaskReceiver:
             all_b2_complete_time=workflow.all_b2_complete_time or 0.0,
             merge_submit_time=workflow.merge_submit_time or 0.0,
             merge_complete_time=workflow.merge_complete_time,
-            workflow_complete_time=workflow.workflow_complete_time
+            workflow_complete_time=workflow.workflow_complete_time,
+            is_warmup=workflow.is_warmup
         )
 
         self.completion_queue.put(event)
@@ -1772,7 +1915,7 @@ def generate_task_ids(num_workflows: int, fanout_values: List[int], strategy: st
     b1_task_ids_by_workflow = {}
     b2_task_ids_by_workflow = {}
 
-    for i in range(num_workflows):
+    for i in range(total_workflows):
         workflow_id = f"wf-{strategy}-{i:04d}"
 
         # A task ID
@@ -1809,6 +1952,8 @@ def calculate_task_metrics(records: List[TaskRecord], task_type: str) -> Dict:
     """
     Calculate metrics for a list of task records.
 
+    NOTE: Warmup tasks (is_warmup=True) are excluded from statistics.
+
     Args:
         records: List of task records
         task_type: "A" or "B"
@@ -1823,6 +1968,7 @@ def calculate_task_metrics(records: List[TaskRecord], task_type: str) -> Dict:
             "num_submitted": 0,
             "num_completed": 0,
             "num_failed": 0,
+            "num_warmup": 0,
             "completion_times": [],
             "avg_completion_time": 0.0,
             "median_completion_time": 0.0,
@@ -1830,8 +1976,9 @@ def calculate_task_metrics(records: List[TaskRecord], task_type: str) -> Dict:
             "p99_completion_time": 0.0
         }
 
-    # Filter records by task type
-    filtered = [r for r in records if r.task_type == task_type]
+    # Filter records by task type and exclude warmup tasks
+    filtered = [r for r in records if r.task_type == task_type and not r.is_warmup]
+    num_warmup = sum(1 for r in records if r.task_type == task_type and r.is_warmup)
 
     # Count statuses
     num_generated = len(filtered)
@@ -1865,6 +2012,7 @@ def calculate_task_metrics(records: List[TaskRecord], task_type: str) -> Dict:
         "num_submitted": num_submitted,
         "num_completed": num_completed,
         "num_failed": num_failed,
+        "num_warmup": num_warmup,
         "completion_times": completion_times,
         "avg_completion_time": avg_completion,
         "median_completion_time": median_completion,
@@ -1877,6 +2025,8 @@ def calculate_workflow_metrics(completed_workflows: List[WorkflowCompletionEvent
     """
     Calculate workflow-level metrics.
 
+    NOTE: Warmup workflows (is_warmup=True) are excluded from statistics.
+
     Args:
         completed_workflows: List of workflow completion events
 
@@ -1886,6 +2036,25 @@ def calculate_workflow_metrics(completed_workflows: List[WorkflowCompletionEvent
     if not completed_workflows:
         return {
             "num_completed": 0,
+            "num_warmup": 0,
+            "workflow_times": [],
+            "avg_workflow_time": 0.0,
+            "median_workflow_time": 0.0,
+            "p50_workflow_time": 0.0,
+            "p95_workflow_time": 0.0,
+            "p99_workflow_time": 0.0,
+            "fanout_distribution": {},
+            "avg_fanout": 0.0
+        }
+
+    # Filter out warmup workflows
+    actual_workflows = [e for e in completed_workflows if not e.is_warmup]
+    num_warmup = sum(1 for e in completed_workflows if e.is_warmup)
+
+    if not actual_workflows:
+        return {
+            "num_completed": 0,
+            "num_warmup": num_warmup,
             "workflow_times": [],
             "avg_workflow_time": 0.0,
             "median_workflow_time": 0.0,
@@ -1897,11 +2066,11 @@ def calculate_workflow_metrics(completed_workflows: List[WorkflowCompletionEvent
         }
 
     # Extract workflow times
-    workflow_times = [event.workflow_time for event in completed_workflows]
+    workflow_times = [event.workflow_time for event in actual_workflows]
     workflow_times_arr = np.array(workflow_times)
 
     # Extract fanout values (total B1/B2 task pairs per workflow)
-    fanout_values = [event.total_b1_tasks for event in completed_workflows]  # B1 and B2 have same count
+    fanout_values = [event.total_b1_tasks for event in actual_workflows]  # B1 and B2 have same count
     fanout_arr = np.array(fanout_values)
 
     # Calculate fanout distribution
@@ -1909,7 +2078,8 @@ def calculate_workflow_metrics(completed_workflows: List[WorkflowCompletionEvent
     fanout_distribution = {int(f): int(c) for f, c in zip(unique_fanouts, counts)}
 
     return {
-        "num_completed": len(completed_workflows),
+        "num_completed": len(actual_workflows),
+        "num_warmup": num_warmup,
         "workflow_times": workflow_times,
         "avg_workflow_time": float(np.mean(workflow_times_arr)),
         "median_workflow_time": float(np.median(workflow_times_arr)),
@@ -1936,7 +2106,7 @@ def print_metrics_summary(strategy: str, a_metrics: Dict, b_metrics: Dict, wf_me
     print("=" * 80)
 
     print("\nA Tasks:")
-    print(f"  Generated:  {a_metrics['num_generated']}")
+    print(f"  Generated:  {a_metrics['num_generated']} (excl. {a_metrics['num_warmup']} warmup)")
     print(f"  Submitted:  {a_metrics['num_submitted']}")
     print(f"  Completed:  {a_metrics['num_completed']}")
     print(f"  Failed:     {a_metrics['num_failed']}")
@@ -1946,7 +2116,7 @@ def print_metrics_summary(strategy: str, a_metrics: Dict, b_metrics: Dict, wf_me
         print(f"  P95:        {a_metrics['p95_completion_time']:.2f}s")
 
     print("\nB Tasks:")
-    print(f"  Generated:  {b_metrics['num_generated']}")
+    print(f"  Generated:  {b_metrics['num_generated']} (excl. {b_metrics['num_warmup']} warmup)")
     print(f"  Submitted:  {b_metrics['num_submitted']}")
     print(f"  Completed:  {b_metrics['num_completed']}")
     print(f"  Failed:     {b_metrics['num_failed']}")
@@ -1956,7 +2126,7 @@ def print_metrics_summary(strategy: str, a_metrics: Dict, b_metrics: Dict, wf_me
         print(f"  P95:        {b_metrics['p95_completion_time']:.2f}s")
 
     print("\nWorkflows:")
-    print(f"  Completed:  {wf_metrics['num_completed']}")
+    print(f"  Completed:  {wf_metrics['num_completed']} (excl. {wf_metrics['num_warmup']} warmup)")
     print(f"  Avg fanout: {wf_metrics['avg_fanout']:.1f} B tasks per A task")
     if wf_metrics['avg_workflow_time'] > 0:
         print(f"  Avg time:   {wf_metrics['avg_workflow_time']:.2f}s")
@@ -1984,7 +2154,9 @@ def test_strategy_workflow(
     task_times_b2: List[float],
     fanout_values: List[int],
     qps_a: float,
-    timeout_minutes: int = 10
+    timeout_minutes: int = 10,
+    gqps: Optional[float] = None,
+    warmup_ratio: float = 0.0
 ) -> Dict:
     """
     Test a single scheduling strategy with dynamic workflow fanout (B1/B2 split).
@@ -1998,6 +2170,8 @@ def test_strategy_workflow(
         fanout_values: List of fanout values (number of B1/B2 task pairs per workflow)
         qps_a: Target QPS for A task submission
         timeout_minutes: Maximum time to wait for completion
+        gqps: Optional global QPS limit for all task submissions
+        warmup_ratio: Warmup task ratio (0.0-1.0)
 
     Returns:
         Dictionary of test results
@@ -2020,10 +2194,10 @@ def test_strategy_workflow(
     # Step 3: Pre-generate all task IDs (B1 and B2 separately)
     logger.info("Step 3: Pre-generating task IDs")
     a_task_ids, merge_task_ids, all_b1_task_ids, all_b2_task_ids, b1_task_ids_by_workflow, b2_task_ids_by_workflow = generate_task_ids(
-        num_workflows, fanout_values, strategy
+        total_workflows, all_fanout_values, strategy
     )
-    logger.info(f"Generated {len(a_task_ids)} A task IDs, {len(merge_task_ids)} merge task IDs, "
-               f"{len(all_b1_task_ids)} B1 task IDs, {len(all_b2_task_ids)} B2 task IDs")
+    logger.info(f"Generated {len(a_task_ids)} A task IDs ({num_warmup_workflows} warmup + {num_workflows} actual), "
+               f"{len(merge_task_ids)} merge task IDs, {len(all_b1_task_ids)} B1 task IDs, {len(all_b2_task_ids)} B2 task IDs")
 
     # Step 4: Generate task data (A, B1, B2, merge)
     logger.info("Step 4: Generating task data")
@@ -2032,10 +2206,11 @@ def test_strategy_workflow(
     b1_tasks_by_workflow: Dict[str, List[WorkflowTaskData]] = {}
     b2_tasks_by_b1: Dict[str, WorkflowTaskData] = {}  # Map B1 task_id -> B2 task data
 
-    for i in range(num_workflows):
+    for i in range(total_workflows):
         workflow_id = f"wf-{strategy}-{i:04d}"
         a_task_id = a_task_ids[i]
         merge_task_id = merge_task_ids[i]
+        is_warmup = i < num_warmup_workflows
 
         # Create A task
         a_task = WorkflowTaskData(
@@ -2096,7 +2271,7 @@ def test_strategy_workflow(
     # Step 5: Initialize workflow states (with B1 and B2 separation)
     logger.info("Step 5: Initializing workflow states")
     workflow_states: Dict[str, WorkflowState] = {}
-    for i in range(num_workflows):
+    for i in range(total_workflows):
         workflow_id = f"wf-{strategy}-{i:04d}"
         workflow_states[workflow_id] = WorkflowState(
             workflow_id=workflow_id,
@@ -2105,14 +2280,16 @@ def test_strategy_workflow(
             b1_task_ids=b1_task_ids_by_workflow[workflow_id],
             b2_task_ids=b2_task_ids_by_workflow[workflow_id],
             merge_task_id=merge_task_ids[i],
-            total_b1_tasks=fanout_values[i],
-            total_b2_tasks=fanout_values[i]
+            total_b1_tasks=all_fanout_values[i],
+            total_b2_tasks=all_fanout_values[i],
+            is_warmup=i < num_warmup_workflows
         )
 
-    # Step 6: Create queues
+    # Step 6: Create queues and rate limiter (if using global QPS)
     logger.info("Step 6: Creating queues")
     merge_ready_queue = Queue()  # NEW: For B->merge transition
     completion_queue = Queue()   # For merge->monitor (final completion)
+    rate_limiter = RateLimiter(gqps) if gqps is not None else None
 
     # Step 7: Start Thread 6 (Merge Task Receiver) - must start before merge tasks exist
     logger.info("Step 7: Starting Thread 6 (Merge Task Receiver)")
@@ -2162,7 +2339,7 @@ def test_strategy_workflow(
     logger.info("Step 10: Starting Thread 7 (Workflow Monitor)")
     monitor = WorkflowMonitor(
         completion_queue=completion_queue,
-        expected_workflows=num_workflows
+        expected_workflows=total_workflows
     )
     monitor.start()
 
@@ -2184,7 +2361,8 @@ def test_strategy_workflow(
         scheduler_url=SCHEDULER_A_URL,
         tasks=a_tasks,
         qps=qps_a,
-        workflow_states=workflow_states
+        workflow_states=workflow_states,
+        rate_limiter=rate_limiter
     )
     a_submitter.start()
 
@@ -2268,7 +2446,7 @@ def test_strategy_workflow(
 # ============================================================================
 
 def main(num_workflows: int = 100, qps_a: float = 8.0, seed: int = 42,
-         strategies: List[str] = None):
+         strategies: List[str] = None, gqps: Optional[float] = None, warmup_ratio: float = 0.0):
     """
     Main entry point for experiment 07.
 
@@ -2277,6 +2455,8 @@ def main(num_workflows: int = 100, qps_a: float = 8.0, seed: int = 42,
         qps_a: Target QPS for A task submission
         seed: Random seed for reproducibility
         strategies: List of strategies to test (default: all three)
+        gqps: Optional global QPS limit for all task submissions
+        warmup_ratio: Warmup task ratio (0.0-1.0)
     """
     if strategies is None:
         strategies = ["min_time", "round_robin", "probabilistic"]
@@ -2284,6 +2464,10 @@ def main(num_workflows: int = 100, qps_a: float = 8.0, seed: int = 42,
     logger = logging.getLogger("Main")
     logger.info("Starting Experiment 07: Multi-Model Workflow with B1/B2 Split and Merge")
     logger.info(f"Configuration: {num_workflows} workflows, QPS={qps_a}, seed={seed}")
+    if gqps is not None:
+        logger.info(f"Global QPS: {gqps}")
+    if warmup_ratio > 0:
+        logger.info(f"Warmup ratio: {warmup_ratio}")
     logger.info(f"Strategies to test: {', '.join(strategies)}")
 
     # Experiment parameters
@@ -2327,7 +2511,9 @@ def main(num_workflows: int = 100, qps_a: float = 8.0, seed: int = 42,
             task_times_b2=task_times_b2,
             fanout_values=fanout_values,
             qps_a=QPS_A,
-            timeout_minutes=10
+            timeout_minutes=10,
+            gqps=gqps,
+            warmup_ratio=warmup_ratio
         )
         all_results.append(results)
 
@@ -2420,11 +2606,27 @@ if __name__ == "__main__":
         help="Scheduling strategies to test"
     )
 
+    parser.add_argument(
+        "--gqps",
+        type=float,
+        default=None,
+        help="Global QPS limit for both A and B task submissions (overrides --qps if set)"
+    )
+
+    parser.add_argument(
+        "--warmup",
+        type=float,
+        default=0.0,
+        help="Warmup task ratio (0.0-1.0). E.g., 0.2 means 20%% warmup tasks before actual workload. Warmup tasks are excluded from statistics."
+    )
+
     args = parser.parse_args()
 
     main(
         num_workflows=args.num_workflows,
         qps_a=args.qps,
         seed=args.seed,
-        strategies=args.strategies
+        strategies=args.strategies,
+        gqps=args.gqps,
+        warmup_ratio=args.warmup
     )

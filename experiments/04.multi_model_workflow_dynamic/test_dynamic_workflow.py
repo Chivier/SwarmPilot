@@ -522,6 +522,8 @@ class ATaskReceiver:
         # Tracking
         self.a_results: List[TaskRecord] = []
         self.b_submitted: List[TaskRecord] = []
+        self.received_a_task_count = 0  # Track number of A tasks received
+        self.expected_a_task_count = len(a_task_ids)  # Total A tasks expected
 
         # Thread control
         self.thread: Optional[threading.Thread] = None
@@ -665,7 +667,12 @@ class ATaskReceiver:
         self.logger.info(f"Connecting to Scheduler A WebSocket: {self.scheduler_a_ws}")
 
         try:
-            async with websockets.connect(self.scheduler_a_ws) as websocket:
+            async with websockets.connect(
+                self.scheduler_a_ws,
+                ping_interval=20,  # Send ping every 20 seconds
+                ping_timeout=10,   # Wait up to 10 seconds for pong
+                close_timeout=10   # Wait up to 10 seconds for close handshake
+            ) as websocket:
                 # Subscribe to all A task IDs
                 subscribe_msg = {
                     "type": "subscribe",
@@ -681,6 +688,14 @@ class ATaskReceiver:
 
                 # Receive A task results
                 while self.running:
+                    # Check if all A tasks have been received
+                    if self.received_a_task_count >= self.expected_a_task_count:
+                        self.logger.info(
+                            f"All {self.expected_a_task_count} A tasks received and B tasks submitted. "
+                            f"Gracefully closing WebSocket connection."
+                        )
+                        break
+
                     try:
                         message = await asyncio.wait_for(websocket.recv(), timeout=1.0)
                         data = json.loads(message)
@@ -695,6 +710,10 @@ class ATaskReceiver:
                     except Exception as e:
                         self.logger.error(f"Error receiving message: {e}")
                         break
+
+                # Gracefully close the WebSocket connection
+                await websocket.close(code=1000, reason="All tasks completed")
+                self.logger.info("WebSocket connection closed gracefully")
 
         except Exception as e:
             self.logger.error(f"WebSocket connection error: {e}")
@@ -743,6 +762,12 @@ class ATaskReceiver:
             await self._submit_b_tasks_for_workflow(workflow_id)
         else:
             self.logger.warning(f"A task {task_id} failed, skipping B task submission")
+
+        # Increment received count after handling the result
+        self.received_a_task_count += 1
+        self.logger.debug(
+            f"Received A task {self.received_a_task_count}/{self.expected_a_task_count}"
+        )
 
     async def _submit_b_tasks_for_workflow(self, workflow_id: str):
         """
@@ -869,7 +894,12 @@ class BTaskReceiver:
         self.logger.info(f"Connecting to Scheduler B WebSocket: {self.scheduler_b_ws}")
 
         try:
-            async with websockets.connect(self.scheduler_b_ws) as websocket:
+            async with websockets.connect(
+                self.scheduler_b_ws,
+                ping_interval=20,  # Send ping every 20 seconds
+                ping_timeout=10,   # Wait up to 10 seconds for pong
+                close_timeout=10   # Wait up to 10 seconds for close handshake
+            ) as websocket:
                 # Subscribe to all B task IDs
                 subscribe_msg = {
                     "type": "subscribe",

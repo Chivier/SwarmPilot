@@ -127,6 +127,18 @@ echo "  Group B: $N2 instances (Scheduler B on port $SCHEDULER_B_PORT)"
 echo "  Total: $((N1 + N2)) instances"
 echo "========================================="
 
+# Pre-flight: Clean up any existing Docker containers
+echo ""
+echo "Pre-flight: Cleaning up existing Docker containers..."
+existing_containers=$(docker ps -a --filter "ancestor=sleep_model" -q)
+if [ -n "$existing_containers" ]; then
+    echo "Found existing containers, removing them..."
+    docker rm -f $existing_containers 2>/dev/null
+    echo -e "${GREEN}Cleaned up existing containers${NC}"
+else
+    echo "No existing containers found"
+fi
+
 # Step 1: Start Predictor Service
 echo ""
 echo "Step 1: Starting Predictor Service"

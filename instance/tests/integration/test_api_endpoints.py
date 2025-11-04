@@ -324,9 +324,10 @@ class TestTaskManagementEndpoints:
         # Verify response
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
-    def test_clear_tasks_success_empty(self, api_client, mock_task_queue):
+    def test_clear_tasks_success_empty(self, api_client, mock_task_queue, mock_docker_manager):
         """Test POST /task/clear - successfully clear empty queue"""
-        # Setup mock
+        # Setup mocks
+        mock_docker_manager.is_model_running.return_value = False
         mock_task_queue.clear_all_tasks.return_value = {
             "queued": 0,
             "completed": 0,
@@ -343,10 +344,14 @@ class TestTaskManagementEndpoints:
         assert data["success"] is True
         assert data["message"] == "Successfully cleared 0 task(s)"
         assert data["cleared_count"]["total"] == 0
+        # Verify Docker restart was not called (no model running)
+        mock_docker_manager.restart_model.assert_not_called()
 
-    def test_clear_tasks_success_with_tasks(self, api_client, mock_task_queue):
-        """Test POST /task/clear - successfully clear queue with tasks"""
-        # Setup mock
+    def test_clear_tasks_success_with_tasks(self, api_client, mock_task_queue, mock_docker_manager):
+        """Test POST /task/clear - successfully clear queue with tasks and restart Docker"""
+        # Setup mocks
+        mock_docker_manager.is_model_running.return_value = True
+        mock_docker_manager.restart_model.return_value = "test-model"
         mock_task_queue.clear_all_tasks.return_value = {
             "queued": 5,
             "completed": 10,
@@ -366,10 +371,29 @@ class TestTaskManagementEndpoints:
         assert data["cleared_count"]["completed"] == 10
         assert data["cleared_count"]["failed"] == 2
         assert data["cleared_count"]["total"] == 17
+        # Verify Docker restart was called
+        mock_docker_manager.restart_model.assert_called_once()
 
-    def test_clear_tasks_with_running_task(self, api_client, mock_task_queue):
+    def test_clear_tasks_docker_restart_failure(self, api_client, mock_task_queue, mock_docker_manager):
+        """Test POST /task/clear - fails when Docker restart fails"""
+        # Setup mocks
+        mock_docker_manager.is_model_running.return_value = True
+        mock_docker_manager.restart_model.side_effect = RuntimeError("Failed to restart container")
+
+        # Make request
+        response = api_client.post("/task/clear")
+
+        # Verify response
+        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        assert "Failed to restart Docker container" in response.json()["detail"]
+        # Verify clear_all_tasks was not called
+        mock_task_queue.clear_all_tasks.assert_not_called()
+
+    def test_clear_tasks_with_running_task(self, api_client, mock_task_queue, mock_docker_manager):
         """Test POST /task/clear - fails when tasks are running"""
-        # Setup mock to raise RuntimeError
+        # Setup mocks
+        mock_docker_manager.is_model_running.return_value = True
+        mock_docker_manager.restart_model.return_value = "test-model"
         mock_task_queue.clear_all_tasks.side_effect = RuntimeError(
             "Cannot clear tasks while 1 task(s) are running. "
             "Wait for running tasks to complete or stop processing first."
@@ -382,9 +406,11 @@ class TestTaskManagementEndpoints:
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert "Cannot clear tasks while 1 task(s) are running" in response.json()["detail"]
 
-    def test_clear_tasks_with_multiple_running_tasks(self, api_client, mock_task_queue):
+    def test_clear_tasks_with_multiple_running_tasks(self, api_client, mock_task_queue, mock_docker_manager):
         """Test POST /task/clear - fails when multiple tasks are running"""
-        # Setup mock to raise RuntimeError
+        # Setup mocks
+        mock_docker_manager.is_model_running.return_value = True
+        mock_docker_manager.restart_model.return_value = "test-model"
         mock_task_queue.clear_all_tasks.side_effect = RuntimeError(
             "Cannot clear tasks while 3 task(s) are running. "
             "Wait for running tasks to complete or stop processing first."

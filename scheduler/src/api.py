@@ -8,6 +8,7 @@ and WebSocket connections for real-time task result delivery.
 from typing import Optional, Callable
 from datetime import datetime
 import asyncio
+import json
 import httpx
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Query, Request
 from pyinstrument import Profiler
@@ -200,7 +201,7 @@ async def register_instance(request: InstanceRegisterRequest):
         HTTPException 400: If instance with this ID already exists
     """
     # Check if instance already exists
-    if instance_registry.get(request.instance_id):
+    if await instance_registry.get(request.instance_id):
         raise HTTPException(
             status_code=400,
             detail={"success": False, "error": "Instance with this ID already exists"},
@@ -239,7 +240,7 @@ async def register_instance(request: InstanceRegisterRequest):
 
     # Register instance (this also initializes queue info and stats)
     try:
-        instance_registry.register(instance)
+        await instance_registry.register(instance)
         logger.info(
             f"Registered instance {request.instance_id} for model {request.model_id} "
             f"on {request.platform_info['hardware_name']}"
@@ -276,7 +277,7 @@ async def remove_instance(request: InstanceRemoveRequest):
         HTTPException 400: If instance cannot be safely removed
     """
     # Check if instance exists
-    if not instance_registry.get(request.instance_id):
+    if not await instance_registry.get(request.instance_id):
         raise HTTPException(
             status_code=404,
             detail={"success": False, "error": "Instance not found"},
@@ -284,7 +285,7 @@ async def remove_instance(request: InstanceRemoveRequest):
 
     # Use safe_remove which validates draining state and pending tasks
     try:
-        instance_registry.safe_remove(request.instance_id)
+        await instance_registry.safe_remove(request.instance_id)
         logger.info(f"Safely removed instance {request.instance_id}")
     except KeyError:
         logger.warning(f"Attempted to remove non-existent instance {request.instance_id}")
@@ -328,18 +329,18 @@ async def drain_instance(request: InstanceDrainRequest):
         HTTPException 404: If instance not found
         HTTPException 400: If instance is not in ACTIVE state
     """
-    if not instance_registry.get(request.instance_id):
+    if not await instance_registry.get(request.instance_id):
         raise HTTPException(
             status_code=404,
             detail={"success": False, "error": "Instance not found"},
         )
 
     try:
-        instance = instance_registry.start_draining(request.instance_id)
-        drain_status = instance_registry.get_drain_status(request.instance_id)
+        instance = await instance_registry.start_draining(request.instance_id)
+        drain_status = await instance_registry.get_drain_status(request.instance_id)
 
         # Estimate completion time based on queue info
-        queue_info = instance_registry.get_queue_info(request.instance_id)
+        queue_info = await instance_registry.get_queue_info(request.instance_id)
         estimated_time = None
         if queue_info:
             if isinstance(queue_info, InstanceQueueExpectError):
@@ -394,7 +395,7 @@ async def get_drain_status(instance_id: str = Query(..., description="ID of the 
         HTTPException 404: If instance not found
     """
     try:
-        drain_status = instance_registry.get_drain_status(instance_id)
+        drain_status = await instance_registry.get_drain_status(instance_id)
 
         logger.debug(
             f"Drain status for {instance_id}: "
@@ -433,7 +434,7 @@ async def list_instances(model_id: Optional[str] = Query(None)):
         InstanceListResponse with list of instances
     """
     # Retrieve instances (with optional model_id filter)
-    instances = instance_registry.list_all(model_id=model_id)
+    instances = await instance_registry.list_all(model_id=model_id)
 
     return InstanceListResponse(
         success=True,
@@ -457,7 +458,7 @@ async def get_instance_info(instance_id: str = Query(...)):
         HTTPException 404: If instance not found
     """
     # Get instance
-    instance = instance_registry.get(instance_id)
+    instance = await instance_registry.get(instance_id)
     if not instance:
         raise HTTPException(
             status_code=404,
@@ -465,7 +466,7 @@ async def get_instance_info(instance_id: str = Query(...)):
         )
 
     # Get queue information
-    queue_info = instance_registry.get_queue_info(instance_id)
+    queue_info = await instance_registry.get_queue_info(instance_id)
     if not queue_info:
         # Shouldn't happen, but handle gracefully
         raise HTTPException(
@@ -474,7 +475,7 @@ async def get_instance_info(instance_id: str = Query(...)):
         )
 
     # Get statistics
-    stats = instance_registry.get_stats(instance_id)
+    stats = await instance_registry.get_stats(instance_id)
     if not stats:
         # Shouldn't happen, but handle gracefully
         raise HTTPException(
@@ -511,14 +512,14 @@ async def submit_task(request: TaskSubmitRequest):
         HTTPException 503: If predictor service errors
     """
     # 1. Validate that task doesn't already exist
-    if task_registry.get(request.task_id):
+    if await task_registry.get(request.task_id):
         raise HTTPException(
             status_code=400,
             detail={"success": False, "error": "Task with this ID already exists"},
         )
 
     # 2. Find available instances for the model (only ACTIVE instances)
-    available_instances = instance_registry.list_active(model_id=request.model_id)
+    available_instances = await instance_registry.list_active(model_id=request.model_id)
 
     if not available_instances:
         raise HTTPException(
@@ -566,7 +567,7 @@ async def submit_task(request: TaskSubmitRequest):
     # 4. Create task record with prediction information
     selected_pred = schedule_result.selected_prediction
     try:
-        task_record = task_registry.create_task(
+        task_record = await task_registry.create_task(
             task_id=request.task_id,
             model_id=request.model_id,
             task_input=request.task_input,
@@ -584,7 +585,7 @@ async def submit_task(request: TaskSubmitRequest):
         )
 
     # 5. Update instance stats
-    instance_registry.increment_pending(schedule_result.selected_instance_id)
+    await instance_registry.increment_pending(schedule_result.selected_instance_id)
 
     # 6. Dispatch task asynchronously
     task_dispatcher.dispatch_task_async(request.task_id)
@@ -626,7 +627,7 @@ async def list_tasks(
         TaskListResponse with paginated task list
     """
     # Retrieve tasks with filters and pagination
-    tasks, total = task_registry.list_all(
+    tasks, total = await task_registry.list_all(
         status=status,
         model_id=model_id,
         instance_id=instance_id,
@@ -672,7 +673,7 @@ async def get_task_info(task_id: str = Query(...)):
         HTTPException 404: If task not found
     """
     # Get task
-    task = task_registry.get(task_id)
+    task = await task_registry.get(task_id)
     if not task:
         raise HTTPException(
             status_code=404,
@@ -715,11 +716,11 @@ async def clear_tasks():
         TaskClearResponse with count of cleared tasks from scheduler
     """
     # Clear all tasks from scheduler registry
-    cleared_count = task_registry.clear_all()
+    cleared_count = await task_registry.clear_all()
     logger.warning(f"Cleared {cleared_count} tasks from scheduler registry")
 
     # Get all registered instances
-    all_instances = instance_registry.list_all()
+    all_instances = await instance_registry.list_all()
 
     # Clear tasks from each instance in parallel
     async def clear_instance_tasks(client: httpx.AsyncClient, instance):
@@ -758,7 +759,7 @@ async def clear_tasks():
         )
 
     # Reset pending_tasks counter for all instances to maintain consistency
-    reset_count = instance_registry.reset_all_pending_tasks()
+    reset_count = await instance_registry.reset_all_pending_tasks()
     logger.info(f"Reset pending_tasks counter for {reset_count} instance(s)")
 
     # Log summary
@@ -798,7 +799,7 @@ async def callback_task_result(request: TaskResultCallbackRequest):
         HTTPException 400: If task status is invalid
     """
     # Validate task exists
-    task = task_registry.get(request.task_id)
+    task = await task_registry.get(request.task_id)
     if not task:
         raise HTTPException(
             status_code=404,
@@ -846,10 +847,10 @@ async def websocket_get_result(websocket: WebSocket):
     await websocket.accept()
 
     # Register connection
-    websocket_manager.connect(websocket)
+    await websocket_manager.connect(websocket)
 
     # Keepalive configuration
-    PING_INTERVAL = 20  # Send ping every 20 seconds
+    PING_INTERVAL = 10  # Send ping every 20 seconds
 
     async def send_keepalive():
         """Send periodic ping messages to keep connection alive."""
@@ -870,22 +871,53 @@ async def websocket_get_result(websocket: WebSocket):
 
     try:
         while True:
-            # Receive message from client
-            data = await websocket.receive_json()
+            # Receive message from client (handle both text and ping/pong frames)
+            message = await websocket.receive()
+
+            # Handle WebSocket protocol-level ping/pong
+            if message["type"] == "websocket.ping":
+                # Respond to protocol-level ping with pong
+                await websocket.send({"type": "websocket.pong", "bytes": message.get("bytes", b"")})
+                logger.debug("Responded to protocol-level ping")
+                continue
+
+            elif message["type"] == "websocket.pong":
+                # Received protocol-level pong, just log
+                logger.debug("Received protocol-level pong")
+                continue
+
+            elif message["type"] == "websocket.disconnect":
+                # Client disconnected
+                logger.debug("Client initiated disconnect")
+                break
+
+            elif message["type"] != "websocket.receive":
+                # Unknown message type
+                logger.warning(f"Unknown WebSocket message type: {message['type']}")
+                continue
+
+            # Parse JSON data from text message
+            try:
+                data = json.loads(message.get("text", "{}"))
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse JSON message: {e}")
+                error_msg = WSErrorMessage(error="Invalid JSON format")
+                await websocket.send_json(error_msg.model_dump())
+                continue
 
             # Parse message type
             message_type = data.get("type")
 
             if message_type == WSMessageType.PONG:
-                # Client responded to our ping, just log and continue
-                logger.debug("Received pong from WebSocket client")
+                # Client responded to our application-level ping, just log and continue
+                logger.debug("Received application-level pong from WebSocket client")
                 continue
 
             elif message_type == WSMessageType.PING:
-                # Client sent ping, respond with pong
+                # Client sent application-level ping, respond with pong
                 pong_msg = WSPongMessage(timestamp=asyncio.get_event_loop().time())
                 await websocket.send_json(pong_msg.model_dump())
-                logger.debug("Sent pong response to WebSocket client")
+                logger.debug("Sent application-level pong response to WebSocket client")
                 continue
 
             elif message_type == WSMessageType.SUBSCRIBE:
@@ -900,11 +932,11 @@ async def websocket_get_result(websocket: WebSocket):
                     continue
 
                 # Subscribe to tasks
-                websocket_manager.subscribe(websocket, task_ids)
+                await websocket_manager.subscribe(websocket, task_ids)
 
                 # For each task_id, check if already completed and send result immediately
                 for task_id in task_ids:
-                    task = task_registry.get(task_id)
+                    task = await task_registry.get(task_id)
                     if task and task.status in (TaskStatus.COMPLETED, TaskStatus.FAILED):
                         # Send result immediately
                         result_msg = WSTaskResultMessage(
@@ -918,7 +950,7 @@ async def websocket_get_result(websocket: WebSocket):
                         await websocket.send_json(result_msg.model_dump())
 
                 # Send acknowledgment
-                subscribed = websocket_manager.get_subscribed_tasks(websocket)
+                subscribed = await websocket_manager.get_subscribed_tasks(websocket)
                 ack_msg = WSAckMessage(
                     message=f"Subscribed to {len(task_ids)} tasks",
                     subscribed_tasks=subscribed,
@@ -937,10 +969,10 @@ async def websocket_get_result(websocket: WebSocket):
                     continue
 
                 # Unsubscribe from tasks
-                websocket_manager.unsubscribe(websocket, task_ids)
+                await websocket_manager.unsubscribe(websocket, task_ids)
 
                 # Send acknowledgment
-                subscribed = websocket_manager.get_subscribed_tasks(websocket)
+                subscribed = await websocket_manager.get_subscribed_tasks(websocket)
                 ack_msg = WSAckMessage(
                     message=f"Unsubscribed from {len(task_ids)} tasks",
                     subscribed_tasks=subscribed,
@@ -956,7 +988,7 @@ async def websocket_get_result(websocket: WebSocket):
 
     except WebSocketDisconnect:
         # Clean up subscriptions
-        websocket_manager.disconnect(websocket)
+        await websocket_manager.disconnect(websocket)
         logger.debug(f"WebSocket client disconnected")
 
     except Exception as e:
@@ -970,7 +1002,7 @@ async def websocket_get_result(websocket: WebSocket):
             pass
 
         # Clean up
-        websocket_manager.disconnect(websocket)
+        await websocket_manager.disconnect(websocket)
 
     finally:
         # Cancel keepalive task
@@ -987,7 +1019,7 @@ async def websocket_get_result(websocket: WebSocket):
 # ============================================================================
 
 
-def reinitialize_instance_queues(strategy_name: str) -> int:
+async def reinitialize_instance_queues(strategy_name: str) -> int:
     """
     Reinitialize all instance queue info to match the new strategy type.
 
@@ -1006,7 +1038,7 @@ def reinitialize_instance_queues(strategy_name: str) -> int:
         queue_info_type = "probabilistic"  # Default to probabilistic for round_robin
 
     # Get all registered instances
-    all_instances = instance_registry.list_all()
+    all_instances = await instance_registry.list_all()
 
     # Reinitialize queue info for each instance
     for instance in all_instances:
@@ -1026,7 +1058,7 @@ def reinitialize_instance_queues(strategy_name: str) -> int:
             )
 
         # Update the queue info in the registry
-        instance_registry.update_queue_info(instance.instance_id, new_queue_info)
+        await instance_registry.update_queue_info(instance.instance_id, new_queue_info)
 
     # Update the global queue_info_type
     instance_registry._queue_info_type = queue_info_type
@@ -1109,7 +1141,7 @@ async def set_strategy_endpoint(request: StrategySetRequest):
     global scheduling_strategy
 
     # Check if there are any running tasks
-    running_count = task_registry.get_count_by_status(TaskStatus.RUNNING)
+    running_count = await task_registry.get_count_by_status(TaskStatus.RUNNING)
     if running_count > 0:
         raise HTTPException(
             status_code=400,
@@ -1120,11 +1152,11 @@ async def set_strategy_endpoint(request: StrategySetRequest):
         )
 
     # Clear all tasks from the task queue
-    cleared_count = task_registry.clear_all()
+    cleared_count = await task_registry.clear_all()
     logger.info(f"Cleared {cleared_count} tasks before switching strategy")
 
     # Reinitialize instance queues to match the new strategy
-    reinitialized_count = reinitialize_instance_queues(request.strategy_name.value)
+    reinitialized_count = await reinitialize_instance_queues(request.strategy_name.value)
     logger.info(f"Reinitialized {reinitialized_count} instance queues for strategy '{request.strategy_name.value}'")
 
     # Create new scheduling strategy instance
@@ -1191,13 +1223,13 @@ async def health_check():
 
         # Collect statistics
         stats = HealthStats(
-            total_instances=instance_registry.get_total_count(),
-            active_instances=instance_registry.get_active_count(),
-            total_tasks=task_registry.get_total_count(),
-            pending_tasks=task_registry.get_count_by_status(TaskStatus.PENDING),
-            running_tasks=task_registry.get_count_by_status(TaskStatus.RUNNING),
-            completed_tasks=task_registry.get_count_by_status(TaskStatus.COMPLETED),
-            failed_tasks=task_registry.get_count_by_status(TaskStatus.FAILED),
+            total_instances=await instance_registry.get_total_count(),
+            active_instances=await instance_registry.get_active_count(),
+            total_tasks=await task_registry.get_total_count(),
+            pending_tasks=await task_registry.get_count_by_status(TaskStatus.PENDING),
+            running_tasks=await task_registry.get_count_by_status(TaskStatus.RUNNING),
+            completed_tasks=await task_registry.get_count_by_status(TaskStatus.COMPLETED),
+            failed_tasks=await task_registry.get_count_by_status(TaskStatus.FAILED),
         )
 
         return HealthResponse(

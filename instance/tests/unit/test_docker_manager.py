@@ -395,6 +395,139 @@ class TestDockerManager:
 
         assert "Failed to stop container" in str(exc_info.value)
 
+    async def test_restart_model_success(self, mock_model_registry, mock_config, temp_model_directory):
+        """Test successful model restart"""
+        manager = DockerManager()
+
+        # Set current model
+        manager.current_model = ModelInfo(
+            model_id="test-model",
+            started_at="2024-01-01T00:00:00Z",
+            parameters={"temperature": 0.7},
+            container_name="model_test-instance_test-model"
+        )
+
+        mock_model_registry.get_model.return_value = ModelRegistryEntry(
+            model_id="test-model",
+            name="Test Model",
+            directory="test_model",
+            resource_requirements={}
+        )
+        mock_model_registry.get_model_directory.return_value = temp_model_directory
+
+        # Mock docker stop and rm (for stopping)
+        mock_stop_process = AsyncMock()
+        mock_stop_process.returncode = 0
+        mock_stop_process.communicate.return_value = (b"", b"")
+
+        # Mock docker build and run (for starting)
+        mock_build_process = AsyncMock()
+        mock_build_process.returncode = 0
+        mock_build_process.communicate.return_value = (b"Successfully built", b"")
+
+        mock_run_process = AsyncMock()
+        mock_run_process.returncode = 0
+        mock_run_process.communicate.return_value = (b"container_id", b"")
+
+        # Mock health check
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json = Mock(return_value={"status": "healthy"})
+        manager.http_client.get = AsyncMock(return_value=mock_response)
+
+        with patch("src.docker_manager.get_registry", return_value=mock_model_registry):
+            with patch("src.docker_manager.config", mock_config):
+                with patch("asyncio.create_subprocess_exec") as mock_subprocess:
+                    # stop, rm, build, run
+                    mock_subprocess.side_effect = [
+                        mock_stop_process, mock_stop_process,  # stop and rm
+                        mock_build_process, mock_run_process  # build and run
+                    ]
+                    restarted_id = await manager.restart_model()
+
+        assert restarted_id == "test-model"
+        assert manager.current_model is not None
+        assert manager.current_model.model_id == "test-model"
+        assert manager.current_model.parameters == {"temperature": 0.7}
+
+    async def test_restart_model_no_model_running(self):
+        """Test restarting when no model is running returns None"""
+        manager = DockerManager()
+
+        result = await manager.restart_model()
+
+        assert result is None
+
+    async def test_restart_model_stop_failure(self, mock_model_registry, mock_config, temp_model_directory):
+        """Test restart fails when stop fails"""
+        manager = DockerManager()
+
+        manager.current_model = ModelInfo(
+            model_id="test-model",
+            started_at="2024-01-01T00:00:00Z",
+            parameters={},
+            container_name="model_test-instance_test-model"
+        )
+
+        mock_model_registry.get_model_directory.return_value = temp_model_directory
+
+        # Mock docker stop to fail
+        mock_process_fail = AsyncMock()
+        mock_process_fail.returncode = 1
+        mock_process_fail.communicate.return_value = (b"", b"Failed to stop")
+
+        with patch("src.docker_manager.get_registry", return_value=mock_model_registry):
+            with patch("src.docker_manager.config", mock_config):
+                with patch("asyncio.create_subprocess_exec", return_value=mock_process_fail):
+                    with pytest.raises(RuntimeError) as exc_info:
+                        await manager.restart_model()
+
+        assert "Failed to restart container" in str(exc_info.value)
+        assert manager.current_model is None
+
+    async def test_restart_model_start_failure(self, mock_model_registry, mock_config, temp_model_directory):
+        """Test restart fails when start fails"""
+        manager = DockerManager()
+
+        manager.current_model = ModelInfo(
+            model_id="test-model",
+            started_at="2024-01-01T00:00:00Z",
+            parameters={},
+            container_name="model_test-instance_test-model"
+        )
+
+        mock_model_registry.get_model.return_value = ModelRegistryEntry(
+            model_id="test-model",
+            name="Test Model",
+            directory="test_model",
+            resource_requirements={}
+        )
+        mock_model_registry.get_model_directory.return_value = temp_model_directory
+
+        # Mock successful stop
+        mock_stop_success = AsyncMock()
+        mock_stop_success.returncode = 0
+        mock_stop_success.communicate.return_value = (b"", b"")
+
+        # Mock failed build
+        mock_build_fail = AsyncMock()
+        mock_build_fail.returncode = 1
+        mock_build_fail.communicate.return_value = (b"", b"Build failed")
+
+        with patch("src.docker_manager.get_registry", return_value=mock_model_registry):
+            with patch("src.docker_manager.config", mock_config):
+                with patch("asyncio.create_subprocess_exec") as mock_subprocess:
+                    # stop, rm, build (fails)
+                    mock_subprocess.side_effect = [
+                        mock_stop_success, mock_stop_success,  # stop and rm
+                        mock_build_fail  # build fails
+                    ]
+                    with pytest.raises(RuntimeError) as exc_info:
+                        await manager.restart_model()
+
+        assert "Failed to restart container" in str(exc_info.value)
+        assert manager.current_model is None
+
     async def test_get_current_model(self):
         """Test getting current model"""
         manager = DockerManager()

@@ -64,16 +64,16 @@ class TaskDispatcher:
             task_id: ID of task to dispatch
         """
         # Get task record
-        task = self.task_registry.get(task_id)
+        task = await self.task_registry.get(task_id)
         if not task:
             return
 
         # Get instance
-        instance = self.instance_registry.get(task.assigned_instance)
+        instance = await self.instance_registry.get(task.assigned_instance)
         if not instance:
             # Instance not found - mark task as failed
-            self.task_registry.update_status(task_id, TaskStatus.FAILED)
-            self.task_registry.set_error(
+            await self.task_registry.update_status(task_id, TaskStatus.FAILED)
+            await self.task_registry.set_error(
                 task_id, f"Instance {task.assigned_instance} not found"
             )
             await self._notify_task_completion(task_id)
@@ -81,8 +81,8 @@ class TaskDispatcher:
 
         try:
             # Update task status to running (dispatched to instance)
-            self.task_registry.update_status(task_id, TaskStatus.RUNNING)
-            self.instance_registry.decrement_pending(instance.instance_id)
+            await self.task_registry.update_status(task_id, TaskStatus.RUNNING)
+            await self.instance_registry.decrement_pending(instance.instance_id)
 
             # Prepare callback URL for result notification
             callback_url = f"{self.callback_base_url}/callback/task_result"
@@ -114,25 +114,25 @@ class TaskDispatcher:
 
         except httpx.TimeoutException:
             # Task dispatch timed out (not execution timeout - that's handled by instance)
-            self.task_registry.update_status(task_id, TaskStatus.FAILED)
-            self.task_registry.set_error(
+            await self.task_registry.update_status(task_id, TaskStatus.FAILED)
+            await self.task_registry.set_error(
                 task_id, f"Task dispatch timed out after {self.timeout}s"
             )
-            self.instance_registry.increment_failed(instance.instance_id)
+            await self.instance_registry.increment_failed(instance.instance_id)
             await self._notify_task_completion(task_id)
 
         except httpx.HTTPError as e:
             # HTTP error from instance during dispatch
-            self.task_registry.update_status(task_id, TaskStatus.FAILED)
-            self.task_registry.set_error(task_id, f"Task dispatch failed: {str(e)}")
-            self.instance_registry.increment_failed(instance.instance_id)
+            await self.task_registry.update_status(task_id, TaskStatus.FAILED)
+            await self.task_registry.set_error(task_id, f"Task dispatch failed: {str(e)}")
+            await self.instance_registry.increment_failed(instance.instance_id)
             await self._notify_task_completion(task_id)
 
         except Exception as e:
             # Unexpected error during dispatch
-            self.task_registry.update_status(task_id, TaskStatus.FAILED)
-            self.task_registry.set_error(task_id, f"Task dispatch error: {str(e)}")
-            self.instance_registry.increment_failed(instance.instance_id)
+            await self.task_registry.update_status(task_id, TaskStatus.FAILED)
+            await self.task_registry.set_error(task_id, f"Task dispatch error: {str(e)}")
+            await self.instance_registry.increment_failed(instance.instance_id)
             await self._notify_task_completion(task_id)
 
     async def handle_task_result(
@@ -156,24 +156,24 @@ class TaskDispatcher:
             execution_time_ms: Execution time in milliseconds
         """
         # Get task record
-        task = self.task_registry.get(task_id)
+        task = await self.task_registry.get(task_id)
         if not task:
             return
 
         # Get instance for stats update
-        instance = self.instance_registry.get(task.assigned_instance)
+        instance = await self.instance_registry.get(task.assigned_instance)
 
         # Update task based on status
         if status == "completed":
-            self.task_registry.update_status(task_id, TaskStatus.COMPLETED)
+            await self.task_registry.update_status(task_id, TaskStatus.COMPLETED)
             if result:
-                self.task_registry.set_result(task_id, result)
+                await self.task_registry.set_result(task_id, result)
             if execution_time_ms is not None:
                 task.set_execution_time(execution_time_ms)
 
             # Update instance stats
             if instance:
-                self.instance_registry.increment_completed(instance.instance_id)
+                await self.instance_registry.increment_completed(instance.instance_id)
 
             # Update queue information based on actual execution time
             if instance and execution_time_ms and task.predicted_time_ms is not None:
@@ -197,13 +197,13 @@ class TaskDispatcher:
                 await self.training_client.flush_if_ready()
 
         elif status == "failed":
-            self.task_registry.update_status(task_id, TaskStatus.FAILED)
+            await self.task_registry.update_status(task_id, TaskStatus.FAILED)
             if error:
-                self.task_registry.set_error(task_id, error)
+                await self.task_registry.set_error(task_id, error)
 
             # Update instance stats
             if instance:
-                self.instance_registry.increment_failed(instance.instance_id)
+                await self.instance_registry.increment_failed(instance.instance_id)
 
         # Notify WebSocket subscribers
         await self._notify_task_completion(task_id)
@@ -215,7 +215,7 @@ class TaskDispatcher:
         Args:
             task_id: ID of completed task
         """
-        task = self.task_registry.get(task_id)
+        task = await self.task_registry.get(task_id)
         if not task:
             return
 
@@ -271,7 +271,7 @@ class TaskDispatcher:
             predicted_error_margin_ms: Predicted error margin (for Shortest Queue)
             predicted_quantiles: Predicted quantiles (for Probabilistic)
         """
-        current_queue = self.instance_registry.get_queue_info(instance_id)
+        current_queue = await self.instance_registry.get_queue_info(instance_id)
         if not current_queue:
             return
 
@@ -287,7 +287,7 @@ class TaskDispatcher:
                 expected_time_ms=new_expected,
                 error_margin_ms=current_queue.error_margin_ms,  # Keep error unchanged
             )
-            self.instance_registry.update_queue_info(instance_id, updated_queue)
+            await self.instance_registry.update_queue_info(instance_id, updated_queue)
 
         elif isinstance(current_queue, InstanceQueueProbabilistic):
             # Probabilistic strategy: Update quantiles using Monte Carlo method
@@ -317,7 +317,7 @@ class TaskDispatcher:
 
                 # Subtract predicted task time and add actual time
                 # new_queue = old_queue - predicted_task + actual_task
-                updated_samples = queue_samples - task_samples + actual_time_ms
+                updated_samples = queue_samples - task_samples
                 # Ensure non-negative
                 updated_samples = np.maximum(updated_samples, 0.0)
 
@@ -332,7 +332,7 @@ class TaskDispatcher:
                     quantiles=current_queue.quantiles,
                     values=updated_values,
                 )
-                self.instance_registry.update_queue_info(instance_id, updated_queue)
+                await self.instance_registry.update_queue_info(instance_id, updated_queue)
             else:
                 # Fallback: Simple subtraction and addition for all quantiles
                 updated_values = [
@@ -344,4 +344,4 @@ class TaskDispatcher:
                     quantiles=current_queue.quantiles,
                     values=updated_values,
                 )
-                self.instance_registry.update_queue_info(instance_id, updated_queue)
+                await self.instance_registry.update_queue_info(instance_id, updated_queue)

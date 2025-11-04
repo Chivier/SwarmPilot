@@ -151,6 +151,49 @@ class DockerManager:
         self.current_model = None
         return model_id
 
+    async def restart_model(self) -> Optional[str]:
+        """
+        Restart the currently running model container.
+
+        This will stop and restart the same model with the same parameters.
+
+        Returns:
+            The model_id that was restarted, or None if no model was running
+
+        Raises:
+            RuntimeError: If restart fails
+        """
+        if not self.current_model:
+            logger.warning("No model is running, nothing to restart")
+            return None
+
+        # Save current model information
+        model_id = self.current_model.model_id
+        parameters = self.current_model.parameters
+        container_name = self.current_model.container_name
+
+        logger.info(f"Restarting model container: {container_name}")
+
+        try:
+            # Stop the current container
+            await self._stop_docker_container(container_name)
+            logger.info(f"Docker container stopped: {container_name}")
+
+            # Clear current model reference
+            self.current_model = None
+
+            # Restart the model with same parameters
+            await self.start_model(model_id, parameters)
+            logger.info(f"Docker container restarted: {container_name}")
+
+            return model_id
+
+        except Exception as e:
+            logger.error(f"Failed to restart container: {e}")
+            # If restart fails, ensure current_model is cleared
+            self.current_model = None
+            raise RuntimeError(f"Failed to restart container: {e}")
+
     async def get_current_model(self) -> Optional[ModelInfo]:
         """Get information about the currently running model"""
         return self.current_model

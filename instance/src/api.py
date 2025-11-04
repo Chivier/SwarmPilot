@@ -834,11 +834,16 @@ async def clear_tasks():
     """
     Clear all tasks from the instance.
 
-    This will remove all tasks from the queue and task storage, regardless
-    of their status (queued, completed, failed). Running tasks cannot be
-    cleared - the endpoint will return an error if there are running tasks.
+    This will:
+    1. Restart the Docker container (if a model is running)
+    2. Remove all tasks from the queue and task storage, regardless
+       of their status (queued, completed, failed)
+
+    Running tasks cannot be cleared - the endpoint will return an error
+    if there are running tasks.
 
     This is useful for:
+    - Resetting the model state by restarting the container
     - Cleaning up completed/failed task history
     - Resetting the instance state before starting new work
     - Removing queued tasks that are no longer needed
@@ -846,8 +851,24 @@ async def clear_tasks():
     Returns the count of tasks that were cleared by status.
     """
     task_queue = get_task_queue()
+    docker_manager = get_docker_manager()
 
     try:
+        # Step 1: Restart Docker container if a model is running
+        if await docker_manager.is_model_running():
+            logger.info("Restarting Docker container before clearing tasks")
+            try:
+                model_id = await docker_manager.restart_model()
+                if model_id:
+                    logger.info(f"Successfully restarted Docker container for model: {model_id}")
+            except Exception as e:
+                logger.error(f"Failed to restart Docker container: {e}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Failed to restart Docker container: {str(e)}"
+                )
+
+        # Step 2: Clear all tasks
         cleared_count = await task_queue.clear_all_tasks()
 
         return TaskClearResponse(

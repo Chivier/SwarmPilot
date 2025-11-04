@@ -6,7 +6,7 @@ throughout their execution lifecycle.
 """
 
 from typing import Dict, List, Optional, Any
-from threading import Lock
+import asyncio
 from datetime import datetime
 
 from .model import TaskStatus, TaskTimestamps
@@ -93,9 +93,9 @@ class TaskRegistry:
 
     def __init__(self):
         self._tasks: Dict[str, TaskRecord] = {}
-        self._lock = Lock()
+        self._lock = asyncio.Lock()
 
-    def create_task(
+    async def create_task(
         self,
         task_id: str,
         model_id: str,
@@ -125,7 +125,7 @@ class TaskRegistry:
         Raises:
             ValueError: If task with this ID already exists
         """
-        with self._lock:
+        async with self._lock:
             if task_id in self._tasks:
                 raise ValueError(f"Task {task_id} already exists")
 
@@ -142,7 +142,7 @@ class TaskRegistry:
             self._tasks[task_id] = task
             return task
 
-    def get(self, task_id: str) -> Optional[TaskRecord]:
+    async def get(self, task_id: str) -> Optional[TaskRecord]:
         """
         Get a task by ID.
 
@@ -152,10 +152,10 @@ class TaskRegistry:
         Returns:
             TaskRecord if found, None otherwise
         """
-        with self._lock:
+        async with self._lock:
             return self._tasks.get(task_id)
 
-    def list_all(
+    async def list_all(
         self,
         status: Optional[TaskStatus] = None,
         model_id: Optional[str] = None,
@@ -176,7 +176,7 @@ class TaskRegistry:
         Returns:
             Tuple of (filtered tasks, total count)
         """
-        with self._lock:
+        async with self._lock:
             tasks = list(self._tasks.values())
 
             # Apply filters
@@ -197,7 +197,7 @@ class TaskRegistry:
 
             return tasks, total
 
-    def update_status(self, task_id: str, status: TaskStatus) -> None:
+    async def update_status(self, task_id: str, status: TaskStatus) -> None:
         """
         Update task status.
 
@@ -208,7 +208,7 @@ class TaskRegistry:
         Raises:
             KeyError: If task not found
         """
-        with self._lock:
+        async with self._lock:
             if task_id not in self._tasks:
                 raise KeyError(f"Task {task_id} not found")
 
@@ -222,7 +222,7 @@ class TaskRegistry:
                 if task.completed_at is None:
                     task.completed_at = datetime.now().isoformat() + "Z"
 
-    def set_result(self, task_id: str, result: Dict[str, Any]) -> None:
+    async def set_result(self, task_id: str, result: Dict[str, Any]) -> None:
         """
         Set task result.
 
@@ -233,13 +233,13 @@ class TaskRegistry:
         Raises:
             KeyError: If task not found
         """
-        with self._lock:
+        async with self._lock:
             if task_id not in self._tasks:
                 raise KeyError(f"Task {task_id} not found")
 
             self._tasks[task_id].result = result
 
-    def set_error(self, task_id: str, error: str) -> None:
+    async def set_error(self, task_id: str, error: str) -> None:
         """
         Set task error.
 
@@ -250,13 +250,13 @@ class TaskRegistry:
         Raises:
             KeyError: If task not found
         """
-        with self._lock:
+        async with self._lock:
             if task_id not in self._tasks:
                 raise KeyError(f"Task {task_id} not found")
 
             self._tasks[task_id].error = error
 
-    def get_count_by_status(self, status: TaskStatus) -> int:
+    async def get_count_by_status(self, status: TaskStatus) -> int:
         """
         Get count of tasks with specific status.
 
@@ -266,22 +266,22 @@ class TaskRegistry:
         Returns:
             Count of tasks with this status
         """
-        with self._lock:
+        async with self._lock:
             return sum(1 for t in self._tasks.values() if t.status == status)
 
-    def get_total_count(self) -> int:
+    async def get_total_count(self) -> int:
         """Get total number of tasks."""
-        with self._lock:
+        async with self._lock:
             return len(self._tasks)
 
-    def clear_all(self) -> int:
+    async def clear_all(self) -> int:
         """
         Clear all tasks from the registry.
 
         Returns:
             Count of tasks that were cleared
         """
-        with self._lock:
+        async with self._lock:
             count = len(self._tasks)
             self._tasks.clear()
             return count

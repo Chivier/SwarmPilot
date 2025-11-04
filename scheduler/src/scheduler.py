@@ -82,7 +82,7 @@ class SchedulingStrategy(ABC):
         logger.info(f"Prediction result: {predictions}")
 
         # Step 2: Collect queue information
-        queue_info = self.collect_queue_info(available_instances)
+        queue_info = await self.collect_queue_info(available_instances)
 
         # Step 3: Select best instance
         selected_instance_id = self.select_instance(predictions, queue_info)
@@ -103,7 +103,7 @@ class SchedulingStrategy(ABC):
 
         # Step 5: Update queue information
         if selected_prediction:
-            self.update_queue(selected_instance_id, selected_prediction)
+            await self.update_queue(selected_instance_id, selected_prediction)
         else:
             logger.warning(f"No prediction is selected:"
                            f"predictions: {predictions}"
@@ -178,7 +178,7 @@ class SchedulingStrategy(ABC):
                 f"Predictor service unavailable: {str(e)}"
             ) from e
 
-    def collect_queue_info(
+    async def collect_queue_info(
         self,
         available_instances: List["Instance"],
     ) -> Dict[str, "InstanceQueueBase"]:
@@ -193,7 +193,7 @@ class SchedulingStrategy(ABC):
         """
         queue_info = {}
         for instance in available_instances:
-            queue = self.instance_registry.get_queue_info(instance.instance_id)
+            queue = await self.instance_registry.get_queue_info(instance.instance_id)
             if queue:
                 queue_info[instance.instance_id] = queue
         return queue_info
@@ -276,27 +276,27 @@ class MinimumExpectedTimeStrategy(SchedulingStrategy):
         if not predictions:
             return None
 
-        best_instance_id = None
-        best_total_time = float("inf")
+        queue_metrics = min([[queue.expected_time_ms, queue.error_margin_ms, instance_id] for instance_id, queue in queue_info.items()])
+        best_instance_id = queue_metrics[2]
 
-        for pred in predictions:
-            # Get queue information for this instance
-            queue = queue_info.get(pred.instance_id)
+        # for pred in predictions:
+        #     # Get queue information for this instance
+        #     queue = queue_info.get(pred.instance_id)
 
-            if queue and isinstance(queue, InstanceQueueExpectError):
-                # Calculate total time: queue expected + queue error + new task expected
-                total_time = queue.expected_time_ms + queue.error_margin_ms + pred.predicted_time_ms
-            else:
-                # Fallback: no queue info, just use prediction
-                total_time = pred.predicted_time_ms
+        #     if queue and isinstance(queue, InstanceQueueExpectError):
+        #         # Calculate total time: queue expected + queue error + new task expected
+        #         total_time = queue.expected_time_ms + queue.error_margin_ms
+        #     else:
+        #         # Fallback: no queue info, just use prediction
+        #         total_time = 0
 
-            if total_time < best_total_time:
-                best_total_time = total_time
-                best_instance_id = pred.instance_id
+        #     if total_time < best_total_time:
+        #         best_total_time = total_time
+        #         best_instance_id = pred.instance_id
 
         return best_instance_id
 
-    def update_queue(
+    async def update_queue(
         self,
         instance_id: str,
         prediction: Prediction,
@@ -315,7 +315,7 @@ class MinimumExpectedTimeStrategy(SchedulingStrategy):
         from .model import InstanceQueueExpectError
         import math
 
-        current_queue = self.instance_registry.get_queue_info(instance_id)
+        current_queue = await self.instance_registry.get_queue_info(instance_id)
 
         if not current_queue or not isinstance(current_queue, InstanceQueueExpectError):
             logger.warning(
@@ -341,7 +341,7 @@ class MinimumExpectedTimeStrategy(SchedulingStrategy):
             error_margin_ms=new_error,
         )
 
-        self.instance_registry.update_queue_info(instance_id, updated_queue)
+        await self.instance_registry.update_queue_info(instance_id, updated_queue)
         logger.debug(
             f"Updated queue (expect_error) for {instance_id}: "
             f"expected_time_ms={new_expected:.2f}, error_margin_ms={new_error:.2f}"
@@ -438,7 +438,7 @@ class ProbabilisticSchedulingStrategy(SchedulingStrategy):
 
         return best_instance_id
 
-    def update_queue(
+    async def update_queue(
         self,
         instance_id: str,
         prediction: Prediction,
@@ -456,7 +456,7 @@ class ProbabilisticSchedulingStrategy(SchedulingStrategy):
         from .model import InstanceQueueProbabilistic
         import numpy as np
 
-        current_queue = self.instance_registry.get_queue_info(instance_id)
+        current_queue = await self.instance_registry.get_queue_info(instance_id)
 
         if not current_queue or not isinstance(current_queue, InstanceQueueProbabilistic):
             logger.warning(
@@ -476,7 +476,7 @@ class ProbabilisticSchedulingStrategy(SchedulingStrategy):
                 quantiles=current_queue.quantiles,
                 values=updated_values,
             )
-            self.instance_registry.update_queue_info(instance_id, updated_queue)
+            await self.instance_registry.update_queue_info(instance_id, updated_queue)
             logger.debug(
                 f"Updated queue (probabilistic, fallback) for {instance_id}: "
                 f"quantiles={current_queue.quantiles}, "
@@ -519,7 +519,7 @@ class ProbabilisticSchedulingStrategy(SchedulingStrategy):
             values=updated_values,
         )
 
-        self.instance_registry.update_queue_info(instance_id, updated_queue)
+        await self.instance_registry.update_queue_info(instance_id, updated_queue)
         logger.debug(
             f"Updated queue (probabilistic, Monte Carlo) for {instance_id}: "
             f"quantiles={current_queue.quantiles}, "
@@ -555,7 +555,7 @@ class RoundRobinStrategy(SchedulingStrategy):
         self._counter += 1
         return selected.instance_id
 
-    def update_queue(
+    async def update_queue(
         self,
         instance_id: str,
         prediction: Prediction,

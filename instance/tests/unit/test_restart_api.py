@@ -45,7 +45,7 @@ class TestRestartModelEndpoint:
         assert "operation_id" in data
         assert isinstance(data["operation_id"], str)
         assert len(data["operation_id"]) > 0
-        assert data["status"] == "pending"
+        assert data["status"] == "draining"
         assert "Model restart operation initiated" in data["message"]
 
     def test_restart_model_success_with_all_params(
@@ -80,7 +80,7 @@ class TestRestartModelEndpoint:
         data = response.json()
         assert data["success"] is True
         assert "operation_id" in data
-        assert data["status"] == "pending"
+        assert data["status"] == "draining"
 
     def test_restart_model_no_model_running(
         self,

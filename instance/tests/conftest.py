@@ -221,6 +221,7 @@ def mock_docker_manager():
         started_at=datetime.now(timezone.utc).isoformat() + "Z",
     ))
     manager.stop_model = AsyncMock(return_value="test-model")
+    manager.restart_model = AsyncMock(return_value="test-model")
     manager.get_current_model = AsyncMock(return_value=None)
     manager.is_model_running = AsyncMock(return_value=False)
     manager.check_model_health = AsyncMock(return_value=True)
