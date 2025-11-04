@@ -380,8 +380,8 @@ class TestTaskAssignmentWithDraining:
         client.post("/instance/drain", json={"instance_id": "inst-1"})
 
         # Task completes
-        api.instance_registry.decrement_pending("inst-1")
-        api.instance_registry.increment_completed("inst-1")
+        await api.instance_registry.decrement_pending("inst-1")
+        await api.instance_registry.increment_completed("inst-1")
 
         # Check can_remove status
         status_response = client.get("/instance/drain/status", params={"instance_id": "inst-1"})
@@ -478,14 +478,14 @@ class TestCompleteRemovalWorkflow:
         assert remove_attempt1.status_code == 400
 
         # Step 6: Simulate task completions
-        api.instance_registry.decrement_pending("inst-1")
-        api.instance_registry.increment_completed("inst-1")
+        await api.instance_registry.decrement_pending("inst-1")
+        await api.instance_registry.increment_completed("inst-1")
 
         status1 = client.get("/instance/drain/status", params={"instance_id": "inst-1"})
         assert status1.json()["can_remove"] is False  # Still 1 task
 
-        api.instance_registry.decrement_pending("inst-1")
-        api.instance_registry.increment_completed("inst-1")
+        await api.instance_registry.decrement_pending("inst-1")
+        await api.instance_registry.increment_completed("inst-1")
 
         status2 = client.get("/instance/drain/status", params={"instance_id": "inst-1"})
         assert status2.json()["can_remove"] is True  # Now safe
