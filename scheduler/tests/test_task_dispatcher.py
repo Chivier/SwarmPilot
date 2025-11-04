@@ -491,7 +491,7 @@ class TestWebSocketNotification:
 
         mock_websocket = MagicMock()
         mock_websocket.send_json = AsyncMock()
-        task_dispatcher.websocket_manager.subscribe(mock_websocket, ["task-1"])
+        await task_dispatcher.websocket_manager.subscribe(mock_websocket, ["task-1"])
 
         # Task is PENDING - should not notify
         await task_dispatcher._notify_task_completion("task-1")
@@ -599,7 +599,7 @@ class TestHandleTaskResult:
         task_dispatcher.training_client = None
 
         await task_dispatcher.instance_registry.register(sample_instance)
-        task_dispatcher.task_registry.create_task(
+        await task_dispatcher.task_registry.create_task(
             task_id="task-1",
             model_id="model-1",
             task_input={},
@@ -622,7 +622,7 @@ class TestHandleTaskResult:
     ):
         """Test handling a failed task result."""
         await task_dispatcher.instance_registry.register(sample_instance)
-        task_dispatcher.task_registry.create_task(
+        await task_dispatcher.task_registry.create_task(
             task_id="task-1",
             model_id="model-1",
             task_input={},
@@ -669,7 +669,7 @@ class TestHandleTaskResult:
         from src.model import InstanceQueueExpectError
 
         await task_dispatcher.instance_registry.register(sample_instance)
-        task_dispatcher.instance_registry.update_queue_info(
+        await task_dispatcher.instance_registry.update_queue_info(
             sample_instance.instance_id,
             InstanceQueueExpectError(
                 instance_id=sample_instance.instance_id,
@@ -695,7 +695,7 @@ class TestHandleTaskResult:
         )
 
         # Verify queue was updated
-        queue = task_dispatcher.instance_registry.get_queue_info(sample_instance.instance_id)
+        queue = await task_dispatcher.instance_registry.get_queue_info(sample_instance.instance_id)
         # Expected: 200 - 100 + 120 = 220
         assert queue.expected_time_ms == 220.0
 
@@ -718,7 +718,7 @@ class TestQueueUpdateOnCompletion:
 
         # Use task_dispatcher's instance_registry to ensure consistency
         await task_dispatcher.instance_registry.register(sample_instance)
-        task_dispatcher.instance_registry.update_queue_info(
+        await task_dispatcher.instance_registry.update_queue_info(
             sample_instance.instance_id,
             InstanceQueueExpectError(
                 instance_id=sample_instance.instance_id,
@@ -736,7 +736,7 @@ class TestQueueUpdateOnCompletion:
         )
 
         # Verify: 300 - 150 + 180 = 330
-        queue = task_dispatcher.instance_registry.get_queue_info(sample_instance.instance_id)
+        queue = await task_dispatcher.instance_registry.get_queue_info(sample_instance.instance_id)
         assert queue.expected_time_ms == 330.0
         assert queue.error_margin_ms == 50.0  # Error unchanged
 
@@ -750,7 +750,7 @@ class TestQueueUpdateOnCompletion:
         from src.model import InstanceQueueExpectError
 
         await task_dispatcher.instance_registry.register(sample_instance)
-        task_dispatcher.instance_registry.update_queue_info(
+        await task_dispatcher.instance_registry.update_queue_info(
             sample_instance.instance_id,
             InstanceQueueExpectError(
                 instance_id=sample_instance.instance_id,
@@ -767,7 +767,7 @@ class TestQueueUpdateOnCompletion:
         )
 
         # Should be clamped to 0
-        queue = task_dispatcher.instance_registry.get_queue_info(sample_instance.instance_id)
+        queue = await task_dispatcher.instance_registry.get_queue_info(sample_instance.instance_id)
         assert queue.expected_time_ms == 0.0
 
     @pytest.mark.asyncio
@@ -780,7 +780,7 @@ class TestQueueUpdateOnCompletion:
         from src.model import InstanceQueueProbabilistic
 
         await task_dispatcher.instance_registry.register(sample_instance)
-        task_dispatcher.instance_registry.update_queue_info(
+        await task_dispatcher.instance_registry.update_queue_info(
             sample_instance.instance_id,
             InstanceQueueProbabilistic(
                 instance_id=sample_instance.instance_id,
@@ -798,7 +798,7 @@ class TestQueueUpdateOnCompletion:
         )
 
         # Verify queue was updated
-        queue = task_dispatcher.instance_registry.get_queue_info(sample_instance.instance_id)
+        queue = await task_dispatcher.instance_registry.get_queue_info(sample_instance.instance_id)
         assert isinstance(queue, InstanceQueueProbabilistic)
         assert len(queue.values) == 3
         # Values should be updated (difficult to test exact values due to Monte Carlo)
@@ -814,7 +814,7 @@ class TestQueueUpdateOnCompletion:
         from src.model import InstanceQueueProbabilistic
 
         await task_dispatcher.instance_registry.register(sample_instance)
-        task_dispatcher.instance_registry.update_queue_info(
+        await task_dispatcher.instance_registry.update_queue_info(
             sample_instance.instance_id,
             InstanceQueueProbabilistic(
                 instance_id=sample_instance.instance_id,
@@ -831,7 +831,7 @@ class TestQueueUpdateOnCompletion:
         )
 
         # Verify simple subtraction/addition: values - 100 + 120 = values + 20
-        queue = task_dispatcher.instance_registry.get_queue_info(sample_instance.instance_id)
+        queue = await task_dispatcher.instance_registry.get_queue_info(sample_instance.instance_id)
         assert queue.values[0] == 170.0  # 150 - 100 + 120
         assert queue.values[1] == 270.0  # 250 - 100 + 120
         assert queue.values[2] == 320.0  # 300 - 100 + 120
@@ -864,7 +864,7 @@ class TestQueueUpdateOnCompletion:
         from src.model import InstanceQueueExpectError
 
         await task_dispatcher.instance_registry.register(sample_instance)
-        task_dispatcher.instance_registry.update_queue_info(
+        await task_dispatcher.instance_registry.update_queue_info(
             sample_instance.instance_id,
             InstanceQueueExpectError(
                 instance_id=sample_instance.instance_id,
@@ -881,7 +881,7 @@ class TestQueueUpdateOnCompletion:
         )
 
         # Should still update
-        queue = task_dispatcher.instance_registry.get_queue_info(sample_instance.instance_id)
+        queue = await task_dispatcher.instance_registry.get_queue_info(sample_instance.instance_id)
         assert queue.expected_time_ms == 210.0
 
 
