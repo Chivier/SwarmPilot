@@ -220,6 +220,7 @@ scheduling_strategy = get_strategy(
     strategy_name=config.scheduling.default_strategy,
     predictor_client=predictor_client,
     instance_registry=instance_registry,
+    target_quantile=config.scheduling.probabilistic_quantile,
 )
 
 # Initialize background scheduler for non-blocking task scheduling
@@ -1129,7 +1130,9 @@ def get_current_strategy_info() -> StrategyInfo:
         parameters = {}
     elif strategy_class_name == "ProbabilisticSchedulingStrategy":
         strategy_name = "probabilistic"
-        parameters = {}
+        # Get target_quantile from strategy instance
+        target_quantile = getattr(scheduling_strategy, 'target_quantile', 0.9)
+        parameters = {"target_quantile": target_quantile}
     elif strategy_class_name == "RoundRobinStrategy":
         strategy_name = "round_robin"
         parameters = {}
@@ -1202,6 +1205,8 @@ async def set_strategy_endpoint(request: StrategySetRequest):
     cleared_count = await task_registry.clear_all()
     logger.info(f"Cleared {cleared_count} tasks before switching strategy")
 
+    logger.info(f"Switching the scheduling strategy to {request.strategy_name.value}, with the quantiles: {request.quantiles}")
+
     # Reinitialize instance queues to match the new strategy
     reinitialized_count = await reinitialize_instance_queues(
         request.strategy_name.value,
@@ -1211,10 +1216,14 @@ async def set_strategy_endpoint(request: StrategySetRequest):
 
     # Create new scheduling strategy instance
     try:
+        # Get target_quantile from request, or use default
+        target_quantile = request.target_quantile if request.target_quantile is not None else 0.9
+
         new_strategy = get_strategy(
             strategy_name=request.strategy_name.value,
             predictor_client=predictor_client,
             instance_registry=instance_registry,
+            target_quantile=target_quantile,
         )
         logger.info(f"Created new scheduling strategy: {request.strategy_name.value}")
     except Exception as e:
@@ -1229,6 +1238,9 @@ async def set_strategy_endpoint(request: StrategySetRequest):
 
     # Update global scheduling strategy
     scheduling_strategy = new_strategy
+
+    # Update BackgroundScheduler to use the new strategy
+    background_scheduler.scheduling_strategy = new_strategy
 
     # Update config (in-memory only, not persisted)
     config.scheduling.default_strategy = request.strategy_name.value

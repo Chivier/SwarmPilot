@@ -141,14 +141,26 @@ class SchedulingStrategy(ABC):
         """
         prediction_type = self.get_prediction_type()
 
+        # Get custom quantiles if this is a probabilistic strategy
+        quantiles = None
+        if hasattr(self, 'quantiles'):
+            quantiles = self.quantiles
+
         try:
-            predictions = await self.predictor_client.predict(
-                model_id=model_id,
-                metadata=metadata,
-                instances=available_instances,
-                prediction_type=prediction_type,
-            )
-            logger.debug(f"sent prediction request model_id: {model_id}, metadata: {metadata}, instances: {available_instances}, prediction_type={prediction_type}")
+            # Build kwargs for predict call
+            predict_kwargs = {
+                "model_id": model_id,
+                "metadata": metadata,
+                "instances": available_instances,
+                "prediction_type": prediction_type,
+            }
+
+            # Only add quantiles if not None
+            if quantiles is not None:
+                predict_kwargs["quantiles"] = quantiles
+
+            predictions = await self.predictor_client.predict(**predict_kwargs)
+            logger.debug(f"sent prediction request model_id: {model_id}, metadata: {metadata}, instances: {available_instances}, prediction_type={prediction_type}, quantiles={quantiles}")
             return predictions
 
         except httpx.HTTPStatusError as e:
@@ -370,6 +382,7 @@ class ProbabilisticSchedulingStrategy(SchedulingStrategy):
         self,
         predictor_client: "PredictorClient",
         instance_registry: "InstanceRegistry",
+        target_quantile: float = 0.9,
     ):
         """
         Initialize probabilistic strategy.
@@ -377,8 +390,11 @@ class ProbabilisticSchedulingStrategy(SchedulingStrategy):
         Args:
             predictor_client: Client for getting predictions
             instance_registry: Registry for instance and queue management
+            target_quantile: Target quantile for probabilistic selection (default: 0.9)
         """
         super().__init__(predictor_client, instance_registry)
+        self.quantiles = instance_registry._quantiles
+        self.target_quantile = target_quantile
 
     def get_prediction_type(self) -> str:
         """Probabilistic strategy requires quantile predictions."""
@@ -388,17 +404,17 @@ class ProbabilisticSchedulingStrategy(SchedulingStrategy):
         self, predictions: List[Prediction], queue_info: Dict[str, "InstanceQueueBase"]
     ) -> Optional[str]:
         """
-        Select instance based on sampling from queue quantile distribution.
+        Select instance based on 10 independent samples from queue quantile distribution.
 
-        For each instance, samples once from its queue distribution by interpolating
-        between quantile values, then selects the instance with minimum sampled time.
+        Performs 10 Monte Carlo samples on queue distributions only. For each sample,
+        finds the instance with minimum queue time. Returns the instance with most wins.
 
         Args:
             predictions: List of predictions with quantile information
             queue_info: Dictionary mapping instance_id to queue information
 
         Returns:
-            Selected instance ID
+            Selected instance ID (the one with most wins in 10 samples)
         """
         import numpy as np
         from .model import InstanceQueueProbabilistic
@@ -406,43 +422,45 @@ class ProbabilisticSchedulingStrategy(SchedulingStrategy):
         if not predictions:
             return None
 
-        best_instance_id = None
-        best_sampled_time = float("inf")
+        num_samples = 10
+        instance_ids = list(queue_info.keys())
+        num_instances = len(instance_ids)
 
-        for pred in predictions:
-            # Get queue information for this instance
-            queue = queue_info.get(pred.instance_id)
+        if num_instances == 0:
+            # Fallback: no queue info, just return first prediction
+            return predictions[0].instance_id
 
-            if queue and isinstance(queue, InstanceQueueProbabilistic):
-                # Sample from queue distribution
-                # Use a random percentile between 0 and 1
-                random_percentile = np.random.random()
+        # Build queue time matrix: shape (num_instances, num_samples)
+        queue_times_matrix = np.zeros((num_instances, num_samples))
 
-                # Interpolate queue time from quantiles using numpy
-                queue_time = np.interp(
-                    random_percentile,
+        # Generate all random percentiles at once
+        random_percentiles = np.random.random(num_samples)
+
+        # Vectorized sampling for all instances
+        for i, instance_id in enumerate(instance_ids):
+            queue = queue_info[instance_id]
+
+            if isinstance(queue, InstanceQueueProbabilistic):
+                # Vectorized queue time sampling
+                queue_times_matrix[i, :] = np.interp(
+                    random_percentiles,
                     queue.quantiles,
                     queue.values
                 )
-
-                # Sample from task distribution
-                if pred.quantiles:
-                    task_quantiles = sorted(pred.quantiles.keys())
-                    task_values = [pred.quantiles[q] for q in task_quantiles]
-                    task_time = np.interp(random_percentile, task_quantiles, task_values)
-                else:
-                    task_time = pred.predicted_time_ms
-
-                total_time = queue_time + task_time
             else:
-                # Fallback: no queue info or wrong type
-                total_time = pred.predicted_time_ms
+                # Fallback: set to infinity to avoid selection
+                queue_times_matrix[i, :] = float('inf')
 
-            if total_time < best_sampled_time:
-                best_sampled_time = total_time
-                best_instance_id = pred.instance_id
+        # Find winner for each sample (argmin along axis 0)
+        winners = np.argmin(queue_times_matrix, axis=0)
 
-        return best_instance_id
+        # Count wins for each instance
+        win_counts = np.bincount(winners, minlength=num_instances)
+
+        # Select instance with most wins
+        best_instance_idx = np.argmax(win_counts)
+
+        return instance_ids[best_instance_idx]
 
     async def update_queue(
         self,
@@ -596,6 +614,7 @@ def get_strategy(
     strategy_name: str,
     predictor_client: "PredictorClient",
     instance_registry: "InstanceRegistry",
+    target_quantile: float = 0.9,
     **kwargs
 ) -> SchedulingStrategy:
     """
@@ -606,6 +625,7 @@ def get_strategy(
                       ("min_time", "probabilistic", "round_robin")
         predictor_client: Predictor client instance
         instance_registry: Instance registry instance
+        target_quantile: Target quantile for probabilistic strategy (default: 0.9)
         **kwargs: Additional keyword arguments (reserved for future use)
 
     Returns:
@@ -614,9 +634,13 @@ def get_strategy(
     if strategy_name == "min_time":
         return MinimumExpectedTimeStrategy(predictor_client, instance_registry)
     elif strategy_name == "probabilistic":
-        return ProbabilisticSchedulingStrategy(predictor_client, instance_registry)
+        return ProbabilisticSchedulingStrategy(
+            predictor_client, instance_registry, target_quantile=target_quantile
+        )
     elif strategy_name == "round_robin":
         return RoundRobinStrategy(predictor_client, instance_registry)
     else:
         # Default to probabilistic
-        return ProbabilisticSchedulingStrategy(predictor_client, instance_registry)
+        return ProbabilisticSchedulingStrategy(
+            predictor_client, instance_registry, target_quantile=target_quantile
+        )

@@ -261,6 +261,7 @@ class PredictorClient:
         metadata: Dict[str, Any],
         instances: List["Instance"],
         prediction_type: str = "quantile",
+        quantiles: Optional[List[float]] = None,
     ) -> List[Prediction]:
         """
         Get predictions for task execution time on multiple instances.
@@ -273,6 +274,7 @@ class PredictorClient:
             metadata: Task metadata for prediction (e.g., image dimensions)
             instances: List of Instance objects to get predictions for
             prediction_type: Type of prediction - "expect_error" or "quantile"
+            quantiles: Optional list of quantile levels for prediction (only used in experiment mode)
 
         Returns:
             List of predictions for each instance
@@ -311,6 +313,10 @@ class PredictorClient:
                     "prediction_type": prediction_type,
                     "features": metadata,
                 }
+
+                # Add custom quantiles if provided (only used in experiment mode)
+                if quantiles is not None:
+                    request_data["quantiles"] = quantiles
 
                 logger.debug(
                     f"Requesting prediction for platform {representative_instance.platform_info} "

@@ -287,6 +287,12 @@ class StrategyType(str, Enum):
 class StrategySetRequest(BaseModel):
     """Request model for setting scheduling strategy."""
     strategy_name: StrategyType = Field(..., description="Name of the scheduling strategy to use")
+    target_quantile: Optional[float] = Field(
+        None,
+        description="Target quantile for probabilistic strategy (0.0 < q < 1.0, default: 0.9)",
+        gt=0.0,
+        lt=1.0
+    )
     quantiles: Optional[List[float]] = Field(
         None,
         description="Custom quantiles for probabilistic strategy (default: [0.5, 0.9, 0.95, 0.99])",
