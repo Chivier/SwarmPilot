@@ -426,15 +426,6 @@ async def restart_model(request: ModelRestartRequest):
             detail="No model is currently running"
         )
 
-    # Check if there's already a restart operation in progress
-    async with _restart_operation_lock:
-        for op in _restart_operations.values():
-            if op.status not in (RestartStatus.COMPLETED, RestartStatus.FAILED):
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=f"A restart operation is already in progress (operation_id: {op.operation_id})"
-                )
-
     # Validate new model exists in registry
     if not registry.model_exists(request.model_id):
         raise HTTPException(
@@ -445,18 +436,29 @@ async def restart_model(request: ModelRestartRequest):
     # Get current model info
     current_model = await docker_manager.get_current_model()
 
-    # Create restart operation
-    operation_id = str(uuid.uuid4())
-    operation = RestartOperation(
-        operation_id=operation_id,
-        old_model_id=current_model.model_id if current_model else None,
-        new_model_id=request.model_id,
-        new_parameters=request.parameters or {},
-        new_scheduler_url=request.scheduler_url,
-    )
-
-    # Store operation
+    # Check if there's already a restart operation in progress and create new operation atomically
     async with _restart_operation_lock:
+        for op in _restart_operations.values():
+            if op.status not in (RestartStatus.COMPLETED, RestartStatus.FAILED):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"A restart operation is already in progress (operation_id: {op.operation_id})"
+                )
+
+        # Create restart operation
+        operation_id = str(uuid.uuid4())
+        operation = RestartOperation(
+            operation_id=operation_id,
+            old_model_id=current_model.model_id if current_model else None,
+            new_model_id=request.model_id,
+            new_parameters=request.parameters or {},
+            new_scheduler_url=request.scheduler_url,
+        )
+
+        # Mark operation as in progress immediately to prevent concurrent restarts
+        operation.update_status(RestartStatus.DRAINING)
+
+        # Store operation (in same lock block to ensure atomicity)
         _restart_operations[operation_id] = operation
 
     # Start background task

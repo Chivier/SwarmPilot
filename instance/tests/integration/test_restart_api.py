@@ -46,7 +46,7 @@ class TestRestartAPIEndpoints:
         data = response.json()
         assert data["success"] is True
         assert "operation_id" in data
-        assert data["status"] == "pending"
+        assert data["status"] == "draining"
         assert "Model restart operation initiated" in data["message"]
 
     def test_restart_model_no_model_running(
@@ -99,6 +99,7 @@ class TestRestartAPIEndpoints:
         api_client,
         mock_docker_manager,
         mock_model_registry,
+        monkeypatch,
     ):
         """Test POST /model/restart - fails when restart already in progress"""
         # Setup mocks for first request
@@ -109,6 +110,14 @@ class TestRestartAPIEndpoints:
             parameters={}
         )
         mock_model_registry.model_exists.return_value = True
+
+        # Patch _perform_restart_operation to do nothing
+        # This prevents the operation from completing and keeps it in "in progress" state
+        async def mock_perform_restart(operation_id):
+            # Do nothing - operation will stay in DRAINING state
+            pass
+
+        monkeypatch.setattr("src.api._perform_restart_operation", mock_perform_restart)
 
         # First request - should succeed
         response1 = api_client.post(
