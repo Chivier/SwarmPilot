@@ -1461,6 +1461,9 @@ def test_strategy_workflow(
     qps_a: float,
     gqps: Optional[float] = None,
     warmup_ratio: float = 0.0,
+    warmup_task_times_a: Optional[List[float]] = None,
+    warmup_task_times_b: Optional[List[float]] = None,
+    warmup_fanout_values: Optional[List[int]] = None,
     timeout_minutes: int = 10
 ) -> Dict:
     """
@@ -1475,6 +1478,9 @@ def test_strategy_workflow(
         qps_a: Target QPS for A task submission (ignored if gqps is set)
         gqps: Global QPS limit for both A and B task submissions (optional)
         warmup_ratio: Ratio of warmup workflows (0.0-1.0)
+        warmup_task_times_a: Pre-generated warmup A task times (optional)
+        warmup_task_times_b: Pre-generated warmup B task times (optional)
+        warmup_fanout_values: Pre-generated warmup fanout values (optional)
         timeout_minutes: Maximum time to wait for completion
 
     Returns:
@@ -1500,10 +1506,12 @@ def test_strategy_workflow(
     total_workflows = num_warmup_workflows + num_workflows
     logger.info(f"Total workflows: {total_workflows} ({num_warmup_workflows} warmup + {num_workflows} actual)")
 
-    # Generate warmup fanout values (same distribution as actual workflows)
+    # Use pre-generated warmup fanout values or fall back to empty list
     if num_warmup_workflows > 0:
-        warmup_fanout_values = np.random.randint(3, 9, size=num_warmup_workflows).tolist()
-        all_fanout_values = warmup_fanout_values + fanout_values
+        if warmup_fanout_values is None:
+            logger.warning("warmup_fanout_values not provided, using empty list")
+            warmup_fanout_values = []
+        all_fanout_values = list(warmup_fanout_values) + list(fanout_values)
     else:
         all_fanout_values = fanout_values
 
@@ -1520,18 +1528,15 @@ def test_strategy_workflow(
     a_tasks: List[WorkflowTaskData] = []
     b_tasks_by_workflow: Dict[str, List[WorkflowTaskData]] = {}
 
-    # Generate warmup task times (same distribution as actual tasks)
+    # Use pre-generated warmup task times or fall back to empty arrays
     if num_warmup_workflows > 0:
-        warmup_task_times_a = np.concatenate([
-            np.random.uniform(0.5, 0.7, num_warmup_workflows // 2),
-            np.random.uniform(10.0, 15.0, num_warmup_workflows - num_warmup_workflows // 2)
-        ])
-        warmup_total_b = sum(warmup_fanout_values)
-        # warmup_task_times_b = np.concatenate([
-        #     np.random.uniform(1.0, 3.0, warmup_total_b // 2),
-        #     np.random.uniform(8.0, 12.0, warmup_total_b - warmup_total_b // 2)
-        # ])
-        warmup_task_times_b = np.random.choice(task_times_b, size=warmup_total_b)
+        if warmup_task_times_a is None or warmup_task_times_b is None:
+            logger.warning("warmup_task_times not provided, using empty arrays")
+            warmup_task_times_a = np.array([])
+            warmup_task_times_b = np.array([])
+        else:
+            warmup_task_times_a = np.array(warmup_task_times_a)
+            warmup_task_times_b = np.array(warmup_task_times_b)
     else:
         warmup_task_times_a = np.array([])
         warmup_task_times_b = np.array([])
@@ -1635,7 +1640,7 @@ def test_strategy_workflow(
     logger.info("Step 8: Starting Thread 4 (Workflow Monitor)")
     monitor = WorkflowMonitor(
         completion_queue=completion_queue,
-        expected_workflows=num_workflows
+        expected_workflows=total_workflows
     )
     monitor.start()
 
@@ -1678,7 +1683,7 @@ def test_strategy_workflow(
         time.sleep(1.0)
         elapsed = time.time() - start_wait
         if int(elapsed) % 10 == 0:
-            logger.info(f"Waiting... {len(monitor.completed_workflows)}/{num_workflows} workflows completed")
+            logger.info(f"Waiting... {len(monitor.completed_workflows)}/{total_workflows} workflows completed")
 
     # Step 13: Stop all threads
     logger.info("Step 13: Stopping all threads")
@@ -1782,6 +1787,32 @@ def main(num_workflows: int = 100, qps_a: float = 8.0, gqps: Optional[float] = N
     print_distribution_stats(task_times_b, workload_b_config)
     logger.info(f"Generated {len(task_times_b)} B tasks total (will submit all)")
 
+    # Generate warmup data once for all strategies (if warmup is enabled)
+    num_warmup_workflows = int(NUM_WORKFLOWS * warmup_ratio)
+    if num_warmup_workflows > 0:
+        logger.info(f"Generating {num_warmup_workflows} warmup workflows (warmup_ratio={warmup_ratio:.1%})")
+
+        # Warmup fanout: Uniform distribution (3-8 B tasks per A task)
+        warmup_fanout_values = np.random.randint(3, 9, size=num_warmup_workflows).tolist()
+        logger.info(f"Generated {len(warmup_fanout_values)} warmup fanout values")
+
+        # Warmup A tasks: Bimodal distribution (same as actual tasks)
+        warmup_task_times_a = np.concatenate([
+            np.random.uniform(0.5, 0.7, num_warmup_workflows // 2),
+            np.random.uniform(10.0, 15.0, num_warmup_workflows - num_warmup_workflows // 2)
+        ])
+        logger.info(f"Generated {len(warmup_task_times_a)} warmup A task times")
+
+        # Warmup B tasks: Sample from actual B task distribution
+        warmup_total_b = sum(warmup_fanout_values)
+        warmup_task_times_b = np.random.choice(task_times_b, size=warmup_total_b)
+        logger.info(f"Generated {len(warmup_task_times_b)} warmup B task times")
+    else:
+        warmup_fanout_values = None
+        warmup_task_times_a = None
+        warmup_task_times_b = None
+        logger.info("No warmup workflows (warmup_ratio=0.0)")
+
     # Run tests for specified strategies
     all_results = []
 
@@ -1796,6 +1827,9 @@ def main(num_workflows: int = 100, qps_a: float = 8.0, gqps: Optional[float] = N
             qps_a=QPS_A,
             gqps=gqps,
             warmup_ratio=warmup_ratio,
+            warmup_task_times_a=warmup_task_times_a,
+            warmup_task_times_b=warmup_task_times_b,
+            warmup_fanout_values=warmup_fanout_values,
             timeout_minutes=60
         )
         all_results.append(results)
