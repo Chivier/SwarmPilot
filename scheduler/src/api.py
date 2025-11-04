@@ -62,6 +62,8 @@ from .model import (
     WSAckMessage,
     WSTaskResultMessage,
     WSErrorMessage,
+    WSPingMessage,
+    WSPongMessage,
     WSMessageType,
     # Common models
     ErrorResponse,
@@ -1058,6 +1060,8 @@ async def websocket_get_result(websocket: WebSocket):
     Clients can subscribe to multiple task IDs and receive results
     as soon as tasks complete or fail.
 
+    Includes keepalive ping mechanism to prevent connection timeout.
+
     Args:
         websocket: WebSocket connection
     """
@@ -1065,6 +1069,26 @@ async def websocket_get_result(websocket: WebSocket):
 
     # Register connection
     websocket_manager.connect(websocket)
+
+    # Keepalive configuration
+    PING_INTERVAL = 20  # Send ping every 20 seconds
+
+    async def send_keepalive():
+        """Send periodic ping messages to keep connection alive."""
+        try:
+            while True:
+                await asyncio.sleep(PING_INTERVAL)
+                ping_msg = WSPingMessage(timestamp=asyncio.get_event_loop().time())
+                await websocket.send_json(ping_msg.model_dump())
+                logger.debug("Sent keepalive ping to WebSocket client")
+        except asyncio.CancelledError:
+            # Task was cancelled, exit gracefully
+            pass
+        except Exception as e:
+            logger.warning(f"Keepalive task error: {e}")
+
+    # Start keepalive task
+    keepalive_task = asyncio.create_task(send_keepalive())
 
     try:
         while True:
@@ -1074,7 +1098,19 @@ async def websocket_get_result(websocket: WebSocket):
             # Parse message type
             message_type = data.get("type")
 
-            if message_type == WSMessageType.SUBSCRIBE:
+            if message_type == WSMessageType.PONG:
+                # Client responded to our ping, just log and continue
+                logger.debug("Received pong from WebSocket client")
+                continue
+
+            elif message_type == WSMessageType.PING:
+                # Client sent ping, respond with pong
+                pong_msg = WSPongMessage(timestamp=asyncio.get_event_loop().time())
+                await websocket.send_json(pong_msg.model_dump())
+                logger.debug("Sent pong response to WebSocket client")
+                continue
+
+            elif message_type == WSMessageType.SUBSCRIBE:
                 # Parse task_ids
                 task_ids = data.get("task_ids", [])
 
@@ -1157,6 +1193,15 @@ async def websocket_get_result(websocket: WebSocket):
 
         # Clean up
         websocket_manager.disconnect(websocket)
+
+    finally:
+        # Cancel keepalive task
+        keepalive_task.cancel()
+        try:
+            await keepalive_task
+        except asyncio.CancelledError:
+            pass
+        logger.debug("WebSocket keepalive task cancelled")
 
 
 # ============================================================================

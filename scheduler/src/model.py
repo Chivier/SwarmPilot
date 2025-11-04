@@ -346,6 +346,8 @@ class WSMessageType(str, Enum):
     RESULT = "result"
     ERROR = "error"
     ACK = "ack"
+    PING = "ping"
+    PONG = "pong"
 
 
 class WSSubscribeMessage(BaseModel):
@@ -383,3 +385,15 @@ class WSErrorMessage(BaseModel):
     type: WSMessageType = WSMessageType.ERROR
     error: str
     task_id: Optional[str] = None
+
+
+class WSPingMessage(BaseModel):
+    """WebSocket ping message for keepalive."""
+    type: WSMessageType = WSMessageType.PING
+    timestamp: Optional[float] = None
+
+
+class WSPongMessage(BaseModel):
+    """WebSocket pong message for keepalive response."""
+    type: WSMessageType = WSMessageType.PONG
+    timestamp: Optional[float] = None
