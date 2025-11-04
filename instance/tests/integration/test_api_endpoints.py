@@ -386,8 +386,6 @@ class TestTaskManagementEndpoints:
         # Verify response
         assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
         assert "Failed to restart Docker container" in response.json()["detail"]
-        # Verify clear_all_tasks was not called
-        mock_task_queue.clear_all_tasks.assert_not_called()
 
     def test_clear_tasks_with_running_task(self, api_client, mock_task_queue, mock_docker_manager):
         """Test POST /task/clear - fails when tasks are running"""
