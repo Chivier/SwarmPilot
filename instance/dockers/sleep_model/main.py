@@ -46,7 +46,7 @@ class InferenceRequest(BaseModel):
         ...,
         description="Time to sleep in seconds",
         ge=0,
-        le=60,
+        le=600,
         alias="sleep_duration"  # Accept both sleep_time and sleep_duration
     )
 

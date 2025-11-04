@@ -247,7 +247,7 @@ class DockerManager:
             response = await self.http_client.post(
                 url,
                 json=task_input,
-                timeout=300.0  # 5 minutes timeout for inference
+                timeout=600.0  # 10 minutes timeout for inference
             )
 
             if response.status_code == 200:
