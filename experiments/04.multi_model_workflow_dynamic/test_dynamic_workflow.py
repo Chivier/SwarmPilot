@@ -1527,10 +1527,11 @@ def test_strategy_workflow(
             np.random.uniform(10.0, 15.0, num_warmup_workflows - num_warmup_workflows // 2)
         ])
         warmup_total_b = sum(warmup_fanout_values)
-        warmup_task_times_b = np.concatenate([
-            np.random.uniform(1.0, 3.0, warmup_total_b // 2),
-            np.random.uniform(8.0, 12.0, warmup_total_b - warmup_total_b // 2)
-        ])
+        # warmup_task_times_b = np.concatenate([
+        #     np.random.uniform(1.0, 3.0, warmup_total_b // 2),
+        #     np.random.uniform(8.0, 12.0, warmup_total_b - warmup_total_b // 2)
+        # ])
+        warmup_task_times_b = np.random.choice(task_times_b, size=warmup_total_b)
     else:
         warmup_task_times_a = np.array([])
         warmup_task_times_b = np.array([])
