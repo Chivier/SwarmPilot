@@ -276,23 +276,23 @@ class MinimumExpectedTimeStrategy(SchedulingStrategy):
         if not predictions:
             return None
 
-        queue_metrics = min([[queue.expected_time_ms, queue.error_margin_ms, instance_id] for instance_id, queue in queue_info.items()])
-        best_instance_id = queue_metrics[2]
+        best_instance_id = None
+        best_total_time = float("inf")
 
-        # for pred in predictions:
-        #     # Get queue information for this instance
-        #     queue = queue_info.get(pred.instance_id)
+        for pred in predictions:
+            # Get queue information for this instance
+            queue = queue_info.get(pred.instance_id)
 
-        #     if queue and isinstance(queue, InstanceQueueExpectError):
-        #         # Calculate total time: queue expected + queue error + new task expected
-        #         total_time = queue.expected_time_ms + queue.error_margin_ms
-        #     else:
-        #         # Fallback: no queue info, just use prediction
-        #         total_time = 0
+            if queue and isinstance(queue, InstanceQueueExpectError):
+                # Calculate total time: queue expected + queue error + new task expected
+                total_time = queue.expected_time_ms + queue.error_margin_ms + pred.predicted_time_ms
+            else:
+                # Fallback: no queue info, just use prediction
+                total_time = pred.predicted_time_ms
 
-        #     if total_time < best_total_time:
-        #         best_total_time = total_time
-        #         best_instance_id = pred.instance_id
+            if total_time < best_total_time:
+                best_total_time = total_time
+                best_instance_id = pred.instance_id
 
         return best_instance_id
 
