@@ -63,6 +63,7 @@ class PredictionRequest(BaseModel):
     platform_info: PlatformInfo = Field(..., description="Platform information")
     prediction_type: str = Field(..., description="Type of prediction: 'expect_error' or 'quantile'")
     features: Dict[str, Any] = Field(..., description="Feature values for prediction")
+    quantiles: Optional[List[float]] = Field(None, description="Custom quantiles for prediction (only used in experiment mode)")
 
     @field_validator('prediction_type')
     @classmethod
@@ -71,6 +72,16 @@ class PredictionRequest(BaseModel):
         allowed_types = {'expect_error', 'quantile'}
         if v not in allowed_types:
             raise ValueError(f"prediction_type must be one of {allowed_types}, got '{v}'")
+        return v
+
+    @field_validator('quantiles')
+    @classmethod
+    def validate_quantiles(cls, v: Optional[List[float]]) -> Optional[List[float]]:
+        """Validate that quantiles are between 0 and 1."""
+        if v is not None:
+            for q in v:
+                if not isinstance(q, (int, float)) or not (0 < q < 1):
+                    raise ValueError(f"All quantiles must be between 0 and 1, got {q}")
         return v
 
 

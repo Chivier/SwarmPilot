@@ -249,10 +249,15 @@ async def predict(request: PredictionRequest):
             # Generate synthetic prediction
             logger.debug(f"Got experiment mode request, raw request: {request}")
             try:
+                # Pass custom quantiles to experiment mode if provided
+                config = {}
+                if request.quantiles is not None:
+                    config['quantiles'] = request.quantiles
+
                 result = generate_experiment_prediction(
                     prediction_type=request.prediction_type,
                     features=request.features,
-                    config={}
+                    config=config
                 )
 
                 return PredictionResponse(
@@ -408,10 +413,15 @@ async def websocket_predict(websocket: WebSocket):
                     # Generate synthetic prediction
                     logger.debug("request is experiment request")
                     try:
+                        # Pass custom quantiles to experiment mode if provided
+                        config = {}
+                        if request.quantiles is not None:
+                            config['quantiles'] = request.quantiles
+
                         result = generate_experiment_prediction(
                             prediction_type=request.prediction_type,
                             features=request.features,
-                            config={}
+                            config=config
                         )
 
                         response = PredictionResponse(
