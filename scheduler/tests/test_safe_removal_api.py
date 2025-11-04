@@ -469,7 +469,7 @@ class TestCompleteRemovalWorkflow:
         assert drain_response.json()["pending_tasks"] == 2
 
         # Step 4: Verify inst-1 excluded from new task assignments
-        list_active = api.instance_registry.list_active(model_id="test_model")
+        list_active = await api.instance_registry.list_active(model_id="test_model")
         assert len(list_active) == 1
         assert list_active[0].instance_id == "inst-2"
 
