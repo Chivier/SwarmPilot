@@ -178,27 +178,58 @@ else
     echo -e "${GREEN}sleep_model image already exists${NC}"
 fi
 
-# Step 5: Start Group A Instance Services
+# Step 5: Start Group A Instance Services (parallel)
 echo ""
-echo "Step 5: Starting Group A Instance Services ($N1 instances)"
+echo "Step 5: Starting Group A Instance Services ($N1 instances, parallel)"
+pids=()
 for i in $(seq 0 $((N1 - 1))); do
     instance_id="instance-$(printf '%03d' $i)"
     instance_port=$((INSTANCE_GROUP_A_START_PORT + i))
 
     start_service "$instance_id" \
         "cd $PROJECT_ROOT/instance && SCHEDULER_URL=http://localhost:$SCHEDULER_A_PORT INSTANCE_ID=$instance_id INSTANCE_PORT=$instance_port INSTANCE_LOG_DIR=$SCRIPT_DIR/logs/instance_$instance_port uv run python -m src.cli start --port $instance_port" \
-        "$instance_port"
+        "$instance_port" &
+    pids+=($!)
+done
 
-    # Wait for instance to be ready
-    if ! check_health "http://localhost:$instance_port"; then
-        echo -e "${RED}Failed to start $instance_id${NC}"
-        exit 1
+# Wait for all instance services to start
+for pid in "${pids[@]}"; do
+    wait $pid
+done
+echo -e "${GREEN}All Group A instance services started${NC}"
+
+# Health check all Group A instances (parallel)
+echo "Checking health of Group A instances..."
+pids=()
+for i in $(seq 0 $((N1 - 1))); do
+    instance_port=$((INSTANCE_GROUP_A_START_PORT + i))
+    (
+        if ! check_health "http://localhost:$instance_port"; then
+            echo -e "${RED}Failed health check for instance on port $instance_port${NC}"
+            exit 1
+        fi
+    ) &
+    pids+=($!)
+done
+
+# Wait for all health checks
+failed=0
+for pid in "${pids[@]}"; do
+    if ! wait $pid; then
+        failed=1
     fi
 done
 
-# Step 6: Start Group B Instance Services
+if [ $failed -eq 1 ]; then
+    echo -e "${RED}Some Group A instances failed to start${NC}"
+    exit 1
+fi
+echo -e "${GREEN}All Group A instances healthy${NC}"
+
+# Step 6: Start Group B Instance Services (parallel)
 echo ""
-echo "Step 6: Starting Group B Instance Services ($N2 instances)"
+echo "Step 6: Starting Group B Instance Services ($N2 instances, parallel)"
+pids=()
 for i in $(seq 0 $((N2 - 1))); do
     global_index=$((N1 + i))
     instance_id="instance-$(printf '%03d' $global_index)"
@@ -206,14 +237,43 @@ for i in $(seq 0 $((N2 - 1))); do
 
     start_service "$instance_id" \
         "cd $PROJECT_ROOT/instance && SCHEDULER_URL=http://localhost:$SCHEDULER_B_PORT INSTANCE_ID=$instance_id INSTANCE_PORT=$instance_port INSTANCE_LOG_DIR=$SCRIPT_DIR/logs/instance_$instance_port uv run python -m src.cli start --port $instance_port" \
-        "$instance_port"
+        "$instance_port" &
+    pids+=($!)
+done
 
-    # Wait for instance to be ready
-    if ! check_health "http://localhost:$instance_port"; then
-        echo -e "${RED}Failed to start $instance_id${NC}"
-        exit 1
+# Wait for all instance services to start
+for pid in "${pids[@]}"; do
+    wait $pid
+done
+echo -e "${GREEN}All Group B instance services started${NC}"
+
+# Health check all Group B instances (parallel)
+echo "Checking health of Group B instances..."
+pids=()
+for i in $(seq 0 $((N2 - 1))); do
+    instance_port=$((INSTANCE_GROUP_B_START_PORT + i))
+    (
+        if ! check_health "http://localhost:$instance_port"; then
+            echo -e "${RED}Failed health check for instance on port $instance_port${NC}"
+            exit 1
+        fi
+    ) &
+    pids+=($!)
+done
+
+# Wait for all health checks
+failed=0
+for pid in "${pids[@]}"; do
+    if ! wait $pid; then
+        failed=1
     fi
 done
+
+if [ $failed -eq 1 ]; then
+    echo -e "${RED}Some Group B instances failed to start${NC}"
+    exit 1
+fi
+echo -e "${GREEN}All Group B instances healthy${NC}"
 
 # Step 7: Start sleep-model on Group A instances
 echo ""
