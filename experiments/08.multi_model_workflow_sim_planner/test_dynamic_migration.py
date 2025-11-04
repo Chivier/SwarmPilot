@@ -35,7 +35,7 @@ from loguru import logger
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from migration_controller import MigrationController, PhaseConfig
-from workload_generator import generate_bimodal_distribution
+from workload_generator import generate_bimodal_distribution, generate_b_task_bimodal_distribution
 
 
 # ============================================================================
@@ -45,11 +45,72 @@ from workload_generator import generate_bimodal_distribution
 SCHEDULER_A_URL = "http://localhost:8100"
 SCHEDULER_B_URL = "http://localhost:8200"
 
-PHASE_CONFIGS = [
+# Default phase configs (16 instances total)
+# Can be overridden via --phase-configs command line argument
+DEFAULT_PHASE_CONFIGS = [
     PhaseConfig(phase_id=1, fanout=3, scheduler_a_instances=4, scheduler_b_instances=12, num_workflows=0),
     PhaseConfig(phase_id=2, fanout=8, scheduler_a_instances=2, scheduler_b_instances=14, num_workflows=0),
     PhaseConfig(phase_id=3, fanout=1, scheduler_a_instances=8, scheduler_b_instances=8, num_workflows=0),
 ]
+
+# Global variable to hold the current phase configs
+PHASE_CONFIGS = DEFAULT_PHASE_CONFIGS.copy()
+
+
+# ============================================================================
+# Rate Limiter
+# ============================================================================
+
+class RateLimiter:
+    """
+    Thread-safe rate limiter using token bucket algorithm.
+
+    Used to control global QPS across multiple threads submitting tasks.
+    """
+
+    def __init__(self, rate: float):
+        """
+        Initialize rate limiter.
+
+        Args:
+            rate: Target rate in requests per second (e.g., 10.0 for 10 QPS)
+        """
+        self.rate = rate
+        self.tokens = 0.0  # Start with 0 tokens to enforce strict rate limit from beginning
+        self.max_tokens = rate
+        self.last_update = time.time()
+        import threading
+        self.lock = threading.Lock()
+
+    def acquire(self, tokens: int = 1) -> float:
+        """
+        Acquire tokens from the bucket, blocking if necessary.
+
+        Args:
+            tokens: Number of tokens to acquire (default: 1)
+
+        Returns:
+            Time spent waiting in seconds
+        """
+        wait_start = time.time()
+
+        while True:
+            with self.lock:
+                now = time.time()
+                elapsed = now - self.last_update
+
+                # Refill tokens based on elapsed time
+                self.tokens = min(self.max_tokens, self.tokens + elapsed * self.rate)
+                self.last_update = now
+
+                # If enough tokens available, consume and return
+                if self.tokens >= tokens:
+                    self.tokens -= tokens
+                    wait_time = time.time() - wait_start
+                    return wait_time
+
+            # Not enough tokens, sleep briefly and retry
+            time.sleep(0.01)
 
 
 # ============================================================================
@@ -66,6 +127,7 @@ class WorkflowState:
     b_task_ids: List[str]
     total_b_tasks: int
     completed_b_tasks: int = 0
+    is_warmup: bool = False  # Whether this is a warmup workflow
 
     # Timestamps
     a_submit_time: Optional[float] = None
@@ -504,8 +566,8 @@ class DynamicMigrationExperiment:
     async def _submit_b_tasks(self, workflow_state: WorkflowState):
         """Submit all B tasks for a workflow."""
         for b_task_id in workflow_state.b_task_ids:
-            # Generate task execution time for each B task
-            times_list, _ = generate_bimodal_distribution(1)
+            # Generate task execution time for each B task (using B task bimodal distribution)
+            times_list, _ = generate_b_task_bimodal_distribution(1)
             exec_time = times_list[0]
 
             task_data = {
@@ -798,8 +860,42 @@ def main():
         action="store_false",
         help="Disable migration and use static instance distribution"
     )
+    parser.add_argument(
+        "--phase-configs",
+        type=str,
+        default=None,
+        help="Phase configurations as comma-separated string: 'phase_id:fanout:a_inst:b_inst,...' "
+             "(e.g., '1:3:4:12,2:8:2:14,3:1:8:8'). If not provided, uses default 16-instance config."
+    )
 
     args = parser.parse_args()
+
+    # Parse phase configurations if provided
+    global PHASE_CONFIGS
+    if args.phase_configs:
+        try:
+            PHASE_CONFIGS = []
+            for phase_str in args.phase_configs.split(','):
+                phase_id, fanout, a_inst, b_inst = map(int, phase_str.split(':'))
+                PHASE_CONFIGS.append(
+                    PhaseConfig(
+                        phase_id=phase_id,
+                        fanout=fanout,
+                        scheduler_a_instances=a_inst,
+                        scheduler_b_instances=b_inst,
+                        num_workflows=0  # Will be set by experiment
+                    )
+                )
+            logger.info(f"Using custom phase configurations:")
+            for pc in PHASE_CONFIGS:
+                logger.info(f"  Phase {pc.phase_id}: fanout={pc.fanout}, A={pc.scheduler_a_instances}, B={pc.scheduler_b_instances}")
+        except Exception as e:
+            logger.error(f"Failed to parse --phase-configs: {e}")
+            logger.error("Expected format: 'phase_id:fanout:a_inst:b_inst,...'")
+            sys.exit(1)
+    else:
+        PHASE_CONFIGS = DEFAULT_PHASE_CONFIGS.copy()
+        logger.info("Using default phase configurations (16 instances)")
 
     # Configure logging
     logger.remove()

@@ -148,27 +148,58 @@ else
     echo -e "${GREEN}sleep_model image already exists${NC}"
 fi
 
-# Step 5: Start instances for Scheduler A (Phase 1: 4 instances)
+# Step 5: Start instances for Scheduler A (Phase 1: 4 instances, parallel)
 echo ""
-echo "Step 5: Starting instances for Scheduler A ($PHASE1_A_INSTANCES instances)"
+echo "Step 5: Starting instances for Scheduler A ($PHASE1_A_INSTANCES instances, parallel)"
+pids=()
 for i in $(seq 0 $((PHASE1_A_INSTANCES - 1))); do
     instance_id="instance-$(printf '%03d' $i)"
     instance_port=$((INSTANCE_START_PORT + i))
 
     start_service "$instance_id" \
         "cd $PROJECT_ROOT/instance && SCHEDULER_URL=http://localhost:$SCHEDULER_A_PORT INSTANCE_ID=$instance_id INSTANCE_PORT=$instance_port INSTANCE_LOG_DIR=$SCRIPT_DIR/logs/instance_$instance_port uv run python -m src.cli start --port $instance_port" \
-        "$instance_port"
+        "$instance_port" &
+    pids+=($!)
+done
 
-    # Wait for instance to be ready
-    if ! check_health "http://localhost:$instance_port"; then
-        echo -e "${RED}Failed to start $instance_id${NC}"
-        exit 1
+# Wait for all Scheduler A instance services to start
+for pid in "${pids[@]}"; do
+    wait $pid
+done
+echo -e "${GREEN}All Scheduler A instance services started${NC}"
+
+# Health check all Scheduler A instances (parallel)
+echo "Checking health of Scheduler A instances..."
+pids=()
+for i in $(seq 0 $((PHASE1_A_INSTANCES - 1))); do
+    instance_port=$((INSTANCE_START_PORT + i))
+    (
+        if ! check_health "http://localhost:$instance_port"; then
+            echo -e "${RED}Failed health check for instance on port $instance_port${NC}"
+            exit 1
+        fi
+    ) &
+    pids+=($!)
+done
+
+# Wait for all health checks
+failed=0
+for pid in "${pids[@]}"; do
+    if ! wait $pid; then
+        failed=1
     fi
 done
 
-# Step 6: Start instances for Scheduler B (Phase 1: 12 instances)
+if [ $failed -eq 1 ]; then
+    echo -e "${RED}Some Scheduler A instances failed to start${NC}"
+    exit 1
+fi
+echo -e "${GREEN}All Scheduler A instances healthy${NC}"
+
+# Step 6: Start instances for Scheduler B (Phase 1: 12 instances, parallel)
 echo ""
-echo "Step 6: Starting instances for Scheduler B ($PHASE1_B_INSTANCES instances)"
+echo "Step 6: Starting instances for Scheduler B ($PHASE1_B_INSTANCES instances, parallel)"
+pids=()
 for i in $(seq 0 $((PHASE1_B_INSTANCES - 1))); do
     global_index=$((PHASE1_A_INSTANCES + i))
     instance_id="instance-$(printf '%03d' $global_index)"
@@ -176,37 +207,74 @@ for i in $(seq 0 $((PHASE1_B_INSTANCES - 1))); do
 
     start_service "$instance_id" \
         "cd $PROJECT_ROOT/instance && SCHEDULER_URL=http://localhost:$SCHEDULER_B_PORT INSTANCE_ID=$instance_id INSTANCE_PORT=$instance_port INSTANCE_LOG_DIR=$SCRIPT_DIR/logs/instance_$instance_port uv run python -m src.cli start --port $instance_port" \
-        "$instance_port"
+        "$instance_port" &
+    pids+=($!)
+done
 
-    # Wait for instance to be ready
-    if ! check_health "http://localhost:$instance_port"; then
-        echo -e "${RED}Failed to start $instance_id${NC}"
-        exit 1
+# Wait for all Scheduler B instance services to start
+for pid in "${pids[@]}"; do
+    wait $pid
+done
+echo -e "${GREEN}All Scheduler B instance services started${NC}"
+
+# Health check all Scheduler B instances (parallel)
+echo "Checking health of Scheduler B instances..."
+pids=()
+for i in $(seq 0 $((PHASE1_B_INSTANCES - 1))); do
+    global_index=$((PHASE1_A_INSTANCES + i))
+    instance_port=$((INSTANCE_START_PORT + global_index))
+    (
+        if ! check_health "http://localhost:$instance_port"; then
+            echo -e "${RED}Failed health check for instance on port $instance_port${NC}"
+            exit 1
+        fi
+    ) &
+    pids+=($!)
+done
+
+# Wait for all health checks
+failed=0
+for pid in "${pids[@]}"; do
+    if ! wait $pid; then
+        failed=1
     fi
 done
 
-# Step 7: Start sleep-model on all instances
+if [ $failed -eq 1 ]; then
+    echo -e "${RED}Some Scheduler B instances failed to start${NC}"
+    exit 1
+fi
+echo -e "${GREEN}All Scheduler B instances healthy${NC}"
+
+# Step 7: Start sleep-model on all instances (parallel)
 echo ""
-echo "Step 7: Starting sleep-model on all instances"
+echo "Step 7: Starting sleep-model on all instances (parallel)"
+pids=()
 for i in $(seq 0 $((TOTAL_INSTANCES - 1))); do
     instance_id="instance-$(printf '%03d' $i)"
     instance_port=$((INSTANCE_START_PORT + i))
 
-    echo -n "Starting model on $instance_id (port $instance_port)..."
-    response=$(curl -s -X POST "http://localhost:$instance_port/model/start" \
-        -H "Content-Type: application/json" \
-        -d "{\"model_id\": \"$MODEL_ID\", \"parameters\": {}}")
+    echo "Starting model on $instance_id (port $instance_port)..."
+    (
+        response=$(curl -s -X POST "http://localhost:$instance_port/model/start" \
+            -H "Content-Type: application/json" \
+            -d "{\"model_id\": \"$MODEL_ID\", \"parameters\": {}}")
 
-    if echo "$response" | grep -q "success\|started"; then
-        echo -e " ${GREEN}OK${NC}"
-    else
-        echo -e " ${RED}FAILED${NC}"
-        echo "Response: $response"
-    fi
-
-    # Small delay between starts
-    sleep 0.5
+        if echo "$response" | grep -q "success\|started"; then
+            echo -e "$instance_id: ${GREEN}OK${NC}"
+        else
+            echo -e "$instance_id: ${RED}FAILED${NC}"
+            echo "Response: $response"
+        fi
+    ) &
+    pids+=($!)
 done
+
+# Wait for all parallel model starts to complete
+for pid in "${pids[@]}"; do
+    wait $pid
+done
+echo -e "${GREEN}All model starts completed${NC}"
 
 # Final status
 echo ""
