@@ -230,12 +230,13 @@ class TestSchedulingStrategies:
             mock_random.return_value = 0.5  # Sample at median
             result = await strategy.schedule_task("test-model", metadata, test_instances)
 
-        # Verify predictor was called with quantile prediction type
+        # Verify predictor was called with quantile prediction type and default quantiles
         mock_predictor_client.predict.assert_called_once_with(
             model_id="test-model",
             metadata=metadata,
             instances=test_instances,
-            prediction_type="quantile"
+            prediction_type="quantile",
+            quantiles=[0.5, 0.9, 0.95, 0.99]
         )
 
         # Verify selected instance (depends on sampling)
