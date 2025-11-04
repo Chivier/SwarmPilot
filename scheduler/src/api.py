@@ -182,201 +182,6 @@ scheduling_strategy = get_strategy(
 )
 
 # ============================================================================
-# Scheduling Threshold Control
-# ============================================================================
-
-# Global state for scheduling pause control
-scheduling_paused: bool = False
-scheduling_lock = asyncio.Lock()
-
-
-# ============================================================================
-# Scheduling Threshold Helper Functions
-# ============================================================================
-
-
-def get_submitted_task_count() -> int:
-    """
-    Get the total count of submitted tasks (PENDING + RUNNING).
-
-    Returns:
-        Total number of tasks currently submitted to instances
-    """
-    pending = task_registry.get_count_by_status(TaskStatus.PENDING)
-    running = task_registry.get_count_by_status(TaskStatus.RUNNING)
-    return pending + running
-
-
-def check_all_instances_busy() -> bool:
-    """
-    Check if all active instances currently have tasks (pending_tasks + running > 0).
-
-    Returns:
-        True if all instances are busy, False otherwise
-    """
-    active_instances = instance_registry.list_active()
-
-    if not active_instances:
-        return False
-
-    for instance in active_instances:
-        # Get pending tasks count for this instance
-        stats = instance_registry.get_stats(instance.instance_id)
-        if not stats:
-            continue
-
-        # Count running tasks for this instance
-        running_tasks, _ = task_registry.list_all(
-            status=TaskStatus.RUNNING,
-            instance_id=instance.instance_id,
-            limit=1,
-        )
-        running_count = len(running_tasks)
-
-        # Check if this instance has any tasks
-        if stats.pending_tasks + running_count == 0:
-            return False
-
-    return True
-
-
-def should_pause_scheduling() -> bool:
-    """
-    Determine if scheduling should be paused based on threshold conditions.
-
-    Pausing conditions:
-    - submitted_tasks >= 10 * num_active_instances
-    - All active instances are busy
-
-    Returns:
-        True if scheduling should pause, False otherwise
-    """
-    num_active = instance_registry.get_active_count()
-    if num_active == 0:
-        return False
-
-    submitted = get_submitted_task_count()
-    threshold = 10 * num_active
-
-    if submitted < threshold:
-        return False
-
-    return check_all_instances_busy()
-
-
-def should_resume_scheduling() -> bool:
-    """
-    Determine if scheduling should resume based on threshold conditions.
-
-    Resuming condition (with hysteresis):
-    - submitted_tasks < 8 * num_active_instances
-
-    Returns:
-        True if scheduling should resume, False otherwise
-    """
-    num_active = instance_registry.get_active_count()
-    if num_active == 0:
-        return False
-
-    submitted = get_submitted_task_count()
-    resume_threshold = 8 * num_active
-
-    return submitted < resume_threshold
-
-
-async def dispatch_pending_tasks_batch():
-    """
-    Dispatch all pending tasks that are queued (not yet assigned to instances).
-
-    This function is called when scheduling resumes from a paused state.
-    It processes tasks in submission order and stops if scheduling should pause again.
-    """
-    global scheduling_paused
-
-    # Get all pending tasks that haven't been dispatched yet
-    # These are tasks with PENDING status
-    pending_tasks, total = task_registry.list_all(
-        status=TaskStatus.PENDING,
-        limit=1000,  # Process in batches to avoid memory issues
-        offset=0,
-    )
-
-    if not pending_tasks:
-        logger.debug("No pending tasks to dispatch")
-        return
-
-    logger.info(f"Starting batch dispatch of {len(pending_tasks)} pending tasks")
-
-    dispatched_count = 0
-    for task in pending_tasks:
-        # Check if we should pause again before dispatching each task
-        async with scheduling_lock:
-            if should_pause_scheduling():
-                scheduling_paused = True
-                logger.warning(
-                    f"Pausing dispatch after {dispatched_count} tasks - threshold reached again"
-                )
-                break
-
-        # Dispatch the task
-        task_dispatcher.dispatch_task_async(task.task_id)
-        dispatched_count += 1
-
-    logger.info(f"Batch dispatch completed: {dispatched_count}/{len(pending_tasks)} tasks dispatched")
-
-
-async def monitor_scheduling_threshold():
-    """
-    Background task to monitor scheduling threshold and control pause/resume.
-
-    This task runs continuously and:
-    - Checks if scheduling should pause (submitted >= 10x instances, all busy)
-    - Checks if scheduling should resume (submitted < 8x instances)
-    - Logs state transitions
-    - Dispatches pending tasks when resuming
-    """
-    global scheduling_paused
-
-    logger.info("Scheduling threshold monitor started")
-
-    while True:
-        try:
-            await asyncio.sleep(1)  # Check every second
-
-            num_instances = instance_registry.get_active_count()
-            if num_instances == 0:
-                continue
-
-            submitted = get_submitted_task_count()
-
-            # Check state transitions
-            async with scheduling_lock:
-                if not scheduling_paused and should_pause_scheduling():
-                    # Transition: not paused -> paused
-                    scheduling_paused = True
-                    threshold = 10 * num_instances
-                    logger.warning(
-                        f"Pausing scheduling: {submitted} tasks >= {threshold} threshold "
-                        f"({num_instances} instances x 10), all instances busy"
-                    )
-
-                elif scheduling_paused and should_resume_scheduling():
-                    # Transition: paused -> not paused
-                    scheduling_paused = False
-                    resume_threshold = 8 * num_instances
-                    logger.info(
-                        f"Resuming scheduling: {submitted} tasks < {resume_threshold} threshold "
-                        f"({num_instances} instances x 8)"
-                    )
-                    # Dispatch pending tasks
-                    asyncio.create_task(dispatch_pending_tasks_batch())
-
-        except Exception as e:
-            logger.error(f"Error in scheduling threshold monitor: {e}", exc_info=True)
-            # Continue monitoring even if there's an error
-
-
-# ============================================================================
 # Instance Management Endpoints
 # ============================================================================
 
@@ -781,21 +586,10 @@ async def submit_task(request: TaskSubmitRequest):
     # 5. Update instance stats
     instance_registry.increment_pending(schedule_result.selected_instance_id)
 
-    # 6. Check if scheduling is paused
-    is_queued = False
-    async with scheduling_lock:
-        if scheduling_paused:
-            is_queued = True
-            logger.info(
-                f"Scheduling paused - task {request.task_id} queued (not dispatched). "
-                f"Current load: {get_submitted_task_count()} tasks for {instance_registry.get_active_count()} instances"
-            )
+    # 6. Dispatch task asynchronously
+    task_dispatcher.dispatch_task_async(request.task_id)
 
-    # 7. Dispatch task asynchronously (only if not paused)
-    if not is_queued:
-        task_dispatcher.dispatch_task_async(request.task_id)
-
-    # 8. Return task info
+    # 7. Return task info
     task_info = TaskInfo(
         task_id=task_record.task_id,
         status=task_record.status,
@@ -803,11 +597,9 @@ async def submit_task(request: TaskSubmitRequest):
         submitted_at=task_record.submitted_at,
     )
 
-    message = "Task queued - scheduling paused due to high load" if is_queued else "Task submitted successfully"
-
     return TaskSubmitResponse(
         success=True,
-        message=message,
+        message="Task submitted successfully",
         task=task_info,
     )
 
@@ -1031,20 +823,6 @@ async def callback_task_result(request: TaskResultCallbackRequest):
         error=request.error,
         execution_time_ms=request.execution_time_ms,
     )
-
-    # Check if scheduling can be resumed (callback-triggered check)
-    async with scheduling_lock:
-        if scheduling_paused and should_resume_scheduling():
-            scheduling_paused = False
-            num_instances = instance_registry.get_active_count()
-            submitted = get_submitted_task_count()
-            resume_threshold = 8 * num_instances
-            logger.info(
-                f"Resuming scheduling (callback trigger): {submitted} tasks < {resume_threshold} threshold "
-                f"({num_instances} instances x 8)"
-            )
-            # Dispatch pending tasks
-            asyncio.create_task(dispatch_pending_tasks_batch())
 
     return TaskResultCallbackResponse(
         success=True,
@@ -1287,121 +1065,6 @@ def get_current_strategy_info() -> StrategyInfo:
 
 
 # ============================================================================
-# Scheduling Control Endpoints
-# ============================================================================
-
-
-@app.get("/scheduling/status")
-async def get_scheduling_status():
-    """
-    Get the current scheduling status and metrics.
-
-    Returns detailed information about:
-    - Whether scheduling is paused
-    - Current task counts
-    - Instance counts
-    - Pause/resume thresholds
-
-    Returns:
-        dict: Current scheduling status and metrics
-    """
-    num_instances = instance_registry.get_active_count()
-    submitted = get_submitted_task_count()
-    pending = task_registry.get_count_by_status(TaskStatus.PENDING)
-    running = task_registry.get_count_by_status(TaskStatus.RUNNING)
-
-    pause_threshold = 10 * num_instances if num_instances > 0 else 0
-    resume_threshold = 8 * num_instances if num_instances > 0 else 0
-
-    async with scheduling_lock:
-        is_paused = scheduling_paused
-
-    return {
-        "success": True,
-        "scheduling_paused": is_paused,
-        "metrics": {
-            "active_instances": num_instances,
-            "submitted_tasks": submitted,
-            "pending_tasks": pending,
-            "running_tasks": running,
-        },
-        "thresholds": {
-            "pause_threshold": pause_threshold,
-            "resume_threshold": resume_threshold,
-        },
-        "conditions": {
-            "all_instances_busy": check_all_instances_busy(),
-            "should_pause": should_pause_scheduling(),
-            "should_resume": should_resume_scheduling(),
-        },
-    }
-
-
-@app.post("/scheduling/pause")
-async def manual_pause_scheduling():
-    """
-    Manually pause task scheduling.
-
-    This will prevent new tasks from being dispatched until scheduling is resumed.
-    Tasks can still be submitted but will remain in PENDING state.
-
-    Returns:
-        dict: Operation result
-    """
-    global scheduling_paused
-
-    async with scheduling_lock:
-        if scheduling_paused:
-            return {
-                "success": False,
-                "message": "Scheduling is already paused",
-                "scheduling_paused": True,
-            }
-
-        scheduling_paused = True
-        logger.warning("Scheduling manually paused via API")
-
-    return {
-        "success": True,
-        "message": "Scheduling paused successfully",
-        "scheduling_paused": True,
-    }
-
-
-@app.post("/scheduling/resume")
-async def manual_resume_scheduling():
-    """
-    Manually resume task scheduling.
-
-    This will start dispatching pending tasks if scheduling was paused.
-
-    Returns:
-        dict: Operation result
-    """
-    global scheduling_paused
-
-    async with scheduling_lock:
-        if not scheduling_paused:
-            return {
-                "success": False,
-                "message": "Scheduling is not paused",
-                "scheduling_paused": False,
-            }
-
-        scheduling_paused = False
-        logger.info("Scheduling manually resumed via API")
-
-    # Dispatch pending tasks
-    asyncio.create_task(dispatch_pending_tasks_batch())
-
-    return {
-        "success": True,
-        "message": "Scheduling resumed successfully - dispatching pending tasks",
-        "scheduling_paused": False,
-    }
-
-
-# ============================================================================
 # Strategy Management Endpoints
 # ============================================================================
 
@@ -1571,10 +1234,6 @@ async def startup_event():
     logger.info(f"Configuration: {config}")
     logger.info(f"Scheduling strategy: {config.scheduling.default_strategy}")
     logger.info(f"Auto-training enabled: {config.training.enable_auto_training}")
-
-    # Start scheduling threshold monitor
-    asyncio.create_task(monitor_scheduling_threshold())
-    logger.info("Started scheduling threshold monitor")
 
     # TODO: Load persisted state if needed
     # TODO: Connect to external services
