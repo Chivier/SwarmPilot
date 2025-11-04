@@ -76,6 +76,7 @@ from .websocket_manager import ConnectionManager
 from .predictor_client import PredictorClient
 from .scheduler import get_strategy
 from .task_dispatcher import TaskDispatcher
+from .background_scheduler import BackgroundScheduler
 
 # Import logger configuration to initialize loguru
 from . import logger as logger_module  # noqa: F401
@@ -181,6 +182,17 @@ scheduling_strategy = get_strategy(
     instance_registry=instance_registry,
     target_quantile=config.scheduling.probabilistic_quantile,
 )
+
+# Initialize background scheduler for non-blocking task scheduling
+background_scheduler = BackgroundScheduler(
+    scheduling_strategy=scheduling_strategy,
+    task_registry=task_registry,
+    instance_registry=instance_registry,
+    task_dispatcher=task_dispatcher,
+    max_concurrent_scheduling=50,  # Limit concurrent scheduling operations
+)
+
+logger.info("Background scheduler initialized with max_concurrent=50")
 
 # ============================================================================
 # Instance Management Endpoints
@@ -500,16 +512,19 @@ async def submit_task(request: TaskSubmitRequest):
     """
     Submit a new task for execution.
 
+    This endpoint returns immediately after creating the task record.
+    Task scheduling (predictions, instance selection, dispatching) happens
+    in the background to prevent blocking API responses.
+
     Args:
         request: Task submission details
 
     Returns:
-        TaskSubmitResponse with task status and assigned instance
+        TaskSubmitResponse with task in PENDING status
 
     Raises:
         HTTPException 400: If task with this ID already exists
         HTTPException 404: If no available instance for the model_id
-        HTTPException 503: If predictor service errors
     """
     # 1. Validate that task doesn't already exist
     if await task_registry.get(request.task_id):
@@ -518,9 +533,9 @@ async def submit_task(request: TaskSubmitRequest):
             detail={"success": False, "error": "Task with this ID already exists"},
         )
 
-    # 2. Find available instances for the model (only ACTIVE instances)
+    # 2. Quick check that at least one instance exists for this model
+    # (Detailed scheduling happens in background)
     available_instances = await instance_registry.list_active(model_id=request.model_id)
-
     if not available_instances:
         raise HTTPException(
             status_code=404,
@@ -530,52 +545,18 @@ async def submit_task(request: TaskSubmitRequest):
             },
         )
 
-    # 3. Schedule task using strategy (handles predictions, selection, queue updates)
-    try:
-        schedule_result = await scheduling_strategy.schedule_task(
-            model_id=request.model_id,
-            metadata=request.metadata,
-            available_instances=available_instances,
-        )
-    except ValueError as e:
-        # Model not found or invalid metadata
-        error_msg = str(e)
-        if "No trained model" in error_msg or "Model not found" in error_msg:
-            raise HTTPException(
-                status_code=404,
-                detail={
-                    "success": False,
-                    "error": "No trained model available for this platform. "
-                    "Please train the model first or use experiment mode.",
-                },
-            )
-        else:
-            raise HTTPException(
-                status_code=400,
-                detail={"success": False, "error": f"Invalid task metadata: {error_msg}"},
-            )
-    except (ConnectionError, TimeoutError) as e:
-        # Predictor service errors
-        raise HTTPException(
-            status_code=503,
-            detail={
-                "success": False,
-                "error": f"Predictor service unavailable: {str(e)}",
-            },
-        )
-
-    # 4. Create task record with prediction information
-    selected_pred = schedule_result.selected_prediction
+    # 3. Create task record immediately with PENDING status
+    # (No assigned_instance yet - will be set by background scheduler)
     try:
         task_record = await task_registry.create_task(
             task_id=request.task_id,
             model_id=request.model_id,
             task_input=request.task_input,
             metadata=request.metadata,
-            assigned_instance=schedule_result.selected_instance_id,
-            predicted_time_ms=selected_pred.predicted_time_ms if selected_pred else None,
-            predicted_error_margin_ms=selected_pred.error_margin_ms if selected_pred else None,
-            predicted_quantiles=selected_pred.quantiles if selected_pred else None,
+            assigned_instance="",  # Empty until background scheduling completes
+            predicted_time_ms=None,
+            predicted_error_margin_ms=None,
+            predicted_quantiles=None,
         )
     except ValueError as e:
         logger.error(str(e))
@@ -584,23 +565,31 @@ async def submit_task(request: TaskSubmitRequest):
             detail={"success": False, "error": str(e)}
         )
 
-    # 5. Update instance stats
-    await instance_registry.increment_pending(schedule_result.selected_instance_id)
+    # 4. Submit to background scheduler (non-blocking)
+    # Background scheduler will:
+    # - Get predictions from predictor service
+    # - Select optimal instance
+    # - Update queue info (Monte Carlo sampling)
+    # - Assign instance to task
+    # - Dispatch task to instance
+    background_scheduler.schedule_task_background(
+        task_id=request.task_id,
+        model_id=request.model_id,
+        task_input=request.task_input,
+        metadata=request.metadata,
+    )
 
-    # 6. Dispatch task asynchronously
-    task_dispatcher.dispatch_task_async(request.task_id)
-
-    # 7. Return task info
+    # 5. Return immediately with PENDING status
     task_info = TaskInfo(
         task_id=task_record.task_id,
-        status=task_record.status,
-        assigned_instance=task_record.assigned_instance,
+        status=task_record.status,  # PENDING
+        assigned_instance=task_record.assigned_instance,  # Empty string initially
         submitted_at=task_record.submitted_at,
     )
 
     return TaskSubmitResponse(
         success=True,
-        message="Task submitted successfully",
+        message="Task submitted successfully and is being scheduled in background",
         task=task_info,
     )
 
@@ -1277,6 +1266,10 @@ async def shutdown_event():
     """Clean up resources on application shutdown."""
     logger.info("Scheduler service shutting down...")
 
+    # Shutdown background scheduler (wait for active tasks to complete)
+    await background_scheduler.shutdown()
+    logger.debug("Background scheduler shutdown complete")
+
     # Close HTTP clients
     await task_dispatcher.close()
     logger.debug("Task dispatcher closed")
@@ -1289,5 +1282,4 @@ async def shutdown_event():
     logger.debug("Predictor client closed")
 
     # TODO: Persist state if needed
-    # TODO: Cancel background tasks
     logger.info("Scheduler service shutdown complete")

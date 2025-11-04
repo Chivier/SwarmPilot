@@ -263,8 +263,8 @@ class TestTaskAssignmentWithDraining:
         from src import api
         from src.predictor_client import Prediction
 
-        # Mock the predict method on scheduling_strategy's predictor_client
-        # This is necessary because scheduling_strategy holds a reference to predictor_client
+        # Mock the predict method on background_scheduler's scheduling_strategy's predictor_client
+        # This is necessary because background_scheduler uses scheduling_strategy
         async def mock_predict(model_id, metadata, instances, prediction_type="quantile"):
             """Mock predict that returns predictions for all instances."""
             return [
@@ -277,15 +277,15 @@ class TestTaskAssignmentWithDraining:
                 for inst in instances
             ]
 
-        with patch.object(api.scheduling_strategy.predictor_client, 'predict', side_effect=mock_predict):
+        with patch.object(api.background_scheduler.scheduling_strategy.predictor_client, 'predict', side_effect=mock_predict):
             yield
 
     @pytest.fixture
     def mock_task_dispatcher(self):
         """Mock task dispatcher to avoid actual task dispatch."""
-        with patch('src.api.task_dispatcher') as mock_dispatcher:
-            mock_dispatcher.dispatch_task = AsyncMock()
-            yield mock_dispatcher
+        from src import api
+        with patch.object(api.background_scheduler.task_dispatcher, 'dispatch_task_async') as mock_dispatch:
+            yield mock_dispatch
 
     async def test_task_not_assigned_to_draining_instance(
         self, client, register_test_instance, mock_task_dispatcher
@@ -325,10 +325,19 @@ class TestTaskAssignmentWithDraining:
         assert task_response.status_code == 200
         data = task_response.json()
 
+        # Wait for background scheduling to complete
+        # Poll until background scheduler finishes
+        for _ in range(20):  # Wait up to 2 seconds
+            await asyncio.sleep(0.1)
+            stats = await api.background_scheduler.get_stats()
+            if stats["active_scheduling_tasks"] == 0:
+                break
+
         # Task should be assigned to inst-2 or inst-3, NOT inst-1
-        assigned_instance = data["task"]["assigned_instance"]
-        assert assigned_instance in ["inst-2", "inst-3"]
-        assert assigned_instance != "inst-1"
+        task = await api.task_registry.get("test-task-1")
+        assert task is not None
+        assert task.assigned_instance in ["inst-2", "inst-3"]
+        assert task.assigned_instance != "inst-1"
 
     async def test_no_available_instances_when_all_draining(
         self, client, register_test_instance, mock_task_dispatcher

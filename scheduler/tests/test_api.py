@@ -1293,8 +1293,15 @@ class TestTaskResultCallback:
 class TestTaskSubmissionErrors:
     """Additional tests for task submission error handling."""
 
-    def test_submit_task_predictor_service_unavailable(self, client):
-        """Test task submission when predictor service is unavailable."""
+    async def test_submit_task_predictor_service_unavailable(self, client):
+        """Test task submission when predictor service is unavailable.
+
+        With background scheduling, API returns 200 immediately.
+        Task will be marked as FAILED in background when predictor fails.
+        """
+        from src import api
+        import asyncio
+
         # Register instance
         client.post(
             "/instance/register",
@@ -1311,7 +1318,8 @@ class TestTaskSubmissionErrors:
         )
 
         # Mock predictor to raise connection error
-        with patch("src.api.scheduling_strategy.schedule_task",
+        # Need to mock the scheduling_strategy used by background_scheduler
+        with patch("src.api.background_scheduler.scheduling_strategy.schedule_task",
                    side_effect=ConnectionError("Predictor service unavailable")):
             response = client.post(
                 "/task/submit",
@@ -1323,10 +1331,36 @@ class TestTaskSubmissionErrors:
                 }
             )
 
-        assert response.status_code == 503
+        # API returns immediately with success
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["task"]["task_id"] == "task-1"
+        assert data["task"]["status"] == "pending"  # lowercase in API response
 
-    def test_submit_task_no_trained_model(self, client):
-        """Test task submission when no trained model is available."""
+        # Wait for background scheduling to complete and fail
+        # Poll until background scheduler finishes
+        for _ in range(20):  # Wait up to 2 seconds
+            await asyncio.sleep(0.1)
+            stats = await api.background_scheduler.get_stats()
+            if stats["active_scheduling_tasks"] == 0:
+                break
+
+        # Task should now be marked as FAILED
+        task = await api.task_registry.get("task-1")
+        assert task is not None
+        assert task.status.value == "failed"
+        assert "Scheduling failed" in task.error
+
+    async def test_submit_task_no_trained_model(self, client):
+        """Test task submission when no trained model is available.
+
+        With background scheduling, API returns 200 immediately.
+        Task will be marked as FAILED in background when model validation fails.
+        """
+        from src import api
+        import asyncio
+
         # Register instance
         client.post(
             "/instance/register",
@@ -1343,7 +1377,8 @@ class TestTaskSubmissionErrors:
         )
 
         # Mock predictor to raise ValueError about missing model
-        with patch("src.api.scheduling_strategy.schedule_task",
+        # Need to mock the scheduling_strategy used by background_scheduler
+        with patch("src.api.background_scheduler.scheduling_strategy.schedule_task",
                    side_effect=ValueError("No trained model available")):
             response = client.post(
                 "/task/submit",
@@ -1355,12 +1390,34 @@ class TestTaskSubmissionErrors:
                 }
             )
 
-        assert response.status_code == 404
+        # API returns immediately with success
+        assert response.status_code == 200
         data = response.json()
-        assert "No trained model" in data["detail"]["error"]
+        assert data["success"] is True
 
-    def test_submit_task_invalid_metadata(self, client):
-        """Test task submission with invalid metadata."""
+        # Wait for background scheduling to complete and fail
+        # Poll until background scheduler finishes
+        for _ in range(20):  # Wait up to 2 seconds
+            await asyncio.sleep(0.1)
+            stats = await api.background_scheduler.get_stats()
+            if stats["active_scheduling_tasks"] == 0:
+                break
+
+        # Task should now be marked as FAILED
+        task = await api.task_registry.get("task-1")
+        assert task is not None
+        assert task.status.value == "failed"
+        assert "Scheduling failed" in task.error
+
+    async def test_submit_task_invalid_metadata(self, client):
+        """Test task submission with invalid metadata.
+
+        With background scheduling, API returns 200 immediately.
+        Task will be marked as FAILED in background when metadata validation fails.
+        """
+        from src import api
+        import asyncio
+
         # Register instance
         client.post(
             "/instance/register",
@@ -1377,7 +1434,8 @@ class TestTaskSubmissionErrors:
         )
 
         # Mock predictor to raise ValueError about invalid metadata
-        with patch("src.api.scheduling_strategy.schedule_task",
+        # Need to mock the scheduling_strategy used by background_scheduler
+        with patch("src.api.background_scheduler.scheduling_strategy.schedule_task",
                    side_effect=ValueError("Invalid metadata format")):
             response = client.post(
                 "/task/submit",
@@ -1389,7 +1447,24 @@ class TestTaskSubmissionErrors:
                 }
             )
 
-        assert response.status_code == 400
+        # API returns immediately with success
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+
+        # Wait for background scheduling to complete and fail
+        # Poll until background scheduler finishes
+        for _ in range(20):  # Wait up to 2 seconds
+            await asyncio.sleep(0.1)
+            stats = await api.background_scheduler.get_stats()
+            if stats["active_scheduling_tasks"] == 0:
+                break
+
+        # Task should now be marked as FAILED
+        task = await api.task_registry.get("task-1")
+        assert task is not None
+        assert task.status.value == "failed"
+        assert "Scheduling failed" in task.error
 
 
 class TestProfilingMiddleware:
@@ -1767,7 +1842,8 @@ class TestRemainingErrorHandling:
         )
 
         # Mock to raise timeout error
-        with patch("src.api.scheduling_strategy.schedule_task",
+        # Need to mock the scheduling_strategy used by background_scheduler
+        with patch("src.api.background_scheduler.scheduling_strategy.schedule_task",
                    side_effect=TimeoutError("Request timeout")):
             response = client.post(
                 "/task/submit",
@@ -1779,7 +1855,8 @@ class TestRemainingErrorHandling:
                 }
             )
 
-        assert response.status_code == 503
+        # With background scheduling, API returns 200 immediately
+        assert response.status_code == 200
 
     def test_task_registry_create_error(self, client):
         """Test task submission with task registry error."""
@@ -2034,7 +2111,8 @@ class TestRemainingErrorHandling:
         )
 
         # Mock to raise ValueError with "Model not found"
-        with patch("src.api.scheduling_strategy.schedule_task",
+        # Need to mock the scheduling_strategy used by background_scheduler
+        with patch("src.api.background_scheduler.scheduling_strategy.schedule_task",
                    side_effect=ValueError("Model not found in database")):
             response = client.post(
                 "/task/submit",
@@ -2046,6 +2124,5 @@ class TestRemainingErrorHandling:
                 }
             )
 
-        assert response.status_code == 404
-        data = response.json()
-        assert "No trained model" in data["detail"]["error"]
+        # With background scheduling, API returns 200 immediately
+        assert response.status_code == 200
