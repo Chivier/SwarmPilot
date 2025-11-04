@@ -5,7 +5,7 @@ This module defines all API endpoints for instance management, task scheduling,
 and WebSocket connections for real-time task result delivery.
 """
 
-from typing import Optional, Callable
+from typing import Optional, Callable, List
 from datetime import datetime
 from contextlib import asynccontextmanager
 import asyncio
@@ -220,7 +220,6 @@ scheduling_strategy = get_strategy(
     strategy_name=config.scheduling.default_strategy,
     predictor_client=predictor_client,
     instance_registry=instance_registry,
-    target_quantile=config.scheduling.probabilistic_quantile,
 )
 
 # Initialize background scheduler for non-blocking task scheduling
@@ -1048,12 +1047,16 @@ async def websocket_get_result(websocket: WebSocket):
 # ============================================================================
 
 
-async def reinitialize_instance_queues(strategy_name: str) -> int:
+async def reinitialize_instance_queues(
+    strategy_name: str,
+    quantiles: Optional[List[float]] = None
+) -> int:
     """
     Reinitialize all instance queue info to match the new strategy type.
 
     Args:
         strategy_name: Name of the new scheduling strategy
+        quantiles: Custom quantiles for probabilistic strategy (optional)
 
     Returns:
         Number of instances whose queue info was reinitialized
@@ -1065,6 +1068,15 @@ async def reinitialize_instance_queues(strategy_name: str) -> int:
         queue_info_type = "probabilistic"
     else:  # round_robin
         queue_info_type = "probabilistic"  # Default to probabilistic for round_robin
+
+    # Update the global queue_info_type FIRST to ensure consistency
+    # This prevents race conditions where new instances might be registered
+    # during the reinitialization process
+    instance_registry._queue_info_type = queue_info_type
+
+    # Update stored quantiles configuration if custom quantiles provided
+    if quantiles:
+        instance_registry._quantiles = sorted(set(quantiles))
 
     # Get all registered instances
     all_instances = await instance_registry.list_all()
@@ -1080,17 +1092,24 @@ async def reinitialize_instance_queues(strategy_name: str) -> int:
             )
         else:  # probabilistic
             # Initialize with InstanceQueueProbabilistic
+            # Use custom quantiles if provided, otherwise use default
+            if quantiles:
+                # Ensure quantiles are sorted and unique
+                sorted_quantiles = sorted(set(quantiles))
+                values = [0.0] * len(sorted_quantiles)
+            else:
+                # Default quantiles for distribution representation
+                sorted_quantiles = [0.5, 0.9, 0.95, 0.99]
+                values = [0.0, 0.0, 0.0, 0.0]
+
             new_queue_info = InstanceQueueProbabilistic(
                 instance_id=instance.instance_id,
-                quantiles=[0.5, 0.9, 0.95, 0.99],
-                values=[0.0, 0.0, 0.0, 0.0],
+                quantiles=sorted_quantiles,
+                values=values,
             )
 
         # Update the queue info in the registry
         await instance_registry.update_queue_info(instance.instance_id, new_queue_info)
-
-    # Update the global queue_info_type
-    instance_registry._queue_info_type = queue_info_type
 
     return len(all_instances)
 
@@ -1110,8 +1129,7 @@ def get_current_strategy_info() -> StrategyInfo:
         parameters = {}
     elif strategy_class_name == "ProbabilisticSchedulingStrategy":
         strategy_name = "probabilistic"
-        # Extract target_quantile from strategy instance
-        parameters = {"target_quantile": scheduling_strategy.target_quantile}
+        parameters = {}
     elif strategy_class_name == "RoundRobinStrategy":
         strategy_name = "round_robin"
         parameters = {}
@@ -1185,7 +1203,10 @@ async def set_strategy_endpoint(request: StrategySetRequest):
     logger.info(f"Cleared {cleared_count} tasks before switching strategy")
 
     # Reinitialize instance queues to match the new strategy
-    reinitialized_count = await reinitialize_instance_queues(request.strategy_name.value)
+    reinitialized_count = await reinitialize_instance_queues(
+        request.strategy_name.value,
+        quantiles=request.quantiles
+    )
     logger.info(f"Reinitialized {reinitialized_count} instance queues for strategy '{request.strategy_name.value}'")
 
     # Create new scheduling strategy instance
@@ -1194,7 +1215,6 @@ async def set_strategy_endpoint(request: StrategySetRequest):
             strategy_name=request.strategy_name.value,
             predictor_client=predictor_client,
             instance_registry=instance_registry,
-            target_quantile=request.target_quantile,
         )
         logger.info(f"Created new scheduling strategy: {request.strategy_name.value}")
     except Exception as e:
@@ -1212,8 +1232,6 @@ async def set_strategy_endpoint(request: StrategySetRequest):
 
     # Update config (in-memory only, not persisted)
     config.scheduling.default_strategy = request.strategy_name.value
-    if request.strategy_name == StrategyType.PROBABILISTIC:
-        config.scheduling.probabilistic_quantile = request.target_quantile
 
     # Get the new strategy info
     strategy_info = get_current_strategy_info()

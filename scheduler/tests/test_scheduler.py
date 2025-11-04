@@ -409,7 +409,7 @@ class TestMinimumExpectedTimeStrategyUpdate:
 
     async def test_update_queue_wrong_type(self, mock_predictor_client, instance_registry):
         """Test update_queue with wrong queue info type."""
-        from src.model import InstanceQueueProbabilistic, Instance
+        from src.model import InstanceQueueProbabilistic, InstanceQueueExpectError, Instance
 
         strategy = MinimumExpectedTimeStrategy(mock_predictor_client, instance_registry)
 
@@ -441,9 +441,12 @@ class TestMinimumExpectedTimeStrategyUpdate:
         )
 
         await strategy.update_queue("inst-1", prediction)
-        # Queue should remain unchanged
+        # Queue should remain unchanged due to type mismatch
         queue = await instance_registry.get_queue_info("inst-1")
         assert isinstance(queue, InstanceQueueProbabilistic)
+        # Values should be unchanged
+        assert queue.quantiles == [0.5, 0.9]
+        assert queue.values == [100.0, 200.0]
 
 
 class TestProbabilisticStrategyUpdate:
@@ -540,7 +543,7 @@ class TestProbabilisticStrategyUpdate:
 
     async def test_update_queue_wrong_type(self, mock_predictor_client, instance_registry):
         """Test update_queue with wrong queue info type."""
-        from src.model import InstanceQueueExpectError, Instance
+        from src.model import InstanceQueueExpectError, InstanceQueueProbabilistic, Instance
 
         strategy = ProbabilisticSchedulingStrategy(mock_predictor_client, instance_registry)
 
@@ -572,9 +575,12 @@ class TestProbabilisticStrategyUpdate:
         )
 
         await strategy.update_queue("inst-1", prediction)
-        # Queue should remain unchanged
+        # Queue should remain unchanged due to type mismatch
         queue = await instance_registry.get_queue_info("inst-1")
         assert isinstance(queue, InstanceQueueExpectError)
+        # Values should be unchanged
+        assert queue.expected_time_ms == 100.0
+        assert queue.error_margin_ms == 10.0
 
     async def test_select_with_queue_info(self, mock_predictor_client, instance_registry):
         """Test selection considering queue information."""

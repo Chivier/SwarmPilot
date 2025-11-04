@@ -35,6 +35,8 @@ class InstanceRegistry:
         self._stats: Dict[str, InstanceStats] = {}
         self._lock = asyncio.Lock()
         self._queue_info_type = queue_info_type
+        # Store quantiles configuration for probabilistic queues
+        self._quantiles = [0.5, 0.9, 0.95, 0.99]  # Default quantiles
 
     async def register(self, instance: Instance) -> None:
         """
@@ -60,10 +62,12 @@ class InstanceRegistry:
                     error_margin_ms=0.0,
                 )
             else:  # Default to probabilistic
+                # Use stored quantiles configuration
+                values = [0.0] * len(self._quantiles)
                 self._queue_info[instance.instance_id] = InstanceQueueProbabilistic(
                     instance_id=instance.instance_id,
-                    quantiles=[0.5, 0.9, 0.95, 0.99],
-                    values=[0.0, 0.0, 0.0, 0.0],
+                    quantiles=self._quantiles.copy(),
+                    values=values,
                 )
 
             # Initialize statistics

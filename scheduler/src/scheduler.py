@@ -317,10 +317,19 @@ class MinimumExpectedTimeStrategy(SchedulingStrategy):
 
         current_queue = await self.instance_registry.get_queue_info(instance_id)
 
-        if not current_queue or not isinstance(current_queue, InstanceQueueExpectError):
+        if not current_queue:
+            # If no queue exists, initialize with correct type
+            current_queue = InstanceQueueExpectError(
+                instance_id=instance_id,
+                expected_time_ms=0.0,
+                error_margin_ms=0.0,
+            )
+        elif not isinstance(current_queue, InstanceQueueExpectError):
+            # Type mismatch - this shouldn't happen if strategy switch was done properly
             logger.warning(
                 f"Queue info type mismatch for {instance_id}: "
-                f"expected InstanceQueueExpectError, got {type(current_queue).__name__}"
+                f"expected InstanceQueueExpectError, got {type(current_queue).__name__}. "
+                f"This indicates the strategy switch didn't properly reinitialize queues. Skipping update."
             )
             return
 
@@ -361,7 +370,6 @@ class ProbabilisticSchedulingStrategy(SchedulingStrategy):
         self,
         predictor_client: "PredictorClient",
         instance_registry: "InstanceRegistry",
-        target_quantile: float = 0.9,
     ):
         """
         Initialize probabilistic strategy.
@@ -369,10 +377,8 @@ class ProbabilisticSchedulingStrategy(SchedulingStrategy):
         Args:
             predictor_client: Client for getting predictions
             instance_registry: Registry for instance and queue management
-            target_quantile: Quantile to optimize for (default 0.9 = 90th percentile)
         """
         super().__init__(predictor_client, instance_registry)
-        self.target_quantile = target_quantile
 
     def get_prediction_type(self) -> str:
         """Probabilistic strategy requires quantile predictions."""
@@ -458,10 +464,19 @@ class ProbabilisticSchedulingStrategy(SchedulingStrategy):
 
         current_queue = await self.instance_registry.get_queue_info(instance_id)
 
-        if not current_queue or not isinstance(current_queue, InstanceQueueProbabilistic):
+        if not current_queue:
+            # If no queue exists, initialize with correct type
+            current_queue = InstanceQueueProbabilistic(
+                instance_id=instance_id,
+                quantiles=[0.5, 0.9, 0.95, 0.99],
+                values=[0.0, 0.0, 0.0, 0.0],
+            )
+        elif not isinstance(current_queue, InstanceQueueProbabilistic):
+            # Type mismatch - this shouldn't happen if strategy switch was done properly
             logger.warning(
                 f"Queue info type mismatch for {instance_id}: "
-                f"expected InstanceQueueProbabilistic, got {type(current_queue).__name__}"
+                f"expected InstanceQueueProbabilistic, got {type(current_queue).__name__}. "
+                f"This indicates the strategy switch didn't properly reinitialize queues. Skipping update."
             )
             return
 
@@ -591,8 +606,7 @@ def get_strategy(
                       ("min_time", "probabilistic", "round_robin")
         predictor_client: Predictor client instance
         instance_registry: Instance registry instance
-        **kwargs: Additional keyword arguments passed to strategy constructor
-                 For probabilistic: target_quantile (default 0.9)
+        **kwargs: Additional keyword arguments (reserved for future use)
 
     Returns:
         Configured scheduling strategy instance
@@ -600,15 +614,9 @@ def get_strategy(
     if strategy_name == "min_time":
         return MinimumExpectedTimeStrategy(predictor_client, instance_registry)
     elif strategy_name == "probabilistic":
-        target_quantile = kwargs.get("target_quantile", 0.9)
-        return ProbabilisticSchedulingStrategy(
-            predictor_client, instance_registry, target_quantile
-        )
+        return ProbabilisticSchedulingStrategy(predictor_client, instance_registry)
     elif strategy_name == "round_robin":
         return RoundRobinStrategy(predictor_client, instance_registry)
     else:
         # Default to probabilistic
-        target_quantile = kwargs.get("target_quantile", 0.9)
-        return ProbabilisticSchedulingStrategy(
-            predictor_client, instance_registry
-        )
+        return ProbabilisticSchedulingStrategy(predictor_client, instance_registry)
