@@ -1796,7 +1796,7 @@ def main(num_workflows: int = 100, qps_a: float = 8.0, gqps: Optional[float] = N
             qps_a=QPS_A,
             gqps=gqps,
             warmup_ratio=warmup_ratio,
-            timeout_minutes=10
+            timeout_minutes=60
         )
         all_results.append(results)
 
