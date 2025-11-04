@@ -32,14 +32,14 @@ PARETO_MAX = 10.0
 PARETO_ALPHA = 1.5  # Shape parameter (smaller = more skewed/long-tail)
 
 # B task bimodal distribution parameters
-B_1ST_PEAK_MIN = 1.0
-B_1ST_PEAK_MAX = 3.0
-B_1ST_PEAK_MEAN = 2.0
-B_1ST_PEAK_STD = 0.4
+B_1ST_PEAK_MIN = 0.5
+B_1ST_PEAK_MAX = 1.5
+B_1ST_PEAK_MEAN = 1.0
+B_1ST_PEAK_STD = 0.2
 
-B_2ND_PEAK_MIN = 5.0
-B_2ND_PEAK_MAX = 8.0
-B_2ND_PEAK_MEAN = 6.5
+B_2ND_PEAK_MIN = 4.0
+B_2ND_PEAK_MAX = 6.0
+B_2ND_PEAK_MEAN = 4.0
 B_2ND_PEAK_STD = 0.4
 
 B_3RD_PEAK_MIN = 10
