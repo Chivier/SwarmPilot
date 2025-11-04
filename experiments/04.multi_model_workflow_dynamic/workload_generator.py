@@ -14,14 +14,14 @@ from dataclasses import dataclass
 
 
 # Bimodal distribution parameters (from exp01)
-LEFT_PEAK_MIN = 1.0
-LEFT_PEAK_MAX = 3.0
-LEFT_PEAK_MEAN = 2.0
+LEFT_PEAK_MIN = 0.5
+LEFT_PEAK_MAX = 0.7
+LEFT_PEAK_MEAN = 1.0
 LEFT_PEAK_STD = 0.4
 
-RIGHT_PEAK_MIN = 7.0
-RIGHT_PEAK_MAX = 10.0
-RIGHT_PEAK_MEAN = 8.5
+RIGHT_PEAK_MIN = 10.0
+RIGHT_PEAK_MAX = 15.0
+RIGHT_PEAK_MEAN = 20
 RIGHT_PEAK_STD = 0.6
 
 PEAK_RATIO = 0.5  # 50% left peak, 50% right peak
@@ -30,6 +30,19 @@ PEAK_RATIO = 0.5  # 50% left peak, 50% right peak
 PARETO_MIN = 1.0
 PARETO_MAX = 10.0
 PARETO_ALPHA = 1.5  # Shape parameter (smaller = more skewed/long-tail)
+
+# B task bimodal distribution parameters
+B_LEFT_PEAK_MIN = 1.0
+B_LEFT_PEAK_MAX = 3.0
+B_LEFT_PEAK_MEAN = 2.0
+B_LEFT_PEAK_STD = 0.4
+
+B_RIGHT_PEAK_MIN = 8.0
+B_RIGHT_PEAK_MAX = 12.0
+B_RIGHT_PEAK_MEAN = 10.0
+B_RIGHT_PEAK_STD = 0.6
+
+B_PEAK_RATIO = 0.5  # 50% left peak (2.0s), 50% right peak (10.0s)
 
 # Fanout distribution parameters
 FANOUT_MIN = 3  # Minimum number of B tasks per A task
@@ -169,6 +182,56 @@ def generate_pareto_distribution(num_tasks: int,
     return times.tolist(), config
 
 
+def generate_b_task_bimodal_distribution(num_tasks: int, seed: int = 42) -> tuple[List[float], WorkloadConfig]:
+    """
+    Generate B task execution times from a bimodal distribution.
+
+    The distribution has two peaks:
+    - Left peak: 1-3 seconds (mean=2.0s, std=0.4s)
+    - Right peak: 8-12 seconds (mean=10.0s, std=0.6s)
+    - Ratio: 50% left, 50% right
+
+    Args:
+        num_tasks: Number of B tasks to generate
+        seed: Random seed for reproducibility
+
+    Returns:
+        Tuple of (task_times, config)
+    """
+    np.random.seed(seed)
+
+    # Calculate number of tasks for each peak
+    num_left_peak = int(num_tasks * B_PEAK_RATIO)
+    num_right_peak = num_tasks - num_left_peak
+
+    # Generate left peak
+    left_times = np.random.normal(B_LEFT_PEAK_MEAN, B_LEFT_PEAK_STD, num_left_peak)
+    left_times = np.clip(left_times, B_LEFT_PEAK_MIN, B_LEFT_PEAK_MAX)
+
+    # Generate right peak
+    right_times = np.random.normal(B_RIGHT_PEAK_MEAN, B_RIGHT_PEAK_STD, num_right_peak)
+    right_times = np.clip(right_times, B_RIGHT_PEAK_MIN, B_RIGHT_PEAK_MAX)
+
+    # Combine and shuffle
+    times = np.concatenate([left_times, right_times])
+    np.random.shuffle(times)
+
+    # Calculate statistics
+    mean_time = float(np.mean(times))
+    std_time = float(np.std(times))
+
+    config = WorkloadConfig(
+        name="b_task_bimodal",
+        min_time=B_LEFT_PEAK_MIN,
+        max_time=B_RIGHT_PEAK_MAX,
+        mean_time=mean_time,
+        std_time=std_time,
+        description=f"B-task Bimodal: {B_PEAK_RATIO:.0%} at {B_LEFT_PEAK_MEAN}s, {1-B_PEAK_RATIO:.0%} at {B_RIGHT_PEAK_MEAN}s"
+    )
+
+    return times.tolist(), config
+
+
 def generate_fanout_distribution(num_workflows: int,
                                  min_fanout: int = FANOUT_MIN,
                                  max_fanout: int = FANOUT_MAX,
@@ -276,9 +339,13 @@ if __name__ == "__main__":
     print("Workload Generator Demo")
     print("=" * 60)
 
-    # Generate and display bimodal distribution
+    # Generate and display A task bimodal distribution
     bimodal_times, bimodal_config = generate_bimodal_distribution(args.num_tasks, args.seed)
     print_distribution_stats(bimodal_times, bimodal_config)
+
+    # Generate and display B task bimodal distribution
+    b_task_times, b_task_config = generate_b_task_bimodal_distribution(args.num_tasks, seed=args.seed)
+    print_distribution_stats(b_task_times, b_task_config)
 
     # Generate and display Pareto distribution
     pareto_times, pareto_config = generate_pareto_distribution(args.num_tasks, seed=args.seed)
