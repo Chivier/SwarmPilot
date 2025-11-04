@@ -358,7 +358,7 @@ class TestTaskAssignmentExclusion:
         # Verify both are gone
         assert await instance_registry.get("inst-1") is None
         assert await instance_registry.get("inst-2") is None
-        assert len(instance_registry.list_all()) == 0
+        assert len(await instance_registry.list_all()) == 0
 
     async def test_concurrent_drain_multiple_instances(self, instance_registry, sample_instances):
         """Test draining multiple instances concurrently."""

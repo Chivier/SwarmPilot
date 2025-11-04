@@ -105,7 +105,7 @@ class TestDrainEndpoint:
         from src import api
         from src.model import InstanceQueueExpectError
 
-        api.instance_registry.update_queue_info(
+        await api.instance_registry.update_queue_info(
             "inst-1",
             InstanceQueueExpectError(
                 instance_id="inst-1",
@@ -167,8 +167,8 @@ class TestDrainStatusEndpoint:
         register_test_instance("inst-1", 9001)
 
         # Add pending tasks
-        api.instance_registry.increment_pending("inst-1")
-        api.instance_registry.increment_pending("inst-1")
+        await api.instance_registry.increment_pending("inst-1")
+        await api.instance_registry.increment_pending("inst-1")
 
         # Start draining
         client.post("/instance/drain", json={"instance_id": "inst-1"})
@@ -236,7 +236,7 @@ class TestSafeRemoveEndpoint:
         register_test_instance("inst-1", 9001)
 
         # Add pending tasks
-        api.instance_registry.increment_pending("inst-1")
+        await api.instance_registry.increment_pending("inst-1")
 
         # Drain instance
         client.post("/instance/drain", json={"instance_id": "inst-1"})
@@ -301,7 +301,7 @@ class TestTaskAssignmentWithDraining:
 
         # Setup queue info for scheduling
         for inst_id in ["inst-1", "inst-2", "inst-3"]:
-            api.instance_registry.update_queue_info(
+            await api.instance_registry.update_queue_info(
                 inst_id,
                 InstanceQueueExpectError(
                     instance_id=inst_id,
@@ -364,7 +364,7 @@ class TestTaskAssignmentWithDraining:
         register_test_instance("inst-1", 9001)
 
         # Setup queue info
-        api.instance_registry.update_queue_info(
+        await api.instance_registry.update_queue_info(
             "inst-1",
             api.InstanceQueueExpectError(
                 instance_id="inst-1",
@@ -374,7 +374,7 @@ class TestTaskAssignmentWithDraining:
         )
 
         # Add pending task
-        api.instance_registry.increment_pending("inst-1")
+        await api.instance_registry.increment_pending("inst-1")
 
         # Drain instance
         client.post("/instance/drain", json={"instance_id": "inst-1"})
@@ -450,7 +450,7 @@ class TestCompleteRemovalWorkflow:
 
         # Setup queue info
         for inst_id in ["inst-1", "inst-2"]:
-            api.instance_registry.update_queue_info(
+            await api.instance_registry.update_queue_info(
                 inst_id,
                 InstanceQueueExpectError(
                     instance_id=inst_id,
@@ -460,8 +460,8 @@ class TestCompleteRemovalWorkflow:
             )
 
         # Step 2: Simulate inst-1 has pending tasks
-        api.instance_registry.increment_pending("inst-1")
-        api.instance_registry.increment_pending("inst-1")
+        await api.instance_registry.increment_pending("inst-1")
+        await api.instance_registry.increment_pending("inst-1")
 
         # Step 3: Drain inst-1
         drain_response = client.post("/instance/drain", json={"instance_id": "inst-1"})

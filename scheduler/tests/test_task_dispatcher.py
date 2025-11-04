@@ -523,8 +523,8 @@ class TestHandleTaskResult:
     ):
         """Test handling a completed task result."""
         # Setup
-        task_dispatcher.instance_registry.register(sample_instance)
-        task = task_dispatcher.task_registry.create_task(
+        await task_dispatcher.instance_registry.register(sample_instance)
+        task = await task_dispatcher.task_registry.create_task(
             task_id="task-1",
             model_id="model-1",
             task_input={"prompt": "test"},
@@ -564,8 +564,8 @@ class TestHandleTaskResult:
         mock_training_client.flush_if_ready = AsyncMock()
         task_dispatcher.training_client = mock_training_client
 
-        task_dispatcher.instance_registry.register(sample_instance)
-        task = task_dispatcher.task_registry.create_task(
+        await task_dispatcher.instance_registry.register(sample_instance)
+        task = await task_dispatcher.task_registry.create_task(
             task_id="task-1",
             model_id="model-1",
             task_input={},
@@ -598,7 +598,7 @@ class TestHandleTaskResult:
         """Test completion without training client (no errors)."""
         task_dispatcher.training_client = None
 
-        task_dispatcher.instance_registry.register(sample_instance)
+        await task_dispatcher.instance_registry.register(sample_instance)
         task_dispatcher.task_registry.create_task(
             task_id="task-1",
             model_id="model-1",
@@ -621,7 +621,7 @@ class TestHandleTaskResult:
         sample_instance
     ):
         """Test handling a failed task result."""
-        task_dispatcher.instance_registry.register(sample_instance)
+        await task_dispatcher.instance_registry.register(sample_instance)
         task_dispatcher.task_registry.create_task(
             task_id="task-1",
             model_id="model-1",
@@ -668,7 +668,7 @@ class TestHandleTaskResult:
         """Test that queue update is triggered on completion."""
         from src.model import InstanceQueueExpectError
 
-        task_dispatcher.instance_registry.register(sample_instance)
+        await task_dispatcher.instance_registry.register(sample_instance)
         task_dispatcher.instance_registry.update_queue_info(
             sample_instance.instance_id,
             InstanceQueueExpectError(
@@ -678,7 +678,7 @@ class TestHandleTaskResult:
             )
         )
 
-        task = task_dispatcher.task_registry.create_task(
+        task = await task_dispatcher.task_registry.create_task(
             task_id="task-1",
             model_id="model-1",
             task_input={},
@@ -717,7 +717,7 @@ class TestQueueUpdateOnCompletion:
         from src.model import InstanceQueueExpectError
 
         # Use task_dispatcher's instance_registry to ensure consistency
-        task_dispatcher.instance_registry.register(sample_instance)
+        await task_dispatcher.instance_registry.register(sample_instance)
         task_dispatcher.instance_registry.update_queue_info(
             sample_instance.instance_id,
             InstanceQueueExpectError(
@@ -749,7 +749,7 @@ class TestQueueUpdateOnCompletion:
         """Test that queue update ensures non-negative values."""
         from src.model import InstanceQueueExpectError
 
-        task_dispatcher.instance_registry.register(sample_instance)
+        await task_dispatcher.instance_registry.register(sample_instance)
         task_dispatcher.instance_registry.update_queue_info(
             sample_instance.instance_id,
             InstanceQueueExpectError(
@@ -779,7 +779,7 @@ class TestQueueUpdateOnCompletion:
         """Test updating Probabilistic queue with Monte Carlo."""
         from src.model import InstanceQueueProbabilistic
 
-        task_dispatcher.instance_registry.register(sample_instance)
+        await task_dispatcher.instance_registry.register(sample_instance)
         task_dispatcher.instance_registry.update_queue_info(
             sample_instance.instance_id,
             InstanceQueueProbabilistic(
@@ -813,7 +813,7 @@ class TestQueueUpdateOnCompletion:
         """Test Probabilistic queue update without quantiles (fallback)."""
         from src.model import InstanceQueueProbabilistic
 
-        task_dispatcher.instance_registry.register(sample_instance)
+        await task_dispatcher.instance_registry.register(sample_instance)
         task_dispatcher.instance_registry.update_queue_info(
             sample_instance.instance_id,
             InstanceQueueProbabilistic(
@@ -863,7 +863,7 @@ class TestQueueUpdateOnCompletion:
         """Test that update handles missing prediction data gracefully."""
         from src.model import InstanceQueueExpectError
 
-        task_dispatcher.instance_registry.register(sample_instance)
+        await task_dispatcher.instance_registry.register(sample_instance)
         task_dispatcher.instance_registry.update_queue_info(
             sample_instance.instance_id,
             InstanceQueueExpectError(

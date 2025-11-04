@@ -649,8 +649,7 @@ class TestSchedulingStrategyErrors:
 
         # Should raise ValueError
         with pytest.raises(ValueError, match="No trained model"):
-            import asyncio
-            asyncio.run(strategy.get_predictions("model-1", {}, instances))
+            await strategy.get_predictions("model-1", {}, instances)
 
     async def test_get_predictions_http_400_error(self, mock_predictor_client, instance_registry):
         """Test get_predictions with HTTP 400 error (invalid metadata)."""
@@ -680,8 +679,7 @@ class TestSchedulingStrategyErrors:
 
         # Should raise ValueError
         with pytest.raises(ValueError, match="Invalid task metadata"):
-            import asyncio
-            asyncio.run(strategy.get_predictions("model-1", {}, instances))
+            await strategy.get_predictions("model-1", {}, instances)
 
     async def test_get_predictions_http_500_error(self, mock_predictor_client, instance_registry):
         """Test get_predictions with HTTP 500 error (server error)."""
@@ -711,8 +709,7 @@ class TestSchedulingStrategyErrors:
 
         # Should raise ConnectionError
         with pytest.raises(ConnectionError, match="Predictor service error"):
-            import asyncio
-            asyncio.run(strategy.get_predictions("model-1", {}, instances))
+            await strategy.get_predictions("model-1", {}, instances)
 
     async def test_get_predictions_timeout_error(self, mock_predictor_client, instance_registry):
         """Test get_predictions with timeout error."""
@@ -735,8 +732,7 @@ class TestSchedulingStrategyErrors:
 
         # Should raise TimeoutError
         with pytest.raises(TimeoutError, match="Predictor service timeout"):
-            import asyncio
-            asyncio.run(strategy.get_predictions("model-1", {}, instances))
+            await strategy.get_predictions("model-1", {}, instances)
 
     async def test_get_predictions_connection_error(self, mock_predictor_client, instance_registry):
         """Test get_predictions with connection error."""
@@ -759,8 +755,7 @@ class TestSchedulingStrategyErrors:
 
         # Should raise ConnectionError
         with pytest.raises(ConnectionError, match="Predictor service unavailable"):
-            import asyncio
-            asyncio.run(strategy.get_predictions("model-1", {}, instances))
+            await strategy.get_predictions("model-1", {}, instances)
 
 
 class TestRoundRobinStrategyUpdate:

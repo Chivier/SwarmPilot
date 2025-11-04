@@ -352,7 +352,7 @@ class TestCountOperations:
             await instance_registry.register(instance)
 
         # Currently, active count = total count
-        assert await instance_registry.get_active_count() == instance_registry.get_total_count()
+        assert await instance_registry.get_active_count() == await instance_registry.get_total_count()
 
 
 """
