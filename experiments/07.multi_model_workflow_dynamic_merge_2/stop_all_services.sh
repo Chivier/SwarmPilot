@@ -107,7 +107,7 @@ pkill -f "sinstance start" 2>/dev/null && echo -e "${GREEN}Cleaned up instance p
 # Stop all Docker containers for sleep_model
 echo ""
 echo "Stopping Docker containers..."
-docker ps --filter "ancestor=sleep_model" -q | xargs -r docker stop 2>/dev/null && echo -e "${GREEN}Stopped Docker containers${NC}" || echo "No Docker containers found"
+docker stop $(docker ps -a --filter "name=sleep_model" -q) && docker rm $(docker ps -a --filter "name=sleep_model" -q)
 
 echo ""
 echo "========================================="

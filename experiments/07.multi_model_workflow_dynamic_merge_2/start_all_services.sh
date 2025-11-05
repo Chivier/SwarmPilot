@@ -33,6 +33,9 @@ usage() {
     exit 1
 }
 
+# enable python jit for better performance
+export PYTHON_JIT=1
+
 if [ $# -ge 1 ]; then
     if [[ "$1" == "-h" ]] || [[ "$1" == "--help" ]]; then
         usage
@@ -94,17 +97,17 @@ start_service() {
     nohup bash -c "$command" > "$log_file" 2>&1 &
 
     # Wait a moment for the process to start
-    sleep 2
+    sleep 10
 
     # Find the actual Python process PID by port number
     # Pattern: python3 (not uv) + src.cli start + --port parameter
-    local actual_pid=$(pgrep -f "python3.*src\.cli start.*--port $port" | head -1)
+    local actual_pid=$(pgrep -f "python.*src\.cli start.*--port $port" | head -1)
 
     # Retry a few times if not found immediately
     local retry=0
     while [ -z "$actual_pid" ] && [ $retry -lt 5 ]; do
         sleep 1
-        actual_pid=$(pgrep -f "python3.*src\.cli start.*--port $port" | head -1)
+        actual_pid=$(pgrep -f "python.*src\.cli start.*--port $port" | head -1)
         retry=$((retry + 1))
     done
 

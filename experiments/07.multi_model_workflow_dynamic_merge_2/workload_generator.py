@@ -8,10 +8,43 @@ Provides workload distributions for B1/B2 split workflow:
 3. Slow peak distribution (for B1 tasks) - right peak only (7-10s)
 4. Pareto long-tail distribution (from exp02/03)
 5. Fanout distribution (from exp06) - number of B tasks per A task
+
+Data Loading from Real Traces:
+- dr_boot: Task A left peak (boot times)
+- dr_summary_dict: Task A right peak (summary times), keyed by fanout
+- dr_query: Task B left peak (query times)
+- dr_criteria: Task B right peak (criteria evaluation times)
+
+Usage:
+    # Generate trace-based workloads from real data (default mode)
+    python workload_generator.py --num-workflows 100
+
+    # Or explicitly specify trace mode
+    python workload_generator.py --mode trace --num-workflows 100
+
+    # Generate synthetic workloads (original functionality)
+    python workload_generator.py --mode synthetic --num-workflows 100
+
+    # Generate both for comparison
+    python workload_generator.py --mode both --num-workflows 100
+
+    # Use in code:
+    from workload_generator import generate_workflow_from_traces
+
+    workflow, config = generate_workflow_from_traces(num_workflows=100, seed=42)
+    # Access workflow data:
+    # - workflow.a1_times: List of A1 (boot) times
+    # - workflow.a2_times: List of A2 (summary) times
+    # - workflow.b1_times: List of lists of B1 (query) times per workflow
+    # - workflow.b2_times: List of lists of B2 (criteria) times per workflow
+    # - workflow.fanout_values: List of fanout values per workflow
 """
 
 import numpy as np
-from typing import List
+import json
+import random
+from pathlib import Path
+from typing import List, Dict, Tuple
 from dataclasses import dataclass
 
 
@@ -36,6 +69,35 @@ PARETO_ALPHA = 1.5  # Shape parameter (smaller = more skewed/long-tail)
 # Fanout distribution parameters
 FANOUT_MIN = 3  # Minimum number of B tasks per A task
 FANOUT_MAX = 8  # Maximum number of B tasks per A task
+
+# Data directory path
+DATA_DIR = Path(__file__).parent / "data"
+
+
+def load_trace_data() -> Tuple[List[float], Dict[str, List[float]], List[float], List[float]]:
+    """
+    Load real trace data from JSON files.
+
+    Returns:
+        Tuple containing:
+        - dr_boot: List of boot times (Task A left peak)
+        - dr_summary_dict: Dict mapping fanout to summary times (Task A right peak)
+        - dr_query: List of query times (Task B left peak)
+        - dr_criteria: List of criteria evaluation times (Task B right peak)
+    """
+    with open(DATA_DIR / "dr_boot.json", "r") as f:
+        dr_boot = json.load(f)
+
+    with open(DATA_DIR / "dr_summary_dict.json", "r") as f:
+        dr_summary_dict = json.load(f)
+
+    with open(DATA_DIR / "dr_query.json", "r") as f:
+        dr_query = json.load(f)
+
+    with open(DATA_DIR / "dr_criteria.json", "r") as f:
+        dr_criteria = json.load(f)
+
+    return dr_boot, dr_summary_dict, dr_query, dr_criteria
 
 
 @dataclass
@@ -309,6 +371,172 @@ def print_distribution_stats(times: List[float], config: WorkloadConfig):
     print(f"  P99:    {np.percentile(times_array, 99):.3f}s")
 
 
+@dataclass
+class WorkflowWorkload:
+    """Configuration for a complete workflow workload."""
+    name: str
+    a1_times: List[float]  # Task A1 (boot) times
+    a2_times: List[float]  # Task A2 (summary) times
+    b1_times: List[List[float]]  # Task B1 (query) times for each workflow
+    b2_times: List[List[float]]  # Task B2 (criteria) times for each workflow
+    fanout_values: List[int]  # Number of B tasks for each workflow
+    description: str
+
+
+def generate_workflow_from_traces(
+    num_workflows: int,
+    seed: int = 42
+) -> Tuple[WorkflowWorkload, WorkloadConfig]:
+    """
+    Generate workflow workload data from real traces.
+
+    Process:
+    1. Load real trace data
+    2. Select a fanout from dr_summary_dict keys
+    3. For each workflow:
+       - Select one dr_boot value as A1 time
+       - Select fanout number of dr_query values as B1 times
+       - Select fanout number of dr_criteria values as B2 times
+       - Select one value from dr_summary_dict[fanout] as A2 time
+
+    Args:
+        num_workflows: Number of workflows to generate
+        seed: Random seed for reproducibility
+
+    Returns:
+        Tuple of (WorkflowWorkload, WorkloadConfig)
+    """
+    random.seed(seed)
+    np.random.seed(seed)
+
+    # Load trace data
+    dr_boot, dr_summary_dict, dr_query, dr_criteria = load_trace_data()
+
+    # Get available fanout values (keys of dr_summary_dict)
+    available_fanouts = [int(k) for k in dr_summary_dict.keys()]
+
+    # Generate data for each workflow
+    a1_times = []
+    a2_times = []
+    b1_times = []
+    b2_times = []
+    fanout_values = []
+
+    for _ in range(num_workflows):
+        # Select a fanout value
+        fanout = random.choice(available_fanouts)
+        fanout_values.append(fanout)
+
+        # Select A1 time from dr_boot
+        a1_time = random.choice(dr_boot)
+        a1_times.append(a1_time)
+
+        # Select fanout number of B1 times from dr_query
+        b1_workflow = random.sample(dr_query, fanout)
+        b1_times.append(b1_workflow)
+
+        # Select fanout number of B2 times from dr_criteria
+        b2_workflow = random.sample(dr_criteria, fanout)
+        b2_times.append(b2_workflow)
+
+        # Select A2 time from dr_summary_dict[fanout]
+        a2_time = random.choice(dr_summary_dict[str(fanout)])
+        a2_times.append(a2_time)
+
+    # Calculate statistics
+    all_a1 = np.array(a1_times)
+    all_a2 = np.array(a2_times)
+    all_b1 = np.array([t for workflow in b1_times for t in workflow])
+    all_b2 = np.array([t for workflow in b2_times for t in workflow])
+    all_fanouts = np.array(fanout_values)
+
+    workflow_workload = WorkflowWorkload(
+        name="trace_based_workflow",
+        a1_times=a1_times,
+        a2_times=a2_times,
+        b1_times=b1_times,
+        b2_times=b2_times,
+        fanout_values=fanout_values,
+        description=f"Workflow from real traces: {num_workflows} workflows, "
+                    f"A1 from dr_boot, A2 from dr_summary_dict, "
+                    f"B1 from dr_query, B2 from dr_criteria"
+    )
+
+    # Overall config for statistics
+    config = WorkloadConfig(
+        name="trace_based_workflow",
+        min_time=min(all_a1.min(), all_a2.min(), all_b1.min(), all_b2.min()),
+        max_time=max(all_a1.max(), all_a2.max(), all_b1.max(), all_b2.max()),
+        mean_time=(all_a1.mean() + all_a2.mean() + all_b1.mean() + all_b2.mean()) / 4,
+        std_time=(all_a1.std() + all_a2.std() + all_b1.std() + all_b2.std()) / 4,
+        description=f"Trace-based workflow: {num_workflows} workflows, "
+                    f"avg fanout={all_fanouts.mean():.1f}"
+    )
+
+    return workflow_workload, config
+
+
+def print_workflow_stats(workload: WorkflowWorkload):
+    """
+    Print detailed statistics about a workflow workload.
+
+    Args:
+        workload: WorkflowWorkload to analyze
+    """
+    a1_times = np.array(workload.a1_times)
+    a2_times = np.array(workload.a2_times)
+    all_b1 = np.array([t for workflow in workload.b1_times for t in workflow])
+    all_b2 = np.array([t for workflow in workload.b2_times for t in workflow])
+    fanouts = np.array(workload.fanout_values)
+
+    print(f"\nWorkflow: {workload.name}")
+    print(f"Description: {workload.description}")
+    print(f"\nA1 (Boot) Statistics:")
+    print(f"  Count:  {len(a1_times)}")
+    print(f"  Min:    {a1_times.min():.3f}s")
+    print(f"  Max:    {a1_times.max():.3f}s")
+    print(f"  Mean:   {a1_times.mean():.3f}s")
+    print(f"  Median: {np.median(a1_times):.3f}s")
+    print(f"  Std:    {a1_times.std():.3f}s")
+
+    print(f"\nA2 (Summary) Statistics:")
+    print(f"  Count:  {len(a2_times)}")
+    print(f"  Min:    {a2_times.min():.3f}s")
+    print(f"  Max:    {a2_times.max():.3f}s")
+    print(f"  Mean:   {a2_times.mean():.3f}s")
+    print(f"  Median: {np.median(a2_times):.3f}s")
+    print(f"  Std:    {a2_times.std():.3f}s")
+
+    print(f"\nB1 (Query) Statistics:")
+    print(f"  Count:  {len(all_b1)}")
+    print(f"  Min:    {all_b1.min():.3f}s")
+    print(f"  Max:    {all_b1.max():.3f}s")
+    print(f"  Mean:   {all_b1.mean():.3f}s")
+    print(f"  Median: {np.median(all_b1):.3f}s")
+    print(f"  Std:    {all_b1.std():.3f}s")
+
+    print(f"\nB2 (Criteria) Statistics:")
+    print(f"  Count:  {len(all_b2)}")
+    print(f"  Min:    {all_b2.min():.3f}s")
+    print(f"  Max:    {all_b2.max():.3f}s")
+    print(f"  Mean:   {all_b2.mean():.3f}s")
+    print(f"  Median: {np.median(all_b2):.3f}s")
+    print(f"  Std:    {all_b2.std():.3f}s")
+
+    print(f"\nFanout Distribution:")
+    print(f"  Min:    {fanouts.min()}")
+    print(f"  Max:    {fanouts.max()}")
+    print(f"  Mean:   {fanouts.mean():.2f}")
+    print(f"  Median: {np.median(fanouts):.2f}")
+    print(f"  Std:    {fanouts.std():.2f}")
+    print(f"  Total B tasks: {fanouts.sum()}")
+    print(f"\nDistribution:")
+    unique, counts = np.unique(fanouts, return_counts=True)
+    for value, count in zip(unique, counts):
+        percentage = (count / len(fanouts)) * 100
+        print(f"  Fanout {value}: {count} workflows ({percentage:.1f}%)")
+
+
 def print_fanout_stats(fanout_values: List[int], config: FanoutConfig):
     """
     Print detailed statistics about fanout distribution.
@@ -344,22 +572,48 @@ if __name__ == "__main__":
     parser.add_argument("--num-tasks", type=int, default=100, help="Number of tasks to generate")
     parser.add_argument("--num-workflows", type=int, default=100, help="Number of workflows for fanout")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
+    parser.add_argument("--mode", type=str, default="trace",
+                        choices=["synthetic", "trace", "both"],
+                        help="Generation mode: trace (from real data, default), synthetic (original), or both")
     args = parser.parse_args()
 
     print("=" * 60)
     print("Workload Generator Demo")
     print("=" * 60)
 
-    # Generate and display bimodal distribution
-    bimodal_times, bimodal_config = generate_bimodal_distribution(args.num_tasks, args.seed)
-    print_distribution_stats(bimodal_times, bimodal_config)
+    if args.mode in ["synthetic", "both"]:
+        print("\n" + "=" * 60)
+        print("SYNTHETIC WORKLOAD GENERATION")
+        print("=" * 60)
 
-    # Generate and display Pareto distribution
-    pareto_times, pareto_config = generate_pareto_distribution(args.num_tasks, seed=args.seed)
-    print_distribution_stats(pareto_times, pareto_config)
+        # Generate and display bimodal distribution
+        bimodal_times, bimodal_config = generate_bimodal_distribution(args.num_tasks, args.seed)
+        print_distribution_stats(bimodal_times, bimodal_config)
 
-    # Generate and display fanout distribution
-    fanout_values, fanout_config = generate_fanout_distribution(args.num_workflows, seed=args.seed)
-    print_fanout_stats(fanout_values, fanout_config)
+        # Generate and display Pareto distribution
+        pareto_times, pareto_config = generate_pareto_distribution(args.num_tasks, seed=args.seed)
+        print_distribution_stats(pareto_times, pareto_config)
+
+        # Generate and display fanout distribution
+        fanout_values, fanout_config = generate_fanout_distribution(args.num_workflows, seed=args.seed)
+        print_fanout_stats(fanout_values, fanout_config)
+
+    if args.mode in ["trace", "both"]:
+        print("\n" + "=" * 60)
+        print("TRACE-BASED WORKLOAD GENERATION")
+        print("=" * 60)
+
+        # Generate workflow from real traces
+        workflow_workload, workflow_config = generate_workflow_from_traces(
+            args.num_workflows, seed=args.seed
+        )
+        print_workflow_stats(workflow_workload)
+
+        print(f"\nOverall Config:")
+        print(f"  Name: {workflow_config.name}")
+        print(f"  Min time: {workflow_config.min_time:.3f}s")
+        print(f"  Max time: {workflow_config.max_time:.3f}s")
+        print(f"  Mean time: {workflow_config.mean_time:.3f}s")
+        print(f"  Std time: {workflow_config.std_time:.3f}s")
 
     print("\n" + "=" * 60)

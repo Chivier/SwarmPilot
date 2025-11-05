@@ -1909,6 +1909,10 @@ def clear_scheduler_tasks(scheduler_url: str):
 def set_scheduling_strategy(scheduler_url: str, strategy: str):
     """Set the scheduling strategy for a scheduler."""
     logger = logging.getLogger("Utils")
+    payload = {"strategy_name": strategy}
+    if "strategy" == "probabilistic":
+        payload["quantiles"] = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.99]
+
     try:
         response = requests.post(
             f"{scheduler_url}/strategy/set",
@@ -1940,7 +1944,7 @@ def generate_task_ids(num_workflows: int, fanout_values: List[int], strategy: st
     b1_task_ids_by_workflow = {}
     b2_task_ids_by_workflow = {}
 
-    for i in range(total_workflows):
+    for i in range(num_workflows):
         workflow_id = f"wf-{strategy}-{i:04d}"
 
         # A task ID
@@ -1973,6 +1977,70 @@ def generate_task_ids(num_workflows: int, fanout_values: List[int], strategy: st
 # Metrics Calculation
 # ============================================================================
 
+def merge_task_records(records: List[TaskRecord]) -> List[TaskRecord]:
+    """
+    Merge submit and completion records for the same task.
+
+    When a task is submitted, one record is created with submit_time.
+    When it completes, another record is created with complete_time/status.
+    This function merges them into complete records with both timestamps.
+
+    Args:
+        records: List of task records (mix of submit and completion records)
+
+    Returns:
+        List of merged task records
+    """
+    # Build lookup maps
+    submit_map = {}  # task_id -> submit record
+    complete_map = {}  # task_id -> completion record
+
+    for r in records:
+        if r.submit_time is not None and r.status is None:
+            # This is a submit record
+            submit_map[r.task_id] = r
+        elif r.complete_time is not None and r.status is not None:
+            # This is a completion record
+            complete_map[r.task_id] = r
+        elif r.submit_time is not None and r.complete_time is not None:
+            # This is already a merged record
+            complete_map[r.task_id] = r
+
+    # Merge records
+    merged = []
+    for task_id, complete_rec in complete_map.items():
+        if complete_rec.submit_time is None and task_id in submit_map:
+            # Need to merge submit_time from submit record
+            submit_rec = submit_map[task_id]
+            merged_rec = TaskRecord(
+                task_id=complete_rec.task_id,
+                workflow_id=complete_rec.workflow_id,
+                task_type=complete_rec.task_type,
+                sleep_time=complete_rec.sleep_time or submit_rec.sleep_time,
+                exp_runtime=complete_rec.exp_runtime or submit_rec.exp_runtime,
+                submit_time=submit_rec.submit_time,
+                assigned_instance=submit_rec.assigned_instance,
+                complete_time=complete_rec.complete_time,
+                status=complete_rec.status,
+                execution_time_ms=complete_rec.execution_time_ms,
+                result=complete_rec.result,
+                error=complete_rec.error,
+                b_index=complete_rec.b_index,
+                is_warmup=complete_rec.is_warmup or submit_rec.is_warmup
+            )
+            merged.append(merged_rec)
+        else:
+            # Already has submit_time or no submit record found
+            merged.append(complete_rec)
+
+    # Also include submit records that never completed
+    for task_id, submit_rec in submit_map.items():
+        if task_id not in complete_map:
+            merged.append(submit_rec)
+
+    return merged
+
+
 def calculate_task_metrics(records: List[TaskRecord], task_type: str) -> Dict:
     """
     Calculate metrics for a list of task records.
@@ -2001,9 +2069,12 @@ def calculate_task_metrics(records: List[TaskRecord], task_type: str) -> Dict:
             "p99_completion_time": 0.0
         }
 
+    # First merge submit and completion records
+    merged_records = merge_task_records(records)
+
     # Filter records by task type and exclude warmup tasks
-    filtered = [r for r in records if r.task_type == task_type and not r.is_warmup]
-    num_warmup = sum(1 for r in records if r.task_type == task_type and r.is_warmup)
+    filtered = [r for r in merged_records if r.task_type == task_type and not r.is_warmup]
+    num_warmup = sum(1 for r in merged_records if r.task_type == task_type and r.is_warmup)
 
     # Count statuses
     num_generated = len(filtered)
@@ -2149,6 +2220,86 @@ def print_metrics_summary(strategy: str, a_metrics: Dict, b_metrics: Dict, wf_me
         print(f"  Avg time:   {b_metrics['avg_completion_time']:.2f}s")
         print(f"  Median:     {b_metrics['median_completion_time']:.2f}s")
         print(f"  P95:        {b_metrics['p95_completion_time']:.2f}s")
+
+    print("\nWorkflows:")
+    print(f"  Completed:  {wf_metrics['num_completed']} (excl. {wf_metrics['num_warmup']} warmup)")
+    print(f"  Avg fanout: {wf_metrics['avg_fanout']:.1f} B tasks per A task")
+    if wf_metrics['avg_workflow_time'] > 0:
+        print(f"  Avg time:   {wf_metrics['avg_workflow_time']:.2f}s")
+        print(f"  Median:     {wf_metrics['median_workflow_time']:.2f}s")
+        print(f"  P95:        {wf_metrics['p95_workflow_time']:.2f}s")
+        print(f"  P99:        {wf_metrics['p99_workflow_time']:.2f}s")
+
+    print("\nFanout Distribution:")
+    for fanout, count in sorted(wf_metrics['fanout_distribution'].items()):
+        percentage = (count / wf_metrics['num_completed']) * 100 if wf_metrics['num_completed'] > 0 else 0
+        print(f"  {fanout} B tasks: {count} workflows ({percentage:.1f}%)")
+
+    print("=" * 80)
+
+
+def print_metrics_summary_exp07(
+    strategy: str,
+    a_metrics: Dict,
+    b1_metrics: Dict,
+    b2_metrics: Dict,
+    merge_metrics: Dict,
+    wf_metrics: Dict
+):
+    """
+    Print a summary of metrics for exp07 test run with B1/B2/merge split.
+
+    Args:
+        strategy: Strategy name
+        a_metrics: A task metrics
+        b1_metrics: B1 task metrics
+        b2_metrics: B2 task metrics
+        merge_metrics: Merge task metrics
+        wf_metrics: Workflow metrics
+    """
+    print("\n" + "=" * 80)
+    print(f"Results Summary: {strategy}")
+    print("=" * 80)
+
+    print("\nA Tasks:")
+    print(f"  Generated:  {a_metrics['num_generated']} (excl. {a_metrics['num_warmup']} warmup)")
+    print(f"  Submitted:  {a_metrics['num_submitted']}")
+    print(f"  Completed:  {a_metrics['num_completed']}")
+    print(f"  Failed:     {a_metrics['num_failed']}")
+    if a_metrics['avg_completion_time'] > 0:
+        print(f"  Avg time:   {a_metrics['avg_completion_time']:.2f}s")
+        print(f"  Median:     {a_metrics['median_completion_time']:.2f}s")
+        print(f"  P95:        {a_metrics['p95_completion_time']:.2f}s")
+
+    print("\nB1 Tasks:")
+    print(f"  Generated:  {b1_metrics['num_generated']} (excl. {b1_metrics['num_warmup']} warmup)")
+    print(f"  Submitted:  {b1_metrics['num_submitted']}")
+    print(f"  Completed:  {b1_metrics['num_completed']}")
+    print(f"  Failed:     {b1_metrics['num_failed']}")
+    if b1_metrics['avg_completion_time'] > 0:
+        print(f"  Avg time:   {b1_metrics['avg_completion_time']:.2f}s")
+        print(f"  Median:     {b1_metrics['median_completion_time']:.2f}s")
+        print(f"  P95:        {b1_metrics['p95_completion_time']:.2f}s")
+
+    print("\nB2 Tasks:")
+    print(f"  Generated:  {b2_metrics['num_generated']} (excl. {b2_metrics['num_warmup']} warmup)")
+    print(f"  Submitted:  {b2_metrics['num_submitted']}")
+    print(f"  Completed:  {b2_metrics['num_completed']}")
+    print(f"  Failed:     {b2_metrics['num_failed']}")
+    if b2_metrics['avg_completion_time'] > 0:
+        print(f"  Avg time:   {b2_metrics['avg_completion_time']:.2f}s")
+        print(f"  Median:     {b2_metrics['median_completion_time']:.2f}s")
+        print(f"  P95:        {b2_metrics['p95_completion_time']:.2f}s")
+
+    print("\nMerge Tasks:")
+    print(f"  Generated:  {merge_metrics['num_generated']} (excl. {merge_metrics['num_warmup']} warmup)")
+    print(f"  Submitted:  {merge_metrics['num_submitted']}")
+    print(f"  Completed:  {merge_metrics['num_completed']}")
+    print(f"  Failed:     {merge_metrics['num_failed']}")
+    if merge_metrics['avg_completion_time'] > 0:
+        print(f"  Avg time:   {merge_metrics['avg_completion_time']:.2f}s")
+        print(f"  Median:     {merge_metrics['median_completion_time']:.2f}s")
+        print(f"  P95:        {merge_metrics['p95_completion_time']:.2f}s")
 
     print("\nWorkflows:")
     print(f"  Completed:  {wf_metrics['num_completed']} (excl. {wf_metrics['num_warmup']} warmup)")
@@ -2448,9 +2599,15 @@ def test_strategy_workflow(
 
     # Step 10: Start Thread 7 (Workflow Monitor)
     logger.info("Step 10: Starting Thread 7 (Workflow Monitor)")
+    # In continuous mode, only wait for target workflows + warmup
+    if continuous_mode and target_workflows is not None:
+        expected_to_complete = num_warmup_workflows + target_workflows
+        logger.info(f"Continuous mode: waiting for {expected_to_complete} workflows ({num_warmup_workflows} warmup + {target_workflows} target)")
+    else:
+        expected_to_complete = total_workflows
     monitor = WorkflowMonitor(
         completion_queue=completion_queue,
-        expected_workflows=total_workflows
+        expected_workflows=expected_to_complete
     )
     monitor.start()
 
@@ -2549,17 +2706,11 @@ def test_strategy_workflow(
     if continuous_mode:
         from common import calculate_makespan, print_continuous_mode_summary
         makespan_metrics = calculate_makespan(monitor.completed_workflows)
-        # For B1/B2 split, we combine B1 and B2 metrics for the summary
-        combined_b_metrics = {
-            "total": b1_metrics["total"] + b2_metrics["total"],
-            "successful": b1_metrics["successful"] + b2_metrics["successful"],
-            "failed": b1_metrics["failed"] + b2_metrics["failed"]
-        }
-        print_continuous_mode_summary(strategy, makespan_metrics, a_metrics, combined_b_metrics, wf_metrics)
+        # For experiment 07 with B1/B2 split, pass all metrics separately
+        print_continuous_mode_summary(strategy, makespan_metrics, a_metrics, b1_metrics, b2_metrics, merge_metrics, wf_metrics)
     else:
-        # Note: print_metrics_summary expects (a, b, wf), but exp07 has b1/b2 split
-        # For now, we'll pass b1_metrics as the "b" metric
-        print_metrics_summary(strategy, a_metrics, b1_metrics, wf_metrics)
+        # Use exp07-specific print function that supports B1/B2/merge split
+        print_metrics_summary_exp07(strategy, a_metrics, b1_metrics, b2_metrics, merge_metrics, wf_metrics)
 
     # Calculate actual QPS
     actual_qps = 0.0
@@ -2807,6 +2958,12 @@ if __name__ == "__main__":
         help="Warmup task ratio (0.0-1.0). E.g., 0.2 means 20%% warmup tasks before actual workload. Warmup tasks are excluded from statistics."
     )
 
+    parser.add_argument(
+        "--continuous",
+        action="store_true",
+        help="Enable continuous request mode. In this mode, tasks are submitted continuously at target QPS until warmup + num_workflows tasks complete. Statistics are calculated only for the first num_workflows (excluding warmup)."
+    )
+
     args = parser.parse_args()
 
     main(
@@ -2815,5 +2972,6 @@ if __name__ == "__main__":
         seed=args.seed,
         strategies=args.strategies,
         gqps=args.gqps,
-        warmup_ratio=args.warmup
+        warmup_ratio=args.warmup,
+        continuous_mode=args.continuous
     )
