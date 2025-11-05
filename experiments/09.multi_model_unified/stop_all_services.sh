@@ -107,13 +107,7 @@ pkill -f "instance.*src.cli start" 2>/dev/null && echo -e "${GREEN}Cleaned up in
 # Stop and remove all Docker containers for sleep_model
 echo ""
 echo "Stopping and removing Docker containers..."
-sleep_model_containers=$(docker ps -a --filter "ancestor=sleep_model" -q)
-if [ -n "$sleep_model_containers" ]; then
-    docker stop $sleep_model_containers 2>/dev/null && docker rm $sleep_model_containers 2>/dev/null
-    echo -e "${GREEN}Docker containers cleaned up${NC}"
-else
-    echo "No sleep_model containers found"
-fi
+docker stop $(docker ps -a --filter "name=sleep_model" -q) && docker rm $(docker ps -a --filter "name=sleep_model" -q)
 
 echo ""
 echo "=========================================="
