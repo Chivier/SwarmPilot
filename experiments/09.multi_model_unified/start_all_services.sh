@@ -118,14 +118,14 @@ start_service() {
     echo -e "${GREEN}Started $name (PID: $actual_pid, Port: $port)${NC}"
 }
 
-echo "========================================="
-echo "Starting 02.multi_model_no_dep Experiment"
-echo "========================================="
+echo "=========================================="
+echo "Starting 09.multi_model_unified Experiment"
+echo "=========================================="
 echo -e "${BLUE}Configuration:${NC}"
 echo "  Group A: $N1 instances (Scheduler A on port $SCHEDULER_A_PORT)"
 echo "  Group B: $N2 instances (Scheduler B on port $SCHEDULER_B_PORT)"
 echo "  Total: $((N1 + N2)) instances"
-echo "========================================="
+echo "=========================================="
 
 # Pre-flight: Clean up any existing Docker containers
 echo ""
@@ -350,9 +350,9 @@ echo -e "${GREEN}Group B model starts completed${NC}"
 
 # Final status
 echo ""
-echo "========================================="
+echo "=========================================="
 echo -e "${GREEN}All services started successfully!${NC}"
-echo "========================================="
+echo "=========================================="
 echo ""
 echo "Service Status:"
 echo "  Predictor:    http://localhost:$PREDICTOR_PORT"

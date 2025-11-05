@@ -9,9 +9,9 @@ RED='\033[0;31m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-echo "========================================="
-echo "Stopping 02.multi_model_no_dep Experiment"
-echo "========================================="
+echo "=========================================="
+echo "Stopping 09.multi_model_unified Experiment"
+echo "=========================================="
 
 # Function to stop a service by PID file
 stop_service() {
@@ -100,18 +100,23 @@ fi
 # Clean up any remaining processes (fallback)
 echo ""
 echo "Cleaning up any remaining processes..."
-pkill -f "spredictor start" 2>/dev/null && echo -e "${GREEN}Cleaned up predictor processes${NC}" || echo "No predictor processes found"
-pkill -f "sscheduler start" 2>/dev/null && echo -e "${GREEN}Cleaned up scheduler processes${NC}" || echo "No scheduler processes found"
-pkill -f "sinstance start" 2>/dev/null && echo -e "${GREEN}Cleaned up instance processes${NC}" || echo "No instance processes found"
+pkill -f "predictor.*src.cli start" 2>/dev/null && echo -e "${GREEN}Cleaned up predictor processes${NC}" || echo "No predictor processes found"
+pkill -f "scheduler.*src.cli start" 2>/dev/null && echo -e "${GREEN}Cleaned up scheduler processes${NC}" || echo "No scheduler processes found"
+pkill -f "instance.*src.cli start" 2>/dev/null && echo -e "${GREEN}Cleaned up instance processes${NC}" || echo "No instance processes found"
 
 # Stop and remove all Docker containers for sleep_model
 echo ""
 echo "Stopping and removing Docker containers..."
-docker stop $(docker ps -a --filter "name=sleep_model" -q) && docker rm $(docker ps -a --filter "name=sleep_model" -q)
-
+sleep_model_containers=$(docker ps -a --filter "ancestor=sleep_model" -q)
+if [ -n "$sleep_model_containers" ]; then
+    docker stop $sleep_model_containers 2>/dev/null && docker rm $sleep_model_containers 2>/dev/null
+    echo -e "${GREEN}Docker containers cleaned up${NC}"
+else
+    echo "No sleep_model containers found"
+fi
 
 echo ""
-echo "========================================="
+echo "=========================================="
 echo -e "${GREEN}All services stopped successfully!${NC}"
-echo "========================================="
+echo "=========================================="
 echo ""
