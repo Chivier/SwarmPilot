@@ -60,14 +60,14 @@ EXPERIMENT_MAP = {
     "06-dr_simple": {
         "name": "06-dr_simple (1→n→1 merge)",
         "dir": "06.multi_model_workflow_dynamic_merge",
-        "module": "test_dynamic_workflow_merge",
+        "module": "test_dynamic_workflow",
         "description": "1-to-n-to-1 with merge task (6 threads)",
         "threads": 6
     },
     "07-dr": {
         "name": "07-dr (1→n→n→1 B1/B2)",
         "dir": "07.multi_model_workflow_dynamic_merge_2",
-        "module": "test_dynamic_workflow_merge_2",
+        "module": "test_dynamic_workflow",
         "description": "1-to-n-to-n-to-1 with B1/B2 split and merge (7 threads)",
         "threads": 7
     }
@@ -136,7 +136,8 @@ def run_experiment(
     gqps: Optional[float],
     warmup: float,
     seed: int,
-    strategies: List[str]
+    strategies: List[str],
+    continuous: bool = False
 ):
     """
     Run a specific experiment.
@@ -149,6 +150,7 @@ def run_experiment(
         warmup: Warmup task ratio
         seed: Random seed
         strategies: List of scheduling strategies to test
+        continuous: Enable continuous request mode
     """
     experiment_config = EXPERIMENT_MAP[experiment_key]
 
@@ -156,6 +158,8 @@ def run_experiment(
     logger.info(f"Starting Experiment: {experiment_config['name']}")
     logger.info(f"Description: {experiment_config['description']}")
     logger.info(f"Threads: {experiment_config['threads']}")
+    if continuous:
+        logger.info("Mode: CONTINUOUS REQUEST (submits 2*num_workflows, tracks first num_workflows)")
     logger.info("=" * 80)
 
     try:
@@ -166,15 +170,29 @@ def run_experiment(
         if not hasattr(module, 'main'):
             raise AttributeError(f"Experiment module does not have a 'main' function")
 
-        # Call the experiment's main function with provided arguments
-        module.main(
-            num_workflows=num_workflows,
-            qps_a=qps,
-            gqps=gqps,
-            warmup_ratio=warmup,
-            seed=seed,
-            strategies=strategies
-        )
+        if continuous:
+            # Use continuous wrapper
+            from continuous_wrapper import run_experiment_continuous
+            run_experiment_continuous(
+                experiment_module=module,
+                experiment_key=experiment_key,
+                num_workflows=num_workflows,
+                qps=qps,
+                gqps=gqps,
+                warmup=warmup,
+                seed=seed,
+                strategies=strategies
+            )
+        else:
+            # Call the experiment's main function with provided arguments
+            module.main(
+                num_workflows=num_workflows,
+                qps_a=qps,
+                gqps=gqps,
+                warmup_ratio=warmup,
+                seed=seed,
+                strategies=strategies
+            )
 
         logger.info(f"Experiment {experiment_config['name']} completed successfully")
 
@@ -189,7 +207,8 @@ def run_all_experiments(
     gqps: Optional[float],
     warmup: float,
     seed: int,
-    strategies: List[str]
+    strategies: List[str],
+    continuous: bool = False
 ):
     """
     Run all experiments sequentially.
@@ -201,9 +220,12 @@ def run_all_experiments(
         warmup: Warmup task ratio
         seed: Random seed
         strategies: List of scheduling strategies to test
+        continuous: Enable continuous request mode
     """
     logger.info("=" * 80)
     logger.info("Running ALL Experiments (04-ocr, 05-t2vid, 06-dr_simple, 07-dr)")
+    if continuous:
+        logger.info("Mode: CONTINUOUS REQUEST")
     logger.info("=" * 80)
 
     experiment_keys = ["04-ocr", "05-t2vid", "06-dr_simple", "07-dr"]
@@ -219,7 +241,8 @@ def run_all_experiments(
                 gqps=gqps,
                 warmup=warmup,
                 seed=seed,
-                strategies=strategies
+                strategies=strategies,
+                continuous=continuous
             )
 
             # Brief pause between experiments
@@ -312,6 +335,12 @@ Examples:
         help="Scheduling strategies to test (default: all three)"
     )
 
+    parser.add_argument(
+        "--continuous",
+        action="store_true",
+        help="Enable continuous request mode (submits 2*num_workflows, tracks first num_workflows, force clears schedulers)"
+    )
+
     args = parser.parse_args()
 
     # Print configuration
@@ -326,6 +355,8 @@ Examples:
     logger.info(f"  Warmup Ratio:  {args.warmup}")
     logger.info(f"  Random Seed:   {args.seed}")
     logger.info(f"  Strategies:    {', '.join(args.strategies)}")
+    if args.continuous:
+        logger.info(f"  Mode:          CONTINUOUS (2x workflows, track first half)")
     logger.info("=" * 80)
 
     # Run the selected experiment(s)
@@ -337,7 +368,8 @@ Examples:
                 gqps=args.gqps,
                 warmup=args.warmup,
                 seed=args.seed,
-                strategies=args.strategies
+                strategies=args.strategies,
+                continuous=args.continuous
             )
         else:
             run_experiment(
@@ -347,7 +379,8 @@ Examples:
                 gqps=args.gqps,
                 warmup=args.warmup,
                 seed=args.seed,
-                strategies=args.strategies
+                strategies=args.strategies,
+                continuous=args.continuous
             )
 
     except KeyboardInterrupt:

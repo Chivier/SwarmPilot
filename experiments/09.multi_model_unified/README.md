@@ -144,6 +144,114 @@ python unified_workflow.py --experiment all \
 ./stop_all_services.sh
 ```
 
+## Continuous Request Mode
+
+### Overview
+
+Continuous request mode is a specialized testing mode that simulates continuous task submission while tracking a specific number of target workflows for statistics. This mode is useful for:
+- Testing system behavior under sustained load
+- Measuring makespan (end-to-end execution time)
+- Evaluating scheduler performance with overflow tasks
+
+### How It Works
+
+1. **Task Generation**: Generates `2 * num_workflows` tasks
+2. **Target Tracking**: Only the first `num_workflows` (non-warmup) tasks are tracked for statistics
+3. **Overflow Tasks**: The remaining `num_workflows` tasks are submitted but excluded from metrics
+4. **Force Cleanup**: After target workflows complete, waits 5 seconds then force-clears all schedulers
+
+### Usage
+
+```bash
+# Run single experiment in continuous mode
+python unified_workflow.py --experiment 04-ocr --continuous --num-workflows 100
+
+# Run with warmup tasks
+python unified_workflow.py --experiment 05-t2vid --continuous \
+    --num-workflows 100 \
+    --warmup 0.2
+
+# Run all experiments in continuous mode
+python unified_workflow.py --experiment all --continuous \
+    --num-workflows 50 \
+    --qps 10.0
+```
+
+### Output Metrics (Continuous Mode)
+
+When running in continuous mode, the following additional metrics are displayed:
+
+#### Makespan
+- **Total time**: From first target workflow submission to last target workflow completion
+- **Timestamps**: Exact submission and completion timestamps
+
+#### Workflow Counts
+- **Total workflows submitted**: 2 * num_workflows + warmup
+- **Warmup workflows**: Excluded from statistics
+- **Target workflows**: First num_workflows tracked for metrics
+- **Overflow workflows**: Remaining num_workflows submitted but not tracked
+
+#### Per-Model Statistics
+- **A Model (Scheduler A)**: Average, P95, P99 execution times
+- **B Model (Scheduler B)**: Average, P95, P99 execution times
+
+#### Workflow Statistics
+- **Target workflows only**: Average, Median, P95, P99 workflow times
+- Fanout distribution for target workflows
+
+### Example Output
+
+```
+================================================================================
+Continuous Request Mode Results: min_time
+================================================================================
+
+Makespan:
+  Total time (first target → last target):  125.43s
+  First target workflow submitted at:        14:23:15.123
+  Last target workflow completed at:         14:25:20.553
+
+Workflow Counts:
+  Total workflows submitted:     220
+  Warmup workflows:              20
+  Target workflows (tracked):    100
+  Overflow workflows (extra):    100
+
+A Model Tasks (Scheduler A):
+  Completed:  220
+  Failed:     0
+  Avg time:   2.45s
+  P95:        9.12s
+  P99:        9.87s
+
+B Model Tasks (Scheduler B):
+  Completed:  1210
+  Failed:     0
+  Avg time:   5.18s
+  P95:        9.45s
+  P99:        9.92s
+
+Target Workflows (First 100 non-warmup):
+  Avg fanout: 5.5 B tasks per A task
+  Avg time:   11.23s
+  Median:     10.87s
+  P95:        18.45s
+  P99:        19.12s
+
+Overflow Workflows: 100 workflows submitted but not tracked in statistics
+================================================================================
+```
+
+### Key Differences from Standard Mode
+
+| Aspect | Standard Mode | Continuous Mode |
+|--------|--------------|-----------------|
+| Tasks Generated | `num_workflows` | `2 * num_workflows` |
+| All Tasks Tracked | ✅ Yes | ❌ No, only first num_workflows |
+| Scheduler Cleanup | Manual | ✅ Automatic (5s delay) |
+| Makespan Metric | ❌ Not calculated | ✅ Calculated |
+| Per-Model Stats | ❌ Combined | ✅ Separate A/B stats |
+
 ## Command-Line Arguments
 
 | Argument | Type | Default | Description |
@@ -155,6 +263,7 @@ python unified_workflow.py --experiment all \
 | `--warmup` | float | 0.0 | Warmup task ratio (0.0-1.0), excluded from statistics |
 | `--seed` | int | 42 | Random seed for reproducibility |
 | `--strategies` | list | all three | Scheduling strategies: `min_time`, `round_robin`, `probabilistic` |
+| `--continuous` | flag | False | Enable continuous request mode (submits 2*num_workflows, tracks first num_workflows) |
 
 ## Output
 
