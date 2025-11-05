@@ -103,6 +103,38 @@ swarmpilot-refresh/
 └── pyproject.toml      # Metapackage configuration
 ```
 
+## Experiments
+
+### Basic Experiments: Verify Installation
+
+Exp. 01, 02, 03
+
+### Scheduler Experiments
+
+Exp. 09 (Universial Entrance for 04~07)  
+
+Cluster Config: static, A = m, B = n, m << n  
+Example Config: m = 8, n = 120
+```
+Exp. 04:   -> B
+         A -> B
+           -> B
+
+
+Exp. 05: A -> B -> B -> B
+
+
+Exp. 06:   -> B -> 
+         A -> B -> A
+           -> B ->
+
+
+Exp. 07:   -> B1 -> B2 -> 
+         A -> B1 -> B2 -> A
+           -> B1 -> B2 ->
+```       
+
+
 ## License
 
 TBD
