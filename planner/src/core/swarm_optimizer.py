@@ -264,6 +264,7 @@ class SimulatedAnnealingOptimizer(SwarmOptimizer):
         if -1 in self.initial:
             logger.info("检测到初始状态包含 -1 (未部署), 自动生成初始部署方案")
             current_deployment = self.generate_initial_deployment()
+            self.initial = current_deployment.copy()
         else:
             current_deployment = self.initial.copy()
 
