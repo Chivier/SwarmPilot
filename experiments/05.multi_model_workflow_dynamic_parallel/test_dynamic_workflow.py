@@ -67,6 +67,7 @@ class WorkflowTaskData:
     task_type: str  # "A" or "B"
     sleep_time: float
     exp_runtime: float  # Expected runtime in milliseconds
+    is_warmup: bool = False  # Whether this is a warmup task
 
 
 @dataclass
@@ -91,6 +92,9 @@ class TaskRecord:
     result: Optional[Dict] = None
     error: Optional[str] = None
 
+    # Warmup flag
+    is_warmup: bool = False
+
 
 @dataclass
 class WorkflowState:
@@ -102,6 +106,7 @@ class WorkflowState:
     total_b_tasks: int
     completed_b_tasks: int = 0
     next_b_task_index: int = 0  # Track which B task to submit next (0 = first)
+    is_warmup: bool = False  # Whether this is a warmup workflow
 
     # Timestamps
     a_submit_time: Optional[float] = None
@@ -135,6 +140,7 @@ class WorkflowCompletionEvent:
     a_submit_time: float
     a_complete_time: float
     workflow_complete_time: float
+    is_warmup: bool = False  # Whether this is a warmup workflow
 
 
 # ============================================================================
@@ -200,7 +206,8 @@ class PoissonTaskSubmitter:
             "metadata": {
                 "exp_runtime": task_data.exp_runtime,
                 "workflow_id": task_data.workflow_id,
-                "task_type": "A"
+                "task_type": "A",
+                "is_warmup": task_data.is_warmup
             }
         }
 
@@ -233,7 +240,8 @@ class PoissonTaskSubmitter:
                     exp_runtime=task_data.exp_runtime,
                     submit_time=submit_time,
                     status="submit_failed",
-                    error=error_detail
+                    error=error_detail,
+                    is_warmup=task_data.is_warmup
                 )
 
             result = response.json()
@@ -251,7 +259,8 @@ class PoissonTaskSubmitter:
                     exp_runtime=task_data.exp_runtime,
                     submit_time=submit_time,
                     status="submit_failed",
-                    error=f"Rejected: {error_msg}"
+                    error=f"Rejected: {error_msg}",
+                    is_warmup=task_data.is_warmup
                 )
 
             # Update workflow state with A task submit time
@@ -267,7 +276,8 @@ class PoissonTaskSubmitter:
                 sleep_time=task_data.sleep_time,
                 exp_runtime=task_data.exp_runtime,
                 submit_time=submit_time,
-                assigned_instance=result.get("task", {}).get("assigned_instance")
+                assigned_instance=result.get("task", {}).get("assigned_instance"),
+                is_warmup=task_data.is_warmup
             )
 
             return record
@@ -283,7 +293,8 @@ class PoissonTaskSubmitter:
                 exp_runtime=task_data.exp_runtime,
                 submit_time=submit_time,
                 status="submit_failed",
-                error=error_msg
+                error=error_msg,
+                is_warmup=task_data.is_warmup
             )
         except requests.exceptions.ConnectionError as e:
             error_msg = f"Connection error: {str(e)}"
@@ -296,7 +307,8 @@ class PoissonTaskSubmitter:
                 exp_runtime=task_data.exp_runtime,
                 submit_time=submit_time,
                 status="submit_failed",
-                error=error_msg
+                error=error_msg,
+                is_warmup=task_data.is_warmup
             )
         except Exception as e:
             error_msg = f"Unexpected error: {type(e).__name__}: {str(e)}"
@@ -309,7 +321,8 @@ class PoissonTaskSubmitter:
                 exp_runtime=task_data.exp_runtime,
                 submit_time=submit_time,
                 status="submit_failed",
-                error=error_msg
+                error=error_msg,
+                is_warmup=task_data.is_warmup
             )
 
     def _run(self):
@@ -441,7 +454,8 @@ class ATaskReceiver:
             "metadata": {
                 "exp_runtime": task_data.exp_runtime,
                 "workflow_id": task_data.workflow_id,
-                "task_type": "B"
+                "task_type": "B",
+                "is_warmup": task_data.is_warmup
             }
         }
 
@@ -474,7 +488,8 @@ class ATaskReceiver:
                     exp_runtime=task_data.exp_runtime,
                     submit_time=submit_time,
                     status="submit_failed",
-                    error=error_detail
+                    error=error_detail,
+                    is_warmup=task_data.is_warmup
                 )
 
             result = response.json()
@@ -492,7 +507,8 @@ class ATaskReceiver:
                     exp_runtime=task_data.exp_runtime,
                     submit_time=submit_time,
                     status="submit_failed",
-                    error=f"Rejected: {error_msg}"
+                    error=f"Rejected: {error_msg}",
+                    is_warmup=task_data.is_warmup
                 )
 
             record = TaskRecord(
@@ -502,7 +518,8 @@ class ATaskReceiver:
                 sleep_time=task_data.sleep_time,
                 exp_runtime=task_data.exp_runtime,
                 submit_time=submit_time,
-                assigned_instance=result.get("task", {}).get("assigned_instance")
+                assigned_instance=result.get("task", {}).get("assigned_instance"),
+                is_warmup=task_data.is_warmup
             )
 
             return record
@@ -518,8 +535,9 @@ class ATaskReceiver:
                 exp_runtime=task_data.exp_runtime,
                 submit_time=submit_time,
                 status="submit_failed",
-                error=error_msg
-            )
+                error=error_msg,
+                    is_warmup=task_data.is_warmup
+                )
         except requests.exceptions.ConnectionError as e:
             error_msg = f"Connection error: {str(e)}"
             self.logger.error(f"Failed to submit B task {task_data.task_id}: {error_msg}")
@@ -531,8 +549,9 @@ class ATaskReceiver:
                 exp_runtime=task_data.exp_runtime,
                 submit_time=submit_time,
                 status="submit_failed",
-                error=error_msg
-            )
+                error=error_msg,
+                    is_warmup=task_data.is_warmup
+                )
         except Exception as e:
             error_msg = f"Unexpected error: {type(e).__name__}: {str(e)}"
             self.logger.error(f"Failed to submit B task {task_data.task_id}: {error_msg}")
@@ -544,8 +563,9 @@ class ATaskReceiver:
                 exp_runtime=task_data.exp_runtime,
                 submit_time=submit_time,
                 status="submit_failed",
-                error=error_msg
-            )
+                error=error_msg,
+                    is_warmup=task_data.is_warmup
+                )
 
     async def _run_async(self):
         """Main WebSocket loop for receiving A task results."""
@@ -829,7 +849,8 @@ class BTaskReceiver:
             "metadata": {
                 "exp_runtime": task_data.exp_runtime,
                 "workflow_id": task_data.workflow_id,
-                "task_type": "B"
+                "task_type": "B",
+                "is_warmup": task_data.is_warmup
             }
         }
 
@@ -860,7 +881,8 @@ class BTaskReceiver:
                     exp_runtime=task_data.exp_runtime,
                     submit_time=submit_time,
                     status="submit_failed",
-                    error=error_detail
+                    error=error_detail,
+                    is_warmup=task_data.is_warmup
                 )
                 self.b_submitted_sequential.append(record)
                 return False
@@ -879,7 +901,8 @@ class BTaskReceiver:
                     exp_runtime=task_data.exp_runtime,
                     submit_time=submit_time,
                     status="submit_failed",
-                    error=error_msg
+                    error=error_msg,
+                    is_warmup=task_data.is_warmup
                 )
                 self.b_submitted_sequential.append(record)
                 return False
@@ -892,8 +915,9 @@ class BTaskReceiver:
                 sleep_time=task_data.sleep_time,
                 exp_runtime=task_data.exp_runtime,
                 submit_time=submit_time,
-                status="submitted"
-            )
+                status="submitted",
+                is_warmup=task_data.is_warmup
+                )
             self.b_submitted_sequential.append(record)
 
             # Update workflow state to point to next B task
@@ -914,7 +938,8 @@ class BTaskReceiver:
                 exp_runtime=task_data.exp_runtime,
                 submit_time=submit_time,
                 status="submit_failed",
-                error=str(e)
+                error=str(e),
+                is_warmup=task_data.is_warmup
             )
             self.b_submitted_sequential.append(record)
             return False
@@ -1036,7 +1061,9 @@ class BTaskReceiver:
             total_b_tasks=workflow.total_b_tasks,
             a_submit_time=workflow.a_submit_time,
             a_complete_time=workflow.a_complete_time or 0.0,
-            workflow_complete_time=workflow.workflow_complete_time
+            workflow_complete_time=workflow.workflow_complete_time,
+            is_warmup=workflow.is_warmup,
+            is_target_for_stats=workflow.is_target_for_stats
         )
 
         self.completion_queue.put(event)
@@ -1250,6 +1277,8 @@ def calculate_task_metrics(records: List[TaskRecord], task_type: str) -> Dict:
     """
     Calculate metrics for a list of task records.
 
+    NOTE: Warmup tasks (is_warmup=True) are excluded from statistics.
+
     Args:
         records: List of task records
         task_type: "A" or "B"
@@ -1264,6 +1293,7 @@ def calculate_task_metrics(records: List[TaskRecord], task_type: str) -> Dict:
             "num_submitted": 0,
             "num_completed": 0,
             "num_failed": 0,
+            "num_warmup": 0,
             "completion_times": [],
             "avg_completion_time": 0.0,
             "median_completion_time": 0.0,
@@ -1271,8 +1301,9 @@ def calculate_task_metrics(records: List[TaskRecord], task_type: str) -> Dict:
             "p99_completion_time": 0.0
         }
 
-    # Filter records by task type
-    filtered = [r for r in records if r.task_type == task_type]
+    # Filter records by task type and exclude warmup tasks
+    filtered = [r for r in records if r.task_type == task_type and not r.is_warmup]
+    num_warmup = sum(1 for r in records if r.task_type == task_type and r.is_warmup)
 
     # Count statuses
     num_generated = len(filtered)
@@ -1306,6 +1337,7 @@ def calculate_task_metrics(records: List[TaskRecord], task_type: str) -> Dict:
         "num_submitted": num_submitted,
         "num_completed": num_completed,
         "num_failed": num_failed,
+        "num_warmup": num_warmup,
         "completion_times": completion_times,
         "avg_completion_time": avg_completion,
         "median_completion_time": median_completion,
@@ -1318,6 +1350,8 @@ def calculate_workflow_metrics(completed_workflows: List[WorkflowCompletionEvent
     """
     Calculate workflow-level metrics.
 
+    NOTE: Warmup workflows (is_warmup=True) are excluded from statistics.
+
     Args:
         completed_workflows: List of workflow completion events
 
@@ -1327,6 +1361,7 @@ def calculate_workflow_metrics(completed_workflows: List[WorkflowCompletionEvent
     if not completed_workflows:
         return {
             "num_completed": 0,
+            "num_warmup": 0,
             "workflow_times": [],
             "avg_workflow_time": 0.0,
             "median_workflow_time": 0.0,
@@ -1337,12 +1372,30 @@ def calculate_workflow_metrics(completed_workflows: List[WorkflowCompletionEvent
             "avg_fanout": 0.0
         }
 
-    # Extract workflow times
-    workflow_times = [event.workflow_time for event in completed_workflows]
+    # Filter out warmup workflows
+    actual_workflows = [e for e in completed_workflows if not e.is_warmup]
+    num_warmup = sum(1 for e in completed_workflows if e.is_warmup)
+
+    if not actual_workflows:
+        return {
+            "num_completed": 0,
+            "num_warmup": num_warmup,
+            "workflow_times": [],
+            "avg_workflow_time": 0.0,
+            "median_workflow_time": 0.0,
+            "p50_workflow_time": 0.0,
+            "p95_workflow_time": 0.0,
+            "p99_workflow_time": 0.0,
+            "fanout_distribution": {},
+            "avg_fanout": 0.0
+        }
+
+    # Extract workflow times (excluding warmup)
+    workflow_times = [event.workflow_time for event in actual_workflows]
     workflow_times_arr = np.array(workflow_times)
 
-    # Extract fanout values
-    fanout_values = [event.total_b_tasks for event in completed_workflows]
+    # Extract fanout values (excluding warmup)
+    fanout_values = [event.total_b_tasks for event in actual_workflows]
     fanout_arr = np.array(fanout_values)
 
     # Calculate fanout distribution
@@ -1350,7 +1403,8 @@ def calculate_workflow_metrics(completed_workflows: List[WorkflowCompletionEvent
     fanout_distribution = {int(f): int(c) for f, c in zip(unique_fanouts, counts)}
 
     return {
-        "num_completed": len(completed_workflows),
+        "num_completed": len(actual_workflows),
+        "num_warmup": num_warmup,
         "workflow_times": workflow_times,
         "avg_workflow_time": float(np.mean(workflow_times_arr)),
         "median_workflow_time": float(np.median(workflow_times_arr)),
@@ -1377,7 +1431,7 @@ def print_metrics_summary(strategy: str, a_metrics: Dict, b_metrics: Dict, wf_me
     print("=" * 80)
 
     print("\nA Tasks:")
-    print(f"  Generated:  {a_metrics['num_generated']}")
+    print(f"  Generated:  {a_metrics['num_generated']} (excl. {a_metrics['num_warmup']} warmup)")
     print(f"  Submitted:  {a_metrics['num_submitted']}")
     print(f"  Completed:  {a_metrics['num_completed']}")
     print(f"  Failed:     {a_metrics['num_failed']}")
@@ -1387,7 +1441,7 @@ def print_metrics_summary(strategy: str, a_metrics: Dict, b_metrics: Dict, wf_me
         print(f"  P95:        {a_metrics['p95_completion_time']:.2f}s")
 
     print("\nB Tasks:")
-    print(f"  Generated:  {b_metrics['num_generated']}")
+    print(f"  Generated:  {b_metrics['num_generated']} (excl. {b_metrics['num_warmup']} warmup)")
     print(f"  Submitted:  {b_metrics['num_submitted']}")
     print(f"  Completed:  {b_metrics['num_completed']}")
     print(f"  Failed:     {b_metrics['num_failed']}")
@@ -1397,7 +1451,7 @@ def print_metrics_summary(strategy: str, a_metrics: Dict, b_metrics: Dict, wf_me
         print(f"  P95:        {b_metrics['p95_completion_time']:.2f}s")
 
     print("\nWorkflows:")
-    print(f"  Completed:  {wf_metrics['num_completed']}")
+    print(f"  Completed:  {wf_metrics['num_completed']} (excl. {wf_metrics['num_warmup']} warmup)")
     print(f"  Avg fanout: {wf_metrics['avg_fanout']:.1f} B tasks per A task")
     if wf_metrics['avg_workflow_time'] > 0:
         print(f"  Avg time:   {wf_metrics['avg_workflow_time']:.2f}s")
@@ -1424,7 +1478,9 @@ def test_strategy_workflow(
     task_times_b: List[float],
     fanout_values: List[int],
     qps_a: float,
-    timeout_minutes: int = 10
+    timeout_minutes: int = 10,
+    continuous_mode: bool = False,
+    target_workflows: Optional[int] = None
 ) -> Dict:
     """
     Test a single scheduling strategy with dynamic workflow fanout.
@@ -1503,15 +1559,30 @@ def test_strategy_workflow(
 
     # Step 5: Initialize workflow states
     logger.info("Step 5: Initializing workflow states")
+
+    # In continuous mode, determine which workflows are targets for statistics
+    if continuous_mode and target_workflows is not None:
+        logger.info(f"Continuous mode: marking first {target_workflows} workflows as targets")
+
     workflow_states: Dict[str, WorkflowState] = {}
     for i in range(num_workflows):
         workflow_id = f"wf-{strategy}-{i:04d}"
+
+        # Determine if this is a target workflow for statistics
+        is_target_for_stats = True  # Default: all workflows are targets
+        if continuous_mode and target_workflows is not None:
+            if i < target_workflows:
+                is_target_for_stats = True
+            else:
+                is_target_for_stats = False  # Overflow workflows
+
         workflow_states[workflow_id] = WorkflowState(
             workflow_id=workflow_id,
             strategy=strategy,
             a_task_id=a_task_ids[i],
             b_task_ids=b_task_ids_by_workflow[workflow_id],
-            total_b_tasks=fanout_values[i]
+            total_b_tasks=fanout_values[i],
+            is_target_for_stats=is_target_for_stats
         )
 
     # Step 6: Create completion queue
@@ -1585,6 +1656,19 @@ def test_strategy_workflow(
     b_receiver.stop()
     monitor.stop()
 
+    # Step 13.5: Continuous mode cleanup
+    if continuous_mode:
+        logger.info("Step 13.5: Continuous mode cleanup")
+        logger.info("Waiting 5 seconds before force-clearing schedulers...")
+        time.sleep(5.0)
+
+        from common import force_clear_scheduler_tasks
+        logger.info("Force-clearing Scheduler A...")
+        force_clear_scheduler_tasks(SCHEDULER_A_URL)
+        logger.info("Force-clearing Scheduler B...")
+        force_clear_scheduler_tasks(SCHEDULER_B_URL)
+        logger.info("Schedulers cleared successfully")
+
     # Step 14: Collect results
     logger.info("Step 14: Collecting results")
 
@@ -1598,7 +1682,12 @@ def test_strategy_workflow(
     wf_metrics = calculate_workflow_metrics(monitor.completed_workflows)
 
     # Print summary
-    print_metrics_summary(strategy, a_metrics, b_metrics, wf_metrics)
+    if continuous_mode:
+        from common import calculate_makespan, print_continuous_mode_summary
+        makespan_metrics = calculate_makespan(monitor.completed_workflows)
+        print_continuous_mode_summary(strategy, makespan_metrics, a_metrics, b_metrics, wf_metrics)
+    else:
+        print_metrics_summary(strategy, a_metrics, b_metrics, wf_metrics)
 
     # Calculate actual QPS
     actual_qps = 0.0
@@ -1624,26 +1713,34 @@ def test_strategy_workflow(
 # ============================================================================
 
 def main(num_workflows: int = 100, qps_a: float = 8.0, seed: int = 42,
-         strategies: List[str] = None):
+         strategies: List[str] = None, continuous_mode: bool = False):
     """
-    Main entry point for experiment 06.
+    Main entry point for experiment 05.
 
     Args:
         num_workflows: Number of workflows to generate and execute per strategy
         qps_a: Target QPS for A task submission
         seed: Random seed for reproducibility
         strategies: List of strategies to test (default: all three)
+        continuous_mode: Enable continuous request mode (2x workflows, track first num_workflows)
     """
     if strategies is None:
         strategies = ["min_time", "round_robin", "probabilistic"]
 
     logger = logging.getLogger("Main")
-    logger.info("Starting Experiment 06: Multi-Model Workflow with Dynamic Fanout")
+    logger.info("Starting Experiment 05: Multi-Model Workflow with Dynamic Fanout (Sequential)")
     logger.info(f"Configuration: {num_workflows} workflows, QPS={qps_a}, seed={seed}")
     logger.info(f"Strategies to test: {', '.join(strategies)}")
 
     # Experiment parameters
-    NUM_WORKFLOWS = num_workflows
+    if continuous_mode:
+        NUM_WORKFLOWS = 2 * num_workflows  # Generate 2x workflows in continuous mode
+        TARGET_WORKFLOWS = num_workflows  # Track first num_workflows
+        logger.info(f"CONTINUOUS MODE: Generating {NUM_WORKFLOWS} workflows, tracking first {TARGET_WORKFLOWS}")
+    else:
+        NUM_WORKFLOWS = num_workflows
+        TARGET_WORKFLOWS = None
+
     QPS_A = qps_a
     SEED = seed
 
@@ -1677,7 +1774,9 @@ def main(num_workflows: int = 100, qps_a: float = 8.0, seed: int = 42,
             task_times_b=task_times_b,
             fanout_values=fanout_values,
             qps_a=QPS_A,
-            timeout_minutes=10
+            timeout_minutes=10,
+            continuous_mode=continuous_mode,
+            target_workflows=TARGET_WORKFLOWS
         )
         all_results.append(results)
 

@@ -178,6 +178,7 @@ class WorkflowState:
     completed_b1_tasks: int = 0
     completed_b2_tasks: int = 0
     is_warmup: bool = False  # Whether this is a warmup workflow
+    is_target_for_stats: bool = True  # Whether to include in statistics (continuous mode)
 
     # Timestamps
     a_submit_time: Optional[float] = None
@@ -247,6 +248,7 @@ class WorkflowCompletionEvent:
     merge_complete_time: float  # when merge task completed
     workflow_complete_time: float  # Same as merge_complete_time
     is_warmup: bool = False  # Whether this is a warmup workflow
+    is_target_for_stats: bool = True  # Whether to include in statistics (continuous mode)
 
 
 # ============================================================================
@@ -546,7 +548,8 @@ class ATaskReceiver:
                  a_task_ids: List[str],
                  b1_tasks_by_workflow: Dict[str, List[WorkflowTaskData]],
                  workflow_states: Dict[str, WorkflowState],
-                 model_id: str = "sleep_model"):
+                 model_id: str = "sleep_model",
+                 rate_limiter: Optional[RateLimiter] = None):
         """
         Initialize A task receiver.
 
@@ -557,6 +560,7 @@ class ATaskReceiver:
             b1_tasks_by_workflow: Map of workflow_id -> list of B1 task data
             workflow_states: Shared workflow state dictionary
             model_id: Model ID to use for B1 tasks
+            rate_limiter: Optional shared rate limiter for global QPS control
         """
         self.scheduler_a_ws = scheduler_a_ws
         self.scheduler_b_url = scheduler_b_url
@@ -564,6 +568,7 @@ class ATaskReceiver:
         self.b1_tasks_by_workflow = b1_tasks_by_workflow
         self.workflow_states = workflow_states
         self.model_id = model_id
+        self.rate_limiter = rate_limiter
         self.logger = logging.getLogger("Thread2.ATaskReceiver")
 
         # Tracking
@@ -840,6 +845,10 @@ class ATaskReceiver:
         # Submit all B1 tasks (in current thread, not async)
         # Using synchronous submission for simplicity
         for b1_task_data in b1_tasks:
+            # If using rate limiter, acquire token before submitting
+            if self.rate_limiter is not None:
+                self.rate_limiter.acquire(1)
+
             record = self._submit_b1_task(b1_task_data)
             self.b1_submitted.append(record)
 
@@ -913,7 +922,8 @@ class B1TaskReceiver:
                  b1_task_ids: List[str],
                  b2_tasks_by_b1: Dict[str, WorkflowTaskData],
                  workflow_states: Dict[str, WorkflowState],
-                 model_id: str = "sleep_model"):
+                 model_id: str = "sleep_model",
+                 rate_limiter: Optional[RateLimiter] = None):
         """
         Initialize B1 task receiver.
 
@@ -924,6 +934,7 @@ class B1TaskReceiver:
             b2_tasks_by_b1: Map of b1_task_id -> B2 task data
             workflow_states: Shared workflow state dictionary
             model_id: Model ID to use for B2 tasks
+            rate_limiter: Optional shared rate limiter for global QPS control
         """
         self.scheduler_b_ws = scheduler_b_ws
         self.scheduler_b_url = scheduler_b_url
@@ -931,6 +942,7 @@ class B1TaskReceiver:
         self.b2_tasks_by_b1 = b2_tasks_by_b1
         self.workflow_states = workflow_states
         self.model_id = model_id
+        self.rate_limiter = rate_limiter
         self.logger = logging.getLogger("Thread3.B1TaskReceiver")
 
         # Tracking
@@ -1162,6 +1174,10 @@ class B1TaskReceiver:
 
             # Submit corresponding B2 task
             if task_id in self.b2_tasks_by_b1:
+                # If using rate limiter, acquire token before submitting
+                if self.rate_limiter is not None:
+                    self.rate_limiter.acquire(1)
+
                 b2_task_data = self.b2_tasks_by_b1[task_id]
                 record = self._submit_b2_task(b2_task_data)
                 self.b2_submitted.append(record)
@@ -1434,7 +1450,8 @@ class MergeTaskSubmitter:
                  scheduler_a_url: str,
                  merge_tasks: List[WorkflowTaskData],
                  workflow_states: Dict[str, WorkflowState],
-                 merge_ready_queue: Queue):
+                 merge_ready_queue: Queue,
+                 rate_limiter: Optional[RateLimiter] = None):
         """
         Initialize merge task submitter.
 
@@ -1443,14 +1460,16 @@ class MergeTaskSubmitter:
             merge_tasks: List of all merge task data (indexed by workflow)
             workflow_states: Shared workflow state dictionary
             merge_ready_queue: Queue to receive merge-ready events
+            rate_limiter: Optional shared rate limiter for global QPS control
         """
         self.scheduler_a_url = scheduler_a_url
         self.merge_tasks = merge_tasks
         self.workflow_states = workflow_states
         self.merge_ready_queue = merge_ready_queue
+        self.rate_limiter = rate_limiter
         self.logger = logging.getLogger("Thread5.MergeTaskSubmitter")
         self.model_id = "sleep_model"
-        
+
         # Thread control
         self.thread: Optional[threading.Thread] = None
         self.running = False
@@ -1530,6 +1549,11 @@ class MergeTaskSubmitter:
             try:
                 # Wait for merge-ready event (workflow_id)
                 workflow_id = self.merge_ready_queue.get(timeout=1.0)
+
+                # If using rate limiter, acquire token before submitting
+                if self.rate_limiter is not None:
+                    self.rate_limiter.acquire(1)
+
                 self._submit_merge_task(workflow_id)
 
             except Empty:
@@ -1729,7 +1753,8 @@ class MergeTaskReceiver:
             merge_submit_time=workflow.merge_submit_time or 0.0,
             merge_complete_time=workflow.merge_complete_time,
             workflow_complete_time=workflow.workflow_complete_time,
-            is_warmup=workflow.is_warmup
+            is_warmup=workflow.is_warmup,
+            is_target_for_stats=workflow.is_target_for_stats
         )
 
         self.completion_queue.put(event)
@@ -2156,14 +2181,20 @@ def test_strategy_workflow(
     qps_a: float,
     timeout_minutes: int = 10,
     gqps: Optional[float] = None,
-    warmup_ratio: float = 0.0
+    warmup_ratio: float = 0.0,
+    warmup_task_times_a: Optional[List[float]] = None,
+    warmup_task_times_b1: Optional[List[float]] = None,
+    warmup_task_times_b2: Optional[List[float]] = None,
+    warmup_fanout_values: Optional[List[int]] = None,
+    continuous_mode: bool = False,
+    target_workflows: Optional[int] = None
 ) -> Dict:
     """
     Test a single scheduling strategy with dynamic workflow fanout (B1/B2 split).
 
     Args:
         strategy: Scheduling strategy ("min_time", "round_robin", "probabilistic")
-        num_workflows: Number of workflows to test
+        num_workflows: Number of workflows to test (actual workflows, not including warmup)
         task_times_a: List of task execution times for A tasks
         task_times_b1: List of task execution times for B1 tasks (slow peak)
         task_times_b2: List of task execution times for B2 tasks (fast peak)
@@ -2171,7 +2202,11 @@ def test_strategy_workflow(
         qps_a: Target QPS for A task submission
         timeout_minutes: Maximum time to wait for completion
         gqps: Optional global QPS limit for all task submissions
-        warmup_ratio: Warmup task ratio (0.0-1.0)
+        warmup_ratio: Ratio of warmup workflows (0.0-1.0)
+        warmup_task_times_a: Pre-generated warmup A task times (optional)
+        warmup_task_times_b1: Pre-generated warmup B1 task times (optional)
+        warmup_task_times_b2: Pre-generated warmup B2 task times (optional)
+        warmup_fanout_values: Pre-generated warmup fanout values (optional)
 
     Returns:
         Dictionary of test results
@@ -2191,6 +2226,20 @@ def test_strategy_workflow(
     set_scheduling_strategy(SCHEDULER_B_URL, strategy)
     time.sleep(0.5)
 
+    # Step 2.5: Calculate warmup workflows
+    num_warmup_workflows = int(num_workflows * warmup_ratio)
+    total_workflows = num_warmup_workflows + num_workflows
+    logger.info(f"Total workflows: {total_workflows} ({num_warmup_workflows} warmup + {num_workflows} actual)")
+
+    # Use pre-generated warmup fanout values or fall back to empty list
+    if num_warmup_workflows > 0:
+        if warmup_fanout_values is None:
+            logger.warning("warmup_fanout_values not provided, using empty list")
+            warmup_fanout_values = []
+        all_fanout_values = list(warmup_fanout_values) + list(fanout_values)
+    else:
+        all_fanout_values = fanout_values
+
     # Step 3: Pre-generate all task IDs (B1 and B2 separately)
     logger.info("Step 3: Pre-generating task IDs")
     a_task_ids, merge_task_ids, all_b1_task_ids, all_b2_task_ids, b1_task_ids_by_workflow, b2_task_ids_by_workflow = generate_task_ids(
@@ -2206,51 +2255,88 @@ def test_strategy_workflow(
     b1_tasks_by_workflow: Dict[str, List[WorkflowTaskData]] = {}
     b2_tasks_by_b1: Dict[str, WorkflowTaskData] = {}  # Map B1 task_id -> B2 task data
 
+    # Use pre-generated warmup task times or fall back to empty arrays
+    if num_warmup_workflows > 0:
+        if warmup_task_times_a is None or warmup_task_times_b1 is None or warmup_task_times_b2 is None:
+            logger.warning("warmup_task_times not provided, using empty arrays")
+            warmup_task_times_a = np.array([])
+            warmup_task_times_b1 = np.array([])
+            warmup_task_times_b2 = np.array([])
+        else:
+            warmup_task_times_a = np.array(warmup_task_times_a)
+            warmup_task_times_b1 = np.array(warmup_task_times_b1)
+            warmup_task_times_b2 = np.array(warmup_task_times_b2)
+    else:
+        warmup_task_times_a = np.array([])
+        warmup_task_times_b1 = np.array([])
+        warmup_task_times_b2 = np.array([])
+
+    # Generate all workflows (warmup first, then actual)
     for i in range(total_workflows):
         workflow_id = f"wf-{strategy}-{i:04d}"
         a_task_id = a_task_ids[i]
         merge_task_id = merge_task_ids[i]
         is_warmup = i < num_warmup_workflows
 
+        # Determine task times based on warmup status
+        if is_warmup:
+            sleep_time_a = warmup_task_times_a[i]
+            fanout = all_fanout_values[i]
+        else:
+            actual_idx = i - num_warmup_workflows
+            sleep_time_a = task_times_a[actual_idx]
+            fanout = fanout_values[actual_idx]
+
         # Create A task
         a_task = WorkflowTaskData(
             task_id=a_task_id,
             workflow_id=workflow_id,
             task_type="A",
-            sleep_time=task_times_a[i],
-            exp_runtime=task_times_a[i] * 1000
+            sleep_time=sleep_time_a,
+            exp_runtime=sleep_time_a * 1000,
+            is_warmup=is_warmup
         )
         a_tasks.append(a_task)
 
         # Create merge A task (0.5x execution time of original A)
-        merge_sleep_time = task_times_a[i] * 0.5
+        merge_sleep_time = sleep_time_a * 0.5
         merge_task = WorkflowTaskData(
             task_id=merge_task_id,
             workflow_id=workflow_id,
             task_type="A",  # Submitted to Scheduler A
             sleep_time=merge_sleep_time,
-            exp_runtime=merge_sleep_time * 1000
+            exp_runtime=merge_sleep_time * 1000,
+            is_warmup=is_warmup
         )
         merge_tasks.append(merge_task)
 
         # Create B1 and B2 tasks for this workflow
-        n = fanout_values[i]
+        n = fanout
         b1_tasks = []
         b1_task_ids_wf = b1_task_ids_by_workflow[workflow_id]
         b2_task_ids_wf = b2_task_ids_by_workflow[workflow_id]
 
         for j in range(n):
             # Calculate index into task_times_b1 and task_times_b2
-            b_task_index = sum(fanout_values[:i]) + j
+            if is_warmup:
+                b_task_index = sum(all_fanout_values[:i]) + j
+                sleep_time_b1 = warmup_task_times_b1[b_task_index]
+                sleep_time_b2 = warmup_task_times_b2[b_task_index]
+            else:
+                actual_idx = i - num_warmup_workflows
+                b_task_index = sum(fanout_values[:actual_idx]) + j
+                sleep_time_b1 = task_times_b1[b_task_index]
+                sleep_time_b2 = task_times_b2[b_task_index]
 
             # Create B1 task (slow peak)
             b1_task = WorkflowTaskData(
                 task_id=b1_task_ids_wf[j],
                 workflow_id=workflow_id,
                 task_type="B1",
-                sleep_time=task_times_b1[b_task_index],
-                exp_runtime=task_times_b1[b_task_index] * 1000,
-                b_index=j  # Track pairing index
+                sleep_time=sleep_time_b1,
+                exp_runtime=sleep_time_b1 * 1000,
+                b_index=j,  # Track pairing index
+                is_warmup=is_warmup
             )
             b1_tasks.append(b1_task)
 
@@ -2259,9 +2345,10 @@ def test_strategy_workflow(
                 task_id=b2_task_ids_wf[j],
                 workflow_id=workflow_id,
                 task_type="B2",
-                sleep_time=task_times_b2[b_task_index],
-                exp_runtime=task_times_b2[b_task_index] * 1000,
-                b_index=j  # Track pairing index
+                sleep_time=sleep_time_b2,
+                exp_runtime=sleep_time_b2 * 1000,
+                b_index=j,  # Track pairing index
+                is_warmup=is_warmup
             )
             # Map B1 task_id -> B2 task data for Thread 3 to look up
             b2_tasks_by_b1[b1_task_ids_wf[j]] = b2_task
@@ -2270,9 +2357,30 @@ def test_strategy_workflow(
 
     # Step 5: Initialize workflow states (with B1 and B2 separation)
     logger.info("Step 5: Initializing workflow states")
+
+    # In continuous mode, determine which workflows are targets for statistics
+    if continuous_mode and target_workflows is not None:
+        logger.info(f"Continuous mode: marking first {target_workflows} non-warmup workflows as targets")
+
     workflow_states: Dict[str, WorkflowState] = {}
+    target_count = 0  # Count of non-warmup workflows marked as targets
     for i in range(total_workflows):
         workflow_id = f"wf-{strategy}-{i:04d}"
+        is_warmup = i < num_warmup_workflows
+
+        # Determine if this is a target workflow for statistics
+        is_target_for_stats = True  # Default: all workflows are targets
+        if continuous_mode and target_workflows is not None:
+            if is_warmup:
+                is_target_for_stats = False  # Warmup workflows are never targets
+            else:
+                # Mark first target_workflows non-warmup workflows as targets
+                if target_count < target_workflows:
+                    is_target_for_stats = True
+                    target_count += 1
+                else:
+                    is_target_for_stats = False  # Overflow workflows
+
         workflow_states[workflow_id] = WorkflowState(
             workflow_id=workflow_id,
             strategy=strategy,
@@ -2282,7 +2390,8 @@ def test_strategy_workflow(
             merge_task_id=merge_task_ids[i],
             total_b1_tasks=all_fanout_values[i],
             total_b2_tasks=all_fanout_values[i],
-            is_warmup=i < num_warmup_workflows
+            is_warmup=is_warmup,
+            is_target_for_stats=is_target_for_stats
         )
 
     # Step 6: Create queues and rate limiter (if using global QPS)
@@ -2308,7 +2417,8 @@ def test_strategy_workflow(
         scheduler_a_url=SCHEDULER_A_URL,
         merge_tasks=merge_tasks,
         workflow_states=workflow_states,
-        merge_ready_queue=merge_ready_queue
+        merge_ready_queue=merge_ready_queue,
+        rate_limiter=rate_limiter
     )
     merge_submitter.start()
 
@@ -2330,7 +2440,8 @@ def test_strategy_workflow(
         scheduler_b_url=SCHEDULER_B_URL,
         b1_task_ids=all_b1_task_ids,
         b2_tasks_by_b1=b2_tasks_by_b1,
-        workflow_states=workflow_states
+        workflow_states=workflow_states,
+        rate_limiter=rate_limiter
     )
     b1_receiver.start()
     time.sleep(2.0)  # Wait for WebSocket connection
@@ -2350,7 +2461,8 @@ def test_strategy_workflow(
         scheduler_b_url=SCHEDULER_B_URL,
         a_task_ids=a_task_ids,
         b1_tasks_by_workflow=b1_tasks_by_workflow,
-        workflow_states=workflow_states
+        workflow_states=workflow_states,
+        rate_limiter=rate_limiter
     )
     a_receiver.start()
     time.sleep(2.0)  # Wait for WebSocket connection
@@ -2393,6 +2505,19 @@ def test_strategy_workflow(
     merge_receiver.stop()
     monitor.stop()
 
+    # Step 15.5: Continuous mode cleanup
+    if continuous_mode:
+        logger.info("Step 15.5: Continuous mode cleanup")
+        logger.info("Waiting 5 seconds before force-clearing schedulers...")
+        time.sleep(5.0)
+
+        from common import force_clear_scheduler_tasks
+        logger.info("Force-clearing Scheduler A...")
+        force_clear_scheduler_tasks(SCHEDULER_A_URL)
+        logger.info("Force-clearing Scheduler B...")
+        force_clear_scheduler_tasks(SCHEDULER_B_URL)
+        logger.info("Schedulers cleared successfully")
+
     # Step 16: Collect results
     logger.info("Step 16: Collecting results")
 
@@ -2420,6 +2545,22 @@ def test_strategy_workflow(
     logger.info(f"Workflows: {wf_metrics}")
     logger.info("="*80)
 
+    # Print formatted summary
+    if continuous_mode:
+        from common import calculate_makespan, print_continuous_mode_summary
+        makespan_metrics = calculate_makespan(monitor.completed_workflows)
+        # For B1/B2 split, we combine B1 and B2 metrics for the summary
+        combined_b_metrics = {
+            "total": b1_metrics["total"] + b2_metrics["total"],
+            "successful": b1_metrics["successful"] + b2_metrics["successful"],
+            "failed": b1_metrics["failed"] + b2_metrics["failed"]
+        }
+        print_continuous_mode_summary(strategy, makespan_metrics, a_metrics, combined_b_metrics, wf_metrics)
+    else:
+        # Note: print_metrics_summary expects (a, b, wf), but exp07 has b1/b2 split
+        # For now, we'll pass b1_metrics as the "b" metric
+        print_metrics_summary(strategy, a_metrics, b1_metrics, wf_metrics)
+
     # Calculate actual QPS
     actual_qps = 0.0
     if a_submitter.submission_end_time and a_submitter.submission_start_time:
@@ -2446,7 +2587,8 @@ def test_strategy_workflow(
 # ============================================================================
 
 def main(num_workflows: int = 100, qps_a: float = 8.0, seed: int = 42,
-         strategies: List[str] = None, gqps: Optional[float] = None, warmup_ratio: float = 0.0):
+         strategies: List[str] = None, gqps: Optional[float] = None, warmup_ratio: float = 0.0,
+         continuous_mode: bool = False):
     """
     Main entry point for experiment 07.
 
@@ -2457,6 +2599,7 @@ def main(num_workflows: int = 100, qps_a: float = 8.0, seed: int = 42,
         strategies: List of strategies to test (default: all three)
         gqps: Optional global QPS limit for all task submissions
         warmup_ratio: Warmup task ratio (0.0-1.0)
+        continuous_mode: Enable continuous request mode (2x workflows, track first num_workflows)
     """
     if strategies is None:
         strategies = ["min_time", "round_robin", "probabilistic"]
@@ -2471,7 +2614,14 @@ def main(num_workflows: int = 100, qps_a: float = 8.0, seed: int = 42,
     logger.info(f"Strategies to test: {', '.join(strategies)}")
 
     # Experiment parameters
-    NUM_WORKFLOWS = num_workflows
+    if continuous_mode:
+        NUM_WORKFLOWS = 2 * num_workflows  # Generate 2x workflows in continuous mode
+        TARGET_WORKFLOWS = num_workflows  # Track first num_workflows
+        logger.info(f"CONTINUOUS MODE: Generating {NUM_WORKFLOWS} workflows, tracking first {TARGET_WORKFLOWS}")
+    else:
+        NUM_WORKFLOWS = num_workflows
+        TARGET_WORKFLOWS = None
+
     QPS_A = qps_a
     SEED = seed
 
@@ -2498,6 +2648,37 @@ def main(num_workflows: int = 100, qps_a: float = 8.0, seed: int = 42,
     print_distribution_stats(task_times_b2, workload_b2_config)
     logger.info(f"Generated {len(task_times_b2)} B2 tasks total (fast peak, will submit all)")
 
+    # Generate warmup data once for all strategies (if warmup is enabled)
+    num_warmup_workflows = int(NUM_WORKFLOWS * warmup_ratio)
+    if num_warmup_workflows > 0:
+        logger.info(f"Generating {num_warmup_workflows} warmup workflows (warmup_ratio={warmup_ratio:.1%})")
+
+        # Warmup fanout: Uniform distribution (3-8 B tasks per A task)
+        warmup_fanout_values = np.random.randint(3, 9, size=num_warmup_workflows).tolist()
+        logger.info(f"Generated {len(warmup_fanout_values)} warmup fanout values")
+
+        # Warmup A tasks: Bimodal distribution (same as actual tasks)
+        warmup_task_times_a = np.concatenate([
+            np.random.uniform(0.5, 0.7, num_warmup_workflows // 2),
+            np.random.uniform(10.0, 15.0, num_warmup_workflows - num_warmup_workflows // 2)
+        ])
+        logger.info(f"Generated {len(warmup_task_times_a)} warmup A task times")
+
+        # Warmup B1 tasks: Sample from actual B1 task distribution
+        warmup_total_b = sum(warmup_fanout_values)
+        warmup_task_times_b1 = np.random.choice(task_times_b1, size=warmup_total_b)
+        logger.info(f"Generated {len(warmup_task_times_b1)} warmup B1 task times")
+
+        # Warmup B2 tasks: Sample from actual B2 task distribution
+        warmup_task_times_b2 = np.random.choice(task_times_b2, size=warmup_total_b)
+        logger.info(f"Generated {len(warmup_task_times_b2)} warmup B2 task times")
+    else:
+        warmup_fanout_values = None
+        warmup_task_times_a = None
+        warmup_task_times_b1 = None
+        warmup_task_times_b2 = None
+        logger.info("No warmup workflows (warmup_ratio=0.0)")
+
     # Run tests for specified strategies
     all_results = []
 
@@ -2513,7 +2694,13 @@ def main(num_workflows: int = 100, qps_a: float = 8.0, seed: int = 42,
             qps_a=QPS_A,
             timeout_minutes=10,
             gqps=gqps,
-            warmup_ratio=warmup_ratio
+            warmup_ratio=warmup_ratio,
+            warmup_task_times_a=warmup_task_times_a,
+            warmup_task_times_b1=warmup_task_times_b1,
+            warmup_task_times_b2=warmup_task_times_b2,
+            warmup_fanout_values=warmup_fanout_values,
+            continuous_mode=continuous_mode,
+            target_workflows=TARGET_WORKFLOWS
         )
         all_results.append(results)
 
