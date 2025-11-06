@@ -91,6 +91,26 @@ class ServerConfig:
 
 
 @dataclass
+class WebSocketConfig:
+    """Configuration for WebSocket communication with instances."""
+
+    # Instance WebSocket server port (separate from main HTTP port)
+    instance_port: int = int(os.getenv("INSTANCE_WEBSOCKET_PORT", "8001"))
+
+    # Heartbeat interval in seconds
+    heartbeat_interval: int = int(os.getenv("WEBSOCKET_HEARTBEAT_INTERVAL", "30"))
+
+    # Number of missed heartbeats before disconnect
+    heartbeat_timeout_threshold: int = int(os.getenv("WEBSOCKET_HEARTBEAT_THRESHOLD", "3"))
+
+    # ACK timeout in seconds
+    ack_timeout: float = float(os.getenv("WEBSOCKET_ACK_TIMEOUT", "10.0"))
+
+    # Maximum message size in bytes (16MB default)
+    max_message_size: int = int(os.getenv("WEBSOCKET_MAX_MESSAGE_SIZE", str(16 * 1024 * 1024)))
+
+
+@dataclass
 class Config:
     """Main configuration object combining all settings."""
 
@@ -99,6 +119,7 @@ class Config:
     training: TrainingConfig
     logging: LoggingConfig
     server: ServerConfig
+    websocket: WebSocketConfig
 
     @classmethod
     def load(cls) -> "Config":
@@ -114,6 +135,7 @@ class Config:
             training=TrainingConfig(),
             logging=LoggingConfig(),
             server=ServerConfig(),
+            websocket=WebSocketConfig(),
         )
 
     def __repr__(self) -> str:
@@ -124,7 +146,8 @@ class Config:
             f"  scheduling=SchedulingConfig(strategy='{self.scheduling.default_strategy}'),\n"
             f"  training=TrainingConfig(auto={self.training.enable_auto_training}),\n"
             f"  logging=LoggingConfig(level='{self.logging.level}'),\n"
-            f"  server=ServerConfig(host='{self.server.host}', port={self.server.port})\n"
+            f"  server=ServerConfig(host='{self.server.host}', port={self.server.port}),\n"
+            f"  websocket=WebSocketConfig(instance_port={self.websocket.instance_port})\n"
             f")"
         )
 

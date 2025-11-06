@@ -29,6 +29,9 @@ class TaskDispatcher:
         training_client: Optional["TrainingClient"] = None,
         timeout: float = 60.0,
         callback_base_url: str = "http://localhost:8000",
+        instance_connection_manager: Optional[Any] = None,
+        enable_websocket: bool = True,
+        enable_http_fallback: bool = True,
     ):
         """
         Initialize task dispatcher.
@@ -40,6 +43,9 @@ class TaskDispatcher:
             training_client: Optional training client for collecting runtime data
             timeout: Task execution timeout in seconds
             callback_base_url: Base URL for task result callbacks
+            instance_connection_manager: Connection manager for Instance WebSockets
+            enable_websocket: Enable WebSocket communication
+            enable_http_fallback: Enable HTTP fallback when WebSocket unavailable
         """
         self.task_registry = task_registry
         self.instance_registry = instance_registry
@@ -47,6 +53,9 @@ class TaskDispatcher:
         self.training_client = training_client
         self.timeout = timeout
         self.callback_base_url = callback_base_url
+        self.instance_connection_manager = instance_connection_manager
+        self.enable_websocket = enable_websocket
+        self.enable_http_fallback = enable_http_fallback
         # Reusable HTTP client with SSL verification disabled for internal network
         self._http_client = httpx.AsyncClient(
             timeout=timeout,
@@ -84,33 +93,40 @@ class TaskDispatcher:
             await self.task_registry.update_status(task_id, TaskStatus.RUNNING)
             await self.instance_registry.decrement_pending(instance.instance_id)
 
-            # Prepare callback URL for result notification
-            callback_url = f"{self.callback_base_url}/callback/task_result"
+            # Try WebSocket first if enabled and available
+            websocket_success = False
+            if self.enable_websocket and self.instance_connection_manager:
+                try:
+                    websocket_success = await self._submit_via_websocket(
+                        instance_id=instance.instance_id,
+                        task_id=task.task_id,
+                        model_id=task.model_id,
+                        task_input=task.task_input,
+                        metadata=task.metadata,
+                    )
+                except Exception as e:
+                    from loguru import logger
+                    logger.warning(
+                        f"WebSocket submission failed for task {task_id}: {e}, "
+                        f"falling back to HTTP"
+                    )
 
-            # Send task to instance for execution
-            # Instance will process asynchronously and notify via callback
-            response = await self._http_client.post(
-                f"{instance.endpoint}/task/submit",
-                json={
-                    "task_id": task.task_id,
-                    "model_id": task.model_id,
-                    "task_input": task.task_input,
-                    "callback_url": callback_url,
-                },
-            )
-            response.raise_for_status()
-            submit_result = response.json()
+            # Fallback to HTTP if WebSocket failed or disabled
+            if not websocket_success:
+                if not self.enable_http_fallback:
+                    raise ConnectionError(
+                        f"WebSocket submission failed and HTTP fallback is disabled"
+                    )
 
-            # Verify task was accepted by instance
-            if not submit_result.get("success", False):
-                raise ValueError(
-                    f"Instance rejected task: {submit_result.get('message', 'Unknown error')}"
+                await self._submit_via_http(
+                    instance=instance,
+                    task_id=task.task_id,
+                    model_id=task.model_id,
+                    task_input=task.task_input,
                 )
 
             # Task is now dispatched and running on instance
-            # Result will arrive via callback endpoint
-            # NOTE: Task completion, result, and training data collection
-            # are handled in the callback endpoint handler
+            # Result will arrive via callback (HTTP) or WebSocket
 
         except httpx.TimeoutException:
             # Task dispatch timed out (not execution timeout - that's handled by instance)
@@ -215,13 +231,19 @@ class TaskDispatcher:
         Args:
             task_id: ID of completed task
         """
+        from loguru import logger
+
         task = await self.task_registry.get(task_id)
         if not task:
+            logger.warning(f"Cannot notify completion for {task_id}: task not found in registry")
             return
 
         # Only notify if task is in terminal state
         if task.status not in (TaskStatus.COMPLETED, TaskStatus.FAILED):
+            logger.debug(f"Skipping notification for {task_id}: status={task.status} (not terminal)")
             return
+
+        logger.info(f"Notifying completion for {task_id}: status={task.status}, execution_time={task.execution_time_ms}ms")
 
         await self.websocket_manager.broadcast_task_result(
             task_id=task.task_id,
@@ -231,6 +253,8 @@ class TaskDispatcher:
             timestamps=task.get_timestamps(),
             execution_time_ms=task.execution_time_ms,
         )
+
+        logger.debug(f"Notification complete for {task_id}")
 
     def dispatch_task_async(self, task_id: str) -> None:
         """
@@ -345,3 +369,130 @@ class TaskDispatcher:
                     values=updated_values,
                 )
                 await self.instance_registry.update_queue_info(instance_id, updated_queue)
+
+    async def _submit_via_websocket(
+        self,
+        instance_id: str,
+        task_id: str,
+        model_id: str,
+        task_input: Dict[str, Any],
+        metadata: Optional[Dict[str, Any]] = None,
+        max_retries: int = 3,
+    ) -> bool:
+        """
+        Submit task to instance via WebSocket.
+
+        Args:
+            instance_id: Instance identifier
+            task_id: Task identifier
+            model_id: Model identifier
+            task_input: Task input data
+            metadata: Optional task metadata
+            max_retries: Maximum retry attempts
+
+        Returns:
+            True if task was accepted, False otherwise
+
+        Raises:
+            Exception: If submission fails after all retries
+        """
+        from loguru import logger
+
+        logger.info(f"Submitting task {task_id} to instance {instance_id} via WebSocket")
+
+        for attempt in range(max_retries):
+            try:
+                # Send task via connection manager
+                success = await self.instance_connection_manager.send_task_to_instance(
+                    instance_id=instance_id,
+                    task_id=task_id,
+                    model_id=model_id,
+                    task_input=task_input,
+                    metadata=metadata,
+                )
+
+                if success:
+                    logger.info(
+                        f"Task {task_id} accepted by instance {instance_id} via WebSocket"
+                    )
+                    return True
+                else:
+                    logger.warning(
+                        f"Task {task_id} rejected by instance {instance_id} "
+                        f"(attempt {attempt + 1}/{max_retries})"
+                    )
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(2 ** attempt)  # Exponential backoff
+
+            except asyncio.TimeoutError:
+                logger.warning(
+                    f"WebSocket submission timeout for task {task_id} "
+                    f"(attempt {attempt + 1}/{max_retries})"
+                )
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(2 ** attempt)
+                else:
+                    raise
+
+            except ConnectionError as e:
+                logger.warning(
+                    f"WebSocket connection error for task {task_id}: {e} "
+                    f"(attempt {attempt + 1}/{max_retries})"
+                )
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(2 ** attempt)
+                else:
+                    raise
+
+            except Exception as e:
+                logger.error(f"Unexpected error in WebSocket submission: {e}")
+                raise
+
+        return False
+
+    async def _submit_via_http(
+        self,
+        instance: Any,
+        task_id: str,
+        model_id: str,
+        task_input: Dict[str, Any],
+    ) -> None:
+        """
+        Submit task to instance via HTTP (fallback method).
+
+        Args:
+            instance: Instance object
+            task_id: Task identifier
+            model_id: Model identifier
+            task_input: Task input data
+
+        Raises:
+            httpx.HTTPError: If HTTP request fails
+        """
+        from loguru import logger
+
+        logger.info(f"Submitting task {task_id} to instance {instance.instance_id} via HTTP")
+
+        # Prepare callback URL for result notification
+        callback_url = f"{self.callback_base_url}/callback/task_result"
+
+        # Send task to instance for execution
+        response = await self._http_client.post(
+            f"{instance.endpoint}/task/submit",
+            json={
+                "task_id": task_id,
+                "model_id": model_id,
+                "task_input": task_input,
+                "callback_url": callback_url,
+            },
+        )
+        response.raise_for_status()
+        submit_result = response.json()
+
+        # Verify task was accepted by instance
+        if not submit_result.get("success", False):
+            raise ValueError(
+                f"Instance rejected task: {submit_result.get('message', 'Unknown error')}"
+            )
+
+        logger.info(f"Task {task_id} accepted by instance {instance.instance_id} via HTTP")

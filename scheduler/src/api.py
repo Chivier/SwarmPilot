@@ -78,6 +78,8 @@ from .predictor_client import PredictorClient
 from .scheduler import get_strategy
 from .task_dispatcher import TaskDispatcher
 from .background_scheduler import BackgroundScheduler
+from .instance_connection_manager import InstanceConnectionManager
+from .instance_websocket_server import InstanceWebSocketServer
 
 # Import logger configuration to initialize loguru
 from . import logger as logger_module  # noqa: F401
@@ -99,6 +101,15 @@ async def lifespan(app: FastAPI):
     logger.info(f"Scheduling strategy: {config.scheduling.default_strategy}")
     logger.info(f"Auto-training enabled: {config.training.enable_auto_training}")
 
+    # Start Instance WebSocket server
+    try:
+        await instance_websocket_server.start()
+        await instance_connection_manager.start()
+        logger.success("Instance WebSocket server started successfully")
+    except Exception as e:
+        logger.error(f"Failed to start Instance WebSocket server: {e}")
+        raise
+
     # TODO: Load persisted state if needed
     # TODO: Connect to external services
     logger.success("Scheduler service started successfully")
@@ -107,6 +118,14 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     logger.info("Scheduler service shutting down...")
+
+    # Stop Instance WebSocket server
+    try:
+        await instance_connection_manager.stop()
+        await instance_websocket_server.stop()
+        logger.info("Instance WebSocket server stopped")
+    except Exception as e:
+        logger.error(f"Error stopping Instance WebSocket server: {e}")
 
     # Shutdown background scheduler (wait for active tasks to complete)
     await background_scheduler.shutdown()
@@ -183,7 +202,24 @@ queue_info_type = "expect_error" if config.scheduling.default_strategy == "min_t
 # Global state - TODO: Consider dependency injection for better testability
 instance_registry = InstanceRegistry(queue_info_type=queue_info_type)
 task_registry = TaskRegistry()
-websocket_manager = ConnectionManager()
+websocket_manager = ConnectionManager()  # Client WebSocket for task result notifications
+
+# Instance WebSocket components (for Instance-to-Scheduler communication)
+instance_connection_manager = InstanceConnectionManager(
+    instance_registry=instance_registry,
+    task_dispatcher=None,  # Will be set after task_dispatcher is initialized
+    heartbeat_interval=config.websocket.heartbeat_interval,
+    heartbeat_timeout_threshold=config.websocket.heartbeat_timeout_threshold,
+    ack_timeout=config.websocket.ack_timeout,
+    max_retries=3,
+)
+
+instance_websocket_server = InstanceWebSocketServer(
+    host=config.server.host,
+    port=config.websocket.instance_port,
+    instance_registry=instance_registry,
+    instance_connection_manager=instance_connection_manager,
+)
 
 predictor_client = PredictorClient(
     predictor_url=config.predictor.url,
@@ -212,7 +248,13 @@ task_dispatcher = TaskDispatcher(
     websocket_manager=websocket_manager,
     training_client=training_client,
     callback_base_url=callback_base_url,
+    instance_connection_manager=instance_connection_manager,
+    enable_websocket=True,  # Enable WebSocket communication
+    enable_http_fallback=True,  # Enable HTTP fallback
 )
+
+# Set task_dispatcher reference in instance_connection_manager
+instance_connection_manager.task_dispatcher = task_dispatcher
 
 # Initialize scheduling strategy from configuration
 # Note: strategy now receives predictor_client and instance_registry dependencies
