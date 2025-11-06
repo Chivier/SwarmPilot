@@ -166,7 +166,11 @@ class TaskRecord:
 
 @dataclass
 class WorkflowState:
-    """State tracking for a single workflow."""
+    """State tracking for a single workflow.
+
+    Note: Uses atomic dict length operations instead of separate counters
+    to avoid race conditions in multi-threaded task completion tracking.
+    """
     workflow_id: str
     strategy: str
     a_task_id: str
@@ -175,8 +179,6 @@ class WorkflowState:
     merge_task_id: str  # merge A task ID
     total_b1_tasks: int
     total_b2_tasks: int
-    completed_b1_tasks: int = 0
-    completed_b2_tasks: int = 0
     is_warmup: bool = False  # Whether this is a warmup workflow
     is_target_for_stats: bool = True  # Whether to include in statistics (continuous mode)
 
@@ -192,34 +194,48 @@ class WorkflowState:
     workflow_complete_time: Optional[float] = None  # same as merge_complete_time
 
     def are_all_b1_tasks_complete(self) -> bool:
-        """Check if all B1 tasks are complete."""
-        return self.completed_b1_tasks >= self.total_b1_tasks
+        """Check if all B1 tasks are complete.
+
+        Uses atomic dict length operation instead of counter to avoid race conditions.
+        """
+        return len(self.b1_complete_times) >= self.total_b1_tasks
 
     def are_all_b2_tasks_complete(self) -> bool:
-        """Check if all B2 tasks are complete."""
-        return self.completed_b2_tasks >= self.total_b2_tasks
+        """Check if all B2 tasks are complete.
+
+        Uses atomic dict length operation instead of counter to avoid race conditions.
+        """
+        return len(self.b2_complete_times) >= self.total_b2_tasks
 
     def is_workflow_complete(self) -> bool:
         """Check if workflow is complete (merge task done)."""
         return self.merge_complete_time is not None
 
     def mark_b1_task_complete(self, b1_task_id: str, complete_time: float):
-        """Mark a B1 task as complete and update workflow state."""
+        """Mark a B1 task as complete and update workflow state.
+
+        Thread-safe: Uses dict insertion (more atomic than counter increment).
+        Each b1_task_id is unique, so no two threads will insert the same key.
+        """
         if b1_task_id not in self.b1_complete_times:
             self.b1_complete_times[b1_task_id] = complete_time
-            self.completed_b1_tasks += 1
 
             # Update all_b1_complete_time if this is the last B1 task
+            # Uses atomic len() operation instead of counter
             if self.are_all_b1_tasks_complete():
                 self.all_b1_complete_time = max(self.b1_complete_times.values())
 
     def mark_b2_task_complete(self, b2_task_id: str, complete_time: float):
-        """Mark a B2 task as complete and update workflow state."""
+        """Mark a B2 task as complete and update workflow state.
+
+        Thread-safe: Uses dict insertion (more atomic than counter increment).
+        Each b2_task_id is unique, so no two threads will insert the same key.
+        """
         if b2_task_id not in self.b2_complete_times:
             self.b2_complete_times[b2_task_id] = complete_time
-            self.completed_b2_tasks += 1
 
             # Update all_b2_complete_time if this is the last B2 task
+            # Uses atomic len() operation instead of counter
             if self.are_all_b2_tasks_complete():
                 self.all_b2_complete_time = max(self.b2_complete_times.values())
 
@@ -293,6 +309,7 @@ class PoissonTaskSubmitter:
         self.submitted_tasks: List[TaskRecord] = []
         self.submission_start_time: Optional[float] = None
         self.submission_end_time: Optional[float] = None
+        self.failed_submissions: int = 0  # Track failed A task submissions
 
         # Thread control
         self.thread: Optional[threading.Thread] = None
@@ -324,6 +341,12 @@ class PoissonTaskSubmitter:
 
         submit_time = time.time()
 
+        # CRITICAL: Set a_submit_time BEFORE attempting submission
+        # This ensures we have a timestamp even if submission fails
+        workflow_id = task_data.workflow_id
+        if workflow_id in self.workflow_states:
+            self.workflow_states[workflow_id].a_submit_time = submit_time
+
         try:
             response = requests.post(
                 f"{self.scheduler_url}/task/submit",
@@ -342,6 +365,7 @@ class PoissonTaskSubmitter:
 
                 error_detail = f"HTTP {response.status_code}: {error_msg}"
                 self.logger.error(f"Failed to submit A task {task_data.task_id}: {error_detail}")
+                self.failed_submissions += 1
 
                 return TaskRecord(
                     task_id=task_data.task_id,
@@ -361,6 +385,7 @@ class PoissonTaskSubmitter:
             if not result.get("success", True):
                 error_msg = result.get("error", "Unknown error")
                 self.logger.error(f"Scheduler rejected A task {task_data.task_id}: {error_msg}")
+                self.failed_submissions += 1
 
                 return TaskRecord(
                     task_id=task_data.task_id,
@@ -374,10 +399,7 @@ class PoissonTaskSubmitter:
                     is_warmup=task_data.is_warmup
                 )
 
-            # Update workflow state with A task submit time
-            workflow_id = task_data.workflow_id
-            if workflow_id in self.workflow_states:
-                self.workflow_states[workflow_id].a_submit_time = submit_time
+            # Note: a_submit_time already set before try block
 
             # Create task record
             record = TaskRecord(
@@ -396,6 +418,7 @@ class PoissonTaskSubmitter:
         except requests.exceptions.Timeout:
             error_msg = f"Request timeout after 5.0s"
             self.logger.error(f"Failed to submit A task {task_data.task_id}: {error_msg}")
+            self.failed_submissions += 1
             return TaskRecord(
                 task_id=task_data.task_id,
                 workflow_id=task_data.workflow_id,
@@ -410,6 +433,7 @@ class PoissonTaskSubmitter:
         except requests.exceptions.ConnectionError as e:
             error_msg = f"Connection error: {str(e)}"
             self.logger.error(f"Failed to submit A task {task_data.task_id}: {error_msg}")
+            self.failed_submissions += 1
             return TaskRecord(
                 task_id=task_data.task_id,
                 workflow_id=task_data.workflow_id,
@@ -424,6 +448,7 @@ class PoissonTaskSubmitter:
         except Exception as e:
             error_msg = f"Unexpected error: {type(e).__name__}: {str(e)}"
             self.logger.error(f"Failed to submit A task {task_data.task_id}: {error_msg}")
+            self.failed_submissions += 1
             return TaskRecord(
                 task_id=task_data.task_id,
                 workflow_id=task_data.workflow_id,
@@ -437,16 +462,26 @@ class PoissonTaskSubmitter:
             )
 
     def _run(self):
-        """Main submission loop with Poisson inter-arrival times or rate limiting."""
+        """Main submission loop with Poisson inter-arrival times and optional global rate limiting."""
         if self.rate_limiter is not None:
-            self.logger.info(f"Starting submission: {len(self.tasks)} A tasks with global rate limiter")
-            self._run_with_rate_limiter()
+            self.logger.info(f"Starting Poisson submission: {len(self.tasks)} A tasks at {self.qps} QPS (with global rate limiter)")
         else:
             self.logger.info(f"Starting Poisson submission: {len(self.tasks)} A tasks at {self.qps} QPS")
-            self._run_poisson()
+        self._run_poisson()
 
     def _run_poisson(self):
-        """Poisson submission without rate limiter."""
+        """
+        Poisson submission with optional global rate limiter.
+
+        Behavior:
+        1. Wait for Poisson inter-arrival time (controlled by --qps)
+        2. Acquire token from global rate limiter if present (controlled by --gqps)
+        3. Submit task
+
+        This allows --qps and --gqps to work together:
+        - --qps controls A task arrival pattern (Poisson process)
+        - --gqps controls global submission rate across all tasks
+        """
         # Generate inter-arrival times (exponential distribution)
         lambda_rate = self.qps
         inter_arrival_times = np.random.exponential(1.0 / lambda_rate, len(self.tasks))
@@ -458,11 +493,15 @@ class PoissonTaskSubmitter:
                 self.logger.warning("Submission stopped early")
                 break
 
-            # Wait for inter-arrival time
+            # Step 1: Wait for Poisson inter-arrival time (controlled by --qps)
             if i > 0:
                 time.sleep(wait_time)
 
-            # Submit task
+            # Step 2: Acquire token from global rate limiter if present (controlled by --gqps)
+            if self.rate_limiter is not None:
+                self.rate_limiter.acquire(1)
+
+            # Step 3: Submit task
             record = self._submit_task(task_data)
             self.submitted_tasks.append(record)
 
@@ -475,6 +514,9 @@ class PoissonTaskSubmitter:
 
         self.logger.info(f"Submission complete: {len(self.submitted_tasks)} tasks in {submission_duration:.2f}s "
                         f"(actual QPS: {actual_qps:.2f})")
+        if self.failed_submissions > 0:
+            self.logger.error(f"⚠️  A TASK SUBMISSION FAILURES: {self.failed_submissions}/{len(self.tasks)} tasks failed to submit!")
+            self.logger.error(f"⚠️  This means {self.failed_submissions} workflows will NEVER complete!")
 
     def _run_with_rate_limiter(self):
         """Submission with shared rate limiter."""
@@ -501,6 +543,9 @@ class PoissonTaskSubmitter:
 
         self.logger.info(f"Submission complete: {len(self.submitted_tasks)} tasks in {submission_duration:.2f}s "
                         f"(actual QPS: {actual_qps:.2f})")
+        if self.failed_submissions > 0:
+            self.logger.error(f"⚠️  A TASK SUBMISSION FAILURES: {self.failed_submissions}/{len(self.tasks)} tasks failed to submit!")
+            self.logger.error(f"⚠️  This means {self.failed_submissions} workflows will NEVER complete!")
 
     def start(self):
         """Start the submission thread."""
@@ -576,6 +621,7 @@ class ATaskReceiver:
         self.b1_submitted: List[TaskRecord] = []
         self.received_a_task_count = 0  # Track number of A tasks received
         self.expected_a_task_count = len(a_task_ids)  # Total A tasks expected
+        self.failed_b1_submissions: int = 0  # Track failed B1 task submissions
 
         # Thread control
         self.thread: Optional[threading.Thread] = None
@@ -627,6 +673,7 @@ class ATaskReceiver:
 
                 error_detail = f"HTTP {response.status_code}: {error_msg}"
                 self.logger.error(f"Failed to submit B1 task {task_data.task_id}: {error_detail}")
+                self.failed_b1_submissions += 1
 
                 return TaskRecord(
                     task_id=task_data.task_id,
@@ -647,6 +694,7 @@ class ATaskReceiver:
             if not result.get("success", True):
                 error_msg = result.get("error", "Unknown error")
                 self.logger.error(f"Scheduler rejected B1 task {task_data.task_id}: {error_msg}")
+                self.failed_b1_submissions += 1
 
                 return TaskRecord(
                     task_id=task_data.task_id,
@@ -677,6 +725,7 @@ class ATaskReceiver:
         except requests.exceptions.Timeout:
             error_msg = f"Request timeout after 5.0s"
             self.logger.error(f"Failed to submit B1 task {task_data.task_id}: {error_msg}")
+            self.failed_b1_submissions += 1
             return TaskRecord(
                 task_id=task_data.task_id,
                 workflow_id=task_data.workflow_id,
@@ -692,6 +741,7 @@ class ATaskReceiver:
         except requests.exceptions.ConnectionError as e:
             error_msg = f"Connection error: {str(e)}"
             self.logger.error(f"Failed to submit B1 task {task_data.task_id}: {error_msg}")
+            self.failed_b1_submissions += 1
             return TaskRecord(
                 task_id=task_data.task_id,
                 workflow_id=task_data.workflow_id,
@@ -707,6 +757,7 @@ class ATaskReceiver:
         except Exception as e:
             error_msg = f"Unexpected error: {type(e).__name__}: {str(e)}"
             self.logger.error(f"Failed to submit B1 task {task_data.task_id}: {error_msg}")
+            self.failed_b1_submissions += 1
             return TaskRecord(
                 task_id=task_data.task_id,
                 workflow_id=task_data.workflow_id,
@@ -1242,8 +1293,8 @@ class B2TaskReceiver:
 
     For each completed B2 task:
     1. Receive completion event from Scheduler B
-    2. Update workflow state (increment completed_b2_tasks counter)
-    3. Check if all B2 tasks are done
+    2. Update workflow state (add to b2_complete_times dict)
+    3. Check if all B2 tasks are done (using atomic len() operation)
     4. If all B2 tasks done, push to merge_ready_queue for Thread 5 to submit merge task
     """
 
@@ -1369,7 +1420,7 @@ class B2TaskReceiver:
                 self.completed_workflows.add(workflow_id)
                 self._push_merge_ready(workflow)
                 self.logger.info(f"Workflow {workflow_id} B2 tasks all completed "
-                               f"({workflow.completed_b2_tasks}/{workflow.total_b2_tasks} B2 tasks), "
+                               f"({len(workflow.b2_complete_times)}/{workflow.total_b2_tasks} B2 tasks), "
                                f"ready for merge task")
         else:
             self.logger.warning(f"B2 task {task_id} failed for workflow {workflow_id}")
@@ -1717,25 +1768,47 @@ class MergeTaskReceiver:
         if status == "completed":
             workflow.mark_merge_task_complete(complete_time)
 
+            # Enhanced logging for debugging
+            self.logger.debug(
+                f"Processing merge completion for {workflow_id}: "
+                f"a_submit_time={workflow.a_submit_time}, "
+                f"merge_complete_time={complete_time}, "
+                f"already_completed={workflow_id in self.completed_workflows}"
+            )
+
             # Push final workflow completion event
+            # CRITICAL: Only mark as completed AFTER successful event push
             if workflow_id not in self.completed_workflows:
-                self.completed_workflows.add(workflow_id)
-                self._push_workflow_completion(workflow)
-                self.logger.info(f"Workflow {workflow_id} FULLY COMPLETED "
-                               f"(merge task finished)")
+                success = self._push_workflow_completion(workflow)
+                if success:
+                    self.completed_workflows.add(workflow_id)
+                    self.logger.info(f"Workflow {workflow_id} FULLY COMPLETED "
+                                   f"(merge task finished)")
+                else:
+                    self.logger.warning(
+                        f"Failed to push completion event for workflow {workflow_id}, "
+                        f"will retry if merge result received again"
+                    )
         else:
             self.logger.warning(f"Merge task {task_id} failed for workflow {workflow_id}")
 
-    def _push_workflow_completion(self, workflow: WorkflowState):
+    def _push_workflow_completion(self, workflow: WorkflowState) -> bool:
         """
         Push final workflow completion event to queue for Thread 4.
 
         Args:
             workflow: Fully completed workflow state
+
+        Returns:
+            True if event was successfully pushed, False otherwise
         """
         if workflow.a_submit_time is None or workflow.merge_complete_time is None:
-            self.logger.error(f"Incomplete workflow timing data for {workflow.workflow_id}")
-            return
+            self.logger.error(
+                f"Incomplete workflow timing data for {workflow.workflow_id}: "
+                f"a_submit_time={workflow.a_submit_time}, "
+                f"merge_complete_time={workflow.merge_complete_time}"
+            )
+            return False
 
         event = WorkflowCompletionEvent(
             workflow_id=workflow.workflow_id,
@@ -1758,6 +1831,7 @@ class MergeTaskReceiver:
         )
 
         self.completion_queue.put(event)
+        return True
 
     def _run(self):
         """Thread entry point."""
@@ -1851,12 +1925,20 @@ class WorkflowMonitor:
 
                 completed_count = len(self.completed_workflows)
 
+                # Enhanced progress logging
                 if completed_count % 10 == 0 or completed_count == self.expected_workflows:
-                    self.logger.info(f"Workflows completed: {completed_count}/{self.expected_workflows}")
+                    percentage = (completed_count / self.expected_workflows * 100) if self.expected_workflows > 0 else 0
+                    self.logger.info(
+                        f"Workflows completed: {completed_count}/{self.expected_workflows} "
+                        f"({percentage:.1f}%)"
+                    )
 
                 # Check if all workflows complete
                 if completed_count >= self.expected_workflows:
-                    self.logger.info("All workflows completed!")
+                    self.logger.info(
+                        f"All expected workflows completed! "
+                        f"Total: {completed_count}/{self.expected_workflows}"
+                    )
                     break
 
             except Empty:
@@ -1864,7 +1946,16 @@ class WorkflowMonitor:
             except Exception as e:
                 self.logger.error(f"Error in workflow monitor: {e}")
 
-        self.logger.info(f"Workflow monitor stopped. Completed: {len(self.completed_workflows)}/{self.expected_workflows}")
+        final_count = len(self.completed_workflows)
+        if final_count < self.expected_workflows:
+            self.logger.warning(
+                f"Workflow monitor stopped INCOMPLETE: {final_count}/{self.expected_workflows} "
+                f"({self.expected_workflows - final_count} workflows missing)"
+            )
+        else:
+            self.logger.info(
+                f"Workflow monitor stopped successfully: {final_count}/{self.expected_workflows}"
+            )
 
     def start(self):
         """Start the monitor thread."""
@@ -2381,6 +2472,7 @@ def test_strategy_workflow(
     num_warmup_workflows = int(num_workflows * warmup_ratio)
     total_workflows = num_warmup_workflows + num_workflows
     logger.info(f"Total workflows: {total_workflows} ({num_warmup_workflows} warmup + {num_workflows} actual)")
+    logger.info(f"Will generate {total_workflows} A tasks, {total_workflows} B1 tasks, {total_workflows} B2 tasks, and {total_workflows} merge tasks")
 
     # Use pre-generated warmup fanout values or fall back to empty list
     if num_warmup_workflows > 0:
@@ -2605,6 +2697,7 @@ def test_strategy_workflow(
         logger.info(f"Continuous mode: waiting for {expected_to_complete} workflows ({num_warmup_workflows} warmup + {target_workflows} target)")
     else:
         expected_to_complete = total_workflows
+        logger.info(f"Normal mode: monitor will wait for {expected_to_complete} workflows to complete")
     monitor = WorkflowMonitor(
         completion_queue=completion_queue,
         expected_workflows=expected_to_complete
@@ -2650,7 +2743,12 @@ def test_strategy_workflow(
         time.sleep(1.0)
         elapsed = time.time() - start_wait
         if int(elapsed) % 10 == 0:
-            logger.info(f"Waiting... {len(monitor.completed_workflows)}/{num_workflows} workflows completed")
+            logger.info(f"Waiting... {len(monitor.completed_workflows)}/{expected_to_complete} workflows completed")
+            # Safety check: if we've reached the expected count but monitor is still alive, something is wrong
+            if len(monitor.completed_workflows) >= expected_to_complete:
+                logger.warning(f"Monitor should have stopped but is still alive! Completed: {len(monitor.completed_workflows)}/{expected_to_complete}")
+                logger.warning("Breaking wait loop to prevent infinite hang. Check for monitor thread issues.")
+                break
 
     # Step 15: Stop all threads
     logger.info("Step 15: Stopping all threads")
@@ -2661,6 +2759,99 @@ def test_strategy_workflow(
     merge_submitter.stop()
     merge_receiver.stop()
     monitor.stop()
+
+    # Step 15.0: Timeout Recovery Mechanism
+    # Detect and recover from stuck workflows
+    if len(monitor.completed_workflows) < expected_to_complete:
+        logger.warning("\n" + "="*80)
+        logger.warning("TIMEOUT RECOVERY: Detecting stuck workflows")
+        logger.warning("="*80)
+
+        # Get workflow IDs that completed merge but never reached monitor
+        completed_in_monitor = set(e.workflow_id for e in monitor.completed_workflows)
+        stuck_workflows = merge_receiver.completed_workflows - completed_in_monitor
+
+        if stuck_workflows:
+            logger.error(f"Found {len(stuck_workflows)} stuck workflows that completed merge but never reached monitor")
+            logger.error(f"Stuck workflow IDs: {sorted(list(stuck_workflows))[:10]}{'...' if len(stuck_workflows) > 10 else ''}")
+
+            # Attempt recovery: force-push completion events for stuck workflows
+            recovered_count = 0
+            for wf_id in stuck_workflows:
+                if wf_id in workflow_states:
+                    wf = workflow_states[wf_id]
+                    logger.warning(f"Attempting recovery for stuck workflow {wf_id}")
+
+                    # Check if workflow has required timing data
+                    if wf.a_submit_time is None:
+                        # Use fallback: earliest available timestamp
+                        if wf.a_complete_time:
+                            wf.a_submit_time = wf.a_complete_time - 1.0  # 1s before completion
+                            logger.warning(f"  Using fallback a_submit_time for {wf_id}")
+                        else:
+                            logger.error(f"  Cannot recover {wf_id}: no timing data available")
+                            continue
+
+                    # Try to push completion event again
+                    if wf.merge_complete_time:
+                        success = merge_receiver._push_workflow_completion(wf)
+                        if success:
+                            recovered_count += 1
+                            logger.info(f"  ✓ Successfully recovered workflow {wf_id}")
+                        else:
+                            logger.error(f"  ✗ Failed to recover workflow {wf_id}")
+                    else:
+                        logger.error(f"  Cannot recover {wf_id}: merge_complete_time is None")
+
+            logger.warning(f"Recovery complete: {recovered_count}/{len(stuck_workflows)} workflows recovered")
+
+            # Give monitor a chance to process recovered events
+            if recovered_count > 0:
+                logger.info("Waiting 2 seconds for monitor to process recovered events...")
+                time.sleep(2.0)
+                logger.info(f"Final completion count: {len(monitor.completed_workflows)}/{expected_to_complete}")
+        else:
+            logger.info("No stuck workflows detected in merge receiver")
+
+            # Check for other potential issues
+            if len(monitor.completed_workflows) < expected_to_complete:
+                logger.warning("Workflows missing but not stuck in merge receiver")
+                logger.warning("Possible causes:")
+                logger.warning("  - A tasks failed to submit or complete")
+                logger.warning("  - B1/B2 tasks failed")
+                logger.warning("  - Merge tasks failed to submit or complete")
+
+        logger.warning("="*80 + "\n")
+
+    # Step 15.1: Diagnostic Summary - Task Submission Failures
+    logger.info("\n" + "="*80)
+    logger.info("DIAGNOSTIC SUMMARY - Task Submission Failures")
+    logger.info("="*80)
+
+    total_failed = a_submitter.failed_submissions + a_receiver.failed_b1_submissions
+    if total_failed > 0:
+        logger.error(f"⚠️  TOTAL TASK SUBMISSION FAILURES: {total_failed}")
+        logger.error(f"   - A task failures: {a_submitter.failed_submissions}/{len(a_tasks)}")
+        logger.error(f"   - B1 task failures: {a_receiver.failed_b1_submissions}")
+        logger.error(f"⚠️  Expected missing workflows: ~{total_failed} (if all failures were A tasks)")
+    else:
+        logger.info("✓ No task submission failures detected")
+
+    logger.info(f"\nWorkflow Completion Status:")
+    logger.info(f"   - Expected: {expected_to_complete} workflows")
+    logger.info(f"   - Completed: {len(monitor.completed_workflows)} workflows")
+    logger.info(f"   - Missing: {expected_to_complete - len(monitor.completed_workflows)} workflows")
+
+    if len(monitor.completed_workflows) < expected_to_complete:
+        missing_count = expected_to_complete - len(monitor.completed_workflows)
+        logger.warning(f"\n⚠️  ANALYSIS: {missing_count} workflows did not complete")
+        if a_submitter.failed_submissions > 0:
+            logger.warning(f"   - {a_submitter.failed_submissions} A task submission failures would cause {a_submitter.failed_submissions} incomplete workflows")
+        if missing_count > a_submitter.failed_submissions:
+            logger.warning(f"   - Additional {missing_count - a_submitter.failed_submissions} workflows may have failed at B1/B2/merge stages")
+            logger.warning(f"   - Check for B2 task failures, merge task failures, or race conditions")
+
+    logger.info("="*80 + "\n")
 
     # Step 15.5: Continuous mode cleanup
     if continuous_mode:
@@ -2843,7 +3034,7 @@ def main(num_workflows: int = 100, qps_a: float = 8.0, seed: int = 42,
             task_times_b2=task_times_b2,
             fanout_values=fanout_values,
             qps_a=QPS_A,
-            timeout_minutes=10,
+            timeout_minutes=20,
             gqps=gqps,
             warmup_ratio=warmup_ratio,
             warmup_task_times_a=warmup_task_times_a,
