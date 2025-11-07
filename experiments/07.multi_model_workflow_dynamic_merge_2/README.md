@@ -307,13 +307,64 @@ uv run python3 test_dynamic_workflow.py --help
 | Argument | Type | Default | Description |
 |----------|------|---------|-------------|
 | `--num-workflows` | int | 100 | Number of workflows to generate and execute per strategy |
-| `--qps` | float | 8.0 | Target queries per second (QPS) for A task submission |
+| `--qps` | float | 8.0 | Target queries per second (QPS) for A task submission (Poisson arrival pattern) |
+| `--gqps` | float | None | Global QPS limit for all task submissions (A, B1, B2, merge). Can be used together with --qps |
+| `--warmup` | float | 0.0 | Warmup task ratio (0.0-1.0). E.g., 0.2 means 20% warmup tasks before actual workload |
+| `--continuous` | bool | False | Enable continuous request mode (submit 2x workflows, track first num_workflows) |
 | `--seed` | int | 42 | Random seed for reproducibility |
 | `--strategies` | list | all three | Scheduling strategies to test (min_time, round_robin, probabilistic) |
 
 **Note**: The experiment will generate and submit **exactly** the number of tasks specified:
 - A tasks: `num_workflows` tasks (e.g., 100)
 - B tasks: `sum(fanout_values)` tasks (e.g., ~550 for 100 workflows with fanout 3-8)
+
+#### QPS Control: `--qps` vs `--gqps`
+
+The experiment supports two independent QPS control mechanisms that can work together:
+
+**1. `--qps` (A Task Arrival Rate)**
+- Controls the **arrival pattern** of A tasks using a Poisson process
+- Simulates realistic user request patterns with exponentially distributed inter-arrival times
+- Only affects A task submission timing
+- Default: 8.0 QPS
+
+**2. `--gqps` (Global QPS Limit)**
+- Applies a **global rate limit** to all task submissions (A, B1, B2, merge) using token bucket algorithm
+- Prevents overloading the system by capping total submission rate
+- Applies to all threads submitting tasks
+- Default: None (no global limit)
+
+**Using Both Parameters Together:**
+
+When both `--qps` and `--gqps` are specified, they work in tandem:
+
+```bash
+# Example: A tasks arrive at 8 QPS (Poisson), but global submission rate is capped at 20 QPS
+uv run python3 test_dynamic_workflow.py --num-workflows 200 --qps 8 --gqps 20
+```
+
+**Behavior:**
+1. A tasks are submitted following Poisson process at 8 QPS average
+2. Each task submission (A, B1, B2, merge) must acquire a token from the global rate limiter (20 QPS total)
+3. If the total submission rate exceeds 20 QPS, tasks will be throttled
+
+**Use Cases:**
+- `--qps` only: Simulate specific arrival patterns without global constraint
+- `--gqps` only: Hard cap on system load, A tasks submitted as fast as possible (within global limit)
+- Both: Realistic arrival pattern with system protection (recommended for production-like scenarios)
+
+**Example Scenarios:**
+
+```bash
+# Scenario 1: Low arrival rate, no global limit (baseline)
+uv run python3 test_dynamic_workflow.py --num-workflows 100 --qps 5
+
+# Scenario 2: High arrival rate with global protection
+uv run python3 test_dynamic_workflow.py --num-workflows 200 --qps 10 --gqps 25
+
+# Scenario 3: Stress test (high arrival, high global limit)
+uv run python3 test_dynamic_workflow.py --num-workflows 500 --qps 20 --gqps 50
+```
 
 ### 3. Monitor Progress
 

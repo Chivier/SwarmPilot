@@ -24,6 +24,7 @@ Key differences from experiment 06 (1-to-n-to-1):
 - Merge trigger: Merge task triggered after all B2 tasks complete (not B1)
 """
 
+import uvloop
 import asyncio
 import websockets
 import requests
@@ -44,10 +45,13 @@ from workload_generator import (
     generate_fast_peak_distribution,
     generate_slow_peak_distribution,
     generate_fanout_distribution,
+    generate_workflow_from_traces,
     WorkloadConfig,
     FanoutConfig,
+    WorkflowWorkload,
     print_distribution_stats,
-    print_fanout_stats
+    print_fanout_stats,
+    print_workflow_stats
 )
 
 # Configure logging
@@ -56,6 +60,8 @@ logging.basicConfig(
     format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S'
 )
+
+asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
 # Scheduler endpoints
 SCHEDULER_A_URL = "http://localhost:8100"
@@ -166,7 +172,11 @@ class TaskRecord:
 
 @dataclass
 class WorkflowState:
-    """State tracking for a single workflow."""
+    """State tracking for a single workflow.
+
+    Note: Uses atomic dict length operations instead of separate counters
+    to avoid race conditions in multi-threaded task completion tracking.
+    """
     workflow_id: str
     strategy: str
     a_task_id: str
@@ -175,8 +185,6 @@ class WorkflowState:
     merge_task_id: str  # merge A task ID
     total_b1_tasks: int
     total_b2_tasks: int
-    completed_b1_tasks: int = 0
-    completed_b2_tasks: int = 0
     is_warmup: bool = False  # Whether this is a warmup workflow
     is_target_for_stats: bool = True  # Whether to include in statistics (continuous mode)
 
@@ -192,34 +200,48 @@ class WorkflowState:
     workflow_complete_time: Optional[float] = None  # same as merge_complete_time
 
     def are_all_b1_tasks_complete(self) -> bool:
-        """Check if all B1 tasks are complete."""
-        return self.completed_b1_tasks >= self.total_b1_tasks
+        """Check if all B1 tasks are complete.
+
+        Uses atomic dict length operation instead of counter to avoid race conditions.
+        """
+        return len(self.b1_complete_times) >= self.total_b1_tasks
 
     def are_all_b2_tasks_complete(self) -> bool:
-        """Check if all B2 tasks are complete."""
-        return self.completed_b2_tasks >= self.total_b2_tasks
+        """Check if all B2 tasks are complete.
+
+        Uses atomic dict length operation instead of counter to avoid race conditions.
+        """
+        return len(self.b2_complete_times) >= self.total_b2_tasks
 
     def is_workflow_complete(self) -> bool:
         """Check if workflow is complete (merge task done)."""
         return self.merge_complete_time is not None
 
     def mark_b1_task_complete(self, b1_task_id: str, complete_time: float):
-        """Mark a B1 task as complete and update workflow state."""
+        """Mark a B1 task as complete and update workflow state.
+
+        Thread-safe: Uses dict insertion (more atomic than counter increment).
+        Each b1_task_id is unique, so no two threads will insert the same key.
+        """
         if b1_task_id not in self.b1_complete_times:
             self.b1_complete_times[b1_task_id] = complete_time
-            self.completed_b1_tasks += 1
 
             # Update all_b1_complete_time if this is the last B1 task
+            # Uses atomic len() operation instead of counter
             if self.are_all_b1_tasks_complete():
                 self.all_b1_complete_time = max(self.b1_complete_times.values())
 
     def mark_b2_task_complete(self, b2_task_id: str, complete_time: float):
-        """Mark a B2 task as complete and update workflow state."""
+        """Mark a B2 task as complete and update workflow state.
+
+        Thread-safe: Uses dict insertion (more atomic than counter increment).
+        Each b2_task_id is unique, so no two threads will insert the same key.
+        """
         if b2_task_id not in self.b2_complete_times:
             self.b2_complete_times[b2_task_id] = complete_time
-            self.completed_b2_tasks += 1
 
             # Update all_b2_complete_time if this is the last B2 task
+            # Uses atomic len() operation instead of counter
             if self.are_all_b2_tasks_complete():
                 self.all_b2_complete_time = max(self.b2_complete_times.values())
 
@@ -293,6 +315,7 @@ class PoissonTaskSubmitter:
         self.submitted_tasks: List[TaskRecord] = []
         self.submission_start_time: Optional[float] = None
         self.submission_end_time: Optional[float] = None
+        self.failed_submissions: int = 0  # Track failed A task submissions
 
         # Thread control
         self.thread: Optional[threading.Thread] = None
@@ -324,6 +347,12 @@ class PoissonTaskSubmitter:
 
         submit_time = time.time()
 
+        # CRITICAL: Set a_submit_time BEFORE attempting submission
+        # This ensures we have a timestamp even if submission fails
+        workflow_id = task_data.workflow_id
+        if workflow_id in self.workflow_states:
+            self.workflow_states[workflow_id].a_submit_time = submit_time
+
         try:
             response = requests.post(
                 f"{self.scheduler_url}/task/submit",
@@ -342,6 +371,7 @@ class PoissonTaskSubmitter:
 
                 error_detail = f"HTTP {response.status_code}: {error_msg}"
                 self.logger.error(f"Failed to submit A task {task_data.task_id}: {error_detail}")
+                self.failed_submissions += 1
 
                 return TaskRecord(
                     task_id=task_data.task_id,
@@ -361,6 +391,7 @@ class PoissonTaskSubmitter:
             if not result.get("success", True):
                 error_msg = result.get("error", "Unknown error")
                 self.logger.error(f"Scheduler rejected A task {task_data.task_id}: {error_msg}")
+                self.failed_submissions += 1
 
                 return TaskRecord(
                     task_id=task_data.task_id,
@@ -374,10 +405,7 @@ class PoissonTaskSubmitter:
                     is_warmup=task_data.is_warmup
                 )
 
-            # Update workflow state with A task submit time
-            workflow_id = task_data.workflow_id
-            if workflow_id in self.workflow_states:
-                self.workflow_states[workflow_id].a_submit_time = submit_time
+            # Note: a_submit_time already set before try block
 
             # Create task record
             record = TaskRecord(
@@ -396,6 +424,7 @@ class PoissonTaskSubmitter:
         except requests.exceptions.Timeout:
             error_msg = f"Request timeout after 5.0s"
             self.logger.error(f"Failed to submit A task {task_data.task_id}: {error_msg}")
+            self.failed_submissions += 1
             return TaskRecord(
                 task_id=task_data.task_id,
                 workflow_id=task_data.workflow_id,
@@ -410,6 +439,7 @@ class PoissonTaskSubmitter:
         except requests.exceptions.ConnectionError as e:
             error_msg = f"Connection error: {str(e)}"
             self.logger.error(f"Failed to submit A task {task_data.task_id}: {error_msg}")
+            self.failed_submissions += 1
             return TaskRecord(
                 task_id=task_data.task_id,
                 workflow_id=task_data.workflow_id,
@@ -424,6 +454,7 @@ class PoissonTaskSubmitter:
         except Exception as e:
             error_msg = f"Unexpected error: {type(e).__name__}: {str(e)}"
             self.logger.error(f"Failed to submit A task {task_data.task_id}: {error_msg}")
+            self.failed_submissions += 1
             return TaskRecord(
                 task_id=task_data.task_id,
                 workflow_id=task_data.workflow_id,
@@ -437,16 +468,26 @@ class PoissonTaskSubmitter:
             )
 
     def _run(self):
-        """Main submission loop with Poisson inter-arrival times or rate limiting."""
+        """Main submission loop with Poisson inter-arrival times and optional global rate limiting."""
         if self.rate_limiter is not None:
-            self.logger.info(f"Starting submission: {len(self.tasks)} A tasks with global rate limiter")
-            self._run_with_rate_limiter()
+            self.logger.debug(f"Starting Poisson submission: {len(self.tasks)} A tasks at {self.qps} QPS (with global rate limiter)")
         else:
-            self.logger.info(f"Starting Poisson submission: {len(self.tasks)} A tasks at {self.qps} QPS")
-            self._run_poisson()
+            self.logger.debug(f"Starting Poisson submission: {len(self.tasks)} A tasks at {self.qps} QPS")
+        self._run_poisson()
 
     def _run_poisson(self):
-        """Poisson submission without rate limiter."""
+        """
+        Poisson submission with optional global rate limiter.
+
+        Behavior:
+        1. Wait for Poisson inter-arrival time (controlled by --qps)
+        2. Acquire token from global rate limiter if present (controlled by --gqps)
+        3. Submit task
+
+        This allows --qps and --gqps to work together:
+        - --qps controls A task arrival pattern (Poisson process)
+        - --gqps controls global submission rate across all tasks
+        """
         # Generate inter-arrival times (exponential distribution)
         lambda_rate = self.qps
         inter_arrival_times = np.random.exponential(1.0 / lambda_rate, len(self.tasks))
@@ -458,23 +499,30 @@ class PoissonTaskSubmitter:
                 self.logger.warning("Submission stopped early")
                 break
 
-            # Wait for inter-arrival time
+            # Step 1: Wait for Poisson inter-arrival time (controlled by --qps)
             if i > 0:
                 time.sleep(wait_time)
 
-            # Submit task
+            # Step 2: Acquire token from global rate limiter if present (controlled by --gqps)
+            if self.rate_limiter is not None:
+                self.rate_limiter.acquire(1)
+
+            # Step 3: Submit task
             record = self._submit_task(task_data)
             self.submitted_tasks.append(record)
 
             if (i + 1) % 20 == 0:
-                self.logger.info(f"Submitted {i + 1}/{len(self.tasks)} A tasks")
+                self.logger.debug(f"Submitted {i + 1}/{len(self.tasks)} A tasks")
 
         self.submission_end_time = time.time()
         submission_duration = self.submission_end_time - self.submission_start_time
         actual_qps = len(self.tasks) / submission_duration
 
-        self.logger.info(f"Submission complete: {len(self.submitted_tasks)} tasks in {submission_duration:.2f}s "
+        self.logger.debug(f"Submission complete: {len(self.submitted_tasks)} tasks in {submission_duration:.2f}s "
                         f"(actual QPS: {actual_qps:.2f})")
+        if self.failed_submissions > 0:
+            self.logger.error(f"⚠️  A TASK SUBMISSION FAILURES: {self.failed_submissions}/{len(self.tasks)} tasks failed to submit!")
+            self.logger.error(f"⚠️  This means {self.failed_submissions} workflows will NEVER complete!")
 
     def _run_with_rate_limiter(self):
         """Submission with shared rate limiter."""
@@ -493,14 +541,17 @@ class PoissonTaskSubmitter:
             self.submitted_tasks.append(record)
 
             if (i + 1) % 20 == 0:
-                self.logger.info(f"Submitted {i + 1}/{len(self.tasks)} A tasks")
+                self.logger.debug(f"Submitted {i + 1}/{len(self.tasks)} A tasks")
 
         self.submission_end_time = time.time()
         submission_duration = self.submission_end_time - self.submission_start_time
         actual_qps = len(self.tasks) / submission_duration
 
-        self.logger.info(f"Submission complete: {len(self.submitted_tasks)} tasks in {submission_duration:.2f}s "
+        self.logger.debug(f"Submission complete: {len(self.submitted_tasks)} tasks in {submission_duration:.2f}s "
                         f"(actual QPS: {actual_qps:.2f})")
+        if self.failed_submissions > 0:
+            self.logger.error(f"⚠️  A TASK SUBMISSION FAILURES: {self.failed_submissions}/{len(self.tasks)} tasks failed to submit!")
+            self.logger.error(f"⚠️  This means {self.failed_submissions} workflows will NEVER complete!")
 
     def start(self):
         """Start the submission thread."""
@@ -511,7 +562,7 @@ class PoissonTaskSubmitter:
         self.running = True
         self.thread = threading.Thread(target=self._run, name="Thread1-ATaskSubmitter")
         self.thread.start()
-        self.logger.info("Submission thread started")
+        self.logger.debug("Submission thread started")
 
     def stop(self):
         """Stop the submission thread."""
@@ -520,7 +571,7 @@ class PoissonTaskSubmitter:
 
         self.running = False
         self.thread.join(timeout=10.0)
-        self.logger.info("Submission thread stopped")
+        self.logger.debug("Submission thread stopped")
 
     def is_alive(self) -> bool:
         """Check if submission thread is still running."""
@@ -576,6 +627,7 @@ class ATaskReceiver:
         self.b1_submitted: List[TaskRecord] = []
         self.received_a_task_count = 0  # Track number of A tasks received
         self.expected_a_task_count = len(a_task_ids)  # Total A tasks expected
+        self.failed_b1_submissions: int = 0  # Track failed B1 task submissions
 
         # Thread control
         self.thread: Optional[threading.Thread] = None
@@ -627,6 +679,7 @@ class ATaskReceiver:
 
                 error_detail = f"HTTP {response.status_code}: {error_msg}"
                 self.logger.error(f"Failed to submit B1 task {task_data.task_id}: {error_detail}")
+                self.failed_b1_submissions += 1
 
                 return TaskRecord(
                     task_id=task_data.task_id,
@@ -647,6 +700,7 @@ class ATaskReceiver:
             if not result.get("success", True):
                 error_msg = result.get("error", "Unknown error")
                 self.logger.error(f"Scheduler rejected B1 task {task_data.task_id}: {error_msg}")
+                self.failed_b1_submissions += 1
 
                 return TaskRecord(
                     task_id=task_data.task_id,
@@ -677,6 +731,7 @@ class ATaskReceiver:
         except requests.exceptions.Timeout:
             error_msg = f"Request timeout after 5.0s"
             self.logger.error(f"Failed to submit B1 task {task_data.task_id}: {error_msg}")
+            self.failed_b1_submissions += 1
             return TaskRecord(
                 task_id=task_data.task_id,
                 workflow_id=task_data.workflow_id,
@@ -692,6 +747,7 @@ class ATaskReceiver:
         except requests.exceptions.ConnectionError as e:
             error_msg = f"Connection error: {str(e)}"
             self.logger.error(f"Failed to submit B1 task {task_data.task_id}: {error_msg}")
+            self.failed_b1_submissions += 1
             return TaskRecord(
                 task_id=task_data.task_id,
                 workflow_id=task_data.workflow_id,
@@ -707,6 +763,7 @@ class ATaskReceiver:
         except Exception as e:
             error_msg = f"Unexpected error: {type(e).__name__}: {str(e)}"
             self.logger.error(f"Failed to submit B1 task {task_data.task_id}: {error_msg}")
+            self.failed_b1_submissions += 1
             return TaskRecord(
                 task_id=task_data.task_id,
                 workflow_id=task_data.workflow_id,
@@ -722,7 +779,7 @@ class ATaskReceiver:
 
     async def _run_async(self):
         """Main WebSocket loop for receiving A task results."""
-        self.logger.info(f"Connecting to Scheduler A WebSocket: {self.scheduler_a_ws}")
+        self.logger.debug(f"Connecting to Scheduler A WebSocket: {self.scheduler_a_ws}")
 
         try:
             async with websockets.connect(
@@ -771,7 +828,7 @@ class ATaskReceiver:
 
                 # Gracefully close the WebSocket connection
                 await websocket.close(code=1000, reason="All tasks completed")
-                self.logger.info("WebSocket connection closed gracefully")
+                self.logger.debug("WebSocket connection closed gracefully")
 
         except Exception as e:
             self.logger.error(f"WebSocket connection error: {e}")
@@ -840,7 +897,7 @@ class ATaskReceiver:
 
         b1_tasks = self.b1_tasks_by_workflow[workflow_id]
 
-        self.logger.info(f"Submitting {len(b1_tasks)} B1 tasks for workflow {workflow_id}")
+        self.logger.debug(f"Submitting {len(b1_tasks)} B1 tasks for workflow {workflow_id}")
 
         # Submit all B1 tasks (in current thread, not async)
         # Using synchronous submission for simplicity
@@ -885,7 +942,7 @@ class ATaskReceiver:
         self.running = True
         self.thread = threading.Thread(target=self._run, name="Thread2-ATaskReceiver")
         self.thread.start()
-        self.logger.info("A task receiver thread started")
+        self.logger.debug("A task receiver thread started")
 
     def stop(self):
         """Stop the receiver thread."""
@@ -894,7 +951,7 @@ class ATaskReceiver:
 
         self.running = False
         self.thread.join(timeout=10.0)
-        self.logger.info("A task receiver thread stopped")
+        self.logger.debug("A task receiver thread stopped")
 
     def is_alive(self) -> bool:
         """Check if receiver thread is still running."""
@@ -1091,7 +1148,7 @@ class B1TaskReceiver:
 
     async def _run_async(self):
         """Main WebSocket loop for receiving B1 task results."""
-        self.logger.info(f"Connecting to Scheduler B WebSocket: {self.scheduler_b_ws}")
+        self.logger.debug(f"Connecting to Scheduler B WebSocket: {self.scheduler_b_ws}")
 
         try:
             async with websockets.connect(self.scheduler_b_ws) as websocket:
@@ -1100,11 +1157,11 @@ class B1TaskReceiver:
                     "task_ids": self.b1_task_ids
                 }
                 await websocket.send(json.dumps(subscribe_msg))
-                self.logger.info(f"Subscribed to {len(self.b1_task_ids)} B1 tasks")
+                self.logger.debug(f"Subscribed to {len(self.b1_task_ids)} B1 tasks")
 
                 ack = await websocket.recv()
                 ack_data = json.loads(ack)
-                self.logger.info(f"Subscription confirmed: {ack_data.get('message')}")
+                self.logger.debug(f"Subscription confirmed: {ack_data.get('message')}")
 
                 while self.running:
                     try:
@@ -1181,7 +1238,7 @@ class B1TaskReceiver:
                 b2_task_data = self.b2_tasks_by_b1[task_id]
                 record = self._submit_b2_task(b2_task_data)
                 self.b2_submitted.append(record)
-                self.logger.info(f"Submitted B2 task {b2_task_data.task_id} for completed B1 {task_id}")
+                self.logger.debug(f"Submitted B2 task {b2_task_data.task_id} for completed B1 {task_id}")
             else:
                 self.logger.error(f"No B2 task found for B1 task {task_id}")
         else:
@@ -1216,7 +1273,7 @@ class B1TaskReceiver:
         self.running = True
         self.thread = threading.Thread(target=self._run, name="Thread3-B1TaskReceiver")
         self.thread.start()
-        self.logger.info("B1 task receiver thread started")
+        self.logger.debug("B1 task receiver thread started")
 
     def stop(self):
         """Stop the receiver thread."""
@@ -1225,7 +1282,7 @@ class B1TaskReceiver:
 
         self.running = False
         self.thread.join(timeout=10.0)
-        self.logger.info("B1 task receiver thread stopped")
+        self.logger.debug("B1 task receiver thread stopped")
 
     def is_alive(self) -> bool:
         """Check if receiver thread is still running."""
@@ -1242,8 +1299,8 @@ class B2TaskReceiver:
 
     For each completed B2 task:
     1. Receive completion event from Scheduler B
-    2. Update workflow state (increment completed_b2_tasks counter)
-    3. Check if all B2 tasks are done
+    2. Update workflow state (add to b2_complete_times dict)
+    3. Check if all B2 tasks are done (using atomic len() operation)
     4. If all B2 tasks done, push to merge_ready_queue for Thread 5 to submit merge task
     """
 
@@ -1280,7 +1337,7 @@ class B2TaskReceiver:
 
     async def _run_async(self):
         """Main WebSocket loop for receiving B2 task results."""
-        self.logger.info(f"Connecting to Scheduler B WebSocket: {self.scheduler_b_ws}")
+        self.logger.debug(f"Connecting to Scheduler B WebSocket: {self.scheduler_b_ws}")
 
         try:
             async with websockets.connect(self.scheduler_b_ws) as websocket:
@@ -1290,12 +1347,12 @@ class B2TaskReceiver:
                     "task_ids": self.b2_task_ids
                 }
                 await websocket.send(json.dumps(subscribe_msg))
-                self.logger.info(f"Subscribed to {len(self.b2_task_ids)} B2 tasks")
+                self.logger.debug(f"Subscribed to {len(self.b2_task_ids)} B2 tasks")
 
                 # Wait for acknowledgment
                 ack = await websocket.recv()
                 ack_data = json.loads(ack)
-                self.logger.info(f"Subscription confirmed: {ack_data.get('message')}")
+                self.logger.debug(f"Subscription confirmed: {ack_data.get('message')}")
 
                 # Receive B2 task results
                 while self.running:
@@ -1368,8 +1425,8 @@ class B2TaskReceiver:
             if workflow.are_all_b2_tasks_complete() and workflow_id not in self.completed_workflows:
                 self.completed_workflows.add(workflow_id)
                 self._push_merge_ready(workflow)
-                self.logger.info(f"Workflow {workflow_id} B2 tasks all completed "
-                               f"({workflow.completed_b2_tasks}/{workflow.total_b2_tasks} B2 tasks), "
+                self.logger.debug(f"Workflow {workflow_id} B2 tasks all completed "
+                               f"({len(workflow.b2_complete_times)}/{workflow.total_b2_tasks} B2 tasks), "
                                f"ready for merge task")
         else:
             self.logger.warning(f"B2 task {task_id} failed for workflow {workflow_id}")
@@ -1572,14 +1629,14 @@ class MergeTaskSubmitter:
         self.running = True
         self.thread = threading.Thread(target=self._run, daemon=True)
         self.thread.start()
-        self.logger.info("Merge task submitter thread started")
+        self.logger.debug("Merge task submitter thread started")
 
     def stop(self):
         """Stop the merge task submitter thread."""
         self.running = False
         if self.thread:
             self.thread.join(timeout=10.0)
-        self.logger.info("Merge task submitter thread stopped")
+        self.logger.debug("Merge task submitter thread stopped")
 
     def is_alive(self) -> bool:
         """Check if submitter thread is still running."""
@@ -1633,7 +1690,7 @@ class MergeTaskReceiver:
 
     async def _run_async(self):
         """Main WebSocket loop for receiving merge task results."""
-        self.logger.info(f"Connecting to Scheduler A WebSocket: {self.scheduler_a_ws}")
+        self.logger.debug(f"Connecting to Scheduler A WebSocket: {self.scheduler_a_ws}")
 
         try:
             async with websockets.connect(self.scheduler_a_ws) as websocket:
@@ -1643,12 +1700,12 @@ class MergeTaskReceiver:
                     "task_ids": self.merge_task_ids
                 }
                 await websocket.send(json.dumps(subscribe_msg))
-                self.logger.info(f"Subscribed to {len(self.merge_task_ids)} merge tasks")
+                self.logger.debug(f"Subscribed to {len(self.merge_task_ids)} merge tasks")
 
                 # Wait for acknowledgment
                 ack = await websocket.recv()
                 ack_data = json.loads(ack)
-                self.logger.info(f"Subscription confirmed: {ack_data.get('message')}")
+                self.logger.debug(f"Subscription confirmed: {ack_data.get('message')}")
 
                 # Receive merge task results
                 while self.running:
@@ -1717,25 +1774,47 @@ class MergeTaskReceiver:
         if status == "completed":
             workflow.mark_merge_task_complete(complete_time)
 
+            # Enhanced logging for debugging
+            self.logger.debug(
+                f"Processing merge completion for {workflow_id}: "
+                f"a_submit_time={workflow.a_submit_time}, "
+                f"merge_complete_time={complete_time}, "
+                f"already_completed={workflow_id in self.completed_workflows}"
+            )
+
             # Push final workflow completion event
+            # CRITICAL: Only mark as completed AFTER successful event push
             if workflow_id not in self.completed_workflows:
-                self.completed_workflows.add(workflow_id)
-                self._push_workflow_completion(workflow)
-                self.logger.info(f"Workflow {workflow_id} FULLY COMPLETED "
-                               f"(merge task finished)")
+                success = self._push_workflow_completion(workflow)
+                if success:
+                    self.completed_workflows.add(workflow_id)
+                    self.logger.debug(f"Workflow {workflow_id} FULLY COMPLETED "
+                                   f"(merge task finished)")
+                else:
+                    self.logger.warning(
+                        f"Failed to push completion event for workflow {workflow_id}, "
+                        f"will retry if merge result received again"
+                    )
         else:
             self.logger.warning(f"Merge task {task_id} failed for workflow {workflow_id}")
 
-    def _push_workflow_completion(self, workflow: WorkflowState):
+    def _push_workflow_completion(self, workflow: WorkflowState) -> bool:
         """
         Push final workflow completion event to queue for Thread 4.
 
         Args:
             workflow: Fully completed workflow state
+
+        Returns:
+            True if event was successfully pushed, False otherwise
         """
         if workflow.a_submit_time is None or workflow.merge_complete_time is None:
-            self.logger.error(f"Incomplete workflow timing data for {workflow.workflow_id}")
-            return
+            self.logger.error(
+                f"Incomplete workflow timing data for {workflow.workflow_id}: "
+                f"a_submit_time={workflow.a_submit_time}, "
+                f"merge_complete_time={workflow.merge_complete_time}"
+            )
+            return False
 
         event = WorkflowCompletionEvent(
             workflow_id=workflow.workflow_id,
@@ -1758,6 +1837,7 @@ class MergeTaskReceiver:
         )
 
         self.completion_queue.put(event)
+        return True
 
     def _run(self):
         """Thread entry point."""
@@ -1790,13 +1870,13 @@ class MergeTaskReceiver:
         self.running = True
         self.thread = threading.Thread(target=self._run, daemon=True)
         self.thread.start()
-        self.logger.info("Merge task receiver thread started")
+        self.logger.debug("Merge task receiver thread started")
 
     def stop(self):
         """Stop the merge task receiver thread."""
         self.running = False
         self.thread.join(timeout=10.0)
-        self.logger.info("Merge task receiver thread stopped")
+        self.logger.debug("Merge task receiver thread stopped")
 
     def is_alive(self) -> bool:
         """Check if receiver thread is still running."""
@@ -1820,16 +1900,19 @@ class WorkflowMonitor:
 
     def __init__(self,
                  completion_queue: Queue,
-                 expected_workflows: int):
+                 expected_workflows: int,
+                 target_workflows: int):
         """
         Initialize workflow monitor.
 
         Args:
             completion_queue: Queue to receive workflow completion events
             expected_workflows: Total number of workflows to expect
+            target_workflows: Number of target workflows to complete before stopping
         """
         self.completion_queue = completion_queue
         self.expected_workflows = expected_workflows
+        self.target_workflows = target_workflows
         self.logger = logging.getLogger("Thread4.WorkflowMonitor")
 
         # Tracking
@@ -1841,7 +1924,10 @@ class WorkflowMonitor:
 
     def _run(self):
         """Main monitoring loop."""
-        self.logger.info(f"Starting workflow monitor (expecting {self.expected_workflows} workflows)")
+        self.logger.info(
+            f"Starting workflow monitor (total: {self.expected_workflows}, "
+            f"target for stats: {self.target_workflows})"
+        )
 
         while self.running:
             try:
@@ -1851,12 +1937,25 @@ class WorkflowMonitor:
 
                 completed_count = len(self.completed_workflows)
 
-                if completed_count % 10 == 0 or completed_count == self.expected_workflows:
-                    self.logger.info(f"Workflows completed: {completed_count}/{self.expected_workflows}")
+                # Count target workflows (excluding warmup and non-target)
+                target_completed = sum(1 for e in self.completed_workflows
+                                      if not e.is_warmup and e.is_target_for_stats)
 
-                # Check if all workflows complete
-                if completed_count >= self.expected_workflows:
-                    self.logger.info("All workflows completed!")
+                # Enhanced progress logging
+                if completed_count % 10 == 0 or target_completed == self.target_workflows:
+                    percentage = (target_completed / self.target_workflows * 100) if self.target_workflows > 0 else 0
+                    self.logger.info(
+                        f"Target workflows completed: {target_completed}/{self.target_workflows} "
+                        f"({percentage:.1f}%), total: {completed_count}/{self.expected_workflows}"
+                    )
+
+                # EARLY TERMINATION: Stop when target workflows are complete
+                if target_completed >= self.target_workflows:
+                    self.logger.info(
+                        f"Target workflows completed! Stopping early. "
+                        f"Target: {target_completed}/{self.target_workflows}, "
+                        f"Total: {completed_count}/{self.expected_workflows}"
+                    )
                     break
 
             except Empty:
@@ -1864,7 +1963,14 @@ class WorkflowMonitor:
             except Exception as e:
                 self.logger.error(f"Error in workflow monitor: {e}")
 
-        self.logger.info(f"Workflow monitor stopped. Completed: {len(self.completed_workflows)}/{self.expected_workflows}")
+        final_count = len(self.completed_workflows)
+        final_target_count = sum(1 for e in self.completed_workflows
+                                if not e.is_warmup and e.is_target_for_stats)
+
+        self.logger.info(
+            f"Workflow monitor stopped: {final_target_count}/{self.target_workflows} target workflows, "
+            f"{final_count}/{self.expected_workflows} total workflows"
+        )
 
     def start(self):
         """Start the monitor thread."""
@@ -1875,7 +1981,7 @@ class WorkflowMonitor:
         self.running = True
         self.thread = threading.Thread(target=self._run, name="Thread4-WorkflowMonitor")
         self.thread.start()
-        self.logger.info("Workflow monitor thread started")
+        self.logger.debug("Workflow monitor thread started")
 
     def stop(self):
         """Stop the monitor thread."""
@@ -1884,7 +1990,7 @@ class WorkflowMonitor:
 
         self.running = False
         self.thread.join(timeout=10.0)
-        self.logger.info("Workflow monitor thread stopped")
+        self.logger.debug("Workflow monitor thread stopped")
 
     def is_alive(self) -> bool:
         """Check if monitor thread is still running."""
@@ -1901,7 +2007,7 @@ def clear_scheduler_tasks(scheduler_url: str):
     try:
         response = requests.post(f"{scheduler_url}/task/clear")
         response.raise_for_status()
-        logger.info(f"Cleared tasks from {scheduler_url}")
+        logger.debug(f"Cleared tasks from {scheduler_url}")
     except Exception as e:
         logger.error(f"Failed to clear tasks from {scheduler_url}: {e}")
 
@@ -1919,7 +2025,7 @@ def set_scheduling_strategy(scheduler_url: str, strategy: str):
             json={"strategy_name": strategy}
         )
         response.raise_for_status()
-        logger.info(f"Set strategy to '{strategy}' on {scheduler_url}")
+        logger.debug(f"Set strategy to '{strategy}' on {scheduler_url}")
     except Exception as e:
         logger.error(f"Failed to set strategy on {scheduler_url}: {e}")
 
@@ -2121,7 +2227,8 @@ def calculate_workflow_metrics(completed_workflows: List[WorkflowCompletionEvent
     """
     Calculate workflow-level metrics.
 
-    NOTE: Warmup workflows (is_warmup=True) are excluded from statistics.
+    NOTE: Warmup workflows (is_warmup=True) and non-target workflows
+    (is_target_for_stats=False) are excluded from statistics.
 
     Args:
         completed_workflows: List of workflow completion events
@@ -2133,6 +2240,7 @@ def calculate_workflow_metrics(completed_workflows: List[WorkflowCompletionEvent
         return {
             "num_completed": 0,
             "num_warmup": 0,
+            "num_excluded": 0,
             "workflow_times": [],
             "avg_workflow_time": 0.0,
             "median_workflow_time": 0.0,
@@ -2143,14 +2251,17 @@ def calculate_workflow_metrics(completed_workflows: List[WorkflowCompletionEvent
             "avg_fanout": 0.0
         }
 
-    # Filter out warmup workflows
-    actual_workflows = [e for e in completed_workflows if not e.is_warmup]
+    # Filter to only include workflows that are targets for statistics
+    # Exclude: warmup workflows AND workflows not marked as targets (last 50%)
+    actual_workflows = [e for e in completed_workflows if not e.is_warmup and e.is_target_for_stats]
     num_warmup = sum(1 for e in completed_workflows if e.is_warmup)
+    num_excluded = sum(1 for e in completed_workflows if not e.is_warmup and not e.is_target_for_stats)
 
     if not actual_workflows:
         return {
             "num_completed": 0,
             "num_warmup": num_warmup,
+            "num_excluded": num_excluded,
             "workflow_times": [],
             "avg_workflow_time": 0.0,
             "median_workflow_time": 0.0,
@@ -2176,6 +2287,7 @@ def calculate_workflow_metrics(completed_workflows: List[WorkflowCompletionEvent
     return {
         "num_completed": len(actual_workflows),
         "num_warmup": num_warmup,
+        "num_excluded": num_excluded,
         "workflow_times": workflow_times,
         "avg_workflow_time": float(np.mean(workflow_times_arr)),
         "median_workflow_time": float(np.median(workflow_times_arr)),
@@ -2222,7 +2334,7 @@ def print_metrics_summary(strategy: str, a_metrics: Dict, b_metrics: Dict, wf_me
         print(f"  P95:        {b_metrics['p95_completion_time']:.2f}s")
 
     print("\nWorkflows:")
-    print(f"  Completed:  {wf_metrics['num_completed']} (excl. {wf_metrics['num_warmup']} warmup)")
+    print(f"  Completed:  {wf_metrics['num_completed']} (excl. {wf_metrics['num_warmup']} warmup, {wf_metrics['num_excluded']} tail)")
     print(f"  Avg fanout: {wf_metrics['avg_fanout']:.1f} B tasks per A task")
     if wf_metrics['avg_workflow_time'] > 0:
         print(f"  Avg time:   {wf_metrics['avg_workflow_time']:.2f}s")
@@ -2302,7 +2414,7 @@ def print_metrics_summary_exp07(
         print(f"  P95:        {merge_metrics['p95_completion_time']:.2f}s")
 
     print("\nWorkflows:")
-    print(f"  Completed:  {wf_metrics['num_completed']} (excl. {wf_metrics['num_warmup']} warmup)")
+    print(f"  Completed:  {wf_metrics['num_completed']} (excl. {wf_metrics['num_warmup']} warmup, {wf_metrics['num_excluded']} tail)")
     print(f"  Avg fanout: {wf_metrics['avg_fanout']:.1f} B tasks per A task")
     if wf_metrics['avg_workflow_time'] > 0:
         print(f"  Avg time:   {wf_metrics['avg_workflow_time']:.2f}s")
@@ -2326,6 +2438,7 @@ def test_strategy_workflow(
     strategy: str,
     num_workflows: int,
     task_times_a: List[float],
+    task_times_a2: List[float],
     task_times_b1: List[float],
     task_times_b2: List[float],
     fanout_values: List[int],
@@ -2334,6 +2447,7 @@ def test_strategy_workflow(
     gqps: Optional[float] = None,
     warmup_ratio: float = 0.0,
     warmup_task_times_a: Optional[List[float]] = None,
+    warmup_task_times_a2: Optional[List[float]] = None,
     warmup_task_times_b1: Optional[List[float]] = None,
     warmup_task_times_b2: Optional[List[float]] = None,
     warmup_fanout_values: Optional[List[int]] = None,
@@ -2363,7 +2477,7 @@ def test_strategy_workflow(
         Dictionary of test results
     """
     logger = logging.getLogger(f"Test.{strategy}")
-    logger.info(f"Starting test for strategy: {strategy}")
+    logger.debug(f"Starting test for strategy: {strategy}")
 
     # Step 1: Clear tasks from both schedulers
     logger.info("Step 1: Clearing tasks from schedulers")
@@ -2381,6 +2495,7 @@ def test_strategy_workflow(
     num_warmup_workflows = int(num_workflows * warmup_ratio)
     total_workflows = num_warmup_workflows + num_workflows
     logger.info(f"Total workflows: {total_workflows} ({num_warmup_workflows} warmup + {num_workflows} actual)")
+    logger.info(f"Will generate {total_workflows} A tasks, {total_workflows} B1 tasks, {total_workflows} B2 tasks, and {total_workflows} merge tasks")
 
     # Use pre-generated warmup fanout values or fall back to empty list
     if num_warmup_workflows > 0:
@@ -2406,19 +2521,50 @@ def test_strategy_workflow(
     b1_tasks_by_workflow: Dict[str, List[WorkflowTaskData]] = {}
     b2_tasks_by_b1: Dict[str, WorkflowTaskData] = {}  # Map B1 task_id -> B2 task data
 
+    # Calculate mean runtime for each task type (for min_time strategy)
+    # Combine warmup and actual task times for accurate mean calculation
+    if strategy == "min_time":
+        # Combine warmup and actual A1 times
+        all_task_times_a = list(warmup_task_times_a) + list(task_times_a) if warmup_task_times_a is not None else list(task_times_a)
+        mean_runtime_a = np.mean(all_task_times_a) * 1000  # Convert to ms
+
+        # Combine warmup and actual A2 times
+        all_task_times_a2 = list(warmup_task_times_a2) + list(task_times_a2) if warmup_task_times_a2 is not None else list(task_times_a2)
+        mean_runtime_a2 = np.mean(all_task_times_a2) * 1000  # Convert to ms
+
+        # Combine warmup and actual B1 times
+        all_task_times_b1 = list(warmup_task_times_b1) + list(task_times_b1) if warmup_task_times_b1 is not None else list(task_times_b1)
+        mean_runtime_b1 = np.mean(all_task_times_b1) * 1000  # Convert to ms
+
+        # Combine warmup and actual B2 times
+        all_task_times_b2 = list(warmup_task_times_b2) + list(task_times_b2) if warmup_task_times_b2 is not None else list(task_times_b2)
+        mean_runtime_b2 = np.mean(all_task_times_b2) * 1000  # Convert to ms
+
+        logger.info(f"Strategy is min_time: using mean runtimes - A1={mean_runtime_a:.2f}ms, A2={mean_runtime_a2:.2f}ms, B1={mean_runtime_b1:.2f}ms, B2={mean_runtime_b2:.2f}ms")
+    else:
+        # For other strategies, use actual task time
+        mean_runtime_a = None
+        mean_runtime_a2 = None
+        mean_runtime_b1 = None
+        mean_runtime_b2 = None
+        logger.info(f"Strategy is {strategy}: using actual task times for exp_runtime")
+
     # Use pre-generated warmup task times or fall back to empty arrays
     if num_warmup_workflows > 0:
-        if warmup_task_times_a is None or warmup_task_times_b1 is None or warmup_task_times_b2 is None:
+        if warmup_task_times_a is None or warmup_task_times_a2 is None or warmup_task_times_b1 is None or warmup_task_times_b2 is None:
             logger.warning("warmup_task_times not provided, using empty arrays")
             warmup_task_times_a = np.array([])
+            warmup_task_times_a2 = np.array([])
             warmup_task_times_b1 = np.array([])
             warmup_task_times_b2 = np.array([])
         else:
             warmup_task_times_a = np.array(warmup_task_times_a)
+            warmup_task_times_a2 = np.array(warmup_task_times_a2)
             warmup_task_times_b1 = np.array(warmup_task_times_b1)
             warmup_task_times_b2 = np.array(warmup_task_times_b2)
     else:
         warmup_task_times_a = np.array([])
+        warmup_task_times_a2 = np.array([])
         warmup_task_times_b1 = np.array([])
         warmup_task_times_b2 = np.array([])
 
@@ -2432,31 +2578,37 @@ def test_strategy_workflow(
         # Determine task times based on warmup status
         if is_warmup:
             sleep_time_a = warmup_task_times_a[i]
+            sleep_time_a2 = warmup_task_times_a2[i]
             fanout = all_fanout_values[i]
         else:
             actual_idx = i - num_warmup_workflows
             sleep_time_a = task_times_a[actual_idx]
+            sleep_time_a2 = task_times_a2[actual_idx]
             fanout = fanout_values[actual_idx]
 
         # Create A task
+        # Use mean runtime for min_time strategy, actual time for others
+        exp_runtime_a = mean_runtime_a if strategy == "min_time" else sleep_time_a * 1000
         a_task = WorkflowTaskData(
             task_id=a_task_id,
             workflow_id=workflow_id,
             task_type="A",
             sleep_time=sleep_time_a,
-            exp_runtime=sleep_time_a * 1000,
+            exp_runtime=exp_runtime_a,
             is_warmup=is_warmup
         )
         a_tasks.append(a_task)
 
-        # Create merge A task (0.5x execution time of original A)
-        merge_sleep_time = sleep_time_a * 0.5
+        # Create merge A task using A2 time from external data
+        # Use mean runtime for min_time strategy, actual time for others
+        merge_sleep_time = sleep_time_a2
+        exp_runtime_a2 = mean_runtime_a2 if strategy == "min_time" else merge_sleep_time * 1000
         merge_task = WorkflowTaskData(
             task_id=merge_task_id,
             workflow_id=workflow_id,
             task_type="A",  # Submitted to Scheduler A
             sleep_time=merge_sleep_time,
-            exp_runtime=merge_sleep_time * 1000,
+            exp_runtime=exp_runtime_a2,
             is_warmup=is_warmup
         )
         merge_tasks.append(merge_task)
@@ -2480,24 +2632,28 @@ def test_strategy_workflow(
                 sleep_time_b2 = task_times_b2[b_task_index]
 
             # Create B1 task (slow peak)
+            # Use mean runtime for min_time strategy, actual time for others
+            exp_runtime_b1 = mean_runtime_b1 if strategy == "min_time" else sleep_time_b1 * 1000
             b1_task = WorkflowTaskData(
                 task_id=b1_task_ids_wf[j],
                 workflow_id=workflow_id,
                 task_type="B1",
                 sleep_time=sleep_time_b1,
-                exp_runtime=sleep_time_b1 * 1000,
+                exp_runtime=exp_runtime_b1,
                 b_index=j,  # Track pairing index
                 is_warmup=is_warmup
             )
             b1_tasks.append(b1_task)
 
             # Create B2 task (fast peak) paired with this B1 task
+            # Use mean runtime for min_time strategy, actual time for others
+            exp_runtime_b2 = mean_runtime_b2 if strategy == "min_time" else sleep_time_b2 * 1000
             b2_task = WorkflowTaskData(
                 task_id=b2_task_ids_wf[j],
                 workflow_id=workflow_id,
                 task_type="B2",
                 sleep_time=sleep_time_b2,
-                exp_runtime=sleep_time_b2 * 1000,
+                exp_runtime=exp_runtime_b2,
                 b_index=j,  # Track pairing index
                 is_warmup=is_warmup
             )
@@ -2509,9 +2665,16 @@ def test_strategy_workflow(
     # Step 5: Initialize workflow states (with B1 and B2 separation)
     logger.info("Step 5: Initializing workflow states")
 
-    # In continuous mode, determine which workflows are targets for statistics
+    # Calculate how many non-warmup workflows should be included in statistics
+    # Default: first 50% of non-warmup workflows are targets for statistics
     if continuous_mode and target_workflows is not None:
-        logger.info(f"Continuous mode: marking first {target_workflows} non-warmup workflows as targets")
+        # In continuous mode, use the specified target_workflows count
+        stats_target_count = target_workflows
+        logger.info(f"Continuous mode: marking first {stats_target_count} non-warmup workflows as targets")
+    else:
+        # In normal mode, use first 50% of non-warmup workflows
+        stats_target_count = int(num_workflows * 0.5)
+        logger.info(f"Normal mode: marking first 50% ({stats_target_count}/{num_workflows}) of non-warmup workflows as targets for statistics")
 
     workflow_states: Dict[str, WorkflowState] = {}
     target_count = 0  # Count of non-warmup workflows marked as targets
@@ -2520,17 +2683,16 @@ def test_strategy_workflow(
         is_warmup = i < num_warmup_workflows
 
         # Determine if this is a target workflow for statistics
-        is_target_for_stats = True  # Default: all workflows are targets
-        if continuous_mode and target_workflows is not None:
-            if is_warmup:
-                is_target_for_stats = False  # Warmup workflows are never targets
+        if is_warmup:
+            # Warmup workflows are never targets for statistics
+            is_target_for_stats = False
+        else:
+            # Mark first stats_target_count non-warmup workflows as targets
+            if target_count < stats_target_count:
+                is_target_for_stats = True
+                target_count += 1
             else:
-                # Mark first target_workflows non-warmup workflows as targets
-                if target_count < target_workflows:
-                    is_target_for_stats = True
-                    target_count += 1
-                else:
-                    is_target_for_stats = False  # Overflow workflows
+                is_target_for_stats = False  # Exclude last 50% (or overflow in continuous mode)
 
         workflow_states[workflow_id] = WorkflowState(
             workflow_id=workflow_id,
@@ -2574,7 +2736,7 @@ def test_strategy_workflow(
     merge_submitter.start()
 
     # Step 8.5: Start Thread 4 (B2 Task Receiver) - must start before B2 tasks are submitted
-    logger.info("Step 8.5: Starting Thread 4 (B2 Task Receiver)")
+    logger.debug("Step 8.5: Starting Thread 4 (B2 Task Receiver)")
     b2_receiver = B2TaskReceiver(
         scheduler_b_ws=SCHEDULER_B_WS,
         b2_task_ids=all_b2_task_ids,
@@ -2599,15 +2761,15 @@ def test_strategy_workflow(
 
     # Step 10: Start Thread 7 (Workflow Monitor)
     logger.info("Step 10: Starting Thread 7 (Workflow Monitor)")
-    # In continuous mode, only wait for target workflows + warmup
-    if continuous_mode and target_workflows is not None:
-        expected_to_complete = num_warmup_workflows + target_workflows
-        logger.info(f"Continuous mode: waiting for {expected_to_complete} workflows ({num_warmup_workflows} warmup + {target_workflows} target)")
-    else:
-        expected_to_complete = total_workflows
+    # Monitor will stop when stats_target_count workflows (marked as is_target_for_stats=True) complete
+    logger.info(
+        f"Monitor configured: will stop after {stats_target_count} target workflows complete "
+        f"(out of {total_workflows} total)"
+    )
     monitor = WorkflowMonitor(
         completion_queue=completion_queue,
-        expected_workflows=expected_to_complete
+        expected_workflows=total_workflows,
+        target_workflows=stats_target_count
     )
     monitor.start()
 
@@ -2639,10 +2801,11 @@ def test_strategy_workflow(
     logger.info("Step 13: Waiting for A task submission to complete")
     while a_submitter.is_alive():
         time.sleep(0.5)
-    logger.info("A task submission complete")
+    logger.debug("A task submission complete")
 
     # Step 14: Wait for workflow completion with timeout
-    logger.info(f"Step 14: Waiting for workflow completion (timeout: {timeout_minutes} minutes)")
+    logger.info(f"Step 14: Waiting for target workflows to complete (timeout: {timeout_minutes} minutes)")
+    logger.info(f"Will stop when {stats_target_count} target workflows complete (out of {total_workflows} total)")
     timeout_seconds = timeout_minutes * 60
     start_wait = time.time()
 
@@ -2650,7 +2813,12 @@ def test_strategy_workflow(
         time.sleep(1.0)
         elapsed = time.time() - start_wait
         if int(elapsed) % 10 == 0:
-            logger.info(f"Waiting... {len(monitor.completed_workflows)}/{num_workflows} workflows completed")
+            target_completed = sum(1 for e in monitor.completed_workflows
+                                  if not e.is_warmup and e.is_target_for_stats)
+            logger.info(
+                f"Waiting... {target_completed}/{stats_target_count} target workflows completed, "
+                f"{len(monitor.completed_workflows)}/{total_workflows} total"
+            )
 
     # Step 15: Stop all threads
     logger.info("Step 15: Stopping all threads")
@@ -2662,18 +2830,71 @@ def test_strategy_workflow(
     merge_receiver.stop()
     monitor.stop()
 
+    # Step 15.0: Check if target workflows completed
+    target_completed = sum(1 for e in monitor.completed_workflows
+                          if not e.is_warmup and e.is_target_for_stats)
+
+    if target_completed >= stats_target_count:
+        logger.info(f"✓ Target workflows completed: {target_completed}/{stats_target_count}")
+        logger.info(f"  Total workflows processed: {len(monitor.completed_workflows)}/{total_workflows}")
+    else:
+        logger.warning("\n" + "="*80)
+        logger.warning(f"TIMEOUT: Target workflows incomplete ({target_completed}/{stats_target_count})")
+        logger.warning("="*80)
+
+        # Only attempt recovery for target workflows that didn't complete
+        logger.warning("Possible causes:")
+        logger.warning("  - A tasks failed to submit or complete")
+        logger.warning("  - B1/B2 tasks failed")
+        logger.warning("  - Merge tasks failed to submit or complete")
+        logger.warning("  - Timeout occurred before target workflows could complete")
+        logger.warning("="*80 + "\n")
+
+    # Step 15.1: Diagnostic Summary - Task Submission Failures
+    logger.debug("\n" + "="*80)
+    logger.info("DIAGNOSTIC SUMMARY - Task Submission Failures")
+    logger.debug("="*80)
+
+    total_failed = a_submitter.failed_submissions + a_receiver.failed_b1_submissions
+    if total_failed > 0:
+        logger.error(f"⚠️  TOTAL TASK SUBMISSION FAILURES: {total_failed}")
+        logger.error(f"   - A task failures: {a_submitter.failed_submissions}/{len(a_tasks)}")
+        logger.error(f"   - B1 task failures: {a_receiver.failed_b1_submissions}")
+        logger.error(f"⚠️  Expected missing workflows: ~{total_failed} (if all failures were A tasks)")
+    else:
+        logger.debug("✓ No task submission failures detected")
+
+    logger.info(f"\nWorkflow Completion Status:")
+    logger.info(f"   - Total workflows: {total_workflows} (submitted)")
+    logger.info(f"   - Target workflows: {stats_target_count} (for statistics)")
+    logger.info(f"   - Completed (total): {len(monitor.completed_workflows)} workflows")
+    logger.info(f"   - Completed (target): {target_completed}/{stats_target_count} workflows")
+
+    if target_completed < stats_target_count:
+        missing_count = stats_target_count - target_completed
+        logger.warning(f"\n⚠️  ANALYSIS: {missing_count} target workflows did not complete")
+        if a_submitter.failed_submissions > 0:
+            logger.warning(f"   - {a_submitter.failed_submissions} A task submission failures")
+        if missing_count > a_submitter.failed_submissions:
+            logger.warning(f"   - Additional failures may have occurred at B1/B2/merge stages")
+            logger.warning(f"   - Check for B2 task failures, merge task failures, or race conditions")
+    else:
+        logger.info(f"✓ All target workflows completed successfully")
+
+    logger.debug("="*80 + "\n")
+
     # Step 15.5: Continuous mode cleanup
     if continuous_mode:
-        logger.info("Step 15.5: Continuous mode cleanup")
-        logger.info("Waiting 5 seconds before force-clearing schedulers...")
+        logger.debug("Step 15.5: Continuous mode cleanup")
+        logger.debug("Waiting 5 seconds before force-clearing schedulers...")
         time.sleep(5.0)
 
         from common import force_clear_scheduler_tasks
-        logger.info("Force-clearing Scheduler A...")
+        logger.debug("Force-clearing Scheduler A...")
         force_clear_scheduler_tasks(SCHEDULER_A_URL)
-        logger.info("Force-clearing Scheduler B...")
+        logger.debug("Force-clearing Scheduler B...")
         force_clear_scheduler_tasks(SCHEDULER_B_URL)
-        logger.info("Schedulers cleared successfully")
+        logger.debug("Schedulers cleared successfully")
 
     # Step 16: Collect results
     logger.info("Step 16: Collecting results")
@@ -2692,15 +2913,15 @@ def test_strategy_workflow(
     wf_metrics = calculate_workflow_metrics(monitor.completed_workflows)
 
     # Print summary
-    logger.info("="*80)
+    logger.debug("="*80)
     logger.info(f"EXPERIMENT RESULTS - Strategy: {strategy}")
-    logger.info("="*80)
-    logger.info(f"A Tasks: {a_metrics}")
-    logger.info(f"B1 Tasks: {b1_metrics}")
-    logger.info(f"B2 Tasks: {b2_metrics}")
-    logger.info(f"Merge Tasks: {merge_metrics}")
-    logger.info(f"Workflows: {wf_metrics}")
-    logger.info("="*80)
+    logger.debug("="*80)
+    logger.debug(f"A Tasks: {a_metrics}")
+    logger.debug(f"B1 Tasks: {b1_metrics}")
+    logger.debug(f"B2 Tasks: {b2_metrics}")
+    logger.debug(f"Merge Tasks: {merge_metrics}")
+    logger.debug(f"Workflows: {wf_metrics}")
+    logger.debug("="*80)
 
     # Print formatted summary
     if continuous_mode:
@@ -2759,9 +2980,9 @@ def main(num_workflows: int = 100, qps_a: float = 8.0, seed: int = 42,
     logger.info("Starting Experiment 07: Multi-Model Workflow with B1/B2 Split and Merge")
     logger.info(f"Configuration: {num_workflows} workflows, QPS={qps_a}, seed={seed}")
     if gqps is not None:
-        logger.info(f"Global QPS: {gqps}")
+        logger.debug(f"Global QPS: {gqps}")
     if warmup_ratio > 0:
-        logger.info(f"Warmup ratio: {warmup_ratio}")
+        logger.debug(f"Warmup ratio: {warmup_ratio}")
     logger.info(f"Strategies to test: {', '.join(strategies)}")
 
     # Experiment parameters
@@ -2776,56 +2997,64 @@ def main(num_workflows: int = 100, qps_a: float = 8.0, seed: int = 42,
     QPS_A = qps_a
     SEED = seed
 
-    # Generate workloads
-    logger.info("Generating workloads...")
+    # Generate workloads from real traces
+    logger.debug("Generating workloads from real traces...")
 
-    # A tasks: Bimodal distribution - generate exactly num_workflows tasks
-    task_times_a, workload_a_config = generate_bimodal_distribution(NUM_WORKFLOWS, seed=SEED)
-    print_distribution_stats(task_times_a, workload_a_config)
-    logger.info(f"Generated {len(task_times_a)} A tasks (will submit all)")
+    # Generate workflow workload from traces
+    workflow_workload, workflow_config = generate_workflow_from_traces(
+        num_workflows=NUM_WORKFLOWS,
+        seed=SEED
+    )
+    print_workflow_stats(workflow_workload)
+    logger.debug(f"Generated {len(workflow_workload.a1_times)} workflows from traces")
 
-    # Fanout: Uniform distribution (3-8 B tasks per A task)
-    fanout_values, fanout_config = generate_fanout_distribution(NUM_WORKFLOWS, seed=SEED)
-    print_fanout_stats(fanout_values, fanout_config)
+    # Extract individual task time lists and fanout values
+    # A1 (boot) times are used for the initial A task submission
+    # A2 (summary) times are used for the merge A task submission
+    task_times_a = workflow_workload.a1_times
+    task_times_a2 = workflow_workload.a2_times
+    fanout_values = workflow_workload.fanout_values
 
-    # B1 tasks: Slow peak distribution (7-10s) - generate exactly sum(fanout_values) tasks
-    total_b_tasks = sum(fanout_values)
-    task_times_b1, workload_b1_config = generate_slow_peak_distribution(total_b_tasks, seed=SEED + 1)
-    print_distribution_stats(task_times_b1, workload_b1_config)
-    logger.info(f"Generated {len(task_times_b1)} B1 tasks total (slow peak, will submit all)")
+    # Flatten B1 and B2 task times for the task time pools
+    # These will be indexed by the b_task_index when submitting
+    task_times_b1 = [t for workflow_b1 in workflow_workload.b1_times for t in workflow_b1]
+    task_times_b2 = [t for workflow_b2 in workflow_workload.b2_times for t in workflow_b2]
 
-    # B2 tasks: Fast peak distribution (1-3s) - generate exactly sum(fanout_values) tasks
-    task_times_b2, workload_b2_config = generate_fast_peak_distribution(total_b_tasks, seed=SEED + 2)
-    print_distribution_stats(task_times_b2, workload_b2_config)
-    logger.info(f"Generated {len(task_times_b2)} B2 tasks total (fast peak, will submit all)")
+    logger.debug(f"Extracted {len(task_times_a)} A1 task times (initial A tasks)")
+    logger.debug(f"Extracted {len(task_times_a2)} A2 task times (merge A tasks)")
+    logger.debug(f"Extracted {len(task_times_b1)} B1 task times (query tasks)")
+    logger.debug(f"Extracted {len(task_times_b2)} B2 task times (criteria tasks)")
+    logger.debug(f"Fanout distribution: min={min(fanout_values)}, max={max(fanout_values)}, mean={np.mean(fanout_values):.2f}")
 
     # Generate warmup data once for all strategies (if warmup is enabled)
     num_warmup_workflows = int(NUM_WORKFLOWS * warmup_ratio)
     if num_warmup_workflows > 0:
-        logger.info(f"Generating {num_warmup_workflows} warmup workflows (warmup_ratio={warmup_ratio:.1%})")
+        logger.debug(f"Generating {num_warmup_workflows} warmup workflows from traces (warmup_ratio={warmup_ratio:.1%})")
 
-        # Warmup fanout: Uniform distribution (3-8 B tasks per A task)
-        warmup_fanout_values = np.random.randint(3, 9, size=num_warmup_workflows).tolist()
-        logger.info(f"Generated {len(warmup_fanout_values)} warmup fanout values")
+        # Generate warmup workflow from traces using a different seed
+        warmup_workflow, warmup_config = generate_workflow_from_traces(
+            num_workflows=num_warmup_workflows,
+            seed=SEED + 1000  # Different seed for warmup data
+        )
 
-        # Warmup A tasks: Bimodal distribution (same as actual tasks)
-        warmup_task_times_a = np.concatenate([
-            np.random.uniform(0.5, 0.7, num_warmup_workflows // 2),
-            np.random.uniform(10.0, 15.0, num_warmup_workflows - num_warmup_workflows // 2)
-        ])
-        logger.info(f"Generated {len(warmup_task_times_a)} warmup A task times")
+        # Extract warmup task times and fanout values
+        warmup_task_times_a = warmup_workflow.a1_times
+        warmup_task_times_a2 = warmup_workflow.a2_times
+        warmup_fanout_values = warmup_workflow.fanout_values
 
-        # Warmup B1 tasks: Sample from actual B1 task distribution
-        warmup_total_b = sum(warmup_fanout_values)
-        warmup_task_times_b1 = np.random.choice(task_times_b1, size=warmup_total_b)
-        logger.info(f"Generated {len(warmup_task_times_b1)} warmup B1 task times")
+        # Flatten warmup B1 and B2 task times
+        warmup_task_times_b1 = [t for workflow_b1 in warmup_workflow.b1_times for t in workflow_b1]
+        warmup_task_times_b2 = [t for workflow_b2 in warmup_workflow.b2_times for t in workflow_b2]
 
-        # Warmup B2 tasks: Sample from actual B2 task distribution
-        warmup_task_times_b2 = np.random.choice(task_times_b2, size=warmup_total_b)
-        logger.info(f"Generated {len(warmup_task_times_b2)} warmup B2 task times")
+        logger.debug(f"Generated {len(warmup_task_times_a)} warmup A1 task times from traces")
+        logger.debug(f"Generated {len(warmup_task_times_a2)} warmup A2 task times from traces")
+        logger.debug(f"Generated {len(warmup_task_times_b1)} warmup B1 task times from traces")
+        logger.debug(f"Generated {len(warmup_task_times_b2)} warmup B2 task times from traces")
+        logger.debug(f"Warmup fanout distribution: min={min(warmup_fanout_values)}, max={max(warmup_fanout_values)}, mean={np.mean(warmup_fanout_values):.2f}")
     else:
         warmup_fanout_values = None
         warmup_task_times_a = None
+        warmup_task_times_a2 = None
         warmup_task_times_b1 = None
         warmup_task_times_b2 = None
         logger.info("No warmup workflows (warmup_ratio=0.0)")
@@ -2839,14 +3068,16 @@ def main(num_workflows: int = 100, qps_a: float = 8.0, seed: int = 42,
             strategy=strategy,
             num_workflows=NUM_WORKFLOWS,
             task_times_a=task_times_a,
+            task_times_a2=task_times_a2,
             task_times_b1=task_times_b1,
             task_times_b2=task_times_b2,
             fanout_values=fanout_values,
             qps_a=QPS_A,
-            timeout_minutes=10,
+            timeout_minutes=20,
             gqps=gqps,
             warmup_ratio=warmup_ratio,
             warmup_task_times_a=warmup_task_times_a,
+            warmup_task_times_a2=warmup_task_times_a2,
             warmup_task_times_b1=warmup_task_times_b1,
             warmup_task_times_b2=warmup_task_times_b2,
             warmup_fanout_values=warmup_fanout_values,
@@ -2869,10 +3100,10 @@ def main(num_workflows: int = 100, qps_a: float = 8.0, seed: int = 42,
             "num_workflows": NUM_WORKFLOWS,
             "qps_a": QPS_A,
             "seed": SEED,
-            "workload_a": asdict(workload_a_config),
-            "workload_b1": asdict(workload_b1_config),
-            "workload_b2": asdict(workload_b2_config),
-            "fanout": asdict(fanout_config)
+            "workflow_config": asdict(workflow_config),
+            "warmup_ratio": warmup_ratio,
+            "gqps": gqps,
+            "continuous_mode": continuous_mode
         },
         "results": all_results
     }
@@ -2939,7 +3170,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--strategies",
         nargs="+",
-        default=["min_time", "round_robin", "probabilistic"],
+        default=["probabilistic", "round_robin", "min_time"],
         choices=["min_time", "round_robin", "probabilistic"],
         help="Scheduling strategies to test"
     )

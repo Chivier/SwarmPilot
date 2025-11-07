@@ -148,7 +148,14 @@ class ConnectionManager:
         subscribers = await self.get_subscribers(task_id)
 
         if not subscribers:
+            # FIX: Add logging for no subscribers case (may indicate issue)
+            from loguru import logger
+            logger.warning(f"No subscribers for task {task_id} when broadcasting result")
             return
+
+        # FIX: Add logging for broadcast start
+        from loguru import logger
+        logger.info(f"Broadcasting result for task {task_id} to {len(subscribers)} subscriber(s)")
 
         # Create result message
         message = WSTaskResultMessage(
@@ -160,22 +167,56 @@ class ConnectionManager:
             execution_time_ms=execution_time_ms,
         )
 
-        # Send to all subscribers
+        # FIX: Track send statistics
+        sent_count = 0
+        failed_count = 0
         disconnected = []
+
+        # Send to all subscribers
         for websocket in subscribers:
             try:
                 await websocket.send_json(message.model_dump())
-            except Exception:
+                sent_count += 1
+                logger.debug(f"Successfully sent {task_id} result to websocket {id(websocket)}")
+            except Exception as e:
+                # FIX: Log the specific error instead of silent catch
+                failed_count += 1
+                logger.error(f"Failed to send {task_id} result to websocket {id(websocket)}: {type(e).__name__}: {e}")
                 # Mark for cleanup if sending fails
                 disconnected.append(websocket)
+
+        # FIX: Log broadcast summary
+        logger.info(f"Broadcast complete for {task_id}: {sent_count} sent, {failed_count} failed")
 
         # Clean up disconnected websockets
         for websocket in disconnected:
             await self.disconnect(websocket)
 
-        # Unsubscribe all connections from this task after broadcasting
+        # FIX: CRITICAL - Delayed unsubscribe instead of immediate
+        # Schedule cleanup after 5 seconds to give clients time to receive
+        import asyncio
+        asyncio.create_task(self._delayed_cleanup_subscriptions(task_id, delay=5.0))
+
+    async def _delayed_cleanup_subscriptions(self, task_id: str, delay: float = 5.0) -> None:
+        """
+        Clean up task subscriptions after a delay.
+
+        This gives clients time to receive messages before subscriptions are removed.
+
+        Args:
+            task_id: Task ID to clean up
+            delay: Delay in seconds before cleanup
+        """
+        from loguru import logger
+        import asyncio
+
+        await asyncio.sleep(delay)
+
         async with self._lock:
             if task_id in self._subscriptions:
+                subscriber_count = len(self._subscriptions[task_id])
+                logger.debug(f"Cleaning up subscriptions for {task_id} (had {subscriber_count} subscribers)")
+
                 for ws in self._subscriptions[task_id].copy():
                     if ws in self._connections:
                         self._connections[ws].discard(task_id)

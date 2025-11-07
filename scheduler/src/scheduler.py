@@ -404,17 +404,20 @@ class ProbabilisticSchedulingStrategy(SchedulingStrategy):
         self, predictions: List[Prediction], queue_info: Dict[str, "InstanceQueueBase"]
     ) -> Optional[str]:
         """
-        Select instance based on 10 independent samples from queue quantile distribution.
+        Select instance using Monte Carlo simulation on combined prediction + queue time.
 
-        Performs 10 Monte Carlo samples on queue distributions only. For each sample,
-        finds the instance with minimum queue time. Returns the instance with most wins.
+        Performs vectorized Monte Carlo sampling (default: 10 samples) by:
+        1. For each instance, interpolate both prediction quantiles and queue quantiles
+        2. Sample from the same random percentiles to get prediction_time + queue_time
+        3. Find the instance with minimum total time for each sample
+        4. Return the instance with the most wins across all samples
 
         Args:
             predictions: List of predictions with quantile information
             queue_info: Dictionary mapping instance_id to queue information
 
         Returns:
-            Selected instance ID (the one with most wins in 10 samples)
+            Selected instance ID (the one with most wins across Monte Carlo samples)
         """
         import numpy as np
         from .model import InstanceQueueProbabilistic
@@ -423,36 +426,63 @@ class ProbabilisticSchedulingStrategy(SchedulingStrategy):
             return None
 
         num_samples = 10
-        instance_ids = list(queue_info.keys())
+
+        # Build prediction dictionary for quick lookup
+        pred_dict = {p.instance_id: p for p in predictions}
+
+        # Use all prediction instance IDs (queue_info is optional)
+        instance_ids = list(pred_dict.keys())
         num_instances = len(instance_ids)
 
-        if num_instances == 0:
-            # Fallback: no queue info, just return first prediction
-            return predictions[0].instance_id
-
-        # Build queue time matrix: shape (num_instances, num_samples)
-        queue_times_matrix = np.zeros((num_instances, num_samples))
-
-        # Generate all random percentiles at once
+        # Generate all random percentiles at once (shared across all instances)
         random_percentiles = np.random.random(num_samples)
+
+        # Build combined time matrix: shape (num_instances, num_samples)
+        # Each entry = prediction_time + queue_time
+        total_times_matrix = np.zeros((num_instances, num_samples))
 
         # Vectorized sampling for all instances
         for i, instance_id in enumerate(instance_ids):
-            queue = queue_info[instance_id]
+            pred = pred_dict[instance_id]
 
-            if isinstance(queue, InstanceQueueProbabilistic):
-                # Vectorized queue time sampling
-                queue_times_matrix[i, :] = np.interp(
+            # Sample prediction times
+            if pred.quantiles and len(pred.quantiles) > 0:
+                # Convert dict to sorted arrays for interpolation
+                pred_quantiles = np.array(sorted(pred.quantiles.keys()))
+                pred_values = np.array([pred.quantiles[q] for q in pred_quantiles])
+
+                # Vectorized prediction time sampling
+                prediction_times = np.interp(
                     random_percentiles,
-                    queue.quantiles,
-                    queue.values
+                    pred_quantiles,
+                    pred_values
                 )
             else:
-                # Fallback: set to infinity to avoid selection
-                queue_times_matrix[i, :] = float('inf')
+                # Fallback: use predicted_time_ms as constant
+                prediction_times = np.full(num_samples, pred.predicted_time_ms)
+
+            # Sample queue times (optional)
+            if instance_id in queue_info:
+                queue = queue_info[instance_id]
+                if isinstance(queue, InstanceQueueProbabilistic):
+                    # Vectorized queue time sampling
+                    queue_times = np.interp(
+                        random_percentiles,
+                        queue.quantiles,
+                        queue.values
+                    )
+                else:
+                    # Fallback: no probabilistic queue info, assume zero queue
+                    queue_times = np.zeros(num_samples)
+            else:
+                # No queue info available for this instance
+                queue_times = np.zeros(num_samples)
+
+            # Combine prediction + queue time
+            total_times_matrix[i, :] = prediction_times + queue_times
 
         # Find winner for each sample (argmin along axis 0)
-        winners = np.argmin(queue_times_matrix, axis=0)
+        winners = np.argmin(total_times_matrix, axis=0)
 
         # Count wins for each instance
         win_counts = np.bincount(winners, minlength=num_instances)

@@ -1743,6 +1743,7 @@ dependencies = [
     { name = "swarmpilot-planner" },
     { name = "swarmpilot-predictor" },
     { name = "swarmpilot-scheduler" },
+    { name = "uvloop" },
     { name = "websockets" },
 ]
 
@@ -1804,6 +1805,7 @@ requires-dist = [
     { name = "swarmpilot-scheduler", editable = "scheduler" },
     { name = "swarmpilot-scheduler", marker = "extra == 'all'", editable = "scheduler" },
     { name = "swarmpilot-scheduler", marker = "extra == 'scheduler'", editable = "scheduler" },
+    { name = "uvloop", specifier = ">=0.22.1" },
     { name = "websockets", specifier = ">=15.0.1" },
 ]
 provides-extras = ["scheduler", "instance", "predictor", "planner", "all", "dev"]

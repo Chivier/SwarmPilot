@@ -246,6 +246,8 @@ class TaskQueue:
         """
         Send task result callback to scheduler.
 
+        Tries WebSocket first, falls back to HTTP if WebSocket unavailable.
+
         Args:
             task_id: ID of the completed task
             status: Task status ("completed" or "failed")
@@ -253,8 +255,28 @@ class TaskQueue:
             error: Error message (if failed)
             execution_time_ms: Execution time in milliseconds
         """
-        # Send callback via scheduler client
-        # callback_url will be derived from scheduler_url in the client
+        # Try WebSocket first
+        from .websocket_client_singleton import get_websocket_client
+
+        ws_client = get_websocket_client()
+        websocket_success = False
+
+        if ws_client and ws_client.is_connected():
+            try:
+                websocket_success = await ws_client.send_task_result(
+                    task_id=task_id,
+                    status=status,
+                    result=result,
+                    error=error,
+                    execution_time_ms=execution_time_ms,
+                )
+                if websocket_success:
+                    logger.info(f"Task result sent via WebSocket for {task_id}")
+                    return
+            except Exception as e:
+                logger.warning(f"WebSocket callback failed for {task_id}: {e}, falling back to HTTP")
+
+        # Fallback to HTTP
         scheduler_client = get_scheduler_client()
         try:
             success = await scheduler_client.send_task_result(
@@ -265,9 +287,9 @@ class TaskQueue:
                 execution_time_ms=execution_time_ms,
             )
             if success:
-                logger.info(f"Callback sent successfully for task {task_id}")
+                logger.info(f"Task result sent via HTTP for {task_id}")
             else:
-                logger.warning(f"Callback failed for task {task_id}")
+                logger.warning(f"HTTP callback failed for task {task_id}")
         except Exception as e:
             logger.error(f"Error sending callback for task {task_id}: {e}")
 
