@@ -942,3 +942,168 @@ class TestClose:
         await task_dispatcher.close()
 
         task_dispatcher._http_client.aclose.assert_called_once()
+
+
+# ============================================================================
+# WebSocket Error Paths Tests
+# ============================================================================
+
+class TestWebSocketErrorPaths:
+    """Tests for WebSocket error paths in dispatch_task."""
+
+    @pytest.mark.asyncio
+    async def test_websocket_fails_http_fallback_success(
+        self,
+        task_dispatcher,
+        instance_registry,
+        task_registry,
+        sample_instance,
+        instance_connection_manager
+    ):
+        """Test WebSocket failure with successful HTTP fallback (lines 99-109, 115-126)."""
+        # Setup
+        await instance_registry.register(sample_instance)
+        task = await task_registry.create_task(
+            task_id="task-1",
+            model_id="model-1",
+            task_input={"prompt": "test"},
+            metadata={},
+            assigned_instance=sample_instance.instance_id
+        )
+        await instance_registry.increment_pending(sample_instance.instance_id)
+
+        # Enable WebSocket and set connection manager
+        task_dispatcher.enable_websocket = True
+        task_dispatcher.instance_connection_manager = instance_connection_manager
+
+        # Mock WebSocket submission to fail
+        instance_connection_manager.submit_task = AsyncMock(
+            side_effect=Exception("WebSocket error")
+        )
+
+        # Mock HTTP client to succeed
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"success": True}
+        mock_response.raise_for_status = MagicMock()
+        task_dispatcher._http_client.post = AsyncMock(return_value=mock_response)
+
+        # Execute
+        await task_dispatcher.dispatch_task("task-1")
+
+        # Verify task status
+        task = await task_registry.get("task-1")
+        assert task.status == TaskStatus.RUNNING
+
+    @pytest.mark.asyncio
+    async def test_websocket_fails_http_disabled(
+        self,
+        task_dispatcher,
+        instance_registry,
+        task_registry,
+        sample_instance,
+        instance_connection_manager
+    ):
+        """Test WebSocket failure with HTTP disabled (line 117)."""
+        # Setup
+        await instance_registry.register(sample_instance)
+        task = await task_registry.create_task(
+            task_id="task-1",
+            model_id="model-1",
+            task_input={"prompt": "test"},
+            metadata={},
+            assigned_instance=sample_instance.instance_id
+        )
+        await instance_registry.increment_pending(sample_instance.instance_id)
+
+        # Enable WebSocket but disable HTTP fallback
+        task_dispatcher.enable_websocket = True
+        task_dispatcher.enable_http_fallback = False
+        task_dispatcher.instance_connection_manager = instance_connection_manager
+
+        # Mock WebSocket submission to fail
+        instance_connection_manager.submit_task = AsyncMock(
+            side_effect=Exception("WebSocket error")
+        )
+
+        # Execute - should raise ConnectionError within dispatch, caught by outer exception handler
+        await task_dispatcher.dispatch_task("task-1")
+
+        # Task should be marked as failed
+        task = await task_registry.get("task-1")
+        assert task.status == TaskStatus.FAILED
+
+    @pytest.mark.asyncio
+    async def test_dispatch_timeout_error(
+        self,
+        task_dispatcher,
+        instance_registry,
+        task_registry,
+        sample_instance,
+        websocket_manager
+    ):
+        """Test dispatch timeout error handling (lines 133-138)."""
+        # Setup
+        await instance_registry.register(sample_instance)
+        task = await task_registry.create_task(
+            task_id="task-1",
+            model_id="model-1",
+            task_input={"prompt": "test"},
+            metadata={},
+            assigned_instance=sample_instance.instance_id
+        )
+        await instance_registry.increment_pending(sample_instance.instance_id)
+
+        # Mock HTTP client to timeout
+        task_dispatcher._http_client.post = AsyncMock(
+            side_effect=httpx.TimeoutException("Timeout")
+        )
+
+        # Execute
+        await task_dispatcher.dispatch_task("task-1")
+
+        # Verify task was marked as failed
+        task = await task_registry.get("task-1")
+        assert task.status == TaskStatus.FAILED
+        assert "timed out" in task.error.lower()
+
+        # Verify instance stats updated
+        stats = await instance_registry.get_stats(sample_instance.instance_id)
+        assert stats.failed_tasks == 1
+
+    @pytest.mark.asyncio
+    async def test_dispatch_http_error(
+        self,
+        task_dispatcher,
+        instance_registry,
+        task_registry,
+        sample_instance,
+        websocket_manager
+    ):
+        """Test dispatch HTTP error handling (lines 147-152)."""
+        # Setup
+        await instance_registry.register(sample_instance)
+        task = await task_registry.create_task(
+            task_id="task-1",
+            model_id="model-1",
+            task_input={"prompt": "test"},
+            metadata={},
+            assigned_instance=sample_instance.instance_id
+        )
+        await instance_registry.increment_pending(sample_instance.instance_id)
+
+        # Mock HTTP client to raise HTTP error
+        task_dispatcher._http_client.post = AsyncMock(
+            side_effect=httpx.HTTPError("HTTP error")
+        )
+
+        # Execute
+        await task_dispatcher.dispatch_task("task-1")
+
+        # Verify task was marked as failed
+        task = await task_registry.get("task-1")
+        assert task.status == TaskStatus.FAILED
+        assert "dispatch failed" in task.error.lower()
+
+        # Verify instance stats updated
+        stats = await instance_registry.get_stats(sample_instance.instance_id)
+        assert stats.failed_tasks == 1

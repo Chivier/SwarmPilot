@@ -25,6 +25,7 @@ from src.task_registry import TaskRegistry
 from src.websocket_manager import ConnectionManager
 from src.predictor_client import PredictorClient, Prediction
 from src.task_dispatcher import TaskDispatcher
+from src.instance_connection_manager import InstanceConnectionManager
 
 
 # ============================================================================
@@ -205,6 +206,12 @@ def mock_websockets(request):
     """
     count = getattr(request, 'param', 2)
     return [MagicMock() for _ in range(count)]
+
+
+@pytest.fixture
+def instance_connection_manager() -> InstanceConnectionManager:
+    """Create a fresh instance connection manager for testing."""
+    return InstanceConnectionManager()
 
 
 # ============================================================================

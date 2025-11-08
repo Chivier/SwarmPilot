@@ -317,6 +317,23 @@ class TestStatsManagement:
         assert stats.failed_tasks == 1
 
 
+    async def test_get_drain_status_no_stats(self, instance_registry, sample_instance):
+        """Test get_drain_status when stats don't exist (line 264)."""
+        await instance_registry.register(sample_instance)
+
+        # Remove stats to simulate missing stats
+        instance_registry._stats.pop(sample_instance.instance_id, None)
+
+        # Get drain status - should return default values
+        info = await instance_registry.get_drain_status(sample_instance.instance_id)
+        assert info["instance_id"] == sample_instance.instance_id
+        assert info["status"] == sample_instance.status
+        assert info["pending_tasks"] == 0
+        assert info["running_tasks"] == 0
+        assert info["can_remove"] is True
+        assert "drain_initiated_at" in info
+
+
 """
 # ============================================================================
 # Count Operations Tests

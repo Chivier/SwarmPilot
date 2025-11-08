@@ -14,7 +14,7 @@ from typing import Dict, Optional, Any
 from datetime import datetime, UTC
 import json
 
-from websockets.server import WebSocketServerProtocol
+from websockets.asyncio.server import ServerConnection
 from loguru import logger
 
 from .model import InstanceStatus
@@ -32,7 +32,7 @@ class ConnectionState(Enum):
 class InstanceConnection:
     """Represents a WebSocket connection to an Instance."""
     instance_id: str
-    websocket: WebSocketServerProtocol
+    websocket: ServerConnection
     state: ConnectionState
     last_heartbeat: float
     registered_at: float
@@ -78,7 +78,7 @@ class InstanceConnectionManager:
 
         # Connection tracking
         self.connections: Dict[str, InstanceConnection] = {}
-        self._websocket_to_instance: Dict[WebSocketServerProtocol, str] = {}
+        self._websocket_to_instance: Dict[ServerConnection, str] = {}
         self._lock = asyncio.Lock()
 
         # Heartbeat configuration
@@ -133,7 +133,7 @@ class InstanceConnectionManager:
     async def register_connection(
         self,
         instance_id: str,
-        websocket: WebSocketServerProtocol,
+        websocket: ServerConnection,
     ) -> None:
         """
         Register a new WebSocket connection.
@@ -173,7 +173,7 @@ class InstanceConnectionManager:
 
             logger.info(f"Connection registered for instance {instance_id}")
 
-    async def handle_disconnect(self, websocket: WebSocketServerProtocol) -> None:
+    async def handle_disconnect(self, websocket: ServerConnection) -> None:
         """
         Handle WebSocket disconnection.
 
@@ -208,15 +208,6 @@ class InstanceConnectionManager:
             del self.connections[instance_id]
             del self._websocket_to_instance[websocket]
 
-            # Update instance registry status
-            if self.instance_registry:
-                try:
-                    await self.instance_registry.update_status(
-                        instance_id, InstanceStatus.DISCONNECTED
-                    )
-                except Exception as e:
-                    logger.error(f"Failed to update instance status: {e}")
-
             logger.info(f"Instance {instance_id} disconnected and cleaned up")
 
     async def update_heartbeat(self, instance_id: str) -> None:
@@ -232,7 +223,7 @@ class InstanceConnectionManager:
             logger.debug(f"Heartbeat updated for instance {instance_id}")
 
     async def get_instance_id_by_websocket(
-        self, websocket: WebSocketServerProtocol
+        self, websocket: ServerConnection
     ) -> Optional[str]:
         """
         Get instance ID from WebSocket.

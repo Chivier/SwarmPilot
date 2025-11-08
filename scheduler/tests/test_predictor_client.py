@@ -608,3 +608,298 @@ class TestHealthCheck:
             result = await client.health_check()
 
             assert result is False
+
+
+# ============================================================================
+# Additional Coverage Tests
+# ============================================================================
+
+class TestURLConversion:
+    """Tests for URL conversion edge cases."""
+
+    def test_init_with_ws_url_already(self):
+        """Test initialization with ws:// URL already (line 55)."""
+        client = PredictorClient("ws://localhost:8080")
+        assert client.ws_url == "ws://localhost:8080"
+        assert client._ws_endpoint == "ws://localhost:8080/ws/predict"
+
+    def test_init_with_wss_url_already(self):
+        """Test initialization with wss:// URL already (line 55)."""
+        client = PredictorClient("wss://example.com:8080")
+        assert client.ws_url == "wss://example.com:8080"
+        assert client._ws_endpoint == "wss://example.com:8080/ws/predict"
+
+
+class TestServerErrorRetry:
+    """Tests for server error retry logic (lines 187-188, 238-256)."""
+
+    @pytest.mark.asyncio
+    async def test_server_error_with_retry(self):
+        """Test server error causes connection close and retry (lines 187-188)."""
+        client = PredictorClient("http://localhost:8080", max_retries=2, retry_delay=0.01)
+
+        # Create mock WebSocket
+        mock_ws = MagicMock()
+        mock_ws.close_code = None
+        mock_ws.send = AsyncMock()
+        mock_ws.recv = AsyncMock()
+        mock_ws.close = AsyncMock()
+
+        # First call returns server error, second succeeds
+        error_response = json.dumps({
+            "error": "Internal Server Error",
+            "message": "Database timeout"
+        })
+        success_response = json.dumps({
+            "result": {
+                "quantiles": {"0.5": 100.0, "0.9": 200.0}
+            }
+        })
+        mock_ws.recv.side_effect = [error_response, success_response]
+
+        with patch('websockets.connect', new_callable=AsyncMock, return_value=mock_ws):
+            result = await client._make_request_with_retry(
+                ws_url="ws://localhost:8080/ws/predict",
+                json_data={"test": "data"}
+            )
+
+            # Should succeed after retry
+            assert result == {"result": {"quantiles": {"0.5": 100.0, "0.9": 200.0}}}
+            # Connection should be closed after server error
+            assert mock_ws.close.call_count >= 1
+
+    @pytest.mark.asyncio
+    async def test_server_error_max_retries_exhausted(self):
+        """Test server error exhausts all retries (lines 238-256)."""
+        client = PredictorClient("http://localhost:8080", max_retries=2, retry_delay=0.01)
+
+        # Create mock WebSocket
+        mock_ws = MagicMock()
+        mock_ws.close_code = None
+        mock_ws.send = AsyncMock()
+        mock_ws.recv = AsyncMock()
+        mock_ws.close = AsyncMock()
+
+        # Always return server error
+        error_response = json.dumps({
+            "error": "Internal Server Error",
+            "message": "Database timeout"
+        })
+        mock_ws.recv.return_value = error_response
+
+        with patch('websockets.connect', new_callable=AsyncMock, return_value=mock_ws):
+            with pytest.raises(RuntimeError) as exc_info:
+                await client._make_request_with_retry(
+                    ws_url="ws://localhost:8080/ws/predict",
+                    json_data={"test": "data"}
+                )
+
+            assert "Internal Server Error" in str(exc_info.value)
+            assert "Database timeout" in str(exc_info.value)
+
+
+class TestTimeoutRetry:
+    """Tests for timeout retry logic (lines 215-229)."""
+
+    @pytest.mark.asyncio
+    async def test_timeout_with_retry_success(self):
+        """Test timeout on first attempt, success on retry (lines 215-229)."""
+        client = PredictorClient("http://localhost:8080", max_retries=3, retry_delay=0.01, timeout=0.05)
+
+        call_count = [0]
+
+        # Create mock WebSocket factory
+        def create_mock_ws():
+            mock_ws = MagicMock()
+            mock_ws.close_code = None
+            mock_ws.send = AsyncMock()
+            mock_ws.close = AsyncMock()
+
+            # First two calls timeout (slow recv), third succeeds
+            async def recv_impl():
+                call_count[0] += 1
+                if call_count[0] < 3:
+                    # Simulate slow response that will timeout
+                    await asyncio.sleep(0.2)
+                    return json.dumps({"result": "should not reach"})
+                else:
+                    # Fast response
+                    return json.dumps({"result": {"quantiles": {"0.5": 100.0}}})
+
+            mock_ws.recv = recv_impl
+            return mock_ws
+
+        with patch('websockets.connect', new_callable=AsyncMock, side_effect=lambda *args, **kwargs: create_mock_ws()):
+            result = await client._make_request_with_retry(
+                ws_url="ws://localhost:8080/ws/predict",
+                json_data={"test": "data"}
+            )
+
+            # Eventually succeeds
+            assert result == {"result": {"quantiles": {"0.5": 100.0}}}
+            # Should have retried at least once
+            assert call_count[0] >= 2
+
+
+class TestPredictionTypeErrors:
+    """Tests for prediction type validation (line 379)."""
+
+    @pytest.mark.asyncio
+    async def test_unknown_prediction_type(self):
+        """Test unknown prediction type raises ValueError (line 379)."""
+        client = PredictorClient("http://localhost:8080")
+
+        # Create mock instance
+        instance = Instance(
+            instance_id="inst-1",
+            model_id="model-1",
+            endpoint="http://localhost:8001",
+            platform_info={
+                "software_name": "docker",
+                "software_version": "20.10",
+                "hardware_name": "test-hw"
+            }
+        )
+
+        # Mock successful WebSocket response
+        mock_ws = MagicMock()
+        mock_ws.close_code = None
+        mock_ws.send = AsyncMock()
+        mock_ws.recv = AsyncMock(return_value=json.dumps({
+            "result": {"quantiles": {"0.5": 100.0}}
+        }))
+        mock_ws.close = AsyncMock()
+
+        with patch('websockets.connect', new_callable=AsyncMock, return_value=mock_ws):
+            with pytest.raises(ValueError) as exc_info:
+                await client.predict(
+                    model_id="model-1",
+                    metadata={"test": "data"},
+                    instances=[instance],
+                    prediction_type="invalid_type"  # Invalid type
+                )
+
+            assert "Unknown prediction type" in str(exc_info.value)
+            assert "invalid_type" in str(exc_info.value)
+
+
+class TestInvalidFeaturesError:
+    """Tests for invalid features error handling (lines 397-405)."""
+
+    @pytest.mark.asyncio
+    async def test_invalid_features_error(self):
+        """Test invalid features error handling (lines 397-405)."""
+        client = PredictorClient("http://localhost:8080")
+
+        # Create mock instance
+        instance = Instance(
+            instance_id="inst-1",
+            model_id="model-1",
+            endpoint="http://localhost:8001",
+            platform_info={
+                "software_name": "docker",
+                "software_version": "20.10",
+                "hardware_name": "test-hw"
+            }
+        )
+
+        # Mock WebSocket to return invalid features error
+        mock_ws = MagicMock()
+        mock_ws.close_code = None
+        mock_ws.send = AsyncMock()
+        mock_ws.recv = AsyncMock(return_value=json.dumps({
+            "error": "Invalid features",
+            "message": "Missing required field: image_size"
+        }))
+        mock_ws.close = AsyncMock()
+
+        with patch('websockets.connect', new_callable=AsyncMock, return_value=mock_ws):
+            with pytest.raises(ValueError) as exc_info:
+                await client.predict(
+                    model_id="model-1",
+                    metadata={"test": "data"},
+                    instances=[instance]
+                )
+
+            assert "Invalid task metadata" in str(exc_info.value)
+            assert "Missing required field" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_invalid_request_error(self):
+        """Test invalid request error handling (lines 397-405)."""
+        client = PredictorClient("http://localhost:8080")
+
+        # Create mock instance
+        instance = Instance(
+            instance_id="inst-1",
+            model_id="model-1",
+            endpoint="http://localhost:8001",
+            platform_info={
+                "software_name": "docker",
+                "software_version": "20.10",
+                "hardware_name": "test-hw"
+            }
+        )
+
+        # Mock WebSocket to return invalid request error
+        mock_ws = MagicMock()
+        mock_ws.close_code = None
+        mock_ws.send = AsyncMock()
+        mock_ws.recv = AsyncMock(return_value=json.dumps({
+            "error": "Invalid request",
+            "message": "Malformed JSON"
+        }))
+        mock_ws.close = AsyncMock()
+
+        with patch('websockets.connect', new_callable=AsyncMock, return_value=mock_ws):
+            with pytest.raises(ValueError) as exc_info:
+                await client.predict(
+                    model_id="model-1",
+                    metadata={"test": "data"},
+                    instances=[instance]
+                )
+
+            assert "Invalid task metadata" in str(exc_info.value)
+            assert "Malformed JSON" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_other_value_error(self):
+        """Test other validation errors are re-raised (lines 397-405)."""
+        client = PredictorClient("http://localhost:8080", max_retries=1)
+
+        # Create mock instance
+        instance = Instance(
+            instance_id="inst-1",
+            model_id="model-1",
+            endpoint="http://localhost:8001",
+            platform_info={
+                "software_name": "docker",
+                "software_version": "20.10",
+                "hardware_name": "test-hw"
+            }
+        )
+
+        # Mock WebSocket factory to return other validation error (server error - retryable)
+        # This should cause a server error that gets retried and eventually fails
+        def create_mock_ws():
+            mock_ws = MagicMock()
+            mock_ws.close_code = None
+            mock_ws.send = AsyncMock()
+            mock_ws.recv = AsyncMock(return_value=json.dumps({
+                "error": "Validation error",
+                "message": "Some other validation issue"
+            }))
+            mock_ws.close = AsyncMock()
+            return mock_ws
+
+        with patch('websockets.connect', new_callable=AsyncMock, side_effect=lambda *args, **kwargs: create_mock_ws()):
+            # This is actually a server error (not in the non-retryable list), so it will retry and fail
+            with pytest.raises(RuntimeError) as exc_info:
+                await client.predict(
+                    model_id="model-1",
+                    metadata={"test": "data"},
+                    instances=[instance]
+                )
+
+            assert "Validation error" in str(exc_info.value)
+            assert "Some other validation issue" in str(exc_info.value)

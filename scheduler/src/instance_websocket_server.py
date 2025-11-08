@@ -17,7 +17,7 @@ import uuid
 from datetime import datetime, UTC
 from typing import Dict, Optional, Callable, Any
 import websockets
-from websockets.server import WebSocketServerProtocol
+from websockets.asyncio.server import ServerConnection
 from loguru import logger
 
 from .model import InstanceStatus
@@ -126,7 +126,7 @@ class InstanceWebSocketServer:
             logger.error(f"Error stopping WebSocket server: {e}")
             raise
 
-    async def _handle_connection(self, websocket: WebSocketServerProtocol, path: str) -> None:
+    async def _handle_connection(self, websocket: ServerConnection, path: str) -> None:
         """
         Handle a new WebSocket connection.
 
@@ -196,7 +196,7 @@ class InstanceWebSocketServer:
             # Clean up connection
             await self._handle_disconnect(websocket)
 
-    async def _route_message(self, websocket: WebSocketServerProtocol, message: Dict[str, Any]) -> None:
+    async def _route_message(self, websocket: ServerConnection, message: Dict[str, Any]) -> None:
         """
         Route message to appropriate handler based on type.
 
@@ -239,7 +239,7 @@ class InstanceWebSocketServer:
     # Message Handlers
     # ========================================================================
 
-    async def _handle_register(self, websocket: WebSocketServerProtocol, message: Dict[str, Any]) -> None:
+    async def _handle_register(self, websocket: ServerConnection, message: Dict[str, Any]) -> None:
         """
         Handle REGISTER message from Instance.
 
@@ -329,7 +329,7 @@ class InstanceWebSocketServer:
                 error_code="INTERNAL_ERROR",
             )
 
-    async def _handle_task_result(self, websocket: WebSocketServerProtocol, message: Dict[str, Any]) -> None:
+    async def _handle_task_result(self, websocket: ServerConnection, message: Dict[str, Any]) -> None:
         """
         Handle TASK_RESULT message from Instance.
 
@@ -395,7 +395,7 @@ class InstanceWebSocketServer:
                 success=False,
             )
 
-    async def _handle_task_ack(self, websocket: WebSocketServerProtocol, message: Dict[str, Any]) -> None:
+    async def _handle_task_ack(self, websocket: ServerConnection, message: Dict[str, Any]) -> None:
         """
         Handle TASK_ACK message from Instance.
 
@@ -422,7 +422,7 @@ class InstanceWebSocketServer:
         except Exception as e:
             logger.error(f"Error handling TASK_ACK: {e}", exc_info=True)
 
-    async def _handle_ping(self, websocket: WebSocketServerProtocol, message: Dict[str, Any]) -> None:
+    async def _handle_ping(self, websocket: ServerConnection, message: Dict[str, Any]) -> None:
         """
         Handle PING message and respond with PONG.
 
@@ -440,7 +440,7 @@ class InstanceWebSocketServer:
             if instance_id:
                 await self.connection_manager.update_heartbeat(instance_id)
 
-    async def _handle_pong(self, websocket: WebSocketServerProtocol, message: Dict[str, Any]) -> None:
+    async def _handle_pong(self, websocket: ServerConnection, message: Dict[str, Any]) -> None:
         """
         Handle PONG message (response to our PING).
 
@@ -455,7 +455,7 @@ class InstanceWebSocketServer:
                 await self.connection_manager.update_heartbeat(instance_id)
                 logger.debug(f"Received PONG from instance {instance_id}")
 
-    async def _handle_unregister(self, websocket: WebSocketServerProtocol, message: Dict[str, Any]) -> None:
+    async def _handle_unregister(self, websocket: ServerConnection, message: Dict[str, Any]) -> None:
         """
         Handle UNREGISTER message from Instance.
 
@@ -491,7 +491,7 @@ class InstanceWebSocketServer:
                 message=f"Unregistration error: {str(e)}",
             )
 
-    async def _handle_disconnect(self, websocket: WebSocketServerProtocol) -> None:
+    async def _handle_disconnect(self, websocket: ServerConnection) -> None:
         """
         Handle WebSocket disconnection.
 
@@ -505,7 +505,7 @@ class InstanceWebSocketServer:
     # Message Sending Helpers
     # ========================================================================
 
-    async def _send_message(self, websocket: WebSocketServerProtocol, message: Dict[str, Any]) -> None:
+    async def _send_message(self, websocket: ServerConnection, message: Dict[str, Any]) -> None:
         """
         Send a message to a WebSocket connection.
 
@@ -527,7 +527,7 @@ class InstanceWebSocketServer:
 
     async def _send_register_ack(
         self,
-        websocket: WebSocketServerProtocol,
+        websocket: ServerConnection,
         reply_to: str,
         success: bool,
         message: str,
@@ -548,7 +548,7 @@ class InstanceWebSocketServer:
 
     async def _send_result_ack(
         self,
-        websocket: WebSocketServerProtocol,
+        websocket: ServerConnection,
         reply_to: str,
         task_id: str,
         success: bool,
@@ -563,7 +563,7 @@ class InstanceWebSocketServer:
         }
         await self._send_message(websocket, ack)
 
-    async def _send_pong(self, websocket: WebSocketServerProtocol, reply_to: str) -> None:
+    async def _send_pong(self, websocket: ServerConnection, reply_to: str) -> None:
         """Send PONG message."""
         pong = {
             "type": "pong",
@@ -574,7 +574,7 @@ class InstanceWebSocketServer:
 
     async def _send_unregister_ack(
         self,
-        websocket: WebSocketServerProtocol,
+        websocket: ServerConnection,
         reply_to: str,
         success: bool,
         message: str,
@@ -591,7 +591,7 @@ class InstanceWebSocketServer:
 
     async def _send_error(
         self,
-        websocket: WebSocketServerProtocol,
+        websocket: ServerConnection,
         error: str,
         error_code: str,
         reply_to: Optional[str] = None,

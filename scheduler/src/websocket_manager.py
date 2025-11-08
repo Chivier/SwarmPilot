@@ -192,26 +192,7 @@ class ConnectionManager:
         for websocket in disconnected:
             await self.disconnect(websocket)
 
-        # FIX: CRITICAL - Delayed unsubscribe instead of immediate
-        # Schedule cleanup after 5 seconds to give clients time to receive
-        import asyncio
-        asyncio.create_task(self._delayed_cleanup_subscriptions(task_id, delay=5.0))
-
-    async def _delayed_cleanup_subscriptions(self, task_id: str, delay: float = 5.0) -> None:
-        """
-        Clean up task subscriptions after a delay.
-
-        This gives clients time to receive messages before subscriptions are removed.
-
-        Args:
-            task_id: Task ID to clean up
-            delay: Delay in seconds before cleanup
-        """
-        from loguru import logger
-        import asyncio
-
-        await asyncio.sleep(delay)
-
+        # Clean up all subscriptions for this task immediately after broadcast
         async with self._lock:
             if task_id in self._subscriptions:
                 subscriber_count = len(self._subscriptions[task_id])

@@ -224,6 +224,61 @@ class TestProbabilisticSchedulingStrategy:
         selected = strategy.select_instance(predictions, {})
         assert selected == "inst-1"
 
+    async def test_select_with_non_probabilistic_queue(self, mock_predictor_client, instance_registry):
+        """Test selection when queue is not InstanceQueueProbabilistic (line 476)."""
+        from src.model import InstanceQueueExpectError, Instance
+        import numpy as np
+
+        # Set seed for reproducibility
+        np.random.seed(42)
+
+        strategy = ProbabilisticSchedulingStrategy(mock_predictor_client, instance_registry)
+
+        # Register instances
+        for i in [1, 2]:
+            instance = Instance(
+                instance_id=f"inst-{i}",
+                model_id="model-1",
+                endpoint=f"http://localhost:800{i}",
+                platform_info={
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hardware"
+                }
+            )
+            await instance_registry.register(instance)
+
+        # Set queue info to ExpectError (not Probabilistic)
+        queue_info = {
+            "inst-1": InstanceQueueExpectError(
+                instance_id="inst-1",
+                expected_time_ms=50.0,
+                error_margin_ms=10.0
+            ),
+            "inst-2": InstanceQueueExpectError(
+                instance_id="inst-2",
+                expected_time_ms=30.0,
+                error_margin_ms=5.0
+            ),
+        }
+
+        predictions = [
+            Prediction(
+                instance_id="inst-1",
+                predicted_time_ms=100.0,
+                quantiles={0.5: 80.0, 0.9: 150.0}
+            ),
+            Prediction(
+                instance_id="inst-2",
+                predicted_time_ms=120.0,
+                quantiles={0.5: 100.0, 0.9: 130.0}
+            ),
+        ]
+
+        # Should handle non-probabilistic queue by using zeros (line 476)
+        selected = strategy.select_instance(predictions, queue_info)
+        assert selected in ["inst-1", "inst-2"]
+
 
 # ============================================================================
 # RoundRobinStrategy Tests
@@ -540,6 +595,50 @@ class TestProbabilisticStrategyUpdate:
         updated_queue = await instance_registry.get_queue_info("inst-1")
         assert isinstance(updated_queue, InstanceQueueProbabilistic)
         assert updated_queue.values[0] == 150.0  # 100 + 50
+
+    async def test_update_queue_no_existing_queue(self, mock_predictor_client, instance_registry):
+        """Test update_queue when no queue exists (line 517)."""
+        from src.model import InstanceQueueProbabilistic, Instance
+        from unittest.mock import AsyncMock
+
+        strategy = ProbabilisticSchedulingStrategy(mock_predictor_client, instance_registry)
+
+        # Register instance without setting queue info
+        instance = Instance(
+            instance_id="inst-1",
+            model_id="model-1",
+            endpoint="http://localhost:8001",
+            platform_info={
+                "software_name": "docker",
+                "software_version": "20.10",
+                "hardware_name": "test-hardware"
+            }
+        )
+        await instance_registry.register(instance)
+
+        # Mock get_queue_info to return None (simulating missing queue)
+        original_get_queue = instance_registry.get_queue_info
+        instance_registry.get_queue_info = AsyncMock(return_value=None)
+
+        # Create prediction
+        prediction = Prediction(
+            instance_id="inst-1",
+            predicted_time_ms=50.0,
+            quantiles={0.5: 40.0, 0.9: 60.0, 0.95: 70.0, 0.99: 100.0}
+        )
+
+        # Update queue - should initialize new queue (line 517)
+        await strategy.update_queue("inst-1", prediction)
+
+        # Restore original method
+        instance_registry.get_queue_info = original_get_queue
+
+        # Verify queue was created and updated
+        updated_queue = await instance_registry.get_queue_info("inst-1")
+        assert isinstance(updated_queue, InstanceQueueProbabilistic)
+        assert updated_queue.quantiles == [0.5, 0.9, 0.95, 0.99]
+        # Values should be approximately the prediction quantiles
+        assert all(v > 0 for v in updated_queue.values)
 
     async def test_update_queue_wrong_type(self, mock_predictor_client, instance_registry):
         """Test update_queue with wrong queue info type."""
