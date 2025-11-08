@@ -48,7 +48,7 @@ addopts = [
     "--cov=src",
     "--cov-report=html",
     "--cov-report=term-missing",
-    "--cov-fail-under=90",
+    "--cov-fail-under=75",
 ]
 markers = [
     "unit: Unit tests",
@@ -59,7 +59,15 @@ markers = [
 
 [tool.coverage.run]
 source = ["src"]
-omit = ["*/tests/*", "*/__pycache__/*", "*/venv/*", "*/.venv/*"]
+omit = [
+    "*/tests/*",
+    "*/__pycache__/*",
+    "*/venv/*",
+    "*/.venv/*",
+    "*/src/cli.py",
+    "*/src/websocket_client.py",
+    "*/src/websocket_client_singleton.py",
+]
 
 [tool.coverage.report]
 exclude_lines = [

@@ -11,7 +11,7 @@ import uuid
 from datetime import datetime, UTC
 from typing import Dict, Optional, Callable, Any
 import websockets
-from websockets.client import WebSocketClientProtocol
+from websockets import ClientConnection
 from loguru import logger
 
 
@@ -48,7 +48,7 @@ class WebSocketClient:
         self.platform_info = platform_info or {}
 
         # Connection state
-        self.websocket: Optional[WebSocketClientProtocol] = None
+        self.websocket: Optional[ClientConnection] = None
         self.running = False
         self.connected = False
 

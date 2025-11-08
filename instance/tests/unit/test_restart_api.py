@@ -257,7 +257,7 @@ class TestRestartModelEndpoint:
         )
 
         # Should fail with validation error
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
     def test_restart_model_invalid_scheduler_url(
         self,
@@ -403,7 +403,7 @@ class TestRestartStatusEndpoint:
         response = api_client.get("/model/restart/status")
 
         # Should fail with validation error
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
     def test_get_restart_status_completed_at_null_when_pending(
         self,
