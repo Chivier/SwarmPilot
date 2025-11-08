@@ -54,8 +54,15 @@ Example usage:
 import asyncio
 import json
 import logging
+import os
+import socket
+import subprocess
+import sys
+import time
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
+from urllib.parse import urlparse
 
 import httpx
 import websockets
@@ -155,6 +162,7 @@ class InstanceClient:
         retry_delay: float = 1.0,
         websocket_url: Optional[str] = None,
         verify_ssl: bool = True,
+        instance_module_path: Optional[str] = None,
     ):
         """Initialize the InstanceClient.
 
@@ -165,6 +173,7 @@ class InstanceClient:
             retry_delay: Initial delay between retries in seconds (default: 1.0)
             websocket_url: WebSocket URL (defaults to ws:// version of base_url)
             verify_ssl: Whether to verify SSL certificates (default: True)
+            instance_module_path: Path to instance module directory (auto-detected if None)
         """
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
@@ -187,6 +196,42 @@ class InstanceClient:
         # WebSocket connection
         self._ws_connection: Optional[WebSocketClientProtocol] = None
         self._ws_listen_task: Optional[asyncio.Task] = None
+
+        # Auto-start management
+        self._instance_process: Optional[subprocess.Popen] = None
+        self.instance_module_path = instance_module_path or self._find_instance_module()
+
+    def _find_instance_module(self) -> str:
+        """Find instance module path automatically.
+
+        Returns:
+            Path to instance module directory
+        """
+        # Try to find instance module relative to current file
+        current_file = Path(__file__).resolve()
+        project_root = current_file.parent.parent.parent.parent  # graph/src/clients/instance_client.py -> project root
+        instance_path = project_root / "instance"
+
+        if instance_path.exists():
+            return str(instance_path)
+
+        # Fallback: check environment variable
+        if "INSTANCE_MODULE_PATH" in os.environ:
+            return os.environ["INSTANCE_MODULE_PATH"]
+
+        # Fallback: assume instance is a sibling directory
+        return str(Path.cwd() / "instance")
+
+    @property
+    def is_instance_running(self) -> bool:
+        """Check if instance process is running.
+
+        Returns:
+            True if process is running, False otherwise
+        """
+        if self._instance_process is None:
+            return False
+        return self._instance_process.poll() is None
 
     async def __aenter__(self) -> "InstanceClient":
         """Enter the async context manager - initialize HTTP client."""
@@ -897,3 +942,270 @@ class InstanceClient:
                 pass
             self._ws_listen_task = None
             logger.info("Stopped listening for WebSocket messages")
+
+    # ==================== Port Management ====================
+
+    def _is_port_in_use(self, port: int) -> bool:
+        """Check if a port is already in use.
+
+        Args:
+            port: Port number to check
+
+        Returns:
+            True if port is in use, False otherwise
+        """
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            try:
+                s.bind(("127.0.0.1", port))
+                return False
+            except OSError:
+                return True
+
+    def _find_available_port(self, start_port: int, max_attempts: int = 100) -> Optional[int]:
+        """Find an available port starting from the given port.
+
+        Args:
+            start_port: Starting port number
+            max_attempts: Maximum number of ports to try
+
+        Returns:
+            Available port number, or None if no port found
+        """
+        for port in range(start_port, start_port + max_attempts):
+            if not self._is_port_in_use(port):
+                return port
+        return None
+
+    def _extract_port_from_url(self, url: str) -> int:
+        """Extract port number from URL.
+
+        Args:
+            url: URL string (e.g., "http://localhost:5000")
+
+        Returns:
+            Port number (defaults to 80 for http, 443 for https if not specified)
+        """
+        parsed = urlparse(url)
+        if parsed.port:
+            return parsed.port
+        return 443 if parsed.scheme == "https" else 80
+
+    def _update_instance_url_port(self, new_port: int) -> None:
+        """Update instance URL with new port.
+
+        Args:
+            new_port: New port number
+        """
+        parsed = urlparse(self.base_url)
+        self.base_url = f"{parsed.scheme}://{parsed.hostname}:{new_port}{parsed.path}"
+
+        # Update WebSocket URL as well
+        ws_scheme = "wss" if parsed.scheme == "https" else "ws"
+        self.websocket_url = f"{ws_scheme}://{parsed.hostname}:{new_port}/ws"
+
+    async def _wait_for_instance_ready(self, timeout: float = 30.0, check_interval: float = 1.0) -> bool:
+        """Wait for instance to become ready.
+
+        Args:
+            timeout: Maximum time to wait in seconds
+            check_interval: Interval between health checks in seconds
+
+        Returns:
+            True if instance is ready, False if timeout
+        """
+        print(f"Waiting for instance to become ready (timeout: {timeout}s)...")
+        start_time = time.time()
+
+        while time.time() - start_time < timeout:
+            try:
+                async with httpx.AsyncClient(timeout=5.0) as client:
+                    response = await client.get(f"{self.base_url}/health")
+                    if response.status_code == 200:
+                        data = response.json()
+                        if data.get("status") == "healthy":
+                            elapsed = time.time() - start_time
+                            print(f"✓ Instance is ready (took {elapsed:.1f}s)")
+                            return True
+            except Exception:
+                pass
+
+            await asyncio.sleep(check_interval)
+
+        print(f"✗ Instance did not become ready within {timeout}s")
+        return False
+
+    # ==================== Auto-Start Methods ====================
+
+    async def start_instance(
+        self,
+        auto_find_port: bool = True,
+        max_port_search: int = 100,
+        wait_timeout: float = 30.0,
+        port: Optional[int] = None,
+        instance_id: Optional[str] = None,
+    ) -> bool:
+        """Start instance service automatically with port auto-discovery.
+
+        This method performs the following steps:
+        1. Check if instance port is available
+        2. If port is occupied and auto_find_port=True, find an available port
+        3. Start instance process
+        4. Wait for instance to become ready
+
+        Args:
+            auto_find_port: Automatically find available port if configured port is occupied
+            max_port_search: Maximum number of ports to search for availability
+            wait_timeout: Maximum time to wait for instance to become ready (seconds)
+            port: Specific port to use (overrides URL port)
+            instance_id: Instance identifier (defaults to "instance-default")
+
+        Returns:
+            True if instance started successfully, False otherwise
+
+        Raises:
+            RuntimeError: If instance module path is not found
+            ConnectionError: If instance fails to start
+
+        Example:
+            ```python
+            client = InstanceClient(base_url="http://localhost:5000")
+
+            # Start instance with auto port discovery
+            success = await client.start_instance(auto_find_port=True)
+            if success:
+                print(f"Instance running at {client.base_url}")
+            ```
+        """
+        print("=" * 60)
+        print("Starting Instance Service")
+        print("=" * 60)
+
+        # Step 1: Determine target port
+        if port is not None:
+            current_port = port
+            self._update_instance_url_port(current_port)
+        else:
+            current_port = self._extract_port_from_url(self.base_url)
+
+        print(f"Checking instance port {current_port}...")
+
+        # Step 2: Check if port is available
+        if self._is_port_in_use(current_port):
+            # Port is in use, check if it's our instance
+            try:
+                async with httpx.AsyncClient(timeout=2.0) as client:
+                    response = await client.get(f"{self.base_url}/health")
+                    if response.status_code == 200:
+                        print(f"✓ Instance is already running at {self.base_url}")
+                        return True
+            except Exception:
+                pass
+
+            # Port is occupied by something else
+            if auto_find_port:
+                print(f"⚠ Port {current_port} is occupied, searching for available port...")
+                available_port = self._find_available_port(current_port + 1, max_port_search)
+
+                if available_port is None:
+                    print(f"✗ Could not find available port in range {current_port + 1} to {current_port + max_port_search}")
+                    raise ConnectionError(f"No available port found for instance service")
+
+                print(f"✓ Found available port: {available_port}")
+                self._update_instance_url_port(available_port)
+                current_port = available_port
+            else:
+                print(f"✗ Port {current_port} is already in use (auto_find_port=False)")
+                raise ConnectionError(f"Port {current_port} is already in use")
+
+        # Step 3: Verify instance module exists
+        if not os.path.exists(self.instance_module_path):
+            raise RuntimeError(f"Instance module not found at: {self.instance_module_path}")
+
+        # Step 4: Prepare environment variables
+        env = os.environ.copy()
+        env["INSTANCE_PORT"] = str(current_port)
+        if instance_id:
+            env["INSTANCE_ID"] = instance_id
+
+        # Step 5: Start instance process
+        print(f"Starting instance at port {current_port}...")
+        print(f"  Module: {self.instance_module_path}")
+        if instance_id:
+            print(f"  Instance ID: {instance_id}")
+
+        try:
+            # Use uvicorn to run the instance
+            cmd = [
+                sys.executable,
+                "-m",
+                "uvicorn",
+                "src.api:app",
+                "--host",
+                "0.0.0.0",
+                "--port",
+                str(current_port),
+                "--log-level",
+                "info",
+            ]
+
+            self._instance_process = subprocess.Popen(
+                cmd,
+                cwd=self.instance_module_path,
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+
+            print(f"✓ Instance process started (PID: {self._instance_process.pid})")
+
+        except Exception as e:
+            print(f"✗ Failed to start instance process: {e}")
+            raise ConnectionError(f"Failed to start instance: {e}")
+
+        # Step 6: Wait for instance to become ready
+        is_ready = await self._wait_for_instance_ready(timeout=wait_timeout)
+
+        if not is_ready:
+            print("✗ Instance failed to become ready")
+            self.stop_instance()
+            raise ConnectionError("Instance failed to become ready")
+
+        print("=" * 60)
+        print(f"✓ Instance is running at {self.base_url}")
+        print("=" * 60)
+        return True
+
+    def stop_instance(self) -> bool:
+        """Stop the instance process if it was started by this client.
+
+        Returns:
+            True if instance was stopped successfully, False otherwise
+        """
+        if self._instance_process is None:
+            print("No instance process to stop")
+            return False
+
+        if not self.is_instance_running:
+            print("Instance process is already stopped")
+            self._instance_process = None
+            return True
+
+        print(f"Stopping instance process (PID: {self._instance_process.pid})...")
+
+        try:
+            self._instance_process.terminate()
+            self._instance_process.wait(timeout=10.0)
+            print("✓ Instance stopped successfully")
+            self._instance_process = None
+            return True
+        except subprocess.TimeoutExpired:
+            print("⚠ Instance did not stop gracefully, forcing termination...")
+            self._instance_process.kill()
+            self._instance_process.wait()
+            print("✓ Instance killed")
+            self._instance_process = None
+            return True
+        except Exception as e:
+            print(f"✗ Error stopping instance: {e}")
+            return False
