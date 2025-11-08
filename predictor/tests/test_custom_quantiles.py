@@ -3,14 +3,9 @@ Integration tests for custom quantiles functionality.
 """
 
 import pytest
-from fastapi.testclient import TestClient
-from src.api import app
 
 
-client = TestClient(app)
-
-
-def test_custom_quantiles_experiment_mode():
+def test_custom_quantiles_experiment_mode(client):
     """Test custom quantiles are used in experiment mode."""
     custom_quantiles = [0.1, 0.25, 0.5, 0.75, 0.9]
 
@@ -46,7 +41,7 @@ def test_custom_quantiles_experiment_mode():
     assert len(result_quantiles) == len(custom_quantiles)
 
 
-def test_custom_quantiles_ignored_in_normal_mode():
+def test_custom_quantiles_ignored_in_normal_mode(client):
     """Test custom quantiles are ignored in normal mode."""
     # First train a model with default quantiles
     train_request = {
@@ -96,7 +91,7 @@ def test_custom_quantiles_ignored_in_normal_mode():
     assert "0.7" not in result_quantiles
 
 
-def test_invalid_quantile_values():
+def test_invalid_quantile_values(client):
     """Test validation of invalid quantile values."""
     invalid_test_cases = [
         ([0.5, 1.5], "above 1"),
@@ -125,7 +120,7 @@ def test_invalid_quantile_values():
         assert response.status_code == 422, f"Should reject quantiles {description}: {quantiles}"
 
 
-def test_empty_quantiles_list():
+def test_empty_quantiles_list(client):
     """Test behavior with empty quantiles list."""
     request_data = {
         "model_id": "test_model",
@@ -149,7 +144,7 @@ def test_empty_quantiles_list():
     assert result["result"]["quantiles"] == {}
 
 
-def test_no_quantiles_field():
+def test_no_quantiles_field(client):
     """Test behavior when quantiles field is not provided (should use defaults)."""
     request_data = {
         "model_id": "test_model",
@@ -176,7 +171,7 @@ def test_no_quantiles_field():
     assert set(result_quantiles.keys()) == set(default_quantiles)
 
 
-def test_many_quantiles():
+def test_many_quantiles(client):
     """Test with many quantiles to ensure performance is acceptable."""
     # Generate 20 quantiles
     many_quantiles = [i/100 for i in range(5, 100, 5)]  # 0.05, 0.10, ..., 0.95
@@ -207,7 +202,7 @@ def test_many_quantiles():
         assert str(q) in result_quantiles
 
 
-def test_quantiles_ordering():
+def test_quantiles_ordering(client):
     """Test that quantile values are properly ordered (monotonic increasing)."""
     quantiles = [0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99]
 
@@ -240,9 +235,8 @@ def test_quantiles_ordering():
 
 
 @pytest.mark.asyncio
-async def test_websocket_custom_quantiles():
+async def test_websocket_custom_quantiles(client):
     """Test custom quantiles through WebSocket endpoint."""
-    from websockets.sync.client import connect
     import json
 
     custom_quantiles = [0.2, 0.4, 0.6, 0.8]
