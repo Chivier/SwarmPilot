@@ -219,14 +219,34 @@ class TestInstanceDeployer:
         previous_models = ["model_0", "model_0", "model_0"]
 
         with patch("httpx.AsyncClient") as mock_client:
+            client_mock = mock_client.return_value.__aenter__.return_value
+
             # Mock responses for all instances
             mock_info_response = MagicMock()
             mock_info_response.json.return_value = mock_instance_responses["info"]
             mock_info_response.raise_for_status = MagicMock()
 
-            mock_client.return_value.__aenter__.return_value.get = AsyncMock(
-                return_value=mock_info_response
-            )
+            # Mock stop response
+            mock_stop_response = MagicMock()
+            mock_stop_response.json.return_value = mock_instance_responses["stop"]
+            mock_stop_response.raise_for_status = MagicMock()
+
+            # Mock start response
+            mock_start_response = MagicMock()
+            mock_start_response.json.return_value = mock_instance_responses["start"]
+            mock_start_response.raise_for_status = MagicMock()
+
+            # Setup get to return info and stop responses
+            client_mock.get = AsyncMock(side_effect=[
+                mock_info_response,  # instance-1 info
+                mock_info_response,  # instance-2 info
+                mock_stop_response,  # instance-2 stop
+                mock_info_response,  # instance-3 info
+                mock_stop_response,  # instance-3 stop
+            ])
+
+            # Setup post to return start response
+            client_mock.post = AsyncMock(return_value=mock_start_response)
 
             statuses = await deployer.deploy_to_instances(
                 endpoints=endpoints,
