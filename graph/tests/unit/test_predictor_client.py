@@ -389,3 +389,256 @@ class TestPredictorClientStop:
         assert result is True
         mock_process.kill.assert_called_once()
         assert client._predictor_process is None
+
+
+class TestPredictorClientAPIs:
+    """Test suite for Predictor API methods."""
+
+    @pytest.mark.asyncio
+    async def test_predict_quantile_success(self):
+        """Test predict with quantile type."""
+        from src.clients.predictor_client import PlatformInfo
+
+        async with PredictorClient() as client:
+            platform = PlatformInfo("vllm", "0.2.5", "nvidia-a100")
+
+            mock_response = MagicMock()
+            mock_response.json.return_value = {
+                "model_id": "gpt-4",
+                "platform_info": {"software_name": "vllm", "software_version": "0.2.5", "hardware_name": "nvidia-a100"},
+                "prediction_type": "quantile",
+                "result": {"quantiles": {"0.5": 100.0, "0.9": 150.0}}
+            }
+
+            with patch.object(client._http_client, "post", return_value=mock_response):
+                result = await client.predict(
+                    model_id="gpt-4",
+                    platform_info=platform,
+                    features={"prompt_length": 100},
+                    prediction_type="quantile"
+                )
+
+                assert result.model_id == "gpt-4"
+                assert result.expected_runtime_ms == 100.0
+                assert result.quantiles == {0.5: 100.0, 0.9: 150.0}
+
+    @pytest.mark.asyncio
+    async def test_predict_expect_error_success(self):
+        """Test predict with expect_error type."""
+        from src.clients.predictor_client import PlatformInfo
+
+        async with PredictorClient() as client:
+            platform = PlatformInfo("vllm", "0.2.5", "nvidia-a100")
+
+            mock_response = MagicMock()
+            mock_response.json.return_value = {
+                "model_id": "gpt-4",
+                "platform_info": {"software_name": "vllm", "software_version": "0.2.5", "hardware_name": "nvidia-a100"},
+                "prediction_type": "expect_error",
+                "result": {"expected_runtime_ms": 100.0, "error_margin_ms": 10.0}
+            }
+
+            with patch.object(client._http_client, "post", return_value=mock_response):
+                result = await client.predict(
+                    model_id="gpt-4",
+                    platform_info=platform,
+                    features={"prompt_length": 100},
+                    prediction_type="expect_error"
+                )
+
+                assert result.model_id == "gpt-4"
+                assert result.expected_runtime_ms == 100.0
+                assert result.error_margin_ms == 10.0
+
+    @pytest.mark.asyncio
+    async def test_predict_invalid_type(self):
+        """Test predict with invalid prediction type."""
+        from src.clients.predictor_client import PlatformInfo
+
+        async with PredictorClient() as client:
+            platform = PlatformInfo("vllm", "0.2.5", "nvidia-a100")
+
+            with pytest.raises(ValueError, match="Invalid prediction_type"):
+                await client.predict(
+                    model_id="gpt-4",
+                    platform_info=platform,
+                    features={"prompt_length": 100},
+                    prediction_type="invalid"
+                )
+
+    @pytest.mark.asyncio
+    async def test_predict_4xx_error(self):
+        """Test predict with 4xx HTTP error."""
+        from src.clients.predictor_client import PlatformInfo
+
+        async with PredictorClient() as client:
+            platform = PlatformInfo("vllm", "0.2.5", "nvidia-a100")
+
+            mock_response = MagicMock()
+            mock_response.status_code = 400
+            mock_response.text = "Bad request"
+
+            error = httpx.HTTPStatusError("Bad request", request=MagicMock(), response=mock_response)
+
+            with patch.object(client._http_client, "post", side_effect=error):
+                with pytest.raises(ValueError, match="Prediction request failed"):
+                    await client.predict(
+                        model_id="gpt-4",
+                        platform_info=platform,
+                        features={"prompt_length": 100}
+                    )
+
+    @pytest.mark.asyncio
+    async def test_predict_retry_and_fail(self):
+        """Test predict retries and eventually fails."""
+        from src.clients.predictor_client import PlatformInfo
+
+        async with PredictorClient(max_retries=2, retry_delay=0.01) as client:
+            platform = PlatformInfo("vllm", "0.2.5", "nvidia-a100")
+
+            with patch.object(client._http_client, "post", side_effect=httpx.ConnectError("Connection failed")):
+                with pytest.raises(ConnectionError, match="Prediction failed after 2 retries"):
+                    await client.predict(
+                        model_id="gpt-4",
+                        platform_info=platform,
+                        features={"prompt_length": 100}
+                    )
+
+    @pytest.mark.asyncio
+    async def test_train_success(self):
+        """Test train method."""
+        from src.clients.predictor_client import PlatformInfo
+
+        async with PredictorClient() as client:
+            platform = PlatformInfo("vllm", "0.2.5", "nvidia-a100")
+
+            mock_response = MagicMock()
+            mock_response.json.return_value = {
+                "status": "success",
+                "message": "Training completed",
+                "model_key": "gpt-4_vllm_0.2.5_nvidia-a100",
+                "samples_trained": 100
+            }
+
+            with patch.object(client._http_client, "post", return_value=mock_response):
+                result = await client.train(
+                    model_id="gpt-4",
+                    platform_info=platform,
+                    prediction_type="quantile",
+                    features_list=[{"prompt_length": 100, "runtime_ms": 120.0}]
+                )
+
+                assert result.status == "success"
+                assert result.samples_trained == 100
+
+    @pytest.mark.asyncio
+    async def test_train_with_config(self):
+        """Test train with training config."""
+        from src.clients.predictor_client import PlatformInfo
+
+        async with PredictorClient() as client:
+            platform = PlatformInfo("vllm", "0.2.5", "nvidia-a100")
+
+            mock_response = MagicMock()
+            mock_response.json.return_value = {
+                "status": "success",
+                "message": "Training completed",
+                "model_key": "gpt-4_vllm_0.2.5_nvidia-a100",
+                "samples_trained": 100
+            }
+
+            with patch.object(client._http_client, "post", return_value=mock_response) as mock_post:
+                await client.train(
+                    model_id="gpt-4",
+                    platform_info=platform,
+                    prediction_type="quantile",
+                    features_list=[{"prompt_length": 100, "runtime_ms": 120.0}],
+                    training_config={"quantiles": [0.5, 0.9]}
+                )
+
+                # Verify training_config was passed
+                call_args = mock_post.call_args
+                assert call_args.kwargs["json"]["training_config"] == {"quantiles": [0.5, 0.9]}
+
+    @pytest.mark.asyncio
+    async def test_list_models_success(self):
+        """Test list_models method."""
+        async with PredictorClient() as client:
+            mock_response = MagicMock()
+            mock_response.json.return_value = {
+                "models": [
+                    {
+                        "model_id": "gpt-4",
+                        "platform_info": {"software_name": "vllm", "software_version": "0.2.5", "hardware_name": "nvidia-a100"},
+                        "prediction_type": "quantile",
+                        "samples_count": 100,
+                        "last_trained": "2025-01-01T00:00:00"
+                    }
+                ]
+            }
+
+            with patch.object(client._http_client, "get", return_value=mock_response):
+                models = await client.list_models()
+
+                assert len(models) == 1
+                assert models[0].model_id == "gpt-4"
+                assert models[0].samples_count == 100
+
+    @pytest.mark.asyncio
+    async def test_list_models_retry(self):
+        """Test list_models with retry."""
+        async with PredictorClient(max_retries=2, retry_delay=0.01) as client:
+            with patch.object(client._http_client, "get", side_effect=httpx.ConnectError("Connection failed")):
+                with pytest.raises(ConnectionError, match="List models failed"):
+                    await client.list_models()
+
+    @pytest.mark.asyncio
+    async def test_health_check_healthy(self):
+        """Test health_check when service is healthy."""
+        async with PredictorClient() as client:
+            mock_response = MagicMock()
+            mock_response.json.return_value = {"status": "healthy"}
+
+            with patch.object(client._http_client, "get", return_value=mock_response):
+                result = await client.health_check()
+
+                assert result is True
+
+    @pytest.mark.asyncio
+    async def test_health_check_unhealthy(self):
+        """Test health_check when service is unhealthy."""
+        async with PredictorClient() as client:
+            mock_response = MagicMock()
+            mock_response.json.return_value = {"status": "unhealthy"}
+
+            with patch.object(client._http_client, "get", return_value=mock_response):
+                result = await client.health_check()
+
+                assert result is False
+
+    @pytest.mark.asyncio
+    async def test_health_check_error(self):
+        """Test health_check with connection error."""
+        async with PredictorClient() as client:
+            with patch.object(client._http_client, "get", side_effect=httpx.ConnectError("Connection failed")):
+                result = await client.health_check()
+
+                assert result is False
+
+    @pytest.mark.asyncio
+    async def test_ensure_client_not_initialized(self):
+        """Test _ensure_client raises error when client not initialized."""
+        client = PredictorClient()
+
+        with pytest.raises(RuntimeError, match="must be used as an async context manager"):
+            client._ensure_client()
+
+    @pytest.mark.asyncio
+    async def test_close_method(self):
+        """Test close method."""
+        client = PredictorClient()
+        client._http_client = AsyncMock()
+
+        await client.close()
+
+        assert client._http_client is None

@@ -421,3 +421,16 @@ class TestInstanceClientStop:
         assert result is True
         mock_process.kill.assert_called_once()
         assert client._instance_process is None
+
+
+class TestInstanceClientInternalMethods:
+    """Test suite for internal helper methods."""
+
+    @pytest.mark.asyncio
+    async def test_ensure_http_client(self):
+        """Test _ensure_http_client creates client."""
+        client = InstanceClient(base_url="http://localhost:5000")
+
+        await client._ensure_http_client()
+
+        assert client._http_client is not None
