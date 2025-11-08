@@ -95,7 +95,8 @@ class WebSocketConfig:
     """Configuration for WebSocket communication with instances."""
 
     # Instance WebSocket server port (separate from main HTTP port)
-    instance_port: int = int(os.getenv("INSTANCE_WEBSOCKET_PORT", "8001"))
+    # If INSTANCE_WEBSOCKET_PORT is not set, will be calculated as scheduler_port + 1
+    instance_port: int = 0  # Will be set in Config.load()
 
     # Heartbeat interval in seconds
     heartbeat_interval: int = int(os.getenv("WEBSOCKET_HEARTBEAT_INTERVAL", "30"))
@@ -129,13 +130,22 @@ class Config:
         Returns:
             Config object with all settings
         """
+        server = ServerConfig()
+        websocket = WebSocketConfig()
+
+        # Set WebSocket instance_port: use env var if set, otherwise scheduler_port + 1
+        if "INSTANCE_WEBSOCKET_PORT" in os.environ:
+            websocket.instance_port = int(os.getenv("INSTANCE_WEBSOCKET_PORT"))
+        else:
+            websocket.instance_port = server.port + 1
+
         return cls(
             predictor=PredictorConfig(),
             scheduling=SchedulingConfig(),
             training=TrainingConfig(),
             logging=LoggingConfig(),
-            server=ServerConfig(),
-            websocket=WebSocketConfig(),
+            server=server,
+            websocket=websocket,
         )
 
     def __repr__(self) -> str:
