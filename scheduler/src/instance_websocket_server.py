@@ -126,13 +126,12 @@ class InstanceWebSocketServer:
             logger.error(f"Error stopping WebSocket server: {e}")
             raise
 
-    async def _handle_connection(self, websocket: ServerConnection, path: str) -> None:
+    async def _handle_connection(self, websocket: ServerConnection) -> None:
         """
         Handle a new WebSocket connection.
 
         Args:
             websocket: WebSocket connection
-            path: Request path (should be /instance/ws)
         """
         remote_address = websocket.remote_address
         logger.info(f"New WebSocket connection from {remote_address}")

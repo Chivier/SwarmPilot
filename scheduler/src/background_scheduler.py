@@ -8,7 +8,7 @@ allowing API endpoints to return immediately.
 import asyncio
 from typing import Dict, Any, Optional
 from loguru import logger
-from src.model import TaskStatus
+from .model import TaskStatus
 
 
 class BackgroundScheduler:
