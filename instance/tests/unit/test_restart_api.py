@@ -1,6 +1,10 @@
 """
 Unit tests for model restart API endpoints.
 Tests POST /model/restart and GET /model/restart/status endpoints.
+
+NOTE: Tests in this file are temporarily disabled because WebSocket
+communication with scheduler has been disabled. All Instance-Scheduler
+communication now uses HTTP API only.
 """
 
 import pytest
@@ -9,6 +13,9 @@ import time
 from unittest.mock import AsyncMock, Mock, patch, MagicMock
 from fastapi import status
 from src.models import RestartStatus, ModelInfo
+
+# Skip all tests since WebSocket restart functionality is temporarily disabled
+pytestmark = pytest.mark.skip(reason="WebSocket restart functionality temporarily disabled")
 
 
 @pytest.mark.unit
