@@ -7,7 +7,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 # Configuration (can be overridden via command-line arguments)
-PREDICTOR_PORT=8101
+PREDICTOR_PORT=8099
 SCHEDULER_A_PORT=8100
 SCHEDULER_B_PORT=8200
 INSTANCE_GROUP_A_START_PORT=8210  # Group A instances: 8210-82xx
@@ -287,7 +287,7 @@ for i in $(seq 0 $((N1 - 1))); do
     (
         response=$(curl -s -X POST "http://localhost:$instance_port/model/start" \
             -H "Content-Type: application/json" \
-            -d "{\"model_id\": \"$MODEL_ID\", \"parameters\": {}}")
+            -d "{\"model_id\": \"$MODEL_ID\", \"scheduler_url\": \"http://localhost:$SCHEDULER_A_PORT\", \"parameters\": {}}")
 
         if echo "$response" | grep -q "success\|started"; then
             echo -e "$instance_id: ${GREEN}OK${NC}"
@@ -318,7 +318,7 @@ for i in $(seq 0 $((N2 - 1))); do
     (
         response=$(curl -s -X POST "http://localhost:$instance_port/model/start" \
             -H "Content-Type: application/json" \
-            -d "{\"model_id\": \"$MODEL_ID\", \"parameters\": {}}")
+            -d "{\"model_id\": \"$MODEL_ID\", \"scheduler_url\": \"http://localhost:$SCHEDULER_B_PORT\", \"parameters\": {}}")
 
         if echo "$response" | grep -q "success\|started"; then
             echo -e "$instance_id: ${GREEN}OK${NC}"
