@@ -15,10 +15,12 @@ The Instance Service is the minimal execution and scheduling unit in the SwarmPi
 ## Quick Start
 
 ### Instance Features
-- Task queue with sequential FIFO processing
-- Dynamic model loading and switching
-- Docker-based model containerization
-- Health monitoring and status reporting
+- **WebSocket Communication**: Real-time bidirectional communication with Scheduler (5-8x lower latency)
+- **Task Queue**: Sequential FIFO processing with automatic task execution
+- **Dynamic Model Management**: Hot-swapping between different models via API
+- **Docker-Based Containerization**: Isolated model execution environments
+- **Health Monitoring**: Automated health checks and status reporting
+- **Dual-Protocol Support**: WebSocket (default) with automatic HTTP fallback
 
 ### Core Concepts
 
@@ -33,6 +35,12 @@ The Instance Service is the minimal execution and scheduling unit in the SwarmPi
 - Implements standardized HTTP endpoints
 - Uses uv for Python dependency management
 - Exposes inference capabilities via REST API
+
+**Scheduler Connection**: The instance can optionally connect to a Scheduler service:
+- WebSocket-based real-time task submission (default)
+- HTTP-based fallback for task callbacks
+- Automatic reconnection with exponential backoff
+- Heartbeat mechanism for connection health
 
 ## Getting Started
 

@@ -39,10 +39,7 @@ class ModelStartRequest(BaseModel):
         default_factory=dict,
         description="Model-specific initialization parameters"
     )
-    scheduler_url: Optional[str] = Field(
-        None,
-        description="Scheduler URL to register with (updates current scheduler if provided)"
-    )
+    scheduler_url: str = Field(..., description="Scheduler URL to register with (must not be empty)")
 
 
 class ModelStartResponse(BaseModel):
@@ -67,10 +64,7 @@ class ModelRestartRequest(BaseModel):
         default_factory=dict,
         description="Model-specific initialization parameters"
     )
-    scheduler_url: Optional[str] = Field(
-        None,
-        description="New scheduler URL to register with (optional)"
-    )
+    scheduler_url: str = Field(..., description="New scheduler URL to register with (must not be empty)")
 
 
 class ModelRestartResponse(BaseModel):
@@ -213,6 +207,36 @@ _restart_operations: Dict[str, RestartOperation] = {}
 _restart_operation_lock = asyncio.Lock()
 
 
+def construct_websocket_url(http_url: str) -> str:
+    """
+    Construct WebSocket URL from HTTP scheduler URL.
+
+    WebSocket server runs on HTTP port + 1.
+    Example: http://scheduler:8000 -> ws://scheduler:8001/instance/ws
+
+    Args:
+        http_url: HTTP URL of the scheduler (e.g., "http://scheduler:8000")
+
+    Returns:
+        WebSocket URL (e.g., "ws://scheduler:8001/instance/ws")
+    """
+    import re
+
+    # Convert protocol
+    ws_url = http_url.replace("http://", "ws://").replace("https://", "wss://")
+
+    # Parse and increment port
+    match = re.match(r"(wss?://[^:]+):(\d+)", ws_url)
+    if match:
+        protocol_host = match.group(1)
+        http_port = int(match.group(2))
+        ws_port = http_port + 1
+        return f"{protocol_host}:{ws_port}/instance/ws"
+    else:
+        # No port specified, add default WebSocket port (8001)
+        return f"{ws_url}:8001/instance/ws"
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application lifespan: startup and shutdown events."""
@@ -233,143 +257,138 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Failed to load model registry: {e}")
 
-    # Initialize WebSocket client for Instance-to-Scheduler communication
-    scheduler_client = get_scheduler_client()
-    ws_client = None
+    # ========================================================================
+    # WebSocket communication with scheduler is temporarily disabled
+    # All communication with scheduler is now via HTTP API
+    # ========================================================================
 
-    if scheduler_client.is_enabled:
-        try:
-            # Get platform info
-            import platform
-            platform_info = {
-                "software_name": platform.system(),
-                "software_version": platform.release(),
-                "hardware_name": platform.machine(),
-            }
+    # # Initialize WebSocket client for Instance-to-Scheduler communication (but don't connect yet)
+    # # Connection will be established when /model/start is called
+    # scheduler_client = get_scheduler_client()
+    # ws_client = None
 
-            # Construct WebSocket URL from scheduler HTTP URL
-            scheduler_ws_url = scheduler_client.scheduler_url
-            if scheduler_ws_url:
-                # Convert http://host:port to ws://host:port+1/instance/ws
-                scheduler_ws_url = scheduler_ws_url.replace("http://", "ws://").replace("https://", "wss://")
-                # Assume WebSocket port is HTTP port + 1 (default: 8000 -> 8001)
-                import re
-                match = re.match(r"(wss?://[^:]+):(\d+)", scheduler_ws_url)
-                if match:
-                    protocol_host = match.group(1)
-                    http_port = int(match.group(2))
-                    ws_port = http_port + 1
-                    scheduler_ws_url = f"{protocol_host}:{ws_port}/instance/ws"
-                else:
-                    # No port specified, add default
-                    scheduler_ws_url = f"{scheduler_ws_url}:8001/instance/ws"
+    # if scheduler_client.is_enabled:
+    #     try:
+    #         # Get platform info
+    #         import platform
+    #         platform_info = {
+    #             "software_name": platform.system(),
+    #             "software_version": platform.release(),
+    #             "hardware_name": platform.machine(),
+    #         }
 
-                logger.info(f"Initializing WebSocket client: {scheduler_ws_url}")
+    #         # Construct WebSocket URL from scheduler HTTP URL
+    #         # WebSocket port = HTTP port + 1 (e.g., 8000 -> 8001)
+    #         scheduler_http_url = scheduler_client.scheduler_url
+    #         if scheduler_http_url:
+    #             scheduler_ws_url = construct_websocket_url(scheduler_http_url)
+    #             logger.info(f"Initializing WebSocket client: {scheduler_ws_url} (from HTTP: {scheduler_http_url})")
 
-                # Create WebSocket client
-                ws_client = WebSocketClient(
-                    scheduler_url=scheduler_ws_url,
-                    instance_id=config.instance_id,
-                    model_id="unknown",  # Will be updated when model starts
-                    platform_info=platform_info,
-                    reconnect_delay_max=32,
-                    heartbeat_interval=30,
-                )
+    #             # Create WebSocket client (but don't start yet)
+    #             ws_client = WebSocketClient(
+    #                 scheduler_url=scheduler_ws_url,
+    #                 instance_id=config.instance_id,
+    #                 model_id="unknown",  # Will be updated when model starts
+    #                 platform_info=platform_info,
+    #                 reconnect_delay_max=32,
+    #                 heartbeat_interval=30,
+    #             )
 
-                # Register message handlers
-                async def handle_task_submit(message: dict):
-                    """Handle TASK_SUBMIT message from Scheduler."""
-                    task_id = message.get("task_id")
-                    model_id = message.get("model_id")
-                    task_input = message.get("task_input")
+    #             # Register message handlers (must be done before start)
+    #             async def handle_task_submit(message: dict):
+    #                 """Handle TASK_SUBMIT message from Scheduler."""
+    #                 task_id = message.get("task_id")
+    #                 model_id = message.get("model_id")
+    #                 task_input = message.get("task_input")
 
-                    logger.info(f"Received TASK_SUBMIT via WebSocket: {task_id}")
+    #                 logger.info(f"Received TASK_SUBMIT via WebSocket: {task_id}")
 
-                    # Create task and submit to queue
-                    task = Task(
-                        task_id=task_id,
-                        model_id=model_id,
-                        task_input=task_input,
-                    )
+    #                 # Create task and submit to queue
+    #                 task = Task(
+    #                     task_id=task_id,
+    #                     model_id=model_id,
+    #                     task_input=task_input,
+    #                 )
 
-                    try:
-                        task_queue = get_task_queue()
-                        position = await task_queue.submit_task(task)
+    #                 try:
+    #                     task_queue = get_task_queue()
+    #                     position = await task_queue.submit_task(task)
 
-                        # Send ACK
-                        await ws_client.send_message({
-                            "type": "task_ack",
-                            "reply_to": message.get("message_id"),
-                            "task_id": task_id,
-                            "success": True,
-                            "queued": True,
-                            "queue_position": position,
-                        }, require_ack=False)
+    #                     # Send ACK
+    #                     await ws_client.send_message({
+    #                         "type": "task_ack",
+    #                         "reply_to": message.get("message_id"),
+    #                         "task_id": task_id,
+    #                         "success": True,
+    #                         "queued": True,
+    #                         "queue_position": position,
+    #                     }, require_ack=False)
 
-                        logger.info(f"Task {task_id} queued at position {position}")
+    #                     logger.info(f"Task {task_id} queued at position {position}")
 
-                    except Exception as e:
-                        logger.error(f"Failed to queue task {task_id}: {e}")
-                        # Send NACK
-                        await ws_client.send_message({
-                            "type": "task_ack",
-                            "reply_to": message.get("message_id"),
-                            "task_id": task_id,
-                            "success": False,
-                            "queued": False,
-                            "error": str(e),
-                        }, require_ack=False)
+    #                 except Exception as e:
+    #                     logger.error(f"Failed to queue task {task_id}: {e}")
+    #                     # Send NACK
+    #                     await ws_client.send_message({
+    #                         "type": "task_ack",
+    #                         "reply_to": message.get("message_id"),
+    #                         "task_id": task_id,
+    #                         "success": False,
+    #                         "queued": False,
+    #                         "error": str(e),
+    #                     }, require_ack=False)
 
-                # Register handler for task submission
-                ws_client.register_handler("task_submit", handle_task_submit)
+    #             # Register handler for task submission
+    #             ws_client.register_handler("task_submit", handle_task_submit)
 
-                # Register handler for scheduler shutdown notification
-                async def handle_scheduler_shutdown(message: dict):
-                    """Handle SCHEDULER_SHUTDOWN message from Scheduler."""
-                    grace_period = message.get("grace_period", 5)
-                    shutdown_message = message.get("message", "Scheduler is shutting down")
+    #             # Register handler for scheduler shutdown notification
+    #             async def handle_scheduler_shutdown(message: dict):
+    #                 """Handle SCHEDULER_SHUTDOWN message from Scheduler."""
+    #                 grace_period = message.get("grace_period", 5)
+    #                 shutdown_message = message.get("message", "Scheduler is shutting down")
 
-                    logger.warning(f"Received shutdown notification: {shutdown_message}")
-                    logger.info(f"Grace period: {grace_period}s - preparing for shutdown...")
+    #                 logger.warning(f"Received shutdown notification: {shutdown_message}")
+    #                 logger.info(f"Grace period: {grace_period}s - preparing for shutdown...")
 
-                    # Log current queue status
-                    task_queue = get_task_queue()
-                    pending_count = await task_queue.get_pending_count()
-                    logger.info(f"Current pending tasks: {pending_count}")
+    #                 # Log current queue status
+    #                 task_queue = get_task_queue()
+    #                 pending_count = await task_queue.get_pending_count()
+    #                 logger.info(f"Current pending tasks: {pending_count}")
 
-                    # Instance will automatically reconnect after Scheduler restarts
-                    # No action needed here - just log the notification
-                    logger.info("Will reconnect automatically when Scheduler restarts")
+    #                 # Instance will automatically reconnect after Scheduler restarts
+    #                 # No action needed here - just log the notification
+    #                 logger.info("Will reconnect automatically when Scheduler restarts")
 
-                ws_client.register_handler("scheduler_shutdown", handle_scheduler_shutdown)
+    #             ws_client.register_handler("scheduler_shutdown", handle_scheduler_shutdown)
 
-                # Set global singleton
-                set_websocket_client(ws_client)
+    #             # Set global singleton (but don't start yet)
+    #             set_websocket_client(ws_client)
 
-                # Start WebSocket client
-                await ws_client.start()
-                logger.success("WebSocket client started successfully")
+    #             # WebSocket will be started when /model/start is called
+    #             logger.info("WebSocket client initialized (connection will be established on model start)")
 
-        except Exception as e:
-            logger.error(f"Failed to initialize WebSocket client: {e}")
-            logger.info("Falling back to HTTP-only communication")
-    else:
-        logger.info("Scheduler integration disabled, WebSocket not initialized")
+    #     except Exception as e:
+    #         logger.error(f"Failed to initialize WebSocket client: {e}")
+    #         logger.info("Falling back to HTTP-only communication")
+    # else:
+    #     logger.info("Scheduler integration disabled, WebSocket not initialized")
+
+    logger.info("Using HTTP-only communication with Scheduler (WebSocket disabled)")
 
     yield
 
     # Shutdown
     logger.info("Instance Service shutting down...")
 
-    # Stop WebSocket client first
-    ws_client = get_websocket_client()
-    if ws_client:
-        try:
-            logger.info("Stopping WebSocket client...")
-            await ws_client.stop()
-            logger.info("WebSocket client stopped")
-        except Exception as e:
-            logger.error(f"Error stopping WebSocket client: {e}")
+    # # Stop WebSocket client first (disabled - using HTTP only)
+    # ws_client = get_websocket_client()
+    # if ws_client:
+    #     try:
+    #         logger.info("Stopping WebSocket client...")
+    #         await ws_client.stop()
+    #         logger.info("WebSocket client stopped")
+    #     except Exception as e:
+    #         logger.error(f"Error stopping WebSocket client: {e}")
 
     # Deregister from scheduler if enabled (HTTP fallback)
     scheduler_client = get_scheduler_client()
@@ -422,9 +441,15 @@ async def start_model(request: ModelStartRequest):
     Each instance can only serve one model at a time. If a model is already
     running, it must be stopped before starting a new one.
 
-    If scheduler_url is provided, the instance will update its scheduler configuration
-    and register with the new scheduler instead of the current one.
+    The scheduler_url must be provided and cannot be empty.
     """
+    # Validate scheduler_url is not empty
+    if not request.scheduler_url or request.scheduler_url.strip() == "":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="scheduler_url is required and cannot be empty"
+        )
+
     docker_manager = get_docker_manager()
     registry = get_registry()
 
@@ -449,14 +474,13 @@ async def start_model(request: ModelStartRequest):
             request.parameters
         )
 
-        # Update scheduler URL if provided and register with scheduler
+        # Update scheduler URL and register with scheduler
         scheduler_client = get_scheduler_client()
 
-        # If new scheduler_url is provided, update the scheduler configuration
-        if request.scheduler_url:
-            logger.info(f"Updating scheduler URL to: {request.scheduler_url}")
-            scheduler_client.scheduler_url = request.scheduler_url
-            scheduler_client._registered = False  # Reset registration status
+        # Update the scheduler configuration
+        logger.info(f"Updating scheduler URL to: {request.scheduler_url}")
+        scheduler_client.scheduler_url = request.scheduler_url
+        scheduler_client._registered = False  # Reset registration status
 
         # Register with scheduler if enabled
         if scheduler_client.is_enabled:
@@ -467,27 +491,65 @@ async def start_model(request: ModelStartRequest):
                 # Log error but don't fail model start
                 logger.warning(f"Failed to register with scheduler via HTTP: {str(e)}")
 
-        # Update WebSocket client model_id and re-register if connected
-        ws_client = get_websocket_client()
-        if ws_client and ws_client.is_connected():
-            try:
-                # Update model_id
-                ws_client.model_id = request.model_id
-                logger.info(f"Updated WebSocket client model_id to: {request.model_id}")
+        # # Update WebSocket client URL, model_id and reconnect (disabled - using HTTP only)
+        # ws_client = get_websocket_client()
+        # if ws_client:
+        #     try:
+        #         # Construct new WebSocket URL from HTTP URL (port + 1)
+        #         new_ws_url = construct_websocket_url(request.scheduler_url)
 
-                # Send new REGISTER message to update scheduler
-                await ws_client.send_message({
-                    "type": "register",
-                    "instance_id": config.instance_id,
-                    "model_id": request.model_id,
-                    "endpoint": f"ws://{config.instance_id}",
-                    "platform_info": ws_client.platform_info,
-                }, require_ack=False)
+        #         # Check if scheduler URL changed
+        #         url_changed = ws_client.scheduler_url != new_ws_url
 
-                logger.info("Re-registered with Scheduler via WebSocket with new model_id")
+        #         if url_changed:
+        #             logger.info(f"Scheduler URL changed: {ws_client.scheduler_url} -> {new_ws_url}")
 
-            except Exception as e:
-                logger.warning(f"Failed to update WebSocket registration: {e}")
+        #             # Stop existing connection if running
+        #             if ws_client.is_connected():
+        #                 logger.info("Stopping existing WebSocket connection...")
+        #                 await ws_client.stop()
+        #                 await asyncio.sleep(0.5)  # Brief pause before reconnecting
+
+        #             # Update WebSocket URL and model_id
+        #             ws_client.scheduler_url = new_ws_url
+        #             ws_client.model_id = request.model_id
+        #             logger.info(f"Updated WebSocket URL to: {new_ws_url}")
+        #         else:
+        #             # Same scheduler, just update model_id
+        #             ws_client.model_id = request.model_id
+        #             logger.info(f"Updated WebSocket client model_id to: {request.model_id}")
+
+        #         # Start WebSocket connection if not already started
+        #         if not ws_client.is_connected():
+        #             logger.info("Starting WebSocket connection to scheduler...")
+        #             await ws_client.start()
+        #             logger.success("WebSocket connection started successfully")
+
+        #             # Send REGISTER message
+        #             await ws_client.send_message({
+        #                 "type": "register",
+        #                 "instance_id": config.instance_id,
+        #                 "model_id": request.model_id,
+        #                 "endpoint": f"ws://{config.instance_id}",
+        #                 "platform_info": ws_client.platform_info,
+        #             }, require_ack=False)
+
+        #             logger.info("Registered with Scheduler via WebSocket")
+        #         else:
+        #             # Already connected, just send updated registration
+        #             await ws_client.send_message({
+        #                 "type": "register",
+        #                 "instance_id": config.instance_id,
+        #                 "model_id": request.model_id,
+        #                 "endpoint": f"ws://{config.instance_id}",
+        #                 "platform_info": ws_client.platform_info,
+        #             }, require_ack=False)
+
+        #             logger.info("Re-registered with Scheduler via WebSocket with new model_id")
+
+        #     except Exception as e:
+        #         logger.warning(f"Failed to start/update WebSocket connection: {e}")
+        #         logger.info("Instance will continue with HTTP-only communication")
 
         return ModelStartResponse(
             success=True,
@@ -561,7 +623,7 @@ async def stop_model():
 )
 async def restart_model(request: ModelRestartRequest):
     """
-    Restart the model with a new model and/or scheduler.
+    Restart the model with a new model and scheduler.
 
     This is a non-blocking operation that:
     1. Drains from the current scheduler (stops accepting new tasks)
@@ -569,10 +631,18 @@ async def restart_model(request: ModelRestartRequest):
     3. Stops the current model
     4. Deregisters from the current scheduler
     5. Starts the new model
-    6. Registers with the new scheduler (if URL provided)
+    6. Registers with the new scheduler
 
+    The scheduler_url must be provided and cannot be empty.
     The operation runs in the background. Use GET /model/restart/status to monitor progress.
     """
+    # Validate scheduler_url is not empty
+    if not request.scheduler_url or request.scheduler_url.strip() == "":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="scheduler_url is required and cannot be empty"
+        )
+
     docker_manager = get_docker_manager()
     registry = get_registry()
 
@@ -738,14 +808,13 @@ async def _perform_restart_operation(operation_id: str):
         )
         logger.info(f"Started new model: {operation.new_model_id}")
 
-        # Step 6: Register with new scheduler (if URL provided)
+        # Step 6: Register with new scheduler
         operation.update_status(RestartStatus.REGISTERING)
 
-        # Update scheduler URL if provided
-        if operation.new_scheduler_url:
-            logger.info(f"Updating scheduler URL to: {operation.new_scheduler_url}")
-            scheduler_client.scheduler_url = operation.new_scheduler_url
-            scheduler_client._registered = False
+        # Update scheduler URL (guaranteed to be non-empty due to validation)
+        logger.info(f"Updating scheduler URL to: {operation.new_scheduler_url}")
+        scheduler_client.scheduler_url = operation.new_scheduler_url
+        scheduler_client._registered = False
 
         # Register with scheduler if enabled
         if scheduler_client.is_enabled:
@@ -755,6 +824,44 @@ async def _perform_restart_operation(operation_id: str):
             except Exception as e:
                 # Log warning but mark operation as completed
                 logger.warning(f"Failed to register with scheduler: {str(e)}")
+
+        # # Step 7: Update WebSocket connection to new scheduler (disabled - using HTTP only)
+        # ws_client = get_websocket_client()
+        # if ws_client:
+        #     try:
+        #         # Construct new WebSocket URL from HTTP URL (port + 1)
+        #         new_ws_url = construct_websocket_url(operation.new_scheduler_url)
+
+        #         logger.info(f"Updating WebSocket to new scheduler: {new_ws_url}")
+
+        #         # Stop existing connection if running
+        #         if ws_client.is_connected():
+        #             logger.info("Stopping existing WebSocket connection...")
+        #             await ws_client.stop()
+        #             await asyncio.sleep(0.5)  # Brief pause before reconnecting
+
+        #         # Update WebSocket URL and model_id
+        #         ws_client.scheduler_url = new_ws_url
+        #         ws_client.model_id = operation.new_model_id
+
+        #         # Start new connection
+        #         logger.info("Starting WebSocket connection to new scheduler...")
+        #         await ws_client.start()
+
+        #         # Send REGISTER message
+        #         await ws_client.send_message({
+        #             "type": "register",
+        #             "instance_id": config.instance_id,
+        #             "model_id": operation.new_model_id,
+        #             "endpoint": f"ws://{config.instance_id}",
+        #             "platform_info": ws_client.platform_info,
+        #         }, require_ack=False)
+
+        #         logger.info("Registered with new Scheduler via WebSocket")
+
+        #     except Exception as e:
+        #         logger.warning(f"Failed to reconnect WebSocket: {e}")
+        #         logger.info("Instance will continue with HTTP-only communication")
 
         # Mark operation as completed
         operation.update_status(RestartStatus.COMPLETED)

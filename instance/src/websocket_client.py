@@ -136,6 +136,7 @@ class WebSocketClient:
         message: Dict[str, Any],
         require_ack: bool = False,
         timeout: float = 10.0,
+        skip_connection_check: bool = False,
     ) -> Optional[Dict[str, Any]]:
         """
         Send a message to the Scheduler.
@@ -144,6 +145,7 @@ class WebSocketClient:
             message: Message dictionary
             require_ack: Whether to wait for ACK
             timeout: ACK timeout in seconds
+            skip_connection_check: Skip connection state check (for registration)
 
         Returns:
             ACK response if require_ack=True, None otherwise
@@ -152,8 +154,11 @@ class WebSocketClient:
             ConnectionError: If not connected
             TimeoutError: If ACK timeout
         """
-        if not self.connected or not self.websocket:
+        if not skip_connection_check and (not self.connected or not self.websocket):
             raise ConnectionError("Not connected to Scheduler")
+
+        if not self.websocket:
+            raise ConnectionError("WebSocket not initialized")
 
         # Add message_id and timestamp if not present
         if "message_id" not in message:
@@ -329,7 +334,8 @@ class WebSocketClient:
         }
 
         try:
-            await self.send_message(register_msg, require_ack=False)
+            # Skip connection check for registration message since we're establishing the connection
+            await self.send_message(register_msg, require_ack=False, skip_connection_check=True)
             logger.info("Sent registration message to Scheduler")
         except Exception as e:
             logger.error(f"Failed to send registration: {e}")
