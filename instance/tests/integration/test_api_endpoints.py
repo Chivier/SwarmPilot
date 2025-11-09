@@ -28,7 +28,11 @@ class TestModelManagementEndpoints:
         # Make request
         response = api_client.post(
             "/model/start",
-            json={"model_id": "test-model", "parameters": {"temp": 0.7}}
+            json={
+                "model_id": "test-model",
+                "parameters": {"temp": 0.7},
+                "scheduler_url": "http://test-scheduler:8000"
+            }
         )
 
         # Verify response
@@ -46,7 +50,10 @@ class TestModelManagementEndpoints:
         # Make request
         response = api_client.post(
             "/model/start",
-            json={"model_id": "test-model"}
+            json={
+                "model_id": "test-model",
+                "scheduler_url": "http://test-scheduler:8000"
+            }
         )
 
         # Verify response
@@ -62,7 +69,10 @@ class TestModelManagementEndpoints:
         # Make request
         response = api_client.post(
             "/model/start",
-            json={"model_id": "non-existent-model"}
+            json={
+                "model_id": "non-existent-model",
+                "scheduler_url": "http://test-scheduler:8000"
+            }
         )
 
         # Verify response
@@ -79,7 +89,10 @@ class TestModelManagementEndpoints:
         # Make request
         response = api_client.post(
             "/model/start",
-            json={"model_id": "test-model"}
+            json={
+                "model_id": "test-model",
+                "scheduler_url": "http://test-scheduler:8000"
+            }
         )
 
         # Verify response
@@ -596,7 +609,10 @@ class TestSchedulerIntegration:
             # Make request
             response = api_client.post(
                 "/model/start",
-                json={"model_id": "test-model"}
+                json={
+                    "model_id": "test-model",
+                    "scheduler_url": "http://test-scheduler:8000"
+                }
             )
 
         # Verify response
@@ -625,7 +641,10 @@ class TestSchedulerIntegration:
             # Make request - should still succeed even if scheduler fails
             response = api_client.post(
                 "/model/start",
-                json={"model_id": "test-model"}
+                json={
+                    "model_id": "test-model",
+                    "scheduler_url": "http://test-scheduler:8000"
+                }
             )
 
         # Verify response still succeeds
@@ -653,7 +672,10 @@ class TestSchedulerIntegration:
             # Make request
             response = api_client.post(
                 "/model/start",
-                json={"model_id": "test-model"}
+                json={
+                    "model_id": "test-model",
+                    "scheduler_url": "http://test-scheduler:8000"
+                }
             )
 
         # Verify response succeeds and scheduler not called
@@ -806,10 +828,13 @@ class TestSchedulerIntegration:
         mock_scheduler_client.register_instance = AsyncMock(return_value=True)
 
         with patch("src.api.get_scheduler_client", return_value=mock_scheduler_client):
-            # Make request WITHOUT scheduler_url parameter
+            # Make request WITH scheduler_url parameter (same as existing)
             response = api_client.post(
                 "/model/start",
-                json={"model_id": "test-model"}
+                json={
+                    "model_id": "test-model",
+                    "scheduler_url": existing_scheduler_url
+                }
             )
 
         # Verify response

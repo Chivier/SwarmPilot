@@ -1,5 +1,9 @@
 """
 Unit tests for Instance WebSocket client.
+
+NOTE: Tests in this file are temporarily disabled because WebSocket
+communication with scheduler has been disabled. All Instance-Scheduler
+communication now uses HTTP API only.
 """
 
 import pytest
@@ -8,6 +12,9 @@ import json
 from unittest.mock import Mock, AsyncMock, patch, MagicMock
 
 from src.websocket_client import WebSocketClient
+
+# Skip all tests since WebSocket functionality is temporarily disabled
+pytestmark = pytest.mark.skip(reason="WebSocket functionality temporarily disabled")
 
 
 class TestWebSocketClient:

@@ -61,7 +61,10 @@ class TestRestartAPIEndpoints:
         # Make request
         response = api_client.post(
             "/model/restart",
-            json={"model_id": "new-model"}
+            json={
+                "model_id": "new-model",
+                "scheduler_url": "http://scheduler:8000"
+            }
         )
 
         # Verify response
@@ -87,7 +90,10 @@ class TestRestartAPIEndpoints:
         # Make request
         response = api_client.post(
             "/model/restart",
-            json={"model_id": "invalid-model"}
+            json={
+                "model_id": "invalid-model",
+                "scheduler_url": "http://scheduler:8000"
+            }
         )
 
         # Verify response
@@ -122,14 +128,20 @@ class TestRestartAPIEndpoints:
         # First request - should succeed
         response1 = api_client.post(
             "/model/restart",
-            json={"model_id": "new-model"}
+            json={
+                "model_id": "new-model",
+                "scheduler_url": "http://scheduler:8000"
+            }
         )
         assert response1.status_code == status.HTTP_200_OK
 
         # Second request - should fail with conflict
         response2 = api_client.post(
             "/model/restart",
-            json={"model_id": "another-model"}
+            json={
+                "model_id": "another-model",
+                "scheduler_url": "http://scheduler:8000"
+            }
         )
         assert response2.status_code == status.HTTP_409_CONFLICT
         assert "already in progress" in response2.json()["detail"]
@@ -153,7 +165,11 @@ class TestRestartAPIEndpoints:
         # Initiate restart
         restart_response = api_client.post(
             "/model/restart",
-            json={"model_id": "new-model", "parameters": {}}
+            json={
+                "model_id": "new-model",
+                "parameters": {},
+                "scheduler_url": "http://scheduler:8000"
+            }
         )
         operation_id = restart_response.json()["operation_id"]
 
