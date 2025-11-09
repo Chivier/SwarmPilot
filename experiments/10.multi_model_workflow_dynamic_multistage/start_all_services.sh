@@ -7,11 +7,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 # Configuration (can be overridden via command-line arguments)
-PREDICTOR_PORT=8101
+PREDICTOR_PORT=8099
 SCHEDULER_A_PORT=8100
-SCHEDULER_A_WS_PORT=8001  # WebSocket port for Scheduler A
+# WebSocket port for Scheduler A will be auto-calculated as SCHEDULER_A_PORT + 1
 SCHEDULER_B_PORT=8200
-SCHEDULER_B_WS_PORT=8002  # WebSocket port for Scheduler B
+# WebSocket port for Scheduler B will be auto-calculated as SCHEDULER_B_PORT + 1
 INSTANCE_GROUP_A_START_PORT=8210  # Group A instances: 8210-82xx
 INSTANCE_GROUP_B_START_PORT=8300  # Group B instances: 8300-83xx
 N1=${N1:-10}  # Default: 10 instances in group A
@@ -158,7 +158,7 @@ fi
 echo ""
 echo "Step 2: Starting Scheduler A (Group A)"
 start_service "scheduler-a" \
-    "cd $PROJECT_ROOT/scheduler && PREDICTOR_URL=http://localhost:$PREDICTOR_PORT SCHEDULER_PORT=$SCHEDULER_A_PORT INSTANCE_WEBSOCKET_PORT=$SCHEDULER_A_WS_PORT SCHEDULER_LOG_DIR=$SCRIPT_DIR/logs/scheduler-a SCHEDULER_LOGURU_LEVEL=\"INFO\" uv run python -m src.cli start --port $SCHEDULER_A_PORT" \
+    "cd $PROJECT_ROOT/scheduler && PREDICTOR_URL=http://localhost:$PREDICTOR_PORT SCHEDULER_PORT=$SCHEDULER_A_PORT SCHEDULER_LOG_DIR=$SCRIPT_DIR/logs/scheduler-a SCHEDULER_LOGURU_LEVEL=\"INFO\" uv run python -m src.cli start --port $SCHEDULER_A_PORT" \
     "$SCHEDULER_A_PORT"
 
 # Wait for scheduler A to be ready
@@ -171,7 +171,7 @@ fi
 echo ""
 echo "Step 3: Starting Scheduler B (Group B)"
 start_service "scheduler-b" \
-    "cd $PROJECT_ROOT/scheduler && PREDICTOR_URL=http://localhost:$PREDICTOR_PORT SCHEDULER_PORT=$SCHEDULER_B_PORT INSTANCE_WEBSOCKET_PORT=$SCHEDULER_B_WS_PORT SCHEDULER_LOG_DIR=$SCRIPT_DIR/logs/scheduler-b SCHEDULER_LOGURU_LEVEL=\"INFO\" uv run python -m src.cli start --port $SCHEDULER_B_PORT" \
+    "cd $PROJECT_ROOT/scheduler && PREDICTOR_URL=http://localhost:$PREDICTOR_PORT SCHEDULER_PORT=$SCHEDULER_B_PORT SCHEDULER_LOG_DIR=$SCRIPT_DIR/logs/scheduler-b SCHEDULER_LOGURU_LEVEL=\"INFO\" uv run python -m src.cli start --port $SCHEDULER_B_PORT" \
     "$SCHEDULER_B_PORT"
 
 # Wait for scheduler B to be ready
@@ -301,7 +301,7 @@ for i in $(seq 0 $((N1 - 1))); do
     (
         response=$(curl -s -X POST "http://localhost:$instance_port/model/start" \
             -H "Content-Type: application/json" \
-            -d "{\"model_id\": \"$MODEL_ID\", \"parameters\": {}}")
+            -d "{\"model_id\": \"$MODEL_ID\", \"scheduler_url\": \"http://localhost:$SCHEDULER_A_PORT\", \"parameters\": {}}")
 
         if echo "$response" | grep -q "success\|started"; then
             echo -e "$instance_id: ${GREEN}OK${NC}"
@@ -332,7 +332,7 @@ for i in $(seq 0 $((N2 - 1))); do
     (
         response=$(curl -s -X POST "http://localhost:$instance_port/model/start" \
             -H "Content-Type: application/json" \
-            -d "{\"model_id\": \"$MODEL_ID\", \"parameters\": {}}")
+            -d "{\"model_id\": \"$MODEL_ID\", \"scheduler_url\": \"http://localhost:$SCHEDULER_B_PORT\", \"parameters\": {}}")
 
         if echo "$response" | grep -q "success\|started"; then
             echo -e "$instance_id: ${GREEN}OK${NC}"
@@ -358,8 +358,8 @@ echo "========================================="
 echo ""
 echo "Service Status:"
 echo "  Predictor:    http://localhost:$PREDICTOR_PORT"
-echo "  Scheduler A:  http://localhost:$SCHEDULER_A_PORT (WebSocket: $SCHEDULER_A_WS_PORT) - Group A: $N1 instances"
-echo "  Scheduler B:  http://localhost:$SCHEDULER_B_PORT (WebSocket: $SCHEDULER_B_WS_PORT) - Group B: $N2 instances"
+echo "  Scheduler A:  http://localhost:$SCHEDULER_A_PORT (WebSocket: $((SCHEDULER_A_PORT + 1))) - Group A: $N1 instances"
+echo "  Scheduler B:  http://localhost:$SCHEDULER_B_PORT (WebSocket: $((SCHEDULER_B_PORT + 1))) - Group B: $N2 instances"
 echo ""
 echo "Instance Groups:"
 echo "  Group A: $N1 instances on ports $INSTANCE_GROUP_A_START_PORT-$((INSTANCE_GROUP_A_START_PORT + N1 - 1)) (registers to Scheduler A)"
