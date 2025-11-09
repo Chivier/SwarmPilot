@@ -2,7 +2,9 @@
 Asynchronous client for the Scheduler service.
 
 Provides low-level API methods for interacting with the scheduler, including:
-- Instance management (register, remove, drain, list, info)
+- Instance management (remove, drain, list, info)
+  Note: Instance registration is handled automatically by instances when
+  start_model() is called. Direct registration is not exposed.
 - Task management (submit, list, info, clear)
 - Strategy management (get, set)
 - Health checking
@@ -18,18 +20,6 @@ Features:
 Example usage:
     ```python
     async with SchedulerClient("http://localhost:8000") as client:
-        # Register an instance
-        await client.register_instance(
-            instance_id="instance-1",
-            model_id="gpt-4",
-            endpoint="http://instance-1:5000",
-            platform_info={
-                "software_name": "vllm",
-                "software_version": "0.2.5",
-                "hardware_name": "nvidia-a100"
-            }
-        )
-
         # Submit a task
         await client.submit_task(
             task_id="task-001",
@@ -37,6 +27,10 @@ Example usage:
             task_input={"prompt": "Hello"},
             metadata={"user_id": "123"}
         )
+
+        # List instances
+        instances = await client.list_instances()
+        print(f"Active instances: {instances['count']}")
 
         # Subscribe to task results via WebSocket
         async with client.subscribe_to_tasks(["task-001"]) as ws:
@@ -53,7 +47,7 @@ from urllib.parse import urljoin
 
 import httpx
 import websockets
-from websockets.client import WebSocketClientProtocol
+from websockets.asyncio.client import ClientConnection
 
 from .exceptions import (
     SchedulerClientError,
@@ -69,7 +63,7 @@ from .exceptions import (
 class WebSocketResultStream:
     """Wrapper for WebSocket to receive task results."""
 
-    def __init__(self, websocket: WebSocketClientProtocol):
+    def __init__(self, websocket: ClientConnection):
         """Initialize the WebSocket result stream.
 
         Args:
@@ -201,7 +195,6 @@ class SchedulerClient:
             base_url=self.base_url,
             timeout=httpx.Timeout(self.timeout),
             limits=self._client_limits,
-            http2=True,  # Enable HTTP/2 for better performance
         )
         return self
 
@@ -297,41 +290,9 @@ class SchedulerClient:
             raise SchedulerClientError(f"HTTP error: {e}")
 
     # ==================== Instance Management API ====================
-
-    async def register_instance(
-        self, instance_id: str, model_id: str, endpoint: str, platform_info: Dict[str, str]
-    ) -> Dict[str, Any]:
-        """Register a new compute instance with the scheduler.
-
-        Args:
-            instance_id: Unique identifier for the instance
-            model_id: Model ID this instance serves (e.g., "gpt-4", "llama-2-70b")
-            endpoint: HTTP endpoint of the instance (e.g., "http://instance-1:5000")
-            platform_info: Dictionary with keys:
-                - software_name: Software running the model (e.g., "vllm")
-                - software_version: Version of the software
-                - hardware_name: Hardware type (e.g., "nvidia-a100")
-
-        Returns:
-            Response dictionary with keys:
-                - success: Boolean indicating success
-                - message: Status message
-                - instance: Instance object with registration details
-
-        Raises:
-            SchedulerValidationError: If instance_id already exists or validation fails
-            SchedulerServiceError: If predictor is unavailable
-        """
-        return await self._request(
-            "POST",
-            "/instance/register",
-            json_data={
-                "instance_id": instance_id,
-                "model_id": model_id,
-                "endpoint": endpoint,
-                "platform_info": platform_info,
-            },
-        )
+    # Note: Instance registration is handled automatically by the instance
+    # when start_model() is called. Direct registration via SchedulerClient
+    # is not supported.
 
     async def remove_instance(self, instance_id: str) -> Dict[str, Any]:
         """Remove an instance from the scheduler.
@@ -657,7 +618,13 @@ class SchedulerClient:
                 stream = WebSocketResultStream(websocket)
                 yield stream
 
+        except SchedulerWebSocketError:
+            # Re-raise our own WebSocket errors
+            raise
         except websockets.exceptions.WebSocketException as e:
             raise SchedulerConnectionError(f"WebSocket connection failed: {e}", original_exception=e)
         except json.JSONDecodeError as e:
             raise SchedulerWebSocketError(f"Invalid JSON in WebSocket communication: {e}")
+        except (OSError, Exception) as e:
+            # Catch connection errors and other exceptions
+            raise SchedulerConnectionError(f"WebSocket connection failed: {e}", original_exception=e)

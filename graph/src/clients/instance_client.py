@@ -61,12 +61,12 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Union
 from urllib.parse import urlparse
 
 import httpx
 import websockets
-from websockets.client import WebSocketClientProtocol
+from websockets.asyncio.client import ClientConnection
 
 from .models import (
     ErrorResponse,
@@ -194,7 +194,7 @@ class InstanceClient:
         self._http_client: Optional[httpx.AsyncClient] = None
 
         # WebSocket connection
-        self._ws_connection: Optional[WebSocketClientProtocol] = None
+        self._ws_connection: Optional[ClientConnection] = None
         self._ws_listen_task: Optional[asyncio.Task] = None
 
         # Auto-start management
@@ -371,17 +371,22 @@ class InstanceClient:
     # ==================== Model Management API ====================
 
     async def start_model(
-        self, model_id: str, parameters: Optional[Dict[str, Any]] = None, scheduler_url: Optional[str] = None
+        self,
+        model_id: str,
+        scheduler_url: Union[str, "SchedulerClient"],
+        parameters: Optional[Dict[str, Any]] = None,
     ) -> ModelStartResponse:
         """Start a model/tool on this instance.
 
         Initializes and loads the specified model, making it ready to process tasks.
-        Optionally registers with a scheduler for automatic task distribution.
+        Automatically registers with the scheduler for task distribution.
 
         Args:
             model_id: Model identifier (e.g., "easyocr/det", "gpt-4")
+            scheduler_url: Scheduler endpoint or SchedulerClient instance
+                - String: Direct endpoint (e.g., "http://localhost:8100" or "localhost:8100")
+                - SchedulerClient: Client instance (automatically extracts base_url)
             parameters: Model-specific initialization parameters (e.g., {"gpu": 0, "batch_size": 8})
-            scheduler_url: Optional scheduler URL to register with for automatic task routing
 
         Returns:
             ModelStartResponse with:
@@ -389,26 +394,53 @@ class InstanceClient:
                 - status: Model status (should be "running")
                 - parameters: Initialization parameters used
                 - started_at: ISO 8601 timestamp
+                - scheduler_url: Scheduler URL registered with
 
         Raises:
             InstanceAPIError: If model already running, model not found, or initialization failed
+            ValueError: If scheduler_url format is invalid
 
         Example:
             ```python
+            # Using string endpoint
             response = await client.start_model(
                 model_id="easyocr/det",
-                parameters={"gpu": 0, "workers": 4},
-                scheduler_url="http://scheduler:8000"
+                scheduler_url="http://localhost:8100",
+                parameters={"gpu": 0, "workers": 4}
             )
+
+            # Using SchedulerClient instance
+            from src.clients.scheduler_client import SchedulerClient
+            scheduler = SchedulerClient(base_url="http://localhost:8100")
+            response = await client.start_model(
+                model_id="easyocr/det",
+                scheduler_url=scheduler,
+                parameters={"gpu": 0, "workers": 4}
+            )
+
             print(f"Model {response.model_id} started at {response.started_at}")
             ```
         """
+        # Extract scheduler URL from SchedulerClient or use string directly
+        from .scheduler_client import SchedulerClient
+
+        if isinstance(scheduler_url, SchedulerClient):
+            extracted_url = scheduler_url.base_url
+        elif isinstance(scheduler_url, str):
+            # Ensure the URL has a scheme
+            extracted_url = scheduler_url
+            if not extracted_url.startswith(("http://", "https://")):
+                extracted_url = f"http://{extracted_url}"
+        else:
+            raise ValueError(
+                f"scheduler_url must be a string or SchedulerClient instance, got {type(scheduler_url)}"
+            )
+
         payload = {
             "model_id": model_id,
             "parameters": parameters or {},
+            "scheduler_url": extracted_url,
         }
-        if scheduler_url:
-            payload["scheduler_url"] = scheduler_url
 
         response = await self._make_request("POST", "/model/start", json=payload)
         return ModelStartResponse(**response.json())

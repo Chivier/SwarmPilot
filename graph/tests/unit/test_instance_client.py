@@ -434,3 +434,436 @@ class TestInstanceClientInternalMethods:
         await client._ensure_http_client()
 
         assert client._http_client is not None
+
+
+class TestInstanceClientModelManagement:
+    """Test suite for model management API methods."""
+
+    @pytest.mark.asyncio
+    async def test_start_model_with_string_url(self):
+        """Test start_model with string scheduler URL."""
+        async with InstanceClient(base_url="http://localhost:5000") as client:
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {
+                "message": "Model started successfully",
+                "model_id": "test-model",
+                "scheduler_url": "http://localhost:8100"
+            }
+
+            with patch.object(client, "_make_request", return_value=mock_response) as mock_request:
+                result = await client.start_model(
+                    model_id="test-model",
+                    scheduler_url="http://localhost:8100",
+                    parameters={}
+                )
+
+                assert result.model_id == "test-model"
+                assert result.message == "Model started successfully"
+
+                # Verify the payload includes scheduler_url
+                call_args = mock_request.call_args
+                assert call_args.kwargs["json"]["scheduler_url"] == "http://localhost:8100"
+
+    @pytest.mark.asyncio
+    async def test_start_model_with_scheduler_client(self):
+        """Test start_model with SchedulerClient instance."""
+        from src.clients.scheduler_client import SchedulerClient
+
+        async with InstanceClient(base_url="http://localhost:5000") as client:
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {
+                "message": "Model started successfully",
+                "model_id": "test-model",
+                "scheduler_url": "http://localhost:8100"
+            }
+
+            scheduler = SchedulerClient(base_url="http://localhost:8100")
+
+            with patch.object(client, "_make_request", return_value=mock_response) as mock_request:
+                result = await client.start_model(
+                    model_id="test-model",
+                    scheduler_url=scheduler,
+                    parameters={}
+                )
+
+                assert result.model_id == "test-model"
+
+                # Verify the URL was extracted from SchedulerClient
+                call_args = mock_request.call_args
+                assert call_args.kwargs["json"]["scheduler_url"] == "http://localhost:8100"
+
+    @pytest.mark.asyncio
+    async def test_start_model_with_url_without_scheme(self):
+        """Test start_model auto-adds http:// scheme."""
+        async with InstanceClient(base_url="http://localhost:5000") as client:
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {
+                "message": "Model started successfully",
+                "model_id": "test-model",
+                "scheduler_url": "http://localhost:8100"
+            }
+
+            with patch.object(client, "_make_request", return_value=mock_response) as mock_request:
+                result = await client.start_model(
+                    model_id="test-model",
+                    scheduler_url="localhost:8100",
+                    parameters={}
+                )
+
+                assert result.model_id == "test-model"
+
+                # Verify http:// was added
+                call_args = mock_request.call_args
+                assert call_args.kwargs["json"]["scheduler_url"] == "http://localhost:8100"
+
+    @pytest.mark.asyncio
+    async def test_start_model_with_invalid_type(self):
+        """Test start_model raises ValueError for invalid scheduler_url type."""
+        async with InstanceClient(base_url="http://localhost:5000") as client:
+            with pytest.raises(ValueError, match="scheduler_url must be a string or SchedulerClient"):
+                await client.start_model(
+                    model_id="test-model",
+                    scheduler_url=12345,  # Invalid type
+                    parameters={}
+                )
+
+    @pytest.mark.asyncio
+    async def test_stop_model_success(self):
+        """Test stop_model method."""
+        async with InstanceClient(base_url="http://localhost:5000") as client:
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {
+                "message": "Model stopped successfully",
+                "model_id": "test-model"
+            }
+
+            with patch.object(client, "_make_request", return_value=mock_response):
+                result = await client.stop_model()
+
+                assert result.model_id == "test-model"
+
+    @pytest.mark.asyncio
+    async def test_restart_model_async(self):
+        """Test restart_model in async mode."""
+        async with InstanceClient(base_url="http://localhost:5000") as client:
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {
+                "status": "accepted",
+                "operation_id": "op-123",
+                "message": "Restart initiated"
+            }
+
+            with patch.object(client, "_make_request", return_value=mock_response):
+                result = await client.restart_model(model_id="new-model", parameters={})
+
+                assert result.status == "accepted"
+                assert result.operation_id == "op-123"
+
+    @pytest.mark.asyncio
+    async def test_get_restart_status_success(self):
+        """Test get_restart_status method."""
+        async with InstanceClient(base_url="http://localhost:5000") as client:
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {
+                "operation_id": "op-123",
+                "status": "completed",
+                "progress": 100,
+                "old_model_id": "old-model",
+                "new_model_id": "new-model",
+                "message": "Restart completed",
+                "started_at": "2025-01-01T00:00:00",
+                "completed_at": "2025-01-01T00:01:00"
+            }
+
+            with patch.object(client, "_make_request", return_value=mock_response):
+                result = await client.get_restart_status("op-123")
+
+                assert result.operation_id == "op-123"
+                assert result.status == "completed"
+
+
+class TestInstanceClientTaskManagement:
+    """Test suite for task management API methods."""
+
+    @pytest.mark.asyncio
+    async def test_submit_task_success(self):
+        """Test submit_task method."""
+        async with InstanceClient(base_url="http://localhost:5000") as client:
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {
+                "message": "Task submitted",
+                "task_id": "task-123",
+                "status": "queued"
+            }
+
+            with patch.object(client, "_make_request", return_value=mock_response):
+                result = await client.submit_task(
+                    task_id="task-123",
+                    model_id="test-model",
+                    task_input={"data": "test"}
+                )
+
+                assert result.task_id == "task-123"
+                assert result.status == "queued"
+
+    @pytest.mark.asyncio
+    async def test_get_task_success(self):
+        """Test get_task method."""
+        async with InstanceClient(base_url="http://localhost:5000") as client:
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {
+                "task_id": "task-123",
+                "model_id": "test-model",
+                "status": "completed",
+                "input": {"data": "test"},
+                "result": {"output": "result"},
+                "created_at": "2025-01-01T00:00:00"
+            }
+
+            with patch.object(client, "_make_request", return_value=mock_response):
+                result = await client.get_task("task-123")
+
+                assert result.task_id == "task-123"
+                assert result.status == "completed"
+
+    @pytest.mark.asyncio
+    async def test_list_tasks_success(self):
+        """Test list_tasks method."""
+        async with InstanceClient(base_url="http://localhost:5000") as client:
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {
+                "tasks": [
+                    {
+                        "task_id": "task-123",
+                        "model_id": "test-model",
+                        "status": "completed",
+                        "input": {},
+                        "result": {},
+                        "created_at": "2025-01-01T00:00:00"
+                    }
+                ],
+                "total": 1
+            }
+
+            with patch.object(client, "_make_request", return_value=mock_response):
+                result = await client.list_tasks()
+
+                assert result.total == 1
+                assert len(result.tasks) == 1
+
+    @pytest.mark.asyncio
+    async def test_cancel_task_success(self):
+        """Test cancel_task method."""
+        async with InstanceClient(base_url="http://localhost:5000") as client:
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {
+                "task_id": "task-123",
+                "message": "Task cancelled"
+            }
+
+            with patch.object(client, "_make_request", return_value=mock_response):
+                result = await client.cancel_task("task-123")
+
+                assert result.task_id == "task-123"
+
+    @pytest.mark.asyncio
+    async def test_clear_tasks_success(self):
+        """Test clear_tasks method."""
+        async with InstanceClient(base_url="http://localhost:5000") as client:
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {
+                "cleared": 5,
+                "message": "Tasks cleared"
+            }
+
+            with patch.object(client, "_make_request", return_value=mock_response):
+                result = await client.clear_tasks()
+
+                assert result.cleared == 5
+
+
+class TestInstanceClientInfoAndHealth:
+    """Test suite for instance info and health check methods."""
+
+    @pytest.mark.asyncio
+    async def test_get_info_success(self):
+        """Test get_info method."""
+        async with InstanceClient(base_url="http://localhost:5000") as client:
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {
+                "instance_id": "instance-123",
+                "status": "healthy",
+                "model_id": "test-model",
+                "started_at": "2025-01-01T00:00:00",
+                "uptime_seconds": 3600,
+                "tasks_processed": 100,
+                "tasks_queued": 5,
+                "tasks_failed": 2
+            }
+
+            with patch.object(client, "_make_request", return_value=mock_response):
+                result = await client.get_info()
+
+                assert result.instance_id == "instance-123"
+                assert result.status == "healthy"
+
+    @pytest.mark.asyncio
+    async def test_health_check_success(self):
+        """Test health_check method."""
+        async with InstanceClient(base_url="http://localhost:5000") as client:
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {
+                "status": "healthy",
+                "instance_id": "instance-123",
+                "model_loaded": True,
+                "model_id": "test-model",
+                "queue_size": 0,
+                "uptime_seconds": 3600,
+                "timestamp": "2025-01-01T00:00:00"
+            }
+
+            with patch.object(client, "_make_request", return_value=mock_response):
+                result = await client.health_check()
+
+                assert result.status == "healthy"
+                assert result.model_loaded is True
+
+
+class TestInstanceClientErrorHandling:
+    """Test suite for error handling and retries."""
+
+    @pytest.mark.asyncio
+    async def test_make_request_connection_error_retry(self):
+        """Test _make_request retries on connection errors."""
+        async with InstanceClient(base_url="http://localhost:5000", max_retries=2, retry_delay=0.01) as client:
+            with patch.object(client, "_ensure_http_client"), \
+                 patch.object(client._http_client, "request", side_effect=httpx.ConnectError("Connection failed")):
+                with pytest.raises(Exception):  # Should raise after retries
+                    await client._make_request("GET", "/health")
+
+    @pytest.mark.asyncio
+    async def test_make_request_timeout_retry(self):
+        """Test _make_request retries on timeout."""
+        async with InstanceClient(base_url="http://localhost:5000", max_retries=2, retry_delay=0.01) as client:
+            with patch.object(client, "_ensure_http_client"), \
+                 patch.object(client._http_client, "request", side_effect=httpx.TimeoutException("Timeout")):
+                with pytest.raises(Exception):
+                    await client._make_request("GET", "/health")
+
+    @pytest.mark.asyncio
+    async def test_make_request_request_error_retry(self):
+        """Test _make_request retries on general request errors."""
+        async with InstanceClient(base_url="http://localhost:5000", max_retries=2, retry_delay=0.01) as client:
+            with patch.object(client, "_ensure_http_client"), \
+                 patch.object(client._http_client, "request", side_effect=httpx.RequestError("Request failed")):
+                with pytest.raises(Exception):
+                    await client._make_request("GET", "/health")
+
+    @pytest.mark.asyncio
+    async def test_get_task_with_tasks_array_empty(self):
+        """Test get_task when response has empty tasks array."""
+        async with InstanceClient(base_url="http://localhost:5000") as client:
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {"tasks": []}
+
+            with patch.object(client, "_make_request", return_value=mock_response):
+                with pytest.raises(Exception):  # Should raise when tasks array is empty
+                    await client.get_task("task-123")
+
+    @pytest.mark.asyncio
+    async def test_list_tasks_with_status_filter(self):
+        """Test list_tasks with status filter."""
+        async with InstanceClient(base_url="http://localhost:5000") as client:
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {
+                "tasks": [],
+                "total": 0,
+                "count": 0
+            }
+
+            with patch.object(client, "_make_request", return_value=mock_response) as mock_request:
+                await client.list_tasks(status="completed")
+
+                # Verify status parameter was passed
+                call_args = mock_request.call_args
+                assert call_args.kwargs["params"]["status"] == "completed"
+
+
+class TestInstanceClientWebSocket:
+    """Test suite for WebSocket methods."""
+
+    @pytest.mark.asyncio
+    async def test_connect_websocket_success(self):
+        """Test connect_websocket method."""
+        client = InstanceClient(base_url="http://localhost:5000")
+
+        mock_websocket = MagicMock()
+
+        async def mock_connect(*args, **kwargs):
+            return mock_websocket
+
+        with patch("websockets.connect", side_effect=mock_connect):
+            await client.connect_websocket()
+
+            assert client._ws_connection == mock_websocket
+
+    @pytest.mark.asyncio
+    async def test_disconnect_websocket_success(self):
+        """Test disconnect_websocket method."""
+        client = InstanceClient(base_url="http://localhost:5000")
+
+        mock_websocket = AsyncMock()
+        client._ws_connection = mock_websocket
+
+        await client.disconnect_websocket()
+
+        mock_websocket.close.assert_called_once()
+        assert client._ws_connection is None
+
+    @pytest.mark.asyncio
+    async def test_submit_task_ws_success(self):
+        """Test submit_task_ws method."""
+        client = InstanceClient(base_url="http://localhost:5000")
+
+        mock_websocket = AsyncMock()
+        client._ws_connection = mock_websocket
+
+        await client.submit_task_ws(
+            task_id="task-123",
+            model_id="test-model",
+            task_input={"data": "test"}
+        )
+
+        mock_websocket.send.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_stop_listening_success(self):
+        """Test stop_listening method."""
+        client = InstanceClient(base_url="http://localhost:5000")
+
+        # Create a real asyncio Task
+        async def dummy_task():
+            await asyncio.sleep(100)
+
+        task = asyncio.create_task(dummy_task())
+        client._ws_listen_task = task
+
+        await client.stop_listening()
+
+        assert task.cancelled()
+        assert client._ws_listen_task is None
