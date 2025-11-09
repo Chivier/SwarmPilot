@@ -101,11 +101,28 @@ async def lifespan(app: FastAPI):
     logger.info(f"Scheduling strategy: {config.scheduling.default_strategy}")
     logger.info(f"Auto-training enabled: {config.training.enable_auto_training}")
 
+    # Dynamically set WebSocket port based on scheduler's actual HTTP port
+    # This ensures WebSocket port = HTTP port + 1, even if port was changed at runtime
+    scheduler_http_port = config.server.port
+    websocket_port = scheduler_http_port + 1
+
+    # Check if INSTANCE_WEBSOCKET_PORT was explicitly set to override
+    import os
+    if "INSTANCE_WEBSOCKET_PORT" in os.environ:
+        websocket_port = int(os.getenv("INSTANCE_WEBSOCKET_PORT"))
+        logger.info(f"Using explicit WebSocket port from env: {websocket_port}")
+    else:
+        logger.info(f"WebSocket port calculated from HTTP port: {scheduler_http_port} + 1 = {websocket_port}")
+
+    # Update WebSocket server port (in case it differs from initial config)
+    instance_websocket_server.port = websocket_port
+    logger.info(f"Instance WebSocket server will start on {instance_websocket_server.host}:{instance_websocket_server.port}")
+
     # Start Instance WebSocket server
     try:
         await instance_websocket_server.start()
         await instance_connection_manager.start()
-        logger.success("Instance WebSocket server started successfully")
+        logger.success(f"Instance WebSocket server started successfully on port {websocket_port}")
     except Exception as e:
         logger.error(f"Failed to start Instance WebSocket server: {e}")
         raise
@@ -921,7 +938,7 @@ async def websocket_get_result(websocket: WebSocket):
     await websocket_manager.connect(websocket)
 
     # Keepalive configuration
-    PING_INTERVAL = 10  # Send ping every 20 seconds
+    PING_INTERVAL = 10  # Send ping every 10 seconds
 
     async def send_keepalive():
         """Send periodic ping messages to keep connection alive."""
