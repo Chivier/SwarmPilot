@@ -57,7 +57,7 @@ members = [
     "instance",
     "predictor",
     "planner",
-    "instance/dockers/sleep_model",
+    "instance/dockers/sleep_model", "graph",
 ]
 
 [dependency-groups]
