@@ -173,13 +173,17 @@ def start(
         # Apply command-line overrides even without config file
         apply_config({}, host, port)
 
-    # Get final configuration values
-    from src.config import config as app_config
+    # Reload config to pick up environment variable changes
+    import importlib
+    from src import config as config_module
+    importlib.reload(config_module)
+    app_config = config_module.config
 
     final_host = app_config.server.host
     final_port = app_config.server.port
 
     typer.echo(f"Server will start at: http://{final_host}:{final_port}")
+    typer.echo(f"WebSocket will be available at: ws://{final_host}:{app_config.websocket.instance_port}/instance/ws")
     typer.echo("")
 
     # Start the server
