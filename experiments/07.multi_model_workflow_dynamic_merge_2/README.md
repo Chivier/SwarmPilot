@@ -36,6 +36,62 @@ A task → n B1 tasks (parallel, slow) → n B2 tasks (pipeline, fast) → Merge
 
 ---
 
+## Quick Start
+
+### Automated Testing (Recommended)
+
+Use the automated testing script to run a comprehensive test suite with multiple configurations:
+
+```bash
+# 1. Install optional dependencies (for visualization)
+uv add matplotlib numpy
+
+# 2. Run quick test (single instance config, minimal parameters)
+python3 run_automated_tests.py --quick --verbose
+
+# 3. View results
+# Reports are saved to: test_reports/run_<timestamp>/
+# - summary_report.html  (interactive HTML report)
+# - summary_report.md    (markdown version)
+# - *.png               (performance charts)
+```
+
+The automated script will:
+- ✅ Automatically restart services with different instance configurations
+- ✅ Test with instance configs: [8,120], [48,80], [64,64]
+- ✅ Run test matrix across QPS values, strategies, and workflow counts
+- ✅ Generate comprehensive HTML/Markdown reports with visualizations
+- ✅ Handle errors and retries automatically
+
+**For full test suite** (takes 3-18 hours):
+
+```bash
+# Edit test_config.yaml if needed, then run:
+python3 run_automated_tests.py --verbose
+```
+
+See [AUTOMATION_README.md](AUTOMATION_README.md) for complete documentation.
+
+### Manual Testing
+
+For manual control over individual tests:
+
+```bash
+# 1. Start services with specific instance configuration
+N1=64 N2=64 ./start_all_services.sh
+
+# 2. Run a single test
+uv run python3 test_dynamic_workflow.py --num-workflows 50 --qps 8.0 --strategies min_time
+
+# 3. View results
+# Results saved to: results/results_workflow_b1b2_<timestamp>.json
+
+# 4. Stop services
+./stop_all_services.sh
+```
+
+---
+
 ## Architecture
 
 ### Seven-Thread Design
