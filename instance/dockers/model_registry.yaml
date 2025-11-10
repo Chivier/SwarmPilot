@@ -6,3 +6,19 @@ models:
       cpu: "1"
       memory: "512Mi"
       gpu: false
+  
+  - model_id: "dummy_think"
+    name: "Think model's dummy, have fanout ability"
+    directory: "dummy_think"
+    resource_requirements:
+      cpu: "1"
+      memory: "512Mi"
+      gpu: false
+
+  - model_id: "dummy_query_criteria_summary"
+    name: "Query/Criteria/Summary model's dummy, have fanout ability"
+    directory: "dummy_query_criteria_summary"
+    resource_requirements:
+      cpu: "1"
+      memory: "512Mi"
+      gpu: false
