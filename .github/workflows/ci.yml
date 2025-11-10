@@ -29,29 +29,21 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
 
-      - name: Cache uv virtual environment
+      - name: Cache virtual environment
+        id: cache-venv
         uses: actions/cache@v4
         with:
           path: .venv
-          key: venv-${{ runner.os }}-${{ matrix.python-version }}-${{ hashFiles('uv.lock') }}
+          key: venv-${{ runner.os }}-py${{ matrix.python-version }}-${{ hashFiles('uv.lock') }}
           restore-keys: |
-            venv-${{ runner.os }}-${{ matrix.python-version }}-
-            venv-${{ runner.os }}-
-
-      - name: Cache pytest cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            .pytest_cache
-            */tests/.pytest_cache
-            */.pytest_cache
-          key: pytest-${{ runner.os }}-${{ matrix.python-version }}-${{ hashFiles('**/test_*.py', '**/*_test.py') }}
-          restore-keys: |
-            pytest-${{ runner.os }}-${{ matrix.python-version }}-
-            pytest-${{ runner.os }}-
+            venv-${{ runner.os }}-py${{ matrix.python-version }}-
 
       - name: Install dependencies
+        if: steps.cache-venv.outputs.cache-hit != 'true'
         run: uv sync --all-extras --dev
+
+      - name: Verify installation
+        run: uv pip list
 
       - name: Run scheduler tests
         run: uv run pytest scheduler/tests/ -v --tb=short
@@ -91,17 +83,21 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
 
-      - name: Cache uv virtual environment
+      - name: Cache virtual environment
+        id: cache-venv
         uses: actions/cache@v4
         with:
           path: .venv
-          key: venv-${{ runner.os }}-3.11-${{ hashFiles('uv.lock') }}
+          key: venv-${{ runner.os }}-py3.11-${{ hashFiles('uv.lock') }}
           restore-keys: |
-            venv-${{ runner.os }}-3.11-
-            venv-${{ runner.os }}-
+            venv-${{ runner.os }}-py3.11-
 
       - name: Install dependencies
+        if: steps.cache-venv.outputs.cache-hit != 'true'
         run: uv sync --all-extras --dev
+
+      - name: Verify installation
+        run: uv pip list
 
       - name: Check Python syntax
         run: uv run python -m py_compile $(find . -name "*.py" -not -path "./.venv/*" -not -path "./experiments/*")
