@@ -22,9 +22,20 @@ from .core.swarm_optimizer import (
 )
 from . import __version__
 from .logging_config import setup_logging
+from .config import config
 
 # Configure logging
 setup_logging()
+
+# Validate configuration on startup
+try:
+    config.validate()
+    logger.info("Configuration validated successfully")
+    if config.scheduler_url:
+        logger.info(f"Default scheduler URL: {config.scheduler_url}")
+except ValueError as e:
+    logger.error(f"Configuration validation failed: {e}")
+    raise
 
 # Create FastAPI app
 app = FastAPI(
@@ -302,7 +313,16 @@ async def deploy_with_optimization(input_data: DeploymentInput):
         logger.info(f"Target models: {target_models}")
 
         # Step 5: Deploy to instances
-        deployer = InstanceDeployer(timeout=30)
+        # Use scheduler_url from request or fall back to config default
+        scheduler_url = config.get_scheduler_url(input_data.scheduler_url)
+        logger.debug(f"Using scheduler URL: {scheduler_url}")
+
+        deployer = InstanceDeployer(
+            timeout=config.instance_timeout,
+            scheduler_url=scheduler_url,
+            max_retries=config.instance_max_retries,
+            retry_delay=config.instance_retry_delay
+        )
         deployment_statuses = await deployer.deploy_to_instances(
             endpoints=endpoints,
             target_models=target_models,

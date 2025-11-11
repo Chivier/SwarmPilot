@@ -117,6 +117,7 @@ class DeploymentInput(BaseModel):
 
     instances: List[InstanceInfo] = Field(..., description="Target instances")
     planner_input: PlannerInput = Field(..., description="Optimization config")
+    scheduler_url: Optional[str] = Field(None, description="Scheduler URL for instance registration")
 
     @model_validator(mode="after")
     def validate_instances_match(self):

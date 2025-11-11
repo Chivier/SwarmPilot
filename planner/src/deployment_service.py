@@ -1,7 +1,8 @@
 """Service layer for model deployment to instances."""
 
+import asyncio
 import time
-from typing import List, Dict, Optional
+from typing import Any, List, Dict, Optional
 import httpx
 from loguru import logger
 
@@ -80,14 +81,47 @@ class ModelMapper:
 class InstanceDeployer:
     """Handles deployment of models to instances."""
 
-    def __init__(self, timeout: int = 30):
+    def __init__(
+        self,
+        timeout: int = 30,
+        scheduler_url: Optional[str] = None,
+        max_retries: int = 3,
+        retry_delay: float = 1.0
+    ):
         """
         Initialize the deployer.
 
         Args:
             timeout: HTTP request timeout in seconds
+            scheduler_url: Scheduler URL for instance registration (optional)
+            max_retries: Maximum number of retry attempts for failed requests
+            retry_delay: Initial delay between retries in seconds (exponential backoff)
         """
         self.timeout = timeout
+        self.scheduler_url = scheduler_url
+        self.max_retries = max_retries
+        self.retry_delay = retry_delay
+
+    def _is_retryable_error(self, error: Exception) -> bool:
+        """
+        Determine if an error is retryable.
+
+        Args:
+            error: The exception to check
+
+        Returns:
+            True if the error should be retried, False otherwise
+        """
+        # Retry on connection errors, timeouts, and certain HTTP errors
+        if isinstance(error, (httpx.ConnectError, httpx.TimeoutException)):
+            return True
+
+        if isinstance(error, httpx.HTTPStatusError):
+            # Retry on 5xx errors (server errors) except 501 (Not Implemented)
+            status_code = error.response.status_code
+            return 500 <= status_code < 600 and status_code != 501
+
+        return False
 
     async def get_instance_info(self, endpoint: str) -> Optional[Dict]:
         """
@@ -167,19 +201,54 @@ class InstanceDeployer:
                         deployment_time=deployment_time
                     )
 
-                # Step 3: Stop current model if running
+                # Step 3: Stop current model if running (with retry)
                 if current_model_id:
                     logger.info(f"Stopping model {current_model_id} on {endpoint}")
-                    stop_response = await client.get(f"{endpoint}/model/stop")
-                    stop_response.raise_for_status()
+                    for attempt in range(self.max_retries):
+                        try:
+                            stop_response = await client.get(f"{endpoint}/model/stop")
+                            stop_response.raise_for_status()
+                            break  # Success, exit retry loop
+                        except Exception as e:
+                            if attempt < self.max_retries - 1 and self._is_retryable_error(e):
+                                delay = self.retry_delay * (2 ** attempt)
+                                logger.warning(
+                                    f"Stop failed (attempt {attempt + 1}/{self.max_retries}), "
+                                    f"retrying in {delay}s: {str(e)}"
+                                )
+                                await asyncio.sleep(delay)
+                            else:
+                                raise  # Not retryable or max retries exceeded
 
-                # Step 4: Start target model
+                # Step 4: Start target model (with retry)
                 logger.info(f"Starting model {target_model} on {endpoint}")
-                start_response = await client.post(
-                    f"{endpoint}/model/start",
-                    json={"model_id": target_model, "parameters": {}}
-                )
-                start_response.raise_for_status()
+                start_payload = {
+                    "model_id": target_model,
+                    "parameters": {}
+                }
+                # Add scheduler_url if available
+                if self.scheduler_url:
+                    start_payload["scheduler_url"] = self.scheduler_url
+                    logger.debug(f"Including scheduler_url: {self.scheduler_url}")
+
+                for attempt in range(self.max_retries):
+                    try:
+                        start_response = await client.post(
+                            f"{endpoint}/model/start",
+                            json=start_payload
+                        )
+                        start_response.raise_for_status()
+                        break  # Success, exit retry loop
+                    except Exception as e:
+                        if attempt < self.max_retries - 1 and self._is_retryable_error(e):
+                            delay = self.retry_delay * (2 ** attempt)
+                            logger.warning(
+                                f"Start failed (attempt {attempt + 1}/{self.max_retries}), "
+                                f"retrying in {delay}s: {str(e)}"
+                            )
+                            await asyncio.sleep(delay)
+                        else:
+                            raise  # Not retryable or max retries exceeded
 
                 deployment_time = time.time() - start_time
                 logger.info(
@@ -198,11 +267,24 @@ class InstanceDeployer:
                 )
 
         except httpx.HTTPStatusError as e:
-            error_message = f"HTTP {e.response.status_code}: {e.response.text}"
+            # Try to extract error message from response JSON
+            try:
+                error_data = e.response.json()
+                error_msg = error_data.get("error", error_data.get("detail", e.response.text))
+            except Exception:
+                error_msg = e.response.text or f"HTTP {e.response.status_code}"
+
+            error_message = f"HTTP {e.response.status_code}: {error_msg}"
             logger.error(f"Failed to deploy to {endpoint}: {error_message}")
+        except httpx.ConnectError as e:
+            error_message = f"Connection failed: {str(e)}"
+            logger.error(f"Failed to connect to {endpoint}: {error_message}")
+        except httpx.TimeoutException as e:
+            error_message = f"Request timed out after {self.timeout}s"
+            logger.error(f"Timeout deploying to {endpoint}: {error_message}")
         except httpx.RequestError as e:
-            error_message = f"Request failed: {str(e)}"
-            logger.error(f"Failed to deploy to {endpoint}: {error_message}")
+            error_message = f"Request error: {str(e)}"
+            logger.error(f"Request failed for {endpoint}: {error_message}")
         except Exception as e:
             error_message = f"Unexpected error: {str(e)}"
             logger.error(f"Failed to deploy to {endpoint}: {error_message}")
@@ -217,6 +299,84 @@ class InstanceDeployer:
             error_message=error_message,
             deployment_time=deployment_time
         )
+
+    async def restart_model(
+        self,
+        endpoint: str,
+        target_model: str,
+        parameters: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Initiate a model restart operation on an instance.
+
+        This calls the /model/restart endpoint which performs a graceful restart:
+        1. Drains the current scheduler (stops accepting new tasks)
+        2. Waits for pending tasks to complete
+        3. Stops the current model
+        4. Starts the new model
+        5. Registers with the scheduler
+
+        Args:
+            endpoint: Instance endpoint URL
+            target_model: Model name to restart to
+            parameters: Optional model parameters
+
+        Returns:
+            Dict containing operation_id and initial status
+
+        Raises:
+            Exception: If restart initiation fails
+        """
+        payload = {
+            "model_id": target_model,
+            "parameters": parameters or {}
+        }
+
+        # Add scheduler_url if available
+        if self.scheduler_url:
+            payload["scheduler_url"] = self.scheduler_url
+
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.post(
+                    f"{endpoint}/model/restart",
+                    json=payload
+                )
+                response.raise_for_status()
+                return response.json()
+        except Exception as e:
+            logger.error(f"Failed to initiate restart on {endpoint}: {e}")
+            raise
+
+    async def get_restart_status(
+        self,
+        endpoint: str,
+        operation_id: str
+    ) -> Dict[str, Any]:
+        """
+        Get the status of a restart operation.
+
+        Args:
+            endpoint: Instance endpoint URL
+            operation_id: Restart operation ID
+
+        Returns:
+            Dict containing restart status information
+
+        Raises:
+            Exception: If status query fails
+        """
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.get(
+                    f"{endpoint}/model/restart/status",
+                    params={"operation_id": operation_id}
+                )
+                response.raise_for_status()
+                return response.json()
+        except Exception as e:
+            logger.error(f"Failed to get restart status from {endpoint}: {e}")
+            raise
 
     async def deploy_to_instances(
         self,
@@ -235,8 +395,6 @@ class InstanceDeployer:
         Returns:
             List of DeploymentStatus objects
         """
-        import asyncio
-
         tasks = [
             self.deploy_model(endpoint, target_model, idx, previous_model)
             for idx, (endpoint, target_model, previous_model)
