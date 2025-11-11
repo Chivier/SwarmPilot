@@ -247,6 +247,12 @@ class ErrorResponse(BaseModel):
     error: str
 
 
+class SuccessResponse(BaseModel):
+    """Standard success response format"""
+    success: bool = True
+    message: str
+
+
 # =============================================================================
 # FastAPI Application
 # =============================================================================
