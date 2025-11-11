@@ -2,6 +2,7 @@
 Core data models for Instance Service
 """
 
+import time
 from datetime import UTC, datetime
 from enum import Enum
 from typing import Any, Dict, Optional
@@ -23,6 +24,7 @@ class InstanceStatus(str, Enum):
     RUNNING = "running"
     BUSY = "busy"
     ERROR = "error"
+    REDEPLOYING = "redeploying"  # Instance is being redeployed (no new tasks accepted)
 
 
 class RestartStatus(str, Enum):
@@ -49,6 +51,10 @@ class Task(BaseModel):
     submitted_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat().replace("+00:00", "Z"))
     started_at: Optional[str] = None
     completed_at: Optional[str] = None
+    enqueue_time: float = Field(
+        default_factory=time.time,
+        description="Unix timestamp when task was enqueued, used for priority queue ordering"
+    )
 
     # Results
     result: Optional[Dict[str, Any]] = None

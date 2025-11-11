@@ -27,6 +27,7 @@ class InstanceStatus(str, Enum):
     ACTIVE = "active"        # Normal operation, accepts new tasks
     DRAINING = "draining"    # No new tasks, waiting for existing tasks to complete
     REMOVING = "removing"    # All tasks complete, safe to remove
+    REDEPLOYING = "redeploying"  # Instance is being redeployed (no new tasks accepted, pending tasks returned)
 
 
 class Instance(BaseModel):
@@ -239,6 +240,43 @@ class TaskClearResponse(BaseModel):
     success: bool
     message: str
     cleared_count: int
+
+
+# ============================================================================
+# Instance Redeploy Models
+# ============================================================================
+
+class InstanceRedeployRequest(BaseModel):
+    """Request model for instance redeployment."""
+    instance_id: str = Field(..., description="ID of the instance to redeploy")
+    redeploy_reason: Optional[str] = Field(None, description="Reason for redeployment")
+    target_model_id: Optional[str] = Field(None, description="Optional target model ID for redeployment")
+
+
+class InstanceRedeployResponse(BaseModel):
+    """Response model for instance redeployment."""
+    success: bool
+    message: str
+    returned_tasks: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Tasks returned from the instance"
+    )
+    redistributed_tasks: List[str] = Field(
+        default_factory=list,
+        description="Task IDs that were successfully redistributed"
+    )
+    failed_redistributions: List[str] = Field(
+        default_factory=list,
+        description="Task IDs that failed to redistribute"
+    )
+    current_task: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Currently executing task on the instance"
+    )
+    estimated_redeploy_time_ms: Optional[float] = Field(
+        None,
+        description="Estimated time for redeployment in milliseconds"
+    )
 
 
 # ============================================================================

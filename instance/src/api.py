@@ -149,6 +149,46 @@ class TaskClearResponse(BaseModel):
     )
 
 
+# Redeploy Management Schemas
+class RedeployRequest(BaseModel):
+    """Request schema for instance redeployment"""
+    target_model_id: Optional[str] = Field(
+        None,
+        description="Optional target model ID for redeployment"
+    )
+    force: bool = Field(
+        default=False,
+        description="Force redeployment even if no pending tasks"
+    )
+
+
+class CurrentTaskInfo(BaseModel):
+    """Information about currently running task"""
+    task_id: str
+    estimated_completion_ms: Optional[float] = Field(
+        None,
+        description="Estimated time until task completion in milliseconds"
+    )
+
+
+class RedeployResponse(BaseModel):
+    """Response schema for instance redeployment"""
+    success: bool
+    message: Optional[str] = None
+    current_task: Optional[CurrentTaskInfo] = Field(
+        None,
+        description="Currently executing task information"
+    )
+    pending_tasks: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="List of pending tasks returned for redistribution"
+    )
+    returned_count: int = Field(
+        ...,
+        description="Number of tasks returned for redistribution"
+    )
+
+
 # Management Schemas
 class ModelInfo(BaseModel):
     """Current model information"""
@@ -205,6 +245,10 @@ _startup_time = time.time()
 # Track restart operations
 _restart_operations: Dict[str, RestartOperation] = {}
 _restart_operation_lock = asyncio.Lock()
+
+# Track redeploy status
+_is_redeploying = False
+_redeploy_lock = asyncio.Lock()
 
 
 def construct_websocket_url(http_url: str) -> str:
@@ -1244,6 +1288,92 @@ async def get_restart_status(operation_id: str = Query(..., description="Restart
         pending_tasks_completed=operation.pending_tasks_completed,
         error=operation.error,
     )
+
+
+@app.post(
+    "/redeploy/start",
+    response_model=RedeployResponse,
+    status_code=status.HTTP_200_OK,
+    responses={
+        400: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+async def start_redeploy(request: RedeployRequest):
+    """
+    Initiate instance redeployment process.
+
+    This endpoint:
+    1. Marks the instance as redeploying
+    2. Extracts all pending (queued) tasks
+    3. Returns pending tasks to scheduler for redistribution
+    4. Preserves currently running task
+
+    Args:
+        request: Redeployment configuration
+
+    Returns:
+        RedeployResponse with pending tasks and current task info
+
+    Raises:
+        HTTPException 400: If already redeploying
+        HTTPException 500: If extraction fails
+    """
+    global _is_redeploying
+
+    async with _redeploy_lock:
+        # Check if already redeploying
+        if _is_redeploying:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Instance is already in redeploying state"
+            )
+
+        try:
+            # Mark instance as redeploying
+            _is_redeploying = True
+            logger.info(
+                f"Starting redeployment process. "
+                f"Target model: {request.target_model_id or 'same'}, Force: {request.force}"
+            )
+
+            # Get task queue
+            task_queue = get_task_queue()
+
+            # Extract pending tasks
+            pending_tasks = await task_queue.extract_pending_tasks()
+            logger.info(f"Extracted {len(pending_tasks)} pending tasks for redistribution")
+
+            # Get current task info
+            current_task_info = await task_queue.get_current_task_info()
+            current_task = None
+            if current_task_info:
+                current_task = CurrentTaskInfo(
+                    task_id=current_task_info["task_id"],
+                    estimated_completion_ms=current_task_info.get("estimated_completion_ms")
+                )
+                logger.info(
+                    f"Current task: {current_task.task_id}, "
+                    f"estimated completion: {current_task.estimated_completion_ms}ms"
+                )
+
+            # Build response
+            return RedeployResponse(
+                success=True,
+                message=f"Redeployment initiated. Returned {len(pending_tasks)} pending tasks.",
+                current_task=current_task,
+                pending_tasks=pending_tasks,
+                returned_count=len(pending_tasks),
+            )
+
+        except Exception as e:
+            # Reset redeploying flag on error
+            _is_redeploying = False
+            logger.error(f"Failed to start redeployment: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to extract pending tasks: {str(e)}"
+            )
 
 
 @app.get(
