@@ -67,9 +67,23 @@ curl http://localhost:8000/health
 ## 3. ENVIRONMENT & CONFIGURATION
 
 ### 3.1 Environment Variables
-**NONE REQUIRED** - This service has a zero-configuration design. All settings are provided via:
-1. CLI flags when starting the service
-2. API request parameters when calling endpoints
+The service supports optional environment variables for configuration:
+
+```bash
+# Scheduler Configuration
+SCHEDULER_URL=http://localhost:8100    # Default scheduler URL for instance registration
+
+# Instance Deployment Configuration
+INSTANCE_TIMEOUT=30                     # HTTP request timeout (seconds)
+INSTANCE_MAX_RETRIES=3                  # Max retry attempts for failed requests
+INSTANCE_RETRY_DELAY=1.0                # Initial retry delay (exponential backoff)
+
+# Planner Service Configuration
+PLANNER_HOST=0.0.0.0                    # Host to bind to
+PLANNER_PORT=8000                       # Port to bind to
+```
+
+All environment variables are **OPTIONAL**. The service will use sensible defaults if not provided.
 
 ### 3.2 CLI Configuration Options
 ```
@@ -254,12 +268,27 @@ curl -X POST http://localhost:8000/plan \
 
 **Purpose**: Compute optimal deployment plan AND execute it by communicating with instance services to start/stop models.
 
-**Request Schema**: Identical to `/plan` endpoint
+**Request Schema**: Similar to `/plan` endpoint with additional scheduler configuration
 ```json
 {
-  "tasks": [ /* same as /plan */ ],
-  "instances": [ /* same as /plan */ ],
-  "optimization_method": "string"  // Optional
+  "instances": [                          // REQUIRED: List of instance information
+    {
+      "endpoint": "string",               // REQUIRED: Instance endpoint URL
+      "current_model": "string"           // REQUIRED: Currently deployed model name
+    }
+  ],
+  "planner_input": {                      // REQUIRED: Optimization parameters
+    "M": "integer",                       // REQUIRED: Number of instances
+    "N": "integer",                       // REQUIRED: Number of model types
+    "B": [[]],                            // REQUIRED: Benefit matrix
+    "initial": [],                        // REQUIRED: Initial deployment (auto-computed from instances)
+    "a": "number",                        // REQUIRED: Service capacity weight
+    "target": [],                         // REQUIRED: Target service capacity
+    "algorithm": "string",                // OPTIONAL: "simulated_annealing" or "integer_programming"
+    "objective_method": "string"          // OPTIONAL: Objective function method
+  },
+  "scheduler_url": "string"               // OPTIONAL: Scheduler URL for instance registration
+                                          // Overrides SCHEDULER_URL environment variable if provided
 }
 ```
 
@@ -375,32 +404,27 @@ Instance services MUST implement the following endpoints:
 GET http://192.168.1.10:8001/info
 ```
 
-#### 5.2.2 POST /model/stop
-**Purpose**: Stop a running model
+#### 5.2.2 GET /model/stop
+**Purpose**: Stop the currently running model
 
-**Request Schema**:
-```json
-{
-  "model_id": "string"
-}
-```
+**Request**: None (no request body)
 
 **Response Schema**:
 ```json
 {
   "success": "boolean",
-  "message": "string"
+  "message": "string",
+  "model_id": "string"
 }
 ```
 
 **Example**:
 ```bash
-# Planner calls this to stop a model
-POST http://192.168.1.10:8001/model/stop
-Content-Type: application/json
-
-{"model_id": "old-model-xyz"}
+# Planner calls this to stop the current model
+GET http://192.168.1.10:8001/model/stop
 ```
+
+**Note**: This endpoint stops whatever model is currently running on the instance. The planner queries `/info` first to determine which model is running.
 
 #### 5.2.3 POST /model/start
 **Purpose**: Start a new model
@@ -409,8 +433,8 @@ Content-Type: application/json
 ```json
 {
   "model_id": "string",
-  "vram_requirement_gb": "number",
-  "flops_requirement_tflops": "number"
+  "parameters": {},                     // Optional model-specific parameters
+  "scheduler_url": "string"             // REQUIRED: Scheduler URL for instance registration
 }
 ```
 
@@ -418,7 +442,9 @@ Content-Type: application/json
 ```json
 {
   "success": "boolean",
-  "message": "string"
+  "message": "string",
+  "model_id": "string",
+  "status": "string"
 }
 ```
 
@@ -430,9 +456,73 @@ Content-Type: application/json
 
 {
   "model_id": "llama-7b",
-  "vram_requirement_gb": 14.0,
-  "flops_requirement_tflops": 50.0
+  "parameters": {},
+  "scheduler_url": "http://scheduler:8100"
 }
+```
+
+**Note**: The `scheduler_url` parameter is required and tells the instance where to register itself after starting the model.
+
+#### 5.2.4 POST /model/restart
+**Purpose**: Gracefully restart to a new model (drain tasks, then switch)
+
+**Request Schema**:
+```json
+{
+  "model_id": "string",
+  "parameters": {},                     // Optional model-specific parameters
+  "scheduler_url": "string"             // OPTIONAL: Scheduler URL for instance registration
+}
+```
+
+**Response Schema**:
+```json
+{
+  "success": "boolean",
+  "message": "string",
+  "operation_id": "string"              // ID to track restart progress
+}
+```
+
+**Example**:
+```bash
+# Initiate graceful restart
+POST http://192.168.1.10:8001/model/restart
+Content-Type: application/json
+
+{
+  "model_id": "llama-7b",
+  "parameters": {},
+  "scheduler_url": "http://scheduler:8100"
+}
+```
+
+**Note**: This endpoint performs a graceful restart that:
+1. Drains the current scheduler (stops accepting new tasks)
+2. Waits for pending tasks to complete
+3. Stops the current model
+4. Starts the new model
+5. Registers with the scheduler
+
+#### 5.2.5 GET /model/restart/status
+**Purpose**: Check status of a restart operation
+
+**Request**: Query parameter `operation_id`
+
+**Response Schema**:
+```json
+{
+  "operation_id": "string",
+  "status": "string",                   // "pending", "in_progress", "completed", "failed"
+  "current_phase": "string",            // "draining", "stopping", "starting", "registering"
+  "message": "string"
+}
+```
+
+**Example**:
+```bash
+# Check restart status
+GET http://192.168.1.10:8001/model/restart/status?operation_id=abc123
 ```
 
 ### 5.3 Communication Flow Diagram
@@ -469,7 +559,41 @@ Content-Type: application/json
        │                                    │
 ```
 
-### 5.4 No External Dependencies
+### 5.4 Retry Logic and Error Handling
+
+The planner includes robust retry logic for transient failures:
+
+**Retry Configuration**:
+- Max retries: 3 (configurable via `INSTANCE_MAX_RETRIES`)
+- Initial delay: 1.0 seconds (configurable via `INSTANCE_RETRY_DELAY`)
+- Backoff strategy: Exponential (delay = initial × 2^attempt)
+
+**Retryable Errors**:
+- Connection errors (httpx.ConnectError)
+- Timeout errors (httpx.TimeoutException)
+- HTTP 5xx errors (except 501 Not Implemented)
+
+**Non-Retryable Errors**:
+- HTTP 4xx errors (client errors)
+- HTTP 501 Not Implemented
+- Validation errors
+
+**Error Response Extraction**:
+The planner attempts to extract detailed error messages from instance responses:
+1. Try to parse JSON error response
+2. Extract "error" or "detail" field
+3. Fall back to response text
+4. Fall back to HTTP status code
+
+**Example Retry Flow**:
+```
+Attempt 1: Connection refused → Wait 1s → Retry
+Attempt 2: Timeout → Wait 2s → Retry
+Attempt 3: 503 Service Unavailable → Wait 4s → Retry
+Attempt 4: Fail (max retries exceeded)
+```
+
+### 5.5 No External Dependencies
 
 This service does NOT require:
 - Database (stateless design)

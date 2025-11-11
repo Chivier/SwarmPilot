@@ -14,6 +14,22 @@ pip install .
 uv sync
 ```
 
+### Configuration
+
+The service can be configured via environment variables. Create a `.env` file or set variables directly:
+
+```bash
+# Scheduler URL for instance registration (optional)
+SCHEDULER_URL=http://localhost:8100
+
+# Instance deployment settings
+INSTANCE_TIMEOUT=30          # HTTP request timeout in seconds
+INSTANCE_MAX_RETRIES=3       # Max retry attempts for failed requests
+INSTANCE_RETRY_DELAY=1.0     # Initial retry delay (exponential backoff)
+```
+
+See `.env.example` for complete configuration options.
+
 ### Starting the Service
 
 ```bash
