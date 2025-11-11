@@ -190,6 +190,17 @@ class RedeployResponse(BaseModel):
     )
 
 
+class RedeployStatusResponse(BaseModel):
+    """Response schema for redeployment status check"""
+    success: bool
+    is_redeploying: bool = Field(..., description="Whether instance is currently redeploying")
+    current_task: Optional[CurrentTaskInfo] = Field(
+        None,
+        description="Currently executing task information"
+    )
+    message: str = Field(..., description="Status message")
+
+
 # Management Schemas
 class ModelInfo(BaseModel):
     """Current model information"""
@@ -1375,6 +1386,85 @@ async def start_redeploy(request: RedeployRequest):
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to extract pending tasks: {str(e)}"
             )
+
+
+@app.get(
+    "/redeploy/status",
+    response_model=RedeployStatusResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def get_redeploy_status():
+    """
+    Get current redeployment status.
+
+    Returns whether the instance is currently redeploying and information
+    about any running task.
+
+    Returns:
+        RedeployStatusResponse with redeployment status
+    """
+    global _is_redeploying
+
+    task_queue = get_task_queue()
+    current_task_info = await task_queue.get_current_task_info()
+
+    current_task = None
+    if current_task_info:
+        current_task = CurrentTaskInfo(
+            task_id=current_task_info["task_id"],
+            estimated_completion_ms=current_task_info.get("estimated_completion_ms")
+        )
+
+    return RedeployStatusResponse(
+        success=True,
+        is_redeploying=_is_redeploying,
+        current_task=current_task,
+        message="Redeploying" if _is_redeploying else "Not redeploying",
+    )
+
+
+@app.post(
+    "/redeploy/complete",
+    response_model=SuccessResponse,
+    status_code=status.HTTP_200_OK,
+    responses={
+        400: {"model": ErrorResponse},
+    },
+)
+async def complete_redeploy():
+    """
+    Mark redeployment as complete on the instance side.
+
+    This endpoint:
+    1. Clears the redeploying flag
+    2. Allows the instance to accept new tasks again
+
+    The instance should call the scheduler's /instance/redeploy/complete
+    endpoint after calling this to notify the scheduler.
+
+    Returns:
+        SuccessResponse confirming redeployment completion
+
+    Raises:
+        HTTPException 400: If not currently redeploying
+    """
+    global _is_redeploying
+
+    async with _redeploy_lock:
+        if not _is_redeploying:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Instance is not currently redeploying"
+            )
+
+        # Clear redeploying flag
+        _is_redeploying = False
+        logger.info("Redeployment completed on instance side")
+
+        return SuccessResponse(
+            success=True,
+            message="Redeployment completed successfully. Instance can now accept new tasks.",
+        )
 
 
 @app.get(

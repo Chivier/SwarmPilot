@@ -641,6 +641,94 @@ async def start_instance_redeploy(request: InstanceRedeployRequest):
     )
 
 
+@app.post("/instance/redeploy/complete", response_model=InstanceRegisterResponse)
+async def complete_instance_redeploy(request: InstanceRegisterRequest):
+    """
+    Complete instance redeployment and return to ACTIVE status.
+
+    This endpoint is called after an instance finishes redeployment to:
+    1. Update instance configuration (model_id, endpoint, platform_info)
+    2. Transition instance status from REDEPLOYING to ACTIVE
+    3. Reinitialize queue info and stats if needed
+
+    Args:
+        request: Instance registration details (may have updated values)
+
+    Returns:
+        InstanceRegisterResponse with updated instance info
+
+    Raises:
+        HTTPException 404: If instance not found
+        HTTPException 400: If instance is not in REDEPLOYING state
+    """
+    # Check if instance exists
+    existing_instance = await instance_registry.get(request.instance_id)
+    if not existing_instance:
+        raise HTTPException(
+            status_code=404,
+            detail={"success": False, "error": "Instance not found"},
+        )
+
+    # Verify instance is in REDEPLOYING state
+    if existing_instance.status != InstanceStatus.REDEPLOYING:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "success": False,
+                "error": f"Instance must be in REDEPLOYING state, current state: {existing_instance.status}"
+            }
+        )
+
+    # Validate platform_info has required keys
+    required_keys = {"software_name", "software_version", "hardware_name"}
+    if not required_keys.issubset(request.platform_info.keys()):
+        missing_keys = required_keys - request.platform_info.keys()
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "success": False,
+                "error": f"platform_info missing required keys: {missing_keys}",
+            },
+        )
+
+    # Update instance configuration
+    existing_instance.model_id = request.model_id
+    existing_instance.endpoint = request.endpoint
+    existing_instance.platform_info = request.platform_info
+
+    # Transition to ACTIVE status
+    try:
+        await instance_registry.update_status(request.instance_id, InstanceStatus.ACTIVE)
+
+        # Reset stats if model changed (new model = fresh start)
+        # Queue info will be updated as new tasks are scheduled
+        stats = await instance_registry.get_stats(request.instance_id)
+        if stats and stats.pending_tasks > 0:
+            # Shouldn't have pending tasks after redeployment, but log if we do
+            logger.warning(
+                f"Instance {request.instance_id} has {stats.pending_tasks} pending tasks "
+                f"after redeployment completion"
+            )
+
+        logger.info(
+            f"Completed redeployment for instance {request.instance_id}. "
+            f"New model: {request.model_id}, Status: ACTIVE"
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to complete redeployment for {request.instance_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={"success": False, "error": f"Failed to complete redeployment: {str(e)}"}
+        )
+
+    return InstanceRegisterResponse(
+        success=True,
+        message="Instance redeployment completed successfully. Instance is now ACTIVE.",
+        instance=existing_instance,
+    )
+
+
 @app.get("/instance/list", response_model=InstanceListResponse)
 async def list_instances(model_id: Optional[str] = Query(None)):
     """
