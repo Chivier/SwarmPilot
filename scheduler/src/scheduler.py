@@ -8,6 +8,7 @@ instance for executing a task based on predictions.
 from typing import List, Optional, Dict, TYPE_CHECKING, Any
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+import random
 import httpx
 from loguru import logger
 
@@ -638,6 +639,50 @@ class RoundRobinStrategy(SchedulingStrategy):
 
 
 
+class RandomStrategy(SchedulingStrategy):
+    """
+    Random scheduling strategy.
+
+    Worst case of probabilistic
+    """
+
+    def __init__(
+        self,
+        predictor_client: "PredictorClient",
+        instance_registry: "InstanceRegistry",
+    ):
+        """Initialize RoundRobinStrategy."""
+        super().__init__(predictor_client, instance_registry)
+        self._counter = 0
+
+    def select_instance(
+        self, predictions: List[Prediction], queue_info: Dict[str, "InstanceQueueBase"]
+    ) -> Optional[str]:
+        """Select next instance in round-robin order."""
+        if not predictions:
+            return None
+        
+        return random.choice(predictions).instance_id
+
+
+    async def update_queue(
+        self,
+        instance_id: str,
+        prediction: Prediction,
+    ) -> None:
+        """
+        No-op for RoundRobinStrategy.
+
+        RoundRobin doesn't use queue predictions for scheduling decisions,
+        so no queue update is necessary.
+
+        Args:
+            instance_id: Selected instance
+            prediction: Prediction for the task
+        """
+        # No-op: RoundRobin doesn't maintain queue state
+        pass
+
 
 # Factory function to get strategy by name
 def get_strategy(
@@ -669,8 +714,11 @@ def get_strategy(
         )
     elif strategy_name == "round_robin":
         return RoundRobinStrategy(predictor_client, instance_registry)
+    elif strategy_name == "random":
+        return RandomStrategy(predictor_client, instance_registry)
     else:
         # Default to probabilistic
         return ProbabilisticSchedulingStrategy(
             predictor_client, instance_registry, target_quantile=target_quantile
         )
+
