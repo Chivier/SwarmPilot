@@ -91,27 +91,6 @@ class ServerConfig:
 
 
 @dataclass
-class WebSocketConfig:
-    """Configuration for WebSocket communication with instances."""
-
-    # Instance WebSocket server port (separate from main HTTP port)
-    # If INSTANCE_WEBSOCKET_PORT is not set, will be calculated as scheduler_port + 1
-    instance_port: int = 0  # Will be set in Config.load()
-
-    # Heartbeat interval in seconds
-    heartbeat_interval: int = int(os.getenv("WEBSOCKET_HEARTBEAT_INTERVAL", "30"))
-
-    # Number of missed heartbeats before disconnect
-    heartbeat_timeout_threshold: int = int(os.getenv("WEBSOCKET_HEARTBEAT_THRESHOLD", "3"))
-
-    # ACK timeout in seconds
-    ack_timeout: float = float(os.getenv("WEBSOCKET_ACK_TIMEOUT", "10.0"))
-
-    # Maximum message size in bytes (16MB default)
-    max_message_size: int = int(os.getenv("WEBSOCKET_MAX_MESSAGE_SIZE", str(16 * 1024 * 1024)))
-
-
-@dataclass
 class Config:
     """Main configuration object combining all settings."""
 
@@ -120,7 +99,6 @@ class Config:
     training: TrainingConfig
     logging: LoggingConfig
     server: ServerConfig
-    websocket: WebSocketConfig
 
     @classmethod
     def load(cls) -> "Config":
@@ -130,22 +108,12 @@ class Config:
         Returns:
             Config object with all settings
         """
-        server = ServerConfig()
-        websocket = WebSocketConfig()
-
-        # Set WebSocket instance_port: use env var if set, otherwise scheduler_port + 1
-        if "INSTANCE_WEBSOCKET_PORT" in os.environ:
-            websocket.instance_port = int(os.getenv("INSTANCE_WEBSOCKET_PORT"))
-        else:
-            websocket.instance_port = server.port + 1
-
         return cls(
             predictor=PredictorConfig(),
             scheduling=SchedulingConfig(),
             training=TrainingConfig(),
             logging=LoggingConfig(),
-            server=server,
-            websocket=websocket,
+            server=ServerConfig(),
         )
 
     def __repr__(self) -> str:
@@ -156,8 +124,7 @@ class Config:
             f"  scheduling=SchedulingConfig(strategy='{self.scheduling.default_strategy}'),\n"
             f"  training=TrainingConfig(auto={self.training.enable_auto_training}),\n"
             f"  logging=LoggingConfig(level='{self.logging.level}'),\n"
-            f"  server=ServerConfig(host='{self.server.host}', port={self.server.port}),\n"
-            f"  websocket=WebSocketConfig(instance_port={self.websocket.instance_port})\n"
+            f"  server=ServerConfig(host='{self.server.host}', port={self.server.port})\n"
             f")"
         )
 

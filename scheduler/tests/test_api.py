@@ -2230,43 +2230,24 @@ class TestLifespanContextManager:
         shutdown_called = False
 
         # Mock the external services
-        with patch("src.api.instance_websocket_server.start", new=AsyncMock()) as mock_ws_start:
-            with patch("src.api.instance_connection_manager.start", new=AsyncMock()) as mock_conn_start:
-                with patch("src.api.background_scheduler.shutdown", new=AsyncMock()) as mock_bg_shutdown:
-                    with patch("src.api.task_dispatcher.close", new=AsyncMock()) as mock_dispatcher_close:
-                        with patch("src.api.predictor_client.close", new=AsyncMock()) as mock_predictor_close:
-                            # Get the lifespan context manager
-                            lifespan_cm = api.lifespan(api.app)
+        with patch("src.api.background_scheduler.shutdown", new=AsyncMock()) as mock_bg_shutdown:
+            with patch("src.api.task_dispatcher.close", new=AsyncMock()) as mock_dispatcher_close:
+                with patch("src.api.predictor_client.close", new=AsyncMock()) as mock_predictor_close:
+                    # Get the lifespan context manager
+                    lifespan_cm = api.lifespan(api.app)
 
-                            # Enter the context (startup)
-                            async with lifespan_cm:
-                                startup_called = True
-                                # Verify startup was called
-                                mock_ws_start.assert_called_once()
-                                mock_conn_start.assert_called_once()
+                    # Enter the context (startup)
+                    async with lifespan_cm:
+                        startup_called = True
 
-                            shutdown_called = True
-                            # Verify shutdown was called
-                            mock_bg_shutdown.assert_called_once()
-                            mock_dispatcher_close.assert_called_once()
-                            mock_predictor_close.assert_called_once()
+                    shutdown_called = True
+                    # Verify shutdown was called
+                    mock_bg_shutdown.assert_called_once()
+                    mock_dispatcher_close.assert_called_once()
+                    mock_predictor_close.assert_called_once()
 
         assert startup_called
         assert shutdown_called
-
-    async def test_lifespan_startup_failure(self):
-        """Test application startup failure."""
-        from src import api
-
-        # Mock WebSocket server to fail on start
-        with patch("src.api.instance_websocket_server.start",
-                   new=AsyncMock(side_effect=Exception("Failed to start WebSocket server"))):
-            with pytest.raises(Exception) as exc_info:
-                lifespan_cm = api.lifespan(api.app)
-                async with lifespan_cm:
-                    pass
-
-            assert "Failed to start WebSocket server" in str(exc_info.value)
 
     async def test_lifespan_shutdown_with_training_client(self):
         """Test shutdown when training client is available."""
@@ -2276,58 +2257,48 @@ class TestLifespanContextManager:
         mock_training_client = AsyncMock()
         mock_training_client.close = AsyncMock()
 
-        with patch("src.api.instance_websocket_server.start", new=AsyncMock()):
-            with patch("src.api.instance_connection_manager.start", new=AsyncMock()):
-                with patch("src.api.instance_connection_manager.stop", new=AsyncMock()):
-                    with patch("src.api.instance_websocket_server.stop", new=AsyncMock()):
-                        with patch("src.api.background_scheduler.shutdown", new=AsyncMock()):
-                            with patch("src.api.task_dispatcher.close", new=AsyncMock()):
-                                with patch("src.api.predictor_client.close", new=AsyncMock()):
-                                    # Temporarily set training_client
-                                    original_training_client = api.training_client
-                                    api.training_client = mock_training_client
+        with patch("src.api.background_scheduler.shutdown", new=AsyncMock()):
+            with patch("src.api.task_dispatcher.close", new=AsyncMock()):
+                with patch("src.api.predictor_client.close", new=AsyncMock()):
+                    # Temporarily set training_client
+                    original_training_client = api.training_client
+                    api.training_client = mock_training_client
 
-                                    try:
-                                        lifespan_cm = api.lifespan(api.app)
-                                        async with lifespan_cm:
-                                            pass
+                    try:
+                        lifespan_cm = api.lifespan(api.app)
+                        async with lifespan_cm:
+                            pass
 
-                                        # Verify training client was closed
-                                        mock_training_client.close.assert_called_once()
-                                    finally:
-                                        # Restore original
-                                        api.training_client = original_training_client
+                        # Verify training client was closed
+                        mock_training_client.close.assert_called_once()
+                    finally:
+                        # Restore original
+                        api.training_client = original_training_client
 
     async def test_lifespan_shutdown_error_handling(self):
-        """Test shutdown continues even if individual components fail."""
+        """Test shutdown error propagation."""
         from src import api
 
-        # Mock all services
-        mock_ws_start = AsyncMock()
-        mock_conn_start = AsyncMock()
-        mock_conn_stop = AsyncMock(side_effect=Exception("Stop failed"))
-        mock_ws_stop = AsyncMock()
-        mock_bg_shutdown = AsyncMock()
+        # Mock all services - background scheduler fails
+        mock_bg_shutdown = AsyncMock(side_effect=Exception("Shutdown failed"))
         mock_dispatcher_close = AsyncMock()
         mock_predictor_close = AsyncMock()
 
-        with patch("src.api.instance_websocket_server.start", mock_ws_start):
-            with patch("src.api.instance_connection_manager.start", mock_conn_start):
-                with patch("src.api.instance_connection_manager.stop", mock_conn_stop):
-                    with patch("src.api.instance_websocket_server.stop", mock_ws_stop):
-                        with patch("src.api.background_scheduler.shutdown", mock_bg_shutdown):
-                            with patch("src.api.task_dispatcher.close", mock_dispatcher_close):
-                                with patch("src.api.predictor_client.close", mock_predictor_close):
-                                    lifespan_cm = api.lifespan(api.app)
-                                    async with lifespan_cm:
-                                        pass
+        with patch("src.api.background_scheduler.shutdown", mock_bg_shutdown):
+            with patch("src.api.task_dispatcher.close", mock_dispatcher_close):
+                with patch("src.api.predictor_client.close", mock_predictor_close):
+                    lifespan_cm = api.lifespan(api.app)
+                    # Shutdown errors should propagate
+                    with pytest.raises(Exception) as exc_info:
+                        async with lifespan_cm:
+                            pass
 
-        # Verify error was caught but other shutdown components outside the try block still ran
-        # Note: websocket_server.stop() is NOT called because connection_manager.stop() failed first
-        # They are both in the same try block
+                    assert "Shutdown failed" in str(exc_info.value)
+
+        # Verify shutdown was attempted but others weren't called due to exception
         mock_bg_shutdown.assert_called_once()
-        mock_dispatcher_close.assert_called_once()
-        mock_predictor_close.assert_called_once()
+        mock_dispatcher_close.assert_not_called()
+        mock_predictor_close.assert_not_called()
 
 
 class TestCustomQuantilesInReinitialization:

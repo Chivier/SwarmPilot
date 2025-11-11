@@ -183,7 +183,6 @@ def start(
     final_port = app_config.server.port
 
     typer.echo(f"Server will start at: http://{final_host}:{final_port}")
-    typer.echo(f"WebSocket will be available at: ws://{final_host}:{app_config.websocket.instance_port}/instance/ws")
     typer.echo("")
 
     # Start the server
