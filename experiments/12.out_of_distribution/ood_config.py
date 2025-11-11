@@ -4,7 +4,7 @@ Out-of-Distribution Experiment Configuration Module.
 
 This module provides configuration classes for the two main experiments:
 1. Experiment 1: B1 samples sleep_time from A1 distribution
-2. Experiment 2: B1 scales sleep_time and exp_runtime by factors [0.2, 0.5, 0.8]
+2. Experiment 2: B1 scales sleep_time and exp_runtime by factors [0.2, 0.5, 1.5]
 
 Both experiments have baseline and comparison configurations.
 """
@@ -144,9 +144,9 @@ def get_exp2_baseline_configs(
     """
     Get configurations for Experiment 2 Baseline with all scaling factors.
 
-    B1 sleep_time is scaled by [0.2, 0.5, 0.8], exp_runtime remains unchanged.
+    B1 sleep_time is scaled by [0.2, 0.5, 1.5], exp_runtime remains unchanged.
     """
-    scale_factors = [0.2, 0.5, 0.8]
+    scale_factors = [0.2, 0.5, 1.5]
     configs = []
 
     for scale in scale_factors:
@@ -174,9 +174,9 @@ def get_exp2_comparison_configs(
     """
     Get configurations for Experiment 2 Comparison with all scaling factors.
 
-    Both B1 sleep_time and exp_runtime are scaled by [0.2, 0.5, 0.8].
+    Both B1 sleep_time and exp_runtime are scaled by [0.2, 0.5, 1.5].
     """
-    scale_factors = [0.2, 0.5, 0.8]
+    scale_factors = [0.2, 0.5, 1.5]
     configs = []
 
     for scale in scale_factors:
