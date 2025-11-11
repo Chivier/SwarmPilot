@@ -7,9 +7,12 @@ All API endpoints are implemented in this module.
 from fastapi import FastAPI, HTTPException, status, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
-from typing import Dict, Any
+from typing import Dict, Any, Optional, Tuple
 import traceback
 import json
+from functools import lru_cache
+from collections import OrderedDict
+import threading
 
 from .models import (
     TrainingRequest, TrainingResponse,
@@ -35,6 +38,117 @@ def get_storage() -> ModelStorage:
 
 
 storage = get_storage()
+
+
+class ModelCache:
+    """
+    Thread-safe LRU cache for loaded prediction models.
+
+    Caches predictor instances to avoid reloading models from disk on every prediction.
+    Uses OrderedDict for LRU eviction policy.
+    """
+
+    def __init__(self, max_size: int = 100):
+        """
+        Initialize model cache.
+
+        Args:
+            max_size: Maximum number of models to cache (default: 100)
+        """
+        self.max_size = max_size
+        self._cache: OrderedDict[str, Tuple[Any, str]] = OrderedDict()  # key -> (predictor, prediction_type)
+        self._lock = threading.Lock()
+        self._hits = 0
+        self._misses = 0
+
+    def get(self, model_key: str) -> Optional[Tuple[Any, str]]:
+        """
+        Get cached predictor for model_key.
+
+        Args:
+            model_key: The model identifier
+
+        Returns:
+            Tuple of (predictor, prediction_type) if cached, None otherwise
+        """
+        with self._lock:
+            if model_key in self._cache:
+                # Move to end (most recently used)
+                self._cache.move_to_end(model_key)
+                self._hits += 1
+                predictor, pred_type = self._cache[model_key]
+                logger.debug(f"Cache hit for model_key={model_key} (hits={self._hits}, misses={self._misses})")
+                return (predictor, pred_type)
+            else:
+                self._misses += 1
+                logger.debug(f"Cache miss for model_key={model_key} (hits={self._hits}, misses={self._misses})")
+                return None
+
+    def put(self, model_key: str, predictor: Any, prediction_type: str) -> None:
+        """
+        Cache a predictor instance.
+
+        Args:
+            model_key: The model identifier
+            predictor: The predictor instance to cache
+            prediction_type: Type of prediction ('expect_error' or 'quantile')
+        """
+        with self._lock:
+            # If already exists, move to end
+            if model_key in self._cache:
+                self._cache.move_to_end(model_key)
+
+            self._cache[model_key] = (predictor, prediction_type)
+
+            # Evict oldest if cache is full
+            if len(self._cache) > self.max_size:
+                evicted_key = next(iter(self._cache))
+                del self._cache[evicted_key]
+                logger.debug(f"Evicted model_key={evicted_key} from cache (size={len(self._cache)})")
+
+            logger.debug(f"Cached model_key={model_key}, cache size={len(self._cache)}")
+
+    def invalidate(self, model_key: str) -> None:
+        """
+        Remove a model from cache (e.g., after retraining).
+
+        Args:
+            model_key: The model identifier to remove
+        """
+        with self._lock:
+            if model_key in self._cache:
+                del self._cache[model_key]
+                logger.debug(f"Invalidated model_key={model_key} from cache")
+
+    def clear(self) -> None:
+        """Clear all cached models."""
+        with self._lock:
+            self._cache.clear()
+            self._hits = 0
+            self._misses = 0
+            logger.info("Cleared model cache")
+
+    def get_stats(self) -> Dict[str, Any]:
+        """
+        Get cache statistics.
+
+        Returns:
+            Dictionary with cache statistics
+        """
+        with self._lock:
+            total = self._hits + self._misses
+            hit_rate = (self._hits / total * 100) if total > 0 else 0.0
+            return {
+                "size": len(self._cache),
+                "max_size": self.max_size,
+                "hits": self._hits,
+                "misses": self._misses,
+                "hit_rate_percent": round(hit_rate, 2)
+            }
+
+
+# Initialize model cache
+model_cache = ModelCache(max_size=100)
 
 
 @asynccontextmanager
@@ -94,6 +208,60 @@ async def health_check():
             content={
                 "status": "unhealthy",
                 "reason": f"Health check failed: {str(e)}"
+            }
+        )
+
+
+@app.get("/cache/stats", tags=["Cache"])
+async def get_cache_stats():
+    """
+    Get model cache statistics.
+
+    Returns information about cache performance including hit rate,
+    current size, and total hits/misses.
+    """
+    try:
+        stats = model_cache.get_stats()
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={
+                "cache_stats": stats,
+                "message": "Cache statistics retrieved successfully"
+            }
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "error": "Failed to get cache stats",
+                "message": str(e)
+            }
+        )
+
+
+@app.post("/cache/clear", tags=["Cache"])
+async def clear_cache():
+    """
+    Clear all cached models.
+
+    Useful for freeing memory or forcing model reloads.
+    This does not affect stored models on disk.
+    """
+    try:
+        model_cache.clear()
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={
+                "status": "success",
+                "message": "Model cache cleared successfully"
+            }
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "error": "Failed to clear cache",
+                "message": str(e)
             }
         )
 
@@ -206,6 +374,10 @@ async def train_model(request: TrainingRequest):
             }
             storage.save_model(model_key, predictor_state, metadata)
 
+            # Invalidate cache for this model (it has been retrained)
+            model_cache.invalidate(model_key)
+            logger.info(f"Invalidated cache for retrained model: {model_key}")
+
         except Exception as e:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -282,52 +454,81 @@ async def predict(request: PredictionRequest):
             platform_info=request.platform_info.model_dump()
         )
 
-        # Load model
-        model_data = storage.load_model(model_key)
-        if model_data is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail={
-                    "error": "Model not found",
-                    "message": f"No trained model found for model_id='{request.model_id}' with given platform_info",
-                    "model_id": request.model_id,
-                    "platform_info": request.platform_info.model_dump(),
-                    "model_key": model_key
-                }
-            )
+        # Try to get predictor from cache
+        cached_result = model_cache.get(model_key)
 
-        # Validate prediction type matches
-        stored_prediction_type = model_data['metadata'].get('prediction_type')
-        if stored_prediction_type != request.prediction_type:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail={
-                    "error": "Prediction type mismatch",
-                    "message": f"Model was trained with prediction_type='{stored_prediction_type}', but request has '{request.prediction_type}'",
-                    "model_prediction_type": stored_prediction_type,
-                    "request_prediction_type": request.prediction_type
-                }
-            )
+        if cached_result is not None:
+            # Cache hit - use cached predictor
+            predictor, stored_prediction_type = cached_result
 
-        # Create predictor and load state
-        if request.prediction_type == "expect_error":
-            predictor = ExpectErrorPredictor()
-        elif request.prediction_type == "quantile":
-            predictor = QuantilePredictor()
+            # Validate prediction type matches
+            if stored_prediction_type != request.prediction_type:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail={
+                        "error": "Prediction type mismatch",
+                        "message": f"Model was trained with prediction_type='{stored_prediction_type}', but request has '{request.prediction_type}'",
+                        "model_prediction_type": stored_prediction_type,
+                        "request_prediction_type": request.prediction_type
+                    }
+                )
         else:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail={
-                    "error": "Invalid prediction type",
-                    "message": f"prediction_type must be 'expect_error' or 'quantile', got '{request.prediction_type}'"
-                }
-            )
+            # Cache miss - load model from storage
+            model_data = storage.load_model(model_key)
+            if model_data is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail={
+                        "error": "Model not found",
+                        "message": f"No trained model found for model_id='{request.model_id}' with given platform_info",
+                        "model_id": request.model_id,
+                        "platform_info": request.platform_info.model_dump(),
+                        "model_key": model_key
+                    }
+                )
 
-        predictor.load_model_state(model_data['predictor_state'])
+            # Validate prediction type matches
+            stored_prediction_type = model_data['metadata'].get('prediction_type')
+            if stored_prediction_type != request.prediction_type:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail={
+                        "error": "Prediction type mismatch",
+                        "message": f"Model was trained with prediction_type='{stored_prediction_type}', but request has '{request.prediction_type}'",
+                        "model_prediction_type": stored_prediction_type,
+                        "request_prediction_type": request.prediction_type
+                    }
+                )
+
+            # Create predictor and load state
+            if request.prediction_type == "expect_error":
+                predictor = ExpectErrorPredictor()
+            elif request.prediction_type == "quantile":
+                predictor = QuantilePredictor()
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail={
+                        "error": "Invalid prediction type",
+                        "message": f"prediction_type must be 'expect_error' or 'quantile', got '{request.prediction_type}'"
+                    }
+                )
+
+            predictor.load_model_state(model_data['predictor_state'])
+
+            # Cache the loaded predictor
+            model_cache.put(model_key, predictor, stored_prediction_type)
+            logger.info(f"Loaded and cached model: {model_key}")
 
         # Make prediction
         try:
-            result = predictor.predict(request.features)
+            # Append hardware info
+            hardware_features = request.platform_info.extract_gpu_specs()
+            all_features = request.features
+            for key, value in hardware_features.items():
+                all_features[key] = value
+                
+            result = predictor.predict(all_features)
 
             return PredictionResponse(
                 model_id=request.model_id,
@@ -447,42 +648,63 @@ async def websocket_predict(websocket: WebSocket):
                     platform_info=request.platform_info.model_dump()
                 )
 
-                # Load model
-                model_data = storage.load_model(model_key)
-                if model_data is None:
-                    await websocket.send_json({
-                        "error": "Model not found",
-                        "message": f"No trained model found for model_id='{request.model_id}' with given platform_info",
-                        "model_id": request.model_id,
-                        "platform_info": request.platform_info.model_dump(),
-                        "model_key": model_key
-                    })
-                    continue
+                # Try to get predictor from cache
+                cached_result = model_cache.get(model_key)
 
-                # Validate prediction type matches
-                stored_prediction_type = model_data['metadata'].get('prediction_type')
-                if stored_prediction_type != request.prediction_type:
-                    await websocket.send_json({
-                        "error": "Prediction type mismatch",
-                        "message": f"Model was trained with prediction_type='{stored_prediction_type}', but request has '{request.prediction_type}'",
-                        "model_prediction_type": stored_prediction_type,
-                        "request_prediction_type": request.prediction_type
-                    })
-                    continue
+                if cached_result is not None:
+                    # Cache hit - use cached predictor
+                    predictor, stored_prediction_type = cached_result
 
-                # Create predictor and load state
-                if request.prediction_type == "expect_error":
-                    predictor = ExpectErrorPredictor()
-                elif request.prediction_type == "quantile":
-                    predictor = QuantilePredictor()
+                    # Validate prediction type matches
+                    if stored_prediction_type != request.prediction_type:
+                        await websocket.send_json({
+                            "error": "Prediction type mismatch",
+                            "message": f"Model was trained with prediction_type='{stored_prediction_type}', but request has '{request.prediction_type}'",
+                            "model_prediction_type": stored_prediction_type,
+                            "request_prediction_type": request.prediction_type
+                        })
+                        continue
                 else:
-                    await websocket.send_json({
-                        "error": "Invalid prediction type",
-                        "message": f"prediction_type must be 'expect_error' or 'quantile', got '{request.prediction_type}'"
-                    })
-                    continue
+                    # Cache miss - load model from storage
+                    model_data = storage.load_model(model_key)
+                    if model_data is None:
+                        await websocket.send_json({
+                            "error": "Model not found",
+                            "message": f"No trained model found for model_id='{request.model_id}' with given platform_info",
+                            "model_id": request.model_id,
+                            "platform_info": request.platform_info.model_dump(),
+                            "model_key": model_key
+                        })
+                        continue
 
-                predictor.load_model_state(model_data['predictor_state'])
+                    # Validate prediction type matches
+                    stored_prediction_type = model_data['metadata'].get('prediction_type')
+                    if stored_prediction_type != request.prediction_type:
+                        await websocket.send_json({
+                            "error": "Prediction type mismatch",
+                            "message": f"Model was trained with prediction_type='{stored_prediction_type}', but request has '{request.prediction_type}'",
+                            "model_prediction_type": stored_prediction_type,
+                            "request_prediction_type": request.prediction_type
+                        })
+                        continue
+
+                    # Create predictor and load state
+                    if request.prediction_type == "expect_error":
+                        predictor = ExpectErrorPredictor()
+                    elif request.prediction_type == "quantile":
+                        predictor = QuantilePredictor()
+                    else:
+                        await websocket.send_json({
+                            "error": "Invalid prediction type",
+                            "message": f"prediction_type must be 'expect_error' or 'quantile', got '{request.prediction_type}'"
+                        })
+                        continue
+
+                    predictor.load_model_state(model_data['predictor_state'])
+
+                    # Cache the loaded predictor
+                    model_cache.put(model_key, predictor, stored_prediction_type)
+                    logger.info(f"Loaded and cached model (WebSocket): {model_key}")
 
                 # Make prediction
                 try:

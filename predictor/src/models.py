@@ -6,6 +6,7 @@ Defines all request/response models for API endpoints.
 
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field, field_validator
+import re
 
 
 class PlatformInfo(BaseModel):
@@ -13,6 +14,76 @@ class PlatformInfo(BaseModel):
     software_name: str = Field(..., description="Name of the software platform")
     software_version: str = Field(..., description="Version of the software")
     hardware_name: str = Field(..., description="Name of the hardware platform")
+
+    def extract_gpu_specs(self) -> Optional[Dict[str, Any]]:
+        """
+        Extract GPU name from hardware_name and return corresponding specifications.
+
+        This method attempts to identify a Tesla series GPU name within the hardware_name
+        field and returns the detailed specifications from the hardware performance database.
+
+        Returns:
+            Dictionary containing GPU specifications if a match is found, None otherwise.
+            The dictionary includes: cuda_cores, tensor_cores, fp32_tflops, fp16_tflops,
+            tensor_tflops, memory_gb, and memory_bandwidth_gb_s.
+
+        Examples:
+            >>> platform = PlatformInfo(
+            ...     software_name="PyTorch",
+            ...     software_version="2.0",
+            ...     hardware_name="NVIDIA Tesla V100-PCIE-16GB"
+            ... )
+            >>> specs = platform.extract_gpu_specs()
+            >>> specs['cuda_cores']
+            5120
+
+            >>> platform = PlatformInfo(
+            ...     software_name="PyTorch",
+            ...     software_version="2.0",
+            ...     hardware_name="NVIDIA H100 80GB HBM3"
+            ... )
+            >>> specs = platform.extract_gpu_specs()
+            >>> specs['memory_gb']
+            80
+        """
+        from predictor.src.utils.hardware_perf_info import NVIDIA_TESLA_SPECS
+
+        # Normalize hardware_name for matching
+        hardware_name_upper = self.hardware_name.upper()
+
+        # Define GPU model patterns in priority order (more specific first)
+        # This ensures we match longer model names before shorter ones
+        gpu_patterns = [
+            # H100 variants (check specific variants first)
+            (r'H100[- ]?PCIE', 'H100-PCIe'),
+            (r'H100[- ]?94GB', 'H100-94GB'),
+            (r'H100', 'H100'),
+
+            # A100 variants
+            (r'A100[- ]?80GB', 'A100-80GB'),
+            (r'A100', 'A100'),
+
+            # V100 variants
+            (r'V100[- ]?32GB', 'V100-32GB'),
+            (r'V100', 'V100'),
+
+            # Other A-series
+            (r'A40', 'A40'),
+            (r'A30', 'A30'),
+            (r'A10', 'A10'),
+
+            # T-series
+            (r'T4', 'T4'),
+        ]
+
+        # Try to match each pattern
+        for pattern, gpu_key in gpu_patterns:
+            if re.search(pattern, hardware_name_upper):
+                if gpu_key in NVIDIA_TESLA_SPECS:
+                    return NVIDIA_TESLA_SPECS[gpu_key].copy()
+
+        # No match found
+        return None
 
 
 class TrainingRequest(BaseModel):
