@@ -2,6 +2,7 @@
 Core data models for Instance Service
 """
 
+import time
 from datetime import UTC, datetime
 from enum import Enum
 from typing import Any, Dict, Optional
@@ -29,7 +30,8 @@ class RestartStatus(str, Enum):
     """Restart operation status enumeration"""
     PENDING = "pending"
     DRAINING = "draining"
-    WAITING_TASKS = "waiting_tasks"
+    EXTRACTING_TASKS = "extracting_tasks"
+    WAITING_RUNNING_TASK = "waiting_running_task"
     STOPPING_MODEL = "stopping_model"
     DEREGISTERING = "deregistering"
     STARTING_MODEL = "starting_model"
@@ -49,6 +51,10 @@ class Task(BaseModel):
     submitted_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat().replace("+00:00", "Z"))
     started_at: Optional[str] = None
     completed_at: Optional[str] = None
+    enqueue_time: float = Field(
+        default_factory=time.time,
+        description="Unix timestamp when task was enqueued, used for priority queue ordering"
+    )
 
     # Results
     result: Optional[Dict[str, Any]] = None
@@ -104,6 +110,7 @@ class RestartOperation(BaseModel):
     # Progress tracking
     pending_tasks_at_start: int = 0
     pending_tasks_completed: int = 0
+    redistributed_tasks_count: int = 0
     error: Optional[str] = None
 
     def update_status(self, new_status: RestartStatus, error: Optional[str] = None):

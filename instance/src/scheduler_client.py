@@ -766,6 +766,97 @@ class SchedulerClient:
         except Exception as e:
             raise Exception(f"Unexpected error during drain: {str(e)}")
 
+    async def resubmit_task(
+        self,
+        task_id: str,
+        model_id: str,
+        task_input: Dict[str, Any],
+        enqueue_time: Optional[float] = None,
+        submitted_at: Optional[str] = None,
+        callback_url: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """Resubmit a task back to the scheduler for redistribution.
+
+        This method is used during instance restart/redeploy to send extracted
+        pending tasks back to the scheduler for reassignment to other instances.
+
+        Args:
+            task_id: Original task ID
+            model_id: Model ID required for the task
+            task_input: Task input data
+            enqueue_time: Original enqueue timestamp (for priority preservation)
+            submitted_at: Original submission timestamp
+            callback_url: Optional callback URL for task completion
+            metadata: Optional task metadata
+
+        Returns:
+            True if task successfully resubmitted, False otherwise
+
+        Raises:
+            Exception: If scheduler integration is disabled or request fails
+        """
+        if not self.is_enabled:
+            raise Exception("Cannot resubmit task: scheduler integration is disabled")
+
+        endpoint = f"{self.scheduler_url}/task/submit"
+
+        # Build task submission payload
+        payload = {
+            "task_id": task_id,
+            "model_id": model_id,
+            "task_input": task_input,
+        }
+
+        # Include optional fields for priority and context preservation
+        if enqueue_time is not None:
+            payload["enqueue_time"] = enqueue_time
+        if submitted_at is not None:
+            payload["submitted_at"] = submitted_at
+        if callback_url is not None:
+            payload["callback_url"] = callback_url
+        if metadata is not None:
+            payload["metadata"] = metadata
+
+        # Retry logic for reliability
+        for attempt in range(self.max_retries):
+            try:
+                async with httpx.AsyncClient(timeout=self.timeout) as client:
+                    response = await client.post(endpoint, json=payload)
+                    response.raise_for_status()
+                    result = response.json()
+
+                if result.get("success", False):
+                    return True
+                else:
+                    error_msg = result.get("error", "Unknown error")
+                    print(f"Task resubmission failed: {error_msg}")
+                    if attempt < self.max_retries - 1:
+                        await asyncio.sleep(self.retry_delay)
+                    else:
+                        return False
+
+            except httpx.HTTPError as e:
+                print(
+                    f"Resubmit attempt {attempt + 1}/{self.max_retries} failed "
+                    f"for task {task_id}: {str(e)}"
+                )
+                if attempt < self.max_retries - 1:
+                    delay = self.retry_delay * (2**attempt)
+                    await asyncio.sleep(delay)
+                else:
+                    print(
+                        f"✗ Failed to resubmit task {task_id} after "
+                        f"{self.max_retries} attempts"
+                    )
+                    return False
+
+            except Exception as e:
+                print(f"✗ Unexpected error during task resubmission: {str(e)}")
+                return False
+
+        return False
+
     # ==================== Task Result Callback API ====================
 
     async def send_task_result(

@@ -86,6 +86,10 @@ class RestartStatusResponse(BaseModel):
     completed_at: Optional[str] = None
     pending_tasks_at_start: int
     pending_tasks_completed: int
+    redistributed_tasks_count: int = Field(
+        default=0,
+        description="Number of pending tasks redistributed to scheduler"
+    )
     error: Optional[str] = None
 
 
@@ -95,6 +99,7 @@ class TaskSubmitRequest(BaseModel):
     task_id: str = Field(..., description="Unique identifier for this task")
     model_id: str = Field(..., description="Model/tool ID to use for this task")
     task_input: Dict[str, Any] = Field(..., description="Model-specific input data")
+    enqueue_time: Optional[float] = Field(None, description="Optional Unix timestamp for task priority ordering")
 
 
 class TaskSubmitResponse(BaseModel):
@@ -193,6 +198,12 @@ class ErrorResponse(BaseModel):
     """Standard error response format"""
     success: bool = False
     error: str
+
+
+class SuccessResponse(BaseModel):
+    """Standard success response format"""
+    success: bool = True
+    message: str
 
 
 # =============================================================================
@@ -710,11 +721,12 @@ async def _perform_restart_operation(operation_id: str):
 
     This function executes the following steps:
     1. Drain from scheduler (if enabled)
-    2. Wait for all pending tasks to complete
-    3. Stop current model
-    4. Deregister from current scheduler
-    5. Start new model
-    6. Register with new scheduler (if URL provided)
+    2. Extract pending queued tasks and redistribute to scheduler
+    3. Wait for currently running task to complete
+    4. Stop current model
+    5. Deregister from current scheduler
+    6. Start new model
+    7. Register with new scheduler (if URL provided)
 
     Args:
         operation_id: Unique identifier for this restart operation
@@ -743,39 +755,91 @@ async def _perform_restart_operation(operation_id: str):
         else:
             logger.info("Scheduler integration disabled, skipping drain step")
 
-        # Step 2: Wait for all pending tasks to complete
-        operation.update_status(RestartStatus.WAITING_TASKS)
+        # Step 2: Extract pending queued tasks and redistribute to scheduler
+        operation.update_status(RestartStatus.EXTRACTING_TASKS)
+
+        if scheduler_client.is_enabled:
+            try:
+                # Extract all pending QUEUED tasks (preserves running task)
+                pending_tasks = await task_queue.extract_pending_tasks()
+                logger.info(f"Extracted {len(pending_tasks)} pending tasks from queue")
+
+                # Redistribute tasks back to scheduler
+                successful_redistributions = 0
+                failed_redistributions = 0
+
+                for task_data in pending_tasks:
+                    try:
+                        success = await scheduler_client.resubmit_task(
+                            task_id=task_data["task_id"],
+                            model_id=task_data["model_id"],
+                            task_input=task_data["task_input"],
+                            enqueue_time=task_data.get("enqueue_time"),
+                            submitted_at=task_data.get("submitted_at"),
+                            callback_url=task_data.get("callback_url"),
+                            metadata=task_data.get("metadata"),
+                        )
+
+                        if success:
+                            successful_redistributions += 1
+                            logger.debug(f"Successfully redistributed task {task_data['task_id']}")
+                        else:
+                            failed_redistributions += 1
+                            logger.warning(f"Failed to redistribute task {task_data['task_id']}")
+
+                    except Exception as e:
+                        failed_redistributions += 1
+                        logger.error(f"Error redistributing task {task_data['task_id']}: {str(e)}")
+
+                operation.redistributed_tasks_count = successful_redistributions
+
+                if failed_redistributions > 0:
+                    logger.warning(
+                        f"Task redistribution: {successful_redistributions} succeeded, "
+                        f"{failed_redistributions} failed"
+                    )
+                else:
+                    logger.info(f"Successfully redistributed all {successful_redistributions} tasks")
+
+            except Exception as e:
+                logger.error(f"Failed to extract and redistribute tasks: {str(e)}")
+                # Continue with restart even if redistribution fails
+        else:
+            logger.info("Scheduler integration disabled, skipping task extraction")
+
+        # Step 3: Wait for currently running task to complete
+        operation.update_status(RestartStatus.WAITING_RUNNING_TASK)
         stats = await task_queue.get_queue_stats()
-        operation.pending_tasks_at_start = stats["queued"] + stats["running"]
 
-        logger.info(f"Waiting for {operation.pending_tasks_at_start} tasks to complete")
+        # Only count running task (queued tasks have been extracted)
+        if stats["running"] > 0:
+            logger.info(f"Waiting for {stats['running']} running task to complete")
 
-        # Poll task queue until all tasks are completed
-        max_wait_time = 300  # 5 minutes timeout
-        start_wait_time = time.time()
-        while True:
-            stats = await task_queue.get_queue_stats()
-            pending = stats["queued"] + stats["running"]
+            # Poll task queue until running task completes
+            max_wait_time = 300  # 5 minutes timeout
+            start_wait_time = time.time()
 
-            if pending == 0:
-                operation.pending_tasks_completed = operation.pending_tasks_at_start
-                logger.info("All pending tasks completed")
-                break
+            while True:
+                stats = await task_queue.get_queue_stats()
+                running = stats["running"]
 
-            # Check timeout
-            if time.time() - start_wait_time > max_wait_time:
-                raise TimeoutError(
-                    f"Timeout waiting for tasks to complete. "
-                    f"{pending} tasks still pending after {max_wait_time}s"
-                )
+                if running == 0:
+                    logger.info("Running task completed")
+                    break
 
-            # Update progress
-            operation.pending_tasks_completed = operation.pending_tasks_at_start - pending
+                # Check timeout
+                if time.time() - start_wait_time > max_wait_time:
+                    raise TimeoutError(
+                        f"Timeout waiting for running task to complete. "
+                        f"Task still running after {max_wait_time}s"
+                    )
 
-            # Wait a bit before checking again
-            await asyncio.sleep(1)
+                # Wait a bit before checking again
+                await asyncio.sleep(1)
+        else:
+            logger.info("No running tasks to wait for")
 
-        # Step 3: Stop current model
+        # Step 4: Stop current model
         operation.update_status(RestartStatus.STOPPING_MODEL)
         if await docker_manager.is_model_running():
             old_model_id = await docker_manager.stop_model()
@@ -784,7 +848,7 @@ async def _perform_restart_operation(operation_id: str):
         else:
             logger.warning("No model was running")
 
-        # Step 4: Deregister from current scheduler
+        # Step 5: Deregister from current scheduler
         operation.update_status(RestartStatus.DEREGISTERING)
         if scheduler_client.is_enabled:
             try:
@@ -794,7 +858,7 @@ async def _perform_restart_operation(operation_id: str):
                 # Log warning but continue
                 logger.warning(f"Failed to deregister: {str(e)}")
 
-        # Step 5: Start new model
+        # Step 6: Start new model
         operation.update_status(RestartStatus.STARTING_MODEL)
         registry = get_registry()
 
@@ -808,7 +872,7 @@ async def _perform_restart_operation(operation_id: str):
         )
         logger.info(f"Started new model: {operation.new_model_id}")
 
-        # Step 6: Register with new scheduler
+        # Step 7: Register with new scheduler
         operation.update_status(RestartStatus.REGISTERING)
 
         # Update scheduler URL (guaranteed to be non-empty due to validation)
@@ -921,9 +985,9 @@ async def submit_task(request: TaskSubmitRequest):
         task_input=request.task_input
     )
 
-    # Submit to queue
+    # Submit to queue with optional enqueue_time for priority ordering
     try:
-        position = await task_queue.submit_task(task)
+        position = await task_queue.submit_task(task, enqueue_time=request.enqueue_time)
 
         return TaskSubmitResponse(
             success=True,
@@ -1242,6 +1306,7 @@ async def get_restart_status(operation_id: str = Query(..., description="Restart
         completed_at=operation.completed_at,
         pending_tasks_at_start=operation.pending_tasks_at_start,
         pending_tasks_completed=operation.pending_tasks_completed,
+        redistributed_tasks_count=operation.redistributed_tasks_count,
         error=operation.error,
     )
 

@@ -376,7 +376,8 @@ class TestRestartStatus:
         """Test that RestartStatus has all required values"""
         assert RestartStatus.PENDING == "pending"
         assert RestartStatus.DRAINING == "draining"
-        assert RestartStatus.WAITING_TASKS == "waiting_tasks"
+        assert RestartStatus.EXTRACTING_TASKS == "extracting_tasks"
+        assert RestartStatus.WAITING_RUNNING_TASK == "waiting_running_task"
         assert RestartStatus.STOPPING_MODEL == "stopping_model"
         assert RestartStatus.DEREGISTERING == "deregistering"
         assert RestartStatus.STARTING_MODEL == "starting_model"
@@ -387,7 +388,7 @@ class TestRestartStatus:
     def test_restart_status_membership(self):
         """Test that all expected statuses are members of the enum"""
         expected_statuses = [
-            "pending", "draining", "waiting_tasks", "stopping_model",
+            "pending", "draining", "extracting_tasks", "waiting_running_task", "stopping_model",
             "deregistering", "starting_model", "registering", "completed", "failed"
         ]
         actual_statuses = [status.value for status in RestartStatus]

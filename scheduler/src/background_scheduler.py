@@ -192,6 +192,115 @@ class BackgroundScheduler:
                 except Exception:
                     logger.error(f"Task {task_id}: Failed to update task status after error")
 
+    async def reassign_task(
+        self,
+        task_id: str,
+        model_id: str,
+        task_input: Dict[str, Any],
+        enqueue_time: Optional[float] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        exclude_instance_id: Optional[str] = None,
+    ) -> bool:
+        """
+        Reassign a task to a new instance (used during redeployment).
+
+        This is similar to schedule_task_background, but:
+        1. Preserves the original enqueue_time for priority ordering
+        2. Can exclude specific instances (e.g., the one being redeployed)
+        3. Returns success/failure status synchronously
+
+        Args:
+            task_id: Unique task identifier
+            model_id: Model/tool to use
+            task_input: Input data for the task
+            enqueue_time: Optional original enqueue time for priority preservation
+            metadata: Optional metadata for prediction
+            exclude_instance_id: Optional instance ID to exclude from selection
+
+        Returns:
+            True if successfully reassigned, False otherwise
+        """
+        try:
+            logger.debug(f"Reassigning task {task_id} (excluding {exclude_instance_id})")
+
+            # 1. Get available instances (excluding the specified one)
+            available_instances = await self.instance_registry.list_active(
+                model_id=model_id
+            )
+
+            # Filter out excluded instance
+            if exclude_instance_id:
+                available_instances = [
+                    inst for inst in available_instances
+                    if inst.instance_id != exclude_instance_id
+                ]
+
+            if not available_instances:
+                logger.error(
+                    f"Task {task_id}: No available instances for reassignment "
+                    f"(model_id: {model_id}, excluding: {exclude_instance_id})"
+                )
+                return False
+
+            # 2. Create task in registry if it doesn't exist
+            existing_task = await self.task_registry.get(task_id)
+            if not existing_task:
+                # Task doesn't exist in registry, create it
+                from .model import Task
+                await self.task_registry.create(
+                    task_id=task_id,
+                    model_id=model_id,
+                    task_input=task_input,
+                    metadata=metadata or {},
+                )
+            else:
+                # Task exists, update status to PENDING for rescheduling
+                await self.task_registry.update_status(task_id, TaskStatus.PENDING)
+
+            # 3. Schedule task using current strategy
+            schedule_result = await self.scheduling_strategy.schedule_task(
+                model_id=model_id,
+                metadata=metadata or {},
+                available_instances=available_instances,
+            )
+
+            # 4. Update task with scheduling results
+            task = await self.task_registry.get(task_id)
+            if not task:
+                logger.error(f"Task {task_id}: Task not found after reassignment")
+                return False
+
+            # Update task with prediction info and assigned instance
+            selected_pred = schedule_result.selected_prediction
+            task.assigned_instance = schedule_result.selected_instance_id
+            if selected_pred:
+                task.predicted_time_ms = selected_pred.predicted_time_ms
+                task.predicted_error_margin_ms = selected_pred.error_margin_ms
+                task.predicted_quantiles = selected_pred.quantiles
+
+            # 5. Update instance stats
+            await self.instance_registry.increment_pending(
+                schedule_result.selected_instance_id
+            )
+
+            # 6. Dispatch task to instance with preserved enqueue_time
+            await self.task_dispatcher.dispatch_task(
+                task_id=task_id,
+                enqueue_time=enqueue_time,  # Preserve original priority
+            )
+
+            logger.info(
+                f"Task {task_id}: Successfully reassigned to {schedule_result.selected_instance_id}"
+            )
+            return True
+
+        except Exception as e:
+            logger.error(
+                f"Task {task_id}: Failed to reassign task - {e}",
+                exc_info=True
+            )
+            return False
+
     async def get_stats(self) -> Dict[str, Any]:
         """
         Get statistics about background scheduling.

@@ -113,6 +113,28 @@ class InstanceRegistry:
         async with self._lock:
             return self._instances.get(instance_id)
 
+    async def update_status(self, instance_id: str, status: InstanceStatus) -> None:
+        """
+        Update the status of an instance.
+
+        Args:
+            instance_id: ID of instance to update
+            status: New instance status
+
+        Raises:
+            KeyError: If instance not found
+        """
+        async with self._lock:
+            if instance_id not in self._instances:
+                raise KeyError(f"Instance {instance_id} not found")
+
+            instance = self._instances[instance_id]
+            instance.status = status
+
+            # Update drain_initiated_at timestamp if transitioning to DRAINING
+            if status == InstanceStatus.DRAINING and not instance.drain_initiated_at:
+                instance.drain_initiated_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
     async def list_all(self, model_id: Optional[str] = None) -> List[Instance]:
         """
         List all instances, optionally filtered by model_id.

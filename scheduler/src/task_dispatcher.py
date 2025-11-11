@@ -53,7 +53,7 @@ class TaskDispatcher:
             verify=False,  # Disable SSL verification for internal network usage
         )
 
-    async def dispatch_task(self, task_id: str) -> None:
+    async def dispatch_task(self, task_id: str, enqueue_time: Optional[float] = None) -> None:
         """
         Dispatch a task to its assigned instance for execution.
 
@@ -62,6 +62,7 @@ class TaskDispatcher:
 
         Args:
             task_id: ID of task to dispatch
+            enqueue_time: Optional Unix timestamp for task priority ordering
         """
         # Get task record
         task = await self.task_registry.get(task_id)
@@ -90,6 +91,7 @@ class TaskDispatcher:
                 task_id=task.task_id,
                 model_id=task.model_id,
                 task_input=task.task_input,
+                enqueue_time=enqueue_time,
             )
 
             # Task is now dispatched and running on instance
@@ -343,6 +345,7 @@ class TaskDispatcher:
         task_id: str,
         model_id: str,
         task_input: Dict[str, Any],
+        enqueue_time: Optional[float] = None,
     ) -> None:
         """
         Submit task to instance via HTTP (fallback method).
@@ -352,6 +355,7 @@ class TaskDispatcher:
             task_id: Task identifier
             model_id: Model identifier
             task_input: Task input data
+            enqueue_time: Optional Unix timestamp for task priority ordering
 
         Raises:
             httpx.HTTPError: If HTTP request fails
@@ -363,15 +367,22 @@ class TaskDispatcher:
         # Prepare callback URL for result notification
         callback_url = f"{self.callback_base_url}/callback/task_result"
 
+        # Prepare payload
+        payload = {
+            "task_id": task_id,
+            "model_id": model_id,
+            "task_input": task_input,
+            "callback_url": callback_url,
+        }
+
+        # Include enqueue_time if provided (for priority preservation)
+        if enqueue_time is not None:
+            payload["enqueue_time"] = enqueue_time
+
         # Send task to instance for execution
         response = await self._http_client.post(
             f"{instance.endpoint}/task/submit",
-            json={
-                "task_id": task_id,
-                "model_id": model_id,
-                "task_input": task_input,
-                "callback_url": callback_url,
-            },
+            json=payload,
         )
         response.raise_for_status()
         submit_result = response.json()
