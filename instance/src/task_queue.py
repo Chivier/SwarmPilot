@@ -5,7 +5,7 @@ Task queue management with FIFO processing
 import asyncio
 import heapq
 import time
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 
 from loguru import logger
 

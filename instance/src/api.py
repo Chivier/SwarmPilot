@@ -86,6 +86,10 @@ class RestartStatusResponse(BaseModel):
     completed_at: Optional[str] = None
     pending_tasks_at_start: int
     pending_tasks_completed: int
+    redistributed_tasks_count: int = Field(
+        default=0,
+        description="Number of pending tasks redistributed to scheduler"
+    )
     error: Optional[str] = None
 
 
@@ -150,57 +154,6 @@ class TaskClearResponse(BaseModel):
     )
 
 
-# Redeploy Management Schemas
-class RedeployRequest(BaseModel):
-    """Request schema for instance redeployment"""
-    target_model_id: Optional[str] = Field(
-        None,
-        description="Optional target model ID for redeployment"
-    )
-    force: bool = Field(
-        default=False,
-        description="Force redeployment even if no pending tasks"
-    )
-
-
-class CurrentTaskInfo(BaseModel):
-    """Information about currently running task"""
-    task_id: str
-    estimated_completion_ms: Optional[float] = Field(
-        None,
-        description="Estimated time until task completion in milliseconds"
-    )
-
-
-class RedeployResponse(BaseModel):
-    """Response schema for instance redeployment"""
-    success: bool
-    message: Optional[str] = None
-    current_task: Optional[CurrentTaskInfo] = Field(
-        None,
-        description="Currently executing task information"
-    )
-    pending_tasks: List[Dict[str, Any]] = Field(
-        default_factory=list,
-        description="List of pending tasks returned for redistribution"
-    )
-    returned_count: int = Field(
-        ...,
-        description="Number of tasks returned for redistribution"
-    )
-
-
-class RedeployStatusResponse(BaseModel):
-    """Response schema for redeployment status check"""
-    success: bool
-    is_redeploying: bool = Field(..., description="Whether instance is currently redeploying")
-    current_task: Optional[CurrentTaskInfo] = Field(
-        None,
-        description="Currently executing task information"
-    )
-    message: str = Field(..., description="Status message")
-
-
 # Management Schemas
 class ModelInfo(BaseModel):
     """Current model information"""
@@ -263,10 +216,6 @@ _startup_time = time.time()
 # Track restart operations
 _restart_operations: Dict[str, RestartOperation] = {}
 _restart_operation_lock = asyncio.Lock()
-
-# Track redeploy status
-_is_redeploying = False
-_redeploy_lock = asyncio.Lock()
 
 
 def construct_websocket_url(http_url: str) -> str:
@@ -772,11 +721,12 @@ async def _perform_restart_operation(operation_id: str):
 
     This function executes the following steps:
     1. Drain from scheduler (if enabled)
-    2. Wait for all pending tasks to complete
-    3. Stop current model
-    4. Deregister from current scheduler
-    5. Start new model
-    6. Register with new scheduler (if URL provided)
+    2. Extract pending queued tasks and redistribute to scheduler
+    3. Wait for currently running task to complete
+    4. Stop current model
+    5. Deregister from current scheduler
+    6. Start new model
+    7. Register with new scheduler (if URL provided)
 
     Args:
         operation_id: Unique identifier for this restart operation
@@ -805,39 +755,91 @@ async def _perform_restart_operation(operation_id: str):
         else:
             logger.info("Scheduler integration disabled, skipping drain step")
 
-        # Step 2: Wait for all pending tasks to complete
-        operation.update_status(RestartStatus.WAITING_TASKS)
+        # Step 2: Extract pending queued tasks and redistribute to scheduler
+        operation.update_status(RestartStatus.EXTRACTING_TASKS)
+
+        if scheduler_client.is_enabled:
+            try:
+                # Extract all pending QUEUED tasks (preserves running task)
+                pending_tasks = await task_queue.extract_pending_tasks()
+                logger.info(f"Extracted {len(pending_tasks)} pending tasks from queue")
+
+                # Redistribute tasks back to scheduler
+                successful_redistributions = 0
+                failed_redistributions = 0
+
+                for task_data in pending_tasks:
+                    try:
+                        success = await scheduler_client.resubmit_task(
+                            task_id=task_data["task_id"],
+                            model_id=task_data["model_id"],
+                            task_input=task_data["task_input"],
+                            enqueue_time=task_data.get("enqueue_time"),
+                            submitted_at=task_data.get("submitted_at"),
+                            callback_url=task_data.get("callback_url"),
+                            metadata=task_data.get("metadata"),
+                        )
+
+                        if success:
+                            successful_redistributions += 1
+                            logger.debug(f"Successfully redistributed task {task_data['task_id']}")
+                        else:
+                            failed_redistributions += 1
+                            logger.warning(f"Failed to redistribute task {task_data['task_id']}")
+
+                    except Exception as e:
+                        failed_redistributions += 1
+                        logger.error(f"Error redistributing task {task_data['task_id']}: {str(e)}")
+
+                operation.redistributed_tasks_count = successful_redistributions
+
+                if failed_redistributions > 0:
+                    logger.warning(
+                        f"Task redistribution: {successful_redistributions} succeeded, "
+                        f"{failed_redistributions} failed"
+                    )
+                else:
+                    logger.info(f"Successfully redistributed all {successful_redistributions} tasks")
+
+            except Exception as e:
+                logger.error(f"Failed to extract and redistribute tasks: {str(e)}")
+                # Continue with restart even if redistribution fails
+        else:
+            logger.info("Scheduler integration disabled, skipping task extraction")
+
+        # Step 3: Wait for currently running task to complete
+        operation.update_status(RestartStatus.WAITING_RUNNING_TASK)
         stats = await task_queue.get_queue_stats()
-        operation.pending_tasks_at_start = stats["queued"] + stats["running"]
 
-        logger.info(f"Waiting for {operation.pending_tasks_at_start} tasks to complete")
+        # Only count running task (queued tasks have been extracted)
+        if stats["running"] > 0:
+            logger.info(f"Waiting for {stats['running']} running task to complete")
 
-        # Poll task queue until all tasks are completed
-        max_wait_time = 300  # 5 minutes timeout
-        start_wait_time = time.time()
-        while True:
-            stats = await task_queue.get_queue_stats()
-            pending = stats["queued"] + stats["running"]
+            # Poll task queue until running task completes
+            max_wait_time = 300  # 5 minutes timeout
+            start_wait_time = time.time()
 
-            if pending == 0:
-                operation.pending_tasks_completed = operation.pending_tasks_at_start
-                logger.info("All pending tasks completed")
-                break
+            while True:
+                stats = await task_queue.get_queue_stats()
+                running = stats["running"]
 
-            # Check timeout
-            if time.time() - start_wait_time > max_wait_time:
-                raise TimeoutError(
-                    f"Timeout waiting for tasks to complete. "
-                    f"{pending} tasks still pending after {max_wait_time}s"
-                )
+                if running == 0:
+                    logger.info("Running task completed")
+                    break
 
-            # Update progress
-            operation.pending_tasks_completed = operation.pending_tasks_at_start - pending
+                # Check timeout
+                if time.time() - start_wait_time > max_wait_time:
+                    raise TimeoutError(
+                        f"Timeout waiting for running task to complete. "
+                        f"Task still running after {max_wait_time}s"
+                    )
 
-            # Wait a bit before checking again
-            await asyncio.sleep(1)
+                # Wait a bit before checking again
+                await asyncio.sleep(1)
+        else:
+            logger.info("No running tasks to wait for")
 
-        # Step 3: Stop current model
+        # Step 4: Stop current model
         operation.update_status(RestartStatus.STOPPING_MODEL)
         if await docker_manager.is_model_running():
             old_model_id = await docker_manager.stop_model()
@@ -846,7 +848,7 @@ async def _perform_restart_operation(operation_id: str):
         else:
             logger.warning("No model was running")
 
-        # Step 4: Deregister from current scheduler
+        # Step 5: Deregister from current scheduler
         operation.update_status(RestartStatus.DEREGISTERING)
         if scheduler_client.is_enabled:
             try:
@@ -856,7 +858,7 @@ async def _perform_restart_operation(operation_id: str):
                 # Log warning but continue
                 logger.warning(f"Failed to deregister: {str(e)}")
 
-        # Step 5: Start new model
+        # Step 6: Start new model
         operation.update_status(RestartStatus.STARTING_MODEL)
         registry = get_registry()
 
@@ -870,7 +872,7 @@ async def _perform_restart_operation(operation_id: str):
         )
         logger.info(f"Started new model: {operation.new_model_id}")
 
-        # Step 6: Register with new scheduler
+        # Step 7: Register with new scheduler
         operation.update_status(RestartStatus.REGISTERING)
 
         # Update scheduler URL (guaranteed to be non-empty due to validation)
@@ -1304,173 +1306,9 @@ async def get_restart_status(operation_id: str = Query(..., description="Restart
         completed_at=operation.completed_at,
         pending_tasks_at_start=operation.pending_tasks_at_start,
         pending_tasks_completed=operation.pending_tasks_completed,
+        redistributed_tasks_count=operation.redistributed_tasks_count,
         error=operation.error,
     )
-
-
-@app.post(
-    "/redeploy/start",
-    response_model=RedeployResponse,
-    status_code=status.HTTP_200_OK,
-    responses={
-        400: {"model": ErrorResponse},
-        500: {"model": ErrorResponse},
-    },
-)
-async def start_redeploy(request: RedeployRequest):
-    """
-    Initiate instance redeployment process.
-
-    This endpoint:
-    1. Marks the instance as redeploying
-    2. Extracts all pending (queued) tasks
-    3. Returns pending tasks to scheduler for redistribution
-    4. Preserves currently running task
-
-    Args:
-        request: Redeployment configuration
-
-    Returns:
-        RedeployResponse with pending tasks and current task info
-
-    Raises:
-        HTTPException 400: If already redeploying
-        HTTPException 500: If extraction fails
-    """
-    global _is_redeploying
-
-    async with _redeploy_lock:
-        # Check if already redeploying
-        if _is_redeploying:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Instance is already in redeploying state"
-            )
-
-        try:
-            # Mark instance as redeploying
-            _is_redeploying = True
-            logger.info(
-                f"Starting redeployment process. "
-                f"Target model: {request.target_model_id or 'same'}, Force: {request.force}"
-            )
-
-            # Get task queue
-            task_queue = get_task_queue()
-
-            # Extract pending tasks
-            pending_tasks = await task_queue.extract_pending_tasks()
-            logger.info(f"Extracted {len(pending_tasks)} pending tasks for redistribution")
-
-            # Get current task info
-            current_task_info = await task_queue.get_current_task_info()
-            current_task = None
-            if current_task_info:
-                current_task = CurrentTaskInfo(
-                    task_id=current_task_info["task_id"],
-                    estimated_completion_ms=current_task_info.get("estimated_completion_ms")
-                )
-                logger.info(
-                    f"Current task: {current_task.task_id}, "
-                    f"estimated completion: {current_task.estimated_completion_ms}ms"
-                )
-
-            # Build response
-            return RedeployResponse(
-                success=True,
-                message=f"Redeployment initiated. Returned {len(pending_tasks)} pending tasks.",
-                current_task=current_task,
-                pending_tasks=pending_tasks,
-                returned_count=len(pending_tasks),
-            )
-
-        except Exception as e:
-            # Reset redeploying flag on error
-            _is_redeploying = False
-            logger.error(f"Failed to start redeployment: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to extract pending tasks: {str(e)}"
-            )
-
-
-@app.get(
-    "/redeploy/status",
-    response_model=RedeployStatusResponse,
-    status_code=status.HTTP_200_OK,
-)
-async def get_redeploy_status():
-    """
-    Get current redeployment status.
-
-    Returns whether the instance is currently redeploying and information
-    about any running task.
-
-    Returns:
-        RedeployStatusResponse with redeployment status
-    """
-    global _is_redeploying
-
-    task_queue = get_task_queue()
-    current_task_info = await task_queue.get_current_task_info()
-
-    current_task = None
-    if current_task_info:
-        current_task = CurrentTaskInfo(
-            task_id=current_task_info["task_id"],
-            estimated_completion_ms=current_task_info.get("estimated_completion_ms")
-        )
-
-    return RedeployStatusResponse(
-        success=True,
-        is_redeploying=_is_redeploying,
-        current_task=current_task,
-        message="Redeploying" if _is_redeploying else "Not redeploying",
-    )
-
-
-@app.post(
-    "/redeploy/complete",
-    response_model=SuccessResponse,
-    status_code=status.HTTP_200_OK,
-    responses={
-        400: {"model": ErrorResponse},
-    },
-)
-async def complete_redeploy():
-    """
-    Mark redeployment as complete on the instance side.
-
-    This endpoint:
-    1. Clears the redeploying flag
-    2. Allows the instance to accept new tasks again
-
-    The instance should call the scheduler's /instance/redeploy/complete
-    endpoint after calling this to notify the scheduler.
-
-    Returns:
-        SuccessResponse confirming redeployment completion
-
-    Raises:
-        HTTPException 400: If not currently redeploying
-    """
-    global _is_redeploying
-
-    async with _redeploy_lock:
-        if not _is_redeploying:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Instance is not currently redeploying"
-            )
-
-        # Clear redeploying flag
-        _is_redeploying = False
-        logger.info("Redeployment completed on instance side")
-
-        return SuccessResponse(
-            success=True,
-            message="Redeployment completed successfully. Instance can now accept new tasks.",
-        )
 
 
 @app.get(

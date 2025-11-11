@@ -24,14 +24,14 @@ class InstanceStatus(str, Enum):
     RUNNING = "running"
     BUSY = "busy"
     ERROR = "error"
-    REDEPLOYING = "redeploying"  # Instance is being redeployed (no new tasks accepted)
 
 
 class RestartStatus(str, Enum):
     """Restart operation status enumeration"""
     PENDING = "pending"
     DRAINING = "draining"
-    WAITING_TASKS = "waiting_tasks"
+    EXTRACTING_TASKS = "extracting_tasks"
+    WAITING_RUNNING_TASK = "waiting_running_task"
     STOPPING_MODEL = "stopping_model"
     DEREGISTERING = "deregistering"
     STARTING_MODEL = "starting_model"
@@ -110,6 +110,7 @@ class RestartOperation(BaseModel):
     # Progress tracking
     pending_tasks_at_start: int = 0
     pending_tasks_completed: int = 0
+    redistributed_tasks_count: int = 0
     error: Optional[str] = None
 
     def update_status(self, new_status: RestartStatus, error: Optional[str] = None):

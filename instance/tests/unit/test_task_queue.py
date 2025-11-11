@@ -22,7 +22,8 @@ class TestTaskQueue:
 
         # Check task was added
         assert sample_task.task_id in queue.tasks
-        assert sample_task.task_id in queue.queue
+        # queue.queue is a list of tuples (enqueue_time, task_id)
+        assert any(task_id == sample_task.task_id for _, task_id in queue.queue)
         assert position == 1  # First task, position 1
 
     async def test_submit_duplicate_task(self, sample_task):
