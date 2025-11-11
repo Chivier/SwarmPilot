@@ -228,6 +228,8 @@ class OODExperimentRunner:
         cmd = [
             "uv", "run", "python3", str(test_script),
             "--num-workflows", str(config.num_workflows),
+            "--qps", "10",
+            "--gqps", "100",
             "--strategies", config.strategy,
             "--seed", str(config.seed),
             "--warmup", "0.2"
