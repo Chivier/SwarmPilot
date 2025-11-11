@@ -1,0 +1,26 @@
+[
+  {
+    "success": false,
+    "config": {
+      "instance_config": {
+        "N1": 64,
+        "N2": 64,
+        "name": "equal"
+      },
+      "num_workflows": 50,
+      "qps": 8.0,
+      "gqps": 30.0,
+      "strategies": [
+        "min_time"
+      ],
+      "warmup": 0.0,
+      "seed": 42
+    },
+    "instance_config": {
+      "N1": 64,
+      "N2": 64,
+      "name": "equal"
+    },
+    "error": "Result file not found"
+  }
+]

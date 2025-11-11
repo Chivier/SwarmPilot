@@ -1,0 +1,73 @@
+# Example Configuration: Testing with Global QPS Limits
+# This configuration tests the impact of global QPS limits on workflow performance
+
+test_matrix:
+  # Number of workflows to test
+  workflows: [100]
+
+  # QPS values for A task submission (Poisson arrival pattern)
+  qps_values: [4.0, 8.0, 12.0]
+
+  # Global QPS values - Test different rate limiting scenarios
+  # This will test both unlimited and limited global throughput
+  gqps_values: [100, 150]
+
+  # Scheduling strategies to test
+  strategies: ['min_time', 'round_robin', 'probabilistic']
+
+  # Instance configurations
+  instance_configs:
+    - N1: 48
+      N2: 80
+      name: "balanced"
+      description: "Balanced distribution (3:5 ratio)"
+
+    - N1: 64
+      N2: 64
+      name: "equal"
+      description: "Equal distribution (1:1 ratio)"
+
+  # Warmup ratios
+  warmup_ratios: [0.2]
+
+# Execution settings
+execution:
+  timeout_per_test: 1500  # 25 minutes per test
+  retry_on_failure: true
+  max_retries: 2
+  parallel_tests: false
+  service_restart_delay: 30
+  inter_test_delay: 15
+  rebuild_docker: false
+  seed: 42
+
+# Reporting settings
+reporting:
+  generate_html: true
+  generate_markdown: true
+  generate_plots: true
+  output_dir: "./test_reports"
+  compare_instance_configs: true
+  include_raw_results: true
+  archive_logs: true
+
+# Quick test mode (for validation)
+quick_test:
+  workflows: [50]
+  qps_values: [8.0]
+  gqps_values: [30.0]  # Test with single global QPS limit
+  strategies: ['min_time']
+  instance_configs:
+    - N1: 64
+      N2: 64
+      name: "equal"
+  warmup_ratios: [0.0]
+
+# Test Matrix Summary:
+# - 2 instance configs
+# - 2 workflow counts
+# - 2 qps values
+# - 3 gqps values
+# - 1 warmup ratio
+# Total: 2 × 2 × 2 × 3 × 1 = 24 test configurations
+# Estimated time: 8-10 hours
