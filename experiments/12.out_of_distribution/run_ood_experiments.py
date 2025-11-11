@@ -15,6 +15,9 @@ import time
 import numpy as np
 import subprocess
 import json
+import signal
+import sys
+import atexit
 from pathlib import Path
 from typing import List, Optional
 
@@ -34,22 +37,262 @@ from workload_generator import (
 )
 
 
+class ServiceManager:
+    """Manages service lifecycle for experiment execution."""
+
+    def __init__(self, service_dir: Path, n1: int = 10, n2: int = 6):
+        """
+        Initialize service manager.
+
+        Args:
+            service_dir: Directory containing service scripts
+            n1: Number of Group A instances
+            n2: Number of Group B instances
+        """
+        self.service_dir = service_dir
+        self.start_script = service_dir / "start_all_services.sh"
+        self.stop_script = service_dir / "stop_all_services.sh"
+        self.n1 = n1
+        self.n2 = n2
+
+        if not self.start_script.exists():
+            raise FileNotFoundError(f"Start script not found: {self.start_script}")
+        if not self.stop_script.exists():
+            raise FileNotFoundError(f"Stop script not found: {self.stop_script}")
+
+    def stop_services(self, timeout: int = 120) -> bool:
+        """
+        Stop all services.
+
+        Args:
+            timeout: Maximum time to wait for shutdown (seconds)
+
+        Returns:
+            True if successful, False otherwise
+        """
+        print(f"Stopping all services...")
+        try:
+            result = subprocess.run(
+                [str(self.stop_script)],
+                cwd=self.service_dir,
+                capture_output=True,
+                text=True,
+                timeout=timeout
+            )
+
+            if result.returncode != 0:
+                print(f"  WARNING: Stop script exited with code {result.returncode}")
+                print(f"  STDERR: {result.stderr[:500]}")
+                return False
+
+            print(f"  ✓ All services stopped successfully")
+            return True
+
+        except subprocess.TimeoutExpired:
+            print(f"  ERROR: Service stop timed out after {timeout}s")
+            return False
+        except Exception as e:
+            print(f"  ERROR: Failed to stop services: {str(e)}")
+            return False
+
+    def start_services(self, timeout: int = 300) -> bool:
+        """
+        Start all services with configured instance counts.
+
+        Args:
+            timeout: Maximum time to wait for startup (seconds)
+
+        Returns:
+            True if successful, False otherwise
+        """
+        print(f"Starting all services (N1={self.n1}, N2={self.n2})...")
+        try:
+            env = {
+                **subprocess.os.environ.copy(),
+                'N1': str(self.n1),
+                'N2': str(self.n2)
+            }
+
+            result = subprocess.run(
+                [str(self.start_script)],
+                cwd=self.service_dir,
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=timeout
+            )
+
+            if result.returncode != 0:
+                print(f"  ERROR: Start script exited with code {result.returncode}")
+                print(f"  STDERR: {result.stderr[:500]}")
+                return False
+
+            print(f"  ✓ All services started successfully")
+            return True
+
+        except subprocess.TimeoutExpired:
+            print(f"  ERROR: Service start timed out after {timeout}s")
+            return False
+        except Exception as e:
+            print(f"  ERROR: Failed to start services: {str(e)}")
+            return False
+
+    def check_health(self, timeout: int = 60) -> bool:
+        """
+        Check if all services are healthy.
+
+        Args:
+            timeout: Maximum time to wait for health check (seconds)
+
+        Returns:
+            True if all services are healthy, False otherwise
+        """
+        print(f"Checking service health...")
+
+        # Services to check
+        services = [
+            ("Predictor", "http://localhost:8099/health"),
+            ("Scheduler A", "http://localhost:8100/health"),
+            ("Scheduler B", "http://localhost:8200/health")
+        ]
+
+        start_time = time.time()
+
+        for service_name, health_url in services:
+            elapsed = time.time() - start_time
+            remaining = timeout - elapsed
+
+            if remaining <= 0:
+                print(f"  ERROR: Health check timed out")
+                return False
+
+            # Try to connect with exponential backoff
+            attempts = 0
+            max_attempts = int(remaining)
+
+            while attempts < max_attempts:
+                try:
+                    import requests
+                    response = requests.get(health_url, timeout=2)
+                    if response.status_code == 200:
+                        print(f"  ✓ {service_name} is healthy")
+                        break
+                except Exception:
+                    attempts += 1
+                    if attempts < max_attempts:
+                        time.sleep(1)
+                    else:
+                        print(f"  ERROR: {service_name} failed health check")
+                        return False
+
+        print(f"  ✓ All services are healthy")
+        return True
+
+    def restart_services(self, restart_delay: int = 30) -> bool:
+        """
+        Restart all services.
+
+        Args:
+            restart_delay: Delay after restart before returning (seconds)
+
+        Returns:
+            True if successful, False otherwise
+        """
+        print(f"\n{'=' * 60}")
+        print(f"RESTARTING ALL SERVICES")
+        print(f"{'=' * 60}")
+
+        # Stop services
+        if not self.stop_services():
+            print(f"WARNING: Service stop had issues, continuing anyway...")
+
+        # Wait a bit for cleanup
+        print(f"Waiting 5s for cleanup...")
+        time.sleep(5)
+
+        # Start services
+        if not self.start_services():
+            print(f"ERROR: Service start failed!")
+            return False
+
+        # Check health
+        if not self.check_health():
+            print(f"ERROR: Service health check failed!")
+            return False
+
+        # Additional delay for stabilization
+        if restart_delay > 0:
+            print(f"Waiting {restart_delay}s for service stabilization...")
+            time.sleep(restart_delay)
+
+        print(f"{'=' * 60}")
+        print(f"SERVICES READY")
+        print(f"{'=' * 60}\n")
+
+        return True
+
+
 class OODExperimentRunner:
     """Runner for out-of-distribution experiments."""
 
-    def __init__(self, output_dir: Path = None, use_real_services: bool = False):
+    def __init__(
+        self,
+        output_dir: Path = None,
+        use_real_services: bool = False,
+        restart_services: bool = True,
+        n1: int = 10,
+        n2: int = 6,
+        restart_delay: int = 30
+    ):
         """
         Initialize experiment runner.
 
         Args:
             output_dir: Directory to save results (default: ./ood_results)
             use_real_services: If True, use real scheduler/predictor services instead of simulation
+            restart_services: If True, restart services before each test pair (only applies when use_real_services=True)
+            n1: Number of Group A instances
+            n2: Number of Group B instances
+            restart_delay: Delay after service restart before running tests (seconds)
         """
         self.output_dir = output_dir or Path("./ood_results")
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.use_real_services = use_real_services
+        self.restart_services = restart_services
+        self.restart_delay = restart_delay
+
         # exp07 is in the parent experiments directory
         self.exp07_dir = Path(__file__).parent.parent / "07.multi_model_workflow_dynamic_merge_2"
+
+        # Initialize service manager if using real services
+        self.service_manager = None
+        if use_real_services:
+            self.service_manager = ServiceManager(
+                service_dir=self.exp07_dir,
+                n1=n1,
+                n2=n2
+            )
+            print(f"Initialized ServiceManager (N1={n1}, N2={n2})")
+            if restart_services:
+                print(f"Service restart enabled (delay={restart_delay}s)")
+
+    def cleanup(self):
+        """
+        Clean up services on exit.
+
+        This method stops all services if they are running.
+        Called automatically on script exit or interruption.
+        """
+        if self.service_manager and self.use_real_services:
+            print(f"\n{'=' * 60}")
+            print(f"CLEANING UP SERVICES")
+            print(f"{'=' * 60}")
+            try:
+                self.service_manager.stop_services()
+                print(f"✓ Services cleaned up successfully")
+            except Exception as e:
+                print(f"WARNING: Error during cleanup: {str(e)}")
+            print(f"{'=' * 60}\n")
 
     def generate_workload(
         self,
@@ -246,7 +489,7 @@ class OODExperimentRunner:
                 cwd=self.exp07_dir,
                 capture_output=True,
                 text=True,
-                timeout=600  # 10 minute timeout
+                timeout=1500  # 25 minute timeout
             )
 
             if result.returncode != 0:
@@ -372,8 +615,24 @@ class OODExperimentRunner:
             baseline_config: Baseline experiment configuration
             comparison_config: Comparison experiment configuration
         """
+        # Restart services before baseline if using real services
+        if self.use_real_services and self.restart_services and self.service_manager:
+            print(f"\n{'*' * 60}")
+            print(f"PREPARING FOR BASELINE EXPERIMENT")
+            print(f"{'*' * 60}")
+            if not self.service_manager.restart_services(self.restart_delay):
+                raise RuntimeError("Failed to restart services before baseline experiment")
+
         # Run baseline
         baseline_metrics = self.run_experiment(baseline_config)
+
+        # Restart services before comparison if using real services
+        if self.use_real_services and self.restart_services and self.service_manager:
+            print(f"\n{'*' * 60}")
+            print(f"PREPARING FOR COMPARISON EXPERIMENT")
+            print(f"{'*' * 60}")
+            if not self.service_manager.restart_services(self.restart_delay):
+                raise RuntimeError("Failed to restart services before comparison experiment")
 
         # Run comparison
         comparison_metrics = self.run_experiment(comparison_config)
@@ -440,28 +699,86 @@ def main():
         action="store_true",
         help="Use real scheduler/predictor services instead of simulation"
     )
+    parser.add_argument(
+        "--restart-services",
+        action="store_true",
+        default=True,
+        help="Restart services before each test pair (only applies when --real-services is used)"
+    )
+    parser.add_argument(
+        "--no-restart-services",
+        dest="restart_services",
+        action="store_false",
+        help="Disable service restart (not recommended)"
+    )
+    parser.add_argument(
+        "--n1",
+        type=int,
+        default=10,
+        help="Number of Group A instances"
+    )
+    parser.add_argument(
+        "--n2",
+        type=int,
+        default=6,
+        help="Number of Group B instances"
+    )
+    parser.add_argument(
+        "--restart-delay",
+        type=int,
+        default=30,
+        help="Delay after service restart before running tests (seconds)"
+    )
 
     args = parser.parse_args()
 
     runner = OODExperimentRunner(
         output_dir=args.output_dir,
-        use_real_services=args.real_services
+        use_real_services=args.real_services,
+        restart_services=args.restart_services,
+        n1=args.n1,
+        n2=args.n2,
+        restart_delay=args.restart_delay
     )
 
-    if args.experiment == "exp1":
-        exp1_baseline = get_exp1_baseline_config(num_workflows=args.num_workflows)
-        exp1_comparison = get_exp1_comparison_config(num_workflows=args.num_workflows)
-        runner.run_experiment_pair(exp1_baseline, exp1_comparison)
+    # Register cleanup handler for normal exit
+    atexit.register(runner.cleanup)
 
-    elif args.experiment == "exp2":
-        exp2_baseline_configs = get_exp2_baseline_configs(num_workflows=args.num_workflows)
-        exp2_comparison_configs = get_exp2_comparison_configs(num_workflows=args.num_workflows)
+    # Register signal handlers for graceful shutdown
+    def signal_handler(signum, frame):
+        print(f"\n\nReceived signal {signum}, shutting down gracefully...")
+        runner.cleanup()
+        sys.exit(0)
 
-        for baseline, comparison in zip(exp2_baseline_configs, exp2_comparison_configs):
-            runner.run_experiment_pair(baseline, comparison)
+    signal.signal(signal.SIGINT, signal_handler)   # Ctrl+C
+    signal.signal(signal.SIGTERM, signal_handler)  # Termination signal
 
-    else:  # all
-        runner.run_all_experiments()
+    try:
+        if args.experiment == "exp1":
+            exp1_baseline = get_exp1_baseline_config(num_workflows=args.num_workflows)
+            exp1_comparison = get_exp1_comparison_config(num_workflows=args.num_workflows)
+            runner.run_experiment_pair(exp1_baseline, exp1_comparison)
+
+        elif args.experiment == "exp2":
+            exp2_baseline_configs = get_exp2_baseline_configs(num_workflows=args.num_workflows)
+            exp2_comparison_configs = get_exp2_comparison_configs(num_workflows=args.num_workflows)
+
+            for baseline, comparison in zip(exp2_baseline_configs, exp2_comparison_configs):
+                runner.run_experiment_pair(baseline, comparison)
+
+        else:  # all
+            runner.run_all_experiments()
+
+    except KeyboardInterrupt:
+        print(f"\n\nExperiment interrupted by user")
+        runner.cleanup()
+        sys.exit(1)
+    except Exception as e:
+        print(f"\n\nERROR: Experiment failed with exception: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        runner.cleanup()
+        sys.exit(1)
 
 
 if __name__ == "__main__":
