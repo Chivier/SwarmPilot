@@ -524,10 +524,11 @@ async def predict(request: PredictionRequest):
         try:
             # Append hardware info
             hardware_features = request.platform_info.extract_gpu_specs()
-            all_features = request.features
-            for key, value in hardware_features.items():
-                all_features[key] = value
-                
+            all_features = request.features.copy()
+            if hardware_features:
+                for key, value in hardware_features.items():
+                    all_features[key] = value
+
             result = predictor.predict(all_features)
 
             return PredictionResponse(

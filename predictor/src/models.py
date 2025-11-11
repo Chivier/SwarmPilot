@@ -46,7 +46,7 @@ class PlatformInfo(BaseModel):
             >>> specs['memory_gb']
             80
         """
-        from predictor.src.utils.hardware_perf_info import NVIDIA_TESLA_SPECS
+        from src.utils.hardware_perf_info import NVIDIA_TESLA_SPECS
 
         # Normalize hardware_name for matching
         hardware_name_upper = self.hardware_name.upper()
