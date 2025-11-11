@@ -260,3 +260,50 @@ class TestInstanceDeployer:
             assert statuses[0].instance_index == 0
             assert statuses[1].instance_index == 1
             assert statuses[2].instance_index == 2
+
+    @pytest.mark.asyncio
+    async def test_deploy_model_with_scheduler_url(self, mock_instance_responses):
+        """Test deployment with scheduler_url parameter."""
+        deployer = InstanceDeployer(timeout=30, scheduler_url="http://scheduler:8100")
+
+        with patch("httpx.AsyncClient") as mock_client:
+            client_mock = mock_client.return_value.__aenter__.return_value
+
+            # Mock /info response
+            mock_info_response = MagicMock()
+            mock_info_response.json.return_value = mock_instance_responses["info"]
+            mock_info_response.raise_for_status = MagicMock()
+
+            # Mock /model/stop response
+            mock_stop_response = MagicMock()
+            mock_stop_response.json.return_value = mock_instance_responses["stop"]
+            mock_stop_response.raise_for_status = MagicMock()
+
+            # Mock /model/start response
+            mock_start_response = MagicMock()
+            mock_start_response.json.return_value = mock_instance_responses["start"]
+            mock_start_response.raise_for_status = MagicMock()
+
+            client_mock.get = AsyncMock(side_effect=[mock_info_response, mock_stop_response])
+            client_mock.post = AsyncMock(return_value=mock_start_response)
+
+            status = await deployer.deploy_model(
+                endpoint="http://test:8080",
+                target_model="model_1",
+                instance_index=0,
+                previous_model="model_0"
+            )
+
+            assert status.success is True
+            assert status.target_model == "model_1"
+            assert status.previous_model == "model_0"
+
+            # Should call /model/start with scheduler_url in payload
+            client_mock.post.assert_called_once_with(
+                "http://test:8080/model/start",
+                json={
+                    "model_id": "model_1",
+                    "parameters": {},
+                    "scheduler_url": "http://scheduler:8100"
+                }
+            )

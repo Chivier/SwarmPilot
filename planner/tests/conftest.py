@@ -42,7 +42,8 @@ def sample_deployment_input(sample_instances, sample_planner_input) -> Dict:
     """Sample DeploymentInput data."""
     return {
         "instances": sample_instances,
-        "planner_input": sample_planner_input
+        "planner_input": sample_planner_input,
+        "scheduler_url": "http://scheduler:8100"
     }
 
 
