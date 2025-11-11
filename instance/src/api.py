@@ -95,6 +95,7 @@ class TaskSubmitRequest(BaseModel):
     task_id: str = Field(..., description="Unique identifier for this task")
     model_id: str = Field(..., description="Model/tool ID to use for this task")
     task_input: Dict[str, Any] = Field(..., description="Model-specific input data")
+    enqueue_time: Optional[float] = Field(None, description="Optional Unix timestamp for task priority ordering")
 
 
 class TaskSubmitResponse(BaseModel):
@@ -965,9 +966,9 @@ async def submit_task(request: TaskSubmitRequest):
         task_input=request.task_input
     )
 
-    # Submit to queue
+    # Submit to queue with optional enqueue_time for priority ordering
     try:
-        position = await task_queue.submit_task(task)
+        position = await task_queue.submit_task(task, enqueue_time=request.enqueue_time)
 
         return TaskSubmitResponse(
             success=True,
