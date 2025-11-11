@@ -26,6 +26,8 @@ from .model import (
     InstanceDrainRequest,
     InstanceDrainResponse,
     InstanceDrainStatusResponse,
+    InstanceRedeployRequest,
+    InstanceRedeployResponse,
     InstanceListResponse,
     InstanceInfoResponse,
     Instance,
@@ -472,6 +474,171 @@ async def get_drain_status(instance_id: str = Query(..., description="ID of the 
             status_code=404,
             detail={"success": False, "error": "Instance not found"}
         )
+
+
+@app.post("/instance/redeploy/start", response_model=InstanceRedeployResponse)
+async def start_instance_redeploy(request: InstanceRedeployRequest):
+    """
+    Start redeploying an instance.
+
+    This initiates a graceful redeployment of an instance:
+    1. Mark instance as REDEPLOYING (stops accepting new tasks)
+    2. Request instance to extract pending tasks
+    3. Redistribute extracted tasks to other active instances
+    4. Return current running task info (if any)
+
+    Args:
+        request: Instance redeploy request with instance_id and optional parameters
+
+    Returns:
+        InstanceRedeployResponse with redistribution statistics and current task info
+
+    Raises:
+        HTTPException 404: If instance not found
+        HTTPException 400: If instance is not in ACTIVE state
+        HTTPException 500: If communication with instance fails
+    """
+    # Step 1: Validate instance exists and is in ACTIVE state
+    instance = await instance_registry.get(request.instance_id)
+    if not instance:
+        raise HTTPException(
+            status_code=404,
+            detail={"success": False, "error": "Instance not found"},
+        )
+
+    if instance.status != InstanceStatus.ACTIVE:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "success": False,
+                "error": f"Instance must be in ACTIVE state, current state: {instance.status}"
+            }
+        )
+
+    logger.info(f"Starting redeployment for instance {request.instance_id}")
+
+    # Step 2: Update instance status to REDEPLOYING in registry
+    try:
+        await instance_registry.update_status(request.instance_id, InstanceStatus.REDEPLOYING)
+    except Exception as e:
+        logger.error(f"Failed to update instance status: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={"success": False, "error": f"Failed to update instance status: {str(e)}"}
+        )
+
+    # Step 3: Communicate with instance to start redeployment and extract tasks
+    returned_tasks = []
+    current_task = None
+    estimated_redeploy_time_ms = None
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                f"{instance.endpoint}/redeploy/start",
+                json={
+                    "reason": request.redeploy_reason or "Scheduler-initiated redeployment",
+                    "target_model_id": request.target_model_id,
+                }
+            )
+            response.raise_for_status()
+
+            redeploy_data = response.json()
+            returned_tasks = redeploy_data.get("returned_tasks", [])
+            current_task = redeploy_data.get("current_task")
+            estimated_redeploy_time_ms = redeploy_data.get("estimated_completion_ms")
+
+            logger.info(
+                f"Instance {request.instance_id} returned {len(returned_tasks)} pending tasks, "
+                f"current_task: {current_task is not None}"
+            )
+
+    except httpx.HTTPStatusError as e:
+        logger.error(f"Instance redeploy request failed with status {e.response.status_code}: {e}")
+        # Revert instance status
+        await instance_registry.update_status(request.instance_id, InstanceStatus.ACTIVE)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "success": False,
+                "error": f"Instance redeploy request failed: {e.response.text}"
+            }
+        )
+    except Exception as e:
+        logger.error(f"Failed to communicate with instance {request.instance_id}: {e}")
+        # Revert instance status
+        await instance_registry.update_status(request.instance_id, InstanceStatus.ACTIVE)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "success": False,
+                "error": f"Failed to communicate with instance: {str(e)}"
+            }
+        )
+
+    # Step 4: Redistribute returned tasks to other instances
+    redistributed_tasks = []
+    failed_redistributions = []
+
+    if returned_tasks:
+        logger.info(f"Redistributing {len(returned_tasks)} tasks from {request.instance_id}")
+
+        for task_data in returned_tasks:
+            try:
+                task_id = task_data["task_id"]
+                model_id = task_data["model_id"]
+                task_input = task_data["task_input"]
+                enqueue_time = task_data.get("enqueue_time")
+                metadata = task_data.get("metadata", {})
+
+                # Use background scheduler to reassign task
+                # The scheduler will use the current strategy to select the best instance
+                success = await background_scheduler.reassign_task(
+                    task_id=task_id,
+                    model_id=model_id,
+                    task_input=task_input,
+                    enqueue_time=enqueue_time,
+                    metadata=metadata,
+                    exclude_instance_id=request.instance_id,  # Don't assign back to redeploying instance
+                )
+
+                if success:
+                    redistributed_tasks.append(task_id)
+                    logger.debug(f"Successfully redistributed task {task_id}")
+                else:
+                    failed_redistributions.append(task_id)
+                    logger.warning(f"Failed to redistribute task {task_id}")
+
+            except Exception as e:
+                task_id = task_data.get("task_id", "unknown")
+                failed_redistributions.append(task_id)
+                logger.error(f"Error redistributing task {task_id}: {e}")
+
+    # Step 5: Construct response
+    response_message = f"Instance {request.instance_id} is now redeploying. "
+    if returned_tasks:
+        response_message += (
+            f"Returned {len(returned_tasks)} pending tasks. "
+            f"Successfully redistributed {len(redistributed_tasks)}, "
+            f"failed {len(failed_redistributions)}."
+        )
+    else:
+        response_message += "No pending tasks to redistribute."
+
+    if current_task:
+        response_message += f" Current task {current_task.get('task_id')} is still running."
+
+    logger.info(response_message)
+
+    return InstanceRedeployResponse(
+        success=True,
+        message=response_message,
+        returned_tasks=returned_tasks,
+        redistributed_tasks=redistributed_tasks,
+        failed_redistributions=failed_redistributions,
+        current_task=current_task,
+        estimated_redeploy_time_ms=estimated_redeploy_time_ms,
+    )
 
 
 @app.get("/instance/list", response_model=InstanceListResponse)
