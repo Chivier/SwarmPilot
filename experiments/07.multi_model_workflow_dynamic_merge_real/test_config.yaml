@@ -1,0 +1,99 @@
+# Automated Testing Configuration for Experiment 07
+# Multi-Model Workflow with B1/B2 Split and Merge
+
+# Test matrix parameters
+test_matrix:
+  # Number of workflows to test
+  workflows: [50, 100, 200]
+
+  # QPS (queries per second) values for A task submission (Poisson arrival pattern)
+  qps_values: [5.0, 8.0, 10.0, 15.0]
+
+  # Global QPS (gqps) values for rate limiting all task submissions (A, B1, B2, merge)
+  # Set to null or empty list to disable global QPS limit
+  # Example: [20.0, 30.0, 50.0] to test different global rate limits
+  gqps_values: []  # No global QPS limit by default
+
+  # Scheduling strategies to test
+  strategies: ['min_time', 'round_robin', 'probabilistic']
+
+  # Instance configurations: [N1, N2]
+  # N1: Number of instances in Group A (for A tasks and merge tasks)
+  # N2: Number of instances in Group B (for B1 and B2 tasks)
+  instance_configs:
+    - N1: 8
+      N2: 120
+      name: "A-bottleneck"
+      description: "Few A instances, many B instances (1:15 ratio)"
+
+    - N1: 48
+      N2: 80
+      name: "balanced"
+      description: "Balanced distribution (3:5 ratio)"
+
+    - N1: 64
+      N2: 64
+      name: "equal"
+      description: "Equal distribution (1:1 ratio)"
+
+  # Warmup ratios to test (0.0 = no warmup, 0.2 = 20% warmup tasks)
+  warmup_ratios: [0.0, 0.2]
+
+# Execution settings
+execution:
+  # Maximum time (seconds) to wait for a single test to complete
+  timeout_per_test: 900
+
+  # Retry failed tests
+  retry_on_failure: true
+  max_retries: 2
+
+  # Run tests in parallel (not recommended for resource-constrained systems)
+  parallel_tests: false
+
+  # Delay (seconds) to wait after service restart before starting test
+  service_restart_delay: 30
+
+  # Wait (seconds) between consecutive tests (for system cooldown)
+  inter_test_delay: 10
+
+  # Whether to rebuild Docker images before testing
+  rebuild_docker: false
+
+  # Random seed for reproducibility
+  seed: 42
+
+# Reporting settings
+reporting:
+  # Generate HTML report
+  generate_html: true
+
+  # Generate Markdown report
+  generate_markdown: true
+
+  # Generate plots and visualizations
+  generate_plots: true
+
+  # Output directory for test reports
+  output_dir: "./test_reports"
+
+  # Compare instance configurations in report
+  compare_instance_configs: true
+
+  # Include raw JSON results in report directory
+  include_raw_results: true
+
+  # Archive logs from services
+  archive_logs: true
+
+# Quick test mode (subset of parameters for fast testing)
+quick_test:
+  workflows: [50]
+  qps_values: [8.0]
+  gqps_values: []  # No global QPS limit in quick test
+  strategies: ['min_time']
+  instance_configs:
+    - N1: 64
+      N2: 64
+      name: "equal"
+  warmup_ratios: [0.0]

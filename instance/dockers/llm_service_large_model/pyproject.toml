@@ -1,0 +1,10 @@
+[project]
+name = "llm-service-large-model"
+version = "0.1.0"
+description = "LLM service container with sglang model loading"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.120.4",
+    "sglang>=0.5.5.post2",
+    "uvicorn[standard]>=0.38.0",
+]
