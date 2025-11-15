@@ -3,11 +3,11 @@ Predictor client for getting task execution time predictions.
 
 This module provides an interface to communicate with the predictor service
 to get predictions for task execution times on different instances.
-Uses WebSocket for real-time bidirectional communication.
+Uses HTTP API for communication.
 """
 
 from typing import Dict, Any, List, Optional, TYPE_CHECKING
-import websockets
+import httpx
 from dataclasses import dataclass
 import asyncio
 import json
@@ -29,7 +29,7 @@ class Prediction:
 
 
 class PredictorClient:
-    """Client for communicating with the predictor service via WebSocket."""
+    """Client for communicating with the predictor service via HTTP API."""
 
     def __init__(
         self,
@@ -47,76 +47,60 @@ class PredictorClient:
             max_retries: Maximum number of retry attempts for transient failures
             retry_delay: Initial delay between retries in seconds (uses exponential backoff)
         """
-        # Convert HTTP URL to WebSocket URL
         self.predictor_url = predictor_url.rstrip("/")
-        if self.predictor_url.startswith("http://"):
-            self.ws_url = self.predictor_url.replace("http://", "ws://", 1)
-        elif self.predictor_url.startswith("https://"):
-            self.ws_url = self.predictor_url.replace("https://", "wss://", 1)
-        else:
-            # Assume it's already a WebSocket URL
-            self.ws_url = self.predictor_url
-
         self.timeout = timeout
         self.max_retries = max_retries
         self.retry_delay = retry_delay
 
-        # WebSocket connection reuse
-        self._websocket: Optional[Any] = None
-        self._ws_lock = asyncio.Lock()  # Ensure thread-safe access to websocket
-        self._ws_endpoint = f"{self.ws_url}/ws/predict"
+        # HTTP client for making requests
+        self._client: Optional[httpx.AsyncClient] = None
+        self._client_lock = asyncio.Lock()  # Ensure thread-safe access to HTTP client
+        self._predict_endpoint = f"{self.predictor_url}/predict"
+        self._health_endpoint = f"{self.predictor_url}/health"
 
-    async def _ensure_connection(self) -> Any:
+    async def _ensure_client(self) -> httpx.AsyncClient:
         """
-        Ensure WebSocket connection is established and healthy.
+        Ensure HTTP client is initialized.
 
         Returns:
-            Active WebSocket connection
+            Active HTTP client
 
         Raises:
-            ConnectionError: If connection cannot be established
+            ConnectionError: If client cannot be initialized
         """
-        # Check if connection exists and is not closed
-        if self._websocket is not None:
-            # Check if connection is still open by examining the state
-            # websockets uses close_code to determine if connection is closed
-            if self._websocket.close_code is None:
-                # Connection is still open
-                return self._websocket
-            else:
-                # Connection was closed, clear it
-                logger.debug("Existing WebSocket connection is closed, reconnecting")
-                self._websocket = None
+        # Check if client exists and is not closed
+        if self._client is not None and not self._client.is_closed:
+            return self._client
 
-        # Connection doesn't exist or is closed, establish new one
+        # Client doesn't exist or is closed, create new one
         try:
-            logger.debug(f"Establishing WebSocket connection to {self._ws_endpoint}")
-            self._websocket = await asyncio.wait_for(
-                websockets.connect(self._ws_endpoint),
-                timeout=self.timeout
+            logger.debug(f"Initializing HTTP client for {self.predictor_url}")
+            self._client = httpx.AsyncClient(
+                timeout=self.timeout,
+                base_url=self.predictor_url
             )
-            logger.info(f"WebSocket connection established to {self._ws_endpoint}")
-            return self._websocket
+            logger.debug(f"HTTP client initialized for {self.predictor_url}")
+            return self._client
         except Exception as e:
-            logger.error(f"Failed to establish WebSocket connection: {e}")
-            self._websocket = None
-            raise ConnectionError(f"Failed to connect to predictor service: {e}")
+            logger.error(f"Failed to initialize HTTP client: {e}")
+            self._client = None
+            raise ConnectionError(f"Failed to initialize HTTP client: {e}")
 
-    async def _close_connection(self) -> None:
-        """Close the WebSocket connection if it exists."""
-        if self._websocket is not None:
+    async def _close_client(self) -> None:
+        """Close the HTTP client if it exists."""
+        if self._client is not None:
             try:
-                await self._websocket.close()
-                logger.debug("WebSocket connection closed")
+                await self._client.aclose()
+                logger.debug("HTTP client closed")
             except Exception as e:
-                logger.debug(f"Error closing WebSocket connection: {e}")
+                logger.debug(f"Error closing HTTP client: {e}")
             finally:
-                self._websocket = None
+                self._client = None
 
     async def close(self) -> None:
         """Close the predictor client and cleanup resources."""
-        async with self._ws_lock:
-            await self._close_connection()
+        async with self._client_lock:
+            await self._close_client()
         logger.info("PredictorClient closed")
 
     async def __aenter__(self):
@@ -129,18 +113,16 @@ class PredictorClient:
 
     async def _make_request_with_retry(
         self,
-        ws_url: str,
         json_data: Dict[str, Any],
     ) -> Dict[str, Any]:
         """
-        Make WebSocket request with retry logic for transient failures.
+        Make HTTP POST request with retry logic for transient failures.
 
-        This method reuses the WebSocket connection when possible, only reconnecting
-        when the connection is closed or encounters errors.
+        This method reuses the HTTP client when possible, only recreating
+        when the client is closed or encounters errors.
 
         Args:
-            ws_url: WebSocket URL to connect to (used for validation, actual endpoint from __init__)
-            json_data: JSON data to send
+            json_data: JSON data to send in request body
 
         Returns:
             Response data as dictionary
@@ -152,53 +134,79 @@ class PredictorClient:
         """
         last_exception = None
 
-        # Use lock to ensure thread-safe access to the shared WebSocket connection
-        async with self._ws_lock:
+        # Use lock to ensure thread-safe access to the shared HTTP client
+        async with self._client_lock:
             for attempt in range(self.max_retries):
                 try:
-                    # Ensure we have an active connection
-                    websocket = await self._ensure_connection()
+                    # Ensure we have an active client
+                    client = await self._ensure_client()
 
-                    # Send request
-                    await asyncio.wait_for(
-                        websocket.send(json.dumps(json_data)),
+                    # Make HTTP POST request
+                    response = await client.post(
+                        "/predict",
+                        json=json_data,
                         timeout=self.timeout
                     )
 
-                    # Receive response
-                    response_text = await asyncio.wait_for(
-                        websocket.recv(),
-                        timeout=self.timeout
-                    )
+                    # Check HTTP status code
+                    if response.status_code == 200:
+                        # Request successful
+                        response_data = response.json()
+                        return response_data
+                    elif response.status_code == 400:
+                        # Bad request - don't retry
+                        try:
+                            error_data = response.json()
+                            error_msg = error_data.get("detail", {})
+                            if isinstance(error_msg, dict):
+                                error_type = error_msg.get("error", "Invalid request")
+                                error_message = error_msg.get("message", "Unknown error")
+                            else:
+                                error_type = "Invalid request"
+                                error_message = str(error_msg)
+                        except Exception:
+                            error_type = "Invalid request"
+                            error_message = response.text
 
-                    response_data = json.loads(response_text)
+                        logger.debug(f"Non-retryable error ({error_type}), not retrying")
+                        raise ValueError(f"{error_type}: {error_message}")
+                    elif response.status_code == 404:
+                        # Model not found - don't retry
+                        try:
+                            error_data = response.json()
+                            error_msg = error_data.get("detail", {})
+                            if isinstance(error_msg, dict):
+                                error_type = error_msg.get("error", "Model not found")
+                                error_message = error_msg.get("message", "Unknown error")
+                            else:
+                                error_type = "Model not found"
+                                error_message = str(error_msg)
+                        except Exception:
+                            error_type = "Model not found"
+                            error_message = response.text
 
-                    # Check for error responses
-                    if "error" in response_data:
-                        error_msg = response_data.get("message", "Unknown error")
-                        error_type = response_data.get("error", "Unknown")
+                        logger.debug(f"Non-retryable error ({error_type}), not retrying")
+                        raise ValueError(f"{error_type}: {error_message}")
+                    elif response.status_code >= 500:
+                        # Server error - retry
+                        await self._close_client()
+                        error_msg = response.text
+                        raise RuntimeError(f"Server error (HTTP {response.status_code}): {error_msg}")
+                    else:
+                        # Other HTTP errors
+                        await self._close_client()
+                        error_msg = response.text
+                        raise ValueError(f"HTTP {response.status_code}: {error_msg}")
 
-                        # Don't retry for client errors (invalid requests)
-                        if error_type in ["Invalid request", "Invalid features", "Model not found", "Prediction type mismatch"]:
-                            logger.debug(f"Non-retryable error ({error_type}), not retrying")
-                            raise ValueError(f"{error_type}: {error_msg}")
-
-                        # Retry for server errors (close connection first)
-                        await self._close_connection()
-                        raise RuntimeError(f"{error_type}: {error_msg}")
-
-                    # Request successful
-                    return response_data
-
-                except (websockets.exceptions.WebSocketException, ConnectionError, OSError) as e:
-                    # Connection error - close and retry
-                    await self._close_connection()
+                except (httpx.NetworkError, httpx.ConnectError, httpx.PoolTimeout, ConnectionError, OSError) as e:
+                    # Connection error - close client and retry
+                    await self._close_client()
                     last_exception = e
 
                     if attempt < self.max_retries - 1:
                         delay = self.retry_delay * (2 ** attempt)  # Exponential backoff
                         logger.warning(
-                            f"Predictor WebSocket connection failed ({type(e).__name__}), "
+                            f"Predictor HTTP connection failed ({type(e).__name__}), "
                             f"retrying in {delay}s (attempt {attempt + 1}/{self.max_retries})"
                         )
                         await asyncio.sleep(delay)
@@ -210,9 +218,9 @@ class PredictorClient:
                             f"Predictor service unavailable after {self.max_retries} retries: {str(e)}"
                         )
 
-                except asyncio.TimeoutError as e:
-                    # Timeout - close connection and retry
-                    await self._close_connection()
+                except (httpx.TimeoutException, asyncio.TimeoutError) as e:
+                    # Timeout - close client and retry
+                    await self._close_client()
                     last_exception = e
 
                     if attempt < self.max_retries - 1:
@@ -323,9 +331,8 @@ class PredictorClient:
                     f"(covers {len(platform_instances)} instances)"
                 )
 
-                # Call predictor via WebSocket with retry logic
+                # Call predictor via HTTP API with retry logic
                 data = await self._make_request_with_retry(
-                    ws_url=f"{self.ws_url}/ws/predict",
                     json_data=request_data,
                 )
 
@@ -416,17 +423,27 @@ class PredictorClient:
 
     async def health_check(self) -> bool:
         """
-        Check if predictor service is healthy by ensuring WebSocket connection.
+        Check if predictor service is healthy by making HTTP GET request to /health endpoint.
 
         Returns:
-            True if service is healthy and WebSocket is accessible, False otherwise
+            True if service is healthy and HTTP endpoint is accessible, False otherwise
         """
-        async with self._ws_lock:
+        async with self._client_lock:
             try:
-                # Try to ensure connection exists
-                await self._ensure_connection()
-                return True
+                # Ensure we have an active client
+                client = await self._ensure_client()
+
+                # Make HTTP GET request to health endpoint
+                response = await client.get("/health", timeout=self.timeout)
+
+                if response.status_code == 200:
+                    health_data = response.json()
+                    status = health_data.get("status", "unhealthy")
+                    return status == "healthy"
+                else:
+                    logger.debug(f"Health check returned HTTP {response.status_code}")
+                    return False
             except Exception as e:
                 logger.debug(f"Health check failed: {e}")
-                await self._close_connection()
+                await self._close_client()
                 return False

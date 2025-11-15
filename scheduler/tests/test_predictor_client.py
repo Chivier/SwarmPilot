@@ -1,7 +1,7 @@
 """
-Unit tests for PredictorClient with WebSocket support.
+Unit tests for PredictorClient with HTTP API support.
 
-Tests WebSocket communication, predictions, retry logic, and health checks.
+Tests HTTP API communication, predictions, retry logic, and health checks.
 """
 
 import pytest
@@ -54,31 +54,31 @@ class TestPredictorClientInit:
 
     def test_init_with_trailing_slash(self):
         """Test that trailing slash is removed from URL."""
-        client = PredictorClient("ws://localhost:8080/", timeout=10.0)
+        client = PredictorClient("http://localhost:8080/", timeout=10.0)
 
-        assert client.ws_url == "ws://localhost:8080"
+        assert client.predictor_url == "http://localhost:8080"
         assert client.timeout == 10.0
 
     def test_init_without_trailing_slash(self):
         """Test initialization with URL without trailing slash."""
-        client = PredictorClient("ws://localhost:8080", timeout=5.0)
+        client = PredictorClient("http://localhost:8080", timeout=5.0)
 
-        assert client.ws_url == "ws://localhost:8080"
+        assert client.predictor_url == "http://localhost:8080"
         assert client.timeout == 5.0
 
     def test_init_default_values(self):
         """Test default initialization values."""
-        client = PredictorClient("ws://localhost:8080")
+        client = PredictorClient("http://localhost:8080")
 
         assert client.timeout == 5.0
         assert client.max_retries == 3
         assert client.retry_delay == 1.0
-        assert client._websocket is None
+        assert client._client is None
 
     def test_init_custom_retry_params(self):
         """Test initialization with custom retry parameters."""
         client = PredictorClient(
-            "ws://localhost:8080",
+            "http://localhost:8080",
             max_retries=5,
             retry_delay=2.0
         )
@@ -88,135 +88,124 @@ class TestPredictorClientInit:
 
 
 # ============================================================================
-# WebSocket Connection Management Tests
+# HTTP Client Management Tests
 # ============================================================================
 
-class TestWebSocketConnection:
-    """Tests for WebSocket connection management."""
+class TestHTTPClientConnection:
+    """Tests for HTTP client management."""
 
     @pytest.mark.asyncio
-    async def test_ensure_connection_establishes_new(self):
-        """Test that _ensure_connection establishes a new connection."""
-        client = PredictorClient("ws://localhost:8080")
+    async def test_ensure_client_establishes_new(self):
+        """Test that _ensure_client establishes a new HTTP client."""
+        client = PredictorClient("http://localhost:8080")
 
-        mock_ws = AsyncMock()
-        mock_ws.close_code = None  # Connection is open
+        mock_client = AsyncMock()
+        mock_client.is_closed = False
 
-        with patch('websockets.connect', new=AsyncMock(return_value=mock_ws)):
-            result = await client._ensure_connection()
+        with patch('httpx.AsyncClient', return_value=mock_client):
+            result = await client._ensure_client()
 
-            assert result == mock_ws
-            assert client._websocket == mock_ws
-
-    @pytest.mark.asyncio
-    async def test_ensure_connection_reuses_existing(self):
-        """Test that existing open connection is reused."""
-        client = PredictorClient("ws://localhost:8080")
-
-        mock_ws = AsyncMock()
-        mock_ws.close_code = None  # Connection is open
-        client._websocket = mock_ws
-
-        result = await client._ensure_connection()
-
-        assert result == mock_ws
-        # Should return same websocket without creating new connection
+            assert result == mock_client
+            assert client._client == mock_client
 
     @pytest.mark.asyncio
-    async def test_ensure_connection_reconnects_if_closed(self):
-        """Test that closed connection triggers reconnection."""
-        client = PredictorClient("ws://localhost:8080")
+    async def test_ensure_client_reuses_existing(self):
+        """Test that existing open client is reused."""
+        client = PredictorClient("http://localhost:8080")
 
-        # Old closed connection
-        old_ws = AsyncMock()
-        old_ws.close_code = 1000  # Connection was closed
-        client._websocket = old_ws
+        mock_client = AsyncMock()
+        mock_client.is_closed = False
+        client._client = mock_client
 
-        # New connection
-        new_ws = AsyncMock()
-        new_ws.close_code = None
+        result = await client._ensure_client()
 
-        with patch('websockets.connect', new=AsyncMock(return_value=new_ws)):
-            result = await client._ensure_connection()
-
-            assert result == new_ws
-            assert client._websocket == new_ws
+        assert result == mock_client
+        # Should return same client without creating new one
 
     @pytest.mark.asyncio
-    async def test_ensure_connection_timeout(self):
-        """Test connection timeout handling."""
-        client = PredictorClient("ws://localhost:8080", timeout=0.1)
+    async def test_ensure_client_reconnects_if_closed(self):
+        """Test that closed client triggers reconnection."""
+        client = PredictorClient("http://localhost:8080")
 
-        async def slow_connect(*args, **kwargs):
-            await asyncio.sleep(1.0)  # Longer than timeout
+        # Old closed client
+        old_client = AsyncMock()
+        old_client.is_closed = True
+        client._client = old_client
 
-        with patch('websockets.connect', new=slow_connect):
-            with pytest.raises(ConnectionError):
-                await client._ensure_connection()
+        # New client
+        new_client = AsyncMock()
+        new_client.is_closed = False
 
-        assert client._websocket is None
+        with patch('httpx.AsyncClient', return_value=new_client):
+            result = await client._ensure_client()
+
+            assert result == new_client
+            assert client._client == new_client
 
     @pytest.mark.asyncio
-    async def test_ensure_connection_failure(self):
-        """Test connection failure handling."""
-        client = PredictorClient("ws://localhost:8080")
+    async def test_ensure_client_failure(self):
+        """Test client initialization failure handling."""
+        client = PredictorClient("http://localhost:8080")
 
-        with patch('websockets.connect', side_effect=Exception("Connection refused")):
+        with patch('httpx.AsyncClient', side_effect=Exception("Initialization failed")):
             with pytest.raises(ConnectionError) as exc_info:
-                await client._ensure_connection()
+                await client._ensure_client()
 
-            assert "Failed to connect" in str(exc_info.value)
-            assert client._websocket is None
-
-    @pytest.mark.asyncio
-    async def test_close_connection(self):
-        """Test closing WebSocket connection."""
-        client = PredictorClient("ws://localhost:8080")
-
-        mock_ws = AsyncMock()
-        client._websocket = mock_ws
-
-        await client._close_connection()
-
-        mock_ws.close.assert_called_once()
-        assert client._websocket is None
-
-    @pytest.mark.asyncio
-    async def test_close_connection_with_error(self):
-        """Test closing connection handles errors gracefully."""
-        client = PredictorClient("ws://localhost:8080")
-
-        mock_ws = AsyncMock()
-        mock_ws.close.side_effect = Exception("Close error")
-        client._websocket = mock_ws
-
-        # Should not raise exception
-        await client._close_connection()
-
-        assert client._websocket is None
+            assert "Failed to initialize" in str(exc_info.value)
+            assert client._client is None
 
     @pytest.mark.asyncio
     async def test_close_client(self):
-        """Test closing the client."""
-        client = PredictorClient("ws://localhost:8080")
+        """Test closing HTTP client."""
+        client = PredictorClient("http://localhost:8080")
 
-        mock_ws = AsyncMock()
-        client._websocket = mock_ws
+        mock_client = AsyncMock()
+        mock_client.is_closed = False
+        client._client = mock_client
+
+        await client._close_client()
+
+        mock_client.aclose.assert_called_once()
+        assert client._client is None
+
+    @pytest.mark.asyncio
+    async def test_close_client_with_error(self):
+        """Test closing client handles errors gracefully."""
+        client = PredictorClient("http://localhost:8080")
+
+        mock_client = AsyncMock()
+        mock_client.aclose.side_effect = Exception("Close error")
+        mock_client.is_closed = False
+        client._client = mock_client
+
+        # Should not raise exception
+        await client._close_client()
+
+        assert client._client is None
+
+    @pytest.mark.asyncio
+    async def test_close_predictor_client(self):
+        """Test closing the predictor client."""
+        client = PredictorClient("http://localhost:8080")
+
+        mock_client = AsyncMock()
+        mock_client.is_closed = False
+        client._client = mock_client
 
         await client.close()
 
-        mock_ws.close.assert_called_once()
-        assert client._websocket is None
+        mock_client.aclose.assert_called_once()
+        assert client._client is None
 
     @pytest.mark.asyncio
     async def test_context_manager(self):
         """Test async context manager support."""
-        client = PredictorClient("ws://localhost:8080")
+        client = PredictorClient("http://localhost:8080")
 
         async with client as c:
             assert c == client
 
-        # Connection should be closed after exiting context
+        # Client should be closed after exiting context
         # (if there was one, it would be closed)
 
 
