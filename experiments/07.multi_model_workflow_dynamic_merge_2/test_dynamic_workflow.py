@@ -3170,8 +3170,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--strategies",
         nargs="+",
-        default=["probabilistic", "round_robin", "min_time"],
-        choices=["min_time", "round_robin", "probabilistic"],
+        default=["probabilistic", "random", "round_robin", "min_time"],
+        choices=["min_time", "round_robin", "probabilistic", "random"],
         help="Scheduling strategies to test"
     )
 

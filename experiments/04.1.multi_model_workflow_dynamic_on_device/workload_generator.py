@@ -339,82 +339,6 @@ def print_fanout_stats(fanout_values: List[int], config: FanoutConfig):
         print(f"  {value} B tasks: {count} workflows ({percentage:.1f}%)")
 
 
-def generate_multistage_fanout_distribution(
-    num_workflows_per_stage: List[int] = [100, 100, 100],
-    fanouts: List[int] = [8, 15, 1],
-    seed: int = 42
-) -> dict:
-    """
-    Generate three-stage fixed fanout distribution for multi-stage workflows.
-
-    Unlike the random fanout distribution, this generates fixed fanout values
-    for each stage to enable predictable redeployment optimization.
-
-    Args:
-        num_workflows_per_stage: Number of workflows in each stage [stage1, stage2, stage3]
-        fanouts: Fixed fanout values for each stage [fanout1, fanout2, fanout3]
-        seed: Random seed for reproducibility (not used for fanout, but for consistency)
-
-    Returns:
-        Dictionary with stage-specific fanout distributions:
-        {
-            'stage_1': {
-                'num_workflows': int,
-                'fanout': int,
-                'fanout_array': List[int],
-                'total_b_tasks': int
-            },
-            ...
-        }
-    """
-    np.random.seed(seed)
-
-    stages = {}
-
-    for stage_idx, (num_workflows, fanout) in enumerate(zip(num_workflows_per_stage, fanouts), 1):
-        fanout_array = [fanout] * num_workflows
-        total_b_tasks = num_workflows * fanout
-
-        stages[f'stage_{stage_idx}'] = {
-            'num_workflows': num_workflows,
-            'fanout': fanout,
-            'fanout_array': fanout_array,
-            'total_b_tasks': total_b_tasks,
-            'description': f"Stage {stage_idx}: {num_workflows} workflows with fanout={fanout} ({total_b_tasks} total B tasks)"
-        }
-
-    return stages
-
-
-def print_multistage_stats(stages: dict):
-    """
-    Print statistics for multi-stage fanout distribution.
-
-    Args:
-        stages: Dictionary returned by generate_multistage_fanout_distribution()
-    """
-    print("\nMulti-Stage Fanout Distribution:")
-    print("=" * 60)
-
-    total_workflows = 0
-    total_b_tasks = 0
-
-    for stage_name, stage_data in stages.items():
-        print(f"\n{stage_name.upper().replace('_', ' ')}:")
-        print(f"  {stage_data['description']}")
-        print(f"  Workflows: {stage_data['num_workflows']}")
-        print(f"  Fixed fanout: {stage_data['fanout']}")
-        print(f"  Total B tasks: {stage_data['total_b_tasks']}")
-
-        total_workflows += stage_data['num_workflows']
-        total_b_tasks += stage_data['total_b_tasks']
-
-    print(f"\nOVERALL:")
-    print(f"  Total workflows: {total_workflows}")
-    print(f"  Total B tasks: {total_b_tasks}")
-    print(f"  Average fanout: {total_b_tasks / total_workflows:.2f}")
-
-
 if __name__ == "__main__":
     """Demo and testing of workload generators."""
     import argparse
@@ -423,37 +347,26 @@ if __name__ == "__main__":
     parser.add_argument("--num-tasks", type=int, default=100, help="Number of tasks to generate")
     parser.add_argument("--num-workflows", type=int, default=100, help="Number of workflows for fanout")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
-    parser.add_argument("--test-multistage", action="store_true",
-                       help="Test multi-stage fanout distribution")
     args = parser.parse_args()
 
     print("=" * 60)
     print("Workload Generator Demo")
     print("=" * 60)
 
-    if args.test_multistage:
-        # Test multi-stage fanout distribution
-        stages = generate_multistage_fanout_distribution(
-            num_workflows_per_stage=[100, 100, 100],
-            fanouts=[8, 15, 1],
-            seed=args.seed
-        )
-        print_multistage_stats(stages)
-    else:
-        # Generate and display A task bimodal distribution
-        bimodal_times, bimodal_config = generate_bimodal_distribution(args.num_tasks, args.seed)
-        print_distribution_stats(bimodal_times, bimodal_config)
+    # Generate and display A task bimodal distribution
+    bimodal_times, bimodal_config = generate_bimodal_distribution(args.num_tasks, args.seed)
+    print_distribution_stats(bimodal_times, bimodal_config)
 
-        # Generate and display B task bimodal distribution
-        b_task_times, b_task_config = generate_b_task_bimodal_distribution(args.num_tasks, seed=args.seed)
-        print_distribution_stats(b_task_times, b_task_config)
+    # Generate and display B task bimodal distribution
+    b_task_times, b_task_config = generate_b_task_bimodal_distribution(args.num_tasks, seed=args.seed)
+    print_distribution_stats(b_task_times, b_task_config)
 
-        # Generate and display Pareto distribution
-        pareto_times, pareto_config = generate_pareto_distribution(args.num_tasks, seed=args.seed)
-        print_distribution_stats(pareto_times, pareto_config)
+    # Generate and display Pareto distribution
+    pareto_times, pareto_config = generate_pareto_distribution(args.num_tasks, seed=args.seed)
+    print_distribution_stats(pareto_times, pareto_config)
 
-        # Generate and display fanout distribution
-        fanout_values, fanout_config = generate_fanout_distribution(args.num_workflows, seed=args.seed)
-        print_fanout_stats(fanout_values, fanout_config)
+    # Generate and display fanout distribution
+    fanout_values, fanout_config = generate_fanout_distribution(args.num_workflows, seed=args.seed)
+    print_fanout_stats(fanout_values, fanout_config)
 
     print("\n" + "=" * 60)
