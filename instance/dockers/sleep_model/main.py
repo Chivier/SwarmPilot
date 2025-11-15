@@ -13,6 +13,11 @@ from typing import Any, Dict
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
+from argparse import ArgumentParser
+
+parser = ArgumentParser()
+parser.add_argument("--port", type=int, default=8000)
+args = parser.parse_args()
 
 # =============================================================================
 # Configuration
@@ -180,9 +185,10 @@ async def shutdown_event():
 # =============================================================================
 
 if __name__ == "__main__":
+
     uvicorn.run(
         app,
         host="0.0.0.0",
-        port=8000,
+        port=args.port,
         log_level=LOG_LEVEL.lower()
     )

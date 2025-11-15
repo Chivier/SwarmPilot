@@ -1,26 +1,26 @@
 """
-Test script for Docker management functionality
+Test script for subprocess management functionality
 
-This script tests the Docker manager by:
-1. Starting the sleep_model container
+This script tests the subprocess manager by:
+1. Starting the sleep_model subprocess
 2. Checking health
 3. Submitting a task
-4. Stopping the container
+4. Stopping the subprocess
 """
 
 import asyncio
 import sys
 
-from src.docker_manager import get_docker_manager
+from src.subprocess_manager import get_docker_manager
 from src.model_registry import get_registry
 from src.task_queue import get_task_queue
 from src.models import Task
 
 
-async def main():
-    """Run Docker management tests"""
+    async def main():
+    """Run subprocess management tests"""
     print("=" * 60)
-    print("Docker Manager Test")
+    print("Subprocess Manager Test")
     print("=" * 60)
     print()
 
@@ -36,7 +36,7 @@ async def main():
         print()
 
         # Test 2: Start model
-        print("2. Starting sleep_model container...")
+        print("2. Starting sleep_model subprocess...")
         model_info = await docker_manager.start_model(
             model_id="sleep_model",
             parameters={}
@@ -89,7 +89,7 @@ async def main():
         print()
 
         # Test 7: Stop model
-        print("7. Stopping model container...")
+        print("7. Stopping model subprocess...")
         stopped_model_id = await docker_manager.stop_model()
         print(f"   ✓ Model stopped: {stopped_model_id}")
         print()

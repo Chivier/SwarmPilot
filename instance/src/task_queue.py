@@ -10,7 +10,7 @@ from typing import Dict, List, Optional, Tuple, Any
 from loguru import logger
 
 from .config import config
-from .docker_manager import get_docker_manager
+from .subprocess_manager import get_docker_manager
 from .models import Task, TaskStatus
 from .scheduler_client import get_scheduler_client
 

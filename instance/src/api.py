@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 from loguru import logger
 
 from .config import config
-from .docker_manager import get_docker_manager
+from .subprocess_manager import get_docker_manager
 from .model_registry import get_registry
 from .models import InstanceStatus, Task, TaskStatus, RestartOperation, RestartStatus
 from .task_queue import get_task_queue

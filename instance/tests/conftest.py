@@ -213,7 +213,7 @@ def mock_model_registry():
 
 @pytest.fixture
 def mock_docker_manager():
-    """Fixture providing a mock DockerManager."""
+    """Fixture providing a mock SubprocessManager (backward compatibility alias)."""
     manager = Mock()
     manager.start_model = AsyncMock(return_value=ModelInfo(
         model_id="test-model",
@@ -331,20 +331,51 @@ def temp_registry_file(tmp_path, sample_registry_yaml):
 
 @pytest.fixture
 def temp_model_directory(tmp_path):
-    """Fixture providing a temporary model directory with Dockerfile."""
+    """Fixture providing a temporary model directory with pyproject.toml and main.py."""
     model_dir = tmp_path / "test_dockers" / "test_model"
     model_dir.mkdir(parents=True)
 
-    # Create a sample Dockerfile
+    # Create Dockerfile
     dockerfile = model_dir / "Dockerfile"
-    dockerfile.write_text("""
-FROM python:3.11-slim
-
+    dockerfile.write_text("""FROM python:3.11-slim
 WORKDIR /app
+COPY . .
+RUN pip install uv && uv sync
+CMD ["uv", "run", "python", "main.py"]
+""")
 
-EXPOSE 8000
+    # Create pyproject.toml for uv
+    pyproject = model_dir / "pyproject.toml"
+    pyproject.write_text("""
+[project]
+name = "test-model"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = ["fastapi", "uvicorn"]
 
-CMD ["python", "-m", "http.server", "8000"]
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+""")
+
+    # Create main.py entry point
+    main_py = model_dir / "main.py"
+    main_py.write_text("""
+from fastapi import FastAPI
+
+app = FastAPI()
+
+@app.get("/health")
+async def health():
+    return {"status": "healthy"}
+
+@app.post("/inference")
+async def inference(data: dict):
+    return {"output": "result"}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
 """)
 
     return model_dir
@@ -373,13 +404,13 @@ def reset_singletons():
     # This ensures clean state between tests
     import src.model_registry
     import src.task_queue
-    import src.docker_manager
+    import src.subprocess_manager
     import src.api
 
     # Reset module-level singleton variables
     src.model_registry._registry_instance = None
     src.task_queue._task_queue_instance = None
-    src.docker_manager._docker_manager_instance = None
+    src.subprocess_manager._subprocess_manager = None
 
     # Reset API-level restart operations
     if hasattr(src.api, '_restart_operations'):
@@ -390,7 +421,7 @@ def reset_singletons():
     # Cleanup after test
     src.model_registry._registry_instance = None
     src.task_queue._task_queue_instance = None
-    src.docker_manager._docker_manager_instance = None
+    src.subprocess_manager._subprocess_manager = None
 
     # Clear restart operations
     if hasattr(src.api, '_restart_operations'):
