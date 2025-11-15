@@ -58,6 +58,7 @@ import socket
 import subprocess
 import sys
 import time
+import uuid
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
 from urllib.parse import urlparse
@@ -222,7 +223,7 @@ class SchedulerClient:
         """
         # Core connection settings
         self.scheduler_url = scheduler_url or os.getenv("SCHEDULER_URL", "http://localhost:8000")
-        self.instance_id = instance_id or os.getenv("INSTANCE_ID", "instance-default")
+        self.instance_id = str(uuid.uuid4())
         self.instance_endpoint = instance_endpoint or os.getenv(
             "INSTANCE_ENDPOINT", f"http://localhost:{os.getenv('INSTANCE_PORT', '5000')}"
         )
