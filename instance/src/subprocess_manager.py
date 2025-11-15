@@ -334,7 +334,11 @@ class SubprocessManager:
 
         # Convert parameters to environment variables
         for key, value in parameters.items():
-            env_key = f"MODEL_{key.upper()}"
+            # On some system, we need http proxy to access the internet inorder to run the uv sync
+            if key == "http_proxy" or key == "https_proxy" or key == "no_proxy":
+                env_key = key.upper()
+            else:
+                env_key = f"MODEL_{key.upper()}"
             if isinstance(value, (dict, list)):
                 env_vars[env_key] = json.dumps(value)
             else:
