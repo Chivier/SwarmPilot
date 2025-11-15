@@ -53,6 +53,7 @@ def start(
     """
     # Use config values as defaults
     service_port = port if port is not None else config.instance_port
+    config.instance_port = service_port # let cli override the config
 
     # Update log level in config if provided via CLI
     if log_level is not None:

@@ -13,7 +13,7 @@ class Config:
     def __init__(self):
         # Instance configuration
         self.instance_id: str = os.getenv("INSTANCE_ID", "instance-default")
-        self.instance_port: int = int(os.getenv("INSTANCE_PORT", "5000"))
+        self.instance_port: int = int(os.getenv("INSTANCE_PORT", "8000"))
 
         # Model container port (instance_port + 1000)
         self.model_port: int = self.instance_port + 1000
