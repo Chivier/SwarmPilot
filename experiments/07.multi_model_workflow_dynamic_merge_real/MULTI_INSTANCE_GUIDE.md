@@ -42,7 +42,8 @@ Create a JSON configuration file (e.g., `config.json`) with the following struct
   "training_config": {
     "quantiles": [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.99],
     "epochs": 500,
-    "learning_rate": 0.01
+    "learning_rate": 0.01,
+    "hidden_layers": [64, 64, 64, 128, 128, 128, 64, 64, 64]
   },
 
   "execution": {
@@ -105,6 +106,9 @@ Training hyperparameters:
   - **Default**: `500`
 - `learning_rate` (float): Learning rate for training
   - **Default**: `0.01`
+- `hidden_layers` (array of integers): MLP hidden layer sizes
+  - **Default**: `[64, 64, 64, 128, 128, 128, 64, 64, 64]`
+  - Defines the neural network architecture for the predictor model
 
 #### `execution` (object)
 Execution control parameters:

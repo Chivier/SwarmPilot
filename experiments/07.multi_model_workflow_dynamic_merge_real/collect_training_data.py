@@ -1142,7 +1142,7 @@ async def validate_model(
                 for q in quantiles:
                     all_quantile_predictions[q].append(np.nan)
 
-        # Calculate metrics for each quantile
+        # Calculate metrics for each quantile (Pinball Loss only)
         quantile_metrics = {}
 
         for q in quantiles:
@@ -1160,32 +1160,65 @@ async def validate_model(
             # Calculate Pinball Loss
             pinball = calculate_pinball_loss(valid_actual, valid_predictions, q)
 
-            # Calculate MAPE
-            mape = calculate_mape(valid_actual, valid_predictions)
-
-            # Calculate MAE
-            mae = float(np.mean(np.abs(valid_actual - valid_predictions)))
-
             quantile_metrics[q] = {
                 "pinball_loss": round(pinball, 2),
-                "mape_percent": round(mape, 2),
-                "mae_ms": round(mae, 2),
                 "samples_valid": int(np.sum(valid_mask))
             }
 
-        # Calculate average metrics across all quantiles
+        # Calculate distribution statistics (mean and median) for MAPE
+        # For each sample, compute mean and median across all quantiles
+        distribution_means = []
+        distribution_medians = []
+
+        num_samples = len(validation_samples)
+        for sample_idx in range(num_samples):
+            sample_quantile_values = []
+            for q in quantiles:
+                if sample_idx < len(all_quantile_predictions[q]):
+                    val = all_quantile_predictions[q][sample_idx]
+                    if not np.isnan(val):
+                        sample_quantile_values.append(val)
+
+            if sample_quantile_values:
+                distribution_means.append(np.mean(sample_quantile_values))
+                distribution_medians.append(np.median(sample_quantile_values))
+            else:
+                distribution_means.append(np.nan)
+                distribution_medians.append(np.nan)
+
+        distribution_means = np.array(distribution_means)
+        distribution_medians = np.array(distribution_medians)
+
+        # Calculate MAPE for distribution mean and median
+        # For each sample, calculate the absolute percentage error, then average
+        mape_mean = np.nan
+        mape_median = np.nan
+
+        # Filter out failed predictions
+        valid_mask = ~(np.isnan(distribution_means) | np.isnan(distribution_medians))
+
+        if np.any(valid_mask):
+            valid_actual = actual_runtimes[valid_mask]
+            valid_means = distribution_means[valid_mask]
+            valid_medians = distribution_medians[valid_mask]
+
+            # Calculate MAPE for distribution mean (per-sample error → aggregate MAPE)
+            mape_mean = calculate_mape(valid_actual, valid_means)
+
+            # Calculate MAPE for distribution median (per-sample error → aggregate MAPE)
+            mape_median = calculate_mape(valid_actual, valid_medians)
+
+        # Calculate average pinball loss across all quantiles
         avg_pinball = np.mean([m["pinball_loss"] for m in quantile_metrics.values()])
-        avg_mape = np.mean([m["mape_percent"] for m in quantile_metrics.values()])
-        avg_mae = np.mean([m["mae_ms"] for m in quantile_metrics.values()])
 
         results = {
             "prediction_type": "quantile",
             "samples_validated": len(validation_samples),
             "quantile_metrics": quantile_metrics,
-            "average_metrics": {
+            "distribution_metrics": {
                 "avg_pinball_loss": round(float(avg_pinball), 2),
-                "avg_mape_percent": round(float(avg_mape), 2),
-                "avg_mae_ms": round(float(avg_mae), 2)
+                "mape_mean_percent": round(float(mape_mean), 2) if not np.isnan(mape_mean) else None,
+                "mape_median_percent": round(float(mape_median), 2) if not np.isnan(mape_median) else None
             }
         }
 
@@ -1193,18 +1226,16 @@ async def validate_model(
         logger.info(f"QUANTILE Model Validation Results:")
         logger.info(f"{'='*60}")
         logger.info(f"  Samples validated: {results['samples_validated']}")
-        logger.info(f"\nPer-Quantile Metrics:")
+        logger.info(f"\nPer-Quantile Pinball Loss:")
         for q, metrics in quantile_metrics.items():
-            logger.info(f"  Quantile {q}:")
-            logger.info(f"    Pinball Loss: {metrics['pinball_loss']:.2f}")
-            logger.info(f"    MAPE: {metrics['mape_percent']:.2f}%")
-            logger.info(f"    MAE: {metrics['mae_ms']:.2f} ms")
-            logger.info(f"    Valid samples: {metrics['samples_valid']}")
+            logger.info(f"  Quantile {q}: {metrics['pinball_loss']:.2f} (samples: {metrics['samples_valid']})")
 
-        logger.info(f"\nAverage Metrics (across all quantiles):")
-        logger.info(f"  Avg Pinball Loss: {results['average_metrics']['avg_pinball_loss']:.2f}")
-        logger.info(f"  Avg MAPE: {results['average_metrics']['avg_mape_percent']:.2f}%")
-        logger.info(f"  Avg MAE: {results['average_metrics']['avg_mae_ms']:.2f} ms")
+        logger.info(f"\nDistribution Metrics:")
+        logger.info(f"  Avg Pinball Loss: {results['distribution_metrics']['avg_pinball_loss']:.2f}")
+        if results['distribution_metrics']['mape_mean_percent'] is not None:
+            logger.info(f"  MAPE (distribution mean): {results['distribution_metrics']['mape_mean_percent']:.2f}%")
+        if results['distribution_metrics']['mape_median_percent'] is not None:
+            logger.info(f"  MAPE (distribution median): {results['distribution_metrics']['mape_median_percent']:.2f}%")
         logger.info(f"{'='*60}\n")
 
         return results
