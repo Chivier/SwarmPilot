@@ -370,19 +370,21 @@ async def detect_platform_info(instance_url: Optional[str] = None) -> Dict[str, 
 
 class LLMServiceClient:
     """Client for interacting with LLM service instance."""
-    
-    def __init__(self, instance_url: str, timeout: float = 300.0):
+
+    def __init__(self, instance_url: str, timeout: float = 300.0, instance_id: str = ""):
         """
         Initialize LLM service client.
-        
+
         Args:
             instance_url: Base URL of the instance service
             timeout: Request timeout in seconds
+            instance_id: Identifier for this instance (for logging)
         """
         self.instance_url = instance_url.rstrip('/')
         self.timeout = timeout
+        self.instance_id = instance_id or instance_url
         self.client = httpx.AsyncClient(timeout=timeout)
-    
+
     async def execute_task(
         self,
         sentence: str,
@@ -390,21 +392,22 @@ class LLMServiceClient:
     ) -> Dict[str, Any]:
         """
         Execute a task on the LLM service and return execution time.
-        
+
         Args:
             sentence: Input sentence for the LLM
             max_tokens: Maximum tokens to generate
-            
+
         Returns:
             Dictionary containing:
             - execution_time_ms: Execution time in milliseconds
             - success: Whether the task succeeded
             - result: Task result (if successful)
             - error: Error message (if failed)
+            - instance_id: Instance that handled this request
         """
         try:
             start_time = time.time()
-            
+
             # Call LLM service inference endpoint
             response = await self.client.post(
                 f"{self.instance_url}/inference",
@@ -413,37 +416,106 @@ class LLMServiceClient:
                     "max_tokens": max_tokens
                 }
             )
-            
+
             end_time = time.time()
             execution_time_ms = (end_time - start_time) * 1000
-            
+
             if response.status_code == 200:
                 result_data = response.json()
                 return {
                     "execution_time_ms": execution_time_ms,
                     "success": True,
                     "result": result_data.get("result"),
-                    "error": None
+                    "error": None,
+                    "instance_id": self.instance_id
                 }
             else:
                 return {
                     "execution_time_ms": execution_time_ms,
                     "success": False,
                     "result": None,
-                    "error": f"HTTP {response.status_code}: {response.text}"
+                    "error": f"HTTP {response.status_code}: {response.text}",
+                    "instance_id": self.instance_id
                 }
         except Exception as e:
-            logger.error(f"Error executing task: {e}")
+            logger.error(f"Error executing task on {self.instance_id}: {e}")
             return {
                 "execution_time_ms": 0.0,
                 "success": False,
                 "result": None,
-                "error": str(e)
+                "error": str(e),
+                "instance_id": self.instance_id
             }
-    
+
     async def close(self):
         """Close the HTTP client."""
         await self.client.aclose()
+
+
+class MultiInstanceLLMClient:
+    """
+    Client for load-balanced parallel execution across multiple LLM instances.
+
+    Uses round-robin load balancing to distribute tasks across instances.
+    """
+
+    def __init__(self, instance_configs: List[Dict[str, str]], timeout: float = 300.0):
+        """
+        Initialize multi-instance LLM client.
+
+        Args:
+            instance_configs: List of instance configurations, each with 'url' key
+            timeout: Request timeout in seconds
+        """
+        self.clients = []
+        for idx, config in enumerate(instance_configs):
+            instance_id = f"instance-{idx}@{config['url']}"
+            client = LLMServiceClient(
+                instance_url=config['url'],
+                timeout=timeout,
+                instance_id=instance_id
+            )
+            self.clients.append({
+                'client': client,
+                'config': config,
+                'instance_id': instance_id
+            })
+
+        self.current_idx = 0
+        logger.info(f"Initialized {len(self.clients)} instance(s) for parallel execution")
+        for client_info in self.clients:
+            logger.info(f"  - {client_info['instance_id']}")
+
+    def get_next_client(self) -> LLMServiceClient:
+        """
+        Get next client using round-robin load balancing.
+
+        Returns:
+            LLM service client
+        """
+        client_info = self.clients[self.current_idx]
+        self.current_idx = (self.current_idx + 1) % len(self.clients)
+        return client_info['client']
+
+    def get_instance_config(self, instance_id: str) -> Dict[str, str]:
+        """
+        Get instance configuration by instance_id.
+
+        Args:
+            instance_id: Instance identifier
+
+        Returns:
+            Instance configuration dict
+        """
+        for client_info in self.clients:
+            if client_info['instance_id'] == instance_id:
+                return client_info['config']
+        return {}
+
+    async def close_all(self):
+        """Close all HTTP clients."""
+        for client_info in self.clients:
+            await client_info['client'].close()
 
 
 class PredictorTrainingClient:
@@ -733,233 +805,241 @@ def extract_tasks_from_dataset(dataset: List[Dict[str, Any]]) -> List[Dict[str, 
 
 
 async def collect_training_samples(
-    llm_client: LLMServiceClient,
+    multi_client: MultiInstanceLLMClient,
     tasks: List[Dict[str, Any]],
-    hardware_specs: Dict[str, Any],
+    max_concurrent: int = 10,
     max_samples: Optional[int] = None
 ) -> List[Dict[str, Any]]:
     """
-    Collect training samples by executing tasks and measuring execution times.
-    
+    Collect training samples by executing tasks in parallel across multiple instances.
+
     Args:
-        llm_client: LLM service client
+        multi_client: Multi-instance LLM client with load balancing
         tasks: List of tasks to execute
-        hardware_specs: Hardware specifications extracted from platform_info
+        max_concurrent: Maximum number of concurrent requests
         max_samples: Maximum number of samples to collect (None for all)
-        
+
     Returns:
         List of training samples, each with features and runtime_ms
     """
     samples = []
     num_tasks = min(len(tasks), max_samples) if max_samples else len(tasks)
-    
-    logger.info(f"Collecting training samples from {num_tasks} tasks...")
-    
-    for i, task in enumerate(tqdm(tasks[:num_tasks], desc="Executing tasks")):
-        sentence = task["sentence"]
-        max_tokens = task.get("max_tokens", 512)
-        
-        # Calculate metadata (same as scheduler submission)
-        token_length = estimate_token_length(sentence)
-        
-        # Execute task and measure execution time
-        result = await llm_client.execute_task(sentence, max_tokens)
-        
-        if result["success"]:
-            # Build features: user metadata + hardware specs
-            # This matches the transformation done by predictor's /predict endpoint
-            # The predictor directly adds hardware spec fields (cuda_cores, tensor_cores, etc.)
-            # to the features dict without any prefix
-            features = {
-                # User metadata (as submitted to scheduler)
-                "token_length": float(token_length),
-                "max_tokens": float(max_tokens),
-            }
-            
-            # Add hardware specs directly (same keys as in hardware_specs dict)
-            # This matches how predictor's /predict endpoint does it:
-            # all_features[key] = value  (no prefix added)
-            for k, v in hardware_specs.items():
-                if isinstance(v, (int, float)):
-                    features[k] = float(v)
-            
-            # Add runtime_ms (required for training)
-            sample = features.copy()
-            sample["runtime_ms"] = float(result["execution_time_ms"])
-            
-            samples.append(sample)
-            
-            # Small delay to avoid overwhelming the service
-            await asyncio.sleep(0.1)
-        else:
-            logger.warning(f"Task {i} failed: {result.get('error')}")
-            # Skip failed tasks
-    
-    logger.info(f"Collected {len(samples)} successful training samples")
+
+    logger.info(f"Collecting training samples from {num_tasks} tasks using {len(multi_client.clients)} instance(s)...")
+    logger.info(f"Max concurrent requests: {max_concurrent}")
+
+    # Create a semaphore to limit concurrent requests
+    semaphore = asyncio.Semaphore(max_concurrent)
+
+    async def execute_task_with_semaphore(task: Dict[str, Any], task_idx: int) -> Optional[Dict[str, Any]]:
+        """Execute a single task with semaphore control."""
+        async with semaphore:
+            sentence = task["sentence"]
+            max_tokens = task.get("max_tokens", 512)
+            token_length = estimate_token_length(sentence)
+
+            # Get next client using round-robin
+            client = multi_client.get_next_client()
+
+            # Execute task
+            result = await client.execute_task(sentence, max_tokens)
+
+            if result["success"]:
+                # Get instance config to extract hardware specs
+                instance_config = multi_client.get_instance_config(result["instance_id"])
+                hardware_name = instance_config.get("hardware_name", "Unknown")
+
+                # Extract hardware specs for this instance
+                hardware_specs = extract_gpu_specs(hardware_name) or {}
+
+                # Build features: user metadata + hardware specs
+                features = {
+                    "token_length": float(token_length),
+                    "max_tokens": float(max_tokens),
+                }
+
+                # Add hardware specs
+                for k, v in hardware_specs.items():
+                    if isinstance(v, (int, float)):
+                        features[k] = float(v)
+
+                # Add runtime_ms
+                sample = features.copy()
+                sample["runtime_ms"] = float(result["execution_time_ms"])
+
+                return sample
+            else:
+                logger.warning(f"Task {task_idx} failed on {result.get('instance_id')}: {result.get('error')}")
+                return None
+
+    # Execute all tasks in parallel with concurrency limit
+    tasks_to_execute = tasks[:num_tasks]
+
+    # Use tqdm with asyncio.gather for progress tracking
+    with tqdm(total=len(tasks_to_execute), desc="Executing tasks") as pbar:
+        async def execute_and_update(task: Dict[str, Any], idx: int):
+            result = await execute_task_with_semaphore(task, idx)
+            pbar.update(1)
+            return result
+
+        # Execute all tasks concurrently
+        results = await asyncio.gather(*[
+            execute_and_update(task, idx)
+            for idx, task in enumerate(tasks_to_execute)
+        ])
+
+    # Filter out failed tasks (None results)
+    samples = [r for r in results if r is not None]
+
+    logger.info(f"Collected {len(samples)} successful training samples ({len(results) - len(samples)} failed)")
     return samples
+
+
+def load_config(config_path: str) -> Dict[str, Any]:
+    """
+    Load configuration from JSON file.
+
+    Args:
+        config_path: Path to configuration file
+
+    Returns:
+        Configuration dictionary
+    """
+    with open(config_path, 'r') as f:
+        config = json.load(f)
+
+    # Validate required fields
+    required_fields = ['dataset', 'model_id', 'instances', 'predictor']
+    for field in required_fields:
+        if field not in config:
+            raise ValueError(f"Missing required field in config: {field}")
+
+    # Set defaults
+    config.setdefault('prediction_types', ['expect_error', 'quantile'])
+    config.setdefault('max_samples', None)
+    config.setdefault('training_config', {
+        'quantiles': [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.99]
+    })
+    config.setdefault('execution', {})
+    config['execution'].setdefault('timeout', 300.0)
+    config['execution'].setdefault('max_concurrent_requests', 10)
+
+    # Ensure training_config has quantiles
+    if 'quantiles' not in config['training_config']:
+        config['training_config']['quantiles'] = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.99]
+
+    return config
 
 
 async def main():
     """Main function."""
-    parser = argparse.ArgumentParser(description="Collect training data for predictor model")
+    parser = argparse.ArgumentParser(
+        description="Collect training data for predictor model using configuration file",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Example config.json:
+{
+  "dataset": "data/dataset.jsonl",
+  "model_id": "llama-7b",
+  "prediction_types": ["expect_error", "quantile"],
+  "instances": [
+    {
+      "url": "http://localhost:8001",
+      "hardware_name": "NVIDIA H20",
+      "software_name": "sglang",
+      "software_version": "1.0.0"
+    }
+  ],
+  "predictor": {
+    "url": "http://localhost:9000"
+  },
+  "training_config": {
+    "quantiles": [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.99]
+  },
+  "execution": {
+    "timeout": 300.0,
+    "max_concurrent_requests": 10
+  }
+}
+        """
+    )
     parser.add_argument(
-        "--dataset",
+        "--config",
         type=str,
         required=True,
-        help="Path to dataset.jsonl file"
+        help="Path to configuration JSON file (see --help epilog for example)"
     )
-    parser.add_argument(
-        "--instance-url",
-        type=str,
-        default="http://localhost:8001",
-        help="URL of the instance service (LLM service)"
-    )
-    parser.add_argument(
-        "--predictor-url",
-        type=str,
-        default="http://localhost:8002",
-        help="URL of the predictor service"
-    )
-    parser.add_argument(
-        "--model-id",
-        type=str,
-        required=True,
-        help="Model identifier for training"
-    )
-    parser.add_argument(
-        "--prediction-types",
-        type=str,
-        nargs="+",
-        choices=["expect_error", "quantile"],
-        default=["expect_error", "quantile"],
-        help="Types of prediction models to train (can specify both or one). Default: both"
-    )
-    parser.add_argument(
-        "--hardware-name",
-        type=str,
-        default=None,
-        help="Hardware name (e.g., 'NVIDIA H20'). If not provided, will be auto-detected from system or instance"
-    )
-    parser.add_argument(
-        "--software-name",
-        type=str,
-        default="sglang",
-        help="Software name (e.g., 'sglang')"
-    )
-    parser.add_argument(
-        "--software-version",
-        type=str,
-        default="1.0.0",
-        help="Software version"
-    )
-    parser.add_argument(
-        "--max-samples",
-        type=int,
-        default=None,
-        help="Maximum number of tasks to process for testing (None for all tasks). Use small value (e.g., 10-20) for quick testing"
-    )
-    parser.add_argument(
-        "--training-config",
-        type=str,
-        default=None,
-        help="Path to training configuration JSON file (optional)"
-    )
-    
+
     args = parser.parse_args()
-    
-    # Detect platform info if not provided
-    platform_info_dict = None
-    if args.hardware_name is None or args.software_name is None or args.software_version is None:
-        logger.info("Auto-detecting platform information...")
-        platform_info_dict = await detect_platform_info(args.instance_url)
-        logger.info(f"Using detected platform info: {platform_info_dict}")
-        
-        # Update args with detected values if not provided
-        if args.hardware_name is None:
-            args.hardware_name = platform_info_dict.get("hardware_name", "CPU")
-        if args.software_name is None:
-            args.software_name = platform_info_dict.get("software_name", "sglang")
-        if args.software_version is None:
-            args.software_version = platform_info_dict.get("software_version", "1.0.0")
-    else:
-        logger.info(f"Using provided platform info: hardware={args.hardware_name}, software={args.software_name} {args.software_version}")
+
+    # Load configuration
+    logger.info(f"Loading configuration from {args.config}")
+    config = load_config(args.config)
     
     # Load dataset
-    logger.info(f"Loading dataset from {args.dataset}")
-    dataset = load_dataset(args.dataset)
-    
+    logger.info(f"Loading dataset from {config['dataset']}")
+    dataset = load_dataset(config['dataset'])
+
     # Extract tasks
     tasks = extract_tasks_from_dataset(dataset)
-    
+
     if not tasks:
         logger.error("No tasks found in dataset")
         return
-    
-    # Get hardware specs using local extract_gpu_specs function
-    # This replicates predictor's PlatformInfo.extract_gpu_specs() behavior
-    hardware_specs = extract_gpu_specs(args.hardware_name) or {}
-    
-    if not hardware_specs:
-        logger.warning(f"Could not extract hardware specs for {args.hardware_name}")
-        logger.warning("Proceeding without hardware features (may cause training errors)")
-    
-    # Load training config if provided, or use defaults
-    training_config = None
-    if args.training_config:
-        with open(args.training_config, 'r') as f:
-            training_config = json.load(f)
-    else:
-        # Use default training config with custom quantiles
-        # Default quantiles: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.99]
-        # This provides fine-grained percentile predictions across the distribution
-        training_config = {
-            'quantiles': [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.99]
-        }
-    
-    # Initialize clients
-    llm_client = LLMServiceClient(args.instance_url)
-    predictor_client = PredictorTrainingClient(args.predictor_url)
-    
+
+    # Initialize multi-instance LLM client
+    multi_client = MultiInstanceLLMClient(
+        instance_configs=config['instances'],
+        timeout=config['execution']['timeout']
+    )
+
+    # Initialize predictor client
+    predictor_client = PredictorTrainingClient(config['predictor']['url'])
+
     try:
-        # Collect all training samples at once
+        # Collect all training samples using parallel execution
         logger.info(f"Collecting training samples from all {len(tasks)} tasks...")
 
         # Apply max_samples limit if specified
-        max_tasks = min(len(tasks), args.max_samples) if args.max_samples else len(tasks)
-        tasks_to_process = tasks[:max_tasks]
+        max_tasks = min(len(tasks), config['max_samples']) if config['max_samples'] else len(tasks)
 
-        # Collect all samples in one go
+        # Collect all samples with parallel execution across instances
         all_samples = await collect_training_samples(
-            llm_client,
-            tasks_to_process,
-            hardware_specs,
-            max_samples=None  # Process all selected tasks
+            multi_client=multi_client,
+            tasks=tasks,
+            max_concurrent=config['execution']['max_concurrent_requests'],
+            max_samples=max_tasks
         )
 
         # Check if we have enough samples (minimum 10 required by predictor)
         if len(all_samples) < 10:
             logger.error(f"Insufficient samples: {len(all_samples)} collected, but at least 10 required for training")
-            logger.error("Try removing --max-samples limit or check if tasks are failing")
+            logger.error("Check if tasks are failing or increase dataset size")
             return
 
         logger.info(f"Successfully collected {len(all_samples)} training samples")
 
         # Submit training data once for each prediction type
-        logger.info(f"Submitting training data to predictor for {len(args.prediction_types)} model type(s)...")
+        # Use the first instance's platform info (all instances should have same platform)
+        first_instance = config['instances'][0]
+        platform_info = {
+            "software_name": first_instance.get("software_name", "sglang"),
+            "software_version": first_instance.get("software_version", "1.0.0"),
+            "hardware_name": first_instance.get("hardware_name", "Unknown")
+        }
 
-        for prediction_type in args.prediction_types:
+        logger.info(f"Submitting training data to predictor for {len(config['prediction_types'])} model type(s)...")
+        logger.info(f"Platform info: {platform_info}")
+
+        for prediction_type in config['prediction_types']:
             try:
                 logger.info(f"Training {prediction_type} model with {len(all_samples)} samples...")
                 response = await predictor_client.submit_training_data(
-                    model_id=args.model_id,
-                    platform_info={
-                        "software_name": args.software_name,
-                        "software_version": args.software_version,
-                        "hardware_name": args.hardware_name
-                    },
+                    model_id=config['model_id'],
+                    platform_info=platform_info,
                     prediction_type=prediction_type,
                     features_list=all_samples.copy(),  # Use copy to avoid modification
-                    training_config=training_config
+                    training_config=config['training_config']
                 )
 
                 logger.info(f"✓ {prediction_type.upper()} model training completed successfully:")
@@ -975,11 +1055,12 @@ async def main():
         logger.info(f"\n{'='*60}")
         logger.info(f"Training data collection and model training completed!")
         logger.info(f"  Total samples collected: {len(all_samples)}")
-        logger.info(f"  Prediction types trained: {', '.join(args.prediction_types)}")
+        logger.info(f"  Instances used: {len(config['instances'])}")
+        logger.info(f"  Prediction types trained: {', '.join(config['prediction_types'])}")
         logger.info(f"{'='*60}")
-        
+
     finally:
-        await llm_client.close()
+        await multi_client.close_all()
         await predictor_client.close()
 
 

@@ -1,0 +1,72 @@
+{
+  "dataset": "data/dataset.jsonl",
+  "model_id": "llama-7b",
+  "prediction_types": ["expect_error", "quantile"],
+  "max_samples": null,
+
+  "instances": [
+    {
+      "url": "http://localhost:8200",
+      "hardware_name": "NVIDIA H20",
+      "software_name": "sglang",
+      "software_version": "0.5.5.post2"
+    },
+    {
+      "url": "http://localhost:8201",
+      "hardware_name": "NVIDIA H20",
+      "software_name": "sglang",
+      "software_version": "0.5.5.post2"
+    },
+    {
+      "url": "http://localhost:8202",
+      "hardware_name": "NVIDIA H20",
+      "software_name": "sglang",
+      "software_version": "0.5.5.post2"
+    },
+    {
+      "url": "http://localhost:8203",
+      "hardware_name": "NVIDIA H20",
+      "software_name": "sglang",
+      "software_version": "0.5.5.post2"
+    },
+    {
+      "url": "http://localhost:8204",
+      "hardware_name": "NVIDIA H20",
+      "software_name": "sglang",
+      "software_version": "0.5.5.post2"
+    },
+    {
+      "url": "http://localhost:8205",
+      "hardware_name": "NVIDIA H20",
+      "software_name": "sglang",
+      "software_version": "0.5.5.post2"
+    },
+    {
+      "url": "http://localhost:8206",
+      "hardware_name": "NVIDIA H20",
+      "software_name": "sglang",
+      "software_version": "0.5.5.post2"
+    },
+    {
+      "url": "http://localhost:8207",
+      "hardware_name": "NVIDIA H20",
+      "software_name": "sglang",
+      "software_version": "0.5.5.post2"
+    }
+  ],
+
+  "predictor": {
+    "url": "http://localhost:8100"
+  },
+
+  "training_config": {
+    "quantiles": [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.99],
+    "epochs": 500,
+    "learning_rate": 0.01
+  },
+
+  "execution": {
+    "timeout": 300.0,
+    "max_concurrent_requests": 10
+  }
+}
