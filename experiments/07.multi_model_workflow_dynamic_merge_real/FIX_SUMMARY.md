@@ -183,6 +183,18 @@ The fix maintains **full backward compatibility**:
    - Removed dependency on `predictor/src/models.py`
    - Now uses local `extract_gpu_specs()` function
 
+4. **Lines 912-923**: Added default training configuration
+   - Configured custom quantiles: `[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.99]`
+   - Provides fine-grained percentile predictions (10%, 20%, ..., 90%, 99%)
+   - Improves model accuracy across the entire distribution
+   - Can be overridden with `--training-config` argument
+
+5. **Lines 929-985**: Simplified training workflow (one-shot collection + training)
+   - Removed batch processing logic - now collects all data first, then trains once
+   - Removed `--batch-size` argument (no longer needed)
+   - Clearer logging with success/failure indicators (✓/✗)
+   - Better error handling for insufficient samples (< 10 minimum)
+
 ## Files Analyzed
 
 - [data/dataset.jsonl](data/dataset.jsonl) - Actual dataset (35.9MB, 99 entries)
@@ -221,10 +233,21 @@ The fix maintains **full backward compatibility**:
    - Removed import of `predictor.src.models.PlatformInfo`
    - Now uses local `extract_gpu_specs()` function
 
+4. **Training Configuration (lines 912-923)**
+   - Added default `training_config` with custom quantiles
+   - Quantiles: `[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.99]`
+   - User can override with `--training-config` JSON file
+
+5. **Training Workflow (lines 929-985)**
+   - Simplified to one-shot data collection + single training submission
+   - Removed batch processing (was submitting multiple trainings)
+   - Removed `--batch-size` parameter
+   - Enhanced logging with ✓/✗ status indicators
+
 **Commit message suggestion:**
 
 ```
-fix(experiment): make collect_training_data.py self-contained
+fix(experiment): self-contained training script with one-shot workflow
 
 - Copy NVIDIA_TESLA_SPECS database from predictor/src/utils/hardware_perf_info.py
 - Copy extract_gpu_specs() logic from predictor/src/models.py
@@ -232,6 +255,8 @@ fix(experiment): make collect_training_data.py self-contained
 - Add dual-format support for boot/summary fields (dict or string)
 - Infer max_tokens from output_len field in query metadata
 - Add comprehensive logging for task extraction statistics
+- Configure default quantiles: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.99]
+- Simplify training workflow: collect all data once, then train once per prediction type
 
 The script is now fully self-contained with no dependencies on
 packages outside the experiment directory. Fixes dataset extraction
@@ -239,7 +264,11 @@ which was failing due to:
 1. Structural mismatch (expected dict, got string for boot/summary)
 2. Missing predictor package in experiment environment
 
-Now extracts all 1,471 tasks with proper max_tokens diversity
-instead of only 1,273 tasks with uniform max_tokens=512.
+Improvements:
+- Extracts all 1,471 tasks (was 1,273, +13% recovery)
+- Proper max_tokens diversity (5 values vs 1 uniform value)
+- Fine-grained quantile predictions (10 percentiles vs 4 default)
+- One-shot training workflow (was batch processing with multiple trainings)
+- Better model training for runtime distribution modeling
 
-Resolves: Dataset structure mismatch and external dependency issues
+Resolves: Dataset structure mismatch, external dependencies, and redundant training

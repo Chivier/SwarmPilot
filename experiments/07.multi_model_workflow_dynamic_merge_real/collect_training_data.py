@@ -853,16 +853,10 @@ async def main():
         help="Software version"
     )
     parser.add_argument(
-        "--batch-size",
-        type=int,
-        default=100,
-        help="Number of samples to collect before submitting to predictor"
-    )
-    parser.add_argument(
         "--max-samples",
         type=int,
         default=None,
-        help="Maximum number of tasks to process (None for all)"
+        help="Maximum number of tasks to process for testing (None for all tasks). Use small value (e.g., 10-20) for quick testing"
     )
     parser.add_argument(
         "--training-config",
@@ -909,100 +903,80 @@ async def main():
         logger.warning(f"Could not extract hardware specs for {args.hardware_name}")
         logger.warning("Proceeding without hardware features (may cause training errors)")
     
-    # Load training config if provided
+    # Load training config if provided, or use defaults
     training_config = None
     if args.training_config:
         with open(args.training_config, 'r') as f:
             training_config = json.load(f)
+    else:
+        # Use default training config with custom quantiles
+        # Default quantiles: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.99]
+        # This provides fine-grained percentile predictions across the distribution
+        training_config = {
+            'quantiles': [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.99]
+        }
     
     # Initialize clients
     llm_client = LLMServiceClient(args.instance_url)
     predictor_client = PredictorTrainingClient(args.predictor_url)
     
     try:
-        # Collect training samples in batches
-        all_samples = []
-        num_batches = (len(tasks) + args.batch_size - 1) // args.batch_size
+        # Collect all training samples at once
+        logger.info(f"Collecting training samples from all {len(tasks)} tasks...")
+
+        # Apply max_samples limit if specified
         max_tasks = min(len(tasks), args.max_samples) if args.max_samples else len(tasks)
-        num_batches = (max_tasks + args.batch_size - 1) // args.batch_size
-        
-        for batch_idx in range(num_batches):
-            start_idx = batch_idx * args.batch_size
-            end_idx = min(start_idx + args.batch_size, max_tasks)
-            batch_tasks = tasks[start_idx:end_idx]
-            
-            logger.info(f"Processing batch {batch_idx + 1}/{num_batches} (tasks {start_idx}-{end_idx})")
-            
-            # Collect samples for this batch
-            batch_samples = await collect_training_samples(
-                llm_client,
-                batch_tasks,
-                hardware_specs,
-                max_samples=None  # Process all tasks in batch
-            )
-            
-            all_samples.extend(batch_samples)
-            
-            # Submit to predictor if we have enough samples (at least 10 required)
-            if len(all_samples) >= 10:
-                logger.info(f"Submitting {len(all_samples)} samples to predictor for {len(args.prediction_types)} model type(s)...")
-                
-                # Train each prediction type with the same samples
-                for prediction_type in args.prediction_types:
-                    try:
-                        logger.info(f"Training {prediction_type} model...")
-                        response = await predictor_client.submit_training_data(
-                            model_id=args.model_id,
-                            platform_info={
-                                "software_name": args.software_name,
-                                "software_version": args.software_version,
-                                "hardware_name": args.hardware_name
-                            },
-                            prediction_type=prediction_type,
-                            features_list=all_samples.copy(),  # Use copy to avoid modification
-                            training_config=training_config
-                        )
-                        
-                        logger.info(f"{prediction_type.upper()} model training submitted successfully:")
-                        logger.info(f"  Model key: {response.get('model_key')}")
-                        logger.info(f"  Samples trained: {response.get('samples_trained')}")
-                        
-                    except Exception as e:
-                        logger.error(f"Failed to submit {prediction_type} training data: {e}")
-                        # Continue with other prediction types even if one fails
-                
-                # Clear samples after successful submission to all requested types
-                all_samples = []
-                
-        # Submit remaining samples
-        if all_samples:
-            logger.info(f"Submitting remaining {len(all_samples)} samples to predictor for {len(args.prediction_types)} model type(s)...")
-            
-            # Train each prediction type with the remaining samples
-            for prediction_type in args.prediction_types:
-                try:
-                    logger.info(f"Training {prediction_type} model with remaining samples...")
-                    response = await predictor_client.submit_training_data(
-                        model_id=args.model_id,
-                        platform_info={
-                            "software_name": args.software_name,
-                            "software_version": args.software_version,
-                            "hardware_name": args.hardware_name
-                        },
-                        prediction_type=prediction_type,
-                        features_list=all_samples.copy(),  # Use copy to avoid modification
-                        training_config=training_config
-                    )
-                    
-                    logger.info(f"{prediction_type.upper()} model training submitted successfully:")
-                    logger.info(f"  Model key: {response.get('model_key')}")
-                    logger.info(f"  Samples trained: {response.get('samples_trained')}")
-                    
-                except Exception as e:
-                    logger.error(f"Failed to submit final {prediction_type} training data: {e}")
-                    # Continue with other prediction types even if one fails
-        
-        logger.info(f"Training data collection completed successfully for {', '.join(args.prediction_types)} model(s)!")
+        tasks_to_process = tasks[:max_tasks]
+
+        # Collect all samples in one go
+        all_samples = await collect_training_samples(
+            llm_client,
+            tasks_to_process,
+            hardware_specs,
+            max_samples=None  # Process all selected tasks
+        )
+
+        # Check if we have enough samples (minimum 10 required by predictor)
+        if len(all_samples) < 10:
+            logger.error(f"Insufficient samples: {len(all_samples)} collected, but at least 10 required for training")
+            logger.error("Try removing --max-samples limit or check if tasks are failing")
+            return
+
+        logger.info(f"Successfully collected {len(all_samples)} training samples")
+
+        # Submit training data once for each prediction type
+        logger.info(f"Submitting training data to predictor for {len(args.prediction_types)} model type(s)...")
+
+        for prediction_type in args.prediction_types:
+            try:
+                logger.info(f"Training {prediction_type} model with {len(all_samples)} samples...")
+                response = await predictor_client.submit_training_data(
+                    model_id=args.model_id,
+                    platform_info={
+                        "software_name": args.software_name,
+                        "software_version": args.software_version,
+                        "hardware_name": args.hardware_name
+                    },
+                    prediction_type=prediction_type,
+                    features_list=all_samples.copy(),  # Use copy to avoid modification
+                    training_config=training_config
+                )
+
+                logger.info(f"✓ {prediction_type.upper()} model training completed successfully:")
+                logger.info(f"  Model key: {response.get('model_key')}")
+                logger.info(f"  Samples trained: {response.get('samples_trained')}")
+                logger.info(f"  Status: {response.get('status')}")
+                logger.info(f"  Message: {response.get('message')}")
+
+            except Exception as e:
+                logger.error(f"✗ Failed to train {prediction_type} model: {e}")
+                # Continue with other prediction types even if one fails
+
+        logger.info(f"\n{'='*60}")
+        logger.info(f"Training data collection and model training completed!")
+        logger.info(f"  Total samples collected: {len(all_samples)}")
+        logger.info(f"  Prediction types trained: {', '.join(args.prediction_types)}")
+        logger.info(f"{'='*60}")
         
     finally:
         await llm_client.close()
