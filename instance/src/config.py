@@ -13,7 +13,7 @@ class Config:
 
     def __init__(self):
         # Instance configuration
-        self.instance_id: str = os.getenv("INSTANCE_ID", uuid.uuid4())
+        self.instance_id: str = os.getenv("INSTANCE_ID", str(uuid.uuid4()))
         self.instance_port: int = int(os.getenv("INSTANCE_PORT", "8000"))
 
         # Model container port (instance_port + 1000)
