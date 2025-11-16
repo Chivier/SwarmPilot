@@ -63,7 +63,7 @@ class TaskQueue:
 
         logger.info(
             f"Task {task.task_id} submitted with enqueue_time={task.enqueue_time:.3f}, "
-            f"queue position: {queue_size}"
+            f"queue position: {queue_size}, callback_url: {task.callback_url}"
         )
 
         # Start processing if not already running
@@ -305,9 +305,11 @@ class TaskQueue:
         # Fallback to HTTP
         scheduler_client = get_scheduler_client()
         try:
+            task = self.tasks.get(task_id)
             success = await scheduler_client.send_task_result(
                 task_id=task_id,
                 status=status,
+                callback_url=getattr(task, "callback_url", None),
                 result=result,
                 error=error,
                 execution_time_ms=execution_time_ms,

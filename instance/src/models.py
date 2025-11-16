@@ -46,6 +46,7 @@ class Task(BaseModel):
     model_id: str = Field(..., description="Model/tool ID to use for this task")
     task_input: Dict[str, Any] = Field(..., description="Model-specific input data")
     status: TaskStatus = Field(default=TaskStatus.QUEUED, description="Current task status")
+    callback_url: Optional[str] = Field(None, description="Optional callback URL for task result")
 
     # Timestamps
     submitted_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat().replace("+00:00", "Z"))

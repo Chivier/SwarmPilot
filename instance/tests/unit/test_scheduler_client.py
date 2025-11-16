@@ -784,7 +784,9 @@ class TestTaskCallbacks:
     async def test_send_task_result_disabled(self):
         """Test send_task_result when scheduler is disabled."""
         client = SchedulerClient(scheduler_url=None)
-        result = await client.send_task_result(task_id="task-1", status="completed")
+        result = await client.send_task_result(
+            task_id="task-1", status="completed", callback_url="http://localhost:8000/callback"
+        )
         assert result is False
 
     @pytest.mark.asyncio
@@ -805,6 +807,7 @@ class TestTaskCallbacks:
             result = await client.send_task_result(
                 task_id="task-1",
                 status="completed",
+                callback_url="http://localhost:8000/callback",
                 result={"output": "data"},
                 execution_time_ms=100.5,
             )
@@ -826,7 +829,11 @@ class TestTaskCallbacks:
             mock_client_class.return_value = mock_client
 
             result = await client.send_task_result(
-                task_id="task-2", status="failed", error="Out of memory", execution_time_ms=50.0
+                task_id="task-2",
+                status="failed",
+                callback_url="http://localhost:8000/callback",
+                error="Out of memory",
+                execution_time_ms=50.0,
             )
             assert result is True
 
@@ -853,7 +860,9 @@ class TestTaskCallbacks:
             mock_client_class.return_value = mock_client
 
             with patch("asyncio.sleep"):
-                result = await client.send_task_result(task_id="task-3", status="completed")
+                result = await client.send_task_result(
+                    task_id="task-3", status="completed", callback_url="http://localhost:8000/callback"
+                )
                 assert result is True
                 assert mock_client.post.call_count == 3
 
@@ -1123,7 +1132,9 @@ class TestEdgeCases:
             mock_client_class.return_value = mock_client
 
             with patch("asyncio.sleep"):
-                result = await client.send_task_result(task_id="task-1", status="completed")
+                result = await client.send_task_result(
+                    task_id="task-1", status="completed", callback_url="http://localhost:8000/callback"
+                )
                 assert result is False
                 # Should have tried max_retries times
                 assert mock_client.post.call_count == 2
@@ -1139,5 +1150,7 @@ class TestEdgeCases:
             mock_client.post = AsyncMock(side_effect=Exception("Unexpected error"))
             mock_client_class.return_value = mock_client
 
-            result = await client.send_task_result(task_id="task-1", status="completed")
+            result = await client.send_task_result(
+                task_id="task-1", status="completed", callback_url="http://localhost:8000/callback"
+            )
             assert result is False

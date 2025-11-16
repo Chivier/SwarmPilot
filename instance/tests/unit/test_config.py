@@ -21,7 +21,14 @@ class TestConfig:
         config = Config()
 
         # Check defaults
-        assert config.instance_id == "instance-default"
+        # instance_id should be a UUID when INSTANCE_ID is not set
+        import uuid
+        try:
+            uuid.UUID(config.instance_id)
+            assert True  # Valid UUID
+        except ValueError:
+            assert False, f"instance_id should be a valid UUID, got: {config.instance_id}"
+
         assert config.instance_port == 8000
         assert config.model_port == 9000  # instance_port + 1000
         assert config.docker_network == "instance_network"

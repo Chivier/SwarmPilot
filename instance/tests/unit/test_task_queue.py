@@ -407,15 +407,22 @@ class TestTaskQueue:
         assert task.status == TaskStatus.FAILED
         assert "Execution error" in task.error
 
-    async def test_send_callback_success(self, sample_task):
-        """Test successful callback sending"""
+    async def test_send_callback_success_websocket(self, sample_task):
+        """Test successful callback sending via WebSocket"""
         queue = TaskQueue()
+        queue.tasks[sample_task.task_id] = sample_task
 
-        # Mock scheduler client
+        # Mock WebSocket client - connected and successful
+        mock_ws_client = AsyncMock()
+        mock_ws_client.is_connected = Mock(return_value=True)  # Use Mock for sync method
+        mock_ws_client.send_task_result = AsyncMock(return_value=True)
+
+        # Mock scheduler client (should not be called if WebSocket succeeds)
         mock_scheduler_client = AsyncMock()
         mock_scheduler_client.send_task_result = AsyncMock(return_value=True)
 
-        with patch("src.task_queue.get_scheduler_client", return_value=mock_scheduler_client):
+        with patch("src.websocket_client_singleton.get_websocket_client", return_value=mock_ws_client), \
+             patch("src.task_queue.get_scheduler_client", return_value=mock_scheduler_client):
             await queue._send_callback(
                 sample_task.task_id,
                 "completed",
@@ -423,43 +430,145 @@ class TestTaskQueue:
                 execution_time_ms=100.0
             )
 
-        # Verify callback was sent (without callback_url parameter)
+        # Verify WebSocket was called
+        mock_ws_client.send_task_result.assert_called_once()
+        ws_call_args = mock_ws_client.send_task_result.call_args
+        assert ws_call_args[1]["task_id"] == sample_task.task_id
+        assert ws_call_args[1]["status"] == "completed"
+        assert ws_call_args[1]["result"] == {"output": "test"}
+        assert ws_call_args[1]["execution_time_ms"] == 100.0
+
+        # Verify HTTP was NOT called (WebSocket succeeded)
+        mock_scheduler_client.send_task_result.assert_not_called()
+
+    async def test_send_callback_success_http_fallback(self, sample_task):
+        """Test callback falls back to HTTP when WebSocket is not available"""
+        queue = TaskQueue()
+        queue.tasks[sample_task.task_id] = sample_task
+
+        # Mock WebSocket client - not available
+        mock_ws_client = None
+
+        # Mock scheduler client (should be called as fallback)
+        mock_scheduler_client = AsyncMock()
+        mock_scheduler_client.send_task_result = AsyncMock(return_value=True)
+
+        with patch("src.websocket_client_singleton.get_websocket_client", return_value=mock_ws_client), \
+             patch("src.task_queue.get_scheduler_client", return_value=mock_scheduler_client):
+            await queue._send_callback(
+                sample_task.task_id,
+                "completed",
+                result={"output": "test"},
+                execution_time_ms=100.0
+            )
+
+        # Verify HTTP callback was sent
         mock_scheduler_client.send_task_result.assert_called_once()
         call_args = mock_scheduler_client.send_task_result.call_args
         assert call_args[1]["task_id"] == sample_task.task_id
         assert call_args[1]["status"] == "completed"
         assert call_args[1]["result"] == {"output": "test"}
         assert call_args[1]["execution_time_ms"] == 100.0
-        # callback_url should not be in call args (will be derived from scheduler_url)
-        assert "callback_url" not in call_args[1]
+        assert call_args[1]["callback_url"] is None  # No callback_url on task
 
-    async def test_send_callback_always_attempted(self, sample_task):
-        """Test callback is always attempted (scheduler_client handles URL derivation)"""
+    async def test_send_callback_websocket_not_connected(self, sample_task):
+        """Test callback falls back to HTTP when WebSocket is not connected"""
         queue = TaskQueue()
+        queue.tasks[sample_task.task_id] = sample_task
 
-        # Mock scheduler client
+        # Mock WebSocket client - exists but not connected
+        mock_ws_client = AsyncMock()
+        mock_ws_client.is_connected = Mock(return_value=False)  # Use Mock for sync method
+
+        # Mock scheduler client (should be called as fallback)
         mock_scheduler_client = AsyncMock()
         mock_scheduler_client.send_task_result = AsyncMock(return_value=True)
 
-        with patch("src.task_queue.get_scheduler_client", return_value=mock_scheduler_client):
+        with patch("src.websocket_client_singleton.get_websocket_client", return_value=mock_ws_client), \
+             patch("src.task_queue.get_scheduler_client", return_value=mock_scheduler_client):
             await queue._send_callback(
                 sample_task.task_id,
                 "completed",
                 result={"output": "test"}
             )
 
-        # Callback should be attempted (scheduler_client will derive URL or skip if not enabled)
+        # Verify WebSocket was not called (not connected)
+        mock_ws_client.send_task_result.assert_not_called()
+
+        # Verify HTTP callback was attempted
         mock_scheduler_client.send_task_result.assert_called_once()
 
-    async def test_send_callback_failure(self, sample_task):
-        """Test callback handles failure response"""
+    async def test_send_callback_websocket_fails_fallback(self, sample_task):
+        """Test callback falls back to HTTP when WebSocket send fails"""
         queue = TaskQueue()
+        queue.tasks[sample_task.task_id] = sample_task
+
+        # Mock WebSocket client - connected but send fails
+        mock_ws_client = AsyncMock()
+        mock_ws_client.is_connected = Mock(return_value=True)  # Use Mock for sync method
+        mock_ws_client.send_task_result = AsyncMock(return_value=False)
+
+        # Mock scheduler client (should be called as fallback)
+        mock_scheduler_client = AsyncMock()
+        mock_scheduler_client.send_task_result = AsyncMock(return_value=True)
+
+        with patch("src.websocket_client_singleton.get_websocket_client", return_value=mock_ws_client), \
+             patch("src.task_queue.get_scheduler_client", return_value=mock_scheduler_client):
+            await queue._send_callback(
+                sample_task.task_id,
+                "completed",
+                result={"output": "test"}
+            )
+
+        # Verify WebSocket was attempted
+        mock_ws_client.send_task_result.assert_called_once()
+
+        # Verify HTTP callback was attempted as fallback
+        mock_scheduler_client.send_task_result.assert_called_once()
+
+    async def test_send_callback_websocket_exception_fallback(self, sample_task):
+        """Test callback falls back to HTTP when WebSocket raises exception"""
+        queue = TaskQueue()
+        queue.tasks[sample_task.task_id] = sample_task
+
+        # Mock WebSocket client - connected but raises exception
+        mock_ws_client = AsyncMock()
+        mock_ws_client.is_connected = Mock(return_value=True)  # Use Mock for sync method
+        mock_ws_client.send_task_result = AsyncMock(side_effect=Exception("WebSocket error"))
+
+        # Mock scheduler client (should be called as fallback)
+        mock_scheduler_client = AsyncMock()
+        mock_scheduler_client.send_task_result = AsyncMock(return_value=True)
+
+        with patch("src.websocket_client_singleton.get_websocket_client", return_value=mock_ws_client), \
+             patch("src.task_queue.get_scheduler_client", return_value=mock_scheduler_client):
+            # Should not raise exception - falls back to HTTP
+            await queue._send_callback(
+                sample_task.task_id,
+                "completed",
+                result={"output": "test"}
+            )
+
+        # Verify WebSocket was attempted
+        mock_ws_client.send_task_result.assert_called_once()
+
+        # Verify HTTP callback was attempted as fallback
+        mock_scheduler_client.send_task_result.assert_called_once()
+
+    async def test_send_callback_http_failure(self, sample_task):
+        """Test callback handles HTTP failure response"""
+        queue = TaskQueue()
+        queue.tasks[sample_task.task_id] = sample_task
+
+        # Mock WebSocket client - not available
+        mock_ws_client = None
 
         # Mock scheduler client to return False
         mock_scheduler_client = AsyncMock()
         mock_scheduler_client.send_task_result = AsyncMock(return_value=False)
 
-        with patch("src.task_queue.get_scheduler_client", return_value=mock_scheduler_client):
+        with patch("src.websocket_client_singleton.get_websocket_client", return_value=mock_ws_client), \
+             patch("src.task_queue.get_scheduler_client", return_value=mock_scheduler_client):
             # Should not raise exception even if callback fails
             await queue._send_callback(
                 sample_task.task_id,
@@ -467,18 +576,23 @@ class TestTaskQueue:
                 result={"output": "test"}
             )
 
-        # Verify callback was attempted
+        # Verify HTTP callback was attempted
         mock_scheduler_client.send_task_result.assert_called_once()
 
-    async def test_send_callback_exception(self, sample_task):
-        """Test callback handles exceptions"""
+    async def test_send_callback_http_exception(self, sample_task):
+        """Test callback handles HTTP exceptions"""
         queue = TaskQueue()
+        queue.tasks[sample_task.task_id] = sample_task
+
+        # Mock WebSocket client - not available
+        mock_ws_client = None
 
         # Mock scheduler client to raise exception
         mock_scheduler_client = AsyncMock()
         mock_scheduler_client.send_task_result = AsyncMock(side_effect=Exception("Network error"))
 
-        with patch("src.task_queue.get_scheduler_client", return_value=mock_scheduler_client):
+        with patch("src.websocket_client_singleton.get_websocket_client", return_value=mock_ws_client), \
+             patch("src.task_queue.get_scheduler_client", return_value=mock_scheduler_client):
             # Should not raise - just logs error
             await queue._send_callback(
                 sample_task.task_id,
@@ -486,8 +600,34 @@ class TestTaskQueue:
                 result={"output": "test"}
             )
 
-        # Verify callback was attempted
+        # Verify HTTP callback was attempted
         mock_scheduler_client.send_task_result.assert_called_once()
+
+    async def test_send_callback_with_callback_url(self, sample_task):
+        """Test callback includes callback_url from task when falling back to HTTP"""
+        queue = TaskQueue()
+        sample_task.callback_url = "http://custom-callback:8000/callback"
+        queue.tasks[sample_task.task_id] = sample_task
+
+        # Mock WebSocket client - not available
+        mock_ws_client = None
+
+        # Mock scheduler client
+        mock_scheduler_client = AsyncMock()
+        mock_scheduler_client.send_task_result = AsyncMock(return_value=True)
+
+        with patch("src.websocket_client_singleton.get_websocket_client", return_value=mock_ws_client), \
+             patch("src.task_queue.get_scheduler_client", return_value=mock_scheduler_client):
+            await queue._send_callback(
+                sample_task.task_id,
+                "completed",
+                result={"output": "test"}
+            )
+
+        # Verify HTTP callback was called with callback_url from task
+        mock_scheduler_client.send_task_result.assert_called_once()
+        call_args = mock_scheduler_client.send_task_result.call_args
+        assert call_args[1]["callback_url"] == "http://custom-callback:8000/callback"
 
     async def test_clear_all_tasks_empty_queue(self):
         """Test clearing tasks when queue is empty"""

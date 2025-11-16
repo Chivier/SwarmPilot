@@ -912,29 +912,25 @@ class SchedulerClient:
         self,
         task_id: str,
         status: str,
+        callback_url: str,
         result: Optional[Dict[str, Any]] = None,
         error: Optional[str] = None,
         execution_time_ms: Optional[float] = None,
-        callback_url: Optional[str] = None,
     ) -> bool:
         """Send task result to scheduler via callback.
 
         Args:
             task_id: ID of the completed task
             status: Task status - "completed" or "failed"
+            callback_url: Callback URL for task result
             result: Task result data
             error: Error message
             execution_time_ms: Execution time in milliseconds
-            callback_url: Custom callback URL
-
         Returns:
             True if callback successful, False otherwise
         """
         if not callback_url:
-            if not self.is_enabled:
-                print("Cannot send callback: scheduler disabled")
-                return False
-            callback_url = f"{self.scheduler_url}/callback/task_result"
+            raise ValueError("Callback URL is required")
 
         callback_data = {
             "task_id": task_id,

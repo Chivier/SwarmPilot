@@ -100,6 +100,7 @@ class TaskSubmitRequest(BaseModel):
     model_id: str = Field(..., description="Model/tool ID to use for this task")
     task_input: Dict[str, Any] = Field(..., description="Model-specific input data")
     enqueue_time: Optional[float] = Field(None, description="Optional Unix timestamp for task priority ordering")
+    callback_url: Optional[str] = Field(None, description="Optional callback URL for task result")
 
 
 class TaskSubmitResponse(BaseModel):
@@ -985,7 +986,8 @@ async def submit_task(request: TaskSubmitRequest):
     task = Task(
         task_id=request.task_id,
         model_id=request.model_id,
-        task_input=request.task_input
+        task_input=request.task_input,
+        callback_url=request.callback_url
     )
 
     # Submit to queue with optional enqueue_time for priority ordering
