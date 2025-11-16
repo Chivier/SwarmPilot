@@ -19,6 +19,7 @@ Create a JSON configuration file (e.g., `config.json`) with the following struct
   "model_id": "llama-7b",
   "prediction_types": ["expect_error", "quantile"],
   "max_samples": null,
+  "output_file": "training_data.json",
 
   "instances": [
     {
@@ -95,6 +96,18 @@ Types of predictions to train. Defaults to `["expect_error", "quantile"]`.
 Maximum number of samples to collect. Use `null` for all tasks in dataset.
 
 **Example**: `100` (collect only first 100 tasks), `null` (collect all tasks)
+
+#### `output_file` (string)
+Path to save collected training data. Defaults to `"training_data.json"`.
+
+**Example**: `"data/training_samples_llama7b.json"`
+
+The saved file contains:
+- `model_id`: Model identifier
+- `platform_info`: Hardware and software configuration
+- `samples`: Array of training samples with features and runtime_ms
+- `num_samples`: Total number of samples
+- `config`: Training configuration used
 
 #### `training_config` (object)
 Training hyperparameters:

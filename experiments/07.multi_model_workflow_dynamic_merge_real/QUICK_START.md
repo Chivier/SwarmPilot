@@ -87,6 +87,8 @@ INFO - Initialized 3 LLM instances for parallel execution
 Collecting training data: 100%|████████████| 1471/1471 [02:35<00:00, 9.47tasks/s]
 
 INFO - ✓ Successfully collected 1471 samples
+INFO - Saving training data to training_data.json
+INFO - ✓ Training data saved to training_data.json
 
 INFO - ✓ Training submitted successfully for expect_error
 INFO - Validating expect_error model...
@@ -150,6 +152,44 @@ curl http://localhost:8002/v1/models
   "execution": {"max_concurrent_requests": 5}
 }
 ```
+
+## Training Data Output
+
+The script automatically saves collected training data to `training_data.json` (configurable via `output_file` in config):
+
+```json
+{
+  "model_id": "llama-7b",
+  "platform_info": {
+    "software_name": "sglang",
+    "software_version": "1.0.0",
+    "hardware_name": "NVIDIA H20"
+  },
+  "samples": [
+    {
+      "token_length": 125.0,
+      "max_tokens": 512.0,
+      "cuda_cores": 17920.0,
+      "tensor_cores": 560.0,
+      "fp32_tflops": 63.0,
+      "memory_gb": 96.0,
+      "runtime_ms": 245.67
+    },
+    ...
+  ],
+  "num_samples": 1471,
+  "config": {
+    "prediction_types": ["expect_error", "quantile"],
+    "training_config": {...}
+  }
+}
+```
+
+This file can be used for:
+- Debugging and analysis
+- Retraining models with different configurations
+- Sharing datasets across experiments
+- Offline model development
 
 ## Next Steps
 

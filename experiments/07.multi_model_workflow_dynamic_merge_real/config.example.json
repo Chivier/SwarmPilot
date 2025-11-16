@@ -3,6 +3,7 @@
   "model_id": "llama-7b",
   "prediction_types": ["expect_error", "quantile"],
   "max_samples": null,
+  "output_file": "training_data.json",
 
   "instances": [
     {

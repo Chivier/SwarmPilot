@@ -1369,7 +1369,6 @@ Example config.json:
 
         logger.info(f"Successfully collected {len(all_samples)} training samples")
 
-        # Submit training data once for each prediction type
         # Use the first instance's platform info (all instances should have same platform)
         first_instance = config['instances'][0]
         platform_info = {
@@ -1377,6 +1376,26 @@ Example config.json:
             "software_version": first_instance.get("software_version", "1.0.0"),
             "hardware_name": first_instance.get("hardware_name", "Unknown")
         }
+
+        # Save collected training data to file
+        output_file = config.get('output_file', 'training_data.json')
+        output_path = Path(output_file)
+
+        logger.info(f"Saving training data to {output_path}")
+        with open(output_path, 'w') as f:
+            json.dump({
+                'model_id': config['model_id'],
+                'platform_info': platform_info,
+                'samples': all_samples,
+                'num_samples': len(all_samples),
+                'config': {
+                    'prediction_types': config['prediction_types'],
+                    'training_config': config['training_config']
+                }
+            }, f, indent=2)
+        logger.info(f"✓ Training data saved to {output_path}")
+
+        # Submit training data once for each prediction type
 
         logger.info(f"Submitting training data to predictor for {len(config['prediction_types'])} model type(s)...")
         logger.info(f"Platform info: {platform_info}")
