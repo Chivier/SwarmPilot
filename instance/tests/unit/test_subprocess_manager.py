@@ -47,6 +47,11 @@ class TestSubprocessManager:
         mock_run_process = AsyncMock()
         mock_run_process.returncode = None  # Process still running
         mock_run_process.pid = 12345
+        # Mock stdout and stderr with proper stream readers
+        mock_run_process.stdout = AsyncMock()
+        mock_run_process.stdout.readline = AsyncMock(return_value=b"")
+        mock_run_process.stderr = AsyncMock()
+        mock_run_process.stderr.readline = AsyncMock(return_value=b"")
         manager.uv_run_process = mock_run_process
 
         # Mock httpx client for health check
@@ -198,6 +203,11 @@ class TestSubprocessManager:
         mock_run_process.wait = AsyncMock(return_value=0)
         mock_run_process.terminate = Mock()
         mock_run_process.kill = Mock()
+        # Mock stdout and stderr with proper stream readers
+        mock_run_process.stdout = AsyncMock()
+        mock_run_process.stdout.readline = AsyncMock(return_value=b"")
+        mock_run_process.stderr = AsyncMock()
+        mock_run_process.stderr.readline = AsyncMock(return_value=b"")
 
         # Mock health check to always fail
         manager.http_client.get = AsyncMock(side_effect=httpx.ConnectError("Connection failed"))
@@ -339,11 +349,16 @@ class TestSubprocessManager:
         )
 
         # Mock old process
-        mock_old_process = AsyncMock()
+        mock_old_process = Mock()
         mock_old_process.returncode = None
         mock_old_process.pid = 12345
         mock_old_process.wait = AsyncMock(return_value=0)
         mock_old_process.terminate = Mock()
+        # Mock stdout and stderr
+        mock_old_process.stdout = AsyncMock()
+        mock_old_process.stdout.readline = AsyncMock(return_value=b"")
+        mock_old_process.stderr = AsyncMock()
+        mock_old_process.stderr.readline = AsyncMock(return_value=b"")
         manager.uv_run_process = mock_old_process
 
         mock_model_registry.get_model.return_value = ModelRegistryEntry(
@@ -362,6 +377,11 @@ class TestSubprocessManager:
         mock_new_run_process = AsyncMock()
         mock_new_run_process.returncode = None
         mock_new_run_process.pid = 67890
+        # Mock stdout and stderr with proper stream readers
+        mock_new_run_process.stdout = AsyncMock()
+        mock_new_run_process.stdout.readline = AsyncMock(return_value=b"")
+        mock_new_run_process.stderr = AsyncMock()
+        mock_new_run_process.stderr.readline = AsyncMock(return_value=b"")
         manager.uv_run_process = mock_new_run_process
 
         # Mock health check

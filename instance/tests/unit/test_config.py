@@ -22,8 +22,8 @@ class TestConfig:
 
         # Check defaults
         assert config.instance_id == "instance-default"
-        assert config.instance_port == 5000
-        assert config.model_port == 6000  # instance_port + 1000
+        assert config.instance_port == 8000
+        assert config.model_port == 9000  # instance_port + 1000
         assert config.docker_network == "instance_network"
         assert config.log_level == "INFO"
         assert config.max_queue_size == 100

@@ -271,9 +271,9 @@ class SchedulerClient:
         """
         # Core connection settings
         self.scheduler_url = scheduler_url or os.getenv("SCHEDULER_URL", "http://localhost:8000")
-        self.instance_id = str(uuid.uuid4())
+        self.instance_id = instance_id or os.getenv("INSTANCE_ID", "instance-default")
         self.instance_endpoint = instance_endpoint or os.getenv(
-            "INSTANCE_ENDPOINT", f"http://localhost:{os.getenv('INSTANCE_PORT', '5000')}"
+            "INSTANCE_ENDPOINT", f"http://localhost:{os.getenv('INSTANCE_PORT', '8000')}"
         )
 
         # Request settings
