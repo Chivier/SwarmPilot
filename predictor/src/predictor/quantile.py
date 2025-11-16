@@ -75,8 +75,6 @@ class QuantilePredictor(BasePredictor):
         self.model = None
         self.feature_names = None
         self.quantiles = None
-        self.feature_mean = None
-        self.feature_std = None
 
     def train(self, features_list: List[Dict[str, Any]], config: Dict[str, Any] = None) -> Dict[str, Any]:
         """
@@ -106,13 +104,8 @@ class QuantilePredictor(BasePredictor):
         X = np.array(X, dtype=np.float32)
         y = np.array(y, dtype=np.float32)
 
-        # Normalize features (z-score normalization)
-        self.feature_mean = X.mean(axis=0)
-        self.feature_std = X.std(axis=0) + 1e-8
-        X_normalized = (X - self.feature_mean) / self.feature_std
-
-        # Convert to PyTorch tensors
-        X_tensor = torch.tensor(X_normalized, dtype=torch.float32)
+        # Convert to PyTorch tensors (no normalization)
+        X_tensor = torch.tensor(X, dtype=torch.float32)
         y_tensor = torch.tensor(y, dtype=torch.float32).unsqueeze(1)
 
         # Get training hyperparameters from config
@@ -149,6 +142,10 @@ class QuantilePredictor(BasePredictor):
             loss.backward()
             optimizer.step()
 
+            # Print loss every 50 epochs and at the end
+            if (epoch + 1) % 50 == 0 or (epoch + 1) == epochs:
+                print(f"Epoch [{epoch + 1}/{epochs}], Loss: {loss.item():.6f}")
+
         return {
             'feature_names': self.feature_names,
             'samples_count': len(features_list),
@@ -179,11 +176,8 @@ class QuantilePredictor(BasePredictor):
         feature_values = [features[fname] for fname in self.feature_names]
         X = np.array([feature_values], dtype=np.float32)
 
-        # Normalize using training statistics
-        X_normalized = (X - self.feature_mean) / self.feature_std
-
-        # Convert to tensor and predict
-        X_tensor = torch.tensor(X_normalized, dtype=torch.float32)
+        # Convert to tensor and predict (no normalization)
+        X_tensor = torch.tensor(X, dtype=torch.float32)
 
         self.model.eval()
         with torch.no_grad():
@@ -213,9 +207,7 @@ class QuantilePredictor(BasePredictor):
             'model_config': self.model.get_config(),
             'model_state_dict': self.model.state_dict(),
             'feature_names': self.feature_names,
-            'quantiles': self.quantiles,
-            'feature_mean': self.feature_mean.tolist(),
-            'feature_std': self.feature_std.tolist()
+            'quantiles': self.quantiles
         }
 
     def load_model_state(self, state: Dict[str, Any]) -> None:
@@ -233,5 +225,3 @@ class QuantilePredictor(BasePredictor):
         # Restore metadata
         self.feature_names = state['feature_names']
         self.quantiles = state['quantiles']
-        self.feature_mean = np.array(state['feature_mean'])
-        self.feature_std = np.array(state['feature_std'])
