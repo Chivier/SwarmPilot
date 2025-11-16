@@ -37,6 +37,7 @@ from queue import Queue, Empty
 from dataclasses import dataclass, field, asdict
 from typing import List, Dict, Optional, Set
 from datetime import datetime
+from pathlib import Path
 import logging
 
 # Import workload generators
@@ -68,6 +69,10 @@ SCHEDULER_A_URL = "http://localhost:8100"
 SCHEDULER_B_URL = "http://localhost:8200"
 SCHEDULER_A_WS = "ws://localhost:8100/task/get_result"
 SCHEDULER_B_WS = "ws://localhost:8200/task/get_result"
+
+# Dataset path
+DATA_DIR = Path(__file__).parent / "data"
+DATASET_FILE = DATA_DIR / "dataset.jsonl"
 
 
 # ============================================================================
@@ -126,6 +131,29 @@ class RateLimiter:
 
 
 # ============================================================================
+# Helper Functions
+# ============================================================================
+
+def estimate_token_length(text: Optional[str]) -> int:
+    """
+    Estimate token length from text.
+    
+    Uses a simple heuristic: approximately 4 characters per token for English text.
+    This is a rough approximation commonly used for LLM token estimation.
+    
+    Args:
+        text: Input text string
+        
+    Returns:
+        Estimated token count
+    """
+    if not text:
+        return 0
+    # Simple heuristic: ~4 characters per token
+    return max(1, len(text) // 4)
+
+
+# ============================================================================
 # Data Structures
 # ============================================================================
 
@@ -139,6 +167,9 @@ class WorkflowTaskData:
     exp_runtime: float  # Expected runtime in milliseconds
     b_index: Optional[int] = None  # Index for B1/B2 pairing (0-based)
     is_warmup: bool = False  # Whether this is a warmup task
+    # LLM service data fields
+    sentence: Optional[str] = None  # Input sentence for LLM service
+    max_tokens: Optional[int] = None  # Max tokens for LLM service
 
 
 @dataclass
@@ -290,7 +321,7 @@ class PoissonTaskSubmitter:
                  tasks: List[WorkflowTaskData],
                  qps: float,
                  workflow_states: Dict[str, WorkflowState],
-                 model_id: str = "sleep_model",
+                 model_id: str = "llm_service_large_model",
                  rate_limiter: Optional[RateLimiter] = None):
         """
         Initialize Poisson task submitter.
@@ -331,18 +362,41 @@ class PoissonTaskSubmitter:
         Returns:
             TaskRecord with submission info
         """
+        # Build task_input based on task type
+        if task_data.sentence is not None:
+            # LLM service format
+            task_input = {
+                "sentence": task_data.sentence,
+                "max_tokens": task_data.max_tokens if task_data.max_tokens is not None else 512
+            }
+        else:
+            # Fallback to sleep_time format (for backward compatibility)
+            task_input = {
+                "sleep_time": task_data.sleep_time
+            }
+        
+        # Calculate token_length from sentence if available
+        token_length = estimate_token_length(task_data.sentence) if task_data.sentence else 0
+        
+        # Extract max_tokens for prediction (if available)
+        max_tokens = task_data.max_tokens if task_data.max_tokens is not None else 512
+        
+        # Build metadata with only prediction-relevant features
+        # Note: workflow_id, task_type are tracking fields, not used for prediction
+        # Predictor will extract hardware specs from platform_info automatically
+        metadata = {
+            "token_length": token_length,
+            "max_tokens": max_tokens,
+        }
+        
+        # Optionally include is_warmup if it affects prediction (uncomment if needed)
+        # metadata["is_warmup"] = task_data.is_warmup
+        
         payload = {
             "task_id": task_data.task_id,
             "model_id": self.model_id,
-            "task_input": {
-                "sleep_time": task_data.sleep_time
-            },
-            "metadata": {
-                "exp_runtime": task_data.exp_runtime,
-                "workflow_id": task_data.workflow_id,
-                "task_type": "A",
-                "is_warmup": task_data.is_warmup
-            }
+            "task_input": task_input,
+            "metadata": metadata
         }
 
         submit_time = time.time()
@@ -599,7 +653,7 @@ class ATaskReceiver:
                  a_task_ids: List[str],
                  b1_tasks_by_workflow: Dict[str, List[WorkflowTaskData]],
                  workflow_states: Dict[str, WorkflowState],
-                 model_id: str = "sleep_model",
+                 model_id: str = "llm_service_large_model",
                  rate_limiter: Optional[RateLimiter] = None):
         """
         Initialize A task receiver.
@@ -644,19 +698,41 @@ class ATaskReceiver:
         Returns:
             TaskRecord with submission info
         """
+        # Build task_input based on task type
+        if task_data.sentence is not None:
+            # LLM service format
+            task_input = {
+                "sentence": task_data.sentence,
+                "max_tokens": task_data.max_tokens if task_data.max_tokens is not None else 512
+            }
+        else:
+            # Fallback to sleep_time format (for backward compatibility)
+            task_input = {
+                "sleep_time": task_data.sleep_time
+            }
+        
+        # Calculate token_length from sentence if available
+        token_length = estimate_token_length(task_data.sentence) if task_data.sentence else 0
+        
+        # Extract max_tokens for prediction (if available)
+        max_tokens = task_data.max_tokens if task_data.max_tokens is not None else 512
+        
+        # Build metadata with only prediction-relevant features
+        # Note: workflow_id, task_type, b_index are tracking fields, not used for prediction
+        # Predictor will extract hardware specs from platform_info automatically
+        metadata = {
+            "token_length": token_length,
+            "max_tokens": max_tokens,
+        }
+        
+        # Optionally include is_warmup if it affects prediction (uncomment if needed)
+        # metadata["is_warmup"] = task_data.is_warmup
+        
         payload = {
             "task_id": task_data.task_id,
             "model_id": self.model_id,
-            "task_input": {
-                "sleep_time": task_data.sleep_time
-            },
-            "metadata": {
-                "exp_runtime": task_data.exp_runtime,
-                "workflow_id": task_data.workflow_id,
-                "task_type": "B1",
-                "b_index": task_data.b_index,
-                "is_warmup": task_data.is_warmup
-            }
+            "task_input": task_input,
+            "metadata": metadata
         }
 
         submit_time = time.time()
@@ -853,6 +929,11 @@ class ATaskReceiver:
             self.logger.error(f"Could not extract workflow_id from task_id: {task_id}")
             return
 
+        # Get is_warmup from workflow state if available
+        is_warmup = False
+        if workflow_id in self.workflow_states:
+            is_warmup = self.workflow_states[workflow_id].is_warmup
+
         # Create A task record
         a_record = TaskRecord(
             task_id=task_id,
@@ -864,7 +945,8 @@ class ATaskReceiver:
             status=status,
             execution_time_ms=data.get("execution_time_ms"),
             result=data.get("result"),
-            error=data.get("error")
+            error=data.get("error"),
+            is_warmup=is_warmup
         )
         self.a_results.append(a_record)
 
@@ -979,7 +1061,7 @@ class B1TaskReceiver:
                  b1_task_ids: List[str],
                  b2_tasks_by_b1: Dict[str, WorkflowTaskData],
                  workflow_states: Dict[str, WorkflowState],
-                 model_id: str = "sleep_model",
+                 model_id: str = "llm_service_small_model",
                  rate_limiter: Optional[RateLimiter] = None):
         """
         Initialize B1 task receiver.
@@ -1021,19 +1103,42 @@ class B1TaskReceiver:
         Returns:
             TaskRecord with submission info
         """
+        # Build task_input based on task type
+        if task_data.sentence is not None:
+            # LLM service format
+            task_input = {
+                "sentence": task_data.sentence,
+                "max_tokens": task_data.max_tokens if task_data.max_tokens is not None else 1
+            }
+        else:
+            # Fallback to sleep_time format (for backward compatibility)
+            task_input = {
+                "sleep_time": task_data.sleep_time
+            }
+        
+        # Calculate token_length from sentence if available
+        token_length = estimate_token_length(task_data.sentence) if task_data.sentence else 0
+        
+        # Extract max_tokens for prediction (if available)
+        # B2 tasks typically use max_tokens=1 for fast completion
+        max_tokens = task_data.max_tokens if task_data.max_tokens is not None else 1
+        
+        # Build metadata with only prediction-relevant features
+        # Note: workflow_id, task_type, b_index are tracking fields, not used for prediction
+        # Predictor will extract hardware specs from platform_info automatically
+        metadata = {
+            "token_length": token_length,
+            "max_tokens": max_tokens,
+        }
+        
+        # Optionally include is_warmup if it affects prediction (uncomment if needed)
+        # metadata["is_warmup"] = task_data.is_warmup
+        
         payload = {
             "task_id": task_data.task_id,
             "model_id": self.model_id,
-            "task_input": {
-                "sleep_time": task_data.sleep_time
-            },
-            "metadata": {
-                "exp_runtime": task_data.exp_runtime,
-                "workflow_id": task_data.workflow_id,
-                "task_type": "B2",
-                "b_index": task_data.b_index,
-                "is_warmup": task_data.is_warmup
-            }
+            "task_input": task_input,
+            "metadata": metadata
         }
 
         submit_time = time.time()
@@ -1194,14 +1299,35 @@ class B1TaskReceiver:
         complete_time = time.time()
         workflow_id = None
 
-        # Extract workflow_id from task_id (format: task-B1-{strategy}-workflow-{i:04d}-B1-{j:02d})
+        # Extract workflow_id and b_index from task_id (format: task-B1-{strategy}-workflow-{i:04d}-B1-{j:02d})
         parts = task_id.split("-")
+        b_index = None
+        
         if len(parts) >= 5 and parts[3] == "workflow":
             workflow_id = f"wf-{parts[2]}-{parts[4]}"
+            # Extract b_index from last part (format: {j:02d} or {j:02d}-B1)
+            if len(parts) >= 6:
+                # Last part might be "B1" or "{j:02d}" or "{j:02d}-B1"
+                last_part = parts[-1]
+                # Try to parse as integer (b_index)
+                try:
+                    b_index = int(last_part)
+                except ValueError:
+                    # If last part is not a number, try second-to-last
+                    if len(parts) >= 7:
+                        try:
+                            b_index = int(parts[-2])
+                        except ValueError:
+                            pass
 
         if not workflow_id:
             self.logger.error(f"Could not extract workflow_id from task_id: {task_id}")
             return
+
+        # Get is_warmup from workflow state if available
+        is_warmup = False
+        if workflow_id in self.workflow_states:
+            is_warmup = self.workflow_states[workflow_id].is_warmup
 
         # Create B1 task record
         b1_record = TaskRecord(
@@ -1214,7 +1340,9 @@ class B1TaskReceiver:
             status=status,
             execution_time_ms=data.get("execution_time_ms"),
             result=data.get("result"),
-            error=data.get("error")
+            error=data.get("error"),
+            b_index=b_index,
+            is_warmup=is_warmup
         )
         self.b1_results.append(b1_record)
 
@@ -1386,14 +1514,35 @@ class B2TaskReceiver:
         complete_time = time.time()
         workflow_id = None
 
-        # Extract workflow_id from task_id (format: task-B2-{strategy}-workflow-{i:04d}-B2-{j:02d})
+        # Extract workflow_id and b_index from task_id (format: task-B2-{strategy}-workflow-{i:04d}-B2-{j:02d})
         parts = task_id.split("-")
+        b_index = None
+        
         if len(parts) >= 5 and parts[3] == "workflow":
             workflow_id = f"wf-{parts[2]}-{parts[4]}"
+            # Extract b_index from last part (format: {j:02d} or {j:02d}-B2)
+            if len(parts) >= 6:
+                # Last part might be "B2" or "{j:02d}" or "{j:02d}-B2"
+                last_part = parts[-1]
+                # Try to parse as integer (b_index)
+                try:
+                    b_index = int(last_part)
+                except ValueError:
+                    # If last part is not a number, try second-to-last
+                    if len(parts) >= 7:
+                        try:
+                            b_index = int(parts[-2])
+                        except ValueError:
+                            pass
 
         if not workflow_id:
             self.logger.error(f"Could not extract workflow_id from task_id: {task_id}")
             return
+
+        # Get is_warmup from workflow state if available
+        is_warmup = False
+        if workflow_id in self.workflow_states:
+            is_warmup = self.workflow_states[workflow_id].is_warmup
 
         # Create B2 task record
         b2_record = TaskRecord(
@@ -1406,7 +1555,9 @@ class B2TaskReceiver:
             status=status,
             execution_time_ms=data.get("execution_time_ms"),
             result=data.get("result"),
-            error=data.get("error")
+            error=data.get("error"),
+            b_index=b_index,
+            is_warmup=is_warmup
         )
         self.b2_results.append(b2_record)
 
@@ -1525,7 +1676,7 @@ class MergeTaskSubmitter:
         self.merge_ready_queue = merge_ready_queue
         self.rate_limiter = rate_limiter
         self.logger = logging.getLogger("Thread5.MergeTaskSubmitter")
-        self.model_id = "sleep_model"
+        self.model_id = "llm_service_large_model"
 
         # Thread control
         self.thread: Optional[threading.Thread] = None
@@ -1560,18 +1711,41 @@ class MergeTaskSubmitter:
 
         # Submit merge task to Scheduler A
         try:
+            # Build task_input based on task type
+            if merge_task.sentence is not None:
+                # LLM service format
+                task_input = {
+                    "sentence": merge_task.sentence,
+                    "max_tokens": merge_task.max_tokens if merge_task.max_tokens is not None else 512
+                }
+            else:
+                # Fallback to sleep_time format (for backward compatibility)
+                task_input = {
+                    "sleep_time": merge_task.sleep_time
+                }
+            
+            # Calculate token_length from sentence if available
+            token_length = estimate_token_length(merge_task.sentence) if merge_task.sentence else 0
+            
+            # Extract max_tokens for prediction (if available)
+            max_tokens = merge_task.max_tokens if merge_task.max_tokens is not None else 512
+            
+            # Build metadata with only prediction-relevant features
+            # Note: workflow_id, task_type are tracking fields, not used for prediction
+            # Predictor will extract hardware specs from platform_info automatically
+            metadata = {
+                "token_length": token_length,
+                "max_tokens": max_tokens,
+            }
+            
+            # Optionally include is_warmup if it affects prediction (uncomment if needed)
+            # metadata["is_warmup"] = merge_task.is_warmup
+            
             payload = {
                 "task_id": merge_task.task_id,
                 "model_id": self.model_id,
-                "task_input": {
-                    "sleep_time": merge_task.sleep_time
-                },
-                "metadata": {
-                    "exp_runtime": merge_task.exp_runtime,
-                    "workflow_id": merge_task.workflow_id,
-                    "task_type": "B",
-                    "is_warmup": merge_task.is_warmup
-                }
+                "task_input": task_input,
+                "metadata": metadata
             }
 
             response = requests.post(
@@ -1748,6 +1922,11 @@ class MergeTaskReceiver:
             self.logger.error(f"Could not extract workflow_id from merge task_id: {task_id}")
             return
 
+        # Get is_warmup from workflow state if available
+        is_warmup = False
+        if workflow_id in self.workflow_states:
+            is_warmup = self.workflow_states[workflow_id].is_warmup
+
         # Create merge task record
         merge_record = TaskRecord(
             task_id=task_id,
@@ -1759,7 +1938,8 @@ class MergeTaskReceiver:
             status=status,
             execution_time_ms=data.get("execution_time_ms"),
             result=data.get("result"),
-            error=data.get("error")
+            error=data.get("error"),
+            is_warmup=is_warmup
         )
         self.merge_results.append(merge_record)
 
@@ -2514,8 +2694,25 @@ def test_strategy_workflow(
     logger.info(f"Generated {len(a_task_ids)} A task IDs ({num_warmup_workflows} warmup + {num_workflows} actual), "
                f"{len(merge_task_ids)} merge task IDs, {len(all_b1_task_ids)} B1 task IDs, {len(all_b2_task_ids)} B2 task IDs")
 
-    # Step 4: Generate task data (A, B1, B2, merge)
-    logger.info("Step 4: Generating task data")
+    # Step 4: Load dataset
+    logger.info("Step 4: Loading dataset")
+    dataset = []
+    if DATASET_FILE.exists():
+        with open(DATASET_FILE, 'r', encoding='utf-8') as f:
+            for line in f:
+                if line.strip():
+                    dataset.append(json.loads(line))
+        logger.info(f"Loaded {len(dataset)} entries from dataset")
+    else:
+        logger.warning(f"Dataset file not found: {DATASET_FILE}, will use empty data")
+    
+    # Ensure we have enough dataset entries (cycle if needed)
+    if len(dataset) == 0:
+        logger.error("Dataset is empty! Cannot proceed without data.")
+        raise ValueError("Dataset is empty")
+    
+    # Step 5: Generate task data (A, B1, B2, merge)
+    logger.info("Step 5: Generating task data")
     a_tasks: List[WorkflowTaskData] = []
     merge_tasks: List[WorkflowTaskData] = []
     b1_tasks_by_workflow: Dict[str, List[WorkflowTaskData]] = {}
@@ -2586,7 +2783,16 @@ def test_strategy_workflow(
             sleep_time_a2 = task_times_a2[actual_idx]
             fanout = fanout_values[actual_idx]
 
-        # Create A task
+        # Get dataset entry for this workflow (cycle if needed)
+        dataset_idx = actual_idx if not is_warmup else i
+        dataset_entry = dataset[dataset_idx % len(dataset)]
+        
+        # Extract data from dataset
+        boot_data = dataset_entry.get("boot", "")
+        queries = dataset_entry.get("queries", [])
+        summary_data = dataset_entry.get("summary", "")
+
+        # Create A task (A1: boot)
         # Use mean runtime for min_time strategy, actual time for others
         exp_runtime_a = mean_runtime_a if strategy == "min_time" else sleep_time_a * 1000
         a_task = WorkflowTaskData(
@@ -2595,11 +2801,13 @@ def test_strategy_workflow(
             task_type="A",
             sleep_time=sleep_time_a,
             exp_runtime=exp_runtime_a,
-            is_warmup=is_warmup
+            is_warmup=is_warmup,
+            sentence=boot_data,  # A1: boot
+            max_tokens=None  # A1 doesn't need max_tokens (will use default)
         )
         a_tasks.append(a_task)
 
-        # Create merge A task using A2 time from external data
+        # Create merge A task (A2: summary)
         # Use mean runtime for min_time strategy, actual time for others
         merge_sleep_time = sleep_time_a2
         exp_runtime_a2 = mean_runtime_a2 if strategy == "min_time" else merge_sleep_time * 1000
@@ -2609,7 +2817,9 @@ def test_strategy_workflow(
             task_type="A",  # Submitted to Scheduler A
             sleep_time=merge_sleep_time,
             exp_runtime=exp_runtime_a2,
-            is_warmup=is_warmup
+            is_warmup=is_warmup,
+            sentence=summary_data,  # A2: summary
+            max_tokens=None  # A2 doesn't need max_tokens (will use default)
         )
         merge_tasks.append(merge_task)
 
@@ -2631,7 +2841,17 @@ def test_strategy_workflow(
                 sleep_time_b1 = task_times_b1[b_task_index]
                 sleep_time_b2 = task_times_b2[b_task_index]
 
-            # Create B1 task (slow peak)
+            # Get query data for this B1/B2 pair (cycle if needed)
+            query_data = queries[j % len(queries)] if queries else {}
+            # Extract query text - handle different possible formats
+            if isinstance(query_data, dict):
+                query_text = query_data.get("input", query_data.get("query", query_data.get("text", "")))
+            elif isinstance(query_data, str):
+                query_text = query_data
+            else:
+                query_text = str(query_data)
+
+            # Create B1 task (B1: Query, max_token = 512)
             # Use mean runtime for min_time strategy, actual time for others
             exp_runtime_b1 = mean_runtime_b1 if strategy == "min_time" else sleep_time_b1 * 1000
             b1_task = WorkflowTaskData(
@@ -2641,11 +2861,13 @@ def test_strategy_workflow(
                 sleep_time=sleep_time_b1,
                 exp_runtime=exp_runtime_b1,
                 b_index=j,  # Track pairing index
-                is_warmup=is_warmup
+                is_warmup=is_warmup,
+                sentence=query_text,  # B1: Query
+                max_tokens=512  # B1: max_token = 512
             )
             b1_tasks.append(b1_task)
 
-            # Create B2 task (fast peak) paired with this B1 task
+            # Create B2 task (B2: Query, max_token = 1) paired with this B1 task
             # Use mean runtime for min_time strategy, actual time for others
             exp_runtime_b2 = mean_runtime_b2 if strategy == "min_time" else sleep_time_b2 * 1000
             b2_task = WorkflowTaskData(
@@ -2655,15 +2877,17 @@ def test_strategy_workflow(
                 sleep_time=sleep_time_b2,
                 exp_runtime=exp_runtime_b2,
                 b_index=j,  # Track pairing index
-                is_warmup=is_warmup
+                is_warmup=is_warmup,
+                sentence=query_text,  # B2: Query (same as B1)
+                max_tokens=1  # B2: max_token = 1
             )
             # Map B1 task_id -> B2 task data for Thread 3 to look up
             b2_tasks_by_b1[b1_task_ids_wf[j]] = b2_task
 
         b1_tasks_by_workflow[workflow_id] = b1_tasks
 
-    # Step 5: Initialize workflow states (with B1 and B2 separation)
-    logger.info("Step 5: Initializing workflow states")
+    # Step 6: Initialize workflow states (with B1 and B2 separation)
+    logger.info("Step 6: Initializing workflow states")
 
     # Calculate how many non-warmup workflows should be included in statistics
     # Default: first 50% of non-warmup workflows are targets for statistics
@@ -2707,14 +2931,14 @@ def test_strategy_workflow(
             is_target_for_stats=is_target_for_stats
         )
 
-    # Step 6: Create queues and rate limiter (if using global QPS)
-    logger.info("Step 6: Creating queues")
+    # Step 7: Create queues and rate limiter (if using global QPS)
+    logger.info("Step 7: Creating queues")
     merge_ready_queue = Queue()  # NEW: For B->merge transition
     completion_queue = Queue()   # For merge->monitor (final completion)
     rate_limiter = RateLimiter(gqps) if gqps is not None else None
 
-    # Step 7: Start Thread 6 (Merge Task Receiver) - must start before merge tasks exist
-    logger.info("Step 7: Starting Thread 6 (Merge Task Receiver)")
+    # Step 8: Start Thread 6 (Merge Task Receiver) - must start before merge tasks exist
+    logger.info("Step 8: Starting Thread 6 (Merge Task Receiver)")
     merge_receiver = MergeTaskReceiver(
         scheduler_a_ws=SCHEDULER_A_WS,
         merge_task_ids=merge_task_ids,
@@ -2724,8 +2948,8 @@ def test_strategy_workflow(
     merge_receiver.start()
     time.sleep(2.0)  # Wait for WebSocket connection
 
-    # Step 8: Start Thread 5 (Merge Task Submitter)
-    logger.info("Step 8: Starting Thread 5 (Merge Task Submitter)")
+    # Step 9: Start Thread 5 (Merge Task Submitter)
+    logger.info("Step 9: Starting Thread 5 (Merge Task Submitter)")
     merge_submitter = MergeTaskSubmitter(
         scheduler_a_url=SCHEDULER_A_URL,
         merge_tasks=merge_tasks,
@@ -2746,8 +2970,8 @@ def test_strategy_workflow(
     b2_receiver.start()
     time.sleep(2.0)  # Wait for WebSocket connection
 
-    # Step 9: Start Thread 3 (B1 Task Receiver) - must start before B1 tasks are submitted
-    logger.info("Step 9: Starting Thread 3 (B1 Task Receiver)")
+    # Step 10: Start Thread 3 (B1 Task Receiver) - must start before B1 tasks are submitted
+    logger.info("Step 10: Starting Thread 3 (B1 Task Receiver)")
     b1_receiver = B1TaskReceiver(
         scheduler_b_ws=SCHEDULER_B_WS,
         scheduler_b_url=SCHEDULER_B_URL,
@@ -2759,8 +2983,8 @@ def test_strategy_workflow(
     b1_receiver.start()
     time.sleep(2.0)  # Wait for WebSocket connection
 
-    # Step 10: Start Thread 7 (Workflow Monitor)
-    logger.info("Step 10: Starting Thread 7 (Workflow Monitor)")
+    # Step 11: Start Thread 7 (Workflow Monitor)
+    logger.info("Step 11: Starting Thread 7 (Workflow Monitor)")
     # Monitor will stop when stats_target_count workflows (marked as is_target_for_stats=True) complete
     logger.info(
         f"Monitor configured: will stop after {stats_target_count} target workflows complete "
@@ -2773,8 +2997,8 @@ def test_strategy_workflow(
     )
     monitor.start()
 
-    # Step 11: Start Thread 2 (A Task Receiver + B1 Task Submitter)
-    logger.info("Step 11: Starting Thread 2 (A Task Receiver + B1 Submitter)")
+    # Step 12: Start Thread 2 (A Task Receiver + B1 Task Submitter)
+    logger.info("Step 12: Starting Thread 2 (A Task Receiver + B1 Submitter)")
     a_receiver = ATaskReceiver(
         scheduler_a_ws=SCHEDULER_A_WS,
         scheduler_b_url=SCHEDULER_B_URL,
@@ -2786,8 +3010,8 @@ def test_strategy_workflow(
     a_receiver.start()
     time.sleep(2.0)  # Wait for WebSocket connection
 
-    # Step 12: Start Thread 1 (A Task Submitter)
-    logger.info("Step 12: Starting Thread 1 (A Task Submitter)")
+    # Step 13: Start Thread 1 (A Task Submitter)
+    logger.info("Step 13: Starting Thread 1 (A Task Submitter)")
     a_submitter = PoissonTaskSubmitter(
         scheduler_url=SCHEDULER_A_URL,
         tasks=a_tasks,
@@ -2797,14 +3021,14 @@ def test_strategy_workflow(
     )
     a_submitter.start()
 
-    # Step 13: Wait for A task submission to complete
-    logger.info("Step 13: Waiting for A task submission to complete")
+    # Step 14: Wait for A task submission to complete
+    logger.info("Step 14: Waiting for A task submission to complete")
     while a_submitter.is_alive():
         time.sleep(0.5)
     logger.debug("A task submission complete")
 
-    # Step 14: Wait for workflow completion with timeout
-    logger.info(f"Step 14: Waiting for target workflows to complete (timeout: {timeout_minutes} minutes)")
+    # Step 15: Wait for workflow completion with timeout
+    logger.info(f"Step 15: Waiting for target workflows to complete (timeout: {timeout_minutes} minutes)")
     logger.info(f"Will stop when {stats_target_count} target workflows complete (out of {total_workflows} total)")
     timeout_seconds = timeout_minutes * 60
     start_wait = time.time()
@@ -2820,8 +3044,8 @@ def test_strategy_workflow(
                 f"{len(monitor.completed_workflows)}/{total_workflows} total"
             )
 
-    # Step 15: Stop all threads
-    logger.info("Step 15: Stopping all threads")
+    # Step 16: Stop all threads
+    logger.info("Step 16: Stopping all threads")
     a_submitter.stop()
     a_receiver.stop()
     b1_receiver.stop()
@@ -2896,8 +3120,8 @@ def test_strategy_workflow(
         force_clear_scheduler_tasks(SCHEDULER_B_URL)
         logger.debug("Schedulers cleared successfully")
 
-    # Step 16: Collect results
-    logger.info("Step 16: Collecting results")
+    # Step 17: Collect results
+    logger.info("Step 17: Collecting results")
 
     # Combine all task records (separate B1 and B2)
     all_a_records = a_submitter.submitted_tasks + a_receiver.a_results
