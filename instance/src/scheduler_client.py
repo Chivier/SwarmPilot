@@ -66,6 +66,54 @@ from urllib.parse import urlparse
 import httpx
 
 
+# ==================== GPU Detection Utility ====================
+
+
+def _get_gpu0_name() -> str:
+    """Get the name of GPU0, or 'CPU' if no GPU is available.
+    
+    Tries multiple methods to detect GPU:
+    1. pynvml (NVIDIA Management Library Python bindings)
+    2. nvidia-smi command
+    3. Falls back to 'CPU' if no GPU is found
+    
+    Returns:
+        GPU name string (e.g., "NVIDIA GeForce RTX 3090") or "CPU"
+    """
+    # Method 1: Try pynvml
+    try:
+        import pynvml
+        pynvml.nvmlInit()
+        handle = pynvml.nvmlDeviceGetHandleByIndex(0)
+        name = pynvml.nvmlDeviceGetName(handle)
+        pynvml.nvmlShutdown()
+        # Decode bytes to string if needed
+        if isinstance(name, bytes):
+            name = name.decode('utf-8')
+        return name
+    except (ImportError, Exception):
+        pass
+    
+    # Method 2: Try nvidia-smi command
+    try:
+        result = subprocess.run(
+            ['nvidia-smi', '--query-gpu=name', '--format=csv,noheader', '-i', '0'],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=True
+        )
+        if result.stdout:
+            gpu_name = result.stdout.strip().split('\n')[0]  # Get first line (GPU0)
+            if gpu_name:
+                return gpu_name
+    except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError, Exception):
+        pass
+    
+    # No GPU found, return CPU
+    return "CPU"
+
+
 # ==================== Configuration Classes ====================
 
 
@@ -939,6 +987,8 @@ class SchedulerClient:
 
     def _get_platform_info(self) -> Dict[str, Any]:
         """Auto-detect platform information.
+        
+        hardware_name will be set to GPU0's name if available, otherwise "CPU".
 
         Returns:
             Dictionary containing platform information
@@ -946,7 +996,7 @@ class SchedulerClient:
         return {
             "software_name": platform.system(),
             "software_version": platform.release(),
-            "hardware_name": platform.machine(),
+            "hardware_name": _get_gpu0_name(),
         }
 
     def update_predictor_config(self, predictor_config: PredictorConfig) -> None:

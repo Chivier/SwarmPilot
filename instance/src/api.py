@@ -21,7 +21,7 @@ from .subprocess_manager import get_docker_manager
 from .model_registry import get_registry
 from .models import InstanceStatus, Task, TaskStatus, RestartOperation, RestartStatus
 from .task_queue import get_task_queue
-from .scheduler_client import get_scheduler_client
+from .scheduler_client import get_scheduler_client, _get_gpu0_name
 from .websocket_client import WebSocketClient
 from .websocket_client_singleton import get_websocket_client, set_websocket_client
 from . import logger as _  # Import logger module to initialize logging
@@ -179,6 +179,9 @@ class InstanceInfo(BaseModel):
     task_queue: TaskQueueStats
     uptime: int = Field(..., description="Uptime in seconds")
     version: str
+    hardware_name: Optional[str] = Field(None, description="Hardware name (e.g., GPU name)")
+    software_name: Optional[str] = Field(None, description="Software platform name (e.g., sglang, vllm)")
+    software_version: Optional[str] = Field(None, description="Software platform version")
 
 
 class InfoResponse(BaseModel):
@@ -1255,6 +1258,40 @@ async def get_info():
 
     # Calculate uptime
     uptime = int(time.time() - _startup_time)
+    
+    # Get platform info (hardware and software)
+    # Use the same method as scheduler_client for consistency
+    try:
+        import platform as platform_module
+        hardware_name = _get_gpu0_name()
+        software_name = platform_module.system()  # Default to OS name
+        software_version = platform_module.release()  # Default to OS version
+        
+        # Try to get software info from environment variables if available
+        # These can be set when starting the instance service
+        import os
+        env_software_name = os.getenv("INSTANCE_SOFTWARE_NAME")
+        env_software_version = os.getenv("INSTANCE_SOFTWARE_VERSION")
+        
+        if env_software_name:
+            software_name = env_software_name
+        if env_software_version:
+            software_version = env_software_version
+        
+        # If a model is running, try to infer software from model metadata
+        # (e.g., if model uses sglang, vllm, etc.)
+        if current_model and current_model.parameters:
+            # Check if parameters contain software hints
+            model_params = current_model.parameters
+            if "software_name" in model_params:
+                software_name = model_params["software_name"]
+            if "software_version" in model_params:
+                software_version = model_params["software_version"]
+    except Exception as e:
+        logger.warning(f"Failed to detect platform info: {e}")
+        hardware_name = None
+        software_name = None
+        software_version = None
 
     # Build response
     instance_info = InstanceInfo(
@@ -1263,7 +1300,10 @@ async def get_info():
         current_model=current_model_info,
         task_queue=task_queue_stats,
         uptime=uptime,
-        version="1.0.0"
+        version="1.0.0",
+        hardware_name=hardware_name,
+        software_name=software_name,
+        software_version=software_version
     )
 
     return InfoResponse(
