@@ -653,7 +653,7 @@ class ATaskReceiver:
                  a_task_ids: List[str],
                  b1_tasks_by_workflow: Dict[str, List[WorkflowTaskData]],
                  workflow_states: Dict[str, WorkflowState],
-                 model_id: str = "llm_service_large_model",
+                 model_id: str = "llm_service_small_model",
                  rate_limiter: Optional[RateLimiter] = None):
         """
         Initialize A task receiver.
@@ -2803,7 +2803,7 @@ def test_strategy_workflow(
             exp_runtime=exp_runtime_a,
             is_warmup=is_warmup,
             sentence=boot_data,  # A1: boot
-            max_tokens=None  # A1 doesn't need max_tokens (will use default)
+            max_tokens=4096  # A1: max_token 4096
         )
         a_tasks.append(a_task)
 
@@ -2819,7 +2819,7 @@ def test_strategy_workflow(
             exp_runtime=exp_runtime_a2,
             is_warmup=is_warmup,
             sentence=summary_data,  # A2: summary
-            max_tokens=None  # A2 doesn't need max_tokens (will use default)
+            max_tokens=4096  # A2: max_token 4096
         )
         merge_tasks.append(merge_task)
 
@@ -2851,7 +2851,7 @@ def test_strategy_workflow(
             else:
                 query_text = str(query_data)
 
-            # Create B1 task (B1: Query, max_token = 512)
+            # Create B1 task (B1: Query, max_token = 300)
             # Use mean runtime for min_time strategy, actual time for others
             exp_runtime_b1 = mean_runtime_b1 if strategy == "min_time" else sleep_time_b1 * 1000
             b1_task = WorkflowTaskData(
@@ -2863,7 +2863,7 @@ def test_strategy_workflow(
                 b_index=j,  # Track pairing index
                 is_warmup=is_warmup,
                 sentence=query_text,  # B1: Query
-                max_tokens=512  # B1: max_token = 512
+                max_tokens=300  # B1: max_token = 300
             )
             b1_tasks.append(b1_task)
 
