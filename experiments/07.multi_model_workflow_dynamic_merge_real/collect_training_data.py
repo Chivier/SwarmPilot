@@ -433,53 +433,129 @@ def load_dataset(dataset_path: str) -> List[Dict[str, Any]]:
 def extract_tasks_from_dataset(dataset: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     Extract individual LLM tasks from dataset entries.
-    
+
     Each dataset entry contains a boot (query generation) and summary task.
     We extract all tasks that have sentences for LLM execution.
-    
+
+    Handles both expected format (dict with 'input' and 'max_tokens') and
+    actual format (plain string for boot/summary).
+
     Args:
         dataset: List of dataset entries
-        
+
     Returns:
         List of tasks, each with sentence and max_tokens
     """
     tasks = []
-    
-    for entry in dataset:
+    boot_count = 0
+    summary_count = 0
+    query_count = 0
+
+    for idx, entry in enumerate(dataset):
+        # Generate entry_id if missing
+        entry_id = entry.get("id", f"entry-{idx:03d}")
+
         # Extract boot task (query generation)
+        # Handle both dict format and string format
         if "boot" in entry and entry["boot"]:
             boot_data = entry["boot"]
-            if "input" in boot_data:
+
+            if isinstance(boot_data, dict) and "input" in boot_data:
+                # Expected format: {"input": "...", "max_tokens": 512}
                 tasks.append({
                     "sentence": boot_data["input"],
                     "max_tokens": boot_data.get("max_tokens", 512),
                     "task_type": "boot",
-                    "entry_id": entry.get("id", "unknown")
+                    "entry_id": entry_id
                 })
-        
+                boot_count += 1
+            elif isinstance(boot_data, str):
+                # Actual format: plain string
+                # Estimate max_tokens from content length
+                estimated_tokens = estimate_token_length(boot_data)
+                max_tokens = 512 if estimated_tokens < 500 else 1024
+
+                tasks.append({
+                    "sentence": boot_data,
+                    "max_tokens": max_tokens,
+                    "task_type": "boot",
+                    "entry_id": entry_id
+                })
+                boot_count += 1
+
         # Extract summary task
+        # Handle both dict format and string format
         if "summary" in entry and entry["summary"]:
             summary_data = entry["summary"]
-            if "input" in summary_data:
+
+            if isinstance(summary_data, dict) and "input" in summary_data:
+                # Expected format: {"input": "...", "max_tokens": 512}
                 tasks.append({
                     "sentence": summary_data["input"],
                     "max_tokens": summary_data.get("max_tokens", 512),
                     "task_type": "summary",
-                    "entry_id": entry.get("id", "unknown")
+                    "entry_id": entry_id
                 })
-        
+                summary_count += 1
+            elif isinstance(summary_data, str):
+                # Actual format: plain string
+                # Estimate max_tokens from content length
+                estimated_tokens = estimate_token_length(summary_data)
+                max_tokens = 512 if estimated_tokens < 500 else 1024
+
+                tasks.append({
+                    "sentence": summary_data,
+                    "max_tokens": max_tokens,
+                    "task_type": "summary",
+                    "entry_id": entry_id
+                })
+                summary_count += 1
+
         # Extract query tasks from queries list
         if "queries" in entry and isinstance(entry["queries"], list):
-            for query_data in entry["queries"]:
+            for query_idx, query_data in enumerate(entry["queries"]):
                 if "input" in query_data:
+                    # Try to get max_tokens from multiple sources
+                    max_tokens = query_data.get("max_tokens")
+
+                    if max_tokens is None:
+                        # Try to infer from output_len field (actual dataset has this)
+                        output_len = query_data.get("output_len")
+                        if output_len:
+                            # Use output_len as a proxy for max_tokens
+                            # Round up to nearest power of 2 for better model training
+                            max_tokens = 128 if output_len < 128 else \
+                                        256 if output_len < 256 else \
+                                        512 if output_len < 512 else \
+                                        1024 if output_len < 1024 else 2048
+                        else:
+                            # Fall back to estimating from input length
+                            estimated_tokens = estimate_token_length(query_data["input"])
+                            max_tokens = 256 if estimated_tokens < 200 else \
+                                        512 if estimated_tokens < 500 else 1024
+
                     tasks.append({
                         "sentence": query_data["input"],
-                        "max_tokens": query_data.get("max_tokens", 512),
+                        "max_tokens": max_tokens,
                         "task_type": "query",
-                        "entry_id": entry.get("id", "unknown")
+                        "entry_id": f"{entry_id}-q{query_idx}"
                     })
-    
-    logger.info(f"Extracted {len(tasks)} LLM tasks from dataset")
+                    query_count += 1
+
+    # Log extraction statistics
+    logger.info(f"Extracted {len(tasks)} LLM tasks from {len(dataset)} dataset entries")
+    logger.info(f"  - Boot tasks: {boot_count}")
+    logger.info(f"  - Summary tasks: {summary_count}")
+    logger.info(f"  - Query tasks: {query_count}")
+
+    # Log max_tokens distribution for data quality validation
+    max_tokens_dist = {}
+    for task in tasks:
+        mt = task["max_tokens"]
+        max_tokens_dist[mt] = max_tokens_dist.get(mt, 0) + 1
+
+    logger.info(f"  - max_tokens distribution: {dict(sorted(max_tokens_dist.items()))}")
+
     return tasks
 
 
