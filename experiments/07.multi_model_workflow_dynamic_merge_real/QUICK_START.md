@@ -70,6 +70,7 @@ For parallel execution with 3 instances:
 3. **Parallel execution**: Distributes tasks across instances using round-robin
 4. **Collects samples**: Executes each task, measures runtime, builds training samples
 5. **Trains predictor**: Submits samples for `expect_error` and `quantile` prediction
+6. **Validates models**: Automatically tests predictions and calculates metrics (pinball loss, MAPE)
 
 ## Expected Output
 
@@ -86,9 +87,44 @@ INFO - Initialized 3 LLM instances for parallel execution
 Collecting training data: 100%|████████████| 1471/1471 [02:35<00:00, 9.47tasks/s]
 
 INFO - ✓ Successfully collected 1471 samples
+
 INFO - ✓ Training submitted successfully for expect_error
+INFO - Validating expect_error model...
+============================================================
+EXPECT_ERROR Model Validation Results:
+============================================================
+  Samples validated: 1471/1471
+  MAPE: 8.52%
+  MAE: 15.67 ms
+  Mean Error Margin: 12.34 ms
+  Coverage (within error margin): 85.42%
+============================================================
+
 INFO - ✓ Training submitted successfully for quantile
-INFO - ✓ All training jobs completed successfully
+INFO - Validating quantile model...
+============================================================
+QUANTILE Model Validation Results:
+============================================================
+  Samples validated: 1471
+
+Per-Quantile Metrics:
+  Quantile 0.1:
+    Pinball Loss: 12.34
+    MAPE: 7.85%
+    MAE: 14.23 ms
+  Quantile 0.5:
+    Pinball Loss: 18.45
+    MAPE: 9.23%
+    MAE: 18.67 ms
+  ...
+
+Average Metrics (across all quantiles):
+  Avg Pinball Loss: 15.67
+  Avg MAPE: 9.15%
+  Avg MAE: 17.42 ms
+============================================================
+
+INFO - ✓ All training and validation completed successfully
 ```
 
 ## Troubleshooting

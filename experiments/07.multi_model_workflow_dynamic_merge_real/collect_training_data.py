@@ -44,6 +44,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import httpx
+import numpy as np
 from tqdm import tqdm
 
 # Configure logging
@@ -518,13 +519,13 @@ class MultiInstanceLLMClient:
             await client_info['client'].close()
 
 
-class PredictorTrainingClient:
-    """Client for submitting training data to predictor service."""
-    
+class PredictorClient:
+    """Client for interacting with predictor service (training and prediction)."""
+
     def __init__(self, predictor_url: str, timeout: float = 600.0):
         """
-        Initialize predictor training client.
-        
+        Initialize predictor client.
+
         Args:
             predictor_url: Base URL of the predictor service
             timeout: Request timeout in seconds
@@ -649,10 +650,112 @@ class PredictorTrainingClient:
                 error_msg += f" - {error_detail}"
             
             raise Exception(error_msg)
-    
+
+    async def predict(
+        self,
+        model_id: str,
+        platform_info: Dict[str, str],
+        prediction_type: str,
+        features: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Get runtime prediction from predictor service.
+
+        Args:
+            model_id: Model identifier
+            platform_info: Platform information dict
+            prediction_type: Type of prediction ('expect_error' or 'quantile')
+            features: Feature dictionary (without runtime_ms)
+
+        Returns:
+            Prediction response from predictor service
+
+        Raises:
+            Exception: If prediction fails
+        """
+        request_data = {
+            "model_id": model_id,
+            "platform_info": {
+                "software_name": platform_info["software_name"],
+                "software_version": platform_info["software_version"],
+                "hardware_name": platform_info["hardware_name"]
+            },
+            "prediction_type": prediction_type,
+            "features": features
+        }
+
+        response = await self.client.post(
+            f"{self.predictor_url}/predict",
+            json=request_data
+        )
+
+        if response.status_code == 200:
+            return response.json()
+        else:
+            try:
+                error_detail = response.json()
+            except Exception:
+                error_detail = {"error": response.text}
+
+            error_msg = f"Prediction failed: HTTP {response.status_code}"
+            if isinstance(error_detail, dict):
+                error_msg += f" - {error_detail.get('error', 'Unknown error')}"
+                if "message" in error_detail:
+                    error_msg += f": {error_detail['message']}"
+            else:
+                error_msg += f" - {error_detail}"
+
+            raise Exception(error_msg)
+
     async def close(self):
         """Close the HTTP client."""
         await self.client.aclose()
+
+
+def calculate_pinball_loss(actual: np.ndarray, predicted: np.ndarray, quantile: float) -> float:
+    """
+    Calculate pinball loss for quantile regression.
+
+    Pinball loss formula:
+    L(y, q_hat) = sum((y - q_hat) * quantile) if y >= q_hat
+                  sum((q_hat - y) * (1 - quantile)) if y < q_hat
+
+    Args:
+        actual: Actual runtime values (array)
+        predicted: Predicted runtime values (array)
+        quantile: Quantile level (0 < quantile < 1)
+
+    Returns:
+        Average pinball loss
+    """
+    errors = actual - predicted
+    loss = np.where(
+        errors >= 0,
+        quantile * errors,
+        (quantile - 1) * errors
+    )
+    return float(np.mean(loss))
+
+
+def calculate_mape(actual: np.ndarray, predicted: np.ndarray, epsilon: float = 1e-10) -> float:
+    """
+    Calculate Mean Absolute Percentage Error (MAPE).
+
+    MAPE formula:
+    MAPE = (1/n) * sum(|actual - predicted| / actual) * 100%
+
+    Args:
+        actual: Actual runtime values (array)
+        predicted: Predicted runtime values (array)
+        epsilon: Small value to avoid division by zero
+
+    Returns:
+        MAPE percentage
+    """
+    # Avoid division by zero
+    actual_safe = np.where(np.abs(actual) < epsilon, epsilon, actual)
+    mape = np.mean(np.abs((actual - predicted) / actual_safe)) * 100
+    return float(mape)
 
 
 def load_dataset(dataset_path: str) -> List[Dict[str, Any]]:
@@ -895,6 +998,222 @@ async def collect_training_samples(
     return samples
 
 
+async def validate_model(
+    predictor_client: PredictorClient,
+    model_id: str,
+    platform_info: Dict[str, str],
+    prediction_type: str,
+    validation_samples: List[Dict[str, Any]],
+    quantiles: Optional[List[float]] = None
+) -> Dict[str, Any]:
+    """
+    Validate trained model by making predictions on validation samples and calculating metrics.
+
+    Args:
+        predictor_client: Predictor service client
+        model_id: Model identifier
+        platform_info: Platform information dict
+        prediction_type: Type of prediction ('expect_error' or 'quantile')
+        validation_samples: List of samples with features and runtime_ms
+        quantiles: List of quantile levels (for quantile prediction type)
+
+    Returns:
+        Dictionary with validation metrics
+    """
+    logger.info(f"\n{'='*60}")
+    logger.info(f"Validating {prediction_type.upper()} model with {len(validation_samples)} samples...")
+    logger.info(f"{'='*60}")
+
+    # Extract actual runtimes
+    actual_runtimes = np.array([sample["runtime_ms"] for sample in validation_samples])
+
+    if prediction_type == "expect_error":
+        # Make predictions for all samples
+        predictions = []
+        errors = []
+
+        logger.info("Making predictions on validation samples...")
+        for idx, sample in enumerate(tqdm(validation_samples, desc="Predicting")):
+            # Extract features (remove runtime_ms)
+            features = {k: v for k, v in sample.items() if k != "runtime_ms"}
+
+            try:
+                pred_response = await predictor_client.predict(
+                    model_id=model_id,
+                    platform_info=platform_info,
+                    prediction_type=prediction_type,
+                    features=features
+                )
+
+                predicted_runtime = pred_response["result"]["expected_runtime_ms"]
+                error_margin = pred_response["result"]["error_margin_ms"]
+
+                predictions.append(predicted_runtime)
+                errors.append(error_margin)
+
+            except Exception as e:
+                logger.warning(f"Prediction failed for sample {idx}: {e}")
+                predictions.append(np.nan)
+                errors.append(np.nan)
+
+        predictions = np.array(predictions)
+        errors = np.array(errors)
+
+        # Filter out failed predictions
+        valid_mask = ~np.isnan(predictions)
+        if not np.any(valid_mask):
+            logger.error("All predictions failed - cannot calculate metrics")
+            return {"error": "All predictions failed"}
+
+        valid_actual = actual_runtimes[valid_mask]
+        valid_predictions = predictions[valid_mask]
+        valid_errors = errors[valid_mask]
+
+        # Calculate MAPE
+        mape = calculate_mape(valid_actual, valid_predictions)
+
+        # Calculate Mean Absolute Error
+        mae = float(np.mean(np.abs(valid_actual - valid_predictions)))
+
+        # Calculate Mean Error Margin
+        mean_error_margin = float(np.mean(valid_errors))
+
+        # Calculate coverage (percentage of actual values within error margin)
+        within_margin = np.abs(valid_actual - valid_predictions) <= valid_errors
+        coverage = float(np.mean(within_margin)) * 100
+
+        results = {
+            "prediction_type": "expect_error",
+            "samples_validated": int(np.sum(valid_mask)),
+            "samples_failed": int(len(validation_samples) - np.sum(valid_mask)),
+            "metrics": {
+                "mape_percent": round(mape, 2),
+                "mae_ms": round(mae, 2),
+                "mean_error_margin_ms": round(mean_error_margin, 2),
+                "coverage_percent": round(coverage, 2)
+            }
+        }
+
+        logger.info(f"\n{'='*60}")
+        logger.info(f"EXPECT_ERROR Model Validation Results:")
+        logger.info(f"{'='*60}")
+        logger.info(f"  Samples validated: {results['samples_validated']}/{len(validation_samples)}")
+        logger.info(f"  MAPE: {results['metrics']['mape_percent']:.2f}%")
+        logger.info(f"  MAE: {results['metrics']['mae_ms']:.2f} ms")
+        logger.info(f"  Mean Error Margin: {results['metrics']['mean_error_margin_ms']:.2f} ms")
+        logger.info(f"  Coverage (within error margin): {results['metrics']['coverage_percent']:.2f}%")
+        logger.info(f"{'='*60}\n")
+
+        return results
+
+    elif prediction_type == "quantile":
+        if not quantiles:
+            logger.error("Quantiles must be provided for quantile prediction type")
+            return {"error": "Missing quantiles"}
+
+        # Make predictions for all samples
+        all_quantile_predictions = {q: [] for q in quantiles}
+
+        logger.info("Making predictions on validation samples...")
+        for idx, sample in enumerate(tqdm(validation_samples, desc="Predicting")):
+            # Extract features (remove runtime_ms)
+            features = {k: v for k, v in sample.items() if k != "runtime_ms"}
+
+            try:
+                pred_response = await predictor_client.predict(
+                    model_id=model_id,
+                    platform_info=platform_info,
+                    prediction_type=prediction_type,
+                    features=features
+                )
+
+                # Extract quantile predictions
+                quantile_results = pred_response["result"]["quantiles"]
+
+                for q in quantiles:
+                    q_str = str(q)
+                    if q_str in quantile_results:
+                        all_quantile_predictions[q].append(quantile_results[q_str])
+                    else:
+                        all_quantile_predictions[q].append(np.nan)
+
+            except Exception as e:
+                logger.warning(f"Prediction failed for sample {idx}: {e}")
+                for q in quantiles:
+                    all_quantile_predictions[q].append(np.nan)
+
+        # Calculate metrics for each quantile
+        quantile_metrics = {}
+
+        for q in quantiles:
+            predictions = np.array(all_quantile_predictions[q])
+
+            # Filter out failed predictions
+            valid_mask = ~np.isnan(predictions)
+            if not np.any(valid_mask):
+                logger.warning(f"All predictions failed for quantile {q}")
+                continue
+
+            valid_actual = actual_runtimes[valid_mask]
+            valid_predictions = predictions[valid_mask]
+
+            # Calculate Pinball Loss
+            pinball = calculate_pinball_loss(valid_actual, valid_predictions, q)
+
+            # Calculate MAPE
+            mape = calculate_mape(valid_actual, valid_predictions)
+
+            # Calculate MAE
+            mae = float(np.mean(np.abs(valid_actual - valid_predictions)))
+
+            quantile_metrics[q] = {
+                "pinball_loss": round(pinball, 2),
+                "mape_percent": round(mape, 2),
+                "mae_ms": round(mae, 2),
+                "samples_valid": int(np.sum(valid_mask))
+            }
+
+        # Calculate average metrics across all quantiles
+        avg_pinball = np.mean([m["pinball_loss"] for m in quantile_metrics.values()])
+        avg_mape = np.mean([m["mape_percent"] for m in quantile_metrics.values()])
+        avg_mae = np.mean([m["mae_ms"] for m in quantile_metrics.values()])
+
+        results = {
+            "prediction_type": "quantile",
+            "samples_validated": len(validation_samples),
+            "quantile_metrics": quantile_metrics,
+            "average_metrics": {
+                "avg_pinball_loss": round(float(avg_pinball), 2),
+                "avg_mape_percent": round(float(avg_mape), 2),
+                "avg_mae_ms": round(float(avg_mae), 2)
+            }
+        }
+
+        logger.info(f"\n{'='*60}")
+        logger.info(f"QUANTILE Model Validation Results:")
+        logger.info(f"{'='*60}")
+        logger.info(f"  Samples validated: {results['samples_validated']}")
+        logger.info(f"\nPer-Quantile Metrics:")
+        for q, metrics in quantile_metrics.items():
+            logger.info(f"  Quantile {q}:")
+            logger.info(f"    Pinball Loss: {metrics['pinball_loss']:.2f}")
+            logger.info(f"    MAPE: {metrics['mape_percent']:.2f}%")
+            logger.info(f"    MAE: {metrics['mae_ms']:.2f} ms")
+            logger.info(f"    Valid samples: {metrics['samples_valid']}")
+
+        logger.info(f"\nAverage Metrics (across all quantiles):")
+        logger.info(f"  Avg Pinball Loss: {results['average_metrics']['avg_pinball_loss']:.2f}")
+        logger.info(f"  Avg MAPE: {results['average_metrics']['avg_mape_percent']:.2f}%")
+        logger.info(f"  Avg MAE: {results['average_metrics']['avg_mae_ms']:.2f} ms")
+        logger.info(f"{'='*60}\n")
+
+        return results
+
+    else:
+        logger.error(f"Unknown prediction type: {prediction_type}")
+        return {"error": f"Unknown prediction type: {prediction_type}"}
+
+
 def load_config(config_path: str) -> Dict[str, Any]:
     """
     Load configuration from JSON file.
@@ -994,7 +1313,7 @@ Example config.json:
     )
 
     # Initialize predictor client
-    predictor_client = PredictorTrainingClient(config['predictor']['url'])
+    predictor_client = PredictorClient(config['predictor']['url'])
 
     try:
         # Collect all training samples using parallel execution
@@ -1047,6 +1366,27 @@ Example config.json:
                 logger.info(f"  Samples trained: {response.get('samples_trained')}")
                 logger.info(f"  Status: {response.get('status')}")
                 logger.info(f"  Message: {response.get('message')}")
+
+                # Validate the trained model
+                logger.info(f"\nValidating {prediction_type} model...")
+                try:
+                    validation_results = await validate_model(
+                        predictor_client=predictor_client,
+                        model_id=config['model_id'],
+                        platform_info=platform_info,
+                        prediction_type=prediction_type,
+                        validation_samples=all_samples,
+                        quantiles=config['training_config'].get('quantiles') if prediction_type == 'quantile' else None
+                    )
+
+                    # Store validation results
+                    if "error" not in validation_results:
+                        logger.info(f"✓ {prediction_type.upper()} model validation completed successfully")
+                    else:
+                        logger.error(f"✗ {prediction_type.upper()} model validation failed: {validation_results['error']}")
+
+                except Exception as e:
+                    logger.error(f"✗ Failed to validate {prediction_type} model: {e}")
 
             except Exception as e:
                 logger.error(f"✗ Failed to train {prediction_type} model: {e}")
