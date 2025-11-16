@@ -22,3 +22,21 @@ models:
       cpu: "1"
       memory: "512Mi"
       gpu: false
+
+  - model_id: "llm_service_large_model"
+    name: "Large Language Model"
+    directory: "llm_service_large_model"
+    resource_requirements:
+      cpu: "4"
+      memory: "16Gi"
+      gpu: true
+      gpu_count: 1
+
+  - model_id: "llm_service_small_model"
+    name: "Small Language Model"
+    directory: "llm_service_small_model"
+    resource_requirements:
+      cpu: "4"
+      memory: "8Gi"
+      gpu: true
+      gpu_count: 1
