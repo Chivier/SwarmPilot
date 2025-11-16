@@ -37,6 +37,7 @@ import argparse
 import asyncio
 import json
 import logging
+import re
 import subprocess
 import time
 from pathlib import Path
@@ -51,6 +52,178 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# Hardware Performance Information (copied from predictor/src/utils/hardware_perf_info.py)
+# ============================================================================
+
+NVIDIA_TESLA_SPECS = {
+    "V100": {
+        "cuda_cores": 5120,
+        "tensor_cores": 640,
+        "fp32_tflops": 15.7,
+        "fp16_tflops": 31.4,
+        "tensor_tflops": 125.0,
+        "memory_gb": 16,
+        "memory_bandwidth_gb_s": 900,
+    },
+    "V100-32GB": {
+        "cuda_cores": 5120,
+        "tensor_cores": 640,
+        "fp32_tflops": 15.7,
+        "fp16_tflops": 31.4,
+        "tensor_tflops": 125.0,
+        "memory_gb": 32,
+        "memory_bandwidth_gb_s": 900,
+    },
+    "T4": {
+        "cuda_cores": 2560,
+        "tensor_cores": 320,
+        "fp32_tflops": 8.1,
+        "fp16_tflops": 65.0,
+        "tensor_tflops": 130.0,
+        "memory_gb": 16,
+        "memory_bandwidth_gb_s": 300,
+    },
+    "A100": {
+        "cuda_cores": 6912,
+        "tensor_cores": 432,
+        "fp32_tflops": 19.5,
+        "fp16_tflops": 78.0,
+        "tensor_tflops": 312.0,
+        "memory_gb": 40,
+        "memory_bandwidth_gb_s": 1555,
+    },
+    "A100-80GB": {
+        "cuda_cores": 6912,
+        "tensor_cores": 432,
+        "fp32_tflops": 19.5,
+        "fp16_tflops": 78.0,
+        "tensor_tflops": 312.0,
+        "memory_gb": 80,
+        "memory_bandwidth_gb_s": 2039,
+    },
+    "A10": {
+        "cuda_cores": 9216,
+        "tensor_cores": 288,
+        "fp32_tflops": 31.2,
+        "fp16_tflops": 125.0,
+        "tensor_tflops": 250.0,
+        "memory_gb": 24,
+        "memory_bandwidth_gb_s": 600,
+    },
+    "A30": {
+        "cuda_cores": 3584,
+        "tensor_cores": 224,
+        "fp32_tflops": 10.3,
+        "fp16_tflops": 82.0,
+        "tensor_tflops": 165.0,
+        "memory_gb": 24,
+        "memory_bandwidth_gb_s": 933,
+    },
+    "A40": {
+        "cuda_cores": 10752,
+        "tensor_cores": 336,
+        "fp32_tflops": 37.4,
+        "fp16_tflops": 74.8,
+        "tensor_tflops": 150.0,
+        "memory_gb": 48,
+        "memory_bandwidth_gb_s": 696,
+    },
+    "H100": {
+        "cuda_cores": 14592,
+        "tensor_cores": 456,
+        "fp32_tflops": 51.0,
+        "fp16_tflops": 204.0,
+        "tensor_tflops": 989.0,
+        "fp8_tensor_tflops": 1979.0,
+        "memory_gb": 80,
+        "memory_bandwidth_gb_s": 3350,
+    },
+    "H100-94GB": {
+        "cuda_cores": 14592,
+        "tensor_cores": 456,
+        "fp32_tflops": 51.0,
+        "fp16_tflops": 204.0,
+        "tensor_tflops": 989.0,
+        "fp8_tensor_tflops": 1979.0,
+        "memory_gb": 94,
+        "memory_bandwidth_gb_s": 3350,
+    },
+    "H100-PCIe": {
+        "cuda_cores": 14592,
+        "tensor_cores": 456,
+        "fp32_tflops": 48.0,
+        "fp16_tflops": 192.0,
+        "tensor_tflops": 756.0,
+        "fp8_tensor_tflops": 1513.0,
+        "memory_gb": 80,
+        "memory_bandwidth_gb_s": 2000,
+    },
+    "H20": {
+        "cuda_cores": 17920,
+        "tensor_cores": 560,
+        "fp32_tflops": 63.0,
+        "fp16_tflops": 252.0,
+        "tensor_tflops": 1230.0,
+        "fp8_tensor_tflops": 2460.0,
+        "memory_gb": 96,
+        "memory_bandwidth_gb_s": 4000,
+    },
+}
+
+
+def extract_gpu_specs(hardware_name: str) -> Optional[Dict[str, Any]]:
+    """
+    Extract GPU specifications from hardware name.
+
+    Copied from predictor/src/models.py::PlatformInfo.extract_gpu_specs()
+
+    Args:
+        hardware_name: Name of the hardware platform (e.g., "NVIDIA H20", "Tesla V100")
+
+    Returns:
+        Dictionary containing GPU specifications if a match is found, None otherwise.
+    """
+    # Normalize hardware_name for matching
+    hardware_name_upper = hardware_name.upper()
+
+    # Define GPU model patterns in priority order (more specific first)
+    gpu_patterns = [
+        # H20/H200 variants (check specific variants first)
+        (r'H20', 'H20'),
+
+        # H100 variants (check specific variants first)
+        (r'H100[- ]?PCIE', 'H100-PCIe'),
+        (r'H100[- ]?94GB', 'H100-94GB'),
+        (r'H100', 'H100'),
+
+        # A100 variants
+        (r'A100[- ]?80GB', 'A100-80GB'),
+        (r'A100', 'A100'),
+
+        # V100 variants
+        (r'V100[- ]?32GB', 'V100-32GB'),
+        (r'V100', 'V100'),
+
+        # Other A-series
+        (r'A40', 'A40'),
+        (r'A30', 'A30'),
+        (r'A10', 'A10'),
+
+        # T-series
+        (r'T4', 'T4'),
+    ]
+
+    # Try to match each pattern
+    for pattern, gpu_key in gpu_patterns:
+        if re.search(pattern, hardware_name_upper):
+            if gpu_key in NVIDIA_TESLA_SPECS:
+                return NVIDIA_TESLA_SPECS[gpu_key].copy()
+
+    # No match found
+    return None
 
 
 def estimate_token_length(text: Optional[str]) -> int:
@@ -728,24 +901,9 @@ async def main():
         logger.error("No tasks found in dataset")
         return
     
-    # Get hardware specs (simulate predictor's extract_gpu_specs)
-    # In real scenario, this would be done by predictor based on platform_info
-    import sys
-    from pathlib import Path
-    
-    # Add predictor source to path
-    predictor_path = Path(__file__).parent.parent.parent / "predictor" / "src"
-    if str(predictor_path) not in sys.path:
-        sys.path.insert(0, str(predictor_path))
-    
-    from models import PlatformInfo
-    
-    platform_info = PlatformInfo(
-        software_name=args.software_name,
-        software_version=args.software_version,
-        hardware_name=args.hardware_name
-    )
-    hardware_specs = platform_info.extract_gpu_specs() or {}
+    # Get hardware specs using local extract_gpu_specs function
+    # This replicates predictor's PlatformInfo.extract_gpu_specs() behavior
+    hardware_specs = extract_gpu_specs(args.hardware_name) or {}
     
     if not hardware_specs:
         logger.warning(f"Could not extract hardware specs for {args.hardware_name}")

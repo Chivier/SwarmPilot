@@ -165,13 +165,31 @@ The fix maintains **full backward compatibility**:
 
 ## Files Modified
 
-- [collect_training_data.py](collect_training_data.py) - Fixed `extract_tasks_from_dataset()` function (lines 433-559)
+- [collect_training_data.py](collect_training_data.py) - Fixed `extract_tasks_from_dataset()` function and removed external dependencies
+
+### Detailed Changes
+
+1. **Lines 36-226**: Added self-contained hardware performance database
+   - Copied `NVIDIA_TESLA_SPECS` from `predictor/src/utils/hardware_perf_info.py`
+   - Copied `extract_gpu_specs()` function from `predictor/src/models.py::PlatformInfo.extract_gpu_specs()`
+   - Script is now fully self-contained with no external package dependencies
+
+2. **Lines 605-759**: Fixed `extract_tasks_from_dataset()` function
+   - Handle both dict and string formats for `boot`/`summary` fields
+   - Infer `max_tokens` from `output_len` field in query metadata
+   - Add comprehensive logging for task extraction statistics
+
+3. **Line 906**: Simplified hardware spec extraction
+   - Removed dependency on `predictor/src/models.py`
+   - Now uses local `extract_gpu_specs()` function
 
 ## Files Analyzed
 
 - [data/dataset.jsonl](data/dataset.jsonl) - Actual dataset (35.9MB, 99 entries)
 - [dataset_generator.py](dataset_generator.py) - Data generation source
 - [COLLECT_TRAINING_DATA_README.md](COLLECT_TRAINING_DATA_README.md) - Documentation
+- [../../predictor/src/models.py](../../predictor/src/models.py) - Source for hardware spec extraction
+- [../../predictor/src/utils/hardware_perf_info.py](../../predictor/src/utils/hardware_perf_info.py) - GPU specifications database
 
 ---
 
@@ -188,21 +206,40 @@ The fix maintains **full backward compatibility**:
 
 ### Changes Made
 
-**Function:** `extract_tasks_from_dataset(dataset: List[Dict[str, Any]])`
-**Location:** `collect_training_data.py` lines 433-559
+**Primary Changes:**
+1. **Hardware Spec Database (lines 57-226)**
+   - Added `NVIDIA_TESLA_SPECS` dictionary with 11 GPU models
+   - Added `extract_gpu_specs()` function for GPU spec extraction
+   - Eliminates dependency on `predictor/src` packages
+
+2. **Task Extraction (lines 605-759)**
+   - Fixed `extract_tasks_from_dataset()` to handle dual formats
+   - Added `max_tokens` inference from `output_len` metadata
+   - Added comprehensive logging and statistics
+
+3. **Dependencies (line 906)**
+   - Removed import of `predictor.src.models.PlatformInfo`
+   - Now uses local `extract_gpu_specs()` function
+
 **Commit message suggestion:**
 
 ```
-fix(data): handle actual dataset structure in collect_training_data.py
+fix(experiment): make collect_training_data.py self-contained
 
+- Copy NVIDIA_TESLA_SPECS database from predictor/src/utils/hardware_perf_info.py
+- Copy extract_gpu_specs() logic from predictor/src/models.py
+- Remove dependency on external predictor package
 - Add dual-format support for boot/summary fields (dict or string)
 - Infer max_tokens from output_len field in query metadata
 - Add comprehensive logging for task extraction statistics
-- Maintain backward compatibility with documented format
 
-Fixes dataset extraction which was previously failing due to
-structural mismatch between expected (dict) and actual (string)
-formats. Now extracts all 1,471 tasks with proper max_tokens
-diversity instead of only 1,273 tasks with uniform max_tokens=512.
+The script is now fully self-contained with no dependencies on
+packages outside the experiment directory. Fixes dataset extraction
+which was failing due to:
+1. Structural mismatch (expected dict, got string for boot/summary)
+2. Missing predictor package in experiment environment
 
-Resolves: Dataset structure mismatch preventing predictor training
+Now extracts all 1,471 tasks with proper max_tokens diversity
+instead of only 1,273 tasks with uniform max_tokens=512.
+
+Resolves: Dataset structure mismatch and external dependency issues
