@@ -37,6 +37,8 @@ MODEL_PATH = os.getenv("MODEL_MODEL_PATH")
 model_loaded = False
 runtime: Optional[Any] = None
 
+os.environ["MASTER_ADDR"] = "127.0.0.1"
+os.environ["MASTER_PORT"] = str(20000 + args.port)
 
 # =============================================================================
 # Lifecycle Management
