@@ -1260,33 +1260,43 @@ async def get_info():
     uptime = int(time.time() - _startup_time)
     
     # Get platform info (hardware and software)
-    # Use the same method as scheduler_client for consistency
+    # Priority: config overrides > env vars > model params > auto-detection
     try:
         import platform as platform_module
+
+        # Start with auto-detected values
         hardware_name = _get_gpu0_name()
-        software_name = platform_module.system()  # Default to OS name
-        software_version = platform_module.release()  # Default to OS version
-        
-        # Try to get software info from environment variables if available
-        # These can be set when starting the instance service
+        software_name = platform_module.system()
+        software_version = platform_module.release()
+
+        # Apply environment variable overrides (deprecated, kept for backward compatibility)
         import os
         env_software_name = os.getenv("INSTANCE_SOFTWARE_NAME")
         env_software_version = os.getenv("INSTANCE_SOFTWARE_VERSION")
-        
+
         if env_software_name:
             software_name = env_software_name
         if env_software_version:
             software_version = env_software_version
-        
+
         # If a model is running, try to infer software from model metadata
         # (e.g., if model uses sglang, vllm, etc.)
         if current_model and current_model.parameters:
-            # Check if parameters contain software hints
             model_params = current_model.parameters
             if "software_name" in model_params:
                 software_name = model_params["software_name"]
             if "software_version" in model_params:
                 software_version = model_params["software_version"]
+
+        # Finally, apply config overrides (highest priority)
+        # These come from INSTANCE_PLATFORM_* env vars or CLI args
+        if config.platform_software_name:
+            software_name = config.platform_software_name
+        if config.platform_software_version:
+            software_version = config.platform_software_version
+        if config.platform_hardware_name:
+            hardware_name = config.platform_hardware_name
+
     except Exception as e:
         logger.warning(f"Failed to detect platform info: {e}")
         hardware_name = None

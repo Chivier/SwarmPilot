@@ -83,6 +83,9 @@ Configure via environment variables:
 | `DOCKER_NETWORK` | Docker network name | `instance_network` |
 | `HEALTH_CHECK_INTERVAL` | Health check interval (seconds) | `10` |
 | `HEALTH_CHECK_TIMEOUT` | Health check timeout (seconds) | `30` |
+| `INSTANCE_PLATFORM_SOFTWARE_NAME` | Override detected OS name | Auto-detected |
+| `INSTANCE_PLATFORM_SOFTWARE_VERSION` | Override detected OS version | Auto-detected |
+| `INSTANCE_PLATFORM_HARDWARE_NAME` | Override detected hardware name | Auto-detected |
 
 **Note:** Model containers run on `INSTANCE_PORT + 1000`.
 
@@ -90,13 +93,50 @@ Configure via environment variables:
 
 ```bash
 sinstance start [OPTIONS]
-  --host, -h           Host to bind (default: 0.0.0.0)
-  --port, -p           Port to bind (default: 5000)
-  --log-level, -l      Logging level (default: INFO)
-  --reload             Enable auto-reload for development
+  --host, -h                        Host to bind (default: 0.0.0.0)
+  --port, -p                        Port to bind (default: 5000)
+  --log-level, -l                   Logging level (default: INFO)
+  --reload                          Enable auto-reload for development
+  --platform-software-name          Override platform software name
+  --platform-software-version       Override platform software version
+  --platform-hardware-name          Override platform hardware name
 
-sinstance version      Show version information
+sinstance version                   Show version information
 ```
+
+#### Platform Information Override
+
+By default, the instance auto-detects platform information (OS, version, hardware). You can override this using environment variables or CLI options:
+
+**Using Environment Variables:**
+```bash
+# Override all platform info
+INSTANCE_PLATFORM_SOFTWARE_NAME="Linux" \
+INSTANCE_PLATFORM_SOFTWARE_VERSION="5.15.0-151-generic" \
+INSTANCE_PLATFORM_HARDWARE_NAME="NVIDIA GeForce RTX 4090" \
+sinstance start
+
+# Override only hardware name
+INSTANCE_PLATFORM_HARDWARE_NAME="CPU" sinstance start
+```
+
+**Using CLI Options:**
+```bash
+# CLI options take precedence over environment variables
+sinstance start \
+  --platform-software-name "Linux" \
+  --platform-software-version "5.15.0-151-generic" \
+  --platform-hardware-name "NVIDIA GeForce RTX 4090"
+
+# Override only hardware
+sinstance start --platform-hardware-name "CPU"
+```
+
+**Priority Order (highest to lowest):**
+1. CLI options (`--platform-*`)
+2. Environment variables (`INSTANCE_PLATFORM_*`)
+3. Model parameters (from model metadata)
+4. Auto-detection (default behavior)
 
 ### Logging
 

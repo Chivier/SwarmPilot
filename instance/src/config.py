@@ -3,6 +3,7 @@ Configuration management for Instance Service
 """
 
 import os
+import uuid
 from pathlib import Path
 from typing import Optional
 
@@ -12,7 +13,7 @@ class Config:
 
     def __init__(self):
         # Instance configuration
-        self.instance_id: str = os.getenv("INSTANCE_ID", "instance-default")
+        self.instance_id: str = os.getenv("INSTANCE_ID", uuid.uuid4())
         self.instance_port: int = int(os.getenv("INSTANCE_PORT", "8000"))
 
         # Model container port (instance_port + 1000)
@@ -40,6 +41,18 @@ class Config:
         # Health check
         self.health_check_interval: int = int(os.getenv("HEALTH_CHECK_INTERVAL", "10"))
         self.health_check_timeout: int = int(os.getenv("HEALTH_CHECK_TIMEOUT", "30"))
+
+        # Platform information overrides
+        # These allow users to specify platform info instead of auto-detection
+        self.platform_software_name: Optional[str] = os.getenv(
+            "INSTANCE_PLATFORM_SOFTWARE_NAME"
+        )
+        self.platform_software_version: Optional[str] = os.getenv(
+            "INSTANCE_PLATFORM_SOFTWARE_VERSION"
+        )
+        self.platform_hardware_name: Optional[str] = os.getenv(
+            "INSTANCE_PLATFORM_HARDWARE_NAME"
+        )
 
     def get_model_directory(self, directory_name: str) -> Path:
         """Get full path to model directory"""

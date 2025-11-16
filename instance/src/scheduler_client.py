@@ -986,17 +986,22 @@ class SchedulerClient:
     # ==================== Utility Methods ====================
 
     def _get_platform_info(self) -> Dict[str, Any]:
-        """Auto-detect platform information.
-        
+        """Get platform information with support for user overrides.
+
+        Checks config for platform overrides (from environment variables or CLI args).
+        Falls back to auto-detection if overrides are not provided.
+
         hardware_name will be set to GPU0's name if available, otherwise "CPU".
 
         Returns:
             Dictionary containing platform information
         """
+        from .config import config
+
         return {
-            "software_name": platform.system(),
-            "software_version": platform.release(),
-            "hardware_name": _get_gpu0_name(),
+            "software_name": config.platform_software_name or platform.system(),
+            "software_version": config.platform_software_version or platform.release(),
+            "hardware_name": config.platform_hardware_name or _get_gpu0_name(),
         }
 
     def update_predictor_config(self, predictor_config: PredictorConfig) -> None:
