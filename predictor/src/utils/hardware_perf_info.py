@@ -107,6 +107,16 @@ NVIDIA_TESLA_SPECS = {
         "memory_gb": 80,
         "memory_bandwidth_gb_s": 2000,  # PCIe variant has lower bandwidth
     },
+    "H20": {
+        "cuda_cores": 17920,  # Hopper architecture, similar to H100
+        "tensor_cores": 560,
+        "fp32_tflops": 63.0,
+        "fp16_tflops": 252.0,
+        "tensor_tflops": 1230.0,  # FP16 with Tensor Cores
+        "fp8_tensor_tflops": 2460.0,  # FP8 with Tensor Cores
+        "memory_gb": 96,  # HBM3e
+        "memory_bandwidth_gb_s": 4000,  # HBM3e bandwidth
+    },
 }
 
 

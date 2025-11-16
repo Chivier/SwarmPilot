@@ -54,6 +54,9 @@ class PlatformInfo(BaseModel):
         # Define GPU model patterns in priority order (more specific first)
         # This ensures we match longer model names before shorter ones
         gpu_patterns = [
+            # H20/H200 variants (check specific variants first)
+            (r'H20', 'H20'),
+            
             # H100 variants (check specific variants first)
             (r'H100[- ]?PCIE', 'H100-PCIe'),
             (r'H100[- ]?94GB', 'H100-94GB'),
