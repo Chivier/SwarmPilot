@@ -75,6 +75,10 @@ class QuantilePredictor(BasePredictor):
         self.model = None
         self.feature_names = None
         self.quantiles = None
+        self.feature_mean = None
+        self.feature_std = None
+        self.target_mean = None
+        self.target_std = None
 
     def train(self, features_list: List[Dict[str, Any]], config: Dict[str, Any] = None) -> Dict[str, Any]:
         """
@@ -104,9 +108,19 @@ class QuantilePredictor(BasePredictor):
         X = np.array(X, dtype=np.float32)
         y = np.array(y, dtype=np.float32)
 
-        # Convert to PyTorch tensors (no normalization)
-        X_tensor = torch.tensor(X, dtype=torch.float32)
-        y_tensor = torch.tensor(y, dtype=torch.float32).unsqueeze(1)
+        # Normalize features (z-score normalization)
+        self.feature_mean = X.mean(axis=0)
+        self.feature_std = X.std(axis=0) + 1e-8
+        X_normalized = (X - self.feature_mean) / self.feature_std
+
+        # Normalize targets (z-score normalization)
+        self.target_mean = y.mean()
+        self.target_std = y.std() + 1e-8
+        y_normalized = (y - self.target_mean) / self.target_std
+
+        # Convert to PyTorch tensors
+        X_tensor = torch.tensor(X_normalized, dtype=torch.float32)
+        y_tensor = torch.tensor(y_normalized, dtype=torch.float32).unsqueeze(1)
 
         # Get training hyperparameters from config
         if config is None:
@@ -176,12 +190,18 @@ class QuantilePredictor(BasePredictor):
         feature_values = [features[fname] for fname in self.feature_names]
         X = np.array([feature_values], dtype=np.float32)
 
-        # Convert to tensor and predict (no normalization)
-        X_tensor = torch.tensor(X, dtype=torch.float32)
+        # Normalize using training statistics
+        X_normalized = (X - self.feature_mean) / self.feature_std
+
+        # Convert to tensor and predict
+        X_tensor = torch.tensor(X_normalized, dtype=torch.float32)
 
         self.model.eval()
         with torch.no_grad():
-            predictions = self.model(X_tensor).numpy().flatten()
+            predictions_normalized = self.model(X_tensor).numpy().flatten()
+
+        # Denormalize predictions back to original scale
+        predictions = predictions_normalized * self.target_std + self.target_mean
 
         # Format results as dict with quantile: value pairs
         quantile_results = {
@@ -207,7 +227,11 @@ class QuantilePredictor(BasePredictor):
             'model_config': self.model.get_config(),
             'model_state_dict': self.model.state_dict(),
             'feature_names': self.feature_names,
-            'quantiles': self.quantiles
+            'quantiles': self.quantiles,
+            'feature_mean': self.feature_mean.tolist(),
+            'feature_std': self.feature_std.tolist(),
+            'target_mean': float(self.target_mean),
+            'target_std': float(self.target_std)
         }
 
     def load_model_state(self, state: Dict[str, Any]) -> None:
@@ -225,3 +249,7 @@ class QuantilePredictor(BasePredictor):
         # Restore metadata
         self.feature_names = state['feature_names']
         self.quantiles = state['quantiles']
+        self.feature_mean = np.array(state['feature_mean'])
+        self.feature_std = np.array(state['feature_std'])
+        self.target_mean = state['target_mean']
+        self.target_std = state['target_std']
