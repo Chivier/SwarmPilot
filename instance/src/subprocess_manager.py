@@ -135,7 +135,7 @@ class SubprocessManager:
 
         # Wait for the model to become healthy
         try:
-            await self._wait_for_health(config.model_port, timeout=30, interval=2)
+            await self._wait_for_health(config.model_port, timeout=300, interval=2)
             logger.info("Model subprocess is healthy")
         except RuntimeError as e:
             # If health check fails, try to stop the process

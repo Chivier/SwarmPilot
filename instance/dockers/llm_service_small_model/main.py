@@ -4,7 +4,6 @@ LLM Service Large Model Container
 A FastAPI service that loads a model using sglang and provides inference endpoints.
 """
 
-import asyncio
 import os
 import time
 from contextlib import asynccontextmanager
@@ -68,9 +67,9 @@ async def lifespan(app: FastAPI):
     # Load model with sglang
     print(f"Loading model from: {MODEL_PATH}")
     try:
-        # Load model using sglang
-        # sglang.load_model() returns a model object
-        runtime = sgl.load_model(MODEL_PATH)
+        # Load model using sglang Engine
+        # sgl.Engine() creates an engine instance with the model
+        runtime = sgl.Engine(model_path=MODEL_PATH)
         
         model_loaded = True
         print("Model loaded successfully!")
@@ -170,51 +169,19 @@ async def inference(request: InferenceRequest) -> InferenceResponse:
         start_time = time.time()
         start_timestamp = int(start_time)
 
-        # Run inference with sglang
-        # sglang models typically have a generate or forward method
-        # Run in executor to avoid blocking the event loop
-        loop = asyncio.get_event_loop()
-        
-        def run_inference():
-            """Run inference in a separate thread to avoid blocking"""
-            if hasattr(runtime, "generate"):
-                return runtime.generate(
-                    request.sentence,
-                    max_new_tokens=request.max_tokens,
-                    temperature=0.7,
-                )
-            elif hasattr(runtime, "forward"):
-                return runtime.forward(request.sentence)
-            elif hasattr(runtime, "predict"):
-                return runtime.predict(request.sentence)
-            elif callable(runtime):
-                return runtime(request.sentence)
-            else:
-                raise RuntimeError("Model does not support inference operations")
-        
-        response = await loop.run_in_executor(None, run_inference)
+        # Run inference with sglang Engine
+        # async_generate returns a dict with "text" key
+        sampleing_parameters = {
+            "max_new_tokens": request.max_tokens,
+            "temperature": 0.7,
+        }
+        result = await runtime.async_generate(
+            [request.sentence],
+            sampleing_parameters
+        )
 
-        # Extract the generated text
-        # Handle different response formats
-        if hasattr(response, "text"):
-            generated_text = response.text
-        elif hasattr(response, "generated_text"):
-            generated_text = response.generated_text
-        elif isinstance(response, str):
-            generated_text = response
-        elif isinstance(response, dict):
-            generated_text = response.get("text") or response.get("generated_text") or str(response)
-        elif isinstance(response, list) and len(response) > 0:
-            # Handle list responses (common in some APIs)
-            first_item = response[0]
-            if isinstance(first_item, str):
-                generated_text = first_item
-            elif hasattr(first_item, "text"):
-                generated_text = first_item.text
-            else:
-                generated_text = str(first_item)
-        else:
-            generated_text = str(response)
+        # Extract the generated text from the result dict
+        generated_text = result[0].get("text", "")
 
         # Calculate execution time
         execution_time = time.time() - start_time
