@@ -575,18 +575,31 @@ async def predict(request: PredictionRequest):
             if hardware_features:
                 for key, value in hardware_features.items():
                     all_features[key] = value
-            
-            # Start preprocessing
-            for preprocessor_name in request.enable_preprocesssors:
-                preprocessor = preprocessors_registry.get_preprocessor(preprocessor_name)
-                target_features = request.preprocessor_mappings[preprocessor_name]
-                processed_features, remove_origin = preprocessor(target_features)
-                for k, v in processed_features.items():
-                    all_features[k] = v
-                
-                if remove_origin:
-                    for key in target_features:
-                        del all_features[key]
+
+            # Start preprocessing if enabled
+            if request.enable_preprocessors:
+                for preprocessor_name in request.enable_preprocessors:
+                    preprocessor = preprocessors_registry.get_preprocessor(preprocessor_name)
+                    target_feature_keys = request.preprocessor_mappings[preprocessor_name]
+
+                    # Validate all required features exist
+                    assert all(key in all_features for key in target_feature_keys), \
+                        f"Feature keys {target_feature_keys} not all found in features"
+
+                    # Extract target feature values
+                    target_feature_values = [all_features[key] for key in target_feature_keys]
+
+                    # Apply preprocessor
+                    processed_features, remove_origin = preprocessor(target_feature_values)
+
+                    # Add processed features
+                    for k, v in processed_features.items():
+                        all_features[k] = v
+
+                    # Remove original features if requested
+                    if remove_origin:
+                        for key in target_feature_keys:
+                            del all_features[key]
 
             result = predictor.predict(all_features)
 
