@@ -238,6 +238,9 @@ for i in {0..7}; do
      INSTANCE_PLATFORM_SOFTWARE_NAME=sglang \
      INSTANCE_PLATFORM_SOFTWARE_VERSION=\"0.5.5.post2\" \
      INSTANCE_PLATFORM_HARDWARE_NAME=\"NVIDIA H20\" \
+     INSTANCE_PORT=${INSTANCE_PORT} \
+     INSTANCE_ENDPOINT=http://${LOCAL_IP}:${INSTANCE_PORT} \
+     INSTANCE_ID=${LOCAL_IP}-${INSTANCE_PORT} \
      uv run python -m src.cli start --port ${INSTANCE_PORT}" \
     "$CPU_RANGE"
 done
