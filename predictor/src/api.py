@@ -333,23 +333,32 @@ async def train_model(request: TrainingRequest):
                 }
             )
         
-        all_features = request.features_list.copy()
-        if request.enable_preprocessors:
-            for preprocessor_name in request.enable_preprocessors:
-                preprocessor = preprocessors_registry.get_preprocessor(preprocessor_name)
-                target_features = request.preprocessor_mappings[preprocessor_name]
-                assert all(key in all_features for key in target_features), f"Feature {key} not found in all_features"
-                target_features = [all_features[key] for key in target_features]
-                processed_features, remove_origin = preprocessor(target_features)
-                for k, v in processed_features.items():
-                    all_features[k] = v
-                if remove_origin:
-                    for key in target_features:
-                        del all_features[key]
+        try:
+            all_features = request.features_list.copy()
+            if request.enable_preprocessors:
+                for preprocessor_name in request.enable_preprocessors:
+                    preprocessor = preprocessors_registry.get_preprocessor(preprocessor_name)
+                    target_features = request.preprocessor_mappings[preprocessor_name]
+                    assert all(key in all_features for key in target_features), f"Feature {key} not found in all_features"
+                    target_features = [all_features[key] for key in target_features]
+                    processed_features, remove_origin = preprocessor(target_features)
+                    for k, v in processed_features.items():
+                        all_features[k] = v
+                    if remove_origin:
+                        for key in target_features:
+                            del all_features[key]
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "error": "Preprocessor error",
+                    "message": str(e)
+                }
+            )
         # Train the model
         try:
             training_metadata = predictor.train(
-                features_list=all_features,
+                features_list=request.features_list,
                 config=request.training_config or {}
             )
         except ValueError as e:
@@ -546,17 +555,16 @@ async def predict(request: PredictionRequest):
                     all_features[key] = value
             
             # Start preprocessing
-            if request.enable_preprocessors:
-                for preprocessor_name in request.enable_preprocessors:
-                    preprocessor = preprocessors_registry.get_preprocessor(preprocessor_name)
-                    target_features = request.preprocessor_mappings[preprocessor_name]
-                    processed_features, remove_origin = preprocessor(target_features)
-                    for k, v in processed_features.items():
-                        all_features[k] = v
-
-                    if remove_origin:
-                        for key in target_features:
-                            del all_features[key]
+            for preprocessor_name in request.enable_preprocesssors:
+                preprocessor = preprocessors_registry.get_preprocessor(preprocessor_name)
+                target_features = request.preprocessor_mappings[preprocessor_name]
+                processed_features, remove_origin = preprocessor(target_features)
+                for k, v in processed_features.items():
+                    all_features[k] = v
+                
+                if remove_origin:
+                    for key in target_features:
+                        del all_features[key]
 
             result = predictor.predict(all_features)
 
