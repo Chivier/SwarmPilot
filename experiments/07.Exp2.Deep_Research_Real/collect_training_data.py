@@ -617,7 +617,11 @@ class PredictorClient:
                 "hardware_name": platform_info["hardware_name"]
             },
             "prediction_type": prediction_type,
-            "features_list": features_list
+            "features_list": features_list,
+            "enable_preprocessors": ["semantic"],
+            "preprocessor_mappings": {
+                "semantic": ["sentence"]
+            }
         }
         
         # Add optional training_config if provided
