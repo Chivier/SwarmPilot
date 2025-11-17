@@ -240,6 +240,42 @@ for i in {0..7}; do
 done
 
 
+# Do health check for all services
+
+curl http://$SCHEDULER_A_HOST:$SCHEDULER_PORT/health
+if [[ $? -ne 0 ]]; then
+  echo -e "${RED}Health check failed for scheduler A:${NC}"
+  exit 1
+fi
+
+
+curl http://$SCHEDULER_B_HOST:$SCHEDULER_PORT/health
+
+if [[ $? -ne 0 ]]; then
+  echo -e "${RED}Health check failed for scheduler B:${NC}"
+  exit 1
+fi
+
+curl http://$PREDICTOR_HOST:$PREDICTOR_PORT/health
+
+if [[ $? -ne 0 ]]; then
+  echo -e "${RED}Health check failed for predictor:${NC}"
+  exit 1
+fi
+
+
+echo -e "${GREEN}Health check passed for scheduler and predictor${NC}"
+
+for i in {0..7}; do
+  INSTANCE_PORT=${INSTANCE_PORT_LIST[$i]}
+  curl http://$LOCAL_IP:$INSTANCE_PORT/health
+  if [[ $? -ne 0 ]]; then
+    echo -e "${RED}Health check failed for instance:${NC}"
+    exit 1
+  fi
+  echo -e "${GREEN}Health check passed for instance:${NC}"
+done
+
 echo ""
 echo -e "${GREEN}All services that should run on $LOCAL_IP have been launched.${NC}"
 echo -e "Scheduler host:  $SCHEDULER_HOST (port $SCHEDULER_PORT)"
