@@ -235,6 +235,9 @@ for i in {0..7}; do
     "cd $PROJECT_ROOT/instance && \
      MODEL_ID=$MODEL_ID \
      CUDA_VISIBLE_DEVICES=${GPU_ID} \
+     INSTANCE_PLATFORM_SOFTWARE_NAME=sglang \
+     INSTANCE_PLATFORM_SOFTWARE_VERSION=\"0.5.5.post2\" \
+     INSTANCE_PLATFORM_HARDWARE_NAME=\"NVIDIA H20\" \
      uv run python -m src.cli start --port ${INSTANCE_PORT}" \
     "$CPU_RANGE"
 done
