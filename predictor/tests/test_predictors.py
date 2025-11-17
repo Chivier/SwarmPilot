@@ -3,7 +3,6 @@ Tests for predictor implementations.
 """
 
 import pytest
-import numpy as np
 from src.predictor.expect_error import ExpectErrorPredictor
 from src.predictor.quantile import QuantilePredictor
 

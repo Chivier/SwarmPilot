@@ -96,6 +96,9 @@ class TrainingRequest(BaseModel):
     prediction_type: str = Field(..., description="Type of prediction: 'expect_error' or 'quantile'")
     features_list: List[Dict[str, Any]] = Field(..., description="List of training samples with features")
     training_config: Optional[Dict[str, Any]] = Field(None, description="Optional training configuration")
+    enable_preprocessors: Optional[List[str]] = Field(None, description="List of preprocessors to enable")
+    preprocessor_mappings: Optional[Dict[str, List[str]]] = Field(None, description="Specific which feature need to be preprocessed by which preprocessor")
+
 
     @field_validator('prediction_type')
     @classmethod
@@ -138,6 +141,9 @@ class PredictionRequest(BaseModel):
     prediction_type: str = Field(..., description="Type of prediction: 'expect_error' or 'quantile'")
     features: Dict[str, Any] = Field(..., description="Feature values for prediction")
     quantiles: Optional[List[float]] = Field(None, description="Custom quantiles for prediction (only used in experiment mode)")
+    enable_preprocessors: Optional[List[str]] = Field(None, description="List of preprocessors to enable")
+    preprocessor_mappings: Optional[Dict[str, List[str]]] = Field(None, description="Specific which feature need to be preprocessed by which preprocessor")
+
 
     @field_validator('prediction_type')
     @classmethod

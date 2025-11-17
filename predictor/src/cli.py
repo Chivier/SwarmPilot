@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Optional
 
 import typer
-from typer import Context, Option
+from typer import Option
 from typing_extensions import Annotated
 
 from .config import PredictorConfig, set_config
@@ -97,7 +97,6 @@ def start(
     typer.echo("\n" + "=" * 50)
 
     # Import app here to allow config to be set first
-    from .api import app as fastapi_app
 
     # Run the server
     uvicorn.run(

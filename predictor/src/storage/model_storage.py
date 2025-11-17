@@ -27,6 +27,7 @@ class ModelStorage:
         """
         self.storage_dir = Path(storage_dir)
         self.storage_dir.mkdir(parents=True, exist_ok=True)
+        self.loaded_models = {}
 
     def generate_model_key(self, model_id: str, platform_info: Dict[str, str], prediction_type: str = "expect_error") -> str:
         """

@@ -7,7 +7,6 @@ Supports configuration from multiple sources with priority:
 4. Default values (lowest priority)
 """
 
-import os
 from pathlib import Path
 from typing import Optional
 

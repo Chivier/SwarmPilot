@@ -1,0 +1,36 @@
+# 35M Parameter Model Configuration (Previously "tiny")
+model:
+  num_layers: 6
+  hidden_size: 512
+  num_attention_heads: 8
+  intermediate_size: 2048
+  vocab_size: 30522
+  max_position_embeddings: 512
+  hidden_dropout_prob: 0.1
+  attention_probs_dropout_prob: 0.1
+  use_pretrained: false
+
+training:
+  batch_size: 64
+  learning_rate: 2.0e-5
+  weight_decay: 0.01
+  warmup_steps: 1000
+  max_epochs: 3
+  gradient_accumulation_steps: 1
+  fp16: false
+  save_steps: 2500
+  eval_steps: 500
+  logging_steps: 10
+
+data:
+  tokenizer_name: "bert-base-uncased"
+  max_length: 512
+  train_file: "processed/train.jsonl"
+  val_file: "processed/val.jsonl"
+  test_file: "processed/test.jsonl"
+  train_sample_ratio: 0.2
+
+output:
+  checkpoint_dir: "checkpoints/model_35M"
+  results_dir: "results/model_35M"
+  model_name: "model_35M"

@@ -10,7 +10,6 @@ from contextlib import asynccontextmanager
 from typing import Dict, Any, Optional, Tuple
 import traceback
 import json
-from functools import lru_cache
 from collections import OrderedDict
 import threading
 
@@ -18,7 +17,7 @@ from .models import (
     TrainingRequest, TrainingResponse,
     PredictionRequest, PredictionResponse,
     ModelListResponse, ModelMetadata,
-    HealthResponse, ErrorResponse
+    HealthResponse
 )
 from .storage.model_storage import ModelStorage
 from .predictor.expect_error import ExpectErrorPredictor
@@ -26,6 +25,7 @@ from .predictor.quantile import QuantilePredictor
 from .utils.experiment import is_experiment_mode, generate_experiment_prediction
 from .config import get_config
 from .utils.logging import get_logger, setup_logging
+from .preprocessor.preprocessors_registry import PreprocessorsRegistry
 
 logger = get_logger()
 
@@ -38,6 +38,7 @@ def get_storage() -> ModelStorage:
 
 
 storage = get_storage()
+preprocessors_registry = PreprocessorsRegistry()
 
 
 class ModelCache:
@@ -331,11 +332,24 @@ async def train_model(request: TrainingRequest):
                     "message": f"prediction_type must be 'expect_error' or 'quantile', got '{request.prediction_type}'"
                 }
             )
-
+        
+        all_features = request.features_list.copy()
+        if request.enable_preprocessors:
+            for preprocessor_name in request.enable_preprocessors:
+                preprocessor = preprocessors_registry.get_preprocessor(preprocessor_name)
+                target_features = request.preprocessor_mappings[preprocessor_name]
+                assert all(key in all_features for key in target_features), f"Feature {key} not found in all_features"
+                target_features = [all_features[key] for key in target_features]
+                processed_features, remove_origin = preprocessor(target_features)
+                for k, v in processed_features.items():
+                    all_features[k] = v
+                if remove_origin:
+                    for key in target_features:
+                        del all_features[key]
         # Train the model
         try:
             training_metadata = predictor.train(
-                features_list=request.features_list,
+                features_list=all_features,
                 config=request.training_config or {}
             )
         except ValueError as e:
@@ -530,6 +544,19 @@ async def predict(request: PredictionRequest):
             if hardware_features:
                 for key, value in hardware_features.items():
                     all_features[key] = value
+            
+            # Start preprocessing
+            if request.enable_preprocessors:
+                for preprocessor_name in request.enable_preprocessors:
+                    preprocessor = preprocessors_registry.get_preprocessor(preprocessor_name)
+                    target_features = request.preprocessor_mappings[preprocessor_name]
+                    processed_features, remove_origin = preprocessor(target_features)
+                    for k, v in processed_features.items():
+                        all_features[k] = v
+
+                    if remove_origin:
+                        for key in target_features:
+                            del all_features[key]
 
             result = predictor.predict(all_features)
 

@@ -12,7 +12,6 @@ Tests the ModelStorage class functionality including:
 import pytest
 import tempfile
 import shutil
-from pathlib import Path
 from src.storage.model_storage import ModelStorage
 
 
