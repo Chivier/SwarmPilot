@@ -67,9 +67,9 @@ asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
 # Scheduler endpoints
 SCHEDULER_A_URL = "http://29.209.114.51:8100"
-SCHEDULER_B_URL = "http://29.209.113.228:8200"
+SCHEDULER_B_URL = "http://29.209.113.228:8100"
 SCHEDULER_A_WS = "ws://29.209.114.51:8100/task/get_result"
-SCHEDULER_B_WS = "ws://29.209.113.228:8200/task/get_result"
+SCHEDULER_B_WS = "ws://29.209.113.228:8100/task/get_result"
 
 # Dataset path
 DATA_DIR = Path(__file__).parent / "data"

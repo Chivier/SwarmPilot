@@ -42,6 +42,7 @@ import subprocess
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+import os
 
 import httpx
 import numpy as np
@@ -1319,6 +1320,12 @@ Example config.json:
         required=True,
         help="Path to configuration JSON file (see --help epilog for example)"
     )
+    parser.add_argument(
+        "--output_file",
+        type=str,
+        default="training_data.json",
+        help="Path to output file (default: training_data.json)"
+    )
 
     args = parser.parse_args()
 
@@ -1346,54 +1353,72 @@ Example config.json:
     # Initialize predictor client
     predictor_client = PredictorClient(config['predictor']['url'])
 
+    
+
     try:
-        # Collect all training samples using parallel execution
-        logger.info(f"Collecting training samples from all {len(tasks)} tasks...")
+        if os.path.exists(args.output_file):
+            logger.error(f"Output file {args.output_file} already exists, train with it instead of collecting new data")
+            logger.info(f"Loading training data from {args.output_file}")
+            with open(args.output_file, 'r') as f:
+                training_data = json.load(f)
+                all_samples = training_data['samples']
+                model_id = training_data['model_id']
+                platform_info = training_data['platform_info']
+                logger.info(f"Model ID: {model_id}")
+                logger.info(f"Platform info: {platform_info}")
+                logger.info(f"Samples: {all_samples}")
+                logger.info(f"Number of samples: {len(all_samples)}")
+                logger.info(f"Prediction types: {config['prediction_types']}")
+                logger.info(f"Training config: {config['training_config']}")
+                logger.info(f"Training data loaded from {args.output_file}")
+            logger.info(f"Training with {len(all_samples)} samples from {args.output_file}")
+        else:
+            # Collect all training samples using parallel execution
+            logger.info(f"Collecting training samples from all {len(tasks)} tasks...")
 
-        # Apply max_samples limit if specified
-        max_tasks = min(len(tasks), config['max_samples']) if config['max_samples'] else len(tasks)
+            # Apply max_samples limit if specified
+            max_tasks = min(len(tasks), config['max_samples']) if config['max_samples'] else len(tasks)
 
-        # Collect all samples with parallel execution across instances
-        all_samples = await collect_training_samples(
-            multi_client=multi_client,
-            tasks=tasks,
-            max_concurrent=config['execution']['max_concurrent_requests'],
-            max_samples=max_tasks
-        )
+            # Collect all samples with parallel execution across instances
+            all_samples = await collect_training_samples(
+                multi_client=multi_client,
+                tasks=tasks,
+                max_concurrent=config['execution']['max_concurrent_requests'],
+                max_samples=max_tasks
+            )
 
-        # Check if we have enough samples (minimum 10 required by predictor)
-        if len(all_samples) < 10:
-            logger.error(f"Insufficient samples: {len(all_samples)} collected, but at least 10 required for training")
-            logger.error("Check if tasks are failing or increase dataset size")
-            return
+            # Check if we have enough samples (minimum 10 required by predictor)
+            if len(all_samples) < 10:
+                logger.error(f"Insufficient samples: {len(all_samples)} collected, but at least 10 required for training")
+                logger.error("Check if tasks are failing or increase dataset size")
+                return
 
-        logger.info(f"Successfully collected {len(all_samples)} training samples")
+            logger.info(f"Successfully collected {len(all_samples)} training samples")
 
-        # Use the first instance's platform info (all instances should have same platform)
-        first_instance = config['instances'][0]
-        platform_info = {
-            "software_name": first_instance.get("software_name", "sglang"),
-            "software_version": first_instance.get("software_version", "1.0.0"),
-            "hardware_name": first_instance.get("hardware_name", "Unknown")
-        }
+            # Use the first instance's platform info (all instances should have same platform)
+            first_instance = config['instances'][0]
+            platform_info = {
+                "software_name": first_instance.get("software_name", "sglang"),
+                "software_version": first_instance.get("software_version", "1.0.0"),
+                "hardware_name": first_instance.get("hardware_name", "Unknown")
+            }
 
-        # Save collected training data to file
-        output_file = config.get('output_file', 'training_data.json')
-        output_path = Path(output_file)
+            # Save collected training data to file
+            output_file = args.output_file
 
-        logger.info(f"Saving training data to {output_path}")
-        with open(output_path, 'w') as f:
-            json.dump({
-                'model_id': config['model_id'],
-                'platform_info': platform_info,
-                'samples': all_samples,
-                'num_samples': len(all_samples),
-                'config': {
-                    'prediction_types': config['prediction_types'],
-                    'training_config': config['training_config']
-                }
-            }, f, indent=2)
-        logger.info(f"✓ Training data saved to {output_path}")
+            logger.info(f"Saving training data to {output_file}")
+            with open(output_file, 'w') as f:
+                json.dump({
+                    'model_id': config['model_id'],
+                    'platform_info': platform_info,
+                    'samples': all_samples,
+                    'num_samples': len(all_samples),
+                    'config': {
+                        'prediction_types': config['prediction_types'],
+                        'training_config': config['training_config']
+                    }
+                }, f, indent=2)
+            logger.info(f"✓ Training data saved to {output_file}")
 
         # Submit training data once for each prediction type
 
