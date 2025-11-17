@@ -682,7 +682,11 @@ class PredictorClient:
                 "hardware_name": platform_info["hardware_name"]
             },
             "prediction_type": prediction_type,
-            "features": features
+            "features": features,
+            "enable_preprocessors": ["semantic"],
+            "preprocessor_mappings": {
+                "semantic": ["sentence"]
+            }
         }
 
         response = await self.client.post(

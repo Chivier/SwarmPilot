@@ -262,7 +262,7 @@ class OODExperimentRunner:
         self.restart_delay = restart_delay
 
         # exp07 is in the parent experiments directory
-        self.exp07_dir = Path(__file__).parent.parent / "07.multi_model_workflow_dynamic_merge_2"
+        self.exp07_dir = Path(__file__).parent.parent / "07.Exp2.Deep_Research"
 
         # Initialize service manager if using real services
         self.service_manager = None
