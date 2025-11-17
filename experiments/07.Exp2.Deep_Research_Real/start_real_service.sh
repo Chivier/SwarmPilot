@@ -28,6 +28,14 @@ SCHEDULER_PORT=8100
 PREDICTOR_PORT=8100
 INSTANCE_PORT=8000
 
+# CPU 绑定配置 (384核心系统,使用后128个核心: 256-383)
+TOTAL_CORES=384
+CPU_START_OFFSET=256  # 从第256个核心开始
+CORES_PER_INSTANCE=16 # 每个instance使用16个核心
+
+# Scheduler和Predictor绑定到前8个核心
+SCHEDULER_PREDICTOR_CPU_RANGE="0-7"
+
 # 角色 IP
 SCHEDULER_A_HOST="29.209.114.51"
 SCHEDULER_B_HOST="29.209.113.228"
@@ -117,16 +125,37 @@ in_list() {
 }
 
 start_bg() {
-  # start_bg <name> <command>
+  # start_bg <name> <command> [cpu_cores]
   local name="$1"
   shift
-  local cmd="$*"
+  local cmd="$1"
+  shift
+  local cpu_cores="$1"  # 可选参数: CPU核心列表 (e.g., "256-271")
+
   local log_file="$LOG_DIR/${name}.log"
 
   echo -e "${YELLOW}Starting $name...${NC}"
-  nohup bash -lc "$cmd" >"$log_file" 2>&1 &
+
+  if [[ -n "$cpu_cores" ]]; then
+    # 使用 taskset 绑定到指定CPU核心
+    echo -e "${BLUE}  CPU binding: $cpu_cores${NC}"
+    nohup taskset -c "$cpu_cores" bash -lc "$cmd" >"$log_file" 2>&1 &
+  else
+    # 不绑定CPU核心
+    nohup bash -lc "$cmd" >"$log_file" 2>&1 &
+  fi
+
   local pid=$!
   echo -e "${GREEN}Started $name (PID: $pid, log: $log_file)${NC}"
+}
+
+get_cpu_range() {
+  # get_cpu_range <instance_index>
+  # 返回该instance应该绑定的CPU核心范围
+  local idx="$1"
+  local start_core=$((CPU_START_OFFSET + idx * CORES_PER_INSTANCE))
+  local end_core=$((start_core + CORES_PER_INSTANCE - 1))
+  echo "${start_core}-${end_core}"
 }
 
 # -----------------------------
@@ -161,7 +190,8 @@ if [[ "$LOCAL_IP" == "$PREDICTOR_HOST" ]]; then
   start_bg "predictor" \
     "cd $PROJECT_ROOT/predictor && \
      PREDICTOR_PORT=$PREDICTOR_PORT \
-     PREDICTOR_LOG_DIR=$SCRIPT_DIR/logs/predictor uv run python -m src.cli start --port $PREDICTOR_PORT --log-level INFO"
+     PREDICTOR_LOG_DIR=$SCRIPT_DIR/logs/predictor uv run python -m src.cli start --port $PREDICTOR_PORT --log-level INFO" \
+    "$SCHEDULER_PREDICTOR_CPU_RANGE"
 fi
 
 if [[ "$LOCAL_IP" == "$SCHEDULER_A_HOST" ]]; then
@@ -169,7 +199,8 @@ if [[ "$LOCAL_IP" == "$SCHEDULER_A_HOST" ]]; then
   start_bg "scheduler" \
     "cd $PROJECT_ROOT/scheduler && \
      PREDICTOR_URL=http://$PREDICTOR_HOST:$PREDICTOR_PORT \
-     SCHEDULER_PORT=$SCHEDULER_PORT SCHEDULER_LOG_DIR=$SCRIPT_DIR/logs/scheduler-a SCHEDULER_LOGURU_LEVEL=\"INFO\" uv run python -m src.cli start --port $SCHEDULER_PORT"
+     SCHEDULER_PORT=$SCHEDULER_PORT SCHEDULER_LOG_DIR=$SCRIPT_DIR/logs/scheduler-a SCHEDULER_LOGURU_LEVEL=\"INFO\" uv run python -m src.cli start --port $SCHEDULER_PORT" \
+    "$SCHEDULER_PREDICTOR_CPU_RANGE"
 fi
 
 if [[ "$LOCAL_IP" == "$SCHEDULER_B_HOST" ]]; then
@@ -177,7 +208,8 @@ if [[ "$LOCAL_IP" == "$SCHEDULER_B_HOST" ]]; then
   start_bg "scheduler" \
     "cd $PROJECT_ROOT/scheduler && \
      PREDICTOR_URL=http://$PREDICTOR_HOST:$PREDICTOR_PORT \
-     SCHEDULER_PORT=$SCHEDULER_PORT SCHEDULER_LOG_DIR=$SCRIPT_DIR/logs/scheduler-a SCHEDULER_LOGURU_LEVEL=\"INFO\" uv run python -m src.cli start --port $SCHEDULER_PORT"
+     SCHEDULER_PORT=$SCHEDULER_PORT SCHEDULER_LOG_DIR=$SCRIPT_DIR/logs/scheduler-b SCHEDULER_LOGURU_LEVEL=\"INFO\" uv run python -m src.cli start --port $SCHEDULER_PORT" \
+    "$SCHEDULER_PREDICTOR_CPU_RANGE"
 fi
 
 # -----------------------------
@@ -197,11 +229,14 @@ contains_element() {
 for i in {0..7}; do
   INSTANCE_PORT=${INSTANCE_PORT_LIST[$i]}
   GPU_ID=${GPU_BIND_ID_LIST[$i]}
+  CPU_RANGE=$(get_cpu_range $i)
+
   start_bg "instance_${MODEL_ID}_gpu${GPU_ID}_port${INSTANCE_PORT}" \
     "cd $PROJECT_ROOT/instance && \
      MODEL_ID=$MODEL_ID \
      CUDA_VISIBLE_DEVICES=${GPU_ID} \
-     uv run python -m src.cli start --port ${INSTANCE_PORT}"
+     uv run python -m src.cli start --port ${INSTANCE_PORT}" \
+    "$CPU_RANGE"
 done
 
 
