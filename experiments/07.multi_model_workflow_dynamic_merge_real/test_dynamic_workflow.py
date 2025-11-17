@@ -963,7 +963,7 @@ class ATaskReceiver:
 
         # Increment received count after handling the result
         self.received_a_task_count += 1
-        self.logger.debug(
+        self.logger.info(
             f"Received A task {self.received_a_task_count}/{self.expected_a_task_count}"
         )
 
