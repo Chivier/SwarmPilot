@@ -386,6 +386,7 @@ class PoissonTaskSubmitter:
         # Note: workflow_id, task_type are tracking fields, not used for prediction
         # Predictor will extract hardware specs from platform_info automatically
         metadata = {
+            "sentence": task_data.sentence,
             "token_length": token_length,
             "max_tokens": max_tokens,
         }
@@ -2905,10 +2906,7 @@ def run_strategy_workflow(
             is_warmup=is_warmup,
             is_target_for_stats=is_target_for_stats
         )
-        from pprint import pprint
-        pprint(workflow_states[workflow_id])
-        exit()
-
+        
     # Step 7: Create queues and rate limiter (if using global QPS)
     logger.info("Step 7: Creating queues")
     merge_ready_queue = Queue()  # NEW: For B->merge transition
