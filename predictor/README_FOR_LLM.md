@@ -281,7 +281,8 @@ Content-Type: application/json
     "epochs": 500,                // Default: 500
     "learning_rate": 0.01,        // Default: 0.01
     "hidden_layers": [64, 32],    // Default: [64, 32]
-    "quantiles": [0.5, 0.9, 0.95, 0.99]  // Default: [0.5, 0.9, 0.95, 0.99] (quantile type only)
+    "quantiles": [0.5, 0.9, 0.95, 0.99],  // Default: [0.5, 0.9, 0.95, 0.99] (quantile type only)
+    "monotonicity_penalty": 0.0   // Default: 0.0 (quantile type only)
   }
 }
 ```
@@ -298,6 +299,7 @@ Content-Type: application/json
 - `learning_rate` (float, default: 0.01): Adam optimizer learning rate
 - `hidden_layers` (array of integers, default: [64, 32]): MLP hidden layer sizes
 - `quantiles` (array of floats, default: [0.5, 0.9, 0.95, 0.99]): Quantile levels for quantile prediction type (ignored for expect_error)
+- `monotonicity_penalty` (float, default: 0.0): Weight for monotonicity constraint during training (quantile type only). Ensures q₀.₅ ≤ q₀.₉ ≤ q₀.₉₅ ≤ q₀.₉₉. Typical range: 0.1-10.0. See [CUSTOM_QUANTILES.md](docs/CUSTOM_QUANTILES.md#monotonicity-enforcement) for details
 
 **Response Body Schema** (`TrainingResponse`):
 ```json

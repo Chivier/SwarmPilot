@@ -20,28 +20,33 @@ class PinballLoss(nn.Module):
 
     Loss = max(q * (y - ŷ), (q - 1) * (y - ŷ))
     where q is the quantile level.
+
+    Optionally includes a monotonicity penalty to ensure q_i <= q_{i+1}.
     """
 
-    def __init__(self, quantiles: List[float]):
+    def __init__(self, quantiles: List[float], monotonicity_penalty: float = 0.0):
         """
         Initialize pinball loss.
 
         Args:
             quantiles: List of quantile levels (e.g., [0.5, 0.9, 0.95, 0.99])
+            monotonicity_penalty: Weight for monotonicity penalty term (default: 0.0).
+                Higher values enforce stricter monotonicity. Typical range: 0.1 - 10.0.
         """
         super(PinballLoss, self).__init__()
         self.quantiles = torch.tensor(quantiles, dtype=torch.float32)
+        self.monotonicity_penalty = monotonicity_penalty
 
     def forward(self, predictions: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
         """
-        Compute pinball loss.
+        Compute pinball loss with optional monotonicity penalty.
 
         Args:
             predictions: Predicted quantiles of shape (batch_size, num_quantiles)
             targets: True values of shape (batch_size, 1)
 
         Returns:
-            Scalar loss value
+            Scalar loss value (pinball loss + monotonicity penalty)
         """
         # Expand targets to match predictions shape
         # targets: (batch_size, 1) -> (batch_size, num_quantiles)
@@ -54,13 +59,33 @@ class PinballLoss(nn.Module):
         # This is equivalent to: q * error if error >= 0, else (q - 1) * error
         quantiles_expanded = self.quantiles.unsqueeze(0).expand_as(predictions)
 
-        loss = torch.where(
+        pinball_loss = torch.where(
             errors >= 0,
             quantiles_expanded * errors,
             (quantiles_expanded - 1) * errors
         )
 
-        return loss.mean()
+        # Compute mean pinball loss
+        total_loss = pinball_loss.mean()
+
+        # Add monotonicity penalty if enabled and there are multiple quantiles
+        if self.monotonicity_penalty > 0 and predictions.shape[1] > 1:
+            # Compute violations: max(0, q_i - q_{i+1}) for adjacent quantiles
+            # predictions[:, :-1] = [q_0.5, q_0.9, q_0.95] (all but last)
+            # predictions[:, 1:]  = [q_0.9, q_0.95, q_0.99] (all but first)
+            # We want to penalize when q_i > q_{i+1}
+            diffs = predictions[:, :-1] - predictions[:, 1:]
+
+            # Only penalize positive violations (when lower quantile > higher quantile)
+            violations = torch.relu(diffs)  # max(0, diffs)
+
+            # Mean violation across all samples and quantile pairs
+            monotonicity_loss = violations.mean()
+
+            # Add weighted penalty to total loss
+            total_loss = total_loss + self.monotonicity_penalty * monotonicity_loss
+
+        return total_loss
 
 
 class QuantilePredictor(BasePredictor):
@@ -86,7 +111,13 @@ class QuantilePredictor(BasePredictor):
 
         Args:
             features_list: List of training samples with features and runtime_ms
-            config: Optional training configuration (epochs, learning_rate, quantiles, etc.)
+            config: Optional training configuration with keys:
+                - epochs (int): Number of training epochs (default: 500)
+                - learning_rate (float): Adam optimizer learning rate (default: 0.01)
+                - hidden_layers (list): Hidden layer sizes (default: [64, 32])
+                - quantiles (list): Quantile levels to predict (default: [0.5, 0.9, 0.95, 0.99])
+                - monotonicity_penalty (float): Weight for monotonicity constraint (default: 0.0)
+                  Higher values enforce stricter quantile ordering. Typical range: 0.1 - 10.0
 
         Returns:
             Training metadata dictionary
@@ -137,6 +168,7 @@ class QuantilePredictor(BasePredictor):
         epochs = config.get('epochs', 500)
         learning_rate = config.get('learning_rate', 0.01)
         hidden_layers = config.get('hidden_layers', [64, 32])
+        monotonicity_penalty = config.get('monotonicity_penalty', 0.0)
 
         # Create and train model
         input_dim = len(feature_names)
@@ -144,7 +176,7 @@ class QuantilePredictor(BasePredictor):
 
         self.model = MLP(input_dim=input_dim, output_dim=output_dim, hidden_layers=hidden_layers)
 
-        criterion = PinballLoss(self.quantiles)
+        criterion = PinballLoss(self.quantiles, monotonicity_penalty=monotonicity_penalty)
         optimizer = optim.Adam(self.model.parameters(), lr=learning_rate)
 
         # Training loop
@@ -167,12 +199,38 @@ class QuantilePredictor(BasePredictor):
             'final_loss': float(loss.item())
         }
 
-    def predict(self, features: Dict[str, Any]) -> Dict[str, Any]:
+    @staticmethod
+    def _enforce_monotonicity(predictions: np.ndarray) -> np.ndarray:
+        """
+        Enforce monotonicity constraint on quantile predictions.
+
+        Uses isotonic regression approach: for any violation where q_i > q_{i+1},
+        sets both to their average to maintain monotonicity while minimizing change.
+
+        Args:
+            predictions: Array of quantile predictions in ascending order
+
+        Returns:
+            Monotonically non-decreasing array of predictions
+        """
+        predictions = predictions.copy()  # Don't modify input
+        for i in range(len(predictions) - 1):
+            if predictions[i] > predictions[i + 1]:
+                # Average the violating pair
+                avg = (predictions[i] + predictions[i + 1]) / 2
+                predictions[i] = avg
+                predictions[i + 1] = avg
+        return predictions
+
+    def predict(self, features: Dict[str, Any], enforce_monotonicity: bool = False) -> Dict[str, Any]:
         """
         Make a prediction for the given features.
 
         Args:
             features: Feature dictionary
+            enforce_monotonicity: If True, applies post-processing to strictly enforce
+                monotonic ordering of quantiles (default: False). Use this when you need
+                guaranteed monotonicity regardless of training configuration.
 
         Returns:
             Dict with 'quantiles' key containing dict of quantile: value pairs
@@ -202,6 +260,10 @@ class QuantilePredictor(BasePredictor):
 
         # Denormalize predictions back to original scale
         predictions = predictions_normalized * self.target_std + self.target_mean
+
+        # Apply monotonicity enforcement if requested
+        if enforce_monotonicity:
+            predictions = self._enforce_monotonicity(predictions)
 
         # Format results as dict with quantile: value pairs
         quantile_results = {

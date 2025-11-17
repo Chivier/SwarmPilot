@@ -213,6 +213,92 @@ class TestQuantilePredictor:
         assert '0.75' in quantiles
         assert len(quantiles) == 3
 
+    def test_monotonicity_penalty_improves_ordering(self):
+        """Monotonicity penalty should improve quantile ordering."""
+        training_data = generate_training_data(50)
+
+        # Train without monotonicity penalty
+        predictor_no_penalty = QuantilePredictor()
+        predictor_no_penalty.train(training_data, config={
+            'epochs': 300,
+            'monotonicity_penalty': 0.0
+        })
+
+        # Train with monotonicity penalty
+        predictor_with_penalty = QuantilePredictor()
+        predictor_with_penalty.train(training_data, config={
+            'epochs': 300,
+            'monotonicity_penalty': 1.0
+        })
+
+        # Test on multiple samples
+        test_features = [
+            {'batch_size': 20, 'sequence_length': 128},
+            {'batch_size': 30, 'sequence_length': 128},
+            {'batch_size': 40, 'sequence_length': 128}
+        ]
+
+        violations_no_penalty = 0
+        violations_with_penalty = 0
+
+        for features in test_features:
+            # Check predictions without penalty
+            result_no_penalty = predictor_no_penalty.predict(features)
+            values_no_penalty = [
+                result_no_penalty['quantiles']['0.5'],
+                result_no_penalty['quantiles']['0.9'],
+                result_no_penalty['quantiles']['0.95'],
+                result_no_penalty['quantiles']['0.99']
+            ]
+
+            # Check predictions with penalty
+            result_with_penalty = predictor_with_penalty.predict(features)
+            values_with_penalty = [
+                result_with_penalty['quantiles']['0.5'],
+                result_with_penalty['quantiles']['0.9'],
+                result_with_penalty['quantiles']['0.95'],
+                result_with_penalty['quantiles']['0.99']
+            ]
+
+            # Count violations
+            for i in range(len(values_no_penalty) - 1):
+                if values_no_penalty[i] > values_no_penalty[i + 1]:
+                    violations_no_penalty += 1
+
+            for i in range(len(values_with_penalty) - 1):
+                if values_with_penalty[i] > values_with_penalty[i + 1]:
+                    violations_with_penalty += 1
+
+        # With penalty, there should be fewer or equal violations
+        assert violations_with_penalty <= violations_no_penalty
+
+    def test_enforce_monotonicity_parameter(self):
+        """enforce_monotonicity parameter should strictly enforce ordering."""
+        predictor = QuantilePredictor()
+        training_data = generate_training_data(50)
+        predictor.train(training_data, config={'epochs': 300})
+
+        # Test multiple samples with enforce_monotonicity=True
+        test_features = [
+            {'batch_size': 20, 'sequence_length': 128},
+            {'batch_size': 30, 'sequence_length': 128},
+            {'batch_size': 40, 'sequence_length': 128}
+        ]
+
+        for features in test_features:
+            result = predictor.predict(features, enforce_monotonicity=True)
+            values = [
+                result['quantiles']['0.5'],
+                result['quantiles']['0.9'],
+                result['quantiles']['0.95'],
+                result['quantiles']['0.99']
+            ]
+
+            # With enforce_monotonicity=True, should have ZERO violations
+            for i in range(len(values) - 1):
+                assert values[i] <= values[i + 1], \
+                    f"Monotonicity violated even with enforce_monotonicity=True: {values}"
+
 
 class TestFeatureValidation:
     """Test feature validation across predictors."""

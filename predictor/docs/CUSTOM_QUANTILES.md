@@ -148,9 +148,137 @@ Run tests with:
 uv run pytest tests/test_custom_quantiles.py -v
 ```
 
+## Monotonicity Enforcement
+
+### Overview
+
+Quantile predictions should satisfy the monotonicity constraint: q₀.₅ ≤ q₀.₉ ≤ q₀.₉₅ ≤ q₀.₉₉. The predictor now supports two mechanisms to ensure this ordering:
+
+1. **Training-time penalty** (soft constraint)
+2. **Prediction-time enforcement** (hard constraint)
+
+### Training-Time Monotonicity Penalty
+
+Add a penalty term during training to encourage monotonic predictions:
+
+```python
+from src.predictor.quantile import QuantilePredictor
+
+predictor = QuantilePredictor()
+training_data = [...]
+
+# Train with monotonicity penalty
+config = {
+    'epochs': 500,
+    'learning_rate': 0.01,
+    'quantiles': [0.5, 0.9, 0.95, 0.99],
+    'monotonicity_penalty': 1.0  # Penalty weight (0.1 to 10.0 typical range)
+}
+
+predictor.train(training_data, config=config)
+```
+
+**How it works:**
+- Adds a penalty term to the loss function: `Loss = Pinball Loss + α × mean(max(0, qᵢ - qᵢ₊₁))`
+- Only penalizes violations where lower quantile > higher quantile
+- Higher penalty values enforce stricter monotonicity during training
+- Default value is 0.0 (no penalty, backward compatible)
+
+**Recommended values:**
+- `monotonicity_penalty=0.0`: No enforcement (default)
+- `monotonicity_penalty=0.1-1.0`: Soft encouragement
+- `monotonicity_penalty=1.0-5.0`: Moderate enforcement
+- `monotonicity_penalty=5.0-10.0`: Strong enforcement
+
+### Prediction-Time Monotonicity Enforcement
+
+Apply strict monotonicity as a post-processing step:
+
+```python
+# Predict with strict monotonicity guarantee
+result = predictor.predict(
+    features={'batch_size': 25, 'sequence_length': 128},
+    enforce_monotonicity=True
+)
+
+# Result is guaranteed to be monotonic
+quantiles = result['quantiles']
+# q₀.₅ ≤ q₀.₉ ≤ q₀.₉₅ ≤ q₀.₉₉ (guaranteed)
+```
+
+**How it works:**
+- Uses isotonic regression approach
+- For any violation qᵢ > qᵢ₊₁, sets both to their average
+- Minimizes changes to predictions while ensuring monotonicity
+- Applied after denormalization, before returning results
+
+**When to use:**
+- When you need guaranteed monotonicity regardless of training
+- When using low or zero monotonicity penalty during training
+- For production systems with strict ordering requirements
+
+### Choosing the Right Approach
+
+| Approach | Pros | Cons | When to Use |
+|----------|------|------|-------------|
+| **Training Penalty** | - Model learns monotonicity naturally<br>- Better generalization<br>- No post-processing overhead | - Not a hard guarantee<br>- Requires retraining<br>- Need to tune penalty weight | - New models<br>- Flexibility in accuracy vs. monotonicity trade-off |
+| **Prediction Enforcement** | - Guaranteed monotonicity<br>- Works with existing models<br>- No retraining needed | - Post-processing overhead<br>- May reduce prediction accuracy<br>- Doesn't improve underlying model | - Existing models<br>- Strict requirements<br>- Quick fix without retraining |
+| **Both Combined** | - Best of both worlds<br>- Training guides the model<br>- Enforcement ensures guarantee | - Slight computational overhead | - Production systems<br>- High-stakes predictions |
+
+### Examples
+
+**Example 1: Train with moderate penalty**
+```python
+config = {
+    'epochs': 500,
+    'monotonicity_penalty': 1.0,
+    'quantiles': [0.5, 0.9, 0.95, 0.99]
+}
+predictor.train(training_data, config=config)
+
+# Predictions will likely be monotonic, but not guaranteed
+result = predictor.predict(features)
+```
+
+**Example 2: Strict enforcement at prediction**
+```python
+# Train without penalty (default)
+predictor.train(training_data)
+
+# Enforce at prediction time
+result = predictor.predict(features, enforce_monotonicity=True)
+# Guaranteed monotonic
+```
+
+**Example 3: Combined approach (recommended for production)**
+```python
+# Train with penalty to guide learning
+config = {'monotonicity_penalty': 1.0}
+predictor.train(training_data, config=config)
+
+# Enforce at prediction for guarantee
+result = predictor.predict(features, enforce_monotonicity=True)
+# Best accuracy with guaranteed monotonicity
+```
+
+### Testing Monotonicity
+
+The test suite includes comprehensive monotonicity tests:
+
+```bash
+# Run monotonicity-specific tests
+uv run pytest tests/test_predictors.py::TestQuantilePredictor::test_monotonicity_penalty_improves_ordering -v
+uv run pytest tests/test_predictors.py::TestQuantilePredictor::test_enforce_monotonicity_parameter -v
+
+# Run all quantile tests
+uv run pytest tests/test_predictors.py::TestQuantilePredictor -v
+```
+
 ## Migration Notes
 
 This is a **backward-compatible** feature:
 - Existing API calls without the `quantiles` field continue to work
 - The field is optional and defaults to standard quantiles when omitted
 - Normal mode behavior is unchanged
+- Default `monotonicity_penalty=0.0` maintains existing behavior
+- Default `enforce_monotonicity=False` maintains existing behavior
