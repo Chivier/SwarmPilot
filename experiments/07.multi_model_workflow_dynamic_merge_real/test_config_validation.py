@@ -6,6 +6,7 @@ Test script to validate configuration file loading and validation.
 import json
 import sys
 import tempfile
+import pytest
 from pathlib import Path
 
 # Add parent directory to path to import from collect_training_data
@@ -53,7 +54,6 @@ def test_valid_config():
         assert config['execution']['max_concurrent_requests'] == 10
 
         print("✓ Valid config test passed")
-        return True
     finally:
         Path(temp_path).unlink()
 
@@ -71,17 +71,9 @@ def test_missing_required_field():
         temp_path = f.name
 
     try:
-        try:
+        with pytest.raises(ValueError, match="Missing required field"):
             config = load_config(temp_path)
-            print("✗ Missing required field test failed - should have raised ValueError")
-            return False
-        except ValueError as e:
-            if "Missing required field" in str(e):
-                print("✓ Missing required field test passed")
-                return True
-            else:
-                print(f"✗ Wrong error message: {e}")
-                return False
+        print("✓ Missing required field test passed")
     finally:
         Path(temp_path).unlink()
 
@@ -121,7 +113,6 @@ def test_custom_config_overrides():
         assert config['execution']['max_concurrent_requests'] == 20
 
         print("✓ Custom config overrides test passed")
-        return True
     finally:
         Path(temp_path).unlink()
 
@@ -131,24 +122,18 @@ def test_example_config_file():
     example_path = Path(__file__).parent / "config.example.json"
 
     if not example_path.exists():
-        print("⚠ config.example.json not found - skipping test")
-        return True
+        pytest.skip("config.example.json not found")
 
-    try:
-        config = load_config(str(example_path))
+    config = load_config(str(example_path))
 
-        # Verify structure
-        assert 'dataset' in config
-        assert 'model_id' in config
-        assert 'instances' in config
-        assert len(config['instances']) >= 1
-        assert 'predictor' in config
+    # Verify structure
+    assert 'dataset' in config
+    assert 'model_id' in config
+    assert 'instances' in config
+    assert len(config['instances']) >= 1
+    assert 'predictor' in config
 
-        print("✓ Example config file test passed")
-        return True
-    except Exception as e:
-        print(f"✗ Example config file test failed: {e}")
-        return False
+    print("✓ Example config file test passed")
 
 
 if __name__ == "__main__":
@@ -161,24 +146,28 @@ if __name__ == "__main__":
         test_example_config_file,
     ]
 
-    results = []
+    passed = 0
+    failed = 0
     for test in tests:
         try:
-            results.append(test())
+            test()
+            passed += 1
+        except AssertionError as e:
+            print(f"✗ Test {test.__name__} failed: {e}")
+            failed += 1
         except Exception as e:
             print(f"✗ Test {test.__name__} crashed: {e}")
-            results.append(False)
+            failed += 1
         print()
 
-    passed = sum(results)
-    total = len(results)
+    total = passed + failed
 
     print("=" * 50)
     print(f"Results: {passed}/{total} tests passed")
 
-    if passed == total:
+    if failed == 0:
         print("✓ All tests passed!")
         sys.exit(0)
     else:
-        print(f"✗ {total - passed} test(s) failed")
+        print(f"✗ {failed} test(s) failed")
         sys.exit(1)

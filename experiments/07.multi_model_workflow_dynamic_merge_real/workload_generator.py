@@ -476,6 +476,144 @@ def generate_workflow_from_traces(
     return workflow_workload, config
 
 
+@dataclass
+class DatasetEntry:
+    """Single entry from dataset.jsonl."""
+    boot: str  # A1 task input (boot prompt)
+    queries: List[str]  # B1/B2 task inputs (query array)
+    summary: str  # A2 task input (summary prompt)
+    fanout: int  # Number of queries (computed)
+
+
+def load_dataset(dataset_path: Path) -> List[DatasetEntry]:
+    """
+    Load dataset from JSONL file.
+
+    Args:
+        dataset_path: Path to dataset.jsonl file
+
+    Returns:
+        List of DatasetEntry objects
+    """
+    dataset = []
+    with open(dataset_path, 'r', encoding='utf-8') as f:
+        for line in f:
+            if line.strip():
+                entry_dict = json.loads(line)
+                # Extract queries - handle both dict format and string format
+                queries_raw = entry_dict.get("queries", [])
+                if isinstance(queries_raw, list) and len(queries_raw) > 0:
+                    # If queries is a list of dicts with 'input' key
+                    if isinstance(queries_raw[0], dict):
+                        queries = [q.get("input", str(q)) for q in queries_raw]
+                    else:
+                        # If queries is already a list of strings
+                        queries = queries_raw
+                else:
+                    queries = []
+
+                entry = DatasetEntry(
+                    boot=entry_dict.get("boot", ""),
+                    queries=queries,
+                    summary=entry_dict.get("summary", ""),
+                    fanout=len(queries)
+                )
+                dataset.append(entry)
+
+    return dataset
+
+
+def generate_workflow_from_dataset(
+    dataset_path: Path,
+    num_workflows: int,
+    seed: int = 42
+) -> Tuple[WorkflowWorkload, WorkloadConfig]:
+    """
+    Generate workflow workload data by sampling from dataset.jsonl WITH REPLACEMENT.
+
+    Process:
+    1. Load dataset.jsonl
+    2. Sample num_workflows entries WITH REPLACEMENT (using random.choices)
+    3. For each sampled entry:
+       - boot field → A1 task input
+       - summary field → A2 task input
+       - queries array → B1 and B2 task inputs
+       - fanout = len(queries)
+
+    Note: This function does NOT generate execution times. The actual execution
+    time will be determined by the LLM service based on the input content and
+    max_tokens parameters.
+
+    Args:
+        dataset_path: Path to dataset.jsonl file
+        num_workflows: Number of workflows to generate (can be > dataset size)
+        seed: Random seed for reproducibility
+
+    Returns:
+        Tuple of (WorkflowWorkload, WorkloadConfig)
+    """
+    random.seed(seed)
+    np.random.seed(seed)
+
+    # Load dataset
+    dataset = load_dataset(dataset_path)
+
+    if len(dataset) == 0:
+        raise ValueError(f"Dataset at {dataset_path} is empty!")
+
+    # Sample WITH REPLACEMENT using random.choices
+    sampled_entries = random.choices(dataset, k=num_workflows)
+
+    # Build workflow data
+    # Note: Setting times to 0.0 since we're using real LLM execution
+    a1_times = [0.0] * num_workflows  # Placeholder (actual time from LLM)
+    a2_times = [0.0] * num_workflows  # Placeholder (actual time from LLM)
+    b1_times = []  # List of lists (one list per workflow)
+    b2_times = []  # List of lists (one list per workflow)
+    fanout_values = []
+
+    for entry in sampled_entries:
+        fanout = entry.fanout
+        fanout_values.append(fanout)
+
+        # Each B task gets 0.0 as placeholder time
+        b1_workflow = [0.0] * fanout
+        b2_workflow = [0.0] * fanout
+
+        b1_times.append(b1_workflow)
+        b2_times.append(b2_workflow)
+
+    # Calculate statistics (fanout only, since times are all 0.0)
+    all_fanouts = np.array(fanout_values)
+
+    workflow_workload = WorkflowWorkload(
+        name="dataset_based_workflow",
+        a1_times=a1_times,
+        a2_times=a2_times,
+        b1_times=b1_times,
+        b2_times=b2_times,
+        fanout_values=fanout_values,
+        description=f"Workflow from dataset.jsonl: {num_workflows} workflows sampled "
+                    f"WITH REPLACEMENT from {len(dataset)} entries, "
+                    f"A1 from boot field, A2 from summary field, "
+                    f"B1/B2 from queries array"
+    )
+
+    # Overall config (times are 0.0 since we use real LLM execution)
+    config = WorkloadConfig(
+        name="dataset_based_workflow",
+        min_time=0.0,
+        max_time=0.0,
+        mean_time=0.0,
+        std_time=0.0,
+        description=f"Dataset-based workflow: {num_workflows} workflows, "
+                    f"avg fanout={all_fanouts.mean():.1f}, "
+                    f"fanout range=[{all_fanouts.min()}, {all_fanouts.max()}]"
+    )
+
+    return workflow_workload, config
+
+
 def print_workflow_stats(workload: WorkflowWorkload):
     """
     Print detailed statistics about a workflow workload.

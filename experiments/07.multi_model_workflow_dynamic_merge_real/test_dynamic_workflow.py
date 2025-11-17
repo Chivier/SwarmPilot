@@ -47,6 +47,7 @@ from workload_generator import (
     generate_slow_peak_distribution,
     generate_fanout_distribution,
     generate_workflow_from_traces,
+    generate_workflow_from_dataset,
     WorkloadConfig,
     FanoutConfig,
     WorkflowWorkload,
@@ -2614,7 +2615,7 @@ def print_metrics_summary_exp07(
 # Main Test Orchestration
 # ============================================================================
 
-def test_strategy_workflow(
+def run_strategy_workflow(
     strategy: str,
     num_workflows: int,
     task_times_a: List[float],
@@ -2718,33 +2719,23 @@ def test_strategy_workflow(
     b1_tasks_by_workflow: Dict[str, List[WorkflowTaskData]] = {}
     b2_tasks_by_b1: Dict[str, WorkflowTaskData] = {}  # Map B1 task_id -> B2 task data
 
-    # Calculate mean runtime for each task type (for min_time strategy)
-    # Combine warmup and actual task times for accurate mean calculation
+    # Note: Since we're using dataset.jsonl, all times are 0.0 (no pre-determined execution time)
+    # The actual execution time will be determined by real LLM inference
+    # For min_time strategy, scheduler will calculate runtime dynamically based on actual execution
     if strategy == "min_time":
-        # Combine warmup and actual A1 times
-        all_task_times_a = list(warmup_task_times_a) + list(task_times_a) if warmup_task_times_a is not None else list(task_times_a)
-        mean_runtime_a = np.mean(all_task_times_a) * 1000  # Convert to ms
-
-        # Combine warmup and actual A2 times
-        all_task_times_a2 = list(warmup_task_times_a2) + list(task_times_a2) if warmup_task_times_a2 is not None else list(task_times_a2)
-        mean_runtime_a2 = np.mean(all_task_times_a2) * 1000  # Convert to ms
-
-        # Combine warmup and actual B1 times
-        all_task_times_b1 = list(warmup_task_times_b1) + list(task_times_b1) if warmup_task_times_b1 is not None else list(task_times_b1)
-        mean_runtime_b1 = np.mean(all_task_times_b1) * 1000  # Convert to ms
-
-        # Combine warmup and actual B2 times
-        all_task_times_b2 = list(warmup_task_times_b2) + list(task_times_b2) if warmup_task_times_b2 is not None else list(task_times_b2)
-        mean_runtime_b2 = np.mean(all_task_times_b2) * 1000  # Convert to ms
-
-        logger.info(f"Strategy is min_time: using mean runtimes - A1={mean_runtime_a:.2f}ms, A2={mean_runtime_a2:.2f}ms, B1={mean_runtime_b1:.2f}ms, B2={mean_runtime_b2:.2f}ms")
+        # Set to 0.0 - scheduler will use actual measured execution times
+        mean_runtime_a = 0.0
+        mean_runtime_a2 = 0.0
+        mean_runtime_b1 = 0.0
+        mean_runtime_b2 = 0.0
+        logger.info(f"Strategy is min_time: scheduler will use actual measured execution times")
     else:
-        # For other strategies, use actual task time
+        # For other strategies (round_robin, random, probabilistic), exp_runtime is not used
         mean_runtime_a = None
         mean_runtime_a2 = None
         mean_runtime_b1 = None
         mean_runtime_b2 = None
-        logger.info(f"Strategy is {strategy}: using actual task times for exp_runtime")
+        logger.info(f"Strategy is {strategy}: exp_runtime not used")
 
     # Use pre-generated warmup task times or fall back to empty arrays
     if num_warmup_workflows > 0:
@@ -2772,34 +2763,30 @@ def test_strategy_workflow(
         merge_task_id = merge_task_ids[i]
         is_warmup = i < num_warmup_workflows
 
-        # Determine task times based on warmup status
+        # Get fanout for this workflow
         if is_warmup:
-            sleep_time_a = warmup_task_times_a[i]
-            sleep_time_a2 = warmup_task_times_a2[i]
             fanout = all_fanout_values[i]
         else:
             actual_idx = i - num_warmup_workflows
-            sleep_time_a = task_times_a[actual_idx]
-            sleep_time_a2 = task_times_a2[actual_idx]
             fanout = fanout_values[actual_idx]
 
         # Get dataset entry for this workflow (cycle if needed)
-        dataset_idx = actual_idx if not is_warmup else i
+        dataset_idx = i - num_warmup_workflows if not is_warmup else i
         dataset_entry = dataset[dataset_idx % len(dataset)]
-        
+
         # Extract data from dataset
         boot_data = dataset_entry.get("boot", "")
         queries = dataset_entry.get("queries", [])
         summary_data = dataset_entry.get("summary", "")
 
         # Create A task (A1: boot)
-        # Use mean runtime for min_time strategy, actual time for others
-        exp_runtime_a = mean_runtime_a if strategy == "min_time" else sleep_time_a * 1000
+        # Note: sleep_time=0.0, exp_runtime from mean (for min_time) or 0.0 (for others)
+        exp_runtime_a = mean_runtime_a if strategy == "min_time" and mean_runtime_a is not None else 0.0
         a_task = WorkflowTaskData(
             task_id=a_task_id,
             workflow_id=workflow_id,
             task_type="A",
-            sleep_time=sleep_time_a,
+            sleep_time=0.0,  # No simulated sleep time (using real LLM)
             exp_runtime=exp_runtime_a,
             is_warmup=is_warmup,
             sentence=boot_data,  # A1: boot
@@ -2808,14 +2795,13 @@ def test_strategy_workflow(
         a_tasks.append(a_task)
 
         # Create merge A task (A2: summary)
-        # Use mean runtime for min_time strategy, actual time for others
-        merge_sleep_time = sleep_time_a2
-        exp_runtime_a2 = mean_runtime_a2 if strategy == "min_time" else merge_sleep_time * 1000
+        # Note: sleep_time=0.0, exp_runtime from mean (for min_time) or 0.0 (for others)
+        exp_runtime_a2 = mean_runtime_a2 if strategy == "min_time" and mean_runtime_a2 is not None else 0.0
         merge_task = WorkflowTaskData(
             task_id=merge_task_id,
             workflow_id=workflow_id,
             task_type="A",  # Submitted to Scheduler A
-            sleep_time=merge_sleep_time,
+            sleep_time=0.0,  # No simulated sleep time (using real LLM)
             exp_runtime=exp_runtime_a2,
             is_warmup=is_warmup,
             sentence=summary_data,  # A2: summary
@@ -2830,17 +2816,6 @@ def test_strategy_workflow(
         b2_task_ids_wf = b2_task_ids_by_workflow[workflow_id]
 
         for j in range(n):
-            # Calculate index into task_times_b1 and task_times_b2
-            if is_warmup:
-                b_task_index = sum(all_fanout_values[:i]) + j
-                sleep_time_b1 = warmup_task_times_b1[b_task_index]
-                sleep_time_b2 = warmup_task_times_b2[b_task_index]
-            else:
-                actual_idx = i - num_warmup_workflows
-                b_task_index = sum(fanout_values[:actual_idx]) + j
-                sleep_time_b1 = task_times_b1[b_task_index]
-                sleep_time_b2 = task_times_b2[b_task_index]
-
             # Get query data for this B1/B2 pair (cycle if needed)
             query_data = queries[j % len(queries)] if queries else {}
             # Extract query text - handle different possible formats
@@ -2852,13 +2827,13 @@ def test_strategy_workflow(
                 query_text = str(query_data)
 
             # Create B1 task (B1: Query, max_token = 300)
-            # Use mean runtime for min_time strategy, actual time for others
-            exp_runtime_b1 = mean_runtime_b1 if strategy == "min_time" else sleep_time_b1 * 1000
+            # Note: sleep_time=0.0, exp_runtime from mean (for min_time) or 0.0 (for others)
+            exp_runtime_b1 = mean_runtime_b1 if strategy == "min_time" and mean_runtime_b1 is not None else 0.0
             b1_task = WorkflowTaskData(
                 task_id=b1_task_ids_wf[j],
                 workflow_id=workflow_id,
                 task_type="B1",
-                sleep_time=sleep_time_b1,
+                sleep_time=0.0,  # No simulated sleep time (using real LLM)
                 exp_runtime=exp_runtime_b1,
                 b_index=j,  # Track pairing index
                 is_warmup=is_warmup,
@@ -2868,13 +2843,13 @@ def test_strategy_workflow(
             b1_tasks.append(b1_task)
 
             # Create B2 task (B2: Query, max_token = 1) paired with this B1 task
-            # Use mean runtime for min_time strategy, actual time for others
-            exp_runtime_b2 = mean_runtime_b2 if strategy == "min_time" else sleep_time_b2 * 1000
+            # Note: sleep_time=0.0, exp_runtime from mean (for min_time) or 0.0 (for others)
+            exp_runtime_b2 = mean_runtime_b2 if strategy == "min_time" and mean_runtime_b2 is not None else 0.0
             b2_task = WorkflowTaskData(
                 task_id=b2_task_ids_wf[j],
                 workflow_id=workflow_id,
                 task_type="B2",
-                sleep_time=sleep_time_b2,
+                sleep_time=0.0,  # No simulated sleep time (using real LLM)
                 exp_runtime=exp_runtime_b2,
                 b_index=j,  # Track pairing index
                 is_warmup=is_warmup,
@@ -3198,7 +3173,8 @@ def main(num_workflows: int = 100, qps_a: float = 8.0, seed: int = 42,
         continuous_mode: Enable continuous request mode (2x workflows, track first num_workflows)
     """
     if strategies is None:
-        strategies = ["min_time", "round_robin", "probabilistic"]
+        # Default strategies to test
+        strategies = ["min_time", "round_robin", "probabilistic", "random"]
 
     logger = logging.getLogger("Main")
     logger.info("Starting Experiment 07: Multi-Model Workflow with B1/B2 Split and Merge")
@@ -3221,16 +3197,17 @@ def main(num_workflows: int = 100, qps_a: float = 8.0, seed: int = 42,
     QPS_A = qps_a
     SEED = seed
 
-    # Generate workloads from real traces
-    logger.debug("Generating workloads from real traces...")
+    # Generate workloads from dataset.jsonl
+    logger.debug("Generating workloads from dataset.jsonl...")
 
-    # Generate workflow workload from traces
-    workflow_workload, workflow_config = generate_workflow_from_traces(
+    # Generate workflow workload from dataset
+    workflow_workload, workflow_config = generate_workflow_from_dataset(
+        dataset_path=DATASET_FILE,
         num_workflows=NUM_WORKFLOWS,
         seed=SEED
     )
     print_workflow_stats(workflow_workload)
-    logger.debug(f"Generated {len(workflow_workload.a1_times)} workflows from traces")
+    logger.debug(f"Generated {len(workflow_workload.a1_times)} workflows from dataset")
 
     # Extract individual task time lists and fanout values
     # A1 (boot) times are used for the initial A task submission
@@ -3253,10 +3230,11 @@ def main(num_workflows: int = 100, qps_a: float = 8.0, seed: int = 42,
     # Generate warmup data once for all strategies (if warmup is enabled)
     num_warmup_workflows = int(NUM_WORKFLOWS * warmup_ratio)
     if num_warmup_workflows > 0:
-        logger.debug(f"Generating {num_warmup_workflows} warmup workflows from traces (warmup_ratio={warmup_ratio:.1%})")
+        logger.debug(f"Generating {num_warmup_workflows} warmup workflows from dataset (warmup_ratio={warmup_ratio:.1%})")
 
-        # Generate warmup workflow from traces using a different seed
-        warmup_workflow, warmup_config = generate_workflow_from_traces(
+        # Generate warmup workflow from dataset using a different seed
+        warmup_workflow, warmup_config = generate_workflow_from_dataset(
+            dataset_path=DATASET_FILE,
             num_workflows=num_warmup_workflows,
             seed=SEED + 1000  # Different seed for warmup data
         )
@@ -3270,10 +3248,10 @@ def main(num_workflows: int = 100, qps_a: float = 8.0, seed: int = 42,
         warmup_task_times_b1 = [t for workflow_b1 in warmup_workflow.b1_times for t in workflow_b1]
         warmup_task_times_b2 = [t for workflow_b2 in warmup_workflow.b2_times for t in workflow_b2]
 
-        logger.debug(f"Generated {len(warmup_task_times_a)} warmup A1 task times from traces")
-        logger.debug(f"Generated {len(warmup_task_times_a2)} warmup A2 task times from traces")
-        logger.debug(f"Generated {len(warmup_task_times_b1)} warmup B1 task times from traces")
-        logger.debug(f"Generated {len(warmup_task_times_b2)} warmup B2 task times from traces")
+        logger.debug(f"Generated {len(warmup_task_times_a)} warmup A1 task times from dataset")
+        logger.debug(f"Generated {len(warmup_task_times_a2)} warmup A2 task times from dataset")
+        logger.debug(f"Generated {len(warmup_task_times_b1)} warmup B1 task times from dataset")
+        logger.debug(f"Generated {len(warmup_task_times_b2)} warmup B2 task times from dataset")
         logger.debug(f"Warmup fanout distribution: min={min(warmup_fanout_values)}, max={max(warmup_fanout_values)}, mean={np.mean(warmup_fanout_values):.2f}")
     else:
         warmup_fanout_values = None
@@ -3288,7 +3266,7 @@ def main(num_workflows: int = 100, qps_a: float = 8.0, seed: int = 42,
 
     for strategy in strategies:
         logger.info(f"\n{'=' * 80}\nTesting strategy: {strategy}\n{'=' * 80}")
-        results = test_strategy_workflow(
+        results = run_strategy_workflow(
             strategy=strategy,
             num_workflows=NUM_WORKFLOWS,
             task_times_a=task_times_a,
