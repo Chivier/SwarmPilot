@@ -4,14 +4,11 @@
 
 ```bash
 # 1. Start all services
-cd experiments/11.multi_model_workflow_repeat
-./start_all_services.sh
-
-# 2. (Optional) Run unit tests
-python3 test_repeat_workflow.py
+cd experiments/11.Exp3.Repeat
+./start_all_services.sh 48 80
 
 # 3. Run experiment (100 workflows, each repeats 1-3 times)
-python3 test_dynamic_workflow.py
+python3 test_dynamic_workflow.py --num-workflows 200 --qps 10 --gqps 100
 
 # 4. Stop services when done
 ./stop_all_services.sh

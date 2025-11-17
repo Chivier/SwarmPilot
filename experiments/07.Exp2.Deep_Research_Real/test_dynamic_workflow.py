@@ -2905,6 +2905,9 @@ def run_strategy_workflow(
             is_warmup=is_warmup,
             is_target_for_stats=is_target_for_stats
         )
+        from pprint import pprint
+        pprint(workflow_states[workflow_id])
+        exit()
 
     # Step 7: Create queues and rate limiter (if using global QPS)
     logger.info("Step 7: Creating queues")
