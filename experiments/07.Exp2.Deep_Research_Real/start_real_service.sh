@@ -12,11 +12,14 @@ set -e
 #   - 根据本机 IP 所属列表，选择 MODEL_ID = sleep_model_a 或 sleep_model_b
 #
 # 启动命令沿用原脚本模式：
-#   uv run python -m src.cli start --port <PORT>
+#   python -m src.cli start --port <PORT>
 
 # -----------------------------
 # 基础路径与配置
 # -----------------------------
+
+uv sync
+source .venv/bin/activate
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR" && pwd)"
 
@@ -190,7 +193,7 @@ if [[ "$LOCAL_IP" == "$PREDICTOR_HOST" ]]; then
   start_bg "predictor" \
     "cd $PROJECT_ROOT/predictor && \
      PREDICTOR_PORT=$PREDICTOR_PORT \
-     PREDICTOR_LOG_DIR=$SCRIPT_DIR/logs/predictor uv run python -m src.cli start --port $PREDICTOR_PORT --log-level INFO" \
+     PREDICTOR_LOG_DIR=$SCRIPT_DIR/logs/predictor python -m src.cli start --port $PREDICTOR_PORT --log-level INFO" \
     "$SCHEDULER_PREDICTOR_CPU_RANGE"
 fi
 
@@ -199,7 +202,7 @@ if [[ "$LOCAL_IP" == "$SCHEDULER_A_HOST" ]]; then
   start_bg "scheduler" \
     "cd $PROJECT_ROOT/scheduler && \
      PREDICTOR_URL=http://$PREDICTOR_HOST:$PREDICTOR_PORT \
-     SCHEDULER_PORT=$SCHEDULER_PORT SCHEDULER_LOG_DIR=$SCRIPT_DIR/logs/scheduler-a SCHEDULER_LOGURU_LEVEL=\"INFO\" uv run python -m src.cli start --port $SCHEDULER_PORT" \
+     SCHEDULER_PORT=$SCHEDULER_PORT SCHEDULER_LOG_DIR=$SCRIPT_DIR/logs/scheduler-a SCHEDULER_LOGURU_LEVEL=\"INFO\" python -m src.cli start --port $SCHEDULER_PORT" \
     "$SCHEDULER_PREDICTOR_CPU_RANGE"
 fi
 
@@ -208,7 +211,7 @@ if [[ "$LOCAL_IP" == "$SCHEDULER_B_HOST" ]]; then
   start_bg "scheduler" \
     "cd $PROJECT_ROOT/scheduler && \
      PREDICTOR_URL=http://$PREDICTOR_HOST:$PREDICTOR_PORT \
-     SCHEDULER_PORT=$SCHEDULER_PORT SCHEDULER_LOG_DIR=$SCRIPT_DIR/logs/scheduler-b SCHEDULER_LOGURU_LEVEL=\"INFO\" uv run python -m src.cli start --port $SCHEDULER_PORT" \
+     SCHEDULER_PORT=$SCHEDULER_PORT SCHEDULER_LOG_DIR=$SCRIPT_DIR/logs/scheduler-b SCHEDULER_LOGURU_LEVEL=\"INFO\" python -m src.cli start --port $SCHEDULER_PORT" \
     "$SCHEDULER_PREDICTOR_CPU_RANGE"
 fi
 
@@ -241,7 +244,7 @@ for i in {0..7}; do
      INSTANCE_PORT=${INSTANCE_PORT} \
      INSTANCE_ENDPOINT=http://${LOCAL_IP}:${INSTANCE_PORT} \
      INSTANCE_ID=${LOCAL_IP}-${INSTANCE_PORT} \
-     uv run python -m src.cli start --port ${INSTANCE_PORT}" \
+     python -m src.cli start --port ${INSTANCE_PORT}" \
     "$CPU_RANGE"
 done
 
