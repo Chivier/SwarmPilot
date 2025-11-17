@@ -966,6 +966,7 @@ async def collect_training_samples(
 
                 # Build features: user metadata + hardware specs
                 features = {
+                    "sentence": sentence,
                     "token_length": float(token_length),
                     "max_tokens": float(max_tokens),
                 }
