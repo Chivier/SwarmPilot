@@ -356,10 +356,11 @@ async def train_model(request: TrainingRequest):
                 }
             )
 
-        # Generate model key
+        # Generate model key with prediction_type
         model_key = storage.generate_model_key(
             model_id=request.model_id,
-            platform_info=request.platform_info.model_dump()
+            platform_info=request.platform_info.model_dump(),
+            prediction_type=request.prediction_type
         )
 
         # Save model
@@ -451,7 +452,8 @@ async def predict(request: PredictionRequest):
         # Normal mode: load model and predict
         model_key = storage.generate_model_key(
             model_id=request.model_id,
-            platform_info=request.platform_info.model_dump()
+            platform_info=request.platform_info.model_dump(),
+            prediction_type=request.prediction_type
         )
 
         # Try to get predictor from cache
@@ -646,7 +648,8 @@ async def websocket_predict(websocket: WebSocket):
                 # Normal mode: load model and predict
                 model_key = storage.generate_model_key(
                     model_id=request.model_id,
-                    platform_info=request.platform_info.model_dump()
+                    platform_info=request.platform_info.model_dump(),
+                    prediction_type=request.prediction_type
                 )
 
                 # Try to get predictor from cache

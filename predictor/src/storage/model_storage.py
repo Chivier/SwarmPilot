@@ -28,16 +28,17 @@ class ModelStorage:
         self.storage_dir = Path(storage_dir)
         self.storage_dir.mkdir(parents=True, exist_ok=True)
 
-    def generate_model_key(self, model_id: str, platform_info: Dict[str, str]) -> str:
+    def generate_model_key(self, model_id: str, platform_info: Dict[str, str], prediction_type: str = "expect_error") -> str:
         """
-        Generate unique model key from model_id and platform_info.
+        Generate unique model key from model_id, platform_info, and prediction_type.
 
-        Format: {model_id}__{software_name}-{software_version}__{hardware_name}
+        Format: {model_id}__{software_name}-{software_version}__{hardware_name}__{prediction_type}
 
         Args:
             model_id: Model identifier
             platform_info: Platform information dict with software_name,
                           software_version, hardware_name
+            prediction_type: Type of prediction model ("expect_error" or "quantile")
 
         Returns:
             Unique model key string
@@ -46,12 +47,13 @@ class ModelStorage:
             >>> generate_model_key("image-classifier-v1",
             ...                   {"software_name": "pytorch",
             ...                    "software_version": "2.0.1",
-            ...                    "hardware_name": "nvidia-a100"})
-            'image-classifier-v1__pytorch-2.0.1__nvidia-a100'
+            ...                    "hardware_name": "nvidia-a100"},
+            ...                   "quantile")
+            'image-classifier-v1__pytorch-2.0.1__nvidia-a100__quantile'
         """
         software = f"{platform_info['software_name']}-{platform_info['software_version']}"
         hardware = platform_info['hardware_name']
-        return f"{model_id}__{software}__{hardware}"
+        return f"{model_id}__{software}__{hardware}__{prediction_type}"
 
     def save_model(self,
                    model_key: str,

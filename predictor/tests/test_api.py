@@ -404,7 +404,7 @@ class TestQuantilePrediction:
         assert '0.99' in quantiles
 
     def test_prediction_type_mismatch(self, client, trained_quantile_model):
-        """Should fail when prediction_type doesn't match trained model."""
+        """Should return 404 when requesting prediction_type that wasn't trained."""
         request = {
             'model_id': 'quantile-pred-model',
             'platform_info': {
@@ -412,7 +412,7 @@ class TestQuantilePrediction:
                 'software_version': '2.0',
                 'hardware_name': 'cpu'
             },
-            'prediction_type': 'expect_error',  # Model was trained with 'quantile'
+            'prediction_type': 'expect_error',  # Model was trained with 'quantile' only
             'features': {
                 'batch_size': 25,
                 'sequence_length': 128
@@ -420,4 +420,6 @@ class TestQuantilePrediction:
         }
 
         response = client.post("/predict", json=request)
-        assert response.status_code == 400
+        # With prediction_type as part of the model key, this is now a 404 (model not found)
+        # rather than 400 (type mismatch) since different types are stored separately
+        assert response.status_code == 404
