@@ -723,6 +723,7 @@ class ATaskReceiver:
         # Note: workflow_id, task_type, b_index are tracking fields, not used for prediction
         # Predictor will extract hardware specs from platform_info automatically
         metadata = {
+            "sentence": task_data.sentence,
             "token_length": token_length,
             "max_tokens": max_tokens,
         }
@@ -1129,6 +1130,7 @@ class B1TaskReceiver:
         # Note: workflow_id, task_type, b_index are tracking fields, not used for prediction
         # Predictor will extract hardware specs from platform_info automatically
         metadata = {
+            "sentence": task_data.sentence,
             "token_length": token_length,
             "max_tokens": max_tokens,
         }
@@ -1736,6 +1738,7 @@ class MergeTaskSubmitter:
             # Note: workflow_id, task_type are tracking fields, not used for prediction
             # Predictor will extract hardware specs from platform_info automatically
             metadata = {
+                "sentence": merge_task.sentence,
                 "token_length": token_length,
                 "max_tokens": max_tokens,
             }
