@@ -334,19 +334,41 @@ async def train_model(request: TrainingRequest):
             )
         
         try:
-            all_features = request.features_list.copy()
+            processed_features_list = []
             if request.enable_preprocessors:
-                for preprocessor_name in request.enable_preprocessors:
-                    preprocessor = preprocessors_registry.get_preprocessor(preprocessor_name)
-                    target_features = request.preprocessor_mappings[preprocessor_name]
-                    assert all(key in all_features for key in target_features), f"Feature {key} not found in all_features"
-                    target_features = [all_features[key] for key in target_features]
-                    processed_features, remove_origin = preprocessor(target_features)
-                    for k, v in processed_features.items():
-                        all_features[k] = v
-                    if remove_origin:
-                        for key in target_features:
-                            del all_features[key]
+                # Process each sample
+                for features in request.features_list:
+                    # Make a copy to avoid modifying the original
+                    processed_features_dict = dict(features)
+
+                    # Apply each preprocessor
+                    for preprocessor_name in request.enable_preprocessors:
+                        preprocessor = preprocessors_registry.get_preprocessor(preprocessor_name)
+                        target_feature_keys = request.preprocessor_mappings[preprocessor_name]
+
+                        # Validate all required features exist
+                        assert all(key in processed_features_dict for key in target_feature_keys), \
+                            f"Feature keys {target_feature_keys} not all found in features"
+
+                        # Extract target feature values
+                        target_feature_values = [processed_features_dict[key] for key in target_feature_keys]
+
+                        # Apply preprocessor
+                        processed_features, remove_origin = preprocessor(target_feature_values)
+
+                        # Add processed features to the dict
+                        for k, v in processed_features.items():
+                            processed_features_dict[k] = v
+
+                        # Remove original features if requested
+                        if remove_origin:
+                            for key in target_feature_keys:
+                                del processed_features_dict[key]
+
+                    processed_features_list.append(processed_features_dict)
+            else:
+                processed_features_list = request.features_list
+                            
         except Exception as e:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -358,7 +380,7 @@ async def train_model(request: TrainingRequest):
         # Train the model
         try:
             training_metadata = predictor.train(
-                features_list=request.features_list,
+                features_list=processed_features_list,
                 config=request.training_config or {}
             )
         except ValueError as e:

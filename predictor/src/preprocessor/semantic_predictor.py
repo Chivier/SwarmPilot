@@ -215,8 +215,16 @@ class SemanticPredictor:
       # Return False: do not remove original input feature
       return {"output_length": int(prediction)}, True
       
-    def __call__(self, input_text: str) -> int:
-        output, _ = self.predict([input_text])
-        return output['output_length']
+    def __call__(self, input_text: List[str]) -> Tuple[Dict[str, int], bool]:
+        """
+        Callable interface for the preprocessor.
+
+        Args:
+            input_text: List containing a single input text string
+
+        Returns:
+            Tuple of (predictions dict, remove_origin flag)
+        """
+        return self.predict(input_text)
     
     

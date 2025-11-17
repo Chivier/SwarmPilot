@@ -5,16 +5,24 @@ Tests for API endpoints.
 import pytest
 
 
-def generate_training_data(n_samples=20):
-    """Generate training data for tests."""
-    return [
-        {
+def generate_training_data(n_samples=20, include_sentence=False):
+    """Generate training data for tests.
+
+    Args:
+        n_samples: Number of samples to generate
+        include_sentence: Whether to include the 'sentence' field (for preprocessor tests)
+    """
+    data = []
+    for i in range(n_samples):
+        sample = {
             'batch_size': 16 + i,
             'sequence_length': 128,
             'runtime_ms': 100 + i * 2
         }
-        for i in range(n_samples)
-    ]
+        if include_sentence:
+            sample['sentence'] = f'Hello, world! {i}'
+        data.append(sample)
+    return data
 
 
 class TestHealthEndpoint:
@@ -181,6 +189,30 @@ class TestTrainEndpoint:
         # Should still have only one model
         list_response = client.get("/list")
         assert len(list_response.json()['models']) == 1
+    
+    def test_train_with_preprocessor(self, client):
+        """Should successfully train with preprocessor."""
+        request = {
+            'model_id': 'preprocessor-model',
+            'platform_info': {
+                'software_name': 'pytorch',
+                'software_version': '2.0',
+                'hardware_name': 'cpu'
+            },
+            'prediction_type': 'expect_error',
+            'features_list': generate_training_data(20, include_sentence=True),
+            'enable_preprocessors': ['semantic'],
+            'preprocessor_mappings': {
+                'semantic': ['sentence']
+            }
+        }
+
+        response = client.post("/train", json=request)
+        assert response.status_code == 200, response.text
+
+        data = response.json()
+        assert data['status'] == 'success'
+        assert data['samples_trained'] == 20
 
 
 class TestPredictEndpoint:
