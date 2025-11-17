@@ -58,6 +58,16 @@ class TrainingConfig:
     # Minimum samples required before training
     min_samples: int = int(os.getenv("TRAINING_MIN_SAMPLES", "10"))
 
+    # Prediction types to train (comma-separated list in env var)
+    # Default: train both expect_error and quantile models
+    prediction_types: list = None
+
+    def __post_init__(self):
+        """Parse prediction_types from environment variable."""
+        if self.prediction_types is None:
+            env_types = os.getenv("TRAINING_PREDICTION_TYPES", "expect_error,quantile")
+            self.prediction_types = [t.strip() for t in env_types.split(",") if t.strip()]
+
 
 @dataclass
 class LoggingConfig:

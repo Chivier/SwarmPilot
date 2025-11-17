@@ -164,7 +164,8 @@ class TestFlushIfReady:
         result = await training_client.flush_if_ready()
 
         assert result is True
-        training_client._http_client.post.assert_called_once()
+        # With multi-model training, we get 2 calls (one for expect_error, one for quantile)
+        assert training_client._http_client.post.call_count == 2
         assert training_client.get_buffer_size() == 0
 
     @pytest.mark.asyncio
@@ -217,7 +218,8 @@ class TestFlush:
         result = await training_client.flush(force=True)
 
         assert result is True
-        training_client._http_client.post.assert_called_once()
+        # With multi-model training, we get 2 calls (one for expect_error, one for quantile)
+        assert training_client._http_client.post.call_count == 2
         assert training_client.get_buffer_size() == 0
 
     @pytest.mark.asyncio
@@ -237,22 +239,25 @@ class TestFlush:
         assert result is True
         assert training_client.get_buffer_size() == 0
 
-        # Verify the POST request
-        training_client._http_client.post.assert_called_once()
-        call_args = training_client._http_client.post.call_args
+        # With multi-model training, we get 2 calls (one for expect_error, one for quantile)
+        assert training_client._http_client.post.call_count == 2
 
-        assert call_args[0][0] == f"{training_client.predictor_url}/train"
-        training_data = call_args[1]["json"]
+        # Verify both POST requests have correct structure
+        for call in training_client._http_client.post.call_args_list:
+            assert call[0][0] == f"{training_client.predictor_url}/train"
+            training_data = call[1]["json"]
 
-        assert training_data["model_id"] == "model-1"
-        assert training_data["platform_info"] == platform_info
-        assert len(training_data["samples"]) == training_client.min_samples
+            assert training_data["model_id"] == "model-1"
+            assert training_data["platform_info"] == platform_info
+            assert "prediction_type" in training_data
+            assert training_data["prediction_type"] in ["expect_error", "quantile"]
+            assert "features_list" in training_data
+            assert len(training_data["features_list"]) == training_client.min_samples
 
-        # Verify sample structure
-        for i, sample in enumerate(training_data["samples"]):
-            assert "features" in sample
-            assert "actual_runtime_ms" in sample
-            assert sample["actual_runtime_ms"] == float(i * 100)
+            # Verify sample structure (new format with runtime_ms)
+            for i, sample in enumerate(training_data["features_list"]):
+                assert "runtime_ms" in sample
+                assert sample["runtime_ms"] == float(i * 100)
 
     @pytest.mark.asyncio
     async def test_flush_multiple_model_platform_groups(self, training_client, features):
@@ -278,8 +283,8 @@ class TestFlush:
         assert result is True
         assert training_client.get_buffer_size() == 0
 
-        # Should make 3 separate POST requests (one per model-platform combination)
-        assert training_client._http_client.post.call_count == 3
+        # With multi-model training: 3 model-platform combinations × 2 prediction types = 6 calls
+        assert training_client._http_client.post.call_count == 6
 
     @pytest.mark.asyncio
     async def test_flush_http_success(self, training_client, platform_info, features):
@@ -296,7 +301,8 @@ class TestFlush:
         result = await training_client.flush()
 
         assert result is True
-        mock_response.raise_for_status.assert_called_once()
+        # With multi-model training, raise_for_status is called twice (once per prediction type)
+        assert mock_response.raise_for_status.call_count == 2
 
     @pytest.mark.asyncio
     async def test_flush_http_error(self, training_client, platform_info, features):
@@ -329,11 +335,13 @@ class TestFlush:
             training_client.add_sample("model-1", platform2, features, 200.0)
 
         # Mock HTTP client with mixed success/failure
+        # With 2 platforms and 2 prediction types each, we need 4 responses
+        # Make the second one fail
         mock_success = MagicMock()
         mock_success.raise_for_status = MagicMock()
 
         training_client._http_client.post = AsyncMock(
-            side_effect=[mock_success, httpx.HTTPError("Failed")]
+            side_effect=[mock_success, httpx.HTTPError("Failed"), mock_success, mock_success]
         )
 
         result = await training_client.flush(force=True)
@@ -357,6 +365,109 @@ class TestFlush:
 
         # Buffer should be cleared regardless of success
         assert training_client.get_buffer_size() == 0
+
+    @pytest.mark.asyncio
+    async def test_multi_model_training_both_types(self, platform_info, features):
+        """Test that both prediction types are trained correctly."""
+        # Create client with both prediction types
+        client = TrainingClient(
+            predictor_url="http://predictor:8000",
+            batch_size=100,
+            min_samples=10,
+            prediction_types=["expect_error", "quantile"]
+        )
+
+        # Add samples
+        for i in range(10):
+            client.add_sample("model-1", platform_info, features, float(i))
+
+        # Mock HTTP client
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        client._http_client.post = AsyncMock(return_value=mock_response)
+
+        result = await client.flush()
+
+        assert result is True
+
+        # Verify both prediction types were trained
+        assert client._http_client.post.call_count == 2
+
+        prediction_types_called = []
+        for call in client._http_client.post.call_args_list:
+            training_data = call[1]["json"]
+            prediction_types_called.append(training_data["prediction_type"])
+
+        assert "expect_error" in prediction_types_called
+        assert "quantile" in prediction_types_called
+
+    @pytest.mark.asyncio
+    async def test_multi_model_training_single_type(self, platform_info, features):
+        """Test training with only one prediction type configured."""
+        # Create client with only quantile
+        client = TrainingClient(
+            predictor_url="http://predictor:8000",
+            batch_size=100,
+            min_samples=10,
+            prediction_types=["quantile"]
+        )
+
+        # Add samples
+        for i in range(10):
+            client.add_sample("model-1", platform_info, features, float(i))
+
+        # Mock HTTP client
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        client._http_client.post = AsyncMock(return_value=mock_response)
+
+        result = await client.flush()
+
+        assert result is True
+
+        # Should only train one model
+        assert client._http_client.post.call_count == 1
+
+        training_data = client._http_client.post.call_args[1]["json"]
+        assert training_data["prediction_type"] == "quantile"
+
+    @pytest.mark.asyncio
+    async def test_features_list_format(self, platform_info, features):
+        """Test that features_list has correct format with runtime_ms."""
+        client = TrainingClient(
+            predictor_url="http://predictor:8000",
+            batch_size=100,
+            min_samples=10,
+            prediction_types=["quantile"]
+        )
+
+        # Add samples with specific features and runtime
+        for i in range(10):
+            custom_features = {"input_size": 1000 + i, "batch": 32}
+            client.add_sample("model-1", platform_info, custom_features, float(i * 10))
+
+        # Mock HTTP client
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        client._http_client.post = AsyncMock(return_value=mock_response)
+
+        await client.flush()
+
+        # Verify features_list format
+        training_data = client._http_client.post.call_args[1]["json"]
+        assert "features_list" in training_data
+
+        features_list = training_data["features_list"]
+        assert len(features_list) == 10
+
+        for i, sample in enumerate(features_list):
+            # Should have runtime_ms field
+            assert "runtime_ms" in sample
+            assert sample["runtime_ms"] == float(i * 10)
+
+            # Should have original features
+            assert sample["input_size"] == 1000 + i
+            assert sample["batch"] == 32
 
 
 class TestBufferManagement:

@@ -32,6 +32,7 @@ class TrainingClient:
         timeout: float = 10.0,
         batch_size: int = 100,
         min_samples: int = 10,
+        prediction_types: List[str] = None,
     ):
         """
         Initialize training client.
@@ -41,11 +42,14 @@ class TrainingClient:
             timeout: Request timeout in seconds
             batch_size: Number of samples to batch before sending
             min_samples: Minimum samples required before training
+            prediction_types: List of prediction types to train (e.g., ["expect_error", "quantile"])
+                            If None, defaults to ["expect_error", "quantile"]
         """
         self.predictor_url = predictor_url.rstrip("/")
         self.timeout = timeout
         self.batch_size = batch_size
         self.min_samples = min_samples
+        self.prediction_types = prediction_types or ["expect_error", "quantile"]
 
         # Buffer for collecting training samples
         self._samples_buffer: List[TrainingSample] = []
@@ -142,37 +146,43 @@ class TrainingClient:
             try:
                 platform_info = samples[0].platform_info
 
-                # Prepare training data
-                training_data = {
-                    "model_id": model_id,
-                    "platform_info": platform_info,
-                    "samples": [
-                        {
-                            "features": s.features,
-                            "actual_runtime_ms": s.actual_runtime_ms,
-                        }
-                        for s in samples
-                    ],
-                }
+                # Prepare features_list (convert to predictor API format)
+                features_list = [
+                    {
+                        **s.features,  # Spread all features
+                        "runtime_ms": s.actual_runtime_ms,  # Add runtime_ms field
+                    }
+                    for s in samples
+                ]
 
-                logger.debug(
-                    f"Training {model_id} on {platform_info['hardware_name']} "
-                    f"with {len(samples)} samples"
-                )
+                # Train a separate model for each prediction_type
+                for prediction_type in self.prediction_types:
+                    # Prepare training data
+                    training_data = {
+                        "model_id": model_id,
+                        "platform_info": platform_info,
+                        "prediction_type": prediction_type,
+                        "features_list": features_list,
+                    }
 
-                # Send training request
-                response = await self._http_client.post(
-                    f"{self.predictor_url}/train",
-                    json=training_data,
-                )
-                response.raise_for_status()
+                    logger.debug(
+                        f"Training {model_id} ({prediction_type}) on {platform_info['hardware_name']} "
+                        f"with {len(samples)} samples"
+                    )
 
-                logger.info(
-                    f"Successfully trained {model_id} on "
-                    f"{platform_info['hardware_name']} "
-                    f"with {len(samples)} samples"
-                )
-                success_count += 1
+                    # Send training request
+                    response = await self._http_client.post(
+                        f"{self.predictor_url}/train",
+                        json=training_data,
+                    )
+                    response.raise_for_status()
+
+                    logger.info(
+                        f"Successfully trained {model_id} ({prediction_type}) on "
+                        f"{platform_info['hardware_name']} "
+                        f"with {len(samples)} samples"
+                    )
+                    success_count += 1
 
             except httpx.HTTPError as e:
                 logger.error(

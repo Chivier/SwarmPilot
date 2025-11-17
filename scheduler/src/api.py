@@ -199,6 +199,7 @@ training_client = TrainingClient(
     predictor_url=config.predictor.url,
     batch_size=config.training.batch_size,
     min_samples=config.training.min_samples,
+    prediction_types=config.training.prediction_types,
 ) if config.training.enable_auto_training else None
 
 # Initialize task dispatcher

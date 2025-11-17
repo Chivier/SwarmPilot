@@ -321,6 +321,13 @@ class PredictorClient:
                     "prediction_type": prediction_type,
                     "features": metadata,
                 }
+                
+                if "llm_service" in model_id and "model" in model_id:
+                    # Enable semantic preprocessor for LLM service model
+                    request_data["enable_preprocessors"] = ["semantic"]
+                    request_data["preprocessor_mappings"] = {
+                        "semantic": ["sentence"]
+                    }
 
                 # Add custom quantiles if provided (only used in experiment mode)
                 if quantiles is not None:
