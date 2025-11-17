@@ -124,21 +124,25 @@ SLEEP_MODEL_B_HOSTS=(
 # Do health check for all hosts by request its /health endpoint
 
 for host in "${SLEEP_MODEL_A_HOSTS[@]}"; do
-    response=$(curl -s -X GET "http://$host:8000/health")
-    if echo "$response" | grep -q "healthy"; then
-        echo -e "$host: ${GREEN}OK${NC}"
-    else
-        echo -e "$host: ${RED}FAILED${NC}"
-    fi
+    for port in "${INSTANCE_PORT_LIST[@]}"; do
+        response=$(curl -s -X GET "http://$host:$port/health")
+        if echo "$response" | grep -q "healthy"; then
+            echo -e "$host:$port: ${GREEN}OK${NC}"
+        else
+            echo -e "$host:$port: ${RED}FAILED${NC}"
+        fi
+    done
 done
 
 for host in "${SLEEP_MODEL_B_HOSTS[@]}"; do
-    response=$(curl -s -X GET "http://$host:8000/health")
-    if echo "$response" | grep -q "healthy"; then
-        echo -e "$host: ${GREEN}OK${NC}"
-    else
-        echo -e "$host: ${RED}FAILED${NC}"
-    fi
+    for port in "${INSTANCE_PORT_LIST[@]}"; do
+        response=$(curl -s -X GET "http://$host:$port/health")
+        if echo "$response" | grep -q "healthy"; then
+            echo -e "$host: ${GREEN}OK${NC}"
+        else
+            echo -e "$host: ${RED}FAILED${NC}"
+        fi
+    done
 done
 
 # If any of the health checks failed, exit with error

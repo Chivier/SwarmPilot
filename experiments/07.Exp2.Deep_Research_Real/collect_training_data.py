@@ -1426,7 +1426,7 @@ Example config.json:
                         'prediction_types': config['prediction_types'],
                         'training_config': config['training_config']
                     }
-                }, f, indent=2)
+                }, f, indent=2, ensure_ascii=False)
             logger.info(f"✓ Training data saved to {output_file}")
 
         # Submit training data once for each prediction type
