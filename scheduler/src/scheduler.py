@@ -80,7 +80,7 @@ class SchedulingStrategy(ABC):
             available_instances=available_instances,
         )
 
-        logger.info(f"Prediction result: {predictions}")
+        # logger.info(f"Prediction result: {predictions}")
 
         # Step 2: Collect queue information
         queue_info = await self.collect_queue_info(available_instances)
