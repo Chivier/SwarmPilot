@@ -213,7 +213,7 @@ class SemanticPredictor:
           predictions = self.model(input_ids, attention_mask)
       prediction = predictions.numpy()[0]
       # Return False: do not remove original input feature
-      return {"output_length": int(prediction)}, False
+      return {"output_length": int(prediction)}, True
       
     def __call__(self, input_text: str) -> int:
         output, _ = self.predict([input_text])

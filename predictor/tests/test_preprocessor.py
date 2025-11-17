@@ -34,7 +34,7 @@ def test_semantic_predictor():
   assert 'output_length' in output
   assert isinstance(output['output_length'], int)
   assert isinstance(remove_origin, bool)
-  assert remove_origin is False
+  assert remove_origin is True
   
   print(f"Load time: {load_end_time - start_time} seconds")
   print(f"Predict time: {predict_end_time - predict_start_time} seconds")
@@ -59,4 +59,4 @@ def test_semantic_predictor_with_preprocessor_registry():
   assert 'output_length' in output
   assert isinstance(output['output_length'], int)
   assert isinstance(remove_origin, bool)
-  assert remove_origin is False
+  assert remove_origin is True
