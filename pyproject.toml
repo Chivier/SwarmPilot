@@ -14,6 +14,11 @@ dependencies = [
     "pandas>=2.3.3",
     "websockets>=15.0.1",
     "uvloop>=0.22.1",
+    "tqdm>=4.67.1",
+    "numpy>=2.3.4",
+    "scipy>=1.16.3",
+    "matplotlib>=3.10.7",
+    "transformers>=4.57.1",
 ]
 
 [project.optional-dependencies]
@@ -57,7 +62,7 @@ members = [
     "instance",
     "predictor",
     "planner",
-    "instance/dockers/sleep_model", "graph",
+    "instance/dockers/sleep_model", "graph", "instance/dockers/llm_service_large_model",
 ]
 
 [dependency-groups]
