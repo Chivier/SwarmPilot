@@ -416,6 +416,10 @@ def reset_singletons():
     if hasattr(src.api, '_restart_operations'):
         src.api._restart_operations.clear()
 
+    # Reset API-level deregister operations
+    if hasattr(src.api, '_deregister_operations'):
+        src.api._deregister_operations.clear()
+
     yield
 
     # Cleanup after test
@@ -426,3 +430,7 @@ def reset_singletons():
     # Clear restart operations
     if hasattr(src.api, '_restart_operations'):
         src.api._restart_operations.clear()
+
+    # Clear deregister operations
+    if hasattr(src.api, '_deregister_operations'):
+        src.api._deregister_operations.clear()

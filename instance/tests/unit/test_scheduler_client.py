@@ -18,6 +18,7 @@ Target coverage: >90%
 
 import asyncio
 import os
+import uuid
 import socket
 import subprocess
 from typing import Any, Dict
@@ -145,7 +146,12 @@ class TestWebSocketConfig:
 
 # ==================== SchedulerClient Initialization Tests ====================
 
-
+def is_uuid(value):
+    try:
+        uuid_obj = uuid.UUID(value, version=4)
+        return str(uuid_obj) == value
+    except:
+        return False
 class TestSchedulerClientInit:
     """Test SchedulerClient initialization."""
 
@@ -153,7 +159,7 @@ class TestSchedulerClientInit:
         """Test default initialization."""
         client = SchedulerClient()
         assert client.scheduler_url == "http://localhost:8000"
-        assert client.instance_id == "instance-default"
+        assert is_uuid(client.instance_id)
         assert client.timeout == 10.0
         assert client.max_retries == 3
         assert client.retry_delay == 2.0

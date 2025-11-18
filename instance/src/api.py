@@ -19,7 +19,7 @@ from loguru import logger
 from .config import config
 from .manager_factory import get_docker_manager
 from .model_registry import get_registry
-from .models import InstanceStatus, Task, TaskStatus, RestartOperation, RestartStatus
+from .models import InstanceStatus, Task, TaskStatus, RestartOperation, RestartStatus, DeregisterOperation, DeregisterStatus
 from .task_queue import get_task_queue
 from .scheduler_client import get_scheduler_client, _get_gpu0_name
 from .websocket_client import WebSocketClient
@@ -209,6 +209,32 @@ class SuccessResponse(BaseModel):
     success: bool = True
     message: str
 
+class ModelRegisterRequest(BaseModel):
+    """Model register request format"""
+    scheduler_url: str = Field(..., description="Scheduler URL to register with")
+
+
+class ModelRegisterResponse(BaseModel):
+    """Response schema for model register endpoint"""
+    success: bool = True
+    message: str = ""
+
+
+class DeregisterStatusResponse(BaseModel):
+    """Response schema for deregister status endpoint"""
+    success: bool
+    operation_id: str
+    status: str = Field(..., description="Current deregister status")
+    old_model_id: Optional[str] = None
+    initiated_at: str
+    completed_at: Optional[str] = None
+    pending_tasks_at_start: int
+    pending_tasks_completed: int
+    redistributed_tasks_count: int = Field(
+        default=0,
+        description="Number of pending tasks redistributed to scheduler"
+    )
+    error: Optional[str] = None
 
 # =============================================================================
 # FastAPI Application
@@ -219,7 +245,9 @@ _startup_time = time.time()
 
 # Track restart operations
 _restart_operations: Dict[str, RestartOperation] = {}
+_deregister_operations: Dict[str, DeregisterOperation] = {}
 _restart_operation_lock = asyncio.Lock()
+_deregister_operation_lock = asyncio.Lock()
 
 
 def construct_websocket_url(http_url: str) -> str:
@@ -272,121 +300,6 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Failed to load model registry: {e}")
 
-    # ========================================================================
-    # WebSocket communication with scheduler is temporarily disabled
-    # All communication with scheduler is now via HTTP API
-    # ========================================================================
-
-    # # Initialize WebSocket client for Instance-to-Scheduler communication (but don't connect yet)
-    # # Connection will be established when /model/start is called
-    # scheduler_client = get_scheduler_client()
-    # ws_client = None
-
-    # if scheduler_client.is_enabled:
-    #     try:
-    #         # Get platform info
-    #         import platform
-    #         platform_info = {
-    #             "software_name": platform.system(),
-    #             "software_version": platform.release(),
-    #             "hardware_name": platform.machine(),
-    #         }
-
-    #         # Construct WebSocket URL from scheduler HTTP URL
-    #         # WebSocket port = HTTP port + 1 (e.g., 8000 -> 8001)
-    #         scheduler_http_url = scheduler_client.scheduler_url
-    #         if scheduler_http_url:
-    #             scheduler_ws_url = construct_websocket_url(scheduler_http_url)
-    #             logger.info(f"Initializing WebSocket client: {scheduler_ws_url} (from HTTP: {scheduler_http_url})")
-
-    #             # Create WebSocket client (but don't start yet)
-    #             ws_client = WebSocketClient(
-    #                 scheduler_url=scheduler_ws_url,
-    #                 instance_id=config.instance_id,
-    #                 model_id="unknown",  # Will be updated when model starts
-    #                 platform_info=platform_info,
-    #                 reconnect_delay_max=32,
-    #                 heartbeat_interval=30,
-    #             )
-
-    #             # Register message handlers (must be done before start)
-    #             async def handle_task_submit(message: dict):
-    #                 """Handle TASK_SUBMIT message from Scheduler."""
-    #                 task_id = message.get("task_id")
-    #                 model_id = message.get("model_id")
-    #                 task_input = message.get("task_input")
-
-    #                 logger.info(f"Received TASK_SUBMIT via WebSocket: {task_id}")
-
-    #                 # Create task and submit to queue
-    #                 task = Task(
-    #                     task_id=task_id,
-    #                     model_id=model_id,
-    #                     task_input=task_input,
-    #                 )
-
-    #                 try:
-    #                     task_queue = get_task_queue()
-    #                     position = await task_queue.submit_task(task)
-
-    #                     # Send ACK
-    #                     await ws_client.send_message({
-    #                         "type": "task_ack",
-    #                         "reply_to": message.get("message_id"),
-    #                         "task_id": task_id,
-    #                         "success": True,
-    #                         "queued": True,
-    #                         "queue_position": position,
-    #                     }, require_ack=False)
-
-    #                     logger.info(f"Task {task_id} queued at position {position}")
-
-    #                 except Exception as e:
-    #                     logger.error(f"Failed to queue task {task_id}: {e}")
-    #                     # Send NACK
-    #                     await ws_client.send_message({
-    #                         "type": "task_ack",
-    #                         "reply_to": message.get("message_id"),
-    #                         "task_id": task_id,
-    #                         "success": False,
-    #                         "queued": False,
-    #                         "error": str(e),
-    #                     }, require_ack=False)
-
-    #             # Register handler for task submission
-    #             ws_client.register_handler("task_submit", handle_task_submit)
-
-    #             # Register handler for scheduler shutdown notification
-    #             async def handle_scheduler_shutdown(message: dict):
-    #                 """Handle SCHEDULER_SHUTDOWN message from Scheduler."""
-    #                 grace_period = message.get("grace_period", 5)
-    #                 shutdown_message = message.get("message", "Scheduler is shutting down")
-
-    #                 logger.warning(f"Received shutdown notification: {shutdown_message}")
-    #                 logger.info(f"Grace period: {grace_period}s - preparing for shutdown...")
-
-    #                 # Log current queue status
-    #                 task_queue = get_task_queue()
-    #                 pending_count = await task_queue.get_pending_count()
-    #                 logger.info(f"Current pending tasks: {pending_count}")
-
-    #                 # Instance will automatically reconnect after Scheduler restarts
-    #                 # No action needed here - just log the notification
-    #                 logger.info("Will reconnect automatically when Scheduler restarts")
-
-    #             ws_client.register_handler("scheduler_shutdown", handle_scheduler_shutdown)
-
-    #             # Set global singleton (but don't start yet)
-    #             set_websocket_client(ws_client)
-
-    #             # WebSocket will be started when /model/start is called
-    #             logger.info("WebSocket client initialized (connection will be established on model start)")
-
-    #     except Exception as e:
-    #         logger.error(f"Failed to initialize WebSocket client: {e}")
-    #         logger.info("Falling back to HTTP-only communication")
-    # else:
-    #     logger.info("Scheduler integration disabled, WebSocket not initialized")
 
     logger.info("Using HTTP-only communication with Scheduler (WebSocket disabled)")
 
@@ -394,16 +307,6 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     logger.info("Instance Service shutting down...")
-
-    # # Stop WebSocket client first (disabled - using HTTP only)
-    # ws_client = get_websocket_client()
-    # if ws_client:
-    #     try:
-    #         logger.info("Stopping WebSocket client...")
-    #         await ws_client.stop()
-    #         logger.info("WebSocket client stopped")
-    #     except Exception as e:
-    #         logger.error(f"Error stopping WebSocket client: {e}")
 
     # Deregister from scheduler if enabled (HTTP fallback)
     scheduler_client = get_scheduler_client()
@@ -506,66 +409,6 @@ async def start_model(request: ModelStartRequest):
                 # Log error but don't fail model start
                 logger.warning(f"Failed to register with scheduler via HTTP: {str(e)}")
 
-        # # Update WebSocket client URL, model_id and reconnect (disabled - using HTTP only)
-        # ws_client = get_websocket_client()
-        # if ws_client:
-        #     try:
-        #         # Construct new WebSocket URL from HTTP URL (port + 1)
-        #         new_ws_url = construct_websocket_url(request.scheduler_url)
-
-        #         # Check if scheduler URL changed
-        #         url_changed = ws_client.scheduler_url != new_ws_url
-
-        #         if url_changed:
-        #             logger.info(f"Scheduler URL changed: {ws_client.scheduler_url} -> {new_ws_url}")
-
-        #             # Stop existing connection if running
-        #             if ws_client.is_connected():
-        #                 logger.info("Stopping existing WebSocket connection...")
-        #                 await ws_client.stop()
-        #                 await asyncio.sleep(0.5)  # Brief pause before reconnecting
-
-        #             # Update WebSocket URL and model_id
-        #             ws_client.scheduler_url = new_ws_url
-        #             ws_client.model_id = request.model_id
-        #             logger.info(f"Updated WebSocket URL to: {new_ws_url}")
-        #         else:
-        #             # Same scheduler, just update model_id
-        #             ws_client.model_id = request.model_id
-        #             logger.info(f"Updated WebSocket client model_id to: {request.model_id}")
-
-        #         # Start WebSocket connection if not already started
-        #         if not ws_client.is_connected():
-        #             logger.info("Starting WebSocket connection to scheduler...")
-        #             await ws_client.start()
-        #             logger.success("WebSocket connection started successfully")
-
-        #             # Send REGISTER message
-        #             await ws_client.send_message({
-        #                 "type": "register",
-        #                 "instance_id": config.instance_id,
-        #                 "model_id": request.model_id,
-        #                 "endpoint": f"ws://{config.instance_id}",
-        #                 "platform_info": ws_client.platform_info,
-        #             }, require_ack=False)
-
-        #             logger.info("Registered with Scheduler via WebSocket")
-        #         else:
-        #             # Already connected, just send updated registration
-        #             await ws_client.send_message({
-        #                 "type": "register",
-        #                 "instance_id": config.instance_id,
-        #                 "model_id": request.model_id,
-        #                 "endpoint": f"ws://{config.instance_id}",
-        #                 "platform_info": ws_client.platform_info,
-        #             }, require_ack=False)
-
-        #             logger.info("Re-registered with Scheduler via WebSocket with new model_id")
-
-        #     except Exception as e:
-        #         logger.warning(f"Failed to start/update WebSocket connection: {e}")
-        #         logger.info("Instance will continue with HTTP-only communication")
-
         return ModelStartResponse(
             success=True,
             message="Model started successfully",
@@ -625,6 +468,341 @@ async def stop_model():
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to stop model: {str(e)}"
         )
+
+@app.post(
+    "/model/deregister",
+    response_model=ModelRestartResponse,
+    status_code=status.HTTP_200_OK,
+    responses={
+        400: {"model": ErrorResponse},
+        409: {"model": ErrorResponse},
+    },
+)
+async def deregister_model():
+    """
+    Restart the model with a new model and scheduler.
+
+    This is a non-blocking operation that:
+    1. Drains from the current scheduler (stops accepting new tasks)
+    2. Waits for all pending tasks to complete
+    3. Stops the current model
+    4. Deregisters from the current scheduler
+
+    The scheduler_url must be provided and cannot be empty.
+    The operation runs in the background. Use GET /model/restart/status to monitor progress.
+    """
+
+    docker_manager = get_docker_manager()
+    registry = get_registry()
+
+    # Check if a model is running
+    if not await docker_manager.is_model_running():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No model is currently running"
+        )
+
+
+    # Get current model info
+    current_model = await docker_manager.get_current_model()
+
+    # Check if there's already a restart operation in progress and create new operation atomically
+    async with _deregister_operation_lock:
+        for op in _deregister_operations.values():
+            if op.status not in (DeregisterStatus.COMPLETED, DeregisterStatus.FAILED):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"A deregister operation is already in progress (operation_id: {op.operation_id})"
+                )
+
+        # Create deregister operation
+        operation_id = str(uuid.uuid4())
+        operation = DeregisterOperation(
+            operation_id=operation_id,
+            old_model_id=current_model.model_id if current_model else None,
+        )
+
+        # Mark operation as in progress immediately to prevent concurrent deregisters
+        operation.update_status(DeregisterStatus.DRAINING)
+
+        # Store operation (in same lock block to ensure atomicity)
+        _deregister_operations[operation_id] = operation
+
+    # Start background task
+    asyncio.create_task(_perform_deregister_operation(operation_id))
+
+    logger.info(
+        f"Deregister operation {operation_id} initiated: "
+        f"{operation.old_model_id}"
+    )
+
+    return ModelRestartResponse(
+        success=True,
+        message="Model deregister operation initiated",
+        operation_id=operation_id,
+        status=operation.status.value,
+    )
+
+
+async def _perform_deregister_operation(operation_id: str):
+    """
+    Background task to perform the model deregister operation.
+
+    This function executes the following steps:
+    1. Drain from scheduler (if enabled)
+    2. Extract pending queued tasks and redistribute to scheduler
+    3. Wait for currently running task to complete
+    4. Stop current model
+    5. Deregister from current scheduler
+
+    Args:
+        operation_id: Unique identifier for this deregister operation
+    """
+    async with _deregister_operation_lock:
+        operation = _deregister_operations.get(operation_id)
+        if not operation:
+            logger.error(f"Deregister operation {operation_id} not found")
+            return
+
+    try:
+        logger.info(f"Starting deregister operation {operation_id}")
+        docker_manager = get_docker_manager()
+        scheduler_client = get_scheduler_client()
+        task_queue = get_task_queue()
+
+        # Step 1: Drain from scheduler (if enabled)
+        operation.update_status(DeregisterStatus.DRAINING)
+        if scheduler_client.is_enabled:
+            try:
+                await scheduler_client.drain_instance()
+                logger.info(f"Instance draining from scheduler")
+            except Exception as e:
+                # Log warning but continue - instance might already be draining or not registered
+                logger.warning(f"Failed to drain from scheduler: {str(e)}")
+        else:
+            logger.info("Scheduler integration disabled, skipping drain step")
+
+        # Step 2: Extract pending queued tasks and redistribute to scheduler
+        operation.update_status(DeregisterStatus.EXTRACTING_TASKS)
+
+        if scheduler_client.is_enabled:
+            try:
+                # Extract all pending QUEUED tasks (preserves running task)
+                pending_tasks = await task_queue.extract_pending_tasks()
+                logger.info(f"Extracted {len(pending_tasks)} pending tasks from queue")
+
+                # Redistribute tasks back to scheduler
+                successful_redistributions = 0
+                failed_redistributions = 0
+
+                for task_data in pending_tasks:
+                    try:
+                        success = await scheduler_client.resubmit_task(
+                            task_id=task_data["task_id"],
+                            model_id=task_data["model_id"],
+                            task_input=task_data["task_input"],
+                            enqueue_time=task_data.get("enqueue_time"),
+                            submitted_at=task_data.get("submitted_at"),
+                            callback_url=task_data.get("callback_url"),
+                            metadata=task_data.get("metadata"),
+                        )
+
+                        if success:
+                            successful_redistributions += 1
+                            logger.debug(f"Successfully redistributed task {task_data['task_id']}")
+                        else:
+                            failed_redistributions += 1
+                            logger.warning(f"Failed to redistribute task {task_data['task_id']}")
+
+                    except Exception as e:
+                        failed_redistributions += 1
+                        logger.error(f"Error redistributing task {task_data['task_id']}: {str(e)}")
+
+                operation.redistributed_tasks_count = successful_redistributions
+
+                if failed_redistributions > 0:
+                    logger.warning(
+                        f"Task redistribution: {successful_redistributions} succeeded, "
+                        f"{failed_redistributions} failed"
+                    )
+                else:
+                    logger.info(f"Successfully redistributed all {successful_redistributions} tasks")
+
+            except Exception as e:
+                logger.error(f"Failed to extract and redistribute tasks: {str(e)}")
+                # Continue with deregister even if redistribution fails
+        else:
+            logger.info("Scheduler integration disabled, skipping task extraction")
+
+        # Step 3: Wait for currently running task to complete
+        operation.update_status(DeregisterStatus.WAITING_RUNNING_TASK)
+        stats = await task_queue.get_queue_stats()
+
+        # Only count running task (queued tasks have been extracted)
+        if stats["running"] > 0:
+            logger.info(f"Waiting for {stats['running']} running task to complete")
+
+            # Poll task queue until running task completes
+            max_wait_time = 300  # 5 minutes timeout
+            start_wait_time = time.time()
+
+            while True:
+                stats = await task_queue.get_queue_stats()
+                running = stats["running"]
+
+                if running == 0:
+                    logger.info("Running task completed")
+                    break
+
+                # Check timeout
+                if time.time() - start_wait_time > max_wait_time:
+                    raise TimeoutError(
+                        f"Timeout waiting for running task to complete. "
+                        f"Task still running after {max_wait_time}s"
+                    )
+
+                # Wait a bit before checking again
+                await asyncio.sleep(1)
+        else:
+            logger.info("No running tasks to wait for")
+
+        # Step 5: Deregister from current scheduler
+        operation.update_status(DeregisterStatus.DEREGISTERING)
+        if scheduler_client.is_enabled:
+            try:
+                await scheduler_client.deregister_instance()
+                logger.info("Deregistered from scheduler")
+            except Exception as e:
+                # Log warning but continue
+                logger.warning(f"Failed to deregister: {str(e)}")
+
+        
+        # Mark operation as completed
+        operation.update_status(DeregisterStatus.COMPLETED)
+        logger.info(f"Deregister operation {operation_id} completed successfully")
+
+    except Exception as e:
+        logger.error(f"Deregister operation {operation_id} failed: {str(e)}")
+        async with _deregister_operation_lock:
+            operation = _deregister_operations.get(operation_id)
+            if operation:
+                operation.update_status(DeregisterStatus.FAILED, error=str(e))
+
+
+@app.get(
+    "/model/deregister/status",
+    response_model=DeregisterStatusResponse,
+    status_code=status.HTTP_200_OK,
+    responses={
+        404: {"model": ErrorResponse},
+    },
+)
+async def get_deregister_status(operation_id: str = Query(..., description="Deregister operation ID")):
+    """
+    Get the status of a model deregister operation.
+
+    Returns the current state of the deregister operation including progress,
+    status, and any errors that occurred.
+    """
+    async with _deregister_operation_lock:
+        operation = _deregister_operations.get(operation_id)
+
+    if not operation:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Deregister operation not found: {operation_id}"
+        )
+
+    return DeregisterStatusResponse(
+        success=True,
+        operation_id=operation.operation_id,
+        status=operation.status.value,
+        old_model_id=operation.old_model_id,
+        initiated_at=operation.initiated_at,
+        completed_at=operation.completed_at,
+        pending_tasks_at_start=operation.pending_tasks_at_start,
+        pending_tasks_completed=operation.pending_tasks_completed,
+        redistributed_tasks_count=operation.redistributed_tasks_count,
+        error=operation.error,
+    )
+
+
+@app.post(
+    "/model/register",
+    response_model=ModelRegisterResponse,
+    status_code=status.HTTP_200_OK,
+    responses={
+        400: {"model": ErrorResponse},
+    },
+)
+async def register_model(request: ModelRegisterRequest):
+    """
+    Register current instance to a specific scheduler without stopping the model.
+
+    This allows an instance to dynamically register to a new scheduler while
+    keeping the current model running.
+
+    Requirements:
+    - A model must be currently running
+    - The scheduler_url must be provided
+    """
+    docker_manager = get_docker_manager()
+    scheduler_client = get_scheduler_client()
+
+    # Check if a model is running
+    if not await docker_manager.is_model_running():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No model is currently running. Start a model first."
+        )
+
+    # Validate scheduler_url is not empty
+    if not request.scheduler_url or request.scheduler_url.strip() == "":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="scheduler_url is required and cannot be empty"
+        )
+
+    # Get current model info
+    current_model = await docker_manager.get_current_model()
+    if not current_model:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Failed to get current model information"
+        )
+
+    # Update scheduler URL
+    logger.info(f"Updating scheduler URL to: {request.scheduler_url}")
+    scheduler_client.scheduler_url = request.scheduler_url
+    scheduler_client._registered = False  # Reset registration status
+
+    # Register with scheduler
+    if scheduler_client.is_enabled:
+        try:
+            success = await scheduler_client.register_instance(model_id=current_model.model_id)
+            if success:
+                logger.info(f"Successfully registered with scheduler: {request.scheduler_url}")
+                return ModelRegisterResponse(
+                    success=True,
+                    message=f"Successfully registered model '{current_model.model_id}' with scheduler at {request.scheduler_url}"
+                )
+            else:
+                logger.warning(f"Failed to register with scheduler: {request.scheduler_url}")
+                return ModelRegisterResponse(
+                    success=False,
+                    message=f"Failed to register with scheduler at {request.scheduler_url}"
+                )
+        except Exception as e:
+            logger.error(f"Error during registration: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to register with scheduler: {str(e)}"
+            )
+
+    return ModelRegisterResponse(
+        success=False,
+        message="Scheduler client is not enabled"
+    )
 
 
 @app.post(
@@ -892,44 +1070,6 @@ async def _perform_restart_operation(operation_id: str):
             except Exception as e:
                 # Log warning but mark operation as completed
                 logger.warning(f"Failed to register with scheduler: {str(e)}")
-
-        # # Step 7: Update WebSocket connection to new scheduler (disabled - using HTTP only)
-        # ws_client = get_websocket_client()
-        # if ws_client:
-        #     try:
-        #         # Construct new WebSocket URL from HTTP URL (port + 1)
-        #         new_ws_url = construct_websocket_url(operation.new_scheduler_url)
-
-        #         logger.info(f"Updating WebSocket to new scheduler: {new_ws_url}")
-
-        #         # Stop existing connection if running
-        #         if ws_client.is_connected():
-        #             logger.info("Stopping existing WebSocket connection...")
-        #             await ws_client.stop()
-        #             await asyncio.sleep(0.5)  # Brief pause before reconnecting
-
-        #         # Update WebSocket URL and model_id
-        #         ws_client.scheduler_url = new_ws_url
-        #         ws_client.model_id = operation.new_model_id
-
-        #         # Start new connection
-        #         logger.info("Starting WebSocket connection to new scheduler...")
-        #         await ws_client.start()
-
-        #         # Send REGISTER message
-        #         await ws_client.send_message({
-        #             "type": "register",
-        #             "instance_id": config.instance_id,
-        #             "model_id": operation.new_model_id,
-        #             "endpoint": f"ws://{config.instance_id}",
-        #             "platform_info": ws_client.platform_info,
-        #         }, require_ack=False)
-
-        #         logger.info("Registered with new Scheduler via WebSocket")
-
-        #     except Exception as e:
-        #         logger.warning(f"Failed to reconnect WebSocket: {e}")
-        #         logger.info("Instance will continue with HTTP-only communication")
 
         # Mark operation as completed
         operation.update_status(RestartStatus.COMPLETED)

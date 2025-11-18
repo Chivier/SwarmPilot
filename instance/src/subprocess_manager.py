@@ -67,14 +67,6 @@ class SubprocessManager:
         
         if not pyproject_file.exists() or not entry_file.exists():
             raise ValueError(f"A vaild model should contain at least a main.py and pyproject.toml")
-        # # Check if Dockerfile exists
-        # dockerfile = model_dir / "Dockerfile"
-        # if not dockerfile.exists():
-        #     raise ValueError(f"Dockerfile not found in {model_dir}")
-
-        # # Generate container and image names
-        # container_name = config.get_model_container_name(model_id)
-        # image_name = self._get_image_name(model_id)
 
         # Build environment variables
         env_vars = self._build_env_vars(model_id, parameters or {})
@@ -349,149 +341,6 @@ class SubprocessManager:
         env_vars.update(os.environ)
         return env_vars
 
-    async def _build_docker_image(
-        self,
-        model_dir: Path,
-        image_name: str
-    ):
-        """
-        Build Docker image from Dockerfile.
-
-        Args:
-            model_dir: Directory containing the Dockerfile
-            image_name: Name and tag for the image
-
-        Raises:
-            RuntimeError: If image build fails
-        """
-        logger.info(f"Building Docker image: {image_name} from {model_dir}")
-
-        cmd = [
-            "docker", "build",
-            "-t", image_name,
-            str(model_dir)
-        ]
-
-        process = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-
-        stdout, stderr = await process.communicate()
-
-        if process.returncode != 0:
-            error_msg = stderr.decode().strip() if stderr else "Unknown error"
-            logger.error(f"Docker build failed: {error_msg}")
-            raise RuntimeError(f"Failed to build Docker image: {error_msg}")
-
-        logger.info(f"Docker image built successfully: {image_name}")
-
-    async def _run_docker_container(
-        self,
-        container_name: str,
-        image_name: str,
-        env_vars: Dict[str, str],
-        port: int
-    ):
-        """
-        Run Docker container with specified configuration.
-
-        Args:
-            container_name: Name for the container
-            image_name: Docker image to use
-            env_vars: Environment variables
-            port: Host port to map to container port 8000
-
-        Raises:
-            RuntimeError: If container fails to start
-        """
-        logger.info(f"Running Docker container: {container_name}")
-
-        # Build docker run command
-        cmd = [
-            "docker", "run",
-            "--name", container_name,
-            "--publish", f"{port}:8000",
-            "--detach",
-            "--restart", "unless-stopped",
-            # Add healthcheck configuration
-            "--health-cmd", "curl -f http://localhost:8000/health || exit 1",
-            "--health-interval", "10s",
-            "--health-timeout", "5s",
-            "--health-retries", "3",
-            "--health-start-period", "10s",
-        ]
-
-        # Add environment variables
-        for key, value in env_vars.items():
-            cmd.extend(["--env", f"{key}={value}"])
-
-        # Add image name
-        cmd.append(image_name)
-
-        logger.debug(f"Docker run command: {' '.join(cmd)}")
-
-        process = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-
-        stdout, stderr = await process.communicate()
-
-        if process.returncode != 0:
-            error_msg = stderr.decode().strip() if stderr else "Unknown error"
-            logger.error(f"Docker run failed: {error_msg}")
-            raise RuntimeError(f"Failed to run Docker container: {error_msg}")
-
-        logger.info(f"Docker container started: {container_name}")
-
-    async def _stop_docker_container(self, container_name: str):
-        """
-        Stop and remove a Docker container.
-
-        Args:
-            container_name: Name of the container to stop
-
-        Raises:
-            RuntimeError: If stop/remove fails
-        """
-        logger.info(f"Stopping Docker container: {container_name}")
-
-        # Stop container
-        stop_cmd = ["docker", "stop", container_name]
-        process = await asyncio.create_subprocess_exec(
-            *stop_cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        stdout, stderr = await process.communicate()
-
-        if process.returncode != 0:
-            error_msg = stderr.decode().strip() if stderr else "Unknown error"
-            if "No such container" not in error_msg:
-                logger.error(f"Docker stop failed: {error_msg}")
-                raise RuntimeError(f"Failed to stop Docker container: {error_msg}")
-            else:
-                logger.warning(f"Container {container_name} does not exist")
-
-        # Remove container
-        rm_cmd = ["docker", "rm", "-f", container_name]
-        process = await asyncio.create_subprocess_exec(
-            *rm_cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        stdout, stderr = await process.communicate()
-
-        if process.returncode != 0:
-            error_msg = stderr.decode().strip() if stderr else "Unknown error"
-            if "No such container" not in error_msg:
-                logger.error(f"Docker rm failed: {error_msg}")
-                raise RuntimeError(f"Failed to remove Docker container: {error_msg}")
-
-        logger.info(f"Docker container stopped and removed: {container_name}")
 
     async def _stream_subprocess_output(
         self,
@@ -607,44 +456,6 @@ class SubprocessManager:
             f"Model subprocess did not become healthy within {timeout} seconds"
         )
 
-    async def _force_remove_container(self, container_name: str):
-        """
-        Force remove a Docker container.
-
-        Args:
-            container_name: Name of the container to remove
-
-        Raises:
-            RuntimeError: If removal fails
-        """
-        logger.info(f"Force removing container: {container_name}")
-
-        # Stop container
-        stop_cmd = ["docker", "stop", container_name]
-        process = await asyncio.create_subprocess_exec(
-            *stop_cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        await process.communicate()
-
-        # Remove container
-        rm_cmd = ["docker", "rm", "-f", container_name]
-        process = await asyncio.create_subprocess_exec(
-            *rm_cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-
-        stdout, stderr = await process.communicate()
-
-        if process.returncode != 0:
-            error_msg = stderr.decode().strip() if stderr else "Unknown error"
-            # Don't raise error if container doesn't exist
-            if "No such container" not in error_msg:
-                raise RuntimeError(f"Failed to remove container: {error_msg}")
-            else:
-                logger.info(f"Container {container_name} does not exist")
 
     async def close(self):
         """Clean up resources"""

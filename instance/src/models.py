@@ -39,6 +39,16 @@ class RestartStatus(str, Enum):
     COMPLETED = "completed"
     FAILED = "failed"
 
+class DeregisterStatus(str, Enum):
+    """Restart operation status enumeration"""
+    PENDING = "pending"
+    DRAINING = "draining"
+    EXTRACTING_TASKS = "extracting_tasks"
+    WAITING_RUNNING_TASK = "waiting_running_task"
+    DEREGISTERING = "deregistering"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
 
 class Task(BaseModel):
     """Task data model"""
@@ -120,4 +130,28 @@ class RestartOperation(BaseModel):
         if error:
             self.error = error
         if new_status in (RestartStatus.COMPLETED, RestartStatus.FAILED):
+            self.completed_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+
+class DeregisterOperation(BaseModel):
+    """Tracks the state of a model deregister operation"""
+    operation_id: str = Field(..., description="Unique identifier for this restart operation")
+    status: DeregisterStatus = Field(default=DeregisterStatus.PENDING, description="Current deregister status")
+    old_model_id: Optional[str] = None
+    
+    # Timestamps
+    initiated_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat().replace("+00:00", "Z"))
+    completed_at: Optional[str] = None
+
+    # Progress tracking
+    pending_tasks_at_start: int = 0
+    pending_tasks_completed: int = 0
+    redistributed_tasks_count: int = 0
+    error: Optional[str] = None
+
+    def update_status(self, new_status: DeregisterStatus, error: Optional[str] = None):
+        """Update the operation status"""
+        self.status = new_status
+        if error:
+            self.error = error
+        if new_status in (DeregisterStatus.COMPLETED, DeregisterStatus.FAILED):
             self.completed_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
