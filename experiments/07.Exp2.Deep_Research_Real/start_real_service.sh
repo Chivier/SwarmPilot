@@ -202,6 +202,7 @@ if [[ "$LOCAL_IP" == "$SCHEDULER_A_HOST" ]]; then
   start_bg "scheduler" \
     "cd $PROJECT_ROOT/scheduler && \
      PREDICTOR_URL=http://$PREDICTOR_HOST:$PREDICTOR_PORT \
+     SCHEDULER_HOST=$SCHEDULER_A_HOST \
      SCHEDULER_PORT=$SCHEDULER_PORT SCHEDULER_LOG_DIR=$SCRIPT_DIR/logs/scheduler-a SCHEDULER_LOGURU_LEVEL=\"INFO\" python -m src.cli start --port $SCHEDULER_PORT" \
     "$SCHEDULER_PREDICTOR_CPU_RANGE"
 fi
@@ -211,6 +212,7 @@ if [[ "$LOCAL_IP" == "$SCHEDULER_B_HOST" ]]; then
   start_bg "scheduler" \
     "cd $PROJECT_ROOT/scheduler && \
      PREDICTOR_URL=http://$PREDICTOR_HOST:$PREDICTOR_PORT \
+     SCHEDULER_HOST=$SCHEDULER_B_HOST \
      SCHEDULER_PORT=$SCHEDULER_PORT SCHEDULER_LOG_DIR=$SCRIPT_DIR/logs/scheduler-b SCHEDULER_LOGURU_LEVEL=\"INFO\" python -m src.cli start --port $SCHEDULER_PORT" \
     "$SCHEDULER_PREDICTOR_CPU_RANGE"
 fi
