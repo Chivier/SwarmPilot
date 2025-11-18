@@ -333,6 +333,7 @@ class StrategyType(str, Enum):
     PROBABILISTIC = "probabilistic"
     ROUND_ROBIN = "round_robin"
     RANDOM = "random"
+    POWEROFTWO = "po2"
 
 
 class StrategySetRequest(BaseModel):
