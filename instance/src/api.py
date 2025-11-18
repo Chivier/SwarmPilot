@@ -751,6 +751,7 @@ async def register_model(request: ModelRegisterRequest):
 
     # Check if a model is running
     if not await docker_manager.is_model_running():
+        logger.error("No model is currently running")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="No model is currently running. Start a model first."

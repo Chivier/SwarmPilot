@@ -172,8 +172,9 @@ async def inference(request: InferenceRequest) -> InferenceResponse:
 
         # Run inference with sglang Engine
         # async_generate returns a dict with "text" key
+        max_tokens = min(max(0, request.max_tokens), 4096)
         sampleing_parameters = {
-            "max_new_tokens": request.max_tokens,
+            "max_new_tokens": max_tokens,
             "temperature": 0.7,
         }
         result = await runtime.async_generate(
