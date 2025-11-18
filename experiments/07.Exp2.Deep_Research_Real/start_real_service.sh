@@ -255,6 +255,8 @@ if [[ "$LOCAL_IP" != "$SCHEDULER_B_HOST" ]] && \
   done
 fi
 
+sleep 5
+
 
 # Do health check for all services
 
