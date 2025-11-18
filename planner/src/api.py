@@ -1,7 +1,7 @@
 """FastAPI application for the Planner service."""
 
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, Dict
 import numpy as np
 
 from fastapi import FastAPI, HTTPException, status
@@ -16,6 +16,7 @@ from .models import (
     DeploymentStatus,
     InstanceRegisterRequest,
     InstanceRegisterResponse,
+    MigrationOutput,
 )
 from .deployment_service import ModelMapper, InstanceDeployer, InstanceMigrator
 from .core.swarm_optimizer import (
@@ -91,6 +92,7 @@ async def service_info():
         "algorithms": ["simulated_annealing", "integer_programming"],
         "objective_methods": ["relative_error", "ratio_difference", "weighted_squared"],
         "description": "Model deployment optimization service",
+        "available_instances": get_available_instance_store().available_instances
     }
 
 
@@ -199,7 +201,7 @@ async def plan_deployment(input_data: PlannerInput):
         )
 
 
-@app.post("/deploy/migration", response_model=DeploymentOutput)
+@app.post("/deploy/migration", response_model=MigrationOutput)
 async def deploy_with_migration(input_data: DeploymentInput):
     """
     Compute optimal deployment plan and execute it across instances with migration mode.
@@ -222,7 +224,7 @@ async def deploy_with_migration(input_data: DeploymentInput):
         HTTPException: If optimization or deployment fails
     """
     try:
-        logger.info(f"Received /deploy request: {len(input_data.instances)} instances, "
+        logger.info(f"Received /deploy/migration request: {len(input_data.instances)} instances, "
                    f"algorithm={input_data.planner_input.algorithm}")
 
         # Step 1: Extract model names from instances
@@ -335,30 +337,19 @@ async def deploy_with_migration(input_data: DeploymentInput):
 
         # Step 5: Deploy to instances
         # Use scheduler_url from request or fall back to config default
-        scheduler_url = config.get_scheduler_url(input_data.scheduler_url)
-        logger.debug(f"Using scheduler URL: {scheduler_url}")
-
-        deployer = InstanceDeployer(
-            timeout=config.instance_timeout,
-            scheduler_url=scheduler_url,
-            max_retries=config.instance_max_retries,
-            retry_delay=config.instance_retry_delay
-        )
-        deployment_statuses = await deployer.deploy_to_instances(
-            endpoints=endpoints,
-            target_models=target_models,
-            previous_models=current_models
-        )
+        scheduler_mapping = config.get_scheduler_url(input_data.scheduler_mapping)
+        logger.debug(f"Using scheduler URL: {scheduler_mapping}")
 
         # Perform migration for instances that need to change
+        migration_status = []
         if pending_change_original:
             migrator = InstanceMigrator(
                 timeout=config.instance_timeout,
-                scheduler_url=scheduler_url,
+                scheduler_mapping=scheduler_mapping,
                 max_retries=config.instance_max_retries,
                 retry_delay=config.instance_retry_delay
             )
-            migration_statuses = await migrator.migration_instances(
+            migration_status = await migrator.migration_instances(
                 pending_change_original,
                 pending_change_target
             )
@@ -376,7 +367,7 @@ async def deploy_with_migration(input_data: DeploymentInput):
         # Step 6: Aggregate results
         failed_instances = [
             status.instance_index
-            for status in deployment_statuses
+            for status in migration_status
             if not status.success
         ]
         overall_success = len(failed_instances) == 0
@@ -386,13 +377,13 @@ async def deploy_with_migration(input_data: DeploymentInput):
         else:
             logger.info("Deployment completed successfully for all instances")
 
-        result = DeploymentOutput(
+        result = MigrationOutput(
             deployment=deployment.tolist(),
             score=float(score),
             stats=stats,
             service_capacity=service_capacity.tolist(),
             changes_count=int(changes_count),
-            deployment_status=deployment_statuses,
+            deployment_status=migration_status,
             success=overall_success,
             failed_instances=failed_instances
         )
@@ -652,7 +643,15 @@ async def register_available_instance(request: InstanceRegisterRequest):
             detail=f"Failed to register instance: {str(e)}"
         )
 
-
+@app.get("/migration/info")
+def get_migration_info() -> Dict[str, AvailableInstance]:
+    """
+    this endpoint is show current available instances for migration
+    """
+    instance_store = get_available_instance_store()
+    
+    return instance_store.available_instances
+    
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

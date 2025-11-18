@@ -11,7 +11,8 @@ class PlannerInput(BaseModel):
     M: int = Field(..., description="Number of instances", gt=0)
     N: int = Field(..., description="Number of model types", gt=0)
     B: List[List[float]] = Field(..., description="Batch capacity matrix [M×N]")
-    initial: List[int] = Field(..., description="Initial deployment [M], -1 = no model")
+    # When deploying the model, inital status will be computed from the instance informations
+    initial: Optional[int] = Field(None, description="Initial deployment [M], -1 = no model")
     a: float = Field(..., description="Change constraint (0 < a ≤ 1)", gt=0, le=1)
     target: List[float] = Field(..., description="Target request distribution [N]")
 
@@ -56,22 +57,6 @@ class PlannerInput(BaseModel):
 
         return v
 
-    @field_validator("initial")
-    @classmethod
-    def validate_initial(cls, v, info):
-        """Validate initial deployment."""
-        M = info.data.get("M")
-        N = info.data.get("N")
-
-        if M is not None and len(v) != M:
-            raise ValueError(f"initial must have length {M}, got {len(v)}")
-
-        if N is not None:
-            for i, val in enumerate(v):
-                if val != -1 and (val < 0 or val >= N):
-                    raise ValueError(f"initial[{i}] = {val} is invalid (must be -1 or 0..{N-1})")
-
-        return v
 
     @field_validator("target")
     @classmethod
@@ -117,7 +102,7 @@ class DeploymentInput(BaseModel):
 
     instances: List[InstanceInfo] = Field(..., description="Target instances")
     planner_input: PlannerInput = Field(..., description="Optimization config")
-    scheduler_url: Optional[str] = Field(None, description="Scheduler URL for instance registration")
+    scheduler_mapping: Dict[str, str] = Field(None, description="mapping of model name to scheduler")
 
     @model_validator(mode="after")
     def validate_instances_match(self):
@@ -142,6 +127,7 @@ class DeploymentStatus(BaseModel):
 
 class MigrationStatus(BaseModel):
     """Status of deployment to a single instance."""
+    instance_index: int = Field(..., description="Instance index")
     endpoint: str = Field(..., description="Instance endpoint")
     target_model: str = Field(..., description="Target model name")
     previous_model: Optional[str] = Field(None, description="Previous model name")
@@ -155,6 +141,13 @@ class DeploymentOutput(PlannerOutput):
     """Output from deployment with execution status."""
 
     deployment_status: List[DeploymentStatus] = Field(..., description="Per-instance results")
+    success: bool = Field(..., description="Overall success flag")
+    failed_instances: List[int] = Field(..., description="Failed instance indices")
+
+class MigrationOutput(PlannerOutput):
+    """Output from deployment with execution status."""
+
+    deployment_status: List[MigrationStatus] = Field(..., description="Per-instance results")
     success: bool = Field(..., description="Overall success flag")
     failed_instances: List[int] = Field(..., description="Failed instance indices")
 

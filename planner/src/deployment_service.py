@@ -433,7 +433,7 @@ class InstanceMigrator:
     def __init__(
         self,
         timeout: int = 30,
-        scheduler_url: Optional[str] = None,
+        scheduler_mapping: Dict[str, str] = None,
         max_retries: int = 3,
         retry_delay: float = 1.0,
     ):
@@ -447,7 +447,7 @@ class InstanceMigrator:
             retry_delay: Initial delay between retries in seconds (exponential backoff)
         """
         self.timeout = timeout
-        self.scheduler_url = scheduler_url
+        self.scheduler_mapping = scheduler_mapping
         self.max_retries = max_retries
         self.retry_delay = retry_delay
 
@@ -523,6 +523,7 @@ class InstanceMigrator:
                 logger.info(f"Instance {current_instance_id} have same model as {target_instance_id}, skip migration")
                 migration_time = time.time() - start_time
                 return MigrationStatus(
+                    instance_index = instance_index,
                     endpoint = original_endpoint,
                     target_model = target_model_id,
                     previous_model = current_model_id,
@@ -534,7 +535,7 @@ class InstanceMigrator:
             # Step 3: Deregister original instance from its scheduler
             # Step 4: Register new instance to scheduler (run in parallel)
             payload = {
-                "scheduler_url": self.scheduler_url
+                "scheduler_url": self.scheduler_mapping[target_model_id]
             }
 
             # Create tasks for parallel execution
@@ -542,7 +543,6 @@ class InstanceMigrator:
             register_task = asyncio.create_task(
                 client.post(f"{target_endpoint}/model/register", json=payload)
             )
-
             # Get the register and deregister result
             deregister_response = await deregister_task
             register_response = await register_task
@@ -555,6 +555,7 @@ class InstanceMigrator:
             f"in {migration_time:.2f}s"
         )
         return MigrationStatus(
+            instance_index = instance_index,
             endpoint = original_endpoint,
             target_model = target_model_id,
             previous_model = current_model_id,
@@ -563,155 +564,6 @@ class InstanceMigrator:
             deployment_time = migration_time
         )
  
-        """
-        Deploy a model to a single instance.
-
-        Workflow:
-        1. Get current model from instance
-        2. If different from target, stop current model
-        3. Start target model
-        4. Record timing and errors
-
-        Args:
-            endpoint: Instance endpoint URL
-            target_model: Model name to deploy
-            instance_index: Index of this instance
-            previous_model: Previous model name (if known)
-
-        Returns:
-            DeploymentStatus with result
-        """
-        start_time = time.time()
-        error_message = None
-
-        try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                # Step 1: Get current model info
-                info_response = await client.get(f"{endpoint}/info")
-                info_response.raise_for_status()
-                info_data = info_response.json()
-
-                current_model_data = info_data.get("instance", {}).get("current_model")
-                current_model_id = current_model_data.get("model_id") if current_model_data else None
-
-                # Update previous_model if we got it from the instance
-                if previous_model is None and current_model_id:
-                    previous_model = current_model_id
-
-                # Step 2: Check if deployment is needed
-                if current_model_id == target_model:
-                    logger.info(
-                        f"Instance {instance_index} ({endpoint}) already running {target_model}, skipping"
-                    )
-                    deployment_time = time.time() - start_time
-                    return DeploymentStatus(
-                        instance_index=instance_index,
-                        endpoint=endpoint,
-                        target_model=target_model,
-                        previous_model=previous_model,
-                        success=True,
-                        error_message=None,
-                        deployment_time=deployment_time
-                    )
-
-                # Step 3: Stop current model if running (with retry)
-                if current_model_id:
-                    logger.info(f"Stopping model {current_model_id} on {endpoint}")
-                    for attempt in range(self.max_retries):
-                        try:
-                            stop_response = await client.get(f"{endpoint}/model/stop")
-                            stop_response.raise_for_status()
-                            break  # Success, exit retry loop
-                        except Exception as e:
-                            if attempt < self.max_retries - 1 and self._is_retryable_error(e):
-                                delay = self.retry_delay * (2 ** attempt)
-                                logger.warning(
-                                    f"Stop failed (attempt {attempt + 1}/{self.max_retries}), "
-                                    f"retrying in {delay}s: {str(e)}"
-                                )
-                                await asyncio.sleep(delay)
-                            else:
-                                raise  # Not retryable or max retries exceeded
-
-                # Step 4: Start target model (with retry)
-                logger.info(f"Starting model {target_model} on {endpoint}")
-                start_payload = {
-                    "model_id": target_model,
-                    "parameters": {}
-                }
-                # Add scheduler_url if available
-                if self.scheduler_url:
-                    start_payload["scheduler_url"] = self.scheduler_url
-                    logger.debug(f"Including scheduler_url: {self.scheduler_url}")
-
-                for attempt in range(self.max_retries):
-                    try:
-                        start_response = await client.post(
-                            f"{endpoint}/model/start",
-                            json=start_payload
-                        )
-                        start_response.raise_for_status()
-                        break  # Success, exit retry loop
-                    except Exception as e:
-                        if attempt < self.max_retries - 1 and self._is_retryable_error(e):
-                            delay = self.retry_delay * (2 ** attempt)
-                            logger.warning(
-                                f"Start failed (attempt {attempt + 1}/{self.max_retries}), "
-                                f"retrying in {delay}s: {str(e)}"
-                            )
-                            await asyncio.sleep(delay)
-                        else:
-                            raise  # Not retryable or max retries exceeded
-
-                deployment_time = time.time() - start_time
-                logger.info(
-                    f"Successfully deployed {target_model} to instance {instance_index} "
-                    f"in {deployment_time:.2f}s"
-                )
-
-                return DeploymentStatus(
-                    instance_index=instance_index,
-                    endpoint=endpoint,
-                    target_model=target_model,
-                    previous_model=previous_model,
-                    success=True,
-                    error_message=None,
-                    deployment_time=deployment_time
-                )
-
-        except httpx.HTTPStatusError as e:
-            # Try to extract error message from response JSON
-            try:
-                error_data = e.response.json()
-                error_msg = error_data.get("error", error_data.get("detail", e.response.text))
-            except Exception:
-                error_msg = e.response.text or f"HTTP {e.response.status_code}"
-
-            error_message = f"HTTP {e.response.status_code}: {error_msg}"
-            logger.error(f"Failed to deploy to {endpoint}: {error_message}")
-        except httpx.ConnectError as e:
-            error_message = f"Connection failed: {str(e)}"
-            logger.error(f"Failed to connect to {endpoint}: {error_message}")
-        except httpx.TimeoutException as e:
-            error_message = f"Request timed out after {self.timeout}s"
-            logger.error(f"Timeout deploying to {endpoint}: {error_message}")
-        except httpx.RequestError as e:
-            error_message = f"Request error: {str(e)}"
-            logger.error(f"Request failed for {endpoint}: {error_message}")
-        except Exception as e:
-            error_message = f"Unexpected error: {str(e)}"
-            logger.error(f"Failed to deploy to {endpoint}: {error_message}")
-
-        deployment_time = time.time() - start_time
-        return DeploymentStatus(
-            instance_index=instance_index,
-            endpoint=endpoint,
-            target_model=target_model,
-            previous_model=previous_model,
-            success=False,
-            error_message=error_message,
-            deployment_time=deployment_time
-        )
 
     async def deregister_model(
         self,
