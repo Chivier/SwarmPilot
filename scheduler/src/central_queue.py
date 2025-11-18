@@ -314,9 +314,8 @@ class CentralTaskQueue:
 
                 # Use scheduling strategy to select best instance
                 try:
-                    selected_instance, prediction_info = await self._scheduling_strategy.schedule_task(
+                    schedule_result = await self._scheduling_strategy.schedule_task(
                         model_id=task.model_id,
-                        task_input=task.task_input,
                         metadata=task.metadata,
                         available_instances=available_instances,
                     )
@@ -324,26 +323,36 @@ class CentralTaskQueue:
                     logger.error(f"Scheduling failed for task {task.task_id}: {e}")
                     return False
 
-                if not selected_instance:
+                if not schedule_result.selected_instance_id:
                     logger.warning(f"No instance selected for task {task.task_id}")
+                    return False
+
+                # Get the selected instance object
+                selected_instance = None
+                for inst in available_instances:
+                    if inst.instance_id == schedule_result.selected_instance_id:
+                        selected_instance = inst
+                        break
+
+                if not selected_instance:
+                    logger.error(f"Selected instance {schedule_result.selected_instance_id} not found")
                     return False
 
                 # Update task record with assignment info
                 task_record = await self._task_registry.get(task.task_id)
                 if task_record:
                     task_record.assigned_instance = selected_instance.instance_id
-                    if prediction_info:
-                        task_record.predicted_time_ms = prediction_info.get("predicted_time_ms")
-                        task_record.predicted_error_margin_ms = prediction_info.get("error_margin_ms")
-                        task_record.predicted_quantiles = prediction_info.get("quantiles")
+                    selected_pred = schedule_result.selected_prediction
+                    if selected_pred:
+                        task_record.predicted_time_ms = selected_pred.predicted_time_ms
+                        task_record.predicted_error_margin_ms = selected_pred.error_margin_ms
+                        task_record.predicted_quantiles = selected_pred.quantiles
 
                 # Increment pending count on selected instance
                 await self._instance_registry.increment_pending(selected_instance.instance_id)
 
                 # Dispatch task to instance (fire and forget)
-                asyncio.create_task(
-                    self._task_dispatcher.dispatch_task_async(task.task_id)
-                )
+                self._task_dispatcher.dispatch_task_async(task.task_id)
 
                 logger.debug(
                     f"Dispatched task {task.task_id} to instance {selected_instance.instance_id}"
