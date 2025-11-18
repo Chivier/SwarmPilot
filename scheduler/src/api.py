@@ -1631,6 +1631,8 @@ async def set_strategy_endpoint(request: StrategySetRequest):
     # Update BackgroundScheduler to use the new strategy
     background_scheduler.scheduling_strategy = new_strategy
 
+    central_queue.set_scheduling_strategy(new_strategy)
+
     # Update config (in-memory only, not persisted)
     config.scheduling.default_strategy = request.strategy_name.value
 
