@@ -599,12 +599,7 @@ async def _perform_deregister_operation(operation_id: str):
                     try:
                         success = await scheduler_client.resubmit_task(
                             task_id=task_data["task_id"],
-                            model_id=task_data["model_id"],
-                            task_input=task_data["task_input"],
-                            enqueue_time=task_data.get("enqueue_time"),
-                            submitted_at=task_data.get("submitted_at"),
-                            callback_url=task_data.get("callback_url"),
-                            metadata=task_data.get("metadata"),
+                            original_instance_id=config.instance_id,
                         )
 
                         if success:
@@ -955,12 +950,7 @@ async def _perform_restart_operation(operation_id: str):
                     try:
                         success = await scheduler_client.resubmit_task(
                             task_id=task_data["task_id"],
-                            model_id=task_data["model_id"],
-                            task_input=task_data["task_input"],
-                            enqueue_time=task_data.get("enqueue_time"),
-                            submitted_at=task_data.get("submitted_at"),
-                            callback_url=task_data.get("callback_url"),
-                            metadata=task_data.get("metadata"),
+                            original_instance_id=config.instance_id,
                         )
 
                         if success:

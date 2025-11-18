@@ -818,12 +818,7 @@ class SchedulerClient:
     async def resubmit_task(
         self,
         task_id: str,
-        model_id: str,
-        task_input: Dict[str, Any],
-        enqueue_time: Optional[float] = None,
-        submitted_at: Optional[str] = None,
-        callback_url: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        original_instance_id: str,
     ) -> bool:
         """Resubmit a task back to the scheduler for redistribution.
 
@@ -832,12 +827,7 @@ class SchedulerClient:
 
         Args:
             task_id: Original task ID
-            model_id: Model ID required for the task
-            task_input: Task input data
-            enqueue_time: Original enqueue timestamp (for priority preservation)
-            submitted_at: Original submission timestamp
-            callback_url: Optional callback URL for task completion
-            metadata: Optional task metadata
+            original_instance_id: ID of the instance that originally held the task
 
         Returns:
             True if task successfully resubmitted, False otherwise
@@ -848,24 +838,13 @@ class SchedulerClient:
         if not self.is_enabled:
             raise Exception("Cannot resubmit task: scheduler integration is disabled")
 
-        endpoint = f"{self.scheduler_url}/task/submit"
+        endpoint = f"{self.scheduler_url}/task/resubmit"
 
-        # Build task submission payload
+        # Build task resubmission payload
         payload = {
             "task_id": task_id,
-            "model_id": model_id,
-            "task_input": task_input,
+            "original_instance_id": original_instance_id,
         }
-
-        # Include optional fields for priority and context preservation
-        if enqueue_time is not None:
-            payload["enqueue_time"] = enqueue_time
-        if submitted_at is not None:
-            payload["submitted_at"] = submitted_at
-        if callback_url is not None:
-            payload["callback_url"] = callback_url
-        if metadata is not None:
-            payload["metadata"] = metadata
 
         # Retry logic for reliability
         for attempt in range(self.max_retries):
