@@ -14,8 +14,10 @@ from .models import (
     DeploymentInput,
     DeploymentOutput,
     DeploymentStatus,
+    InstanceRegisterRequest,
+    InstanceRegisterResponse,
 )
-from .deployment_service import ModelMapper, InstanceDeployer
+from .deployment_service import ModelMapper, InstanceDeployer, InstanceMigrator
 from .core.swarm_optimizer import (
     SimulatedAnnealingOptimizer,
     IntegerProgrammingOptimizer,
@@ -23,6 +25,7 @@ from .core.swarm_optimizer import (
 from . import __version__
 from .logging_config import setup_logging
 from .config import config
+from .available_instance_store import get_available_instance_store, AvailableInstance
 
 # Configure logging
 setup_logging()
@@ -195,6 +198,227 @@ async def plan_deployment(input_data: PlannerInput):
             detail=f"Optimization failed: {str(e)}"
         )
 
+
+@app.post("/deploy/migration", response_model=DeploymentOutput)
+async def deploy_with_migration(input_data: DeploymentInput):
+    """
+    Compute optimal deployment plan and execute it across instances with migration mode.
+
+    Workflow:
+    1. Extract model names from instances
+    2. Create model name → ID mapping
+    3. Run optimization algorithm
+    4. Map result IDs back to model names
+    5. Deploy to instances concurrently with migration mode
+    6. Return results with detailed status
+
+    Args:
+        input_data: Deployment configuration with instances and optimization parameters
+
+    Returns:
+        DeploymentOutput: Optimization results plus deployment execution status
+
+    Raises:
+        HTTPException: If optimization or deployment fails
+    """
+    try:
+        logger.info(f"Received /deploy request: {len(input_data.instances)} instances, "
+                   f"algorithm={input_data.planner_input.algorithm}")
+
+        # Step 1: Extract model names from instances
+        current_models = [inst.current_model for inst in input_data.instances]
+        endpoints = [inst.endpoint for inst in input_data.instances]
+
+        logger.info(f"Current models: {current_models}")
+
+        # Step 2: Create model name → ID mapping
+        mapper = ModelMapper()
+        model_mapping = mapper.create_mapping(current_models)
+        reverse_mapping = {v: k for k, v in model_mapping.items()}
+
+        logger.info(f"Model mapping: {model_mapping}")
+
+        # Update planner_input.initial with mapped IDs
+        try:
+            initial_ids = mapper.map_names_to_ids(current_models, model_mapping)
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Model mapping failed: {str(e)}"
+            )
+
+        # Override the initial field in planner_input
+        planner_params = input_data.planner_input.model_copy(deep=True)
+        planner_params.initial = initial_ids
+
+        # Step 3: Run optimization
+        B = np.array(planner_params.B)
+        initial = np.array(planner_params.initial)
+        target = np.array(planner_params.target)
+
+        if planner_params.algorithm == "simulated_annealing":
+            optimizer = SimulatedAnnealingOptimizer(
+                M=planner_params.M,
+                N=planner_params.N,
+                B=B,
+                initial=initial,
+                a=planner_params.a,
+                target=target
+            )
+
+            deployment, score, stats = optimizer.optimize(
+                objective_method=planner_params.objective_method,
+                initial_temp=planner_params.initial_temp,
+                final_temp=planner_params.final_temp,
+                cooling_rate=planner_params.cooling_rate,
+                max_iterations=planner_params.max_iterations,
+                iterations_per_temp=planner_params.iterations_per_temp,
+                verbose=planner_params.verbose
+            )
+
+        elif planner_params.algorithm == "integer_programming":
+            optimizer = IntegerProgrammingOptimizer(
+                M=planner_params.M,
+                N=planner_params.N,
+                B=B,
+                initial=initial,
+                a=planner_params.a,
+                target=target
+            )
+
+            deployment, score, stats = optimizer.optimize(
+                objective_method=planner_params.objective_method,
+                solver_name=planner_params.solver_name,
+                time_limit=planner_params.time_limit,
+                verbose=planner_params.verbose
+            )
+
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unknown algorithm: {planner_params.algorithm}"
+            )
+
+        service_capacity = optimizer.compute_service_capacity(deployment)
+        changes_count = optimizer.compute_changes(deployment)
+
+        # Get the target instance list for all instances
+        # We need to find the changed instance here
+        instance_store = get_available_instance_store()
+        deployment_target_models = [reverse_mapping[idx] for idx in deployment]
+        pending_change_original_model = []
+        pending_change_original = []
+        pending_change_target = []
+        for idx, (cur, target_model) in enumerate(zip(current_models, deployment_target_models)):
+            if cur != target_model:
+                pending_change_original.append(endpoints[idx])
+                pending_change_original_model.append(cur)
+                target_instance = await instance_store.fetch_one_available_instance(target_model)
+                if not target_instance:
+                    raise ValueError(f"No available target endpoint for model {target_model}")
+                pending_change_target.append(target_instance.endpoint)
+                
+            
+
+        logger.info(f"Optimization completed: score={score:.4f}, changes={changes_count}")
+
+        # Step 4: Map result IDs back to model names
+        try:
+            target_models = mapper.map_ids_to_names(deployment.tolist(), reverse_mapping)
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to map deployment IDs to names: {str(e)}"
+            )
+
+        logger.info(f"Target models: {target_models}")
+
+        # Step 5: Deploy to instances
+        # Use scheduler_url from request or fall back to config default
+        scheduler_url = config.get_scheduler_url(input_data.scheduler_url)
+        logger.debug(f"Using scheduler URL: {scheduler_url}")
+
+        deployer = InstanceDeployer(
+            timeout=config.instance_timeout,
+            scheduler_url=scheduler_url,
+            max_retries=config.instance_max_retries,
+            retry_delay=config.instance_retry_delay
+        )
+        deployment_statuses = await deployer.deploy_to_instances(
+            endpoints=endpoints,
+            target_models=target_models,
+            previous_models=current_models
+        )
+
+        # Perform migration for instances that need to change
+        if pending_change_original:
+            migrator = InstanceMigrator(
+                timeout=config.instance_timeout,
+                scheduler_url=scheduler_url,
+                max_retries=config.instance_max_retries,
+                retry_delay=config.instance_retry_delay
+            )
+            migration_statuses = await migrator.migration_instances(
+                pending_change_original,
+                pending_change_target
+            )
+            logger.info(f"Migration completed for {len(pending_change_original)} instances")
+
+        # Append original endpoint to the storage for future use
+        for model_id, endpoint in zip(pending_change_original_model, pending_change_original):
+            await instance_store.add_available_instance(
+                AvailableInstance(
+                    model_id=model_id,
+                    endpoint=endpoint
+                )
+            )
+
+        # Step 6: Aggregate results
+        failed_instances = [
+            status.instance_index
+            for status in deployment_statuses
+            if not status.success
+        ]
+        overall_success = len(failed_instances) == 0
+
+        if not overall_success:
+            logger.warning(f"Deployment partially failed: {len(failed_instances)} instances failed")
+        else:
+            logger.info("Deployment completed successfully for all instances")
+
+        result = DeploymentOutput(
+            deployment=deployment.tolist(),
+            score=float(score),
+            stats=stats,
+            service_capacity=service_capacity.tolist(),
+            changes_count=int(changes_count),
+            deployment_status=deployment_statuses,
+            success=overall_success,
+            failed_instances=failed_instances
+        )
+
+        return result
+
+    except HTTPException:
+        raise
+    except ImportError as e:
+        logger.error(f"Import error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Algorithm dependency not available: {str(e)}"
+        )
+    except ValueError as e:
+        logger.error(f"Validation error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid input: {str(e)}"
+        )
+    except Exception as e:
+        logger.error(f"Deployment failed: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Deployment failed: {str(e)}"
+        )
 
 @app.post("/deploy", response_model=DeploymentOutput)
 async def deploy_with_optimization(input_data: DeploymentInput):
@@ -374,6 +598,58 @@ async def deploy_with_optimization(input_data: DeploymentInput):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Deployment failed: {str(e)}"
+        )
+
+
+@app.post("/instance/register", response_model=InstanceRegisterResponse)
+async def register_available_instance(request: InstanceRegisterRequest):
+    """
+    Register an available instance to the planner's available instance store.
+
+    This endpoint has the same parameters as the scheduler's /instance/register
+    but stores instances for migration-based redeployment instead of task scheduling.
+
+    Args:
+        request: Instance registration details (instance_id, model_id, endpoint, platform_info)
+
+    Returns:
+        InstanceRegisterResponse with registration status
+
+    Raises:
+        HTTPException: If registration fails
+    """
+    try:
+        logger.info(
+            f"Registering available instance: {request.instance_id} "
+            f"for model {request.model_id} at {request.endpoint}"
+        )
+
+        # Get the available instance store
+        instance_store = get_available_instance_store()
+
+        # Create AvailableInstance and add to store
+        available_instance = AvailableInstance(
+            model_id=request.model_id,
+            endpoint=request.endpoint
+        )
+
+        await instance_store.add_available_instance(available_instance)
+
+        logger.info(
+            f"Successfully registered instance {request.instance_id} "
+            f"for model {request.model_id}"
+        )
+
+        return InstanceRegisterResponse(
+            success=True,
+            message=f"Instance {request.instance_id} registered successfully for model {request.model_id}"
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to register instance: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to register instance: {str(e)}"
         )
 
 

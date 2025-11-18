@@ -140,6 +140,16 @@ class DeploymentStatus(BaseModel):
     error_message: Optional[str] = Field(None, description="Error details")
     deployment_time: float = Field(..., description="Deployment duration (sec)")
 
+class MigrationStatus(BaseModel):
+    """Status of deployment to a single instance."""
+    endpoint: str = Field(..., description="Instance endpoint")
+    target_model: str = Field(..., description="Target model name")
+    previous_model: Optional[str] = Field(None, description="Previous model name")
+    success: bool = Field(..., description="Success flag")
+    error_message: Optional[str] = Field(None, description="Error details")
+    deployment_time: float = Field(..., description="Deployment duration (sec)")
+
+
 
 class DeploymentOutput(PlannerOutput):
     """Output from deployment with execution status."""
@@ -147,3 +157,20 @@ class DeploymentOutput(PlannerOutput):
     deployment_status: List[DeploymentStatus] = Field(..., description="Per-instance results")
     success: bool = Field(..., description="Overall success flag")
     failed_instances: List[int] = Field(..., description="Failed instance indices")
+
+
+class InstanceRegisterRequest(BaseModel):
+    """Request model for instance registration (compatible with scheduler)."""
+    instance_id: str = Field(..., description="Unique instance identifier")
+    model_id: str = Field(..., description="Model ID supported by this instance")
+    endpoint: str = Field(..., description="Instance HTTP endpoint URL")
+    platform_info: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Platform info (software_name, software_version, hardware_name)"
+    )
+
+
+class InstanceRegisterResponse(BaseModel):
+    """Response model for instance registration."""
+    success: bool = Field(..., description="Whether registration was successful")
+    message: str = Field(..., description="Status message")

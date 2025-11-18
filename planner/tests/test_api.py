@@ -286,3 +286,92 @@ class TestDeployEndpoint:
             initial = call_args[1]["initial"]
             # bert_large=0, gpt_small=1, t5_base=2
             assert list(initial) == [0, 1, 0, 2]
+
+
+
+class TestInstanceRegisterEndpoint:
+    """Tests for /instance/register endpoint."""
+
+    def test_register_instance_success(self, client):
+        """Test successful instance registration."""
+        request_data = {
+            "instance_id": "test-instance-1",
+            "model_id": "model_0",
+            "endpoint": "http://test:8080",
+            "platform_info": {
+                "software_name": "pytorch",
+                "software_version": "2.0",
+                "hardware_name": "nvidia-a100"
+            }
+        }
+
+        response = client.post("/instance/register", json=request_data)
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert "test-instance-1" in data["message"]
+        assert "model_0" in data["message"]
+
+    def test_register_instance_minimal_info(self, client):
+        """Test instance registration with minimal platform_info."""
+        request_data = {
+            "instance_id": "test-instance-2",
+            "model_id": "model_1",
+            "endpoint": "http://test:8081",
+            "platform_info": {}
+        }
+
+        response = client.post("/instance/register", json=request_data)
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+
+    def test_register_multiple_instances_same_model(self, client):
+        """Test registering multiple instances for the same model."""
+        # Register first instance
+        request_data1 = {
+            "instance_id": "instance-1",
+            "model_id": "shared_model",
+            "endpoint": "http://instance1:8080",
+            "platform_info": {}
+        }
+        response1 = client.post("/instance/register", json=request_data1)
+        assert response1.status_code == 200
+
+        # Register second instance for same model
+        request_data2 = {
+            "instance_id": "instance-2",
+            "model_id": "shared_model",
+            "endpoint": "http://instance2:8080",
+            "platform_info": {}
+        }
+        response2 = client.post("/instance/register", json=request_data2)
+        assert response2.status_code == 200
+
+        data = response2.json()
+        assert data["success"] is True
+
+    def test_register_instance_missing_required_fields(self, client):
+        """Test registration fails with missing required fields."""
+        # Missing model_id
+        request_data = {
+            "instance_id": "test-instance",
+            "endpoint": "http://test:8080"
+        }
+
+        response = client.post("/instance/register", json=request_data)
+
+        assert response.status_code == 422  # Validation error
+
+    def test_register_instance_missing_endpoint(self, client):
+        """Test registration fails without endpoint."""
+        request_data = {
+            "instance_id": "test-instance",
+            "model_id": "model_0"
+        }
+
+        response = client.post("/instance/register", json=request_data)
+
+        assert response.status_code == 422  # Validation error

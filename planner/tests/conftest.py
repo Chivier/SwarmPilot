@@ -80,5 +80,44 @@ def mock_instance_responses() -> Dict:
             "message": "Model started successfully",
             "model_id": "model_1",
             "status": "running"
+        },
+        "deregister": {
+            "success": True,
+            "message": "Model deregistered successfully"
+        },
+        "register": {
+            "success": True,
+            "message": "Model registered successfully"
+        }
+    }
+
+
+@pytest.fixture
+def mock_migration_info_responses() -> Dict:
+    """Mock HTTP responses for migration operations."""
+    return {
+        "original_info": {
+            "success": True,
+            "instance": {
+                "instance_id": "original-instance",
+                "status": "running",
+                "current_model": {
+                    "model_id": "model_0",
+                    "started_at": "2025-10-31T10:00:00Z",
+                    "parameters": {}
+                }
+            }
+        },
+        "target_info": {
+            "success": True,
+            "instance": {
+                "instance_id": "target-instance",
+                "status": "running",
+                "current_model": {
+                    "model_id": "model_1",
+                    "started_at": "2025-10-31T10:00:00Z",
+                    "parameters": {}
+                }
+            }
         }
     }

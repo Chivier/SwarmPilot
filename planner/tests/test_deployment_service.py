@@ -4,7 +4,8 @@ import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 import httpx
 
-from src.deployment_service import ModelMapper, InstanceDeployer
+from src.deployment_service import ModelMapper, InstanceDeployer, InstanceMigrator
+from src.available_instance_store import AvailableInstance, AvailableInstanceStore
 
 
 class TestModelMapper:
@@ -307,3 +308,341 @@ class TestInstanceDeployer:
                     "scheduler_url": "http://scheduler:8100"
                 }
             )
+
+
+class TestInstanceMigrator:
+    """Tests for InstanceMigrator class."""
+
+    @pytest.mark.asyncio
+    async def test_migration_model_success(self, mock_instance_responses, mock_migration_info_responses):
+        """Test successful migration from one instance to another."""
+        migrator = InstanceMigrator(
+            timeout=30,
+            scheduler_url="http://scheduler:8100"
+        )
+
+        with patch("httpx.AsyncClient") as mock_client:
+            client_mock = mock_client.return_value.__aenter__.return_value
+
+            # Mock /info responses for original and target
+            mock_original_info = MagicMock()
+            mock_original_info.json.return_value = mock_migration_info_responses["original_info"]
+            mock_original_info.raise_for_status = MagicMock()
+
+            mock_target_info = MagicMock()
+            mock_target_info.json.return_value = mock_migration_info_responses["target_info"]
+            mock_target_info.raise_for_status = MagicMock()
+
+            # Mock deregister response
+            mock_deregister_response = MagicMock()
+            mock_deregister_response.json.return_value = mock_instance_responses["deregister"]
+            mock_deregister_response.raise_for_status = MagicMock()
+
+            # Mock register response
+            mock_register_response = MagicMock()
+            mock_register_response.json.return_value = mock_instance_responses["register"]
+            mock_register_response.raise_for_status = MagicMock()
+
+            # Setup get to return info responses
+            client_mock.get = AsyncMock(side_effect=[
+                mock_original_info,
+                mock_target_info
+            ])
+
+            # Setup post to return register response
+            client_mock.post = AsyncMock(return_value=mock_register_response)
+
+            # Mock the deregister_model method
+            with patch.object(migrator, 'deregister_model', new_callable=AsyncMock) as mock_deregister:
+                mock_deregister.return_value = mock_deregister_response
+
+                status = await migrator.migration_model(
+                    original_endpoint="http://original:8080",
+                    target_endpoint="http://target:8080",
+                    instance_index=0
+                )
+
+                assert status.success is True
+                assert status.previous_model == "model_0"
+                assert status.target_model == "model_1"
+                assert status.endpoint == "http://original:8080"
+                assert status.deployment_time > 0
+
+                # Verify deregister was called
+                mock_deregister.assert_called_once_with("http://original:8080")
+
+                # Verify register was called
+                client_mock.post.assert_called_once()
+                call_args = client_mock.post.call_args
+                assert "model/register" in call_args[0][0]
+
+    @pytest.mark.asyncio
+    async def test_migration_model_skip_same_model(self, mock_migration_info_responses):
+        """Test migration is skipped when both instances have the same model."""
+        migrator = InstanceMigrator(
+            timeout=30,
+            scheduler_url="http://scheduler:8100"
+        )
+
+        # Make both instances have the same model
+        same_model_responses = {
+            "original_info": mock_migration_info_responses["original_info"],
+            "target_info": {
+                "success": True,
+                "instance": {
+                    "instance_id": "target-instance",
+                    "status": "running",
+                    "current_model": {
+                        "model_id": "model_0",  # Same as original
+                        "started_at": "2025-10-31T10:00:00Z",
+                        "parameters": {}
+                    }
+                }
+            }
+        }
+
+        with patch("httpx.AsyncClient") as mock_client:
+            client_mock = mock_client.return_value.__aenter__.return_value
+
+            mock_original_info = MagicMock()
+            mock_original_info.json.return_value = same_model_responses["original_info"]
+            mock_original_info.raise_for_status = MagicMock()
+
+            mock_target_info = MagicMock()
+            mock_target_info.json.return_value = same_model_responses["target_info"]
+            mock_target_info.raise_for_status = MagicMock()
+
+            client_mock.get = AsyncMock(side_effect=[
+                mock_original_info,
+                mock_target_info
+            ])
+
+            status = await migrator.migration_model(
+                original_endpoint="http://original:8080",
+                target_endpoint="http://target:8080",
+                instance_index=0
+            )
+
+            # Should succeed but skip the actual migration
+            assert status.success is True
+            assert status.previous_model == "model_0"
+            assert status.target_model == "model_0"
+
+            # Should only call get for info, no post calls
+            assert client_mock.get.call_count == 2
+            client_mock.post.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_migration_instances_parallel(self, mock_instance_responses, mock_migration_info_responses):
+        """Test parallel migration to multiple instances."""
+        migrator = InstanceMigrator(
+            timeout=30,
+            scheduler_url="http://scheduler:8100"
+        )
+
+        original_endpoints = [
+            "http://original-1:8080",
+            "http://original-2:8080"
+        ]
+        target_endpoints = [
+            "http://target-1:8080",
+            "http://target-2:8080"
+        ]
+
+        # Mock migration_model to return successful status
+        with patch.object(migrator, 'migration_model', new_callable=AsyncMock) as mock_migration:
+            from src.models import MigrationStatus
+            mock_migration.return_value = MigrationStatus(
+                endpoint="http://original:8080",
+                target_model="model_1",
+                previous_model="model_0",
+                success=True,
+                error_message=None,
+                deployment_time=1.0
+            )
+
+            statuses = await migrator.migration_instances(
+                original_endpoints=original_endpoints,
+                target_endpoints=target_endpoints
+            )
+
+            assert len(statuses) == 2
+            assert all(s.success for s in statuses)
+
+            # Verify migration_model was called for each pair
+            assert mock_migration.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_deregister_model_success(self, mock_instance_responses):
+        """Test successful deregistration from scheduler."""
+        migrator = InstanceMigrator(
+            timeout=30,
+            scheduler_url="http://scheduler:8100"
+        )
+
+        with patch("httpx.AsyncClient") as mock_client:
+            client_mock = mock_client.return_value.__aenter__.return_value
+
+            mock_deregister_response = MagicMock()
+            mock_deregister_response.json.return_value = mock_instance_responses["deregister"]
+            mock_deregister_response.raise_for_status = MagicMock()
+
+            client_mock.post = AsyncMock(return_value=mock_deregister_response)
+
+            result = await migrator.deregister_model("http://test:8080")
+
+            assert result["success"] is True
+            client_mock.post.assert_called_once_with(
+                "http://test:8080/model/deregister"
+            )
+
+
+class TestAvailableInstanceStore:
+    """Tests for AvailableInstanceStore class."""
+
+    @pytest.mark.asyncio
+    async def test_add_available_instance(self):
+        """Test adding an instance to the store."""
+        store = AvailableInstanceStore()
+
+        instance = AvailableInstance(
+            model_id="model_0",
+            endpoint="http://instance-1:8080"
+        )
+
+        await store.add_available_instance(instance)
+
+        instances = await store.get_available_instances_by_model_id("model_0")
+        assert len(instances) == 1
+        assert instances[0].endpoint == "http://instance-1:8080"
+
+    @pytest.mark.asyncio
+    async def test_add_multiple_instances_same_model(self):
+        """Test adding multiple instances for the same model."""
+        store = AvailableInstanceStore()
+
+        instance1 = AvailableInstance(
+            model_id="model_0",
+            endpoint="http://instance-1:8080"
+        )
+        instance2 = AvailableInstance(
+            model_id="model_0",
+            endpoint="http://instance-2:8080"
+        )
+
+        await store.add_available_instance(instance1)
+        await store.add_available_instance(instance2)
+
+        instances = await store.get_available_instances_by_model_id("model_0")
+        assert len(instances) == 2
+
+    @pytest.mark.asyncio
+    async def test_fetch_one_available_instance(self):
+        """Test fetching one instance from the store."""
+        store = AvailableInstanceStore()
+
+        instance1 = AvailableInstance(
+            model_id="model_0",
+            endpoint="http://instance-1:8080"
+        )
+        instance2 = AvailableInstance(
+            model_id="model_0",
+            endpoint="http://instance-2:8080"
+        )
+
+        await store.add_available_instance(instance1)
+        await store.add_available_instance(instance2)
+
+        # Fetch first instance
+        fetched = await store.fetch_one_available_instance("model_0")
+        assert fetched is not None
+        assert fetched.endpoint == "http://instance-1:8080"
+
+        # Verify only one remains
+        remaining = await store.get_available_instances_by_model_id("model_0")
+        assert len(remaining) == 1
+        assert remaining[0].endpoint == "http://instance-2:8080"
+
+    @pytest.mark.asyncio
+    async def test_fetch_one_available_instance_empty(self):
+        """Test fetching from empty store returns None."""
+        store = AvailableInstanceStore()
+
+        fetched = await store.fetch_one_available_instance("model_0")
+        assert fetched is None
+
+    @pytest.mark.asyncio
+    async def test_fetch_one_available_instance_unknown_model(self):
+        """Test fetching unknown model returns None."""
+        store = AvailableInstanceStore()
+
+        instance = AvailableInstance(
+            model_id="model_0",
+            endpoint="http://instance-1:8080"
+        )
+        await store.add_available_instance(instance)
+
+        fetched = await store.fetch_one_available_instance("model_unknown")
+        assert fetched is None
+
+    @pytest.mark.asyncio
+    async def test_remove_available_instance(self):
+        """Test removing an instance from the store."""
+        store = AvailableInstanceStore()
+
+        instance1 = AvailableInstance(
+            model_id="model_0",
+            endpoint="http://instance-1:8080"
+        )
+        instance2 = AvailableInstance(
+            model_id="model_0",
+            endpoint="http://instance-2:8080"
+        )
+
+        await store.add_available_instance(instance1)
+        await store.add_available_instance(instance2)
+
+        # Remove the first instance
+        await store.remove_available_instance(instance1)
+
+        instances = await store.get_available_instances_by_model_id("model_0")
+        assert len(instances) == 1
+        assert instances[0].endpoint == "http://instance-2:8080"
+
+    @pytest.mark.asyncio
+    async def test_get_all_available_instances(self):
+        """Test getting all instances across all models."""
+        store = AvailableInstanceStore()
+
+        instance1 = AvailableInstance(
+            model_id="model_0",
+            endpoint="http://instance-1:8080"
+        )
+        instance2 = AvailableInstance(
+            model_id="model_1",
+            endpoint="http://instance-2:8080"
+        )
+        instance3 = AvailableInstance(
+            model_id="model_0",
+            endpoint="http://instance-3:8080"
+        )
+
+        await store.add_available_instance(instance1)
+        await store.add_available_instance(instance2)
+        await store.add_available_instance(instance3)
+
+        all_instances = await store.get_available_instances()
+        assert len(all_instances) == 3
+
+    @pytest.mark.asyncio
+    async def test_remove_instance_from_unknown_model(self):
+        """Test removing instance from unknown model doesn't raise error."""
+        store = AvailableInstanceStore()
+
+        instance = AvailableInstance(
+            model_id="model_unknown",
+            endpoint="http://instance-1:8080"
+        )
+
+        # Should not raise any error
+        await store.remove_available_instance(instance)
