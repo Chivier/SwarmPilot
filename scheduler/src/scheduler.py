@@ -157,7 +157,7 @@ class SchedulingStrategy(ABC):
             }
 
             # Only add quantiles if not None
-            if quantiles is not None:
+            if quantiles is not None and prediction_type == "quantile":
                 predict_kwargs["quantiles"] = quantiles
 
             predictions = await self.predictor_client.predict(**predict_kwargs)
@@ -844,7 +844,7 @@ def get_strategy(
     elif strategy_name == "random":
         return RandomStrategy(predictor_client, instance_registry)
     elif strategy_name == "po2":
-        return RandomStrategy(predictor_client, instance_registry)
+        return PowerOfTwoStrategy(predictor_client, instance_registry)
     else:
         # Default to probabilistic
         return ProbabilisticSchedulingStrategy(

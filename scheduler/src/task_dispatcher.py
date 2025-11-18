@@ -282,7 +282,7 @@ class TaskDispatcher:
         if isinstance(current_queue, InstanceQueueExpectError):
             # Shortest Queue strategy: Update expect with actual time, keep error unchanged
             # Formula: new_expect = old_expect - predicted_time + actual_time
-            new_expected = current_queue.expected_time_ms - predicted_time_ms + actual_time_ms
+            new_expected = current_queue.expected_time_ms - actual_time_ms
             # Ensure non-negative
             new_expected = max(0.0, new_expected)
 
