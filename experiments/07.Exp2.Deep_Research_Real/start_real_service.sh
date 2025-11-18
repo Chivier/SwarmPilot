@@ -217,6 +217,8 @@ if [[ "$LOCAL_IP" == "$SCHEDULER_B_HOST" ]]; then
     "$SCHEDULER_PREDICTOR_CPU_RANGE"
 fi
 
+sleep 10
+
 # -----------------------------
 # 所有机器统一启动 instance:8000
 # -----------------------------
