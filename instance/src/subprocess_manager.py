@@ -208,6 +208,7 @@ class SubprocessManager:
             # Clear current model reference
             self.current_model = None
 
+            asyncio.sleep(5)
             # Restart the model with same parameters
             await self.start_model(model_id, parameters)
             logger.info(f"Model subprocess restarted: {container_name}")
