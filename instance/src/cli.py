@@ -58,6 +58,11 @@ def start(
         None,
         "--platform-hardware-name",
         help="Override platform hardware name (e.g., 'NVIDIA GeForce RTX 4090', 'CPU')"
+    ),
+    docker: bool = typer.Option(
+        False,
+        "--docker",
+        help="Use Docker containers instead of subprocesses for model execution"
     )
 ):
     """
@@ -70,6 +75,10 @@ def start(
     - INSTANCE_PLATFORM_SOFTWARE_NAME
     - INSTANCE_PLATFORM_SOFTWARE_VERSION
     - INSTANCE_PLATFORM_HARDWARE_NAME
+
+    Manager type can be controlled using CLI options or environment variables:
+    - Use --docker flag or set INSTANCE_USE_DOCKER=true to use Docker containers
+    - Default is to use subprocesses (no Docker required)
 
     CLI options take precedence over environment variables.
     """
@@ -89,9 +98,14 @@ def start(
     if platform_hardware_name is not None:
         config.platform_hardware_name = platform_hardware_name
 
+    # Update manager type if provided via CLI (takes precedence over env var)
+    if docker:
+        config.use_docker = True
+
     typer.echo(f"Starting Instance Service on {host}:{service_port}")
     typer.echo(f"Instance ID: {config.instance_id}")
     typer.echo(f"Log Level: {config.log_level}")
+    typer.echo(f"Manager Type: {'Docker' if config.use_docker else 'Subprocess'}")
 
     # Show platform override information if any is set
     platform_overrides = []

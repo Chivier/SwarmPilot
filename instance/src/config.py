@@ -38,6 +38,11 @@ class Config:
         # Task queue
         self.max_queue_size: int = int(os.getenv("MAX_QUEUE_SIZE", "100"))
 
+        # Manager configuration
+        self.use_docker: bool = (
+            os.getenv("INSTANCE_USE_DOCKER", "false").lower() == "true"
+        )
+
         # Health check
         self.health_check_interval: int = int(os.getenv("HEALTH_CHECK_INTERVAL", "10"))
         self.health_check_timeout: int = int(os.getenv("HEALTH_CHECK_TIMEOUT", "30"))
