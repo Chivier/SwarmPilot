@@ -42,6 +42,8 @@ from .model import (
     TaskListResponse,
     TaskDetailResponse,
     TaskClearResponse,
+    TaskResubmitRequest,
+    TaskResubmitResponse,
     TaskStatus,
     TaskInfo,
     TaskSummary,
@@ -80,6 +82,7 @@ from .predictor_client import PredictorClient
 from .scheduler import get_strategy
 from .task_dispatcher import TaskDispatcher
 from .background_scheduler import BackgroundScheduler
+from .central_queue import CentralTaskQueue
 
 # Import logger configuration to initialize loguru
 from . import logger as logger_module  # noqa: F401
@@ -103,12 +106,21 @@ async def lifespan(app: FastAPI):
 
     # TODO: Load persisted state if needed
     # TODO: Connect to external services
+
+    # Start central queue dispatcher
+    await central_queue.start()
+    logger.info("Central queue dispatcher started")
+
     logger.success("Scheduler service started successfully")
 
     yield
 
     # Shutdown
     logger.info("Scheduler service shutting down...")
+
+    # Shutdown central queue (wait for pending dispatches)
+    await central_queue.shutdown()
+    logger.debug("Central queue shutdown complete")
 
     # Shutdown background scheduler (wait for active tasks to complete)
     await background_scheduler.shutdown()
@@ -236,6 +248,25 @@ background_scheduler = BackgroundScheduler(
 )
 
 logger.info("Background scheduler initialized with max_concurrent=50")
+
+# Initialize central task queue
+central_queue = CentralTaskQueue(
+    task_registry=task_registry,
+    instance_registry=instance_registry,
+    high_water_mark=config.queue.high_water_mark,
+    low_water_mark=config.queue.low_water_mark,
+    max_concurrent_dispatch=config.queue.max_concurrent_dispatch,
+)
+
+# Set up component references
+central_queue.set_scheduling_strategy(scheduling_strategy)
+central_queue.set_task_dispatcher(task_dispatcher)
+task_dispatcher.set_central_queue(central_queue)
+
+logger.info(
+    f"Central queue initialized with high_water_mark={config.queue.high_water_mark}, "
+    f"low_water_mark={config.queue.low_water_mark}"
+)
 
 # ============================================================================
 # Instance Management Endpoints
@@ -861,14 +892,16 @@ async def submit_task(request: TaskSubmitRequest):
             detail={"success": False, "error": str(e)}
         )
 
-    # 4. Submit to background scheduler (non-blocking)
-    # Background scheduler will:
-    # - Get predictions from predictor service
-    # - Select optimal instance
-    # - Update queue info (Monte Carlo sampling)
-    # - Assign instance to task
-    # - Dispatch task to instance
-    background_scheduler.schedule_task_background(
+    # 4. Enqueue task to central queue (non-blocking)
+    # Central queue will:
+    # - Queue task for dispatch
+    # - When instance capacity available:
+    #   - Get predictions from predictor service
+    #   - Select optimal instance
+    #   - Update queue info (Monte Carlo sampling)
+    #   - Assign instance to task
+    #   - Dispatch task to instance
+    queue_position = await central_queue.enqueue(
         task_id=request.task_id,
         model_id=request.model_id,
         task_input=request.task_input,
@@ -885,7 +918,7 @@ async def submit_task(request: TaskSubmitRequest):
 
     return TaskSubmitResponse(
         success=True,
-        message="Task submitted successfully and is being scheduled in background",
+        message=f"Task queued at position {queue_position} and is being scheduled",
         task=task_info,
     )
 
@@ -1061,6 +1094,106 @@ async def clear_tasks():
         success=True,
         message=f"Successfully cleared {cleared_count} scheduler task(s) and tasks from {successful_clears}/{len(all_instances)} instance(s)",
         cleared_count=cleared_count,
+    )
+
+
+@app.post("/task/resubmit", response_model=TaskResubmitResponse)
+async def resubmit_task(request: TaskResubmitRequest):
+    """
+    Resubmit a task for rescheduling during instance migration.
+
+    This endpoint is called by instances during migration to return a task
+    to the scheduler for reassignment to another instance.
+
+    The task will be:
+    1. Reset to PENDING status with cleared result/error
+    2. Removed from the original instance's pending count
+    3. Rescheduled to a new instance in the background
+
+    Args:
+        request: Task resubmit request with task_id and original_instance_id
+
+    Returns:
+        TaskResubmitResponse with success status
+
+    Raises:
+        HTTPException 404: If task not found
+        HTTPException 400: If task is in invalid state (COMPLETED or FAILED)
+        HTTPException 404: If original instance not found
+    """
+    # 1. Validate task exists
+    task = await task_registry.get(request.task_id)
+    if not task:
+        raise HTTPException(
+            status_code=404,
+            detail={"success": False, "error": "Task not found"},
+        )
+
+    # 2. Record previous state for logging
+    previous_status = task.status
+    previous_instance = task.assigned_instance
+
+    # 3. Validate task status - can only resubmit PENDING or RUNNING tasks
+    if previous_status in (TaskStatus.COMPLETED, TaskStatus.FAILED):
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "success": False,
+                "error": f"Cannot resubmit task in {previous_status} state. Only PENDING or RUNNING tasks can be resubmitted.",
+            },
+        )
+
+    # 4. Validate original instance exists (for statistics update)
+    original_instance = await instance_registry.get(request.original_instance_id)
+    if not original_instance:
+        raise HTTPException(
+            status_code=404,
+            detail={"success": False, "error": "Original instance not found"},
+        )
+
+    # 5. Decrement pending tasks count on original instance
+    try:
+        await instance_registry.decrement_pending(request.original_instance_id)
+        logger.debug(f"Decremented pending count for instance {request.original_instance_id}")
+    except Exception as e:
+        logger.warning(f"Failed to decrement pending count for {request.original_instance_id}: {e}")
+        # Continue anyway - the task should still be resubmitted
+
+    # 6. Reset task for resubmission
+    try:
+        await task_registry.reset_for_resubmit(request.task_id)
+        logger.debug(f"Reset task {request.task_id} for resubmission")
+    except KeyError:
+        raise HTTPException(
+            status_code=404,
+            detail={"success": False, "error": "Task not found"},
+        )
+
+    # 7. Resubmit task to central queue with original submission time
+    # Parse ISO format string to datetime, then convert to timestamp for queue ordering
+    enqueue_time = None
+    if task.submitted_at:
+        from datetime import datetime
+        dt = datetime.fromisoformat(task.submitted_at.replace("Z", "+00:00"))
+        enqueue_time = dt.timestamp()
+
+    queue_position = await central_queue.enqueue(
+        task_id=request.task_id,
+        model_id=task.model_id,
+        task_input=task.task_input,
+        metadata=task.metadata or {},
+        enqueue_time=enqueue_time,
+    )
+
+    logger.info(
+        f"Successfully resubmitted task {request.task_id} to queue at position {queue_position} "
+        f"(previous status: {previous_status}, previous instance: {previous_instance}, "
+        f"original submission time preserved)"
+    )
+
+    return TaskResubmitResponse(
+        success=True,
+        message=f"Task {request.task_id} resubmitted successfully for rescheduling",
     )
 
 

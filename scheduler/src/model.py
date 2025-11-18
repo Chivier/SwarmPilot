@@ -242,6 +242,18 @@ class TaskClearResponse(BaseModel):
     cleared_count: int
 
 
+class TaskResubmitRequest(BaseModel):
+    """Request model for task resubmission during instance migration."""
+    task_id: str = Field(..., description="ID of the task to resubmit")
+    original_instance_id: str = Field(..., description="ID of the original instance for updating statistics")
+
+
+class TaskResubmitResponse(BaseModel):
+    """Response model for task resubmission."""
+    success: bool
+    message: str
+
+
 # ============================================================================
 # Instance Redeploy Models
 # ============================================================================

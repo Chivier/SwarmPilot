@@ -16,6 +16,7 @@ from .websocket_manager import ConnectionManager
 
 if TYPE_CHECKING:
     from .training_client import TrainingClient
+    from .central_queue import CentralTaskQueue
 
 
 class TaskDispatcher:
@@ -52,6 +53,12 @@ class TaskDispatcher:
             timeout=timeout,
             verify=False,  # Disable SSL verification for internal network usage
         )
+        # Reference to central queue (set by api.py)
+        self._central_queue: Optional["CentralTaskQueue"] = None
+
+    def set_central_queue(self, queue: "CentralTaskQueue") -> None:
+        """Set the central queue reference for capacity notifications."""
+        self._central_queue = queue
 
     async def dispatch_task(self, task_id: str, enqueue_time: Optional[float] = None) -> None:
         """
@@ -192,6 +199,10 @@ class TaskDispatcher:
 
         # Notify WebSocket subscribers
         await self._notify_task_completion(task_id)
+
+        # Notify central queue that capacity may be available
+        if self._central_queue:
+            await self._central_queue.notify_capacity_available()
 
     async def _notify_task_completion(self, task_id: str) -> None:
         """

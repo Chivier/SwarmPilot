@@ -570,6 +570,568 @@ class TestTaskInfo:
         assert response.status_code == 404
 
 
+class TestTaskResubmit:
+    """Tests for task resubmit endpoint."""
+
+    def test_resubmit_task_success(self, client):
+        """Test successful task resubmission with original submission time preserved."""
+        from src.predictor_client import Prediction
+        from datetime import datetime
+        from src import api
+
+        # Register instance
+        client.post(
+            "/instance/register",
+            json={
+                "instance_id": "inst-1",
+                "model_id": "model-1",
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hardware"
+                }
+            }
+        )
+
+        # Submit a task
+        mock_prediction = Prediction(
+            instance_id="inst-1",
+            predicted_time_ms=100.0,
+            quantiles={0.5: 90.0, 0.9: 110.0},
+            error_margin_ms=10.0
+        )
+
+        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[mock_prediction])):
+            with patch("src.api.task_dispatcher.dispatch_task_async"):
+                client.post(
+                    "/task/submit",
+                    json={
+                        "task_id": "task-1",
+                        "model_id": "model-1",
+                        "task_input": {"prompt": "test"},
+                        "metadata": {}
+                    }
+                )
+
+        # Mock central_queue.enqueue to verify it receives correct parameters
+        with patch("src.api.central_queue.enqueue", new=AsyncMock(return_value=1)) as mock_enqueue:
+            response = client.post(
+                "/task/resubmit",
+                json={
+                    "task_id": "task-1",
+                    "original_instance_id": "inst-1"
+                }
+            )
+
+            assert response.status_code == 200
+            data = response.json()
+            assert data["success"] is True
+            assert "resubmitted successfully" in data["message"]
+
+            # Verify central_queue.enqueue was called with correct parameters
+            mock_enqueue.assert_called_once()
+            call_kwargs = mock_enqueue.call_args[1]
+            assert call_kwargs["task_id"] == "task-1"
+            assert call_kwargs["model_id"] == "model-1"
+            assert call_kwargs["task_input"] == {"prompt": "test"}
+            # Verify enqueue_time is passed (original submission time)
+            assert "enqueue_time" in call_kwargs
+            assert call_kwargs["enqueue_time"] is not None
+
+    def test_resubmit_task_preserves_original_time(self, client):
+        """Test that resubmit preserves the original submission timestamp."""
+        from src.predictor_client import Prediction
+        from src import api
+        import asyncio
+
+        # Register instance
+        client.post(
+            "/instance/register",
+            json={
+                "instance_id": "inst-1",
+                "model_id": "model-1",
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hardware"
+                }
+            }
+        )
+
+        # Submit a task
+        mock_prediction = Prediction(
+            instance_id="inst-1",
+            predicted_time_ms=100.0,
+            quantiles={0.5: 90.0, 0.9: 110.0},
+            error_margin_ms=10.0
+        )
+
+        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[mock_prediction])):
+            with patch("src.api.task_dispatcher.dispatch_task_async"):
+                client.post(
+                    "/task/submit",
+                    json={
+                        "task_id": "task-1",
+                        "model_id": "model-1",
+                        "task_input": {"prompt": "test"},
+                        "metadata": {}
+                    }
+                )
+
+        # Get the original task to capture its submitted_at time
+        from datetime import datetime as dt_module
+        async def get_original_time():
+            task = await api.task_registry.get("task-1")
+            if task.submitted_at:
+                dt = dt_module.fromisoformat(task.submitted_at.replace("Z", "+00:00"))
+                return dt.timestamp()
+            return None
+
+        original_timestamp = asyncio.get_event_loop().run_until_complete(get_original_time())
+
+        # Resubmit and verify the enqueue_time matches original timestamp
+        with patch("src.api.central_queue.enqueue", new=AsyncMock(return_value=1)) as mock_enqueue:
+            response = client.post(
+                "/task/resubmit",
+                json={
+                    "task_id": "task-1",
+                    "original_instance_id": "inst-1"
+                }
+            )
+
+            assert response.status_code == 200
+
+            # Verify the enqueue_time matches original submission time
+            call_kwargs = mock_enqueue.call_args[1]
+            assert call_kwargs["enqueue_time"] == original_timestamp
+
+    def test_resubmit_task_not_found(self, client):
+        """Test resubmitting non-existent task returns 404."""
+        # Register instance
+        client.post(
+            "/instance/register",
+            json={
+                "instance_id": "inst-1",
+                "model_id": "model-1",
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hardware"
+                }
+            }
+        )
+
+        response = client.post(
+            "/task/resubmit",
+            json={
+                "task_id": "nonexistent",
+                "original_instance_id": "inst-1"
+            }
+        )
+
+        assert response.status_code == 404
+        assert "Task not found" in response.json()["detail"]["error"]
+
+    def test_resubmit_task_invalid_status_completed(self, client):
+        """Test resubmitting completed task returns 400."""
+        from src.predictor_client import Prediction
+        from src import api
+        import asyncio
+
+        # Register instance
+        client.post(
+            "/instance/register",
+            json={
+                "instance_id": "inst-1",
+                "model_id": "model-1",
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hardware"
+                }
+            }
+        )
+
+        # Submit task
+        mock_prediction = Prediction(
+            instance_id="inst-1",
+            predicted_time_ms=100.0,
+            quantiles={0.5: 90.0, 0.9: 110.0},
+            error_margin_ms=10.0
+        )
+
+        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[mock_prediction])):
+            with patch("src.api.task_dispatcher.dispatch_task_async"):
+                client.post(
+                    "/task/submit",
+                    json={
+                        "task_id": "task-1",
+                        "model_id": "model-1",
+                        "task_input": {"prompt": "test"},
+                        "metadata": {}
+                    }
+                )
+
+        # Mark task as completed
+        async def mark_completed():
+            await api.task_registry.update_status("task-1", TaskStatus.COMPLETED)
+
+        asyncio.get_event_loop().run_until_complete(mark_completed())
+
+        # Try to resubmit
+        response = client.post(
+            "/task/resubmit",
+            json={
+                "task_id": "task-1",
+                "original_instance_id": "inst-1"
+            }
+        )
+
+        assert response.status_code == 400
+        assert "Cannot resubmit task" in response.json()["detail"]["error"]
+        assert "COMPLETED" in response.json()["detail"]["error"]
+
+    def test_resubmit_task_invalid_status_failed(self, client):
+        """Test resubmitting failed task returns 400."""
+        from src.predictor_client import Prediction
+        from src import api
+        import asyncio
+
+        # Register instance
+        client.post(
+            "/instance/register",
+            json={
+                "instance_id": "inst-1",
+                "model_id": "model-1",
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hardware"
+                }
+            }
+        )
+
+        # Submit task
+        mock_prediction = Prediction(
+            instance_id="inst-1",
+            predicted_time_ms=100.0,
+            quantiles={0.5: 90.0, 0.9: 110.0},
+            error_margin_ms=10.0
+        )
+
+        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[mock_prediction])):
+            with patch("src.api.task_dispatcher.dispatch_task_async"):
+                client.post(
+                    "/task/submit",
+                    json={
+                        "task_id": "task-1",
+                        "model_id": "model-1",
+                        "task_input": {"prompt": "test"},
+                        "metadata": {}
+                    }
+                )
+
+        # Mark task as failed
+        async def mark_failed():
+            await api.task_registry.update_status("task-1", TaskStatus.FAILED)
+
+        asyncio.get_event_loop().run_until_complete(mark_failed())
+
+        # Try to resubmit
+        response = client.post(
+            "/task/resubmit",
+            json={
+                "task_id": "task-1",
+                "original_instance_id": "inst-1"
+            }
+        )
+
+        assert response.status_code == 400
+        assert "Cannot resubmit task" in response.json()["detail"]["error"]
+        assert "FAILED" in response.json()["detail"]["error"]
+
+    def test_resubmit_task_original_instance_not_found(self, client):
+        """Test resubmitting with non-existent original instance returns 404."""
+        from src.predictor_client import Prediction
+
+        # Register instance
+        client.post(
+            "/instance/register",
+            json={
+                "instance_id": "inst-1",
+                "model_id": "model-1",
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hardware"
+                }
+            }
+        )
+
+        # Submit task
+        mock_prediction = Prediction(
+            instance_id="inst-1",
+            predicted_time_ms=100.0,
+            quantiles={0.5: 90.0, 0.9: 110.0},
+            error_margin_ms=10.0
+        )
+
+        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[mock_prediction])):
+            with patch("src.api.task_dispatcher.dispatch_task_async"):
+                client.post(
+                    "/task/submit",
+                    json={
+                        "task_id": "task-1",
+                        "model_id": "model-1",
+                        "task_input": {"prompt": "test"},
+                        "metadata": {}
+                    }
+                )
+
+        # Try to resubmit with non-existent instance
+        response = client.post(
+            "/task/resubmit",
+            json={
+                "task_id": "task-1",
+                "original_instance_id": "nonexistent-instance"
+            }
+        )
+
+        assert response.status_code == 404
+        assert "Original instance not found" in response.json()["detail"]["error"]
+
+    def test_resubmit_task_decrements_pending_count(self, client):
+        """Test that resubmit decrements pending count on original instance."""
+        from src.predictor_client import Prediction
+        from src import api
+        import asyncio
+
+        # Register instance
+        client.post(
+            "/instance/register",
+            json={
+                "instance_id": "inst-1",
+                "model_id": "model-1",
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hardware"
+                }
+            }
+        )
+
+        # Submit task
+        mock_prediction = Prediction(
+            instance_id="inst-1",
+            predicted_time_ms=100.0,
+            quantiles={0.5: 90.0, 0.9: 110.0},
+            error_margin_ms=10.0
+        )
+
+        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[mock_prediction])):
+            with patch("src.api.task_dispatcher.dispatch_task_async"):
+                client.post(
+                    "/task/submit",
+                    json={
+                        "task_id": "task-1",
+                        "model_id": "model-1",
+                        "task_input": {"prompt": "test"},
+                        "metadata": {}
+                    }
+                )
+
+        # Verify decrement_pending is called
+        with patch("src.api.central_queue.enqueue", new=AsyncMock(return_value=1)):
+            with patch("src.api.instance_registry.decrement_pending", new=AsyncMock()) as mock_decrement:
+                response = client.post(
+                    "/task/resubmit",
+                    json={
+                        "task_id": "task-1",
+                        "original_instance_id": "inst-1"
+                    }
+                )
+
+                assert response.status_code == 200
+                mock_decrement.assert_called_once_with("inst-1")
+
+    def test_resubmit_running_task(self, client):
+        """Test resubmitting a running task succeeds."""
+        from src.predictor_client import Prediction
+        from src import api
+        import asyncio
+
+        # Register instance
+        client.post(
+            "/instance/register",
+            json={
+                "instance_id": "inst-1",
+                "model_id": "model-1",
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hardware"
+                }
+            }
+        )
+
+        # Submit task
+        mock_prediction = Prediction(
+            instance_id="inst-1",
+            predicted_time_ms=100.0,
+            quantiles={0.5: 90.0, 0.9: 110.0},
+            error_margin_ms=10.0
+        )
+
+        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[mock_prediction])):
+            with patch("src.api.task_dispatcher.dispatch_task_async"):
+                client.post(
+                    "/task/submit",
+                    json={
+                        "task_id": "task-1",
+                        "model_id": "model-1",
+                        "task_input": {"prompt": "test"},
+                        "metadata": {}
+                    }
+                )
+
+        # Mark task as running
+        async def mark_running():
+            await api.task_registry.update_status("task-1", TaskStatus.RUNNING)
+
+        asyncio.get_event_loop().run_until_complete(mark_running())
+
+        # Resubmit should succeed for running task
+        with patch("src.api.central_queue.enqueue", new=AsyncMock(return_value=1)):
+            response = client.post(
+                "/task/resubmit",
+                json={
+                    "task_id": "task-1",
+                    "original_instance_id": "inst-1"
+                }
+            )
+
+            assert response.status_code == 200
+            data = response.json()
+            assert data["success"] is True
+
+    def test_resubmit_task_reset_for_resubmit_error(self, client):
+        """Test resubmit when reset_for_resubmit raises KeyError."""
+        from src.predictor_client import Prediction
+
+        # Register instance
+        client.post(
+            "/instance/register",
+            json={
+                "instance_id": "inst-1",
+                "model_id": "model-1",
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hardware"
+                }
+            }
+        )
+
+        # Submit task
+        mock_prediction = Prediction(
+            instance_id="inst-1",
+            predicted_time_ms=100.0,
+            quantiles={0.5: 90.0, 0.9: 110.0},
+            error_margin_ms=10.0
+        )
+
+        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[mock_prediction])):
+            with patch("src.api.task_dispatcher.dispatch_task_async"):
+                client.post(
+                    "/task/submit",
+                    json={
+                        "task_id": "task-1",
+                        "model_id": "model-1",
+                        "task_input": {"prompt": "test"},
+                        "metadata": {}
+                    }
+                )
+
+        # Mock reset_for_resubmit to raise KeyError
+        with patch("src.api.task_registry.reset_for_resubmit", side_effect=KeyError("not found")):
+            response = client.post(
+                "/task/resubmit",
+                json={
+                    "task_id": "task-1",
+                    "original_instance_id": "inst-1"
+                }
+            )
+
+            assert response.status_code == 404
+            assert "Task not found" in response.json()["detail"]["error"]
+
+    def test_resubmit_task_with_metadata(self, client):
+        """Test resubmitting task preserves metadata."""
+        from src.predictor_client import Prediction
+
+        # Register instance
+        client.post(
+            "/instance/register",
+            json={
+                "instance_id": "inst-1",
+                "model_id": "model-1",
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hardware"
+                }
+            }
+        )
+
+        # Submit task with metadata
+        mock_prediction = Prediction(
+            instance_id="inst-1",
+            predicted_time_ms=100.0,
+            quantiles={0.5: 90.0, 0.9: 110.0},
+            error_margin_ms=10.0
+        )
+
+        task_metadata = {"user_id": "user-123", "priority": "high"}
+
+        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[mock_prediction])):
+            with patch("src.api.task_dispatcher.dispatch_task_async"):
+                client.post(
+                    "/task/submit",
+                    json={
+                        "task_id": "task-1",
+                        "model_id": "model-1",
+                        "task_input": {"prompt": "test"},
+                        "metadata": task_metadata
+                    }
+                )
+
+        # Resubmit and verify metadata is preserved
+        with patch("src.api.central_queue.enqueue", new=AsyncMock(return_value=1)) as mock_enqueue:
+            response = client.post(
+                "/task/resubmit",
+                json={
+                    "task_id": "task-1",
+                    "original_instance_id": "inst-1"
+                }
+            )
+
+            assert response.status_code == 200
+
+            # Verify metadata is passed correctly
+            call_kwargs = mock_enqueue.call_args[1]
+            assert call_kwargs["metadata"] == task_metadata
+
+
 class TestTaskClear:
     """Tests for task clear endpoint."""
 

@@ -379,3 +379,70 @@ class InstanceRegistry:
         # TODO: Implement health checking mechanism
         # For now, assume all registered instances are active
         return await self.get_total_count()
+
+    async def get_instances_below_water_mark(
+        self, model_id: str, water_mark: int
+    ) -> List[Instance]:
+        """
+        Get active instances with pending_tasks below the specified water mark.
+
+        Args:
+            model_id: Model ID filter
+            water_mark: Maximum pending tasks threshold
+
+        Returns:
+            List of instances that can accept more tasks
+        """
+        async with self._lock:
+            result = []
+            for instance in self._instances.values():
+                if instance.model_id != model_id:
+                    continue
+                if instance.status != InstanceStatus.ACTIVE:
+                    continue
+
+                stats = self._stats.get(instance.instance_id)
+                if stats and stats.pending_tasks < water_mark:
+                    result.append(instance)
+
+            return result
+
+    async def is_any_instance_available(
+        self, model_id: str, high_water_mark: int
+    ) -> bool:
+        """
+        Check if any active instance for the model can accept new tasks.
+
+        Args:
+            model_id: Model ID filter
+            high_water_mark: Maximum pending tasks threshold
+
+        Returns:
+            True if at least one instance is below the high water mark
+        """
+        async with self._lock:
+            for instance in self._instances.values():
+                if instance.model_id != model_id:
+                    continue
+                if instance.status != InstanceStatus.ACTIVE:
+                    continue
+
+                stats = self._stats.get(instance.instance_id)
+                if stats and stats.pending_tasks < high_water_mark:
+                    return True
+
+            return False
+
+    async def get_pending_tasks_count(self, instance_id: str) -> int:
+        """
+        Get the current pending tasks count for an instance.
+
+        Args:
+            instance_id: ID of instance
+
+        Returns:
+            Current pending tasks count, or 0 if instance not found
+        """
+        async with self._lock:
+            stats = self._stats.get(instance_id)
+            return stats.pending_tasks if stats else 0

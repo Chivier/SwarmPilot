@@ -285,3 +285,44 @@ class TaskRegistry:
             count = len(self._tasks)
             self._tasks.clear()
             return count
+
+    async def reset_for_resubmit(self, task_id: str) -> TaskRecord:
+        """
+        Reset a task for resubmission by clearing result/error and timestamps.
+
+        This method is used during instance migration to prepare a task for
+        rescheduling to a new instance.
+
+        Args:
+            task_id: ID of task to reset
+
+        Returns:
+            The reset TaskRecord
+
+        Raises:
+            KeyError: If task not found
+        """
+        async with self._lock:
+            if task_id not in self._tasks:
+                raise KeyError(f"Task {task_id} not found")
+
+            task = self._tasks[task_id]
+
+            # Clear result and error
+            task.result = None
+            task.error = None
+
+            # Reset timestamps (keep submitted_at)
+            task.started_at = None
+            task.completed_at = None
+
+            # Clear actual execution time
+            task._actual_execution_time_ms = None
+
+            # Clear assigned instance (will be reassigned)
+            task.assigned_instance = ""
+
+            # Reset status to PENDING
+            task.status = TaskStatus.PENDING
+
+            return task
