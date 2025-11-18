@@ -204,8 +204,8 @@ class QuantilePredictor(BasePredictor):
         """
         Enforce monotonicity constraint on quantile predictions.
 
-        Uses isotonic regression approach: for any violation where q_i > q_{i+1},
-        sets both to their average to maintain monotonicity while minimizing change.
+        Uses a forward-pass algorithm that ensures strict monotonicity by
+        propagating the maximum value forward when violations are detected.
 
         Args:
             predictions: Array of quantile predictions in ascending order
@@ -214,12 +214,12 @@ class QuantilePredictor(BasePredictor):
             Monotonically non-decreasing array of predictions
         """
         predictions = predictions.copy()  # Don't modify input
-        for i in range(len(predictions) - 1):
-            if predictions[i] > predictions[i + 1]:
-                # Average the violating pair
-                avg = (predictions[i] + predictions[i + 1]) / 2
-                predictions[i] = avg
-                predictions[i + 1] = avg
+
+        # Forward pass: ensure each element is >= previous element
+        for i in range(1, len(predictions)):
+            if predictions[i] < predictions[i - 1]:
+                predictions[i] = predictions[i - 1]
+
         return predictions
 
     def predict(self, features: Dict[str, Any], enforce_monotonicity: bool = False) -> Dict[str, Any]:

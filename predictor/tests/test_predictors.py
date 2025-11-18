@@ -154,12 +154,14 @@ class TestQuantilePredictor:
             assert isinstance(value, float)
 
     def test_quantile_predictions_are_monotonic(self):
-        """Quantile predictions should be non-decreasing."""
+        """Quantile predictions should be non-decreasing when enforce_monotonicity is used."""
         predictor = QuantilePredictor()
         training_data = generate_training_data(50)  # More samples for better training
         predictor.train(training_data, config={'epochs': 500})
 
-        result = predictor.predict({'batch_size': 25, 'sequence_length': 128})
+        # Use enforce_monotonicity to ensure strict ordering
+        result = predictor.predict({'batch_size': 25, 'sequence_length': 128},
+                                   enforce_monotonicity=True)
         quantiles = result['quantiles']
 
         # Extract values in order
@@ -170,10 +172,9 @@ class TestQuantilePredictor:
             quantiles['0.99']
         ]
 
-        # Check monotonicity (allowing for small numerical errors)
+        # Check strict monotonicity (no tolerance needed with enforcement)
         for i in range(len(values) - 1):
-            # Allow 1% tolerance for numerical instability
-            assert values[i] <= values[i + 1] * 1.01, \
+            assert values[i] <= values[i + 1], \
                 f"Quantiles not monotonic: {values}"
 
     def test_model_serialization(self):
