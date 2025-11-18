@@ -40,9 +40,10 @@ CORES_PER_INSTANCE=16 # 每个instance使用16个核心
 SCHEDULER_PREDICTOR_CPU_RANGE="0-7"
 
 # 角色 IP
-SCHEDULER_A_HOST="29.209.114.51"
+SCHEDULER_A_HOST="29.209.114.51" 
 SCHEDULER_B_HOST="29.209.113.228"
-PREDICTOR_HOST="29.209.114.166"
+PREDICTOR_HOST="29.209.113.113"
+CLIENT_HOST="29.209.114.166" #0
 
 INSTANCE_PORT_LIST=(
     8200
@@ -68,7 +69,6 @@ GPU_BIND_ID_LIST=(
 
 # sleep_model_a 对应的机器
 SLEEP_MODEL_A_HOSTS=(
-  29.209.114.51
   29.209.114.166
   29.209.113.113
   29.209.106.237
@@ -230,25 +230,30 @@ contains_element() {
     return 1
 }
 
+# 仅当本机IP不是 SCHEDULER_B_HOST、SCHEDULER_A_HOST、PREDICTOR_HOST 和 CLIENT_HOST 任意一个时，启动instance
+if [[ "$LOCAL_IP" != "$SCHEDULER_B_HOST" ]] && \
+   [[ "$LOCAL_IP" != "$SCHEDULER_A_HOST" ]] && \
+   [[ "$LOCAL_IP" != "$PREDICTOR_HOST" ]] && \
+   [[ "$LOCAL_IP" != "$CLIENT_HOST" ]]; then
+  for i in {0..7}; do
+    INSTANCE_PORT=${INSTANCE_PORT_LIST[$i]}
+    GPU_ID=${GPU_BIND_ID_LIST[$i]}
+    CPU_RANGE=$(get_cpu_range $i)
 
-for i in {0..7}; do
-  INSTANCE_PORT=${INSTANCE_PORT_LIST[$i]}
-  GPU_ID=${GPU_BIND_ID_LIST[$i]}
-  CPU_RANGE=$(get_cpu_range $i)
-
-  start_bg "instance_${MODEL_ID}_gpu${GPU_ID}_port${INSTANCE_PORT}" \
-    "cd $PROJECT_ROOT/instance && \
-     MODEL_ID=$MODEL_ID \
-     CUDA_VISIBLE_DEVICES=${GPU_ID} \
-     INSTANCE_PLATFORM_SOFTWARE_NAME=sglang \
-     INSTANCE_PLATFORM_SOFTWARE_VERSION=\"0.5.5.post2\" \
-     INSTANCE_PLATFORM_HARDWARE_NAME=\"NVIDIA H20\" \
-     INSTANCE_PORT=${INSTANCE_PORT} \
-     INSTANCE_ENDPOINT=http://${LOCAL_IP}:${INSTANCE_PORT} \
-     INSTANCE_ID=${LOCAL_IP}-${INSTANCE_PORT} \
-     python -m src.cli start --port ${INSTANCE_PORT}" \
-    "$CPU_RANGE"
-done
+    start_bg "instance_${MODEL_ID}_gpu${GPU_ID}_port${INSTANCE_PORT}" \
+      "cd $PROJECT_ROOT/instance && \
+       MODEL_ID=$MODEL_ID \
+       CUDA_VISIBLE_DEVICES=${GPU_ID} \
+       INSTANCE_PLATFORM_SOFTWARE_NAME=sglang \
+       INSTANCE_PLATFORM_SOFTWARE_VERSION=\"0.5.5.post2\" \
+       INSTANCE_PLATFORM_HARDWARE_NAME=\"NVIDIA H20\" \
+       INSTANCE_PORT=${INSTANCE_PORT} \
+       INSTANCE_ENDPOINT=http://${LOCAL_IP}:${INSTANCE_PORT} \
+       INSTANCE_ID=${LOCAL_IP}-${INSTANCE_PORT} \
+       python -m src.cli start --port ${INSTANCE_PORT}" \
+      "$CPU_RANGE"
+  done
+fi
 
 
 # Do health check for all services
@@ -277,15 +282,21 @@ fi
 
 echo -e "${GREEN}Health check passed for scheduler and predictor${NC}"
 
-for i in {0..7}; do
-  INSTANCE_PORT=${INSTANCE_PORT_LIST[$i]}
-  curl http://$LOCAL_IP:$INSTANCE_PORT/health
-  if [[ $? -ne 0 ]]; then
-    echo -e "${RED}Health check failed for instance:${NC}"
-    exit 1
-  fi
-  echo -e "${GREEN}Health check passed for instance:${NC}"
-done
+# 仅当本机IP不是 SCHEDULER_B_HOST、SCHEDULER_A_HOST、PREDICTOR_HOST 和 CLIENT_HOST 任意一个时，检查instance健康状态
+if [[ "$LOCAL_IP" != "$SCHEDULER_B_HOST" ]] && \
+   [[ "$LOCAL_IP" != "$SCHEDULER_A_HOST" ]] && \
+   [[ "$LOCAL_IP" != "$PREDICTOR_HOST" ]] && \
+   [[ "$LOCAL_IP" != "$CLIENT_HOST" ]]; then
+  for i in {0..7}; do
+    INSTANCE_PORT=${INSTANCE_PORT_LIST[$i]}
+    curl http://$LOCAL_IP:$INSTANCE_PORT/health
+    if [[ $? -ne 0 ]]; then
+      echo -e "${RED}Health check failed for instance:${NC}"
+      exit 1
+    fi
+    echo -e "${GREEN}Health check passed for instance:${NC}"
+  done
+fi
 
 echo ""
 echo -e "${GREEN}All services that should run on $LOCAL_IP have been launched.${NC}"
