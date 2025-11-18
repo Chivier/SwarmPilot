@@ -684,6 +684,133 @@ class RandomStrategy(SchedulingStrategy):
         pass
 
 
+class PowerOfTwoStrategy(SchedulingStrategy):
+    """
+    Random scheduling strategy.
+
+    Worst case of probabilistic
+    """
+
+    def __init__(
+        self,
+        predictor_client: "PredictorClient",
+        instance_registry: "InstanceRegistry",
+    ):
+        """Initialize RoundRobinStrategy."""
+        super().__init__(predictor_client, instance_registry)
+        self._counter = 0
+
+    def select_instance(
+        self, predictions: List[Prediction], queue_info: Dict[str, "InstanceQueueBase"]
+    ) -> Optional[str]:
+        """Select next instance in round-robin order."""
+        if not predictions:
+            return None
+        
+        pred_1 = random.choice(predictions)
+        pred_2 = random.choice(predictions)
+        instance_1 = pred_1.instance_id
+        instance_2 = pred_2.instance_id
+
+        from .model import InstanceQueueExpectError
+
+        if not predictions:
+            return None
+        
+        queue_1 = queue_info.get(instance_1)
+        queue_2 = queue_info.get(instance_2)
+
+        if queue_1 and isinstance(queue_1, InstanceQueueExpectError):
+            # Calculate total time: queue expected + queue error + new task expected
+            total_time_1 = queue_1.expected_time_ms + queue_1.error_margin_ms + pred_1.predicted_time_ms
+        else:
+            # Fallback: no queue info, just use prediction
+            total_time_1 = pred_1.predicted_time_ms
+
+        if queue_2 and isinstance(queue_1, InstanceQueueExpectError):
+            # Calculate total time: queue expected + queue error + new task expected
+            total_time_2 = queue_2.expected_time_ms + queue_2.error_margin_ms + pred_2.predicted_time_ms
+        else:
+            # Fallback: no queue info, just use prediction
+            total_time_2 = pred_2.predicted_time_ms    
+
+        
+        if total_time_1 < total_time_2:
+            return instance_1
+        else:
+            return instance_2
+
+
+    async def update_queue(
+        self,
+        instance_id: str,
+        prediction: Prediction,
+    ) -> None:
+        """
+        No-op for RoundRobinStrategy.
+
+        RoundRobin doesn't use queue predictions for scheduling decisions,
+        so no queue update is necessary.
+
+        Args:
+            instance_id: Selected instance
+            prediction: Prediction for the task
+        """
+        """
+        Update queue using error accumulation formula.
+
+        Formula:
+        - new_expected = current_expected + task_expected
+        - new_error = sqrt(current_error^2 + task_error^2)
+
+        Args:
+            instance_id: Selected instance
+            prediction: Prediction for the task
+        """
+        from .model import InstanceQueueExpectError
+        import math
+
+        current_queue = await self.instance_registry.get_queue_info(instance_id)
+
+        if not current_queue:
+            # If no queue exists, initialize with correct type
+            current_queue = InstanceQueueExpectError(
+                instance_id=instance_id,
+                expected_time_ms=0.0,
+                error_margin_ms=0.0,
+            )
+        elif not isinstance(current_queue, InstanceQueueExpectError):
+            # Type mismatch - this shouldn't happen if strategy switch was done properly
+            logger.warning(
+                f"Queue info type mismatch for {instance_id}: "
+                f"expected InstanceQueueExpectError, got {type(current_queue).__name__}. "
+                f"This indicates the strategy switch didn't properly reinitialize queues. Skipping update."
+            )
+            return
+
+        task_expected = prediction.predicted_time_ms
+        task_error = prediction.error_margin_ms or 0.0
+
+        # Calculate new queue expected time (simple addition)
+        new_expected = current_queue.expected_time_ms + task_expected
+
+        # Calculate new queue error margin (error accumulation)
+        new_error = math.sqrt(
+            current_queue.error_margin_ms ** 2 + task_error ** 2
+        )
+
+        updated_queue = InstanceQueueExpectError(
+            instance_id=instance_id,
+            expected_time_ms=new_expected,
+            error_margin_ms=new_error,
+        )
+
+        await self.instance_registry.update_queue_info(instance_id, updated_queue)
+        logger.debug(
+            f"Updated queue (expect_error) for {instance_id}: "
+            f"expected_time_ms={new_expected:.2f}, error_margin_ms={new_error:.2f}"
+        )
+
 # Factory function to get strategy by name
 def get_strategy(
     strategy_name: str,
@@ -715,6 +842,8 @@ def get_strategy(
     elif strategy_name == "round_robin":
         return RoundRobinStrategy(predictor_client, instance_registry)
     elif strategy_name == "random":
+        return RandomStrategy(predictor_client, instance_registry)
+    elif strategy_name == "po2":
         return RandomStrategy(predictor_client, instance_registry)
     else:
         # Default to probabilistic

@@ -115,6 +115,20 @@ class ServerConfig:
 
 
 @dataclass
+class PlannerReportConfig:
+    """Configuration for automatic reporting to planner service."""
+
+    # Planner service URL (empty string disables reporting)
+    url: str = os.getenv("PLANNER_URL", "")
+
+    # Auto-report interval in seconds (0 to disable)
+    interval: float = float(os.getenv("SCHEDULER_AUTO_REPORT", "0"))
+
+    # Request timeout in seconds
+    timeout: float = float(os.getenv("PLANNER_REPORT_TIMEOUT", "5.0"))
+
+
+@dataclass
 class Config:
     """Main configuration object combining all settings."""
 
@@ -124,6 +138,7 @@ class Config:
     training: TrainingConfig
     logging: LoggingConfig
     server: ServerConfig
+    planner_report: PlannerReportConfig
 
     @classmethod
     def load(cls) -> "Config":
@@ -140,6 +155,7 @@ class Config:
             training=TrainingConfig(),
             logging=LoggingConfig(),
             server=ServerConfig(),
+            planner_report=PlannerReportConfig(),
         )
 
     def __repr__(self) -> str:

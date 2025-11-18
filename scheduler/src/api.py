@@ -83,6 +83,7 @@ from .scheduler import get_strategy
 from .task_dispatcher import TaskDispatcher
 from .background_scheduler import BackgroundScheduler
 from .central_queue import CentralTaskQueue
+from .planner_reporter import PlannerReporter
 
 # Import logger configuration to initialize loguru
 from . import logger as logger_module  # noqa: F401
@@ -111,12 +112,22 @@ async def lifespan(app: FastAPI):
     await central_queue.start()
     logger.info("Central queue dispatcher started")
 
+    # Start planner reporter (if configured)
+    if planner_reporter:
+        await planner_reporter.start()
+        logger.info("Planner reporter started")
+
     logger.success("Scheduler service started successfully")
 
     yield
 
     # Shutdown
     logger.info("Scheduler service shutting down...")
+
+    # Shutdown planner reporter first (if configured)
+    if planner_reporter:
+        await planner_reporter.shutdown()
+        logger.debug("Planner reporter shutdown complete")
 
     # Shutdown central queue (wait for pending dispatches)
     await central_queue.shutdown()
@@ -268,6 +279,24 @@ logger.info(
     f"low_water_mark={config.queue.low_water_mark}"
 )
 
+# Initialize planner reporter (if configured)
+planner_reporter = None
+if config.planner_report.url and config.planner_report.interval > 0:
+    planner_reporter = PlannerReporter(
+        task_registry=task_registry,
+        planner_url=config.planner_report.url,
+        interval=config.planner_report.interval,
+        timeout=config.planner_report.timeout,
+    )
+    logger.info(
+        f"Planner reporter initialized: URL={config.planner_report.url}, "
+        f"interval={config.planner_report.interval}s"
+    )
+else:
+    logger.debug(
+        "Planner reporter disabled (PLANNER_URL not set or SCHEDULER_AUTO_REPORT=0)"
+    )
+
 # ============================================================================
 # Instance Management Endpoints
 # ============================================================================
@@ -331,6 +360,11 @@ async def register_instance(request: InstanceRegisterRequest):
             f"Registered instance {request.instance_id} for model {request.model_id} "
             f"on {request.platform_info['hardware_name']}"
         )
+
+        # Set model_id for planner reporter (only first registration takes effect)
+        if planner_reporter:
+            planner_reporter.set_model_id(request.model_id)
+
     except ValueError as e:
         logger.warning(f"Failed to register instance {request.instance_id}: {e}")
         raise HTTPException(
@@ -1452,7 +1486,7 @@ async def reinitialize_instance_queues(
         Number of instances whose queue info was reinitialized
     """
     # Determine the queue info type for the new strategy
-    if strategy_name == "min_time":
+    if strategy_name == "min_time" or strategy_name == "po2":
         queue_info_type = "expect_error"
     elif strategy_name == "probabilistic":
         queue_info_type = "probabilistic"
@@ -1524,6 +1558,9 @@ def get_current_strategy_info() -> StrategyInfo:
         parameters = {"target_quantile": target_quantile}
     elif strategy_class_name == "RoundRobinStrategy":
         strategy_name = "round_robin"
+        parameters = {}
+    elif strategy_class_name == "PowerOfTwoStrategy":
+        strategy_name = "po2"
         parameters = {}
     else:
         strategy_name = "unknown"
