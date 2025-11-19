@@ -2697,6 +2697,7 @@ def run_strategy_workflow(
     logger = logging.getLogger(f"Test.{strategy}")
     logger.debug(f"Starting test for strategy: {strategy}")
 
+    os.makedirs(f"task_result_{strategy}", exist_ok=True)
     # Step 1: Clear tasks from both schedulers
     logger.info("Step 1: Clearing tasks from schedulers")
     clear_scheduler_tasks(SCHEDULER_A_URL)
