@@ -707,6 +707,9 @@ class PowerOfTwoStrategy(SchedulingStrategy):
         if not predictions:
             return None
         
+        for idx in len(predictions):
+            predictions[idx].predicted_time_ms = 1.0
+        
         # Select Queue
         pred_1 = random.choice(predictions)
         pred_2 = random.choice(predictions)
