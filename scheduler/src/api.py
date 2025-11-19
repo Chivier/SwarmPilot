@@ -1256,7 +1256,8 @@ async def callback_task_result(request: TaskResultCallbackRequest):
     task = await task_registry.get(request.task_id)
 
     #TODO: Resotre it after experiment
-    request.execution_time_ms = 1.0
+    if background_scheduler.scheduling_strategy.__class__.__name__ == "PowerOfTwoStrategy":
+        request.execution_time_ms = 1.0
     if not task:
         raise HTTPException(
             status_code=404,
