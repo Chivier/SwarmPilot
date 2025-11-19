@@ -656,7 +656,8 @@ class ATaskReceiver:
                  b1_tasks_by_workflow: Dict[str, List[WorkflowTaskData]],
                  workflow_states: Dict[str, WorkflowState],
                  model_id: str = "llm_service_small_model",
-                 rate_limiter: Optional[RateLimiter] = None):
+                 rate_limiter: Optional[RateLimiter] = None,
+                 strategy = "default"):
         """
         Initialize A task receiver.
 
@@ -689,6 +690,9 @@ class ATaskReceiver:
         self.thread: Optional[threading.Thread] = None
         self.running = False
         self.loop: Optional[asyncio.AbstractEventLoop] = None
+        
+        self.task_raw_data = []
+        self.strategy = strategy
 
     def _submit_b1_task(self, task_data: WorkflowTaskData) -> TaskRecord:
         """
@@ -922,6 +926,7 @@ class ATaskReceiver:
         task_id = data["task_id"]
         status = data["status"]
         workflow_id = None
+        self.task_raw_data.append(data)
 
         # Extract workflow_id from task_id (format: task-A-{strategy}-workflow-{i:04d}-A)
         parts = task_id.split("-")
@@ -1031,6 +1036,10 @@ class ATaskReceiver:
 
     def stop(self):
         """Stop the receiver thread."""
+        with open(f"task_result_{self.strategy}/a1.jsonl", "w") as f:
+            for record in self.task_raw_data:
+                f.write(f"{json.dumps(record)}\n")
+                
         if self.thread is None:
             return
 
@@ -1065,7 +1074,8 @@ class B1TaskReceiver:
                  b2_tasks_by_b1: Dict[str, WorkflowTaskData],
                  workflow_states: Dict[str, WorkflowState],
                  model_id: str = "llm_service_small_model",
-                 rate_limiter: Optional[RateLimiter] = None):
+                 rate_limiter: Optional[RateLimiter] = None,
+                 strategy = "default"):
         """
         Initialize B1 task receiver.
 
@@ -1095,6 +1105,9 @@ class B1TaskReceiver:
         self.thread: Optional[threading.Thread] = None
         self.running = False
         self.loop: Optional[asyncio.AbstractEventLoop] = None
+        
+        self.task_raw_data = []
+        self.strategy = strategy
 
     def _submit_b2_task(self, task_data: WorkflowTaskData) -> TaskRecord:
         """
@@ -1302,6 +1315,7 @@ class B1TaskReceiver:
         status = data["status"]
         complete_time = time.time()
         workflow_id = None
+        self.task_raw_data.append(data)
 
         # Extract workflow_id and b_index from task_id (format: task-B1-{strategy}-workflow-{i:04d}-B1-{j:02d})
         parts = task_id.split("-")
@@ -1409,6 +1423,9 @@ class B1TaskReceiver:
 
     def stop(self):
         """Stop the receiver thread."""
+        with open(f"task_result_{self.strategy}/b1.jsonl", "w") as f:
+            for record in self.task_raw_data:
+                f.write(f"{json.dumps(record)}\n")
         if self.thread is None:
             return
 
@@ -1440,7 +1457,8 @@ class B2TaskReceiver:
                  scheduler_b_ws: str,
                  b2_task_ids: List[str],
                  workflow_states: Dict[str, WorkflowState],
-                 merge_ready_queue: Queue):
+                 merge_ready_queue: Queue,
+                 strategy: str = "default"):
         """
         Initialize B2 task receiver.
 
@@ -1466,6 +1484,8 @@ class B2TaskReceiver:
 
         # Track workflow completion to avoid duplicates
         self.completed_workflows: Set[str] = set()
+        self.task_raw_data = []
+        self.strategy = strategy
 
     async def _run_async(self):
         """Main WebSocket loop for receiving B2 task results."""
@@ -1517,6 +1537,7 @@ class B2TaskReceiver:
         status = data["status"]
         complete_time = time.time()
         workflow_id = None
+        self.task_raw_data.append(data)
 
         # Extract workflow_id and b_index from task_id (format: task-B2-{strategy}-workflow-{i:04d}-B2-{j:02d})
         parts = task_id.split("-")
@@ -1632,6 +1653,9 @@ class B2TaskReceiver:
 
     def stop(self):
         """Stop the receiver thread."""
+        with open(f"task_result_{self.strategy}/b2.jsonl", "w") as f:
+            for record in self.task_raw_data:
+                f.write(f"{json.dumps(record)}\n")
         if self.thread is None:
             return
 
@@ -1840,7 +1864,8 @@ class MergeTaskReceiver:
                  scheduler_a_ws: str,
                  merge_task_ids: List[str],
                  workflow_states: Dict[str, WorkflowState],
-                 completion_queue: Queue):
+                 completion_queue: Queue,
+                 strategy: str):
         """
         Initialize merge task receiver.
 
@@ -1866,6 +1891,9 @@ class MergeTaskReceiver:
 
         # Track workflow completion to avoid duplicates
         self.completed_workflows: Set[str] = set()
+        
+        self.task_raw_data = []
+        self.strategy = strategy
 
     async def _run_async(self):
         """Main WebSocket loop for receiving merge task results."""
@@ -1917,6 +1945,8 @@ class MergeTaskReceiver:
         status = data["status"]
         complete_time = time.time()
         workflow_id = None
+
+        self.task_raw_data.append(data)
 
         # Extract workflow_id from task_id (format: task-A-{strategy}-workflow-{i:04d}-merge)
         parts = task_id.split("-")
@@ -2059,6 +2089,9 @@ class MergeTaskReceiver:
 
     def stop(self):
         """Stop the merge task receiver thread."""
+        with open(f"task_result_{self.strategy}/a2.jsonl", "w") as f:
+            for record in self.task_raw_data:
+                f.write(f"{json.dumps(record)}\n")
         self.running = False
         self.thread.join(timeout=10.0)
         self.logger.debug("Merge task receiver thread stopped")
@@ -2922,7 +2955,8 @@ def run_strategy_workflow(
         scheduler_a_ws=SCHEDULER_A_WS,
         merge_task_ids=merge_task_ids,
         workflow_states=workflow_states,
-        completion_queue=completion_queue
+        completion_queue=completion_queue,
+        strategy=strategy
     )
     merge_receiver.start()
     time.sleep(2.0)  # Wait for WebSocket connection
@@ -2944,7 +2978,8 @@ def run_strategy_workflow(
         scheduler_b_ws=SCHEDULER_B_WS,
         b2_task_ids=all_b2_task_ids,
         workflow_states=workflow_states,
-        merge_ready_queue=merge_ready_queue
+        merge_ready_queue=merge_ready_queue,
+        strategy = strategy
     )
     b2_receiver.start()
     time.sleep(2.0)  # Wait for WebSocket connection
@@ -2957,7 +2992,8 @@ def run_strategy_workflow(
         b1_task_ids=all_b1_task_ids,
         b2_tasks_by_b1=b2_tasks_by_b1,
         workflow_states=workflow_states,
-        rate_limiter=rate_limiter
+        rate_limiter=rate_limiter,
+        strategy=strategy
     )
     b1_receiver.start()
     time.sleep(2.0)  # Wait for WebSocket connection
@@ -2984,7 +3020,8 @@ def run_strategy_workflow(
         a_task_ids=a_task_ids,
         b1_tasks_by_workflow=b1_tasks_by_workflow,
         workflow_states=workflow_states,
-        rate_limiter=rate_limiter
+        rate_limiter=rate_limiter,
+        strategy = strategy
     )
     a_receiver.start()
     time.sleep(2.0)  # Wait for WebSocket connection
