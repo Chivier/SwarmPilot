@@ -111,7 +111,7 @@ async def inference(request: InferenceRequest) -> InferenceResponse:
             "actual_sleep_time": execution_time,
             "model_id": MODEL_ID,
             "instance_id": INSTANCE_ID,
-            "message": f"Slept for {execution_time:.3f} seconds"
+            "message": f"Slept for {execution_time:.3f} seconds",
             "start_time": start_time
         }
 
