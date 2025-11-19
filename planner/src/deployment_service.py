@@ -539,10 +539,10 @@ class InstanceMigrator:
             }
 
             # Create tasks for parallel execution
-            deregister_task = asyncio.create_task(self.deregister_model(original_endpoint))
             register_task = asyncio.create_task(
                 client.post(f"{target_endpoint}/model/register", json=payload)
             )
+            deregister_task = asyncio.create_task(self.deregister_model(original_endpoint))
             # Get the register and deregister result
             deregister_response = await deregister_task
             register_response = await register_task

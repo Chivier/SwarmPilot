@@ -167,3 +167,16 @@ class InstanceRegisterResponse(BaseModel):
     """Response model for instance registration."""
     success: bool = Field(..., description="Whether registration was successful")
     message: str = Field(..., description="Status message")
+
+
+class SubmitTargetRequest(BaseModel):
+    """Request model for submitting target queue length from scheduler."""
+    model_id: str = Field(..., description="Model identifier from scheduler")
+    value: float = Field(..., description="Queue length from scheduler")
+
+
+class SubmitTargetResponse(BaseModel):
+    """Response model for submit_target endpoint."""
+    success: bool = Field(..., description="Whether target was updated successfully")
+    message: str = Field(..., description="Status message")
+    current_target: Optional[List[float]] = Field(None, description="Current accumulated target distribution")

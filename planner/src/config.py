@@ -21,6 +21,11 @@ class PlannerConfig:
         self.planner_port: int = int(os.getenv("PLANNER_PORT", "8000"))
         self.planner_host: str = os.getenv("PLANNER_HOST", "0.0.0.0")
 
+        # Auto-optimization configuration
+        self.auto_optimize_enabled: bool = os.getenv("AUTO_OPTIMIZE_ENABLED", "false").lower() in ("true", "1", "yes")
+        self.auto_optimize_interval: float = float(os.getenv("AUTO_OPTIMIZE_INTERVAL", "60.0"))
+        self.auto_optimize_cooldown: float = float(os.getenv("AUTO_OPTIMIZE_COOLDOWN", "5.0"))
+
     def get_scheduler_url(self, override: Optional[str] = None) -> Optional[str]:
         """
         Get scheduler URL with optional override.
@@ -51,6 +56,12 @@ class PlannerConfig:
 
         if not (0 < self.planner_port < 65536):
             raise ValueError(f"PLANNER_PORT must be 1-65535, got {self.planner_port}")
+
+        if self.auto_optimize_interval <= 0:
+            raise ValueError(f"AUTO_OPTIMIZE_INTERVAL must be positive, got {self.auto_optimize_interval}")
+
+        if self.auto_optimize_cooldown < 0:
+            raise ValueError(f"AUTO_OPTIMIZE_COOLDOWN must be non-negative, got {self.auto_optimize_cooldown}")
 
 
 # Global configuration instance
