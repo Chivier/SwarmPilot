@@ -177,7 +177,7 @@ async def inference(request: InferenceRequest) -> InferenceResponse:
         sampleing_parameters = {
             "max_new_tokens": max_tokens,
             "temperature": 0,
-            "seed": 114514
+            "sampling_seed": 114514
         }
         result = await runtime.async_generate(
             [request.sentence],

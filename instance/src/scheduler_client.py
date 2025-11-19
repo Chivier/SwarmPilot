@@ -919,6 +919,7 @@ class SchedulerClient:
         if result is not None:
             callback_data["result"] = result
             result['callback_timestamp'] = time.time()
+            result['instance_id'] = self.instance_id
         if error is not None:
             callback_data["error"] = error
         if execution_time_ms is not None:
