@@ -6,7 +6,7 @@ models:
       cpu: "1"
       memory: "512Mi"
       gpu: false
-      
+
   - model_id: "sleep_model_a"
     name: "Sleep Model"
     directory: "sleep_model"
@@ -14,6 +14,7 @@ models:
       cpu: "1"
       memory: "512Mi"
       gpu: false
+
   
   - model_id: "sleep_model_b"
     name: "Sleep Model"
@@ -22,6 +23,15 @@ models:
       cpu: "1"
       memory: "512Mi"
       gpu: false
+
+  - model_id: "t2vid"
+    name: "Sleep Model"
+    directory: "t2video"
+    resource_requirements:
+      cpu: "1"
+      memory: "512Mi"
+      gpu: true
+      gpu_count: 1
   
   - model_id: "dummy_think"
     name: "Think model's dummy, have fanout ability"

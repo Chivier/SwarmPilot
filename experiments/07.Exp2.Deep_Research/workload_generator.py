@@ -93,15 +93,20 @@ def load_trace_data() -> Tuple[List[float], Dict[str, List[float]], List[float],
 
     with open(DATA_DIR / "dr_summary_dict.json", "r") as f:
         dr_summary_dict = json.load(f)
+        
     for i in range(5, 16):
         dr_summary_dict[i] = np.random.normal(25, 2, size=len(dr_summary_dict[str(i)]))
         dr_summary_dict[i] = dr_summary_dict[i].tolist()
+        
     with open(DATA_DIR / "dr_query.json", "r") as f:
         dr_query = json.load(f)
+
     dr_query = np.random.normal(3, 0.3, size=len(dr_query))
     dr_query = dr_query.tolist()
+    
     with open(DATA_DIR / "dr_criteria.json", "r") as f:
         dr_criteria = json.load(f)
+        
     dr_criteria = np.random.normal(2, 0.2, size=len(dr_criteria))
     dr_criteria = dr_criteria.tolist()
     return dr_boot, dr_summary_dict, dr_query, dr_criteria

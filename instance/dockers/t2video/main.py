@@ -14,13 +14,11 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from argparse import ArgumentParser
 
-os.environ["SGLANG_ENABLE_DETERMINISTIC_INFERENCE"] = "True"
+import torch
+from diffusers.utils import export_to_video
+from diffusers import AutoencoderKLWan, WanPipeline
+from diffusers.schedulers.scheduling_unipc_multistep import UniPCMultistepScheduler
 
-# Import sglang
-try:
-    import sglang as sgl
-except ImportError:
-    sgl = None
 
 parser = ArgumentParser()
 parser.add_argument("--port", type=int, default=8000)
@@ -36,8 +34,7 @@ LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 MODEL_PATH = os.getenv("MODEL_MODEL_PATH")
 
 # Model state
-model_loaded = False
-runtime: Optional[Any] = None
+pipe=None
 
 os.environ["MASTER_ADDR"] = "127.0.0.1"
 os.environ["MASTER_PORT"] = str(20000 + args.port)
@@ -46,59 +43,45 @@ os.environ["MASTER_PORT"] = str(20000 + args.port)
 # Lifecycle Management
 # =============================================================================
 
+
+# Available models: Wan-AI/Wan2.1-T2V-14B-Diffusers, Wan-AI/Wan2.1-T2V-1.3B-Diffusers
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application lifecycle: startup and shutdown."""
-    global model_loaded, runtime
+    global pipe
 
     # Startup
-    print(f"LLM Service Large Model Container starting...")
+    print(f"Wan Service Large Model Container starting...")
     print(f"Model ID: {MODEL_ID}")
     print(f"Instance ID: {INSTANCE_ID}")
     print(f"Log Level: {LOG_LEVEL}")
 
-    # Check if sglang is available
-    if sgl is None:
-        raise RuntimeError("sglang is not installed. Please install it with: pip install sglang")
 
     # Check if MODEL_PATH is set
     if not MODEL_PATH:
         raise RuntimeError("MODEL_MODEL_PATH environment variable is not set")
 
-    if not os.path.exists(MODEL_PATH):
-        raise RuntimeError(f"Model path does not exist: {MODEL_PATH}")
+    # if not os.path.exists(MODEL_PATH):
+    #     raise RuntimeError(f"Model path does not exist: {MODEL_PATH}")
 
     # Load model with sglang
     print(f"Loading model from: {MODEL_PATH}")
-    try:
-        # Load model using sglang Engine
-        # sgl.Engine() creates an engine instance with the model
-        runtime = sgl.Engine(model_path=MODEL_PATH)
-        
-        model_loaded = True
-        print("Model loaded successfully!")
-    except Exception as e:
-        print(f"Failed to load model: {e}")
-        raise RuntimeError(f"Model loading failed: {str(e)}")
+    
+    vae = AutoencoderKLWan.from_pretrained(MODEL_PATH, subfolder="vae", torch_dtype=torch.float32)
+    pipe = WanPipeline.from_pretrained(MODEL_PATH, vae=vae, torch_dtype=torch.bfloat16)
+    pipe.to("cuda")
+    
+    print("T2Video Service is running")
 
     yield
 
     # Shutdown
-    print("LLM Service Large Model Container shutting down...")
+    print("T2Video Service  is shutting down...")
     
-    # Clean up runtime if it exists
-    if runtime is not None:
-        try:
-            # sglang runtime cleanup if needed
-            if hasattr(runtime, "shutdown"):
-                runtime.shutdown()
-            elif hasattr(runtime, "close"):
-                runtime.close()
-        except Exception as e:
-            print(f"Error during runtime cleanup: {e}")
-    
-    runtime = None
-    model_loaded = False
+
+    pipe = None
     print("Shutdown complete")
 
 
@@ -125,9 +108,9 @@ class InferenceRequest(BaseModel):
         description="Input sentence to send to the LLM",
         min_length=1
     )
-    max_tokens: int = Field(
-        default=512,
-        description="Maximum number of tokens to generate",
+    frames: int = Field(
+        ...,
+        description="frames of generated video"
     )
 
 
@@ -160,7 +143,7 @@ async def inference(request: InferenceRequest) -> InferenceResponse:
     Returns:
         InferenceResponse with the LLM result and execution details
     """
-    if not model_loaded or runtime is None:
+    if not pipe:
         raise HTTPException(
             status_code=503,
             detail="Model not loaded"
@@ -171,21 +154,17 @@ async def inference(request: InferenceRequest) -> InferenceResponse:
         start_time = time.time()
         start_timestamp = int(start_time)
 
-        # Run inference with sglang Engine
-        # async_generate returns a dict with "text" key
-        max_tokens = min(max(0, request.max_tokens), 4096)
-        sampleing_parameters = {
-            "max_new_tokens": max_tokens,
-            "temperature": 0,
-            "seed": 114514
-        }
-        result = await runtime.async_generate(
-            [request.sentence],
-            sampleing_parameters
-        )
+        result = pipe(
+                prompt=request.sentence,
+                negative_prompt=request.sentence,
+                height=704,
+                width=1280,
+                num_frames=request.frames,
+                guidance_scale=5.0,
+        ).frames[0]
 
         # Extract the generated text from the result dict
-        generated_text = result[0].get("text", "")
+        # export_to_video(result, "output.mp4", fps=16)
 
         # Calculate execution time
         execution_time = time.time() - start_time
@@ -193,7 +172,7 @@ async def inference(request: InferenceRequest) -> InferenceResponse:
         # Build result
         result = {
             "input": request.sentence,
-            "output": generated_text,
+            "output": "video",
             "model_id": MODEL_ID,
             "instance_id": INSTANCE_ID,
         }
@@ -220,7 +199,7 @@ async def health() -> HealthResponse:
     Returns:
         HealthResponse indicating model status
     """
-    if not model_loaded:
+    if not pipe:
         return HealthResponse(
             status="unhealthy",
             model_loaded=False

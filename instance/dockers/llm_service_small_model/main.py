@@ -14,6 +14,8 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from argparse import ArgumentParser
 
+os.environ["SGLANG_ENABLE_DETERMINISTIC_INFERENCE"] = "True"
+
 # Import sglang
 try:
     import sglang as sgl
@@ -175,7 +177,8 @@ async def inference(request: InferenceRequest) -> InferenceResponse:
         max_tokens = min(max(0, request.max_tokens), 4096)
         sampleing_parameters = {
             "max_new_tokens": max_tokens,
-            "temperature": 0.7,
+            "temperature": 0,
+            "seed": 114514
         }
         result = await runtime.async_generate(
             [request.sentence],

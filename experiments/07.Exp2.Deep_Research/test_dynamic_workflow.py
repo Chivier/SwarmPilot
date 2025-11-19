@@ -2452,7 +2452,8 @@ def test_strategy_workflow(
     warmup_task_times_b2: Optional[List[float]] = None,
     warmup_fanout_values: Optional[List[int]] = None,
     continuous_mode: bool = False,
-    target_workflows: Optional[int] = None
+    target_workflows: Optional[int] = None,
+    metric_portion: float = 0.5
 ) -> Dict:
     """
     Test a single scheduling strategy with dynamic workflow fanout (B1/B2 split).
@@ -2472,6 +2473,9 @@ def test_strategy_workflow(
         warmup_task_times_b1: Pre-generated warmup B1 task times (optional)
         warmup_task_times_b2: Pre-generated warmup B2 task times (optional)
         warmup_fanout_values: Pre-generated warmup fanout values (optional)
+        continuous_mode: Enable continuous request mode (bool)
+        target_workflows: Target number of workflows for continuous mode (optional)
+        metric_portion: Portion of non-warmup workflows to include in statistics (0.0-1.0, default: 0.5)
 
     Returns:
         Dictionary of test results
@@ -2666,15 +2670,15 @@ def test_strategy_workflow(
     logger.info("Step 5: Initializing workflow states")
 
     # Calculate how many non-warmup workflows should be included in statistics
-    # Default: first 50% of non-warmup workflows are targets for statistics
+    # Default: first metric_portion (e.g., 50%) of non-warmup workflows are targets for statistics
     if continuous_mode and target_workflows is not None:
         # In continuous mode, use the specified target_workflows count
         stats_target_count = target_workflows
         logger.info(f"Continuous mode: marking first {stats_target_count} non-warmup workflows as targets")
     else:
-        # In normal mode, use first 50% of non-warmup workflows
-        stats_target_count = int(num_workflows * 0.5)
-        logger.info(f"Normal mode: marking first 50% ({stats_target_count}/{num_workflows}) of non-warmup workflows as targets for statistics")
+        # In normal mode, use first metric_portion of non-warmup workflows
+        stats_target_count = int(num_workflows * metric_portion)
+        logger.info(f"Normal mode: marking first {metric_portion:.0%} ({stats_target_count}/{num_workflows}) of non-warmup workflows as targets for statistics")
 
     workflow_states: Dict[str, WorkflowState] = {}
     target_count = 0  # Count of non-warmup workflows marked as targets
@@ -2960,7 +2964,7 @@ def test_strategy_workflow(
 
 def main(num_workflows: int = 100, qps_a: float = 8.0, seed: int = 42,
          strategies: List[str] = None, gqps: Optional[float] = None, warmup_ratio: float = 0.0,
-         continuous_mode: bool = False):
+         continuous_mode: bool = False, metric_portion: float = 0.5):
     """
     Main entry point for experiment 07.
 
@@ -2972,6 +2976,7 @@ def main(num_workflows: int = 100, qps_a: float = 8.0, seed: int = 42,
         gqps: Optional global QPS limit for all task submissions
         warmup_ratio: Warmup task ratio (0.0-1.0)
         continuous_mode: Enable continuous request mode (2x workflows, track first num_workflows)
+        metric_portion: Portion of non-warmup workflows to use for statistics (0.0-1.0, default: 0.5)
     """
     if strategies is None:
         strategies = ["min_time", "round_robin", "probabilistic"]
@@ -3082,7 +3087,8 @@ def main(num_workflows: int = 100, qps_a: float = 8.0, seed: int = 42,
             warmup_task_times_b2=warmup_task_times_b2,
             warmup_fanout_values=warmup_fanout_values,
             continuous_mode=continuous_mode,
-            target_workflows=TARGET_WORKFLOWS
+            target_workflows=TARGET_WORKFLOWS,
+            metric_portion=metric_portion
         )
         all_results.append(results)
 
@@ -3170,8 +3176,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--strategies",
         nargs="+",
-        default=["probabilistic", "random", "round_robin", "min_time"],
-        choices=["min_time", "round_robin", "probabilistic", "random"],
+        default=["probabilistic", "random", "round_robin", "min_time", "po2"],
+        choices=["min_time", "round_robin", "probabilistic", "random", "po2"],
         help="Scheduling strategies to test"
     )
 
@@ -3195,6 +3201,13 @@ if __name__ == "__main__":
         help="Enable continuous request mode. In this mode, tasks are submitted continuously at target QPS until warmup + num_workflows tasks complete. Statistics are calculated only for the first num_workflows (excluding warmup)."
     )
 
+    parser.add_argument(
+        "--metric-portion",
+        type=float,
+        default=0.5,
+        help="Portion of non-warmup workflows to include in final statistics (0.0-1.0, default: 0.5). For example, 0.5 means only the first 50%% of workflows are used for metrics calculation."
+    )
+
     args = parser.parse_args()
 
     main(
@@ -3204,5 +3217,6 @@ if __name__ == "__main__":
         strategies=args.strategies,
         gqps=args.gqps,
         warmup_ratio=args.warmup,
-        continuous_mode=args.continuous
+        continuous_mode=args.continuous,
+        metric_portion=args.metric_portion
     )
