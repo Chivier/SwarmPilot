@@ -10,6 +10,8 @@ from contextlib import asynccontextmanager
 from typing import Dict, Any, Optional, Tuple
 import traceback
 import json
+import random
+import numpy as np
 from collections import OrderedDict
 import threading
 
@@ -461,6 +463,8 @@ async def predict(request: PredictionRequest):
     Returns prediction based on trained model or experiment mode.
     Supports both expect_error and quantile prediction types.
     """
+    random.seed(42)
+    np.random.seed(42)
     try:
         # Check if experiment mode
         if is_experiment_mode(request.features, request.platform_info.model_dump()):
