@@ -10,6 +10,7 @@ from datetime import datetime
 from contextlib import asynccontextmanager
 import asyncio
 import random
+import numpy as np
 import json
 import httpx
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Query, Request
@@ -1680,6 +1681,9 @@ async def set_strategy_endpoint(request: StrategySetRequest):
     # Get the new strategy info
     strategy_info = get_current_strategy_info()
 
+    random.seed(42)
+    np.random.seed(42)
+    
     logger.success(f"Successfully switched to strategy '{request.strategy_name.value}'")
 
     return StrategySetResponse(
