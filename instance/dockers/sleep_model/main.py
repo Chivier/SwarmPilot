@@ -112,6 +112,7 @@ async def inference(request: InferenceRequest) -> InferenceResponse:
             "model_id": MODEL_ID,
             "instance_id": INSTANCE_ID,
             "message": f"Slept for {execution_time:.3f} seconds"
+            "start_time": start_time
         }
 
         return InferenceResponse(

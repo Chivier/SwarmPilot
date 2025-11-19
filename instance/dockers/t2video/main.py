@@ -175,6 +175,7 @@ async def inference(request: InferenceRequest) -> InferenceResponse:
             "output": "video",
             "model_id": MODEL_ID,
             "instance_id": INSTANCE_ID,
+            "start_time": start_time
         }
 
         return InferenceResponse(
