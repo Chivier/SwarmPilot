@@ -1486,7 +1486,7 @@ async def reinitialize_instance_queues(
         Number of instances whose queue info was reinitialized
     """
     # Determine the queue info type for the new strategy
-    if strategy_name == "min_time" or strategy_name == "po2":
+    if strategy_name == "min_time" or strategy_name == "po2" or strategy_name == "severless":
         queue_info_type = "expect_error"
     elif strategy_name == "probabilistic":
         queue_info_type = "probabilistic"

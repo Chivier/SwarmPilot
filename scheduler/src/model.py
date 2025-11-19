@@ -334,6 +334,7 @@ class StrategyType(str, Enum):
     ROUND_ROBIN = "round_robin"
     RANDOM = "random"
     POWEROFTWO = "po2"
+    SERVERLESS = "serverless"
 
 
 class StrategySetRequest(BaseModel):

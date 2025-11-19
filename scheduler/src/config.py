@@ -45,7 +45,7 @@ class QueueConfig:
     """Configuration for central task queue with backpressure control."""
 
     # High water mark: maximum pending tasks per instance before stopping dispatch
-    high_water_mark: int = int(os.getenv("QUEUE_HIGH_WATER_MARK", "6"))
+    high_water_mark: int = int(os.getenv("QUEUE_HIGH_WATER_MARK", "5"))
 
     # Low water mark: resume dispatching when pending tasks drop below this
     low_water_mark: int = int(os.getenv("QUEUE_LOW_WATER_MARK", "3"))
