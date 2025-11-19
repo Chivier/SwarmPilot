@@ -9,6 +9,7 @@ from typing import Optional, Callable, List
 from datetime import datetime
 from contextlib import asynccontextmanager
 import asyncio
+import random
 import json
 import httpx
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Query, Request
@@ -88,7 +89,7 @@ from .planner_reporter import PlannerReporter
 # Import logger configuration to initialize loguru
 from . import logger as logger_module  # noqa: F401
 
-
+random.seed(42)
 # ============================================================================
 # Application Setup
 # ============================================================================

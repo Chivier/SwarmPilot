@@ -20,6 +20,8 @@ if TYPE_CHECKING:
     from .instance_registry import InstanceRegistry
 
 
+random.seed(42)
+
 @dataclass
 class ScheduleResult:
     """Result of scheduling operation."""
