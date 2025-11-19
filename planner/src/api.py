@@ -3,9 +3,13 @@
 from datetime import datetime, timezone
 from typing import Optional, Dict
 import numpy as np
+import random
 import asyncio
 import time
 from contextlib import asynccontextmanager
+
+np.random.seed(42)
+random.seed(42)
 
 from fastapi import FastAPI, HTTPException, status
 from fastapi.responses import JSONResponse
