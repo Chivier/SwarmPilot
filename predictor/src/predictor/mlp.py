@@ -9,6 +9,9 @@ import torch.nn as nn
 from typing import List
 
 
+torch.use_deterministic_algorithms(True)
+
+
 class MLP(nn.Module):
     """
     Multi-layer Perceptron for regression tasks.
