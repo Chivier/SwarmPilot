@@ -44,7 +44,7 @@ SCHEDULER_PREDICTOR_CPU_RANGE="0-7"
 SCHEDULER_A_HOST="29.209.114.51" 
 SCHEDULER_B_HOST="29.209.113.228"
 PREDICTOR_HOST="29.209.113.113"
-PLANNER_HOST="20.209.114.166"
+PLANNER_HOST="29.209.114.166"
 CLIENT_HOST="29.209.114.166" #0
 
 INSTANCE_PORT_LIST=(
@@ -199,7 +199,7 @@ if [[ "$LOCAL_IP" == "$PLANNER_HOST" ]]; then
      AUTO_OPTIMIZE_ENABLED=True \
      AUTO_OPTIMIZE_INTERVAL=150.0 \
      AUTO_OPTIMIZE_COOLDOWN=5.0 \
-     python -m src.cli start --port $PLANNER_PORT --log-level INFO" \
+     python -m uvicorn src.api:app --port $PLANNER_PORT --log-level INFO" \
     "$SCHEDULER_PREDICTOR_CPU_RANGE"
 fi
 
@@ -263,6 +263,7 @@ contains_element() {
 if [[ "$LOCAL_IP" != "$SCHEDULER_B_HOST" ]] && \
    [[ "$LOCAL_IP" != "$SCHEDULER_A_HOST" ]] && \
    [[ "$LOCAL_IP" != "$PREDICTOR_HOST" ]] && \
+   [[ "$LOCAL_IP" != "$PLANNER_HOST" ]] && \
    [[ "$LOCAL_IP" != "$CLIENT_HOST" ]]; then
   for i in {0..7}; do
     INSTANCE_PORT=${INSTANCE_PORT_LIST[$i]}
@@ -311,6 +312,12 @@ if [[ $? -ne 0 ]]; then
   exit 1
 fi
 
+curl http://$PLANNER_HOST:$PLANNER_PORT/health
+
+if [[ $? -ne 0 ]]; then
+  echo -e "${RED}Health check failed for planner:${NC}"
+  exit 1
+fi
 
 echo -e "${GREEN}Health check passed for scheduler and predictor${NC}"
 
