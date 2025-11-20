@@ -845,8 +845,6 @@ class ATaskReceiver:
             data: WebSocket result message
         """
         
-        print(data)
-
         task_id = data["task_id"]
         status = data["status"]
         raw_result = data["result"]
