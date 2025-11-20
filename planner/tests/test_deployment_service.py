@@ -318,7 +318,7 @@ class TestInstanceMigrator:
         """Test successful migration from one instance to another."""
         migrator = InstanceMigrator(
             timeout=30,
-            scheduler_url="http://scheduler:8100"
+            scheduler_mapping={"model_0": "http://scheduler:8100", "model_1": "http://scheduler:8100"}
         )
 
         with patch("httpx.AsyncClient") as mock_client:
@@ -381,7 +381,7 @@ class TestInstanceMigrator:
         """Test migration is skipped when both instances have the same model."""
         migrator = InstanceMigrator(
             timeout=30,
-            scheduler_url="http://scheduler:8100"
+            scheduler_mapping={"model_0": "http://scheduler:8100", "model_1": "http://scheduler:8100"}
         )
 
         # Make both instances have the same model
@@ -437,7 +437,7 @@ class TestInstanceMigrator:
         """Test parallel migration to multiple instances."""
         migrator = InstanceMigrator(
             timeout=30,
-            scheduler_url="http://scheduler:8100"
+            scheduler_mapping={"model_0": "http://scheduler:8100", "model_1": "http://scheduler:8100"}
         )
 
         original_endpoints = [
@@ -453,6 +453,7 @@ class TestInstanceMigrator:
         with patch.object(migrator, 'migration_model', new_callable=AsyncMock) as mock_migration:
             from src.models import MigrationStatus
             mock_migration.return_value = MigrationStatus(
+                instance_index=0,
                 endpoint="http://original:8080",
                 target_model="model_1",
                 previous_model="model_0",
@@ -477,7 +478,7 @@ class TestInstanceMigrator:
         """Test successful deregistration from scheduler."""
         migrator = InstanceMigrator(
             timeout=30,
-            scheduler_url="http://scheduler:8100"
+            scheduler_mapping={"model_0": "http://scheduler:8100", "model_1": "http://scheduler:8100"}
         )
 
         with patch("httpx.AsyncClient") as mock_client:
