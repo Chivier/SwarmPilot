@@ -65,6 +65,14 @@ DATA_DIR = Path(__file__).parent / "data"
 
 
 # ============================================================================
+# Prompt Templates
+# ============================================================================
+
+A1_TEMPLATE = "Generate a detailed image generation prompt based on this caption: {caption}"
+A2_TEMPLATE = "Generate a negative prompt for image generation to avoid artifacts, based on this positive prompt: {positive_prompt}"
+
+
+# ============================================================================
 # Rate Limiter
 # ============================================================================
 
@@ -314,7 +322,7 @@ class PoissonTaskSubmitter:
             task_input = {"sleep_time": task_data.sleep_time}
         else:  # real mode
             task_input = {
-                "sentence": task_data.caption,
+                "sentence": A1_TEMPLATE.format(caption=task_data.caption),
                 "max_tokens": task_data.max_tokens or 512
             }
         
@@ -600,7 +608,7 @@ class A1TaskReceiver:
             task_input = {"sleep_time": a2_task_data.sleep_time}
         else:  # real mode
             task_input = {
-                "sentence": f"Generate negative prompt for: {positive_prompt}",
+                "sentence": A2_TEMPLATE.format(positive_prompt=positive_prompt),
                 "max_tokens": a2_task_data.max_tokens or 512
             }
         

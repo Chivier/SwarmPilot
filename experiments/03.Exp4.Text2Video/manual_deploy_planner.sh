@@ -1,120 +1,277 @@
 #!/bin/bash
-# Manual deployment with planner split: half instances to schedulers, half to planner.
-# Mirrors the behavior of exp07 manual_deploy_planner but adapted for exp03 local topology.
 
-set -euo pipefail
+set -e
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-# Defaults (override via env or flags)
-SCHEDULER_A_URL="${SCHEDULER_A_URL:-http://localhost:8100}"
-SCHEDULER_B_URL="${SCHEDULER_B_URL:-http://localhost:8200}"
-PLANNER_URL="${PLANNER_URL:-http://localhost:8202}"
-MODEL_ID_A="${MODEL_ID_A:-sleep_model_a}"
-MODEL_ID_B="${MODEL_ID_B:-sleep_model_b}"
-N1="${N1:-4}"
-N2="${N2:-2}"
-PORT_A_START="${PORT_A_START:-8210}"
-PORT_B_START="${PORT_B_START:-8300}"
-
-GREEN='\033[0;32m'
+# Color codes for output
 RED='\033[0;31m'
+GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-NC='\033[0m'
+NC='\033[0m' # No Color
 
-usage() {
-  cat <<EOF
-Usage: manual_deploy_planner.sh [options]
-  --scheduler-a-url URL   Scheduler A URL (default: $SCHEDULER_A_URL)
-  --scheduler-b-url URL   Scheduler B URL (default: $SCHEDULER_B_URL)
-  --planner-url URL       Planner URL (default: $PLANNER_URL)
-  --model-id-a ID         Model for Group A (default: $MODEL_ID_A)
-  --model-id-b ID         Model for Group B (default: $MODEL_ID_B)
-  --n1 N                  Group A instance count (default: $N1)
-  --n2 N                  Group B instance count (default: $N2)
-  --port-a-start P        Group A start port (default: $PORT_A_START)
-  --port-b-start P        Group B start port (default: $PORT_B_START)
-  -h|--help               Show this help
-EOF
-  exit 0
-}
+# Parse command line arguments
+MODEL_PATH_A=""
+MODEL_PATH_B=""
 
 while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --scheduler-a-url) SCHEDULER_A_URL="$2"; shift 2 ;;
-    --scheduler-b-url) SCHEDULER_B_URL="$2"; shift 2 ;;
-    --planner-url) PLANNER_URL="$2"; shift 2 ;;
-    --model-id-a) MODEL_ID_A="$2"; shift 2 ;;
-    --model-id-b) MODEL_ID_B="$2"; shift 2 ;;
-    --n1) N1="$2"; shift 2 ;;
-    --n2) N2="$2"; shift 2 ;;
-    --port-a-start) PORT_A_START="$2"; shift 2 ;;
-    --port-b-start) PORT_B_START="$2"; shift 2 ;;
-    -h|--help) usage ;;
-    *) echo "Unknown arg: $1"; usage ;;
-  esac
+    case $1 in
+        --model-path-a)
+            MODEL_PATH_A="$2"
+            shift 2
+            ;;
+        --model-path-b)
+            MODEL_PATH_B="$2"
+            shift 2
+            ;;
+        --model-path)
+            # If both use the same path
+            MODEL_PATH_A="$2"
+            MODEL_PATH_B="$2"
+            shift 2
+            ;;
+        -h|--help)
+            echo "Usage: $0 [OPTIONS]"
+            echo ""
+            echo "Options:"
+            echo "  --model-path PATH         Set model path for both Group A and B"
+            echo "  --model-path-a PATH       Set model path for Group A only"
+            echo "  --model-path-b PATH       Set model path for Group B only"
+            echo "  -h, --help                Show this help message"
+            echo ""
+            echo "Example:"
+            echo "  $0 --model-path /path/to/model"
+            echo "  $0 --model-path-a /path/to/model_a --model-path-b /path/to/model_b"
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Use --help for usage information"
+            exit 1
+            ;;
+    esac
 done
 
-echo "Starting deployment for Group A: $MODEL_ID_A, $N1 instances, starting from port $PORT_A_START"
-echo "                        Group B: $MODEL_ID_B, $N2 instances, starting from port $PORT_B_START"
-echo "Scheduler A URL: $SCHEDULER_A_URL"
-echo "Scheduler B URL: $SCHEDULER_B_URL"
-echo "Planner URL: $PLANNER_URL"
+# Display configuration
+echo -e "${GREEN}Deployment Configuration:${NC}"
+echo "  Group A model path: $MODEL_PATH_A"
+echo "  Group B model path: $MODEL_PATH_B"
+echo ""
 
+# Check if jq is available for JSON generation
+if ! command -v jq &> /dev/null; then
+    echo -e "${RED}Error: jq is required but not installed.${NC}"
+    echo "Please install jq: sudo apt-get install jq (or brew install jq on macOS)"
+    exit 1
+fi
 
-deploy_split() {
-  local group="$1" model_id="$2" count="$3" start_port="$4" scheduler_url="$5" planner_url="$6"
-  local half=$((count / 2))
-  echo -e "${YELLOW}Deploying ${group}: first ${half} -> scheduler, remaining -> planner${NC}"
-  local status=0
-  local pids=()
-  for i in $(seq 0 $((count - 1))); do
-    port=$((start_port + i))
-    target_url=$scheduler_url
-    if [ "$i" -ge "$half" ]; then
-      target_url=$planner_url
-    fi
-    payload=$(cat <<EOF
-{"model_id":"${model_id}","scheduler_url":"${target_url}","parameters":{}}
-EOF
+# 固定端口
+SCHEDULER_PORT=8100
+PREDICTOR_PORT=8100
+PLANNER_PORT=8100
+INSTANCE_PORT=8000
+
+# 角色 IP
+SCHEDULER_A_HOST="29.209.114.51" # 0
+SCHEDULER_B_HOST="29.209.113.228" # 8
+PREDICTOR_HOST="29.209.113.113" # 2
+PLANNER_HOST="29.209.114.166" # 1
+CLIENT_HOST="29.209.114.166" # 1
+
+# Ports for scheduler (first half)
+SCHEDULER_PORT_LIST=(
+    8200
+    8201
+    8202
+    8203
 )
-    (
-      resp=$(curl -s -X POST "http://localhost:${port}/model/start" \
-        -H "Content-Type: application/json" \
-        -d "${payload}")
-      if echo "$resp" | grep -q "success\|started"; then
-        echo -e "  ${group}-${i} (port ${port} -> ${target_url}): ${GREEN}OK${NC}"
-      else
-        echo -e "  ${group}-${i} (port ${port} -> ${target_url}): ${RED}FAILED${NC} -> ${resp}"
-        exit 1
-      fi
-    ) &
-    pids+=($!)
-  done
-  for pid in "${pids[@]}"; do
-    if ! wait "$pid"; then
-      status=1
-    fi
-  done
-  return "$status"
-}
 
-deploy_split "GroupA" "$MODEL_ID_A" "$N1" "$PORT_A_START" "$SCHEDULER_A_URL" "$PLANNER_URL"
-deploy_split "GroupB" "$MODEL_ID_B" "$N2" "$PORT_B_START" "$SCHEDULER_B_URL" "$PLANNER_URL"
+# Ports for planner (second half)
+PLANNER_PORT_LIST=(
+    8204
+    8205
+    8206
+    8207
+)
 
-echo -e "${GREEN}Waiting for 10 seconds...${NC}"
-sleep 10
+# All instance ports (for health check)
+INSTANCE_PORT_LIST=(
+    8200
+    8201
+    8202
+    8203
+    8204
+    8205
+    8206
+    8207
+)
 
-echo -e "${GREEN}Initial split deployment complete. Triggering planner redeploy...${NC}"
-uv run "$SCRIPT_DIR/redeploy.py" \
-  --scheduler-a-url "$SCHEDULER_A_URL" \
-  --scheduler-b-url "$SCHEDULER_B_URL" \
-  --planner-url "$PLANNER_URL" \
-  --model-id-a "$MODEL_ID_A" \
-  --model-id-b "$MODEL_ID_B" \
-  --n1 "$N1" \
-  --n2 "$N2" \
-  --port-a-start "$PORT_A_START" \
-  --port-b-start "$PORT_B_START"
+# Check service health
 
-echo -e "${GREEN}Manual deploy + initial redeploy done.${NC}"
+SLEEP_MODEL_A_HOSTS=(
+  29.209.106.237
+  29.209.114.56
+  29.209.114.241
+  29.209.112.177
+  29.209.113.235
+  29.209.105.60
+)
+
+# sleep_model_b 对应的机器
+SLEEP_MODEL_B_HOSTS=(
+  29.209.113.166
+  29.209.113.176
+  29.209.113.169
+  29.209.112.74
+  29.209.115.174
+  29.209.113.156
+)
+
+
+# Do health check for all hosts by request its /health endpoint
+
+for host in "${SLEEP_MODEL_A_HOSTS[@]}"; do
+    for port in "${INSTANCE_PORT_LIST[@]}"; do
+        response=$(curl -s -X GET "http://$host:$port/health")
+        if echo "$response" | grep -q "healthy"; then
+            echo -e "$host:$port: ${GREEN}OK${NC}"
+        else
+            echo -e "$host:$port: ${RED}FAILED${NC}"
+        fi
+    done
+done
+
+for host in "${SLEEP_MODEL_B_HOSTS[@]}"; do
+    for port in "${INSTANCE_PORT_LIST[@]}"; do
+        response=$(curl -s -X GET "http://$host:$port/health")
+        if echo "$response" | grep -q "healthy"; then
+            echo -e "$host: ${GREEN}OK${NC}"
+        else
+            echo -e "$host: ${RED}FAILED${NC}"
+        fi
+    done
+done
+
+# If any of the health checks failed, exit with error
+if [ $? -ne 0 ]; then
+    echo -e "${RED}Some hosts failed to start${NC}"
+    exit 1
+fi  
+
+echo -e "${GREEN}All hosts are healthy${NC}"
+
+# Start sleep-model on Group A instances (parallel)
+# First half: register to scheduler
+for host in "${SLEEP_MODEL_A_HOSTS[@]}"; do
+    for instance_port in "${SCHEDULER_PORT_LIST[@]}"; do
+        (
+            instance_id="${host}:${instance_port}"
+            # Build JSON payload with model_path in parameters
+            # Note: The key should be "MODEL_PATH" (not "MODEL_MODEL_PATH") because
+            # subprocess_manager._build_env_vars will add "MODEL_" prefix, resulting in "MODEL_MODEL_PATH"
+            
+            # Group A uses llm_service_small_model
+            json_payload=$(jq -n \
+                --arg model_id "llm_service_small_model" \
+                --arg scheduler_url "http://$SCHEDULER_A_HOST:$SCHEDULER_PORT" \
+                --arg model_path "$MODEL_PATH_A" \
+                '{model_id: $model_id, scheduler_url: $scheduler_url, parameters: {MODEL_PATH: $model_path}}')
+
+            response=$(curl -s -X POST "http://$host:$instance_port/model/start" \
+                -H "Content-Type: application/json" \
+                -d "$json_payload")
+
+            if echo "$response" | grep -q "success\|started"; then
+                echo -e "$instance_id (scheduler): ${GREEN}OK${NC}"
+            else
+                echo -e "$instance_id (scheduler): ${RED}FAILED${NC}"
+                echo "Response: $response"
+            fi
+        ) &
+        pids+=($!)
+    done
+done
+
+# Second half: register to planner
+for host in "${SLEEP_MODEL_A_HOSTS[@]}"; do
+    for instance_port in "${PLANNER_PORT_LIST[@]}"; do
+        (
+            instance_id="${host}:${instance_port}"
+            json_payload=$(jq -n \
+                --arg model_id "llm_service_small_model" \
+                --arg scheduler_url "http://$PLANNER_HOST:$PLANNER_PORT" \
+                --arg model_path "$MODEL_PATH_A" \
+                '{model_id: $model_id, scheduler_url: $scheduler_url, parameters: {MODEL_PATH: $model_path}}')
+
+            response=$(curl -s -X POST "http://$host:$instance_port/model/start" \
+                -H "Content-Type: application/json" \
+                -d "$json_payload")
+
+            if echo "$response" | grep -q "success\|started"; then
+                echo -e "$instance_id (planner): ${GREEN}OK${NC}"
+            else
+                echo -e "$instance_id (planner): ${RED}FAILED${NC}"
+                echo "Response: $response"
+            fi
+        ) &
+        pids+=($!)
+    done
+done
+
+# Start sleep-model on Group B instances (parallel)
+# First half: register to scheduler
+for host in "${SLEEP_MODEL_B_HOSTS[@]}"; do
+    for instance_port in "${SCHEDULER_PORT_LIST[@]}"; do
+        (
+            instance_id="${host}:${instance_port}"
+            # Group B uses t2vid
+            json_payload=$(jq -n \
+                --arg model_id "t2vid" \
+                --arg scheduler_url "http://$SCHEDULER_B_HOST:$SCHEDULER_PORT" \
+                --arg model_path "$MODEL_PATH_B" \
+                '{model_id: $model_id, scheduler_url: $scheduler_url, parameters: {MODEL_PATH: $model_path}}')
+
+            response=$(curl -s -X POST "http://$host:$instance_port/model/start" \
+                -H "Content-Type: application/json" \
+                -d "$json_payload")
+
+            if echo "$response" | grep -q "success\|started"; then
+                echo -e "$instance_id (scheduler): ${GREEN}OK${NC}"
+            else
+                echo -e "$instance_id (scheduler): ${RED}FAILED${NC}"
+                echo "Response: $response"
+            fi
+        ) &
+        pids+=($!)
+    done
+done
+
+# Second half: register to planner
+for host in "${SLEEP_MODEL_B_HOSTS[@]}"; do
+    for instance_port in "${PLANNER_PORT_LIST[@]}"; do
+        (
+            instance_id="${host}:${instance_port}"
+            json_payload=$(jq -n \
+                --arg model_id "t2vid" \
+                --arg scheduler_url "http://$PLANNER_HOST:$PLANNER_PORT" \
+                --arg model_path "$MODEL_PATH_B" \
+                '{model_id: $model_id, scheduler_url: $scheduler_url, parameters: {MODEL_PATH: $model_path}}')
+
+            response=$(curl -s -X POST "http://$host:$instance_port/model/start" \
+                -H "Content-Type: application/json" \
+                -d "$json_payload")
+
+            if echo "$response" | grep -q "success\|started"; then
+                echo -e "$instance_id (planner): ${GREEN}OK${NC}"
+            else
+                echo -e "$instance_id (planner): ${RED}FAILED${NC}"
+                echo "Response: $response"
+            fi
+        ) &
+        pids+=($!)
+    done
+done
+
+# Wait for all parallel model starts to complete
+for pid in "${pids[@]}"; do
+    wait $pid
+done
+echo -e "${GREEN}All model starts completed${NC}"
