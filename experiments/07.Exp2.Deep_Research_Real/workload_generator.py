@@ -305,6 +305,138 @@ def generate_pareto_distribution(num_tasks: int,
     return times.tolist(), config
 
 
+def generate_long_tail_with_mean(num_tasks: int,
+                                  target_mean: float = 8.0,
+                                  seed: int = 42) -> tuple[List[float], WorkloadConfig]:
+    """
+    Generate task execution times from a log-normal (long-tail) distribution
+    with a specified target mean.
+
+    The log-normal distribution creates a long-tail effect where:
+    - Most tasks complete around the mean
+    - A small percentage takes significantly longer (long tail)
+    - The distribution is right-skewed
+
+    Args:
+        num_tasks: Number of tasks to generate
+        target_mean: Target mean execution time in seconds
+        seed: Random seed for reproducibility
+
+    Returns:
+        Tuple of (task_times, config)
+    """
+    np.random.seed(seed)
+
+    # For log-normal distribution: mean = exp(mu + sigma^2/2)
+    # We want to achieve target_mean, so we solve for mu given sigma
+    # Using sigma = 0.6 gives a reasonable long-tail shape
+    sigma = 0.6
+    mu = np.log(target_mean) - (sigma**2) / 2
+
+    # Generate log-normal samples
+    times = np.random.lognormal(mu, sigma, num_tasks)
+
+    # Scale to achieve exact target mean
+    actual_mean = np.mean(times)
+    times = times * (target_mean / actual_mean)
+
+    # Shuffle to randomize order
+    np.random.shuffle(times)
+
+    # Calculate statistics
+    mean_time = float(np.mean(times))
+    std_time = float(np.std(times))
+    min_time = float(np.min(times))
+    max_time = float(np.max(times))
+    p50 = float(np.percentile(times, 50))
+    p80 = float(np.percentile(times, 80))
+    p95 = float(np.percentile(times, 95))
+
+    config = WorkloadConfig(
+        name="long_tail",
+        min_time=min_time,
+        max_time=max_time,
+        mean_time=mean_time,
+        std_time=std_time,
+        description=f"Long-tail (mean={mean_time:.2f}s): p50={p50:.2f}s, p80={p80:.2f}s, p95={p95:.2f}s"
+    )
+
+    return times.tolist(), config
+
+
+def generate_four_peak_distribution(num_tasks: int,
+                                    peaks: List[float] = [15.0, 30.0, 60.0, 120.0],
+                                    peak_ratios: List[float] = [0.25, 0.25, 0.25, 0.25],
+                                    std_factor: float = 0.1,
+                                    seed: int = 42) -> tuple[List[float], WorkloadConfig]:
+    """
+    Generate task execution times from a four-peak normal distribution.
+
+    Each peak is a normal distribution centered at the specified value.
+    Tasks are randomly assigned to one of the four peaks based on peak_ratios.
+
+    Args:
+        num_tasks: Number of tasks to generate
+        peaks: List of 4 peak centers (mean values for each Gaussian)
+        peak_ratios: List of 4 ratios (must sum to 1.0) for each peak
+        std_factor: Standard deviation factor (std = peak_center * std_factor)
+        seed: Random seed for reproducibility
+
+    Returns:
+        Tuple of (task_times, config)
+    """
+    np.random.seed(seed)
+
+    if len(peaks) != 4 or len(peak_ratios) != 4:
+        raise ValueError("Must provide exactly 4 peaks and 4 peak_ratios")
+
+    if not np.isclose(sum(peak_ratios), 1.0):
+        raise ValueError(f"peak_ratios must sum to 1.0, got {sum(peak_ratios)}")
+
+    times = []
+
+    # Generate samples for each peak
+    for peak_center, ratio in zip(peaks, peak_ratios):
+        n_samples = int(num_tasks * ratio)
+        std_dev = peak_center * std_factor
+
+        # Generate normal distribution around this peak
+        peak_times = np.random.normal(peak_center, std_dev, n_samples)
+
+        # Clip to ensure positive values
+        peak_times = np.clip(peak_times, 0.1, None)
+
+        times.extend(peak_times)
+
+    # Handle rounding errors (if total < num_tasks)
+    while len(times) < num_tasks:
+        # Add one more sample from the last peak
+        std_dev = peaks[-1] * std_factor
+        extra = np.random.normal(peaks[-1], std_dev, 1)[0]
+        times.append(max(0.1, extra))
+
+    # Convert to numpy array and shuffle
+    times = np.array(times[:num_tasks])
+    np.random.shuffle(times)
+
+    # Calculate statistics
+    mean_time = float(np.mean(times))
+    std_time = float(np.std(times))
+    min_time = float(np.min(times))
+    max_time = float(np.max(times))
+
+    config = WorkloadConfig(
+        name="four_peak",
+        min_time=min_time,
+        max_time=max_time,
+        mean_time=mean_time,
+        std_time=std_time,
+        description=f"Four-peak distribution: peaks at {peaks}, mean={mean_time:.2f}s"
+    )
+
+    return times.tolist(), config
+
+
 def generate_fanout_distribution(num_workflows: int,
                                  min_fanout: int = FANOUT_MIN,
                                  max_fanout: int = FANOUT_MAX,
@@ -529,23 +661,20 @@ def generate_workflow_from_dataset(
     seed: int = 42
 ) -> Tuple[WorkflowWorkload, WorkloadConfig]:
     """
-    Generate workflow workload data by sampling from dataset.jsonl WITH REPLACEMENT.
+    Generate workflow workload data for sleep model simulation.
 
     Process:
-    1. Load dataset.jsonl
+    1. Load dataset.jsonl to extract fanout distribution
     2. Sample num_workflows entries WITH REPLACEMENT (using random.choices)
-    3. For each sampled entry:
-       - boot field → A1 task input
-       - summary field → A2 task input
-       - queries array → B1 and B2 task inputs
-       - fanout = len(queries)
-
-    Note: This function does NOT generate execution times. The actual execution
-    time will be determined by the LLM service based on the input content and
-    max_tokens parameters.
+    3. Generate execution times using sleep model distributions:
+       - A1 tasks: Long-tail distribution with mean=8s
+       - A2 tasks (merge): Four-peak distribution (15s, 30s, 60s, 120s)
+       - B1 tasks: Long-tail distribution with mean=8s
+       - B2 tasks: Long-tail distribution with mean=8s
+    4. Extract fanout from dataset (fanout = len(queries) per entry)
 
     Args:
-        dataset_path: Path to dataset.jsonl file
+        dataset_path: Path to dataset.jsonl file (used for fanout distribution)
         num_workflows: Number of workflows to generate (can be > dataset size)
         seed: Random seed for reproducibility
 
@@ -564,51 +693,75 @@ def generate_workflow_from_dataset(
     # Sample WITH REPLACEMENT using random.choices
     sampled_entries = random.choices(dataset, k=num_workflows)
 
-    # Build workflow data
-    # Note: Setting times to 0.0 since we're using real LLM execution
-    a1_times = [0.0] * num_workflows  # Placeholder (actual time from LLM)
-    a2_times = [0.0] * num_workflows  # Placeholder (actual time from LLM)
-    b1_times = []  # List of lists (one list per workflow)
-    b2_times = []  # List of lists (one list per workflow)
-    fanout_values = []
+    # Extract fanout values first to calculate total B tasks
+    fanout_values = [entry.fanout for entry in sampled_entries]
+    total_b_tasks = sum(fanout_values)
 
-    for entry in sampled_entries:
-        fanout = entry.fanout
-        fanout_values.append(fanout)
+    # Generate execution times using sleep model distributions
+    # A1 tasks: long-tail with mean=8
+    a1_times, _ = generate_long_tail_with_mean(num_workflows, target_mean=8.0, seed=seed)
 
-        # Each B task gets 0.0 as placeholder time
-        b1_workflow = [0.0] * fanout
-        b2_workflow = [0.0] * fanout
+    # A2 tasks (merge): four-peak distribution (15, 30, 60, 120)
+    a2_times, _ = generate_four_peak_distribution(
+        num_workflows,
+        peaks=[15.0, 30.0, 60.0, 120.0],
+        peak_ratios=[0.25, 0.25, 0.25, 0.25],
+        seed=seed + 1
+    )
+
+    # B1 tasks: long-tail with mean=8
+    b1_times_flat, _ = generate_long_tail_with_mean(total_b_tasks, target_mean=8.0, seed=seed + 2)
+
+    # B2 tasks: long-tail with mean=8
+    b2_times_flat, _ = generate_long_tail_with_mean(total_b_tasks, target_mean=8.0, seed=seed + 3)
+
+    # Distribute B1/B2 times into workflows
+    b1_times = []
+    b2_times = []
+    b_task_index = 0
+
+    for fanout in fanout_values:
+        # Slice B1 times for this workflow
+        b1_workflow = b1_times_flat[b_task_index:b_task_index + fanout]
+        b2_workflow = b2_times_flat[b_task_index:b_task_index + fanout]
 
         b1_times.append(b1_workflow)
         b2_times.append(b2_workflow)
 
-    # Calculate statistics (fanout only, since times are all 0.0)
+        b_task_index += fanout
+
+    # Calculate statistics for all task types
+    all_a1 = np.array(a1_times)
+    all_a2 = np.array(a2_times)
+    all_b1 = np.array([t for workflow in b1_times for t in workflow])
+    all_b2 = np.array([t for workflow in b2_times for t in workflow])
     all_fanouts = np.array(fanout_values)
 
+    # Calculate overall statistics
+    all_times = np.concatenate([all_a1, all_a2, all_b1, all_b2])
+
     workflow_workload = WorkflowWorkload(
-        name="dataset_based_workflow",
+        name="sleep_model_workflow",
         a1_times=a1_times,
         a2_times=a2_times,
         b1_times=b1_times,
         b2_times=b2_times,
         fanout_values=fanout_values,
-        description=f"Workflow from dataset.jsonl: {num_workflows} workflows sampled "
-                    f"WITH REPLACEMENT from {len(dataset)} entries, "
-                    f"A1 from boot field, A2 from summary field, "
-                    f"B1/B2 from queries array"
+        description=f"Sleep model workflow: {num_workflows} workflows, "
+                    f"A1 long-tail (mean=8s), A2 four-peak (15/30/60/120s), "
+                    f"B1/B2 long-tail (mean=8s), fanout from dataset"
     )
 
-    # Overall config (times are 0.0 since we use real LLM execution)
+    # Overall config with actual time statistics
     config = WorkloadConfig(
-        name="dataset_based_workflow",
-        min_time=0.0,
-        max_time=0.0,
-        mean_time=0.0,
-        std_time=0.0,
-        description=f"Dataset-based workflow: {num_workflows} workflows, "
-                    f"avg fanout={all_fanouts.mean():.1f}, "
-                    f"fanout range=[{all_fanouts.min()}, {all_fanouts.max()}]"
+        name="sleep_model_workflow",
+        min_time=float(all_times.min()),
+        max_time=float(all_times.max()),
+        mean_time=float(all_times.mean()),
+        std_time=float(all_times.std()),
+        description=f"Sleep model: A1={all_a1.mean():.2f}s, A2={all_a2.mean():.2f}s, "
+                    f"B1={all_b1.mean():.2f}s, B2={all_b2.mean():.2f}s, "
+                    f"avg fanout={all_fanouts.mean():.1f}"
     )
 
     return workflow_workload, config

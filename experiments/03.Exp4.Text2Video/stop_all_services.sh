@@ -10,7 +10,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 echo "========================================="
-echo "Stopping 02.multi_model_no_dep Experiment"
+echo "Stopping Experiment 03: Text2Video"
 echo "========================================="
 
 # Function to stop a service by PID file
@@ -57,19 +57,45 @@ stop_service() {
 
 # Stop all services
 if [ -d "$LOG_DIR" ]; then
-    # Stop instances first
+    pids=()
+
+    # Stop instances first (in parallel)
+    echo "Stopping instance services (parallel)..."
     for pid_file in "$LOG_DIR"/instance-*.pid; do
         if [ -f "$pid_file" ]; then
             instance_name=$(basename "$pid_file" .pid)
-            stop_service "$instance_name"
+            stop_service "$instance_name" &
+            pids+=($!)
         fi
     done
 
-    # Stop both schedulers
-    stop_service "scheduler-a"
-    stop_service "scheduler-b"
+    # Wait for all instances to stop
+    for pid in "${pids[@]}"; do
+        wait $pid
+    done
+    echo -e "${GREEN}All instances stopped${NC}"
+
+    # Stop both schedulers (in parallel)
+    echo ""
+    echo "Stopping scheduler services (parallel)..."
+    pids=()
+    stop_service "scheduler-a" &
+    pids+=($!)
+    stop_service "scheduler-b" &
+    pids+=($!)
+
+    # Wait for schedulers to stop
+    for pid in "${pids[@]}"; do
+        wait $pid
+    done
+    echo -e "${GREEN}All schedulers stopped${NC}"
+
+    # Stop planner
+    echo ""
+    stop_service "planner"
 
     # Stop predictor
+    echo ""
     stop_service "predictor"
 else
     echo -e "${YELLOW}Log directory not found. No services to stop.${NC}"
@@ -78,14 +104,17 @@ fi
 # Clean up any remaining processes (fallback)
 echo ""
 echo "Cleaning up any remaining processes..."
-pkill -f "spredictor start" 2>/dev/null && echo -e "${GREEN}Cleaned up predictor processes${NC}" || echo "No predictor processes found"
-pkill -f "sscheduler start" 2>/dev/null && echo -e "${GREEN}Cleaned up scheduler processes${NC}" || echo "No scheduler processes found"
-pkill -f "sinstance start" 2>/dev/null && echo -e "${GREEN}Cleaned up instance processes${NC}" || echo "No instance processes found"
+pkill -f "predictor.*start" 2>/dev/null && echo -e "${GREEN}Cleaned up predictor processes${NC}" || echo "No predictor processes found"
+pkill -f "planner.*uvicorn" 2>/dev/null && echo -e "${GREEN}Cleaned up planner processes${NC}" || echo "No planner processes found"
+pkill -f "scheduler.*start" 2>/dev/null && echo -e "${GREEN}Cleaned up scheduler processes${NC}" || echo "No scheduler processes found"
+pkill -f "instance.*start" 2>/dev/null && echo -e "${GREEN}Cleaned up instance processes${NC}" || echo "No instance processes found"
 
-# Stop all Docker containers for sleep_model
+# Stop all Docker containers for models
 echo ""
 echo "Stopping Docker containers..."
-docker ps --filter "ancestor=sleep_model" -q | xargs -r docker stop 2>/dev/null && echo -e "${GREEN}Stopped Docker containers${NC}" || echo "No Docker containers found"
+docker stop $(docker ps -a --filter "name=sleep_model" -q) 2>/dev/null && docker rm $(docker ps -a --filter "name=sleep_model" -q) 2>/dev/null || echo "No sleep_model containers found"
+docker stop $(docker ps -a --filter "name=llm_service" -q) 2>/dev/null && docker rm $(docker ps -a --filter "name=llm_service" -q) 2>/dev/null || echo "No llm_service containers found"
+docker stop $(docker ps -a --filter "name=t2vid" -q) 2>/dev/null && docker rm $(docker ps -a --filter "name=t2vid" -q) 2>/dev/null || echo "No t2vid containers found"
 
 echo ""
 echo "========================================="

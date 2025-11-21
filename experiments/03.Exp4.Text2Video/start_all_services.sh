@@ -6,15 +6,18 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-# Configuration (can be overridden via command-line arguments)
+# Configuration (can be overridden via environment variables or command-line arguments)
 PREDICTOR_PORT=8101
 SCHEDULER_A_PORT=8100
 SCHEDULER_B_PORT=8200
+PLANNER_PORT=8202
 INSTANCE_GROUP_A_START_PORT=8210  # Group A instances: 8210-82xx
 INSTANCE_GROUP_B_START_PORT=8300  # Group B instances: 8300-83xx
-N1=${N1:-10}  # Default: 10 instances in group A
-N2=${N2:-6}   # Default: 6 instances in group B
-MODEL_ID="sleep_model"
+N1=${N1:-4}  # Default: 4 instances in group A
+N2=${N2:-2}  # Default: 2 instances in group B
+MODEL_ID_A=${MODEL_ID_A:-sleep_model_a}
+MODEL_ID_B=${MODEL_ID_B:-sleep_model_b}
+AUTO_OPTIMIZE_ENABLED=${AUTO_OPTIMIZE_ENABLED:-True}
 
 # Color output
 GREEN='\033[0;32m'
@@ -23,16 +26,26 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Parse command-line arguments
+# Parse command-line arguments (matching exp07 pattern)
 usage() {
-    echo "Usage: $0 [N1] [N2]"
-    echo "  N1: Number of instances in Group A (default: 10)"
-    echo "  N2: Number of instances in Group B (default: 6)"
+    echo "Usage: $0 [N1] [N2] [MODEL_ID_A] [MODEL_ID_B]"
+    echo "  N1: Number of instances in Group A (default: 4)"
+    echo "  N2: Number of instances in Group B (default: 2)"
+    echo "  MODEL_ID_A: Model ID for Group A (default: sleep_model_a)"
+    echo "  MODEL_ID_B: Model ID for Group B (default: sleep_model_b)"
     echo ""
-    echo "Example: $0 8 8  # Start with 8 instances in each group"
+    echo "Examples:"
+    echo "  $0                              # Use defaults (N1=4, N2=2)"
+    echo "  $0 8 4                          # 8 Group A, 4 Group B instances"
+    echo "  N1=10 N2=6 $0                   # Using environment variables"
+    echo "  $0 10 6 llm_service_small_model t2vid  # Real models"
     exit 1
 }
 
+# Enable python jit for better performance
+export PYTHON_JIT=1
+
+# Parse positional arguments
 if [ $# -ge 1 ]; then
     if [[ "$1" == "-h" ]] || [[ "$1" == "--help" ]]; then
         usage
@@ -42,6 +55,14 @@ fi
 
 if [ $# -ge 2 ]; then
     N2=$2
+fi
+
+if [ $# -ge 3 ]; then
+    MODEL_ID_A=$3
+fi
+
+if [ $# -ge 4 ]; then
+    MODEL_ID_B=$4
 fi
 
 # Validate inputs
@@ -94,17 +115,16 @@ start_service() {
     nohup bash -c "$command" > "$log_file" 2>&1 &
 
     # Wait a moment for the process to start
-    sleep 2
+    sleep 3
 
     # Find the actual Python process PID by port number
-    # Pattern: python3 (not uv) + src.cli start + --port parameter
-    local actual_pid=$(pgrep -f "python3.*src\.cli start.*--port $port" | head -1)
+    local actual_pid=$(pgrep -f "python.*--port $port" | head -1)
 
     # Retry a few times if not found immediately
     local retry=0
     while [ -z "$actual_pid" ] && [ $retry -lt 5 ]; do
         sleep 1
-        actual_pid=$(pgrep -f "python3.*src\.cli start.*--port $port" | head -1)
+        actual_pid=$(pgrep -f "python.*--port $port" | head -1)
         retry=$((retry + 1))
     done
 
@@ -119,12 +139,13 @@ start_service() {
 }
 
 echo "========================================="
-echo "Starting 02.multi_model_no_dep Experiment"
+echo "Starting Experiment 03: Text2Video"
 echo "========================================="
 echo -e "${BLUE}Configuration:${NC}"
-echo "  Group A: $N1 instances (Scheduler A on port $SCHEDULER_A_PORT)"
-echo "  Group B: $N2 instances (Scheduler B on port $SCHEDULER_B_PORT)"
+echo "  Group A: $N1 instances (Model: $MODEL_ID_A)"
+echo "  Group B: $N2 instances (Model: $MODEL_ID_B)"
 echo "  Total: $((N1 + N2)) instances"
+echo "  Planner: $AUTO_OPTIMIZE_ENABLED"
 echo "========================================="
 
 # Step 1: Start Predictor Service
@@ -140,144 +161,153 @@ if ! check_health "http://localhost:$PREDICTOR_PORT"; then
     exit 1
 fi
 
-# Step 2: Start Scheduler A (for Group A)
+# Step 2: Start Planner Service
 echo ""
-echo "Step 2: Starting Scheduler A (Group A)"
+echo "Step 2: Starting Planner Service"
+start_service "planner" \
+    "cd $PROJECT_ROOT/planner && AUTO_OPTIMIZE_ENABLED=$AUTO_OPTIMIZE_ENABLED AUTO_OPTIMIZE_INTERVAL=150 PLANNER_LOG_DIR=$SCRIPT_DIR/logs/planner uv run python -m uvicorn src.api:app --port $PLANNER_PORT" \
+    "$PLANNER_PORT"
+
+# Wait for planner to be ready
+if ! check_health "http://localhost:$PLANNER_PORT"; then
+    echo -e "${RED}Failed to start planner service${NC}"
+    exit 1
+fi
+
+# Step 3: Start Scheduler A (for Group A)
+echo ""
+echo "Step 3: Starting Scheduler A (Group A)"
 start_service "scheduler-a" \
-    "cd $PROJECT_ROOT/scheduler && PREDICTOR_URL=http://localhost:$PREDICTOR_PORT SCHEDULER_PORT=$SCHEDULER_A_PORT SCHEDULER_LOG_DIR=$SCRIPT_DIR/logs/scheduler-a SCHEDULER_LOGURU_LEVEL=\"INFO\" uv run python -m src.cli start --port $SCHEDULER_A_PORT" \
+    "cd $PROJECT_ROOT/scheduler && PREDICTOR_URL=http://localhost:$PREDICTOR_PORT PLANNER_URL=http://localhost:$PLANNER_PORT SCHEDULER_PORT=$SCHEDULER_A_PORT SCHEDULER_LOG_DIR=$SCRIPT_DIR/logs/scheduler-a SCHEDULER_AUTO_REPORT=5 uv run python -m src.cli start --port $SCHEDULER_A_PORT" \
     "$SCHEDULER_A_PORT"
 
-# Wait for scheduler A to be ready
+# Wait for Scheduler A to be ready
 if ! check_health "http://localhost:$SCHEDULER_A_PORT"; then
-    echo -e "${RED}Failed to start scheduler A service${NC}"
+    echo -e "${RED}Failed to start Scheduler A${NC}"
     exit 1
 fi
 
-# Step 3: Start Scheduler B (for Group B)
+# Step 4: Start Scheduler B (for Group B)
 echo ""
-echo "Step 3: Starting Scheduler B (Group B)"
+echo "Step 4: Starting Scheduler B (Group B)"
 start_service "scheduler-b" \
-    "cd $PROJECT_ROOT/scheduler && PREDICTOR_URL=http://localhost:$PREDICTOR_PORT SCHEDULER_PORT=$SCHEDULER_B_PORT SCHEDULER_LOG_DIR=$SCRIPT_DIR/logs/scheduler-b SCHEDULER_LOGURU_LEVEL=\"INFO\" uv run python -m src.cli start --port $SCHEDULER_B_PORT" \
+    "cd $PROJECT_ROOT/scheduler && PREDICTOR_URL=http://localhost:$PREDICTOR_PORT PLANNER_URL=http://localhost:$PLANNER_PORT SCHEDULER_PORT=$SCHEDULER_B_PORT SCHEDULER_LOG_DIR=$SCRIPT_DIR/logs/scheduler-b SCHEDULER_AUTO_REPORT=5 uv run python -m src.cli start --port $SCHEDULER_B_PORT" \
     "$SCHEDULER_B_PORT"
 
-# Wait for scheduler B to be ready
+# Wait for Scheduler B to be ready
 if ! check_health "http://localhost:$SCHEDULER_B_PORT"; then
-    echo -e "${RED}Failed to start scheduler B service${NC}"
+    echo -e "${RED}Failed to start Scheduler B${NC}"
     exit 1
 fi
 
-# Step 4: Build sleep-model Docker image (if not already built)
+# Step 5: Start Instances for Group A
 echo ""
-echo "Step 4: Building sleep-model Docker image"
-if ! docker images | grep -q "sleep_model"; then
-    echo "Building sleep_model image..."
-    cd $PROJECT_ROOT/instance
-    chmod +x build_sleep_model.sh
-    ./build_sleep_model.sh
-else
-    echo -e "${GREEN}sleep_model image already exists${NC}"
-fi
+echo "Step 5: Starting $N1 instances for Group A (ports $INSTANCE_GROUP_A_START_PORT-$((INSTANCE_GROUP_A_START_PORT + N1 - 1)))"
 
-# Step 5: Start Group A Instance Services
-echo ""
-echo "Step 5: Starting Group A Instance Services ($N1 instances)"
-for i in $(seq 0 $((N1 - 1))); do
-    instance_id="instance-$(printf '%03d' $i)"
-    instance_port=$((INSTANCE_GROUP_A_START_PORT + i))
-
-    start_service "$instance_id" \
-        "cd $PROJECT_ROOT/instance && SCHEDULER_URL=http://localhost:$SCHEDULER_A_PORT INSTANCE_ID=$instance_id INSTANCE_PORT=$instance_port INSTANCE_LOG_DIR=$SCRIPT_DIR/logs/instance_$instance_port uv run python -m src.cli start --port $instance_port" \
-        "$instance_port"
-
-    # Wait for instance to be ready
-    if ! check_health "http://localhost:$instance_port"; then
-        echo -e "${RED}Failed to start $instance_id${NC}"
-        exit 1
-    fi
-done
-
-# Step 6: Start Group B Instance Services
-echo ""
-echo "Step 6: Starting Group B Instance Services ($N2 instances)"
-for i in $(seq 0 $((N2 - 1))); do
-    global_index=$((N1 + i))
-    instance_id="instance-$(printf '%03d' $global_index)"
-    instance_port=$((INSTANCE_GROUP_B_START_PORT + i))
-
-    start_service "$instance_id" \
-        "cd $PROJECT_ROOT/instance && SCHEDULER_URL=http://localhost:$SCHEDULER_B_PORT INSTANCE_ID=$instance_id INSTANCE_PORT=$instance_port INSTANCE_LOG_DIR=$SCRIPT_DIR/logs/instance_$instance_port uv run python -m src.cli start --port $instance_port" \
-        "$instance_port"
-
-    # Wait for instance to be ready
-    if ! check_health "http://localhost:$instance_port"; then
-        echo -e "${RED}Failed to start $instance_id${NC}"
-        exit 1
-    fi
-done
-
-# Step 7: Start sleep-model on Group A instances
-echo ""
-echo "Step 7: Starting sleep-model on Group A instances"
+instance_pids=()
 for i in $(seq 0 $((N1 - 1))); do
     instance_port=$((INSTANCE_GROUP_A_START_PORT + i))
-    instance_id="instance-$(printf '%03d' $i)"
-
-    echo -n "Starting model on $instance_id..."
-    response=$(curl -s -X POST "http://localhost:$instance_port/model/start" \
-        -H "Content-Type: application/json" \
-        -d "{\"model_id\": \"$MODEL_ID\", \"parameters\": {}}")
-
-    if echo "$response" | grep -q "success\|started"; then
-        echo -e " ${GREEN}OK${NC}"
+    instance_id="instance-a-$(printf '%03d' $i)"
+    
+    if (( i % 2 == 0 )); then
+        scheduler_port=$SCHEDULER_A_PORT
     else
-        echo -e " ${RED}FAILED${NC}"
-        echo "Response: $response"
+        scheduler_port=$PLANNER_PORT
     fi
 
-    # Small delay between starts
-    sleep 0.5
+    (
+        start_service "$instance_id" \
+            "cd $PROJECT_ROOT/instance && SCHEDULER_URL=http://localhost:$scheduler_port INSTANCE_ID=$instance_id INSTANCE_PORT=$instance_port INSTANCE_LOG_DIR=$SCRIPT_DIR/logs/$instance_id uv run python -m src.cli start --port $instance_port --docker" \
+            "$instance_port"
+    ) &
+    instance_pids+=($!)
 done
 
-# Step 8: Start sleep-model on Group B instances
+# Wait for all Group A instances to start
+for pid in "${instance_pids[@]}"; do
+    wait "$pid" || true
+done
+
+# Health check for Group A instances (parallel)
+echo -n "Health checking Group A instances..."
+health_pids=()
+for i in $(seq 0 $((N1 - 1))); do
+    instance_port=$((INSTANCE_GROUP_A_START_PORT + i))
+    ( check_health "http://localhost:$instance_port" > /dev/null 2>&1 ) &
+    health_pids+=($!)
+done
+for pid in "${health_pids[@]}"; do
+    wait "$pid" || true
+done
+echo -e " ${GREEN}OK${NC}"
+
+# Step 6: Start Instances for Group B
 echo ""
-echo "Step 8: Starting sleep-model on Group B instances"
+echo "Step 6: Starting $N2 instances for Group B (ports $INSTANCE_GROUP_B_START_PORT-$((INSTANCE_GROUP_B_START_PORT + N2 - 1)))"
+
+instance_pids=()
 for i in $(seq 0 $((N2 - 1))); do
-    global_index=$((N1 + i))
     instance_port=$((INSTANCE_GROUP_B_START_PORT + i))
-    instance_id="instance-$(printf '%03d' $global_index)"
-
-    echo -n "Starting model on $instance_id..."
-    response=$(curl -s -X POST "http://localhost:$instance_port/model/start" \
-        -H "Content-Type: application/json" \
-        -d "{\"model_id\": \"$MODEL_ID\", \"parameters\": {}}")
-
-    if echo "$response" | grep -q "success\|started"; then
-        echo -e " ${GREEN}OK${NC}"
+    instance_id="instance-b-$(printf '%03d' $i)"
+    
+    if (( i % 2 == 0 )); then
+        scheduler_port=$SCHEDULER_B_PORT
     else
-        echo -e " ${RED}FAILED${NC}"
-        echo "Response: $response"
+        scheduler_port=$PLANNER_PORT
     fi
-
-    # Small delay between starts
-    sleep 0.5
+    
+    (
+        start_service "$instance_id" \
+            "cd $PROJECT_ROOT/instance && SCHEDULER_URL=http://localhost:$SCHEDULER_B_PORT INSTANCE_ID=$instance_id INSTANCE_PORT=$instance_port INSTANCE_LOG_DIR=$SCRIPT_DIR/logs/$instance_id uv run python -m src.cli start --port $instance_port --docker" \
+            "$instance_port"
+    ) &
+    instance_pids+=($!)
 done
 
-# Final status
+# Wait for all Group B instances to start
+for pid in "${instance_pids[@]}"; do
+    wait "$pid" || true
+done
+
+# Health check for Group B instances (parallel)
+echo -n "Health checking Group B instances..."
+health_pids=()
+for i in $(seq 0 $((N2 - 1))); do
+    instance_port=$((INSTANCE_GROUP_B_START_PORT + i))
+    ( check_health "http://localhost:$instance_port" > /dev/null 2>&1 ) &
+    health_pids+=($!)
+done
+for pid in "${health_pids[@]}"; do
+    wait "$pid" || true
+done
+echo -e " ${GREEN}OK${NC}"
+
+# Step 7: Deploy models using planner
+echo ""
+echo "Step 7: Deploying models via Planner"
+"$SCRIPT_DIR/manual_deploy_planner.sh" \
+    --scheduler-a-url "http://localhost:$SCHEDULER_A_PORT" \
+    --scheduler-b-url "http://localhost:$SCHEDULER_B_PORT" \
+    --planner-url "http://localhost:$PLANNER_PORT" \
+    --model-id-a "$MODEL_ID_A" \
+    --model-id-b "$MODEL_ID_B" \
+    --n1 "$N1" \
+    --n2 "$N2" \
+    --port-a-start "$INSTANCE_GROUP_A_START_PORT" \
+    --port-b-start "$INSTANCE_GROUP_B_START_PORT"
+
+# Summary
 echo ""
 echo "========================================="
 echo -e "${GREEN}All services started successfully!${NC}"
 echo "========================================="
+echo -e "${BLUE}Service URLs:${NC}"
+echo "  Predictor:   http://localhost:$PREDICTOR_PORT"
+echo "  Planner:     http://localhost:$PLANNER_PORT"
+echo "  Scheduler A: http://localhost:$SCHEDULER_A_PORT (Model: $MODEL_ID_A, $N1 instances)"
+echo "  Scheduler B: http://localhost:$SCHEDULER_B_PORT (Model: $MODEL_ID_B, $N2 instances)"
 echo ""
-echo "Service Status:"
-echo "  Predictor:    http://localhost:$PREDICTOR_PORT"
-echo "  Scheduler A:  http://localhost:$SCHEDULER_A_PORT (Group A: $N1 instances)"
-echo "  Scheduler B:  http://localhost:$SCHEDULER_B_PORT (Group B: $N2 instances)"
+echo -e "${BLUE}Log Directory:${NC} $LOG_DIR"
 echo ""
-echo "Instance Groups:"
-echo "  Group A: $N1 instances on ports $INSTANCE_GROUP_A_START_PORT-$((INSTANCE_GROUP_A_START_PORT + N1 - 1)) (registers to Scheduler A)"
-echo "  Group B: $N2 instances on ports $INSTANCE_GROUP_B_START_PORT-$((INSTANCE_GROUP_B_START_PORT + N2 - 1)) (registers to Scheduler B)"
-echo ""
-echo "Logs are available in: $LOG_DIR/"
-echo ""
-echo "To stop all services, run: ./stop_all_services.sh"
-echo ""
+echo "Use './stop_all_services.sh' to shutdown all services."
+echo "========================================="

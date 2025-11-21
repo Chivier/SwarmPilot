@@ -1,243 +1,280 @@
-# Quick Reference: Experiment 03
+# Experiment 03: Quick Reference
 
-## TL;DR
+## Service Management
 
-Experiment testing **1-to-1 workflow dependencies**: each A task triggers exactly one B task upon completion.
-
-## Quick Start
+### Start Services (Multiple Methods - Compatible with Exp07)
 
 ```bash
-# Start services
+# Use defaults (4 Group A, 2 Group B, sleep models)
 ./start_all_services.sh
 
-# Run experiment (default: 100 workflows, 3 strategies)
-python test_dual_scheduler.py
+# Positional arguments (exp07 style)
+./start_all_services.sh 10 6
 
-# View results
-ls -lh results/
+# Positional with models
+./start_all_services.sh 10 6 llm_service_small_model t2vid
 
-# Stop services
+# Environment variables (simulation)
+N1=4 N2=2 ./start_all_services.sh
+
+# Environment variables (real models)
+N1=10 N2=6 MODEL_ID_A=llm_service_small_model MODEL_ID_B=t2vid ./start_all_services.sh
+
+# Show help
+./start_all_services.sh --help
+```
+
+### Stop Services
+```bash
 ./stop_all_services.sh
 ```
 
-## Key Concept
-
-```
-Workflow:
-  A task (Poisson QPS) → A completes → B task submitted → B completes
-  └────────────────────── Workflow Time ─────────────────────┘
-```
-
-## Common Commands
-
-### Basic Run
+### Check Service Health
 ```bash
-python test_dual_scheduler.py
+curl http://localhost:8100/health  # Scheduler A
+curl http://localhost:8200/health  # Scheduler B
+curl http://localhost:8101/health  # Predictor
+curl http://localhost:8202/health  # Planner
 ```
 
-### Custom Configuration
+## Common Test Commands
+
+### Basic Simulation Test
 ```bash
-# 200 workflows, QPS=10, test only min_time
-python test_dual_scheduler.py --num-workflows 200 --qps1 10.0 --strategies min_time
-
-# Different instance counts
-python test_dual_scheduler.py --n1 15 --n2 10
-
-# High QPS test
-python test_dual_scheduler.py --qps1 15.0 --num-workflows 150
+uv run python test_dynamic_workflow.py \
+  --num-workflows 10 \
+  --qps 5.0 \
+  --strategies min_time \
+  --mode simulation
 ```
 
-### Test Specific Strategy
+### Real Model Test
 ```bash
-# Only round_robin
-python test_dual_scheduler.py --strategies round_robin
-
-# Multiple strategies
-python test_dual_scheduler.py --strategies min_time probabilistic
+uv run python test_dynamic_workflow.py \
+  --num-workflows 24 \
+  --qps 4.0 \
+  --strategies min_time \
+  --mode real
 ```
 
-## Parameters
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `--n1` | 10 | Number of Group A instances |
-| `--n2` | 6 | Number of Group B instances |
-| `--qps1` | 8.0 | QPS for A tasks (B follows A) |
-| `--num-workflows` | 100 | Number of workflows per strategy |
-| `--strategies` | all | Strategies to test |
-
-## Strategies
-
-- `round_robin`: Even distribution
-- `min_time`: Assign to fastest instance
-- `probabilistic`: Probabilistic load balancing
-
-## Output Files
-
-Results saved to `results/results_workflow_YYYYMMDD_HHMMSS.json`
-
-## Service Ports
-
-- **Predictor**: 8101
-- **Scheduler A**: 8100 (WebSocket: ws://localhost:8100)
-- **Scheduler B**: 8200 (WebSocket: ws://localhost:8200)
-- **Group A Instances**: 8210-821N (N=n1-1)
-- **Group B Instances**: 8300-830M (M=n2-1)
-
-## Metrics Explained
-
-### A Task Metrics
-Time from A task submission to A task completion.
-
-### B Task Metrics
-Time from B task submission to B task completion.
-
-### Workflow Metrics (KEY)
-Time from A task submission to B task completion (end-to-end).
-
-## Example Workflow
-
-```
-t=0.0s:   A task submitted (QPS control)
-t=0.1s:   A task starts execution
-t=2.5s:   A task completes
-t=2.5s:   B task immediately submitted
-t=2.6s:   B task starts execution
-t=5.8s:   B task completes
-─────────────────────────────
-Workflow time: 5.8s
-A completion: 2.5s
-B completion: 3.3s (5.8 - 2.5)
+### Multiple Strategies
+```bash
+uv run python test_dynamic_workflow.py \
+  --num-workflows 50 \
+  --qps 6.0 \
+  --strategies min_time round_robin probabilistic \
+  --mode simulation
 ```
 
-## Quick Health Check
+### With Global Rate Limiting
+```bash
+uv run python test_dynamic_workflow.py \
+  --num-workflows 100 \
+  --qps 8.0 \
+  --gqps 20.0 \
+  --strategies min_time
+```
+
+### With Warmup
+```bash
+uv run python test_dynamic_workflow.py \
+  --num-workflows 100 \
+  --qps 8.0 \
+  --warmup 0.2 \
+  --strategies min_time
+```
+
+### Continuous Mode
+```bash
+uv run python test_dynamic_workflow.py \
+  --num-workflows 100 \
+  --qps 8.0 \
+  --continuous \
+  --strategies min_time
+```
+
+## Workload Generation
+
+### Generate Captions Cache
+```bash
+uv run python workload_generator.py \
+  --num-captions 200 \
+  --cache-path data/captions.jsonl \
+  --stream-limit 5000
+```
+
+### Use Cached Captions
+```bash
+uv run python test_dynamic_workflow.py \
+  --num-workflows 50 \
+  --cache-path data/captions.jsonl
+```
+
+## Port Configuration
+
+| Service | Default Port | Environment Variable |
+|---------|-------------|---------------------|
+| Scheduler A | 8100 | SCHEDULER_A_PORT |
+| Scheduler B | 8200 | SCHEDULER_B_PORT |
+| Predictor | 8101 | PREDICTOR_PORT |
+| Planner | 8202 | PLANNER_PORT |
+| Group A Instances | 8210+ | INSTANCE_GROUP_A_START_PORT |
+| Group B Instances | 8300+ | INSTANCE_GROUP_B_START_PORT |
+
+## Environment Variables
 
 ```bash
-# Check Scheduler A
-curl http://localhost:8100/health
+# Instance counts
+N1=4              # Number of Group A instances
+N2=2              # Number of Group B instances
 
-# Check Scheduler B
-curl http://localhost:8200/health
+# Model IDs
+MODEL_ID_A=sleep_model_a                # For simulation
+MODEL_ID_B=sleep_model_b                # For simulation
+MODEL_ID_A=llm_service_small_model      # For real mode
+MODEL_ID_B=t2vid                        # For real mode
 
-# Check Predictor
-curl http://localhost:8101/health
+# Planner
+AUTO_OPTIMIZE_ENABLED=true              # Enable/disable auto optimization
+AUTO_OPTIMIZE_INTERVAL=150              # Optimization interval (seconds)
+```
 
-# Check instances
-docker ps | grep sleep_model
+## Results
+
+### View Results
+```bash
+# Latest results
+ls -lt results/*.json | head
+
+# View specific result
+cat results/text2video_min_time_20251120_123456.json | jq '.workflows'
+
+# View all strategies
+cat results/text2video_combined_20251120_123456.json | jq '.strategies | keys'
+```
+
+### Extract Metrics
+```bash
+# Workflow completion times
+jq '.workflows.avg_workflow_time' results/text2video_min_time_*.json
+
+# Task completion times
+jq '.a1_tasks.p95_completion_time' results/text2video_min_time_*.json
+jq '.a2_tasks.p95_completion_time' results/text2video_min_time_*.json
+jq '.b_tasks.p95_completion_time' results/text2video_min_time_*.json
+
+# Success rates
+jq '.workflows.num_completed' results/text2video_min_time_*.json
 ```
 
 ## Troubleshooting
 
-### Services not starting
+### Check Logs
 ```bash
-# Check Docker
-docker ps
+# All logs
+tail -f logs/*.log
 
-# Check logs
-docker logs <container_id>
+# Specific service
+tail -f logs/scheduler_a.log
+tail -f logs/scheduler_b.log
+tail -f logs/predictor.log
+tail -f logs/planner.log
+```
 
-# Restart
+### Check Running Processes
+```bash
+# PIDs
+cat logs/*.pid
+
+# Processes
+ps aux | grep -E "(scheduler|predictor|planner|instance)"
+```
+
+### Force Clean Restart
+```bash
 ./stop_all_services.sh
+pkill -f "scheduler|predictor|planner|instance"
+rm -f logs/*.pid
+sleep 5
 ./start_all_services.sh
 ```
 
-### WebSocket errors
-```bash
-# Test WebSocket manually
-wscat -c ws://localhost:8100/task/get_result
+## Scheduler API
 
-# Send subscription
-{"type": "subscribe", "task_ids": ["test-task-001"]}
+### Submit Task
+```bash
+curl -X POST http://localhost:8100/task/submit \
+  -H "Content-Type: application/json" \
+  -d '{
+    "task_id": "test-task-001",
+    "model_id": "llm_service_small_model",
+    "task_input": {"sentence": "Generate a video of a cat"},
+    "metadata": {"task_type": "A1"}
+  }'
 ```
 
-### Results analysis
+### Query Task
 ```bash
-# Pretty print results
-python -m json.tool results/results_workflow_20250115_103045.json
-
-# Extract workflow metrics
-jq '.results[].workflows' results/results_workflow_*.json
+curl http://localhost:8100/task/query/test-task-001
 ```
 
-## Comparison with Experiment 02
-
-| Feature | Exp 02 | Exp 03 |
-|---------|--------|--------|
-| A-B Relationship | Independent | 1-to-1 dependency |
-| B Task QPS | Controlled | Follows A completion |
-| Key Metric | Separate A/B times | Workflow time |
-| Use Case | Independent workloads | Chained workflows |
-
-## Analysis Examples
-
-### Compare strategy workflow times
+### Clear Tasks
 ```bash
-# Extract P95 workflow times
-jq '.results[] | {strategy: .strategy, p95: .workflows.p95_completion_time}' results/results_workflow_*.json
+curl -X POST http://localhost:8100/task/clear
 ```
 
-### Count completed workflows
+### Instance Status
 ```bash
-# Total workflows across all strategies
-jq '[.results[].workflows.num_completed] | add' results/results_workflow_*.json
+curl http://localhost:8100/instance/status
 ```
 
-### Get best strategy
+## Quick Performance Test
+
 ```bash
-# Sort by average workflow time
-jq '.results | sort_by(.workflows.avg_completion_time) | .[0].strategy' results/results_workflow_*.json
+# Small test (5 minutes)
+uv run python test_dynamic_workflow.py \
+  --num-workflows 20 \
+  --qps 6.0 \
+  --strategies min_time \
+  --mode simulation \
+  --timeout 5
+
+# Medium test (15 minutes)
+uv run python test_dynamic_workflow.py \
+  --num-workflows 100 \
+  --qps 8.0 \
+  --strategies min_time round_robin \
+  --mode simulation \
+  --timeout 15
+
+# Large test (30 minutes)
+uv run python test_dynamic_workflow.py \
+  --num-workflows 200 \
+  --qps 10.0 \
+  --strategies min_time round_robin probabilistic \
+  --mode simulation \
+  --gqps 25.0 \
+  --timeout 30
 ```
 
-## Tips
+## Development
 
-1. **Start with default settings** to understand baseline performance
-2. **Increase num-workflows** for more stable statistics
-3. **Adjust QPS** to test under different load conditions
-4. **Compare workflow P95** to understand tail latency impact
-5. **Check A/B ratio** to understand where time is spent
-
-## Common Patterns
-
-### Load Testing
+### Run Syntax Check
 ```bash
-# Low load
-python test_dual_scheduler.py --qps1 5.0 --num-workflows 50
-
-# Medium load
-python test_dual_scheduler.py --qps1 10.0 --num-workflows 100
-
-# High load
-python test_dual_scheduler.py --qps1 20.0 --num-workflows 200
+python3 -m py_compile test_dynamic_workflow.py common.py workload_generator.py
 ```
 
-### Strategy Comparison
+### Test Workload Generation
 ```bash
-# All strategies, large sample
-python test_dual_scheduler.py --num-workflows 200 --strategies min_time round_robin probabilistic
+uv run python workload_generator.py --num-captions 10
 ```
 
-### Resource Scaling
+### Test Single Workflow
 ```bash
-# Scale Group A
-python test_dual_scheduler.py --n1 20
-
-# Scale Group B
-python test_dual_scheduler.py --n2 12
-
-# Scale both
-python test_dual_scheduler.py --n1 15 --n2 10
+uv run python test_dynamic_workflow.py \
+  --num-workflows 1 \
+  --qps 1.0 \
+  --strategies min_time \
+  --mode simulation \
+  --timeout 2
 ```
-
-## Next Steps
-
-1. Run experiment with default settings
-2. Analyze workflow completion times
-3. Compare strategies based on workflow P95
-4. Adjust parameters to optimize for your use case
-5. Consider scaling resources if needed
-
-## Documentation
-
-- Full details: See [README.md](README.md)
-- Workload generation: See [workload_generator.py](workload_generator.py)
-- Implementation: See [test_dual_scheduler.py](test_dual_scheduler.py)

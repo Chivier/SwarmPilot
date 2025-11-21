@@ -1,384 +1,286 @@
-# Experiment 03: Multi-Model 1-to-1 Workflow Dependencies
+# Experiment 03: Text2Video Workflow (A1→A2→B)
 
 ## Overview
 
-This experiment extends experiment 02 by introducing **1-to-1 task dependencies** between two task types (A and B). Each A-type task, upon completion, triggers exactly one B-type task, forming a workflow chain.
+This experiment tests a linear workflow for text-to-video generation using two models:
+- **Model A** (llm_service_small_model): Generates video prompts
+  - **A1 task**: Generate positive prompt from caption
+  - **A2 task**: Generate negative prompt from positive prompt
+- **Model B** (t2video): Generates video from both prompts
+  - **B task**: Generate video frames using positive and negative prompts
 
-The key difference from experiment 02:
-- **Experiment 02**: Independent A and B tasks with separate QPS control
-- **Experiment 03**: A tasks trigger B tasks (1-to-1 dependency), QPS control only on A tasks
+**Workflow Pattern**: A1 → A2 → B (linear chain, no fanout, no merge)
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                       Predictor (8101)                       │
-│                    Shared by both schedulers                 │
-└────────────────────┬───────────────────┬────────────────────┘
-                     │                   │
-         ┌───────────▼──────────┐   ┌───▼────────────────────┐
-         │  Scheduler A (8100)  │   │  Scheduler B (8200)    │
-         │  Handles A tasks     │   │  Handles B tasks       │
-         └──────────┬───────────┘   └───┬────────────────────┘
-                    │                   │
-         ┌──────────▼──────────┐   ┌───▼────────────────────┐
-         │ Group A Instances   │   │ Group B Instances      │
-         │ (ports 8210-82xx)   │   │ (ports 8300-83xx)      │
-         │ N1 instances        │   │ N2 instances           │
-         └─────────────────────┘   └────────────────────────┘
+### Thread Model (4 threads)
+1. **Thread 1**: A1 Task Submitter (Poisson process, QPS-controlled)
+2. **Thread 2**: A1 Result Receiver → A2 Task Submitter
+3. **Thread 3**: A2 Result Receiver → B Task Submitter  
+4. **Thread 4**: B Result Receiver → Workflow Completion
 
-Workflow Flow:
-  1. A task submitted with Poisson QPS control
-  2. A task executes on Group A instance
-  3. A task completes → WebSocket notification
-  4. B task immediately submitted to Scheduler B
-  5. B task executes on Group B instance
-  6. B task completes → Workflow complete
-```
+### Services
+- **Predictor** (Port 8101): Predicts task execution times
+- **Scheduler A** (Port 8100): Manages A1 and A2 tasks (LLM service)
+- **Scheduler B** (Port 8200): Manages B tasks (video generation)
+- **Planner** (Port 8202): Optional AI-based optimization
+- **Instances**:
+  - Group A (Ports 8210-82xx): llm_service_small_model instances
+  - Group B (Ports 8300-83xx): t2video instances
 
-## Task Types and Workloads
+## Quick Start
 
-### A Tasks (Bimodal Distribution)
-- **Distribution**: Two distinct peaks in execution time
-  - Left peak: 1-3 seconds (mean=2.0s, std=0.4s, 50% of tasks)
-  - Right peak: 7-10 seconds (mean=8.5s, std=0.6s, 50% of tasks)
-- **Submission**: Poisson process with configurable QPS (default: 8.0)
-- **Scheduler**: Scheduler A (port 8100)
-- **Instances**: Group A (N1 instances, default: 10)
+### 1. Start Services
 
-### B Tasks (Pareto Long-Tail Distribution)
-- **Distribution**: Power-law distribution with long tail
-  - Range: 1-10 seconds
-  - ~80% of tasks complete quickly
-  - ~20% of tasks take significantly longer
-  - Alpha parameter: 1.5
-- **Submission**: Triggered by A task completion (no direct QPS control)
-- **Scheduler**: Scheduler B (port 8200)
-- **Instances**: Group B (N2 instances, default: 6)
+**Interface compatible with Experiment 07:**
 
-## Workflow Tracking
-
-Each workflow consists of one A task and one B task:
-
-### Task ID Format
-- **A task**: `task-A-{strategy}-workflow-{i:04d}-A`
-- **B task**: `task-B-{strategy}-workflow-{i:04d}-B`
-- **Workflow ID**: `wf-{strategy}-{i:04d}`
-
-### Metrics Tracked
-
-1. **A Task Metrics** (Submit → Complete):
-   - Average, Median, P95, P99 completion times
-   - Number completed/failed
-   - Task distribution across instances
-
-2. **B Task Metrics** (Submit → Complete):
-   - Average, Median, P95, P99 completion times
-   - Number completed/failed
-   - Task distribution across instances
-
-3. **Workflow Metrics** (A Submit → B Complete):
-   - Average, Median, P50, P95, P99 workflow completion times
-   - Number of completed workflows
-   - End-to-end latency analysis
-
-## Scheduling Strategies
-
-Three strategies are tested:
-
-1. **round_robin**: Evenly distributes tasks across instances in a round-robin fashion
-2. **min_time**: Assigns tasks to the instance with minimum predicted completion time
-3. **probabilistic**: Balances load using probabilistic selection based on predicted times
-
-## Implementation Details
-
-### Thread Architecture
-
-The experiment uses a 4-threaded design:
-
-1. **Thread 1**: WebSocket receiver for Scheduler A
-   - Receives A task completion events
-   - **Immediately submits corresponding B tasks** upon A completion
-   - Tracks B task submissions
-
-2. **Thread 2**: WebSocket receiver for Scheduler B
-   - Receives B task completion events
-   - Tracks workflow completion
-
-3. **Thread 3**: Poisson task submitter for A tasks
-   - Submits A tasks following Poisson process (configurable QPS)
-   - Uses exponential inter-arrival times
-
-4. **Thread 4**: Not used (B tasks submitted by Thread 1)
-
-### Key Classes
-
-#### WorkflowTaskData
-Extends TaskData with workflow tracking:
-```python
-@dataclass
-class WorkflowTaskData:
-    task_id: str
-    workflow_id: str  # Links A and B tasks
-    task_type: str    # "A" or "B"
-    sleep_time: float
-    exp_runtime: float
-```
-
-#### TaskRecord
-Tracks execution with workflow context:
-```python
-@dataclass
-class TaskRecord:
-    task_id: str
-    workflow_id: str
-    task_type: str
-    sleep_time: float
-    exp_runtime: float
-    submit_time: Optional[float]
-    complete_time: Optional[float]
-    status: Optional[str]
-    assigned_instance: Optional[str]
-    result: Optional[Dict]
-    error: Optional[str]
-    execution_time_ms: Optional[float]
-```
-
-#### WebSocketResultReceiver (Enhanced)
-Now includes B task submission capability:
-```python
-def __init__(self, name: str, ws_url: str, task_ids: List[str], result_queue: Queue,
-             scheduler_b_url: Optional[str] = None, b_task_generator=None):
-    # When scheduler_b_url and b_task_generator are provided,
-    # this receiver will submit B tasks upon A task completion
-```
-
-## Usage
-
-### Quick Start
-
-1. **Start all services**:
 ```bash
-cd experiments/03.multi_model_1_to_1
+# Method 1: Use defaults (4 Group A, 2 Group B, sleep models)
 ./start_all_services.sh
+
+# Method 2: Positional arguments
+./start_all_services.sh 10 6                              # 10 Group A, 6 Group B
+
+# Method 3: Positional with model IDs
+./start_all_services.sh 10 6 llm_service_small_model t2vid
+
+# Method 4: Environment variables (simulation)
+N1=4 N2=2 ./start_all_services.sh
+
+# Method 5: Environment variables (real models)
+N1=10 N2=6 MODEL_ID_A=llm_service_small_model MODEL_ID_B=t2vid ./start_all_services.sh
+
+# Show help
+./start_all_services.sh --help
 ```
 
-2. **Run experiment with default settings**:
+### 2. Run Tests
+
 ```bash
-python test_dual_scheduler.py
+# Simulation test (quick validation)
+uv run python test_dynamic_workflow.py \
+  --num-workflows 10 \
+  --qps 5.0 \
+  --strategies min_time \
+  --mode simulation
+
+# Real model test
+uv run python test_dynamic_workflow.py \
+  --num-workflows 24 \
+  --qps 4.0 \
+  --strategies min_time round_robin \
+  --mode real
+
+# With global rate limiting
+uv run python test_dynamic_workflow.py \
+  --num-workflows 50 \
+  --qps 8.0 \
+  --gqps 20.0 \
+  --strategies min_time
+
+# With warmup and continuous mode
+uv run python test_dynamic_workflow.py \
+  --num-workflows 100 \
+  --qps 8.0 \
+  --warmup 0.2 \
+  --continuous \
+  --strategies min_time
 ```
 
-3. **Stop all services**:
+### 3. Stop Services
+
 ```bash
 ./stop_all_services.sh
 ```
 
-### Configuration Options
+## Command-Line Options
 
+```
+--num-workflows    Number of workflows to execute per strategy (default: 24)
+--qps              Target QPS for A1 task submission (default: 6.0)
+--strategies       Scheduling strategies to test (default: min_time)
+                   Choices: min_time, round_robin, probabilistic, random, po2
+--mode             Test mode: simulation or real (default: simulation)
+--model-a-id       Model ID for A1/A2 tasks (default: llm_service_small_model)
+--model-b-id       Model ID for B tasks (default: t2vid)
+--gqps             Global QPS limit for all task submissions (optional)
+--warmup           Warmup task ratio 0.0-1.0 (default: 0.0)
+--continuous       Enable continuous request mode
+--timeout          Test timeout in minutes (default: 30)
+--output-dir       Output directory for results (default: results)
+```
+
+## Rate Limiting
+
+### QPS (A1 Arrival Rate)
+- Controls A1 task submission using Poisson process
+- Simulates realistic user request patterns
+- Example: `--qps 8.0` → 8 A1 tasks per second
+
+### Global QPS (All Submissions)
+- Applies token bucket rate limiting to ALL submissions (A1, A2, B)
+- Prevents system overload
+- Example: `--gqps 20.0` → maximum 20 total task submissions per second
+
+### Combined Example
 ```bash
-python test_dual_scheduler.py \
-  --n1 10 \              # Number of Group A instances
-  --n2 6 \               # Number of Group B instances
-  --qps1 8.0 \           # QPS for A tasks (B tasks follow A completions)
-  --num-workflows 100 \  # Number of workflows per strategy
-  --strategies min_time round_robin probabilistic
+# A1 arrives at 8 QPS, but total submission capped at 20 QPS
+uv run python test_dynamic_workflow.py \
+  --num-workflows 100 \
+  --qps 8.0 \
+  --gqps 20.0
 ```
 
-### Example Output
+## Workload Generation
 
-```
-=================================================================
-03.multi_model_1_to_1 Experiment
-=================================================================
-Configuration:
-  Group A: 10 instances (Scheduler A)
-  Group B: 6 instances (Scheduler B)
-  A Tasks QPS: 8.0
-  Workflows per strategy: 100
-  Strategies: min_time, round_robin, probabilistic
-  Workflow: Each A task → triggers one B task
-=================================================================
+Captions are sampled from the OpenVid-1M dataset:
+- **Default**: Stream from `nkp37/OpenVid-1M` (requires internet)
+- **Cached**: Use local JSONL file for faster iteration
 
-...
-
-=================================================================
-Results for MIN_TIME
-=================================================================
-
-[A Tasks - Scheduler A]
-  Total tasks:              100
-  Submitted:                100
-  Completed:                100
-  Failed:                   0
-  Avg completion time:      2.456s
-  Median completion time:   2.123s
-  P95 completion time:      5.678s
-  P99 completion time:      7.234s
-
-[B Tasks - Scheduler B]
-  Total tasks:              100
-  Submitted:                100
-  Completed:                100
-  Failed:                   0
-  Avg completion time:      3.234s
-  Median completion time:   2.567s
-  P95 completion time:      8.123s
-  P99 completion time:      9.456s
-
-[Workflows (A submit → B complete)]
-  Total workflows:          100
-  Completed workflows:      100
-  Avg workflow time:        5.690s
-  Median workflow time:     4.690s
-  P50 workflow time:        4.690s
-  P95 workflow time:        13.801s
-  P99 workflow time:        16.690s
-
-...
-
-=================================================================
-Strategy Comparison - Workflow Metrics
-=================================================================
-Strategy             A Avg        B Avg        Workflow Avg    Workflow P95
---------------------------------------------------------------------------------
-min_time                  2.456s       3.234s          5.690s         13.801s
-round_robin               3.123s       4.567s          7.690s         15.234s
-probabilistic             2.789s       3.890s          6.679s         14.123s
-================================================================================
-```
+Frame counts follow a four-peak distribution:
+- **16 frames**: 40% (fast generation)
+- **24 frames**: 30% (standard)
+- **32 frames**: 20% (high quality)
+- **48 frames**: 10% (maximum quality)
 
 ## Results
 
-Results are saved to `results/results_workflow_YYYYMMDD_HHMMSS.json`:
+Results are saved in JSON format to the `results/` directory:
+- **Per-strategy files**: `text2video_{strategy}_{timestamp}.json`
+- **Combined file**: `text2video_combined_{timestamp}.json`
 
-```json
-{
-  "experiment": "03.multi_model_1_to_1",
-  "timestamp": "2025-01-15T10:30:45.123456",
-  "config": {
-    "n1": 10,
-    "n2": 6,
-    "qps1": 8.0,
-    "num_workflows": 100,
-    "workload_a": {
-      "type": "Bimodal Distribution",
-      "description": "Two distinct peaks...",
-      "mean": 5.0,
-      "std": 3.0,
-      "min": 1.0,
-      "max": 10.0
-    },
-    "workload_b": {
-      "type": "Pareto Distribution",
-      "description": "Power-law distribution...",
-      "mean": 2.5,
-      "std": 2.0,
-      "min": 1.0,
-      "max": 10.0
-    }
-  },
-  "results": [
-    {
-      "strategy": "min_time",
-      "qps": 8.0,
-      "num_workflows": 100,
-      "a_tasks": {
-        "num_tasks": 100,
-        "num_submitted": 100,
-        "num_completed": 100,
-        "num_failed": 0,
-        "avg_completion_time": 2.456,
-        "median_completion_time": 2.123,
-        "p95_completion_time": 5.678,
-        "p99_completion_time": 7.234
-      },
-      "b_tasks": {
-        "num_tasks": 100,
-        "num_submitted": 100,
-        "num_completed": 100,
-        "num_failed": 0,
-        "avg_completion_time": 3.234,
-        "median_completion_time": 2.567,
-        "p95_completion_time": 8.123,
-        "p99_completion_time": 9.456
-      },
-      "workflows": {
-        "num_completed": 100,
-        "avg_completion_time": 5.690,
-        "median_completion_time": 4.690,
-        "p50_completion_time": 4.690,
-        "p95_completion_time": 13.801,
-        "p99_completion_time": 16.690
-      },
-      "submission_time": 12.5,
-      "actual_qps": 8.0
-    }
-  ]
-}
+### Metrics Collected
+
+#### Task-Level Metrics (A1, A2, B)
+- Completion times (avg, median, P95, P99)
+- Success/failure counts
+- Task execution statistics
+
+#### Workflow-Level Metrics
+- End-to-end workflow time (A1 submit → B complete)
+- Workflow completion rates
+- Percentile distributions
+
+#### Continuous Mode Metrics
+- **Makespan**: Time from first target workflow to last target completion
+- Workflow counts: warmup, target, overflow
+- Throughput analysis
+
+## File Structure
+
+```
+03.Exp4.Text2Video/
+├── test_dynamic_workflow.py    # Main test runner (replaces old test_*.py)
+├── common.py                   # Shared utilities (makespan, continuous mode)
+├── workload_generator.py       # Caption sampling and frame generation
+├── start_all_services.sh       # Service orchestration (with deploy)
+├── start_all_services_no_deploy.sh  # Without auto redeploy
+├── stop_all_services.sh        # Service cleanup
+├── manual_deploy_planner.sh    # Manual planner deployment
+├── deploy_models.sh            # Model deployment script
+├── redeploy.py                 # Planner migration helper
+├── README.md                   # This file
+├── QUICK_REFERENCE.md          # Command reference
+├── requirements.txt            # Python dependencies
+├── data/                       # Dataset directory
+│   ├── captions.jsonl          # Cached captions (optional)
+│   └── frame_distribution.json # Frame statistics
+└── results/                    # Test results (generated)
 ```
 
-## Key Differences from Experiment 02
+## Implementation Details
 
-| Aspect | Experiment 02 | Experiment 03 |
-|--------|---------------|---------------|
-| **Task Relationship** | Independent A and B tasks | A tasks trigger B tasks (1-to-1) |
-| **QPS Control** | Both A and B have QPS control | Only A tasks have QPS control |
-| **B Task Submission** | Separate Poisson submitter | Triggered by A completion |
-| **Task ID Format** | `task-{scheduler}-{strategy}-{i}` | `task-{type}-{strategy}-workflow-{i}-{type}` |
-| **Metrics** | Separate A and B metrics | A, B, and workflow metrics |
-| **Thread 4** | B task submitter | Not used |
-| **Results File** | `results_dual_*.json` | `results_workflow_*.json` |
+### Data Structures
 
-## Analysis Goals
+**WorkflowTaskData**: Pre-generated task data
+```python
+@dataclass
+class WorkflowTaskData:
+    task_id: str
+    workflow_id: str
+    task_type: str  # "A1", "A2", or "B"
+    caption: str    # For A1
+    frame_count: int  # For B
+    is_warmup: bool
+```
 
-This experiment helps answer:
+**WorkflowState**: Real-time state tracking
+```python
+@dataclass
+class WorkflowState:
+    workflow_id: str
+    a1_task_id: str
+    a2_task_id: str
+    b_task_id: str
+    a1_submit_time: float
+    a1_complete_time: float
+    a2_submit_time: float
+    a2_complete_time: float
+    b_submit_time: float
+    b_complete_time: float
+```
 
-1. **Dependency Impact**: How do task dependencies affect overall workflow latency?
-2. **Cascading Effects**: Do A task scheduling decisions impact B task performance?
-3. **Strategy Comparison**: Which strategy minimizes end-to-end workflow time?
-4. **Resource Utilization**: How efficiently are Group B instances utilized when driven by A completions?
-5. **Tail Latency**: How do P95/P99 workflow times compare across strategies?
+### Threading Architecture
+
+All threads use async/await for WebSocket communication:
+- **Thread 1**: Synchronous Poisson submission
+- **Threads 2-4**: Async WebSocket receivers with task submission
+
+### Task Dependencies
+
+```
+A1 (Caption)
+  ↓ (extracts positive prompt)
+A2 (Positive Prompt)
+  ↓ (extracts negative prompt)
+B (Positive + Negative → Video)
+  ↓
+Workflow Complete
+```
+
+## Comparison with Experiment 07
+
+| Aspect | Exp07 (Deep Research) | Exp03 (Text2Video) |
+|--------|----------------------|-------------------|
+| **Workflow** | A → {B1} → {B2} → Merge | A1 → A2 → B |
+| **Fanout** | Variable (3-8 tasks) | None (1:1:1) |
+| **Threads** | 7 threads | 4 threads |
+| **Models** | 2 models (A and B) | 2 models (A and B) |
+| **Complexity** | Fan-out/fan-in | Linear chain |
+| **Use Case** | Parallel search & analysis | Sequential prompt → video |
 
 ## Troubleshooting
 
-### Common Issues
+### Services won't start
+```bash
+# Check logs
+tail -f logs/*.log
 
-1. **WebSocket connection failed**
-   - Ensure schedulers are running: `./start_all_services.sh`
-   - Check scheduler health: `curl http://localhost:8100/health`
+# Check ports
+lsof -i :8100 -i :8200 -i :8101 -i :8202
 
-2. **B tasks not being submitted**
-   - Check WebSocket receiver A logs for submission errors
-   - Verify Scheduler B is accepting tasks: `curl http://localhost:8200/health`
-
-3. **Incomplete workflows**
-   - Check if A tasks are completing successfully
-   - Verify B task submission in logs
-   - Increase timeout in `collect_results()` if needed
-
-4. **Port conflicts**
-   - Verify ports 8100, 8101, 8200, 8210-82xx, 8300-83xx are available
-   - Check `docker ps` for running containers
-
-### Debug Mode
-
-Add debug logging:
-```python
-import logging
-logging.basicConfig(level=logging.DEBUG)
+# Force stop and restart
+./stop_all_services.sh
+sleep 5
+./start_all_services.sh
 ```
 
-## Dependencies
+### WebSocket connection errors
+- Ensure schedulers are healthy: `curl http://localhost:8100/health`
+- Check firewall settings
+- Increase connection timeout in code
 
-See `requirements.txt`:
-- numpy>=1.21.0
-- requests>=2.26.0
-- websockets>=10.0
-- scipy>=1.7.0
+### Caption sampling fails
+```bash
+# Use local cache instead
+python workload_generator.py --num-captions 100 --cache-path data/captions.jsonl
+
+# Then use cache in tests
+python test_dynamic_workflow.py --cache-path data/captions.jsonl
+```
 
 ## References
 
-- Experiment 01: [Quick Start Up](../01.quick-start-up/)
-- Experiment 02: [Multi-Model No Dependencies](../02.multi_model_no_dep/)
-- Scheduler API: See scheduler source code for API details
-- Predictor API: See predictor source code for prediction interface
+- [OpenVid-1M Dataset](https://huggingface.co/datasets/nkp37/OpenVid-1M)
+- [Experiment 07 (Pattern Reference)](../07.Exp2.Deep_Research_Real/)
+- [SwarmPilot Documentation](../../README.md)
