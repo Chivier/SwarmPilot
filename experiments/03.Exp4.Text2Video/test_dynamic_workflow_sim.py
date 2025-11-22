@@ -654,8 +654,6 @@ class A1TaskReceiver:
         metadata = data.get("metadata", {})
         workflow_id = metadata.get("workflow_id") or data.get("workflow_id")
 
-        self.logger.info(f"A1 task {task_id} received"   )
-
         # If workflow_id not in metadata, extract from task_id
         # Format: task-A1-{strategy}-workflow-{i:04d}
         if not workflow_id and task_id:
@@ -698,7 +696,7 @@ class A1TaskReceiver:
         else:
             positive_prompt = result.get("output", "")
         
-        self.logger.info("Positive prompt: {}".format(positive_prompt))
+        self.logger.info("A1 task received: {}, Positive prompt: {}".format(task_id, positive_prompt[:10]))
         if not positive_prompt:
             self.logger.error("Positive prompt is empty")
             self.logger.error("A1 task result: {}".format(data))
@@ -996,7 +994,7 @@ class A2TaskReceiver:
         else:
             negative_prompt = result.get("output", "")
 
-        self.logger.info("Negative prompt: {}".format(negative_prompt))
+        self.logger.info("A2 task received: {}, Negative prompt: {}".format(task_id, negative_prompt[:10]))
         if not negative_prompt:
             self.logger.error("Negative prompt is empty")
             self.logger.error("A2 task result: {}".format(data))
