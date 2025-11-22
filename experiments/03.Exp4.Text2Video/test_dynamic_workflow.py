@@ -332,10 +332,9 @@ class PoissonTaskSubmitter:
         
         # Build metadata
         metadata = {
-            "caption": task_data.caption,
+            "sentence": task_input.get("sentence", ""),
             "token_length": token_length,
             "max_tokens": max_tokens,
-            "task_type": "A1"
         }
         
         payload = {
@@ -612,10 +611,15 @@ class A1TaskReceiver:
                 "max_tokens": a2_task_data.max_tokens or 512
             }
         
+        # Calculate token length
+        sentence = task_input.get("sentence", "")
+        input_length = estimate_token_length(sentence)
+
         # Build metadata
         metadata = {
-            "positive_prompt": positive_prompt,
-            "task_type": "A2"
+            "sentence": sentence,
+            "input_length": input_length,
+            "max_tokens": a2_task_data.max_tokens or 512,
         }
         
         payload = {
@@ -860,12 +864,15 @@ class A2TaskReceiver:
                 "frame_count": b_task_data.frame_count or 16
             }
         
+        # Calculate token length
+        prompt = b_task_data.positive_prompt or ""
+        token_length = estimate_token_length(prompt)
+
         # Build metadata
         metadata = {
-            "positive_prompt": b_task_data.positive_prompt,
-            "negative_prompt": negative_prompt,
-            "frame_count": b_task_data.frame_count,
-            "task_type": "B"
+            "positive_prompt_length": token_length,
+            "negative_prompt_length": estimate_token_length(negative_prompt),
+            "frames": b_task_data.frame_count,
         }
         
         payload = {

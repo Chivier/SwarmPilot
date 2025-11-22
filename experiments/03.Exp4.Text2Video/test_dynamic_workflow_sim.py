@@ -407,11 +407,9 @@ class PoissonTaskSubmitter:
             max_tokens = task_data.max_tokens or 512
 
             metadata = {
-                "workflow_id": task_data.workflow_id,
-                "caption": task_data.caption,
-                "token_length": token_length,
+                "sentence": task_input.get("sentence", ""),
+                "input_length": token_length,
                 "max_tokens": max_tokens,
-                "task_type": "A1"
             }
         
         payload = {
@@ -727,9 +725,13 @@ class A1TaskReceiver:
                 "max_tokens": a2_task_data.max_tokens or 512
             }
 
+        # Calculate token length
+        sentence = task_input.get("sentence", "")
+        token_length = estimate_token_length(sentence)
+
         # Build metadata
         if self.mode == "simulation":
-            metadata = {
+             metadata = {
                 "workflow_id": a2_task_data.workflow_id,
                 "exp_runtime": a2_task_data.exp_runtime,
                 "task_type": "A2"
@@ -738,6 +740,9 @@ class A1TaskReceiver:
             metadata = {
                 "workflow_id": a2_task_data.workflow_id,
                 "positive_prompt": positive_prompt,
+                "sentence": sentence,
+                "input_length": token_length,
+                "max_tokens": a2_task_data.max_tokens or 512,
                 "task_type": "A2"
             }
         
@@ -1026,6 +1031,10 @@ class A2TaskReceiver:
                 "iteration": 1  # First iteration
             }
 
+        # Calculate token length
+        prompt = b_task_data.positive_prompt or ""
+        token_length = estimate_token_length(prompt)
+
         # Build metadata
         if self.mode == "simulation":
             metadata = {
@@ -1042,6 +1051,8 @@ class A2TaskReceiver:
                 "positive_prompt": b_task_data.positive_prompt,
                 "negative_prompt": negative_prompt,
                 "frame_count": b_task_data.frame_count,
+                "prompt": prompt,
+                "frames": b_task_data.frame_count,
                 "task_type": "B",
                 "b_iteration": 1,
                 "max_b_loops": workflow_state.max_b_loops
@@ -1349,6 +1360,10 @@ class BTaskReceiver:
                 "iteration": workflow_state.b_loop_count
             }
 
+        # Calculate token length
+        prompt = previous_result.get("positive_prompt", "")
+        token_length = estimate_token_length(prompt)
+
         # Build metadata
         if self.mode == "simulation":
             metadata = {
@@ -1363,6 +1378,8 @@ class BTaskReceiver:
             metadata = {
                 "workflow_id": workflow_id,
                 "frame_count": b_config["frame_count"],
+                "prompt": prompt,
+                "frames": b_config["frame_count"],
                 "task_type": "B",
                 "b_iteration": workflow_state.b_loop_count,
                 "max_b_loops": workflow_state.max_b_loops

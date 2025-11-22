@@ -127,6 +127,16 @@ class ServiceClient:
                 # Default pass-through
                 payload = task_input
 
+            # Mock execution for testing
+            # if self.instance_url == "mock":
+            #     return {
+            #         "execution_time_ms": 100.0,
+            #         "success": True,
+            #         "result": {"output": "mock output"},
+            #         "error": None,
+            #         "instance_id": self.instance_id
+            #     }
+
             response = await self.client.post(
                 f"{self.instance_url}/inference",
                 json=payload
@@ -347,23 +357,27 @@ async def execute_tasks(
                 hardware_name = instance_config.get("hardware_name", "Unknown")
                 hardware_specs = extract_gpu_specs(hardware_name) or {}
 
-                features = task.copy()
-                # Remove internal fields
-                features.pop("task_type", None)
-                features.pop("entry_id", None)
-                
-                # Add derived features
-                if "sentence" in features:
-                    features["token_length"] = float(estimate_token_length(features["sentence"]))
-                if "max_tokens" in features:
-                    features["max_tokens"] = float(features["max_tokens"])
-                if "frames" in features:
-                    features["frames"] = float(features["frames"])
+                features = {}
 
                 # Add hardware specs
                 for k, v in hardware_specs.items():
                     if isinstance(v, (int, float)):
                         features[k] = float(v)
+
+                # LLM Features (match experiments/07.Exp2.Deep_Research_Real/collect_training_data.py)
+                if "sentence" in task:
+                    features["sentence"] = task["sentence"]
+                    features["token_length"] = float(estimate_token_length(task["sentence"]))
+                    if "max_tokens" in task:
+                        features["max_tokens"] = float(task["max_tokens"])
+                
+                # T2Vid Features (frames and input token count)
+                if "prompt" in task:
+                    features["positive_prompt_length"] = float(estimate_token_length(task["prompt"]))
+                    if "negative_prompt" in task:
+                        features["negative_prompt_length"] = float(estimate_token_length(task["negative_prompt"]))
+                    if "frames" in task:
+                        features["frames"] = float(task["frames"])
 
                 sample = features.copy()
                 sample["runtime_ms"] = float(result["execution_time_ms"])
