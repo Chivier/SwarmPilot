@@ -395,10 +395,6 @@ async def execute_tasks(
                 sample = features.copy()
                 sample["runtime_ms"] = float(result["execution_time_ms"])
                 
-                # Store raw output for pipeline chaining
-                sample["_raw_output"] = result["result"].get("output", "")
-                sample["_entry_id"] = task.get("entry_id")
-                
                 return sample
             else:
                 logger.warning(f"Task {task_idx} failed: {result.get('error')}")
