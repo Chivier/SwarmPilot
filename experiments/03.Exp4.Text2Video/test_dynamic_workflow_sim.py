@@ -29,7 +29,7 @@ import os
 import time
 import numpy as np
 import threading
-import tiktoken
+
 from queue import Queue, Empty
 from dataclasses import dataclass, field, asdict
 from typing import List, Dict, Optional, Set
@@ -67,7 +67,6 @@ SCHEDULER_B_WS = "ws://localhost:8200/task/get_result"
 # Dataset path
 DATA_DIR = Path(__file__).parent / "data"
 
-tokenizer = tiktoken.encoding_for_model("gpt-5")
 
 # ============================================================================
 # Prompt Templates
