@@ -618,7 +618,7 @@ class A1TaskReceiver:
         # Build metadata
         metadata = {
             "sentence": sentence,
-            "input_length": input_length,
+            "token_length": input_length,
             "max_tokens": a2_task_data.max_tokens or 512,
         }
         
