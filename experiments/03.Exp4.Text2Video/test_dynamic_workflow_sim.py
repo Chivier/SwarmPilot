@@ -671,11 +671,10 @@ class A1TaskReceiver:
         
         # Update task record
         if task_id in self.task_records:
-            task_record = self.task_records[task_id]
-            task_record.complete_time = complete_time
-            task_record.status = status
-            task_record.execution_time_ms = execution_time_ms
-            task_record.result = result
+            self.task_records[task_id].complete_time = complete_time
+            self.task_records[task_id].status = status
+            self.task_records[task_id].execution_time_ms = execution_time_ms
+            self.task_records[task_id].result = result
         
         # Update workflow state
         workflow_state = self.workflow_states.get(workflow_id)
@@ -699,6 +698,11 @@ class A1TaskReceiver:
         else:
             positive_prompt = result.get("output", "")
         
+        self.logger.info("Positive prompt: {}".format(positive_prompt))
+        if not positive_prompt:
+            self.logger.error("Positive prompt is empty")
+            self.logger.error("A1 task result: {}".format(data))
+            return
         # Submit A2 task
         await self._submit_a2_task(workflow_id, positive_prompt)
 
@@ -950,7 +954,6 @@ class A2TaskReceiver:
         metadata = data.get("metadata", {})
         workflow_id = metadata.get("workflow_id") or data.get("workflow_id")
 
-        self.logger.info(f"A2 task {task_id} received")
         # If workflow_id not in metadata, extract from task_id
         # Format: task-A2-{strategy}-workflow-{i:04d}
         if not workflow_id and task_id:
@@ -966,11 +969,10 @@ class A2TaskReceiver:
         
         # Update task record
         if task_id in self.task_records:
-            task_record = self.task_records[task_id]
-            task_record.complete_time = complete_time
-            task_record.status = status
-            task_record.execution_time_ms = execution_time_ms
-            task_record.result = result
+            self.task_records[task_id].complete_time = complete_time
+            self.task_records[task_id].status = status
+            self.task_records[task_id].execution_time_ms = execution_time_ms
+            self.task_records[task_id].result = result
         
         # Update workflow state
         workflow_state = self.workflow_states.get(workflow_id)
@@ -993,6 +995,12 @@ class A2TaskReceiver:
             negative_prompt = result.get("output", "simulated negative prompt")
         else:
             negative_prompt = result.get("output", "")
+
+        self.logger.info("Negative prompt: {}".format(negative_prompt))
+        if not negative_prompt:
+            self.logger.error("Negative prompt is empty")
+            self.logger.error("A2 task result: {}".format(data))
+            return
         
         # Submit B task
         await self._submit_b_task(workflow_id, negative_prompt)
