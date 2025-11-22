@@ -104,7 +104,7 @@ class ServiceClient:
         self.model_id = model_id
         self.timeout = timeout
         self.instance_id = instance_id or instance_url
-        self.client = httpx.AsyncClient()
+        self.client = httpx.AsyncClient(timeout=3000)
 
     async def execute_task(self, task_input: Dict[str, Any]) -> Dict[str, Any]:
         try:
