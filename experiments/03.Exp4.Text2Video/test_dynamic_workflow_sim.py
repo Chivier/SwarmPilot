@@ -2277,8 +2277,8 @@ def main():
         global SCHEDULER_B_WS
         SCHEDULER_A_URL = "http://29.209.114.51:8100"
         SCHEDULER_B_URL = "http://29.209.113.228:8100"
-        SCHEDULER_A_WS = "ws://29.209.114.51:8100"
-        SCHEDULER_B_WS = "ws://29.209.113.228:8100"
+        SCHEDULER_A_WS = "ws://29.209.114.51:8100/task/get_result"
+        SCHEDULER_B_WS = "ws://29.209.113.228:8100/task/get_result"
     
 
     # Set random seed
