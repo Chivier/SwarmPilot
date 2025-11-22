@@ -162,8 +162,8 @@ async def inference(request: InferenceRequest) -> InferenceResponse:
         result = pipe(
                 prompt=request.prompt,
                 negative_prompt=request.negative_prompt,
-                height=704,
-                width=1280,
+                height=480,
+                width=832,
                 num_frames=request.frames,
                 guidance_scale=5.0,
         ).frames[0]
