@@ -616,38 +616,45 @@ async def main():
 
     logger.info(f"Loading configuration from {args.config}")
     config = load_config(args.config)
-    
-    dataset_path = config.get('dataset', 'nkp37/OpenVid-1M')
-    logger.info(f"Loading dataset from {dataset_path}")
-    
-    # Load enough dataset entries to satisfy LLM limit
-    dataset = load_dataset_entries(dataset_path, limit=args.llm_limit * 2) # Load a bit more to be safe
-    
-    if not dataset:
-        logger.error("No dataset entries found")
-        return
 
-    # Collect samples
-    samples_dict = await collect_pipeline_samples(
-        config, dataset, args.llm_limit, args.t2vid_limit
-    )
-    
-    llm_samples = samples_dict.get("llm_samples", [])
-    t2vid_samples = samples_dict.get("t2vid_samples", [])
-    
-    logger.info(f"Collected {len(llm_samples)} LLM samples and {len(t2vid_samples)} T2Vid samples")
+    if os.path.exists(args.output_file):
+        logger.info(f"Output file {args.output_file} already exists, skipping inference")
+        with open(args.output_file, 'r') as f:
+            samples_dict = json.load(f)
+        llm_samples = samples_dict.get("llm_samples", [])
+        t2vid_samples = samples_dict.get("t2vid_samples", [])
+    else:
+        dataset_path = config.get('dataset', 'nkp37/OpenVid-1M')
+        logger.info(f"Loading dataset from {dataset_path}")
+        
+        # Load enough dataset entries to satisfy LLM limit
+        dataset = load_dataset_entries(dataset_path, limit=args.llm_limit * 2) # Load a bit more to be safe
+        
+        if not dataset:
+            logger.error("No dataset entries found")
+            return
 
-    # Save Data
-    output_data = {
-        'config': config,
-        'llm_samples': llm_samples,
-        't2vid_samples': t2vid_samples,
-        'timestamp': time.time()
-    }
+        # Collect samples
+        samples_dict = await collect_pipeline_samples(
+            config, dataset, args.llm_limit, args.t2vid_limit
+        )
     
-    with open(args.output_file, 'w') as f:
-        json.dump(output_data, f, indent=2)
-    logger.info(f"Saved training data to {args.output_file}")
+        llm_samples = samples_dict.get("llm_samples", [])
+        t2vid_samples = samples_dict.get("t2vid_samples", [])
+        
+        logger.info(f"Collected {len(llm_samples)} LLM samples and {len(t2vid_samples)} T2Vid samples")
+
+        # Save Data
+        output_data = {
+            'config': config,
+            'llm_samples': llm_samples,
+            't2vid_samples': t2vid_samples,
+            'timestamp': time.time()
+        }
+        
+        with open(args.output_file, 'w') as f:
+            json.dump(output_data, f, indent=2)
+        logger.info(f"Saved training data to {args.output_file}")
 
     # Train/Validate if predictor is configured
     if 'predictor' in config:
