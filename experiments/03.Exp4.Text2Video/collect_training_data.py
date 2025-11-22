@@ -265,20 +265,33 @@ class PredictorClient:
             raise Exception(f"Training submission failed: HTTP {response.status_code} - {response.text}")
 
     async def predict(self, model_id: str, platform_info: Dict[str, str], prediction_type: str, features: Dict[str, Any]) -> Dict[str, Any]:
-        request_data = {
-            "model_id": model_id,
-            "platform_info": {
-                "software_name": platform_info["software_name"],
-                "software_version": platform_info["software_version"],
-                "hardware_name": platform_info["hardware_name"]
-            },
-            "prediction_type": prediction_type,
-            "features": features,
-            "enable_preprocessors": ["semantic"],
-            "preprocessor_mappings": {
-                "semantic": ["sentence"]
+        if model_id == "llm_service_small_model":
+            request_data = {
+                "model_id": model_id,
+                "platform_info": {
+                    "software_name": platform_info["software_name"],
+                    "software_version": platform_info["software_version"],
+                    "hardware_name": platform_info["hardware_name"]
+                },
+                "prediction_type": prediction_type,
+                "features": features,
+                "enable_preprocessors": ["semantic"],
+                "preprocessor_mappings": {
+                    "semantic": ["sentence"]
+                }
             }
-        }
+        elif model_id == "t2vid":
+            request_data = {
+                "model_id": model_id,
+                "platform_info": {
+                    "software_name": platform_info["software_name"],
+                    "software_version": platform_info["software_version"],
+                    "hardware_name": platform_info["hardware_name"]
+                },
+                "prediction_type": prediction_type,
+                "features": features,
+            }
+        
         response = await self.client.post(f"{self.predictor_url}/predict", json=request_data)
         if response.status_code == 200:
             return response.json()
