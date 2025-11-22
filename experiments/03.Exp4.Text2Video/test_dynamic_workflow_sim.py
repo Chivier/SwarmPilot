@@ -1029,14 +1029,16 @@ class A2TaskReceiver:
         if self.mode == "simulation":
             task_input = {"sleep_time": b_task_data.sleep_time}
         else:  # real mode
+            # Use caption for both positive and negative prompts as requested
+            caption = b_task_data.caption or "fallback caption"
             task_input = {
-                "prompt": b_task_data.positive_prompt or "",
-                "negative_prompt": negative_prompt,
+                "prompt": caption,
+                "negative_prompt": caption,
                 "frames": b_task_data.frame_count or 16,
             }
 
         # Calculate token length
-        prompt = b_task_data.positive_prompt or ""
+        prompt = b_task_data.caption or "fallback caption"
         token_length = estimate_token_length(prompt)
 
         # Build metadata
@@ -1051,8 +1053,8 @@ class A2TaskReceiver:
             }
         else:
             metadata = {
-                "positive_prompt_length": estimate_token_length(b_task_data.positive_prompt),
-                "negative_prompt_length": estimate_token_length(negative_prompt),
+                "positive_prompt_length": estimate_token_length(prompt),
+                "negative_prompt_length": estimate_token_length(prompt),
                 "frames": b_task_data.frame_count,
             }
 
@@ -1276,7 +1278,7 @@ class BTaskReceiver:
                 workflow_id = f"{parts[2]}-workflow-{parts[4]}"
 
         status = data.get("status")
-        result = data.get("result", {}).get("result", {})
+        result = data.get("result", {})
         execution_time_ms = data.get("execution_time_ms")
 
         complete_time = time.time()
@@ -1353,28 +1355,15 @@ class BTaskReceiver:
             task_input = {"sleep_time": b_config["sleep_time"]}
             prompt = ""
         else:  # real mode
-            # Get A1 and A2 outputs for prompt and negative_prompt
-            a1_task_id = workflow_state.a1_task_id
-            a2_task_id = workflow_state.a2_task_id
+            # Use caption for both positive and negative prompts
+            caption = b_config.get("caption", "")
             
-            a1_record = self.task_records.get(a1_task_id)
-            a2_record = self.task_records.get(a2_task_id)
-            
-            positive_prompt = ""
-            negative_prompt = ""
-            
-            if a1_record and a1_record.result:
-                positive_prompt = a1_record.result.get("output", "")
-            
-            if a2_record and a2_record.result:
-                negative_prompt = a2_record.result.get("output", "")
-
             task_input = {
-                "prompt": positive_prompt,
-                "negative_prompt": negative_prompt,
+                "prompt": caption,
+                "negative_prompt": caption,
                 "frames": b_config["frame_count"],
             }
-            prompt = positive_prompt
+            prompt = caption
 
         # Calculate token length
         token_length = estimate_token_length(prompt)
@@ -1391,8 +1380,8 @@ class BTaskReceiver:
             }
         else:
             metadata = {
-                "positive_prompt_length": estimate_token_length(positive_prompt),
-                "negative_prompt_length": estimate_token_length(negative_prompt),
+                "positive_prompt_length": estimate_token_length(prompt),
+                "negative_prompt_length": estimate_token_length(prompt),
                 "frames": b_config["frame_count"],
             }
 
@@ -1664,7 +1653,7 @@ def test_strategy_workflow(
                 workflow_id=workflow_id,
                 task_type="B",
                 is_warmup=is_warmup,
-                # Until now, we don't know the prompts, so leave it blank, and fill it at thet A2TaskReceiver
+                caption=a1_prompt,  # Use sampled caption
                 frame_count=frame_count
             )
 
@@ -1686,7 +1675,8 @@ def test_strategy_workflow(
                 "max_loops": max_b_loops,
                 "task_ids": b_task_ids,
                 "frame_count": frame_count,
-                "is_warmup": is_warmup
+                "is_warmup": is_warmup,
+                "caption": a1_prompt  # Store caption for loop iterations
             }
 
         # Create workflow state with B loop support
