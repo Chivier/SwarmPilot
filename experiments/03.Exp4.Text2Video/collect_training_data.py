@@ -220,20 +220,33 @@ class PredictorClient:
         self.client = httpx.AsyncClient(timeout=timeout)
     
     async def submit_training_data(self, model_id: str, platform_info: Dict[str, str], prediction_type: str, features_list: List[Dict[str, Any]], training_config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        request_data = {
-            "model_id": model_id,
-            "platform_info": {
-                "software_name": platform_info["software_name"],
-                "software_version": platform_info["software_version"],
-                "hardware_name": platform_info["hardware_name"]
-            },
-            "prediction_type": prediction_type,
-            "features_list": features_list,
-            "enable_preprocessors": ["semantic"],
-            "preprocessor_mappings": {
-                "semantic": ["sentence", "prompt", "negative_prompt"]
+
+        if model_id == "llm_service_small_model":
+            request_data = {
+                "model_id": model_id,
+                "platform_info": {
+                    "software_name": platform_info["software_name"],
+                    "software_version": platform_info["software_version"],
+                    "hardware_name": platform_info["hardware_name"]
+                },
+                "prediction_type": prediction_type,
+                "features_list": features_list,
+                "enable_preprocessors": ["semantic"],
+                "preprocessor_mappings": {
+                    "semantic": ["sentence"]
+                }
             }
-        }
+        else:
+            request_data = {
+                "model_id": model_id,
+                "platform_info": {
+                    "software_name": platform_info["software_name"],
+                    "software_version": platform_info["software_version"],
+                    "hardware_name": platform_info["hardware_name"]
+                },
+                "prediction_type": prediction_type,
+                "features_list": features_list,
+            }
         if training_config:
             request_data["training_config"] = training_config
         
@@ -377,7 +390,7 @@ async def execute_tasks(
                     if "negative_prompt" in task:
                         features["negative_prompt_length"] = float(estimate_token_length(task["negative_prompt"]))
                     if "frames" in task:
-                        features["frames"] = float(task["frames"])
+                        features["frames"] = float(task["frames"])3
 
                 sample = features.copy()
                 sample["runtime_ms"] = float(result["execution_time_ms"])
