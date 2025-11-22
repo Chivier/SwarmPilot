@@ -1543,6 +1543,8 @@ def main():
                        help="Test timeout in minutes")
     parser.add_argument("--output-dir", type=Path, default=Path("results"),
                        help="Output directory for results")
+    parser.add_argument("--dataset-path", type=Path, default=None,
+                       help="Path to dataset file (e.g. captions_10k.json)")
 
     args = parser.parse_args()
 
@@ -1565,7 +1567,8 @@ def main():
 
     workload, config = generate_text2video_workload(
         num_workflows=total_workflows,
-        seed=args.seed
+        seed=args.seed,
+        cache_path=args.dataset_path
     )
     
     print_text2video_stats(workload)

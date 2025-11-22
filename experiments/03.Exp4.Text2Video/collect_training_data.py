@@ -313,14 +313,46 @@ def load_dataset_entries(dataset_path: str, limit: Optional[int] = None) -> List
 
     # Local file
     try:
+        # Check if it's a JSON list of strings (like captions_10k.json)
+        if dataset_path.endswith('.json'):
+            with open(dataset_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                if isinstance(data, list):
+                    logger.info(f"Detected JSON list in {dataset_path}")
+                    count = 0
+                    for item in data:
+                        if limit and count >= limit:
+                            break
+                        
+                        if isinstance(item, str):
+                            dataset.append({"caption": item, "id": f"local-{count}"})
+                            count += 1
+                        elif isinstance(item, dict):
+                            # Handle list of dicts
+                            if "caption" in item:
+                                dataset.append({"caption": item["caption"], "id": f"local-{count}"})
+                                count += 1
+                            elif "text" in item:
+                                dataset.append({"caption": item["text"], "id": f"local-{count}"})
+                                count += 1
+                    
+                    logger.info(f"Loaded {len(dataset)} entries from {dataset_path}")
+                    return dataset
+
+        # Fallback to JSONL or other formats
         with open(dataset_path, 'r', encoding='utf-8') as f:
             count = 0
             for line in f:
                 if limit and count >= limit:
                     break
                 if line.strip():
-                    dataset.append(json.loads(line))
-                    count += 1
+                    try:
+                        entry = json.loads(line)
+                        dataset.append(entry)
+                        count += 1
+                    except json.JSONDecodeError:
+                        pass # Skip invalid lines
+                        
         logger.info(f"Loaded {len(dataset)} entries from {dataset_path}")
         return dataset
     except Exception as e:
