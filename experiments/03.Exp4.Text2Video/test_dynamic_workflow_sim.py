@@ -950,7 +950,7 @@ class A2TaskReceiver:
         metadata = data.get("metadata", {})
         workflow_id = metadata.get("workflow_id") or data.get("workflow_id")
 
-        self.logger.info(f"A2 task {workflow_id} received")
+        self.logger.info(f"A2 task {task_id} received")
         # If workflow_id not in metadata, extract from task_id
         # Format: task-A2-{strategy}-workflow-{i:04d}
         if not workflow_id and task_id:
@@ -1266,7 +1266,7 @@ class BTaskReceiver:
         metadata = data.get("metadata", {})
         workflow_id = metadata.get("workflow_id") or data.get("workflow_id")
 
-        self.logger.info(f"B task {workflow_id} received")
+        self.logger.info(f"B task {task_id} received")
         # If workflow_id not in metadata, extract from task_id
         # Format: task-B1-{strategy}-workflow-{i:04d} or task-B2-xxx etc.
         if not workflow_id and task_id:
