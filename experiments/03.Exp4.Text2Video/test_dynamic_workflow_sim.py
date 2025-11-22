@@ -1025,7 +1025,6 @@ class A2TaskReceiver:
                 "prompt": b_task_data.positive_prompt or "",
                 "negative_prompt": negative_prompt,
                 "frames": b_task_data.frame_count or 16,
-                "iteration": 1  # First iteration
             }
 
         # Calculate token length
@@ -1366,7 +1365,6 @@ class BTaskReceiver:
                 "prompt": positive_prompt,
                 "negative_prompt": negative_prompt,
                 "frames": b_config["frame_count"],
-                "iteration": workflow_state.b_loop_count
             }
             prompt = positive_prompt
 
