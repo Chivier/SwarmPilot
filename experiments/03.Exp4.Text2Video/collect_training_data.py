@@ -403,7 +403,7 @@ async def execute_tasks(
                 sample["runtime_ms"] = float(result["execution_time_ms"])
                     
                 # Store raw output for pipeline chaining
-                sample["_raw_output"] = result["result"].get("output", "")
+                sample["_raw_output"] = result["result"]["result"].get("output", "")
                 sample["_entry_id"] = task.get("entry_id")
 
                 return sample
