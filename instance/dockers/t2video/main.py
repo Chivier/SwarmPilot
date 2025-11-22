@@ -103,9 +103,14 @@ app = FastAPI(
 
 class InferenceRequest(BaseModel):
     """Request schema for inference"""
-    sentence: str = Field(
+    prompt: str = Field(
         ...,
         description="Input sentence to send to the LLM",
+        min_length=1
+    )
+    negative_prompt: str = Field(
+        ...,
+        description="Negative prompt for video generation",
         min_length=1
     )
     frames: int = Field(
@@ -155,8 +160,8 @@ async def inference(request: InferenceRequest) -> InferenceResponse:
         start_timestamp = int(start_time)
 
         result = pipe(
-                prompt=request.sentence,
-                negative_prompt=request.sentence,
+                prompt=request.prompt,
+                negative_prompt=request.negative_prompt,
                 height=704,
                 width=1280,
                 num_frames=request.frames,
@@ -171,7 +176,7 @@ async def inference(request: InferenceRequest) -> InferenceResponse:
 
         # Build result
         result = {
-            "input": request.sentence,
+            "input": f"positive: {request.prompt}, negative: {request.negative_prompt}",
             "output": "video",
             "model_id": MODEL_ID,
             "instance_id": INSTANCE_ID,
