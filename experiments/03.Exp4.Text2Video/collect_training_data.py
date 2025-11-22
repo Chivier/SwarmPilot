@@ -390,7 +390,7 @@ async def execute_tasks(
                     if "negative_prompt" in task:
                         features["negative_prompt_length"] = float(estimate_token_length(task["negative_prompt"]))
                     if "frames" in task:
-                        features["frames"] = float(task["frames"])3
+                        features["frames"] = float(task["frames"])
 
                 sample = features.copy()
                 sample["runtime_ms"] = float(result["execution_time_ms"])
