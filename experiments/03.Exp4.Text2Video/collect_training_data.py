@@ -19,7 +19,6 @@ Usage:
 import argparse
 import asyncio
 import json
-import logging
 import re
 import subprocess
 import time
@@ -32,6 +31,8 @@ import httpx
 import numpy as np
 from tqdm import tqdm
 
+from loguru import logger
+
 # Try importing datasets
 try:
     from datasets import load_dataset as hf_load_dataset
@@ -39,12 +40,6 @@ try:
 except ImportError:
     HAS_DATASETS = False
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
 
 
 # ============================================================================
