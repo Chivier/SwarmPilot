@@ -277,86 +277,42 @@ def calculate_mape(actual: np.ndarray, predicted: np.ndarray, epsilon: float = 1
 
 def load_dataset_entries(dataset_path: str, limit: Optional[int] = None) -> List[Dict[str, Any]]:
     """
-    Load dataset from local file or HuggingFace.
-    Expected format: list of dicts with 'caption' or 'prompt' field.
+    Load dataset from local JSON file (list of strings).
+    Expected format: ["caption1", "caption2", ...]
     """
     dataset = []
     
-    # Check if it's a HuggingFace dataset
-    if not os.path.exists(dataset_path) and "/" in dataset_path:
-        if not HAS_DATASETS:
-            logger.error("datasets library not installed. Cannot load from HuggingFace.")
-            return []
-        
-        try:
-            logger.info(f"Loading HuggingFace dataset: {dataset_path}")
-            hf_data = hf_load_dataset(dataset_path, split="train", streaming=True)
-            
-            count = 0
-            for entry in hf_data:
-                if limit and count >= limit:
-                    break
-                
-                # Normalize entry
-                if "caption" in entry:
-                    dataset.append({"caption": entry["caption"], "id": f"hf-{count}"})
-                elif "text" in entry:
-                    dataset.append({"caption": entry["text"], "id": f"hf-{count}"})
-                
-                count += 1
-            
-            logger.info(f"Loaded {len(dataset)} entries from HuggingFace")
-            return dataset
-        except Exception as e:
-            logger.error(f"Failed to load HF dataset: {e}")
-            return []
-
-    # Local file
     try:
-        # Check if it's a JSON list of strings (like captions_10k.json)
-        if dataset_path.endswith('.json'):
-            with open(dataset_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                if isinstance(data, list):
-                    logger.info(f"Detected JSON list in {dataset_path}")
-                    count = 0
-                    for item in data:
-                        if limit and count >= limit:
-                            break
-                        
-                        if isinstance(item, str):
-                            dataset.append({"caption": item, "id": f"local-{count}"})
-                            count += 1
-                        elif isinstance(item, dict):
-                            # Handle list of dicts
-                            if "caption" in item:
-                                dataset.append({"caption": item["caption"], "id": f"local-{count}"})
-                                count += 1
-                            elif "text" in item:
-                                dataset.append({"caption": item["text"], "id": f"local-{count}"})
-                                count += 1
-                    
-                    logger.info(f"Loaded {len(dataset)} entries from {dataset_path}")
-                    return dataset
-
-        # Fallback to JSONL or other formats
+        logger.info(f"Loading dataset from {dataset_path}")
         with open(dataset_path, 'r', encoding='utf-8') as f:
-            count = 0
-            for line in f:
-                if limit and count >= limit:
-                    break
-                if line.strip():
-                    try:
-                        entry = json.loads(line)
-                        dataset.append(entry)
-                        count += 1
-                    except json.JSONDecodeError:
-                        pass # Skip invalid lines
-                        
+            data = json.load(f)
+            
+        if not isinstance(data, list):
+            logger.error(f"Dataset must be a JSON list, got {type(data)}")
+            return []
+
+        count = 0
+        for item in data:
+            if limit and count >= limit:
+                break
+            
+            if isinstance(item, str):
+                dataset.append({"caption": item, "id": f"local-{count}"})
+                count += 1
+            elif isinstance(item, dict):
+                # Handle list of dicts if present, though primarily targeting list of strings
+                if "caption" in item:
+                    dataset.append({"caption": item["caption"], "id": f"local-{count}"})
+                    count += 1
+                elif "text" in item:
+                    dataset.append({"caption": item["text"], "id": f"local-{count}"})
+                    count += 1
+        
         logger.info(f"Loaded {len(dataset)} entries from {dataset_path}")
         return dataset
+
     except Exception as e:
-        logger.error(f"Failed to load local dataset: {e}")
+        logger.error(f"Failed to load dataset: {e}")
         return []
 
 
