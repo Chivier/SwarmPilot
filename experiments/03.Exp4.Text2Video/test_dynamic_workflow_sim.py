@@ -995,10 +995,10 @@ class A2TaskReceiver:
             negative_prompt = result.get("output", "")
 
         self.logger.info("A2 task received: {}, Negative prompt: {}".format(task_id, negative_prompt[:10]))
-        if not negative_prompt:
-            self.logger.error("Negative prompt is empty")
-            self.logger.error("A2 task result: {}".format(data))
-            return
+        # if not negative_prompt:
+        #     self.logger.error("Negative prompt is empty")
+        #     self.logger.error("A2 task result: {}".format(data))
+        #     return
         
         # Submit B task
         await self._submit_b_task(workflow_id, negative_prompt)
