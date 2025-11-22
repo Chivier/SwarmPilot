@@ -1,0 +1,745 @@
+{
+  "dataset": "nkp37/OpenVid-1M",
+  "llm_service": {
+    "instances": [
+      {
+        "url": "http://29.209.114.166:8200",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.114.166:8201",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.114.166:8202",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.114.166:8203",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.114.166:8204",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.114.166:8205",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.114.166:8206",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.114.166:8207",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.113.113:8200",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.113.113:8201",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.113.113:8202",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.113.113:8203",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.113.113:8204",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.113.113:8205",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.113.113:8206",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.113.113:8207",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.106.237:8200",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.106.237:8201",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.106.237:8202",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.106.237:8203",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.106.237:8204",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.106.237:8205",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.106.237:8206",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.106.237:8207",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.114.56:8200",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.114.56:8201",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.114.56:8202",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.114.56:8203",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.114.56:8204",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.114.56:8205",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.114.56:8206",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.114.56:8207",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.114.241:8200",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.114.241:8201",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.114.241:8202",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.114.241:8203",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.114.241:8204",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.114.241:8205",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.114.241:8206",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.114.241:8207",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.112.177:8200",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.112.177:8201",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.112.177:8202",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.112.177:8203",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.112.177:8204",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.112.177:8205",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.112.177:8206",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.112.177:8207",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.113.235:8200",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.113.235:8201",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.113.235:8202",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.113.235:8203",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.113.235:8204",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.113.235:8205",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.113.235:8206",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.113.235:8207",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      }
+    ]
+  },
+  "t2vid_service": {
+    "instances": [
+      {
+        "url": "http://29.209.113.228:8200",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.113.228:8201",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.113.228:8202",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.113.228:8203",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.113.228:8204",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.113.228:8205",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.113.228:8206",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.113.228:8207",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.105.60:8200",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.105.60:8201",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.105.60:8202",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.105.60:8203",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.105.60:8204",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.105.60:8205",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.105.60:8206",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.105.60:8207",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.113.166:8200",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.113.166:8201",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.113.166:8202",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.113.166:8203",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.113.166:8204",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.113.166:8205",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.113.166:8206",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.113.166:8207",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.113.176:8200",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.113.176:8201",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.113.176:8202",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.113.176:8203",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.113.176:8204",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.113.176:8205",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.113.176:8206",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.113.176:8207",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.113.169:8200",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.113.169:8201",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.113.169:8202",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.113.169:8203",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.113.169:8204",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.113.169:8205",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.113.169:8206",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.113.169:8207",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.112.74:8200",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.112.74:8201",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.112.74:8202",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.112.74:8203",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.112.74:8204",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.112.74:8205",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.112.74:8206",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.112.74:8207",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.115.174:8200",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.115.174:8201",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.115.174:8202",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.115.174:8203",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.115.174:8204",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.115.174:8205",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.115.174:8206",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.115.174:8207",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.113.156:8200",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.113.156:8201",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.113.156:8202",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.113.156:8203",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.113.156:8204",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.113.156:8205",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.113.156:8206",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      },
+      {
+        "url": "http://29.209.113.156:8207",
+        "hardware_name": "NVIDIA H20",
+        "software_name": "sglang",
+        "software_version": "0.5.5.post2"
+      }
+    ]
+  },
+  "predictor": {
+    "url": "http://29.209.113.113:8100"
+  },
+  "execution": {
+    "timeout": 300,
+    "max_concurrent_requests": 100
+  },
+  "training_config": {
+    "quantiles": [
+      0.1,
+      0.5,
+      0.9
+    ]
+  }
+}

@@ -187,6 +187,7 @@ if [[ "$LOCAL_IP" == "$PLANNER_HOST" ]]; then
      export PLANNER_LOG_DIR=$LOG_DIR/planner && \
      export PLANNER_LOGURU_LEVEL=INFO && \
      export AUTO_OPTIMIZE_ENABLED=False && \
+     export AUTO_OPTIMIZE_INTERVAL=300 && \
      python -m src.cli start --port $PLANNER_PORT" \
     "$SCHEDULER_PREDICTOR_CPU_RANGE"
 fi
@@ -268,12 +269,25 @@ if [[ -n "$MODEL_ID" ]]; then
         SCHEDULER_URL="http://fake-scheduler:9999"
         echo "  Instance $i (Port $INSTANCE_PORT): NOT registering (Manual Control)"
     fi
+
+    if [[ $MODEL_ID == "t2vid" ]]; then
+      INSTANCE_PLATFORM_SOFTWARE_NAME="diffuser"
+      INSTANCE_PLATFORM_SOFTWARE_VERSION="latest"
+      INSTANCE_PLATFORM_HARDWARE_NAME="NVIDIA H20"
+    else 
+      INSTANCE_PLATFORM_SOFTWARE_NAME="sglang"
+      INSTANCE_PLATFORM_SOFTWARE_VERSION="0.5.5.post2"
+      INSTANCE_PLATFORM_HARDWARE_NAME="NVIDIA H20"
+    fi
     
     start_bg "instance_${MODEL_ID}_${i}" \
       "cd $PROJECT_ROOT/instance && \
        export PYTHONPATH=$PROJECT_ROOT && \
        export INSTANCE_ID=${MODEL_ID}_${LOCAL_IP}_${INSTANCE_PORT} && \
        export INSTANCE_PORT=$INSTANCE_PORT && \
+       export INSTANCE_PLATFORM_SOFTWARE_NAME=$INSTANCE_PLATFORM_SOFTWARE_NAME && \
+       export INSTANCE_PLATFORM_SOFTWARE_VERSION=$INSTANCE_PLATFORM_SOFTWARE_VERSION && \
+       export INSTANCE_PLATFORM_HARDWARE_NAME=$INSTANCE_PLATFORM_HARDWARE_NAME && \
        export CUDA_VISIBLE_DEVICES=$GPU_ID && \
        export MASTER_PORT=$((INSTANCE_PORT + 20000)) \
        export INSTANCE_LOG_DIR=$LOG_DIR/instance_${MODEL_ID}_${i} && \
