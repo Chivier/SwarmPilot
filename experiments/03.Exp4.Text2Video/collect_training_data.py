@@ -220,10 +220,13 @@ class PredictorClient:
         self.client = httpx.AsyncClient(timeout=timeout)
     
     async def submit_training_data(self, model_id: str, platform_info: Dict[str, str], prediction_type: str, features_list: List[Dict[str, Any]], training_config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        pending_features = features_list.copy()
         new_feature_list = []
-        for feature in features_list:
-            del feature["_raw_output"]
-            del feature["_entry_id"]
+        for feature in pending_features:
+            if "_raw_output" in feature:
+                del feature["_raw_output"]
+            if "_entry_id" in feature:
+                del feature["_entry_id"]
             new_feature_list.append(feature)
         if model_id == "llm_service_small_model":
             request_data = {
@@ -273,7 +276,7 @@ class PredictorClient:
             "features": features,
             "enable_preprocessors": ["semantic"],
             "preprocessor_mappings": {
-                "semantic": ["sentence", "prompt", "negative_prompt"]
+                "semantic": ["sentence"]
             }
         }
         response = await self.client.post(f"{self.predictor_url}/predict", json=request_data)
