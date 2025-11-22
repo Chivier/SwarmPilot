@@ -1351,16 +1351,33 @@ class BTaskReceiver:
         # Build task_input based on mode (all B iterations use same input)
         if self.mode == "simulation":
             task_input = {"sleep_time": b_config["sleep_time"]}
+            prompt = ""
         else:  # real mode
+            # Get A1 and A2 outputs for prompt and negative_prompt
+            a1_task_id = workflow_state.a1_task_id
+            a2_task_id = workflow_state.a2_task_id
+            
+            a1_record = self.task_records.get(a1_task_id)
+            a2_record = self.task_records.get(a2_task_id)
+            
+            positive_prompt = ""
+            negative_prompt = ""
+            
+            if a1_record and a1_record.result:
+                positive_prompt = a1_record.result.get("output", "")
+            
+            if a2_record and a2_record.result:
+                negative_prompt = a2_record.result.get("output", "")
+
             task_input = {
-                "prompt": previous_result.get("positive_prompt", ""),
-                "negative_prompt": previous_result.get("negative_prompt", ""),
+                "prompt": positive_prompt,
+                "negative_prompt": negative_prompt,
                 "frames": b_config["frame_count"],
                 "iteration": workflow_state.b_loop_count
             }
+            prompt = positive_prompt
 
         # Calculate token length
-        prompt = previous_result.get("positive_prompt", "")
         token_length = estimate_token_length(prompt)
 
         # Build metadata
@@ -1376,6 +1393,8 @@ class BTaskReceiver:
         else:
             metadata = {
                 "workflow_id": workflow_id,
+                "positive_prompt": positive_prompt,
+                "negative_prompt": negative_prompt,
                 "frame_count": b_config["frame_count"],
                 "prompt": prompt,
                 "frames": b_config["frame_count"],
@@ -1656,16 +1675,26 @@ def test_strategy_workflow(
                 frame_count=frame_count
             )
 
-        # Store B task configuration (used for all iterations)
-        all_b_tasks_dict[workflow_id] = {
-            "initial_task": b_task_initial,
-            "max_loops": max_b_loops,
-            "task_ids": b_task_ids,
-            "sleep_time": b_sleep,
-            "exp_runtime": b_sleep * 1000.0,
-            "frame_count": frame_count,
-            "is_warmup": is_warmup
-        }
+        if mode == "simulation":
+            # Store B task configuration (used for all iterations)
+            all_b_tasks_dict[workflow_id] = {
+                "initial_task": b_task_initial,
+                "max_loops": max_b_loops,
+                "task_ids": b_task_ids,
+                "sleep_time": b_sleep,
+                "exp_runtime": b_sleep * 1000.0,
+                "frame_count": frame_count,
+                "is_warmup": is_warmup
+            }
+        else:
+            # Store B task configuration (used for all iterations)
+            all_b_tasks_dict[workflow_id] = {
+                "initial_task": b_task_initial,
+                "max_loops": max_b_loops,
+                "task_ids": b_task_ids,
+                "frame_count": frame_count,
+                "is_warmup": is_warmup
+            }
 
         # Create workflow state with B loop support
         workflow_state = WorkflowState(
