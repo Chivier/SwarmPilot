@@ -1044,15 +1044,9 @@ class A2TaskReceiver:
             }
         else:
             metadata = {
-                "workflow_id": b_task_data.workflow_id,
-                "positive_prompt": b_task_data.positive_prompt,
-                "negative_prompt": negative_prompt,
-                "frame_count": b_task_data.frame_count,
-                "prompt": prompt,
+                "positive_prompt_length": estimate_token_length(b_task_data.positive_prompt),
+                "negative_prompt_length": estimate_token_length(negative_prompt),
                 "frames": b_task_data.frame_count,
-                "task_type": "B",
-                "b_iteration": 1,
-                "max_b_loops": workflow_state.max_b_loops
             }
 
         payload = {
@@ -1391,15 +1385,9 @@ class BTaskReceiver:
             }
         else:
             metadata = {
-                "workflow_id": workflow_id,
-                "positive_prompt": positive_prompt,
-                "negative_prompt": negative_prompt,
-                "frame_count": b_config["frame_count"],
-                "prompt": prompt,
+                "positive_prompt_length": estimate_token_length(positive_prompt),
+                "negative_prompt_length": estimate_token_length(negative_prompt),
                 "frames": b_config["frame_count"],
-                "task_type": "B",
-                "b_iteration": workflow_state.b_loop_count,
-                "max_b_loops": workflow_state.max_b_loops
             }
 
         payload = {
