@@ -664,7 +664,7 @@ class A1TaskReceiver:
                 workflow_id = f"{parts[2]}-workflow-{parts[4]}"
 
         status = data.get("status")
-        result = data.get("result", {})
+        result = data.get("result", {}).get("result", {})
         execution_time_ms = data.get("execution_time_ms")
 
         complete_time = time.time()
@@ -959,7 +959,7 @@ class A2TaskReceiver:
                 workflow_id = f"{parts[2]}-workflow-{parts[4]}"
 
         status = data.get("status")
-        result = data.get("result", {})
+        result = data.get("result", {}).get("result", {})
         execution_time_ms = data.get("execution_time_ms")
 
         complete_time = time.time()
@@ -1268,7 +1268,7 @@ class BTaskReceiver:
                 workflow_id = f"{parts[2]}-workflow-{parts[4]}"
 
         status = data.get("status")
-        result = data.get("result", {})
+        result = data.get("result", {}).get("result", {})
         execution_time_ms = data.get("execution_time_ms")
 
         complete_time = time.time()
