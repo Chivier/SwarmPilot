@@ -900,6 +900,7 @@ async def submit_task(request: TaskSubmitRequest):
     # (Detailed scheduling happens in background)
     available_instances = await instance_registry.list_active(model_id=request.model_id)
     if not available_instances:
+        logger.error(f"No available instance for model_id: {request.model_id}")
         raise HTTPException(
             status_code=404,
             detail={
