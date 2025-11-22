@@ -103,6 +103,7 @@ class DeploymentInput(BaseModel):
     instances: List[InstanceInfo] = Field(..., description="Target instances")
     planner_input: PlannerInput = Field(..., description="Optimization config")
     scheduler_mapping: Dict[str, str] = Field(None, description="mapping of model name to scheduler")
+    instance_scheduler_mapping: Optional[Dict[str, str]] = Field(None, description="mapping of instance endpoint to scheduler URL")
 
     @model_validator(mode="after")
     def validate_instances_match(self):

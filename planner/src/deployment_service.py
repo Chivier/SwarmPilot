@@ -534,8 +534,27 @@ class InstanceMigrator:
             
             # Step 3: Deregister original instance from its scheduler
             # Step 4: Register new instance to scheduler (run in parallel)
+
+            # Validate scheduler_mapping has the target model
+            if not self.scheduler_mapping or target_model_id not in self.scheduler_mapping:
+                error_msg = f"No scheduler mapping found for model {target_model_id}. Available models: {list(self.scheduler_mapping.keys()) if self.scheduler_mapping else []}"
+                logger.error(error_msg)
+                migration_time = time.time() - start_time
+                return MigrationStatus(
+                    instance_index=instance_index,
+                    endpoint=original_endpoint,
+                    target_model=target_model_id,
+                    previous_model=current_model_id,
+                    success=False,
+                    error_message=error_msg,
+                    deployment_time=migration_time
+                )
+
+            scheduler_url = self.scheduler_mapping[target_model_id]
+            logger.info(f"Registering {target_endpoint} with model {target_model_id} to scheduler {scheduler_url}")
+
             payload = {
-                "scheduler_url": self.scheduler_mapping[target_model_id]
+                "scheduler_url": scheduler_url
             }
 
             # Create tasks for parallel execution

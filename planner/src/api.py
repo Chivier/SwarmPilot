@@ -137,6 +137,13 @@ async def _trigger_optimization():
         initial = np.array(planner_params.initial)
         target = np.array(planner_params.target)
 
+        logger.info(f"Running optimization: algorithm={planner_params.algorithm}, objective_method={planner_params.objective_method}, solver_name={planner_params.solver_name}, time_limit={planner_params.time_limit}, verbose={planner_params.verbose}")
+        logger.info(f"Optimization parameters: M={planner_params.M}, N={planner_params.N}, B={B}, \ninitial={initial}, a={planner_params.a}, target={target}")
+        logger.info(f"Current models: {current_models}")
+        logger.info(f"Endpoints: {endpoints}")
+        logger.info(f"Model mapping: {model_mapping}")
+        logger.info(f"Reverse mapping: {reverse_mapping}")
+
         if planner_params.algorithm == "simulated_annealing":
             optimizer = SimulatedAnnealingOptimizer(
                 M=planner_params.M,
@@ -550,6 +557,9 @@ async def deploy_with_migration(input_data: DeploymentInput):
         pending_change_original_model = []
         pending_change_original = []
         pending_change_target = []
+        logger.info(f"Start redeployment mapping")
+        logger.info(f"Current models: {current_models}")
+        logger.info(f"Deployment target models: {deployment_target_models}")
         for idx, (cur, target_model) in enumerate(zip(current_models, deployment_target_models)):
             if cur != target_model:
                 pending_change_original.append(endpoints[idx])
@@ -562,6 +572,9 @@ async def deploy_with_migration(input_data: DeploymentInput):
             
 
         logger.info(f"Optimization completed: score={score:.4f}, changes={changes_count}")
+        logger.info(f"Pending change original: {pending_change_original}")
+        logger.info(f"Pending change original model: {pending_change_original_model}")
+        logger.info(f"Pending change target: {pending_change_target}")
 
         # Step 4: Map result IDs back to model names
         try:
@@ -575,9 +588,14 @@ async def deploy_with_migration(input_data: DeploymentInput):
         logger.info(f"Target models: {target_models}")
 
         # Step 5: Deploy to instances
-        # Use scheduler_url from request or fall back to config default
-        scheduler_mapping = config.get_scheduler_url(input_data.scheduler_mapping)
-        logger.debug(f"Using scheduler URL: {scheduler_mapping}")
+        # Use scheduler_mapping from request (model_id -> scheduler_url)
+        scheduler_mapping = input_data.scheduler_mapping or {}
+        logger.debug(f"Using scheduler mapping: {scheduler_mapping}")
+
+        # Validate that all target models have scheduler mappings
+        missing_models = [m for m in set(target_models) if m not in scheduler_mapping]
+        if missing_models:
+            logger.warning(f"Missing scheduler mapping for models: {missing_models}")
 
         # Perform migration for instances that need to change
         migration_status = []
