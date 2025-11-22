@@ -220,7 +220,11 @@ class PredictorClient:
         self.client = httpx.AsyncClient(timeout=timeout)
     
     async def submit_training_data(self, model_id: str, platform_info: Dict[str, str], prediction_type: str, features_list: List[Dict[str, Any]], training_config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-
+        new_feature_list = []
+        for feature in features_list:
+            del feature["_raw_output"]
+            del feature["_entry_id"]
+            new_feature_list.append(feature)
         if model_id == "llm_service_small_model":
             request_data = {
                 "model_id": model_id,
@@ -230,7 +234,7 @@ class PredictorClient:
                     "hardware_name": platform_info["hardware_name"]
                 },
                 "prediction_type": prediction_type,
-                "features_list": features_list,
+                "features_list": new_feature_list,
                 "enable_preprocessors": ["semantic"],
                 "preprocessor_mappings": {
                     "semantic": ["sentence"]
@@ -245,7 +249,7 @@ class PredictorClient:
                     "hardware_name": platform_info["hardware_name"]
                 },
                 "prediction_type": prediction_type,
-                "features_list": features_list,
+                "features_list": new_feature_list,
             }
         if training_config:
             request_data["training_config"] = training_config
@@ -394,7 +398,11 @@ async def execute_tasks(
 
                 sample = features.copy()
                 sample["runtime_ms"] = float(result["execution_time_ms"])
-                
+                    
+                # Store raw output for pipeline chaining
+                sample["_raw_output"] = result["result"].get("output", "")
+                sample["_entry_id"] = task.get("entry_id")
+
                 return sample
             else:
                 logger.warning(f"Task {task_idx} failed: {result.get('error')}")
