@@ -2263,6 +2263,13 @@ def main():
         SCHEDULER_B_URL = "http://29.209.113.228:8100"
         SCHEDULER_A_WS = "ws://29.209.114.51:8100/task/get_result"
         SCHEDULER_B_WS = "ws://29.209.113.228:8100/task/get_result"
+    print(f"Model A: {args.model_a_id}")
+    print(f"Model B: {args.model_b_id}")
+    print(f"Scheduler A URL: {SCHEDULER_A_URL}")
+    print(f"Scheduler B URL: {SCHEDULER_B_URL}")
+    print(f"Scheduler A WS: {SCHEDULER_A_WS}")
+    print(f"Scheduler B WS: {SCHEDULER_B_WS}")
+
     
 
     # Set random seed
