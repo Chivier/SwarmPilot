@@ -2,7 +2,7 @@
 set -e
 
 # ============================================
-# Multi-node service launcher (Exp 03)
+# Multi-node service launcher (Exp 03) - No Redeploy
 # ============================================
 # Logic:
 #   - Get local IP from bond1
@@ -11,7 +11,7 @@ set -e
 #   - Register instances with appropriate scheduler (or fake one for manual control)
 #
 # Usage:
-#   bash start_real_service.sh
+#   bash start_real_service_no_redeploy.sh
 
 # -----------------------------
 # Base Paths & Config
@@ -324,3 +324,14 @@ fi
 echo ""
 echo -e "${GREEN}Service Launch Sequence Completed on $LOCAL_IP${NC}"
 echo "Logs: $LOG_DIR"
+
+# Sync dockers (if they exist)
+if [ -d "$PROJECT_ROOT/instance/dockers" ]; then
+    cd "$PROJECT_ROOT/instance/dockers"
+    if [ -d "llm_service_large_model" ]; then
+        cd llm_service_large_model && uv sync && cd ..
+    fi
+    if [ -d "llm_service_small_model" ]; then
+        cd llm_service_small_model && uv sync && cd ..
+    fi
+fi
