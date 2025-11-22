@@ -104,7 +104,7 @@ class ServiceClient:
         self.model_id = model_id
         self.timeout = timeout
         self.instance_id = instance_id or instance_url
-        self.client = httpx.AsyncClient(timeout=timeout)
+        self.client = httpx.AsyncClient()
 
     async def execute_task(self, task_input: Dict[str, Any]) -> Dict[str, Any]:
         try:
@@ -361,7 +361,7 @@ A2_TEMPLATE = "Generate a negative prompt for image generation to avoid artifact
 async def execute_tasks(
     multi_client: MultiInstanceClient,
     tasks: List[Dict[str, Any]],
-    max_concurrent: int = 10,
+    max_concurrent: int = 20,
     desc: str = "Executing tasks"
 ) -> List[Dict[str, Any]]:
     

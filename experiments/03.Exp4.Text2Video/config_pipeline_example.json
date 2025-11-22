@@ -241,11 +241,7 @@
         "hardware_name": "NVIDIA H20",
         "software_name": "sglang",
         "software_version": "0.5.5.post2"
-      }
-    ]
-  },
-  "t2vid_service": {
-    "instances": [
+      },
       {
         "url": "http://29.209.105.60:8200",
         "hardware_name": "NVIDIA H20",
@@ -293,7 +289,11 @@
         "hardware_name": "NVIDIA H20",
         "software_name": "diffuser",
         "software_version": "latest"
-      },
+      }
+    ]
+  },
+  "t2vid_service": {
+    "instances": [
       {
         "url": "http://29.209.113.166:8200",
         "hardware_name": "NVIDIA H20",
