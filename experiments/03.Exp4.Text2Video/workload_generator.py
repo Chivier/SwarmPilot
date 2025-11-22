@@ -24,6 +24,7 @@ DataPath = Path | str
 DEFAULT_DATASET = "nkp37/OpenVid-1M"
 DEFAULT_SPLIT = "train"
 DEFAULT_STREAM_LIMIT = 20000  # Limit streaming rows to keep local runs reasonable
+DEFAULT_CAPTIONS_FILE = Path(__file__).parent / "captions_10k.json"
 
 
 # ============================================================================
@@ -107,82 +108,47 @@ def sample_captions(
     stream_limit: int = DEFAULT_STREAM_LIMIT,
 ) -> Tuple[List[str], dict]:
     """
-    Sample captions for all workflows BEFORE running any strategies.
-
-    Order of precedence:
-    1) If cache_path exists, sample from it (no network).
-    2) Otherwise stream from nkp37/OpenVid-1M (requires datasets + network),
-       using reservoir sampling to get a random subset.
+    Sample captions for all workflows.
+    
+    Reads from local JSON file (default: captions_10k.json) or provided cache_path.
+    HuggingFace dataset loading has been replaced by local file loading.
 
     Returns:
         captions: List[str] length == num_captions
-        meta: {source, dataset, split, cache_path}
+        meta: {source, path, total_available}
     """
     rng = random.Random(seed)
 
-    # 1) Use cache if available
+    # Determine source path
     if cache_path:
-        cache_path = Path(cache_path)
-        if cache_path.exists():
-            captions = _read_local_captions(cache_path)
-            rng.shuffle(captions)
-            if len(captions) >= num_captions:
-                captions = captions[:num_captions]
-            else:
-                # Sample with replacement if cache is small
-                captions = [rng.choice(captions) for _ in range(num_captions)]
-            return captions, {
-                "source": "cache",
-                "cache_path": str(cache_path),
-                "dataset": None,
-                "split": None,
-            }
+        source_path = Path(cache_path)
+    else:
+        source_path = DEFAULT_CAPTIONS_FILE
 
-    # 2) Stream from HF dataset
-    try:
-        from datasets import load_dataset
-    except Exception as exc:  # pragma: no cover
-        raise RuntimeError(
-            "datasets package is required to sample captions when no cache is present. "
-            "Install with `uv add datasets` or provide --captions-cache pointing to a "
-            "local JSONL/TXT file."
-        ) from exc
-
-    ds = load_dataset(dataset_name, split=dataset_split, streaming=True)
-    reservoir: List[str] = []
-    total_seen = 0
-
-    for total_seen, row in enumerate(ds, start=1):
-        caption = _extract_caption(row)
-        if not caption:
-            continue
-
-        if len(reservoir) < num_captions:
-            reservoir.append(caption)
-        else:
-            # Reservoir sampling: replace element with decreasing probability
-            j = rng.randint(1, total_seen)
-            if j <= num_captions:
-                reservoir[j - 1] = caption
-
-        if stream_limit and total_seen >= stream_limit:
-            break
-
-    if len(reservoir) < num_captions:
-        raise RuntimeError(
-            f"Only collected {len(reservoir)} captions from {dataset_name} before stream limit "
-            f"{stream_limit}. Increase --stream-limit or provide a cache file."
+    if not source_path.exists():
+        raise FileNotFoundError(
+            f"Captions file not found at {source_path}. "
+            "Please ensure experiments/03.Exp4.Text2Video/captions_10k.json exists."
         )
 
-    if cache_path:
-        save_captions(reservoir, cache_path)
+    # Read all captions
+    all_captions = _read_local_captions(source_path)
+    
+    # Shuffle and sample
+    rng.shuffle(all_captions)
+    
+    if len(all_captions) >= num_captions:
+        selected_captions = all_captions[:num_captions]
+    else:
+        # Sample with replacement if we need more than available
+        selected_captions = [rng.choice(all_captions) for _ in range(num_captions)]
 
-    return reservoir, {
-        "source": "dataset",
-        "dataset": dataset_name,
+    return selected_captions, {
+        "source": "local_file",
+        "path": str(source_path),
+        "total_available": len(all_captions),
+        "dataset": dataset_name, # Preserved for interface compatibility
         "split": dataset_split,
-        "stream_limit": stream_limit,
-        "cache_path": str(cache_path) if cache_path else None,
     }
 
 
