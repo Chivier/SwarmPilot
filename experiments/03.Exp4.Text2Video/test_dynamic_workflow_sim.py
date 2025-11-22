@@ -407,7 +407,7 @@ class PoissonTaskSubmitter:
 
             metadata = {
                 "sentence": task_input.get("sentence", ""),
-                "input_length": token_length,
+                "token_length": token_length,
                 "max_tokens": max_tokens,
             }
         
@@ -737,12 +737,9 @@ class A1TaskReceiver:
             }
         else:
             metadata = {
-                "workflow_id": a2_task_data.workflow_id,
-                "positive_prompt": positive_prompt,
                 "sentence": sentence,
-                "input_length": token_length,
+                "token_length": token_length,
                 "max_tokens": a2_task_data.max_tokens or 512,
-                "task_type": "A2"
             }
         
         payload = {
