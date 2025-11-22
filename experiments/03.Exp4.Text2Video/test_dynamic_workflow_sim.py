@@ -2272,11 +2272,17 @@ def main():
 
     # Update default model IDs based on mode if not explicitly provided
     if args.mode == "real":
-        # Check if default values were used (not explicitly provided by user)
-        if args.model_a_id == "sleep_model_a":
-            args.model_a_id = "llm_service_small_model"
-        if args.model_b_id == "sleep_model_b":
-            args.model_b_id = "t2vid"
+        args.model_a_id = "llm_service_small_model"
+        args.model_b_id = "t2vid"
+        global SCHEDULER_A_URL
+        global SCHEDULER_B_URL
+        global SCHEDULER_A_WS
+        global SCHEDULER_B_WS
+        SCHEDULER_A_URL = "http://29.209.114.51:8100"
+        SCHEDULER_B_URL = "http://29.209.113.228:8100"
+        SCHEDULER_A_WS = "ws://29.209.114.51:8100"
+        SCHEDULER_B_WS = "ws://29.209.113.228:8100"
+    
 
     # Set random seed
     np.random.seed(args.seed)
