@@ -186,8 +186,8 @@ class TaskRecord:
     task_id: str
     workflow_id: str
     task_type: str  # "A1", "A2", or "B"
-    sleep_time: float
-    exp_runtime: float
+    sleep_time: Optional[float] = None
+    exp_runtime: Optional[float] = None
 
     # Tracked at submission
     submit_time: Optional[float] = None
@@ -1416,8 +1416,8 @@ class BTaskReceiver:
                 task_id=next_task_id,
                 workflow_id=workflow_id,
                 task_type="B",
-                sleep_time=b_config["sleep_time"],
-                exp_runtime=b_config["exp_runtime"],
+                sleep_time=b_config["sleep_time"] if self.mode == "simulation" else None,
+                exp_runtime=b_config["exp_runtime"] if self.mode == "simulation" else None,
                 submit_time=submit_time,
                 assigned_instance=assigned_instance,
                 is_warmup=b_config["is_warmup"]
