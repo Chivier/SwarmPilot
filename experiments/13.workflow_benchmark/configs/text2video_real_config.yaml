@@ -1,0 +1,87 @@
+# Text2Video Workflow - Real Cluster Mode Configuration
+
+# Experiment metadata
+experiment_name: "text2video_real"
+experiment_type: "text2video"
+mode: "real"
+description: "Text2Video workflow on real cluster with deployed models"
+
+# Quality of Service (QoS) parameters
+qos:
+  qps: 2.0                # Query per second rate
+  duration: 300           # Experiment duration in seconds (5 minutes)
+  num_workflows: 100      # Total number of workflows (lower for real mode)
+
+# Workflow-specific parameters
+workflow:
+  max_b_loops: 4          # Maximum B task iterations per workflow (1-4)
+
+# Scheduler endpoints (real cluster - update with actual IPs)
+schedulers:
+  scheduler_a:
+    host: "10.0.0.10"     # Replace with actual scheduler A IP
+    port: 8100
+    url: "http://10.0.0.10:8100"
+
+  scheduler_b:
+    host: "10.0.0.11"     # Replace with actual scheduler B IP
+    port: 8101
+    url: "http://10.0.0.11:8101"
+
+# Model configurations (real deployed models)
+models:
+  model_a_id: "llm_service_small_model"  # A1/A2 tasks (LLM for prompt generation)
+  model_b_id: "t2vid"                    # B tasks (Text-to-Video model)
+
+# Task parameters (real mode)
+task_params:
+  # LLM parameters for A1/A2 tasks
+  max_tokens: 512                        # Maximum tokens for LLM generation
+  platform: "linux"                      # Platform identifier
+
+# Data source
+data:
+  caption_file: "captions_10k.json"      # Path to caption data
+
+# Prompt templates (real mode)
+prompts:
+  a1_template: "Generate a detailed image generation prompt based on this caption: {caption}"
+  a2_template: "Generate a negative prompt for image generation to avoid artifacts, based on this positive prompt: Positive prompt: {positive_prompt}"
+  # B tasks use A1/A2 results directly
+
+# Output configuration
+output:
+  dir: "output"                          # Output directory
+  metrics_file: "metrics.json"           # Metrics output filename
+  log_level: "INFO"                      # Logging level
+
+# Performance tuning (optional)
+performance:
+  rate_limiter_burst_size: null          # Burst size (default: qps * 2)
+  websocket_timeout: 300                 # WebSocket timeout in seconds
+  submission_queue_size: 1000            # Task submission queue size
+  retry_attempts: 3                      # Retry attempts for failed submissions
+  retry_delay: 1.0                       # Delay between retries in seconds
+
+# Service health check (optional)
+health_check:
+  enabled: true                          # Enable health checks before starting
+  endpoints:
+    - "http://10.0.0.10:8100/health"
+    - "http://10.0.0.11:8101/health"
+  timeout: 10                            # Health check timeout in seconds
+
+# Advanced options (optional)
+advanced:
+  enable_metrics_export: true            # Export metrics to file
+  enable_console_output: true            # Show real-time console output
+  enable_detailed_logging: false         # Enable detailed debug logging
+  enable_token_estimation: true          # Estimate token counts in metadata
+
+# Deployment information (for reference)
+deployment:
+  cluster_name: "production"
+  deployment_date: "2024-01-15"
+  model_versions:
+    llm_service_small_model: "v1.2.3"
+    t2vid: "v2.0.1"

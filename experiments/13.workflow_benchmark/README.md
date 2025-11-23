@@ -94,34 +94,52 @@ experiments/13.workflow_benchmark/
 | 14 | Deep Research Simulation | ✅ Complete | type2_deep_research/{config,workflow_data,submitters,receivers,simulation}.py |
 | 15 | Service Management | ✅ Complete | service_management/{service_launcher,deployment_manager,health_checker,resource_binder}.py |
 | 16 | Real Cluster Mode | ✅ Complete | */real/*, updated configs and submitters for both workflows |
-| 17 | Testing Tools | 📋 Next | tools/* |
-| 18 | Documentation | 📋 Planned | docs/*, configs/* |
+| 17 | Testing Tools | ✅ Complete | tools/experiment_runner.py, tools/cli.py |
+| 18 | Documentation | ✅ Complete | docs/{QUICKSTART,API,MIGRATION,TROUBLESHOOTING}.md, configs/*.yaml |
 
 ## Quick Start
+
+### 5-Minute Quick Start
+
+See [QUICKSTART.md](docs/QUICKSTART.md) for comprehensive getting started guide with:
+- **Method 1**: Using the CLI tool (easiest)
+- **Method 2**: Direct Python scripts
+- **Method 3**: Real cluster mode
+
+**Quick Example**:
+```bash
+cd experiments/13.workflow_benchmark
+
+# Run Text2Video simulation (1 minute test)
+python tools/cli.py run-text2video-sim --duration 60 --num-workflows 120
+
+# Run Deep Research simulation (1 minute test)
+python tools/cli.py run-deep-research-sim --duration 60 --num-workflows 60
+
+# View results
+cat output/metrics.json | python -m json.tool
+```
 
 ### Running Text2Video Simulation
 
 ```bash
-cd experiments/13.workflow_benchmark
+# Method 1: CLI (recommended)
+python tools/cli.py run-text2video-sim --qps 2.0 --duration 300 --num-workflows 600
 
-# Configure experiment
-export QPS=2.0
-export DURATION=300
-export NUM_WORKFLOWS=600
-
-# Run simulation
-python -m type1_text2video.simulation.test_workflow_sim
+# Method 2: Direct Python with environment variables
+export QPS=2.0 DURATION=300 NUM_WORKFLOWS=600
+python type1_text2video/simulation/test_workflow_sim.py
 ```
 
 ### Running Deep Research Simulation
 
 ```bash
-# Configure experiment
-export FANOUT_COUNT=3
-export QPS=1.0
+# Method 1: CLI (recommended)
+python tools/cli.py run-deep-research-sim --qps 1.0 --duration 600 --num-workflows 600
 
-# Run simulation
-python -m type2_deep_research.simulation.test_workflow_sim
+# Method 2: Direct Python with environment variables
+export QPS=1.0 DURATION=600 NUM_WORKFLOWS=600 FANOUT_COUNT=3
+python type2_deep_research/simulation/test_workflow_sim.py
 ```
 
 ## Implementation Guide

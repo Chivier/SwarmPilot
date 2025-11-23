@@ -1,0 +1,62 @@
+# Text2Video Workflow - Simulation Mode Configuration
+
+# Experiment metadata
+experiment_name: "text2video_simulation"
+experiment_type: "text2video"
+mode: "simulation"
+description: "Text2Video workflow simulation for performance benchmarking"
+
+# Quality of Service (QoS) parameters
+qos:
+  qps: 2.0                # Query per second rate
+  duration: 300           # Experiment duration in seconds (5 minutes)
+  num_workflows: 600      # Total number of workflows to execute
+
+# Workflow-specific parameters
+workflow:
+  max_b_loops: 4          # Maximum B task iterations per workflow (1-4)
+
+# Scheduler endpoints (simulation mode uses local services)
+schedulers:
+  scheduler_a:
+    host: "127.0.0.1"
+    port: 8100
+    url: "http://127.0.0.1:8100"
+
+  scheduler_b:
+    host: "127.0.0.1"
+    port: 8101
+    url: "http://127.0.0.1:8101"
+
+# Model configurations
+models:
+  model_a_id: "llm_service_small_model"  # A1/A2 tasks (caption processing)
+  model_b_id: "t2vid"                    # B tasks (video generation)
+
+# Task parameters (simulation mode)
+task_params:
+  # Sleep time range for simulated task execution
+  sleep_time_min: 5.0     # Minimum sleep time in seconds
+  sleep_time_max: 15.0    # Maximum sleep time in seconds
+
+# Data source
+data:
+  caption_file: "captions_10k.json"   # Path to caption data (relative or absolute)
+
+# Output configuration
+output:
+  dir: "output"                        # Output directory
+  metrics_file: "metrics.json"         # Metrics output filename
+  log_level: "INFO"                    # Logging level (DEBUG, INFO, WARNING, ERROR)
+
+# Performance tuning (optional)
+performance:
+  rate_limiter_burst_size: null        # Burst size (default: qps * 2)
+  websocket_timeout: 300               # WebSocket timeout in seconds
+  submission_queue_size: 1000          # Task submission queue size
+
+# Advanced options (optional)
+advanced:
+  enable_metrics_export: true          # Export metrics to file
+  enable_console_output: true          # Show real-time console output
+  enable_detailed_logging: false       # Enable detailed debug logging

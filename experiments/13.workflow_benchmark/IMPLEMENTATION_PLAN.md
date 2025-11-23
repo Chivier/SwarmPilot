@@ -423,8 +423,21 @@ def test_text2video_end_to_end():
   - [x] Created type2_deep_research/real/test_workflow_real.py
   - [x] Real mode uses sentence/max_tokens instead of sleep_time
   - [x] Token estimation in metadata for performance prediction
-- [ ] Task 17: Testing Tools
-- [ ] Task 18: Documentation
+- [x] Task 17: Testing Tools
+  - [x] tools/experiment_runner.py - Unified runner for all experiment types
+  - [x] tools/cli.py - Command-line interface with 4 commands
+  - [x] ExperimentRunner class with run_text2video_simulation/real and run_deep_research_simulation/real methods
+  - [x] CLI with argparse for all 4 experiment modes
+  - [x] Subprocess execution with environment variable passing
+- [x] Task 18: Documentation
+  - [x] docs/QUICKSTART.md - 5-minute quick start guide (3 methods: CLI, direct Python, real cluster)
+  - [x] docs/API.md - Complete API reference with examples for all classes
+  - [x] docs/MIGRATION.md - Step-by-step migration guide from original scripts
+  - [x] docs/TROUBLESHOOTING.md - Common issues and solutions
+  - [x] configs/text2video_sim_config.yaml - Text2Video simulation template
+  - [x] configs/text2video_real_config.yaml - Text2Video real mode template
+  - [x] configs/deep_research_sim_config.yaml - Deep Research simulation template
+  - [x] configs/deep_research_real_config.yaml - Deep Research real mode template
 
 ## Development Workflow
 
