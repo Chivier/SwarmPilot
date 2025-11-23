@@ -26,6 +26,9 @@ DEFAULT_SPLIT = "train"
 DEFAULT_STREAM_LIMIT = 20000  # Limit streaming rows to keep local runs reasonable
 DEFAULT_CAPTIONS_FILE = Path(__file__).parent / "captions_10k.json"
 
+random.seed(42)
+np.random.seed(42)  
+
 
 # ============================================================================
 # Caption Sampling
