@@ -1433,6 +1433,7 @@ class BTaskReceiver:
 
         except Exception as e:
             self.logger.error(f"Failed to submit B iteration {next_task_id}: {e}")
+            traceback.print_exc()
             self.failed_b_submissions += 1
             # On submission failure, finalize workflow
             workflow_state.mark_workflow_complete(time.time())
