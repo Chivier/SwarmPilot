@@ -408,7 +408,12 @@ def test_text2video_end_to_end():
   - [x] receivers.py (A, B1, B2, Merge)
   - [x] main simulation script (8-thread architecture)
   - [x] comprehensive tests (15 tests, all passing)
-- [ ] Task 15: Service Management
+- [x] Task 15: Service Management
+  - [x] service_launcher.py (CPU/GPU binding, process management)
+  - [x] deployment_manager.py (parallel deployment, retry logic)
+  - [x] health_checker.py (health monitoring)
+  - [x] resource_binder.py (CPU/GPU allocation)
+  - [x] comprehensive tests (19 tests, all passing)
 - [ ] Task 16: Real Cluster Mode
 - [ ] Task 17: Testing Tools
 - [ ] Task 18: Documentation
