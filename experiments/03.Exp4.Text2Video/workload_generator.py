@@ -413,7 +413,7 @@ def print_text2video_stats(workload: Text2VideoWorkload):
     # Frame count distribution
     frame_array = np.array(workload.frame_counts)
     print(f"\nFrame Count Distribution (5:1 ratio - first peak dominates):")
-    for i, peak in enumerate([16, 24, 32, 48]):
+    for i, peak in enumerate([30, 50, 100, 200]):
         count = np.sum((frame_array >= peak - 4) & (frame_array <= peak + 4))
         percentage = 100.0 * count / len(frame_array)
         peak_label = f"Peak {i+1} ({peak} frames)"
