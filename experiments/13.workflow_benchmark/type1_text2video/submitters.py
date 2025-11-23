@@ -5,8 +5,16 @@ import threading
 from queue import Queue, Empty
 from typing import Any, Dict, List, Optional
 
-from common import BaseTaskSubmitter
+from common import BaseTaskSubmitter, estimate_token_length
 from .workflow_data import Text2VideoWorkflowData
+
+
+# ============================================================================
+# Prompt Templates
+# ============================================================================
+
+A1_TEMPLATE = "Generate a detailed image generation prompt based on this caption: {caption}"
+A2_TEMPLATE = "Generate a negative prompt for image generation to avoid artifacts, based on this positive prompt: Positive prompt: {positive_prompt}"
 
 
 class A1TaskSubmitter(BaseTaskSubmitter):
@@ -62,21 +70,42 @@ class A1TaskSubmitter(BaseTaskSubmitter):
         Returns:
             JSON payload for /task/submit
         """
-        # Generate random sleep time for simulation mode
-        sleep_time = random.uniform(
-            self.config.sleep_time_min,
-            self.config.sleep_time_max
-        )
+        # Build task_input based on mode
+        if self.config.mode == "simulation":
+            sleep_time = random.uniform(
+                self.config.sleep_time_min,
+                self.config.sleep_time_max
+            )
+            task_input = {"sleep_time": sleep_time}
+        else:  # real mode
+            task_input = {
+                "sentence": A1_TEMPLATE.format(caption=workflow_data.caption),
+                "max_tokens": self.config.max_tokens
+            }
+
+        # Calculate token_length for metadata (useful for prediction)
+        token_length = estimate_token_length(workflow_data.caption)
+
+        # Build metadata
+        metadata = {
+            "workflow_id": workflow_data.workflow_id,
+            "caption": workflow_data.caption,
+            "task_type": "A1"
+        }
+
+        # Add real mode metadata
+        if self.config.mode == "real":
+            metadata.update({
+                "sentence": task_input["sentence"],
+                "token_length": token_length,
+                "max_tokens": self.config.max_tokens
+            })
 
         return {
             "task_id": f"{workflow_data.workflow_id}-A1",
             "model_id": self.config.model_a_id,
-            "task_input": {"sleep_time": sleep_time},
-            "metadata": {
-                "workflow_id": workflow_data.workflow_id,
-                "caption": workflow_data.caption,
-                "task_type": "A1"
-            }
+            "task_input": task_input,
+            "metadata": metadata
         }
 
     def _get_next_task_data(self) -> Optional[Text2VideoWorkflowData]:
@@ -130,20 +159,47 @@ class A2TaskSubmitter(BaseTaskSubmitter):
         """
         workflow_id, a1_result = task_data
 
-        sleep_time = random.uniform(
-            self.config.sleep_time_min,
-            self.config.sleep_time_max
-        )
+        # Build task_input based on mode
+        if self.config.mode == "simulation":
+            sleep_time = random.uniform(
+                self.config.sleep_time_min,
+                self.config.sleep_time_max
+            )
+            task_input = {"sleep_time": sleep_time}
+        else:  # real mode
+            task_input = {
+                "sentence": A2_TEMPLATE.format(positive_prompt=a1_result),
+                "max_tokens": self.config.max_tokens
+            }
+
+        # Calculate token length for metadata
+        if self.config.mode == "real":
+            sentence = task_input["sentence"]
+            token_length = estimate_token_length(sentence)
+        else:
+            sentence = ""
+            token_length = 0
+
+        # Build metadata
+        metadata = {
+            "workflow_id": workflow_id,
+            "positive_prompt": a1_result,
+            "task_type": "A2"
+        }
+
+        # Add real mode metadata
+        if self.config.mode == "real":
+            metadata.update({
+                "sentence": sentence,
+                "token_length": token_length,
+                "max_tokens": self.config.max_tokens
+            })
 
         return {
             "task_id": f"{workflow_id}-A2",
             "model_id": self.config.model_a_id,
-            "task_input": {"sleep_time": sleep_time},
-            "metadata": {
-                "workflow_id": workflow_id,
-                "positive_prompt": a1_result,
-                "task_type": "A2"
-            }
+            "task_input": task_input,
+            "metadata": metadata
         }
 
     def _get_next_task_data(self) -> Optional[tuple]:
@@ -202,21 +258,34 @@ class BTaskSubmitter(BaseTaskSubmitter):
         """
         workflow_id, a2_result, loop_iteration = task_data
 
-        sleep_time = random.uniform(
-            self.config.sleep_time_min,
-            self.config.sleep_time_max
-        )
+        # Build task_input based on mode
+        if self.config.mode == "simulation":
+            sleep_time = random.uniform(
+                self.config.sleep_time_min,
+                self.config.sleep_time_max
+            )
+            task_input = {"sleep_time": sleep_time}
+        else:  # real mode
+            # B task (video generation) uses the negative prompt from A2
+            # In real mode, this would be the actual video generation parameters
+            task_input = {
+                "negative_prompt": a2_result,
+                "num_frames": 16  # Example: generate 16 frame video
+            }
+
+        # Build metadata
+        metadata = {
+            "workflow_id": workflow_id,
+            "negative_prompt": a2_result,
+            "task_type": "B",
+            "loop_iteration": loop_iteration
+        }
 
         return {
             "task_id": f"{workflow_id}-B{loop_iteration}",
             "model_id": self.config.model_b_id,
-            "task_input": {"sleep_time": sleep_time},
-            "metadata": {
-                "workflow_id": workflow_id,
-                "negative_prompt": a2_result,
-                "task_type": "B",
-                "loop_iteration": loop_iteration
-            }
+            "task_input": task_input,
+            "metadata": metadata
         }
 
     def _get_next_task_data(self) -> Optional[tuple]:

@@ -93,8 +93,8 @@ experiments/13.workflow_benchmark/
 | 13 | Text2Video Simulation | ✅ Complete | type1_text2video/{config,workflow_data,submitters,receivers,simulation}.py |
 | 14 | Deep Research Simulation | ✅ Complete | type2_deep_research/{config,workflow_data,submitters,receivers,simulation}.py |
 | 15 | Service Management | ✅ Complete | service_management/{service_launcher,deployment_manager,health_checker,resource_binder}.py |
-| 16 | Real Cluster Mode | 📋 Next | */real/* |
-| 17 | Testing Tools | 📋 Planned | tools/* |
+| 16 | Real Cluster Mode | ✅ Complete | */real/*, updated configs and submitters for both workflows |
+| 17 | Testing Tools | 📋 Next | tools/* |
 | 18 | Documentation | 📋 Planned | docs/*, configs/* |
 
 ## Quick Start

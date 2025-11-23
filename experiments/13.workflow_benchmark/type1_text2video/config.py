@@ -9,6 +9,9 @@ from typing import Optional
 class Text2VideoConfig:
     """Configuration for Text2Video workflow experiments."""
 
+    # Experiment mode
+    mode: str = "simulation"  # "simulation" or "real"
+
     # Experiment parameters
     qps: float = 1.0
     duration: int = 600  # seconds
@@ -31,6 +34,9 @@ class Text2VideoConfig:
     sleep_time_min: float = 5.0
     sleep_time_max: float = 15.0
 
+    # Task parameters (real mode)
+    max_tokens: int = 512  # For A1/A2 LLM tasks
+
     # Caption file
     caption_file: str = "captions_10k.json"
 
@@ -42,6 +48,7 @@ class Text2VideoConfig:
     def from_env(cls) -> "Text2VideoConfig":
         """Create configuration from environment variables."""
         return cls(
+            mode=os.getenv("MODE", "simulation"),
             qps=float(os.getenv("QPS", "1.0")),
             duration=int(os.getenv("DURATION", "600")),
             num_workflows=int(os.getenv("NUM_WORKFLOWS", "600")),
@@ -54,6 +61,7 @@ class Text2VideoConfig:
             planner_url=os.getenv("PLANNER_URL", "http://127.0.0.1:8103"),
             sleep_time_min=float(os.getenv("SLEEP_TIME_MIN", "5.0")),
             sleep_time_max=float(os.getenv("SLEEP_TIME_MAX", "15.0")),
+            max_tokens=int(os.getenv("MAX_TOKENS", "512")),
             caption_file=os.getenv("CAPTION_FILE", "captions_10k.json"),
             output_dir=os.getenv("OUTPUT_DIR", "output"),
             metrics_file=os.getenv("METRICS_FILE", "metrics.json"),

@@ -414,7 +414,15 @@ def test_text2video_end_to_end():
   - [x] health_checker.py (health monitoring)
   - [x] resource_binder.py (CPU/GPU allocation)
   - [x] comprehensive tests (19 tests, all passing)
-- [ ] Task 16: Real Cluster Mode
+- [x] Task 16: Real Cluster Mode
+  - [x] Added mode parameter to configs (Text2Video and Deep Research)
+  - [x] Added estimate_token_length utility (already present in common/utils.py)
+  - [x] Updated Text2Video submitters (A1, A2, B) for real mode with prompt templates
+  - [x] Updated Deep Research submitters (A, B1, B2, Merge) for real mode with prompt templates
+  - [x] Created type1_text2video/real/test_workflow_real.py
+  - [x] Created type2_deep_research/real/test_workflow_real.py
+  - [x] Real mode uses sentence/max_tokens instead of sleep_time
+  - [x] Token estimation in metadata for performance prediction
 - [ ] Task 17: Testing Tools
 - [ ] Task 18: Documentation
 
