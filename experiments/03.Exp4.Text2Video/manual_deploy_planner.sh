@@ -230,7 +230,7 @@ for host in "${SLEEP_MODEL_B_HOSTS[@]}"; do
                 --arg model_path "$MODEL_PATH_B" \
                 --arg software_name "diffuser" \
                 --arg software_version "latest" \
-                '{model_id: $model_id, scheduler_url: $scheduler_url, parameters: {MODEL_PATH: $model_path}, software_name: $software_name, software_version: $software_version}')
+                '{model_id: $model_id, scheduler_url: $scheduler_url, parameters: {MODEL_PATH: $model_path, software_name: $software_name, software_version: $software_version}}')
 
             response=$(curl -s -X POST "http://$host:$instance_port/model/start" \
                 -H "Content-Type: application/json" \
