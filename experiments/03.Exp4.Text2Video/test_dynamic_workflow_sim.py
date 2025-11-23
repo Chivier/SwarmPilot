@@ -1523,9 +1523,9 @@ def test_strategy_workflow(
         num_workflows: Number of workflows to execute
         qps: Target QPS for A1 task submission
         workload: SleepModelWorkload | Text2VideoWorkload with pre-generated execution times or pre-sampled import prompts
-        mode: "simulation" (always simulation for sleep model)
-        model_a_id: Model ID for A1/A2 tasks (default: sleep_model_a)
-        model_b_id: Model ID for B tasks (default: sleep_model_b)
+        mode: "simulation" or "real" (determines model IDs and scheduler URLs)
+        model_a_id: Model ID for A1/A2 tasks (set by mode: sleep_model_a for simulation, llm_service_small_model for real)
+        model_b_id: Model ID for B tasks (set by mode: sleep_model_b for simulation, t2vid for real)
         gqps: Optional global QPS limit
         warmup_ratio: Warmup workflow ratio (0.0-1.0)
         continuous_mode: Enable continuous request mode
@@ -1781,9 +1781,9 @@ def test_strategy_workflow(
     completed_workflows = []
 
     # Calculate number of workflows that need to be completed for statistics
-    # Apply metric_portion to determine how many workflows are actually needed
-    num_target_for_stats = max(1, int(num_workflows * metric_portion))
-    logger.info(f"Target workflows for statistics: {num_target_for_stats} (from {num_workflows} total, portion={metric_portion})")
+    # Wait for all regular workflows to complete, then apply metric_portion filter at the end
+    num_target_for_stats = num_workflows
+    logger.info(f"Waiting for {num_target_for_stats} regular workflows to complete (will use first {max(1, int(num_workflows * metric_portion))} for metrics)")
     logger.info(f"Total workflows to generate: {num_workflows_to_generate}")
 
     while len(completed_workflows) < num_workflows_to_generate:
@@ -1808,7 +1808,7 @@ def test_strategy_workflow(
 
             # Check if all target workflows are completed
             if num_completed_targets >= num_target_for_stats:
-                logger.info(f"All {num_target_for_stats} target workflows completed. Ending test early.")
+                logger.info(f"All {num_target_for_stats} regular workflows completed.")
                 logger.info(f"Total workflows completed: {len(completed_workflows)}/{num_workflows_to_generate}")
                 break
 
@@ -2232,10 +2232,6 @@ def main():
     parser.add_argument("--mode", type=str, default="simulation",
                        choices=["simulation", "real"],
                        help="Test mode: simulation (sleep) or real (actual models)")
-    parser.add_argument("--model-a-id", type=str, default="sleep_model_a",
-                       help="Model ID for A1/A2 tasks (default: sleep_model_a for simulation)")
-    parser.add_argument("--model-b-id", type=str, default="sleep_model_b",
-                       help="Model ID for B tasks (default: sleep_model_b for simulation)")
     parser.add_argument("--gqps", type=float, default=None,
                        help="Global QPS limit for all task submissions")
     parser.add_argument("--warmup", type=float, default=0.0,
@@ -2253,7 +2249,7 @@ def main():
 
     args = parser.parse_args()
 
-    # Update default model IDs based on mode if not explicitly provided
+    # Set model IDs based on mode
     if args.mode == "real":
         args.model_a_id = "llm_service_small_model"
         args.model_b_id = "t2vid"
@@ -2265,6 +2261,9 @@ def main():
         SCHEDULER_B_URL = "http://29.209.113.228:8100"
         SCHEDULER_A_WS = "ws://29.209.114.51:8100/task/get_result"
         SCHEDULER_B_WS = "ws://29.209.113.228:8100/task/get_result"
+    else:  # simulation mode
+        args.model_a_id = "sleep_model_a"
+        args.model_b_id = "sleep_model_b"
     print(f"Model A: {args.model_a_id}")
     print(f"Model B: {args.model_b_id}")
     print(f"Scheduler A URL: {SCHEDULER_A_URL}")
