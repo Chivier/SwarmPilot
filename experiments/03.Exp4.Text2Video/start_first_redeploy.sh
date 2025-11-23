@@ -1,0 +1,34 @@
+#!/bin/bash
+
+
+
+SCHEDULER_A_HOST="29.209.114.51"
+SCHEDULER_B_HOST="29.209.113.228"
+PREDICTOR_HOST="29.209.113.113"
+PLANNER_HOST="29.209.114.166"
+CLIENT_HOST="29.209.114.166"
+
+INSTANCE_PORT_START=8200
+INSTANCE_NUM_N1=24
+INSTNACE_NUM_N2=24
+
+MODEL_A_ID="llm_service_small_model"
+MODEL_B_ID="t2vid"
+
+SCHEDULER_A_URL="http://$SCHEDULER_A_HOST:8100"
+SCHEDULER_B_URL="http://$SCHEDULER_B_HOST:8100"
+PLANNER_URL="http://$PLANNER_HOST:8100"
+
+
+uv run redeploy.py \
+  --scheduler-a-url $SCHEDULER_A_URL \
+  --scheduler-b-url $SCHEDULER_B_URL \
+  --planner-url $PLANNER_URL \
+  --model-id-a $MODEL_A_ID \
+  --model-id-b $MODEL_B_ID \
+  --n1 $INSTANCE_NUM_N1 \
+  --n2 $INSTNACE_NUM_N2 \
+  --port-a-start $INSTANCE_PORT_START \
+  --port-b-start $INSTANCE_PORT_START
+
+
