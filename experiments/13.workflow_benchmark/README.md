@@ -241,6 +241,77 @@ def load_captions(filepath: str) -> List[str]:
 - **Text2Video**: `experiments/03.Exp4.Text2Video/test_dynamic_workflow_sim.py`
 - **Deep Research**: `experiments/07.Exp2.Deep_Research_Migration_Test/test_dynamic_workflow.py`
 
+## Service Management
+
+### Quick Start Scripts
+
+The `scripts/` directory contains adapted service management scripts that work from the current experiment directory:
+
+```bash
+# Start all services (simulation mode)
+./scripts/start_all_services.sh
+
+# Start with custom configuration
+./scripts/start_all_services.sh 10 6 llm_service_small_model t2vid
+
+# Stop all services
+./scripts/stop_all_services.sh
+```
+
+### What Gets Started
+
+- **Predictor** (port 8101): Performance prediction service
+- **Planner** (port 8202): Auto-optimization planner
+- **Scheduler A** (port 8100): Scheduler for Group A models
+- **Scheduler B** (port 8200): Scheduler for Group B models
+- **Instances**: N1 + N2 model instances (configurable)
+
+### Service Scripts
+
+| Script | Description | Usage |
+|--------|-------------|-------|
+| `start_all_services.sh` | Start all services | `./scripts/start_all_services.sh [N1] [N2] [MODEL_A] [MODEL_B]` |
+| `stop_all_services.sh` | Stop all services | `./scripts/stop_all_services.sh` |
+| `deploy_models_local.sh` | Deploy models to instances | `./scripts/deploy_models_local.sh --model-id-a MODEL_A --n1 N1` |
+
+See [scripts/README.md](scripts/README.md) for detailed documentation.
+
+### Typical Workflow
+
+```bash
+# 1. Start services
+cd experiments/13.workflow_benchmark
+./scripts/start_all_services.sh 4 2 sleep_model_a sleep_model_b
+
+# 2. Run experiment
+python tools/cli.py run-text2video-sim --duration 300 --num-workflows 600
+
+# 3. View results
+cat output/metrics.json | python -m json.tool
+
+# 4. Stop services
+./scripts/stop_all_services.sh
+```
+
+### Logs and Debugging
+
+- **Log Directory**: `logs/` (created automatically)
+- **Service Logs**: `logs/predictor.log`, `logs/scheduler-a.log`, etc.
+- **PID Files**: `logs/*.pid` for process tracking
+
+**View logs**:
+```bash
+tail -f logs/predictor.log
+tail -f logs/scheduler-a.log
+```
+
+**Check service health**:
+```bash
+curl http://localhost:8101/health  # Predictor
+curl http://localhost:8100/health  # Scheduler A
+curl http://localhost:8200/health  # Scheduler B
+```
+
 ## Next Steps
 
 1. Complete Task 13 subtasks (workflow_data.py, submitters.py, receivers.py, main script)
