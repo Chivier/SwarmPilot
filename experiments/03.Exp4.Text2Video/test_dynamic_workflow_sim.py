@@ -29,6 +29,7 @@ import os
 import time
 import numpy as np
 import threading
+import traceback
 
 from queue import Queue, Empty
 from dataclasses import dataclass, field, asdict
