@@ -54,13 +54,13 @@ def build_instances(
         for port in INSTANCE_PORT_LIST:
             endpoint = f"http://{host}:{port}"
             instances.append(InstanceInfo(endpoint=endpoint, current_model="llm_service_small_model"))
-            instance_scheduler_map[endpoint] = scheduler_a_url
+            instance_scheduler_map[endpoint] = "http://29.209.114.51:8100"
 
     for host in T2VID_MODEL_HOSTS:
         for port in INSTANCE_PORT_LIST:
             endpoint = f"http://{host}:{port}"
             instances.append(InstanceInfo(endpoint=endpoint, current_model="t2vid"))
-            instance_scheduler_map[endpoint] = scheduler_b_url
+            instance_scheduler_map[endpoint] = "http://29.209.113.228:8100"
     
     return instances, instance_scheduler_map
 
