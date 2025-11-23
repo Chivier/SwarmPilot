@@ -169,7 +169,7 @@ class FrameDistribution:
 
 
 DEFAULT_FRAMES = FrameDistribution(
-    peaks=(16, 24, 32, 48),
+    peaks=(30, 50, 100, 200),
     std=2.5,
     weights=(5/6, 1/18, 1/18, 1/18),  # 5:1 ratio - first peak dominates (83.3% vs 16.7% total)
     min_frames=8,
