@@ -162,7 +162,7 @@ start_service "planner" \
 echo ""
 echo "Step 2: Starting Scheduler A (Group A)"
 start_service "scheduler-a" \
-    "cd $PROJECT_ROOT/scheduler && PLANNER_URL=http://localhost:$PLANNER_PORT SCHEDULER_AUTO_REPORT=30 PREDICTOR_URL=http://localhost:$PREDICTOR_PORT SCHEDULER_PORT=$SCHEDULER_A_PORT SCHEDULER_LOG_DIR=$SCRIPT_DIR/logs/scheduler-a SCHEDULER_LOGURU_LEVEL=\"INFO\" uv run python -m src.cli start --port $SCHEDULER_A_PORT" \
+    "cd $PROJECT_ROOT/scheduler && PLANNER_URL=http://localhost:$PLANNER_PORT SCHEDULER_AUTO_REPORT=30 PREDICTOR_URL=http://localhost:$PREDICTOR_PORT SCHEDULER_PORT=$SCHEDULER_A_PORT SCHEDULER_LOG_DIR=$SCRIPT_DIR/logs/scheduler-a SCHEDULER_LOGURU_LEVEL=\"INFO\" uv run python -m src.cli start --port $SCHEDULER_A_PORT --docker" \
     "$SCHEDULER_A_PORT"
 
 # Wait for scheduler A to be ready
@@ -175,7 +175,7 @@ fi
 echo ""
 echo "Step 3: Starting Scheduler B (Group B)"
 start_service "scheduler-b" \
-    "cd $PROJECT_ROOT/scheduler && PLANNER_URL=http://localhost:$PLANNER_PORT SCHEDULER_AUTO_REPORT=30 PREDICTOR_URL=http://localhost:$PREDICTOR_PORT SCHEDULER_PORT=$SCHEDULER_B_PORT SCHEDULER_LOG_DIR=$SCRIPT_DIR/logs/scheduler-b SCHEDULER_LOGURU_LEVEL=\"INFO\" uv run python -m src.cli start --port $SCHEDULER_B_PORT" \
+    "cd $PROJECT_ROOT/scheduler && PLANNER_URL=http://localhost:$PLANNER_PORT SCHEDULER_AUTO_REPORT=30 PREDICTOR_URL=http://localhost:$PREDICTOR_PORT SCHEDULER_PORT=$SCHEDULER_B_PORT SCHEDULER_LOG_DIR=$SCRIPT_DIR/logs/scheduler-b SCHEDULER_LOGURU_LEVEL=\"INFO\" uv run python -m src.cli start --port $SCHEDULER_B_PORT --docker" \
     "$SCHEDULER_B_PORT"
 
 # Wait for scheduler B to be ready

@@ -192,7 +192,7 @@ for i in $(seq 0 $((N1 - 1))); do
     instance_port=$((INSTANCE_GROUP_A_START_PORT + i))
 
     start_service "$instance_id" \
-        "cd $PROJECT_ROOT/instance && SCHEDULER_URL=http://localhost:$SCHEDULER_A_PORT INSTANCE_ID=$instance_id INSTANCE_PORT=$instance_port INSTANCE_LOG_DIR=$SCRIPT_DIR/logs/instance_$instance_port uv run python -m src.cli start --port $instance_port" \
+        "cd $PROJECT_ROOT/instance && SCHEDULER_URL=http://localhost:$SCHEDULER_A_PORT INSTANCE_ID=$instance_id INSTANCE_PORT=$instance_port INSTANCE_LOG_DIR=$SCRIPT_DIR/logs/instance_$instance_port uv run python -m src.cli start --port $instance_port --docker" \
         "$instance_port" &
     pids+=($!)
 done
@@ -241,7 +241,7 @@ for i in $(seq 0 $((N2 - 1))); do
     instance_port=$((INSTANCE_GROUP_B_START_PORT + i))
 
     start_service "$instance_id" \
-        "cd $PROJECT_ROOT/instance && SCHEDULER_URL=http://localhost:$SCHEDULER_B_PORT INSTANCE_ID=$instance_id INSTANCE_PORT=$instance_port INSTANCE_LOG_DIR=$SCRIPT_DIR/logs/instance_$instance_port uv run python -m src.cli start --port $instance_port" \
+        "cd $PROJECT_ROOT/instance && SCHEDULER_URL=http://localhost:$SCHEDULER_B_PORT INSTANCE_ID=$instance_id INSTANCE_PORT=$instance_port INSTANCE_LOG_DIR=$SCRIPT_DIR/logs/instance_$instance_port uv run python -m src.cli start --port $instance_port --docker" \
         "$instance_port" &
     pids+=($!)
 done
