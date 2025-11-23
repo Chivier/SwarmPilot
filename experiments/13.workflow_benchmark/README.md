@@ -91,8 +91,8 @@ experiments/13.workflow_benchmark/
 | 11 | Core Infrastructure | ✅ Complete | common/{base_classes,rate_limiter,data_structures,utils}.py |
 | 12 | Metrics Collection | ✅ Complete | common/metrics_collector.py |
 | 13 | Text2Video Simulation | ✅ Complete | type1_text2video/{config,workflow_data,submitters,receivers,simulation}.py |
-| 14 | Deep Research Simulation | 📋 Next | type2_deep_research/* |
-| 15 | Service Management | 📋 Planned | service_management/* |
+| 14 | Deep Research Simulation | ✅ Complete | type2_deep_research/{config,workflow_data,submitters,receivers,simulation}.py |
+| 15 | Service Management | 📋 Next | service_management/* |
 | 16 | Real Cluster Mode | 📋 Planned | */real/* |
 | 17 | Testing Tools | 📋 Planned | tools/* |
 | 18 | Documentation | 📋 Planned | docs/*, configs/* |

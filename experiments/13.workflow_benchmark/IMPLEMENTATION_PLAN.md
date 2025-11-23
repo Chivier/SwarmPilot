@@ -401,7 +401,13 @@ def test_text2video_end_to_end():
   - [x] receivers.py
   - [x] main simulation script
   - [x] comprehensive tests (17 tests, all passing)
-- [ ] Task 14: Deep Research Simulation
+- [x] Task 14: Deep Research Simulation
+  - [x] Config
+  - [x] workflow_data.py
+  - [x] submitters.py (A, B1, B2, Merge)
+  - [x] receivers.py (A, B1, B2, Merge)
+  - [x] main simulation script (8-thread architecture)
+  - [x] comprehensive tests (15 tests, all passing)
 - [ ] Task 15: Service Management
 - [ ] Task 16: Real Cluster Mode
 - [ ] Task 17: Testing Tools
