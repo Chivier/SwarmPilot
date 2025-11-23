@@ -4,6 +4,7 @@ import torch
 import yaml
 from transformers import AutoTokenizer
 from typing import Dict, Optional, Tuple, List
+from .base_preprocessor import BasePreprocessor
 
 """
 Transformer-based model architectures for output length prediction.
@@ -171,7 +172,7 @@ def create_model_from_config(config: Dict) -> TransformerLengthPredictor:
     return model
 
 
-class SemanticPredictor:
+class SemanticPredictor(BasePreprocessor):
     def __init__(self, model_path: str, model_config_path: str):
         self.model_path = model_path
         with open(model_config_path, 'r') as f:
