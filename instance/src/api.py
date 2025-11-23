@@ -397,11 +397,11 @@ async def start_model(request: ModelStartRequest):
         hardware_name = request.parameters.get("hardware_name", None)
         
         if software_name:
-            config.software_name = software_name
+            config.platform_software_name = software_name
         if software_version:
-            config.software_version = software_version
+            config.platform_software_version = software_version
         if hardware_name:
-            config.hardware_name = hardware_name
+            config.platform_hardware_name = hardware_name
 
         # Update scheduler URL and register with scheduler
         scheduler_client = get_scheduler_client()
