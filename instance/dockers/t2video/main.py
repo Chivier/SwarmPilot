@@ -159,6 +159,8 @@ async def inference(request: InferenceRequest) -> InferenceResponse:
         start_time = time.time()
         start_timestamp = int(start_time)
 
+        generator = torch.Generator(device="cuda").manual_seed(42)
+
         result = pipe(
                 prompt=request.prompt,
                 negative_prompt=request.negative_prompt,
@@ -166,7 +168,8 @@ async def inference(request: InferenceRequest) -> InferenceResponse:
                 width=832,
                 num_frames=request.frames,
                 guidance_scale=5.0,
-                num_inference_steps=10
+                num_inference_steps=10,
+                generator=generator
         ).frames[0]
 
         # Extract the generated text from the result dict
