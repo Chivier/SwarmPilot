@@ -52,6 +52,9 @@ Examples:
     t2v_sim.add_argument("--num-workflows", type=int, default=600, help="Number of workflows (default: 600)")
     t2v_sim.add_argument("--max-b-loops", type=int, default=4, help="Max B iterations (default: 4)")
     t2v_sim.add_argument("--output-dir", type=str, default="output", help="Output directory (default: output)")
+    t2v_sim.add_argument("--strategies", type=str, help="Comma-separated list of scheduling strategies to test (e.g., min_time,probabilistic,round_robin)")
+    t2v_sim.add_argument("--target-quantile", type=float, help="Target quantile for probabilistic strategy (default: 0.9)")
+    t2v_sim.add_argument("--quantiles", type=str, help="Comma-separated quantiles for probabilistic (default: 0.1,0.25,0.5,0.75,0.99)")
 
     # ========================================================================
     # Text2Video Real
@@ -67,6 +70,9 @@ Examples:
     t2v_real.add_argument("--output-dir", type=str, default="output", help="Output directory (default: output)")
     t2v_real.add_argument("--scheduler-a-url", type=str, help="Scheduler A URL")
     t2v_real.add_argument("--scheduler-b-url", type=str, help="Scheduler B URL")
+    t2v_real.add_argument("--strategies", type=str, help="Comma-separated list of scheduling strategies to test (e.g., min_time,probabilistic,round_robin)")
+    t2v_real.add_argument("--target-quantile", type=float, help="Target quantile for probabilistic strategy (default: 0.9)")
+    t2v_real.add_argument("--quantiles", type=str, help="Comma-separated quantiles for probabilistic (default: 0.1,0.25,0.5,0.75,0.99)")
 
     # ========================================================================
     # Deep Research Simulation
@@ -80,6 +86,9 @@ Examples:
     dr_sim.add_argument("--num-workflows", type=int, default=600, help="Number of workflows (default: 600)")
     dr_sim.add_argument("--fanout-count", type=int, default=3, help="Fanout count (default: 3)")
     dr_sim.add_argument("--output-dir", type=str, default="output", help="Output directory (default: output)")
+    dr_sim.add_argument("--strategies", type=str, help="Comma-separated list of scheduling strategies to test (e.g., min_time,probabilistic,round_robin)")
+    dr_sim.add_argument("--target-quantile", type=float, help="Target quantile for probabilistic strategy (default: 0.9)")
+    dr_sim.add_argument("--quantiles", type=str, help="Comma-separated quantiles for probabilistic (default: 0.1,0.25,0.5,0.75,0.99)")
 
     # ========================================================================
     # Deep Research Real
@@ -95,6 +104,9 @@ Examples:
     dr_real.add_argument("--output-dir", type=str, default="output", help="Output directory (default: output)")
     dr_real.add_argument("--scheduler-a-url", type=str, help="Scheduler A URL")
     dr_real.add_argument("--scheduler-b-url", type=str, help="Scheduler B URL")
+    dr_real.add_argument("--strategies", type=str, help="Comma-separated list of scheduling strategies to test (e.g., min_time,probabilistic,round_robin)")
+    dr_real.add_argument("--target-quantile", type=float, help="Target quantile for probabilistic strategy (default: 0.9)")
+    dr_real.add_argument("--quantiles", type=str, help="Comma-separated quantiles for probabilistic (default: 0.1,0.25,0.5,0.75,0.99)")
 
     # Parse arguments
     args = parser.parse_args()
@@ -112,12 +124,21 @@ Examples:
     # Execute command
     try:
         if args.command == "run-text2video-sim":
+            kwargs = {}
+            if args.strategies:
+                kwargs["STRATEGIES"] = args.strategies
+            if args.target_quantile:
+                kwargs["TARGET_QUANTILE"] = str(args.target_quantile)
+            if args.quantiles:
+                kwargs["QUANTILES"] = args.quantiles
+
             result = runner.run_text2video_simulation(
                 qps=args.qps,
                 duration=args.duration,
                 num_workflows=args.num_workflows,
                 max_b_loops=args.max_b_loops,
-                output_dir=args.output_dir
+                output_dir=args.output_dir,
+                **kwargs
             )
 
         elif args.command == "run-text2video-real":
@@ -126,6 +147,12 @@ Examples:
                 kwargs["SCHEDULER_A_URL"] = args.scheduler_a_url
             if args.scheduler_b_url:
                 kwargs["SCHEDULER_B_URL"] = args.scheduler_b_url
+            if args.strategies:
+                kwargs["STRATEGIES"] = args.strategies
+            if args.target_quantile:
+                kwargs["TARGET_QUANTILE"] = str(args.target_quantile)
+            if args.quantiles:
+                kwargs["QUANTILES"] = args.quantiles
 
             result = runner.run_text2video_real(
                 qps=args.qps,
@@ -137,12 +164,21 @@ Examples:
             )
 
         elif args.command == "run-deep-research-sim":
+            kwargs = {}
+            if args.strategies:
+                kwargs["STRATEGIES"] = args.strategies
+            if args.target_quantile:
+                kwargs["TARGET_QUANTILE"] = str(args.target_quantile)
+            if args.quantiles:
+                kwargs["QUANTILES"] = args.quantiles
+
             result = runner.run_deep_research_simulation(
                 qps=args.qps,
                 duration=args.duration,
                 num_workflows=args.num_workflows,
                 fanout_count=args.fanout_count,
-                output_dir=args.output_dir
+                output_dir=args.output_dir,
+                **kwargs
             )
 
         elif args.command == "run-deep-research-real":
@@ -151,6 +187,12 @@ Examples:
                 kwargs["SCHEDULER_A_URL"] = args.scheduler_a_url
             if args.scheduler_b_url:
                 kwargs["SCHEDULER_B_URL"] = args.scheduler_b_url
+            if args.strategies:
+                kwargs["STRATEGIES"] = args.strategies
+            if args.target_quantile:
+                kwargs["TARGET_QUANTILE"] = str(args.target_quantile)
+            if args.quantiles:
+                kwargs["QUANTILES"] = args.quantiles
 
             result = runner.run_deep_research_real(
                 qps=args.qps,

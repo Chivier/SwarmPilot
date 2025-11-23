@@ -45,6 +45,7 @@ from common import (
     MetricsCollector,
     RateLimiter,
     ensure_directory,
+    setup_scheduler_strategies,
 )
 from type2_deep_research.config import DeepResearchConfig
 from type2_deep_research.submitters import (
@@ -61,18 +62,20 @@ from type2_deep_research.receivers import (
 )
 
 
-def main():
-    """Main entry point for Deep Research simulation."""
+def run_single_experiment(config, logger, strategy_name=None):
+    """Run a single experiment with the given configuration.
 
-    # ========================================================================
-    # Configuration
-    # ========================================================================
-
-    config = DeepResearchConfig.from_env()
-    logger = configure_logging(level="INFO")
+    Args:
+        config: DeepResearchConfig instance
+        logger: Logger instance
+        strategy_name: Optional strategy name (for logging purposes)
+    """
 
     logger.info("="*70)
-    logger.info("Deep Research Workflow Simulation")
+    if strategy_name:
+        logger.info(f"Deep Research Workflow Simulation - Strategy: {strategy_name}")
+    else:
+        logger.info("Deep Research Workflow Simulation")
     logger.info("="*70)
     logger.info(f"QPS: {config.qps}")
     logger.info(f"Duration: {config.duration}s")
@@ -80,6 +83,8 @@ def main():
     logger.info(f"Fanout count: {config.fanout_count}")
     logger.info(f"Scheduler A: {config.scheduler_a_url}")
     logger.info(f"Scheduler B: {config.scheduler_b_url}")
+    if strategy_name:
+        logger.info(f"Strategy: {strategy_name}")
     logger.info("="*70)
 
     # ========================================================================
@@ -335,8 +340,75 @@ def main():
     print("\n" + report)
 
     logger.info("="*70)
-    logger.info("Simulation complete!")
+    if strategy_name:
+        logger.info(f"Simulation complete for strategy: {strategy_name}!")
+    else:
+        logger.info("Simulation complete!")
     logger.info("="*70)
+
+
+def main():
+    """Main entry point - handles strategy management and experiment orchestration."""
+
+    # ========================================================================
+    # Configuration and Setup
+    # ========================================================================
+
+    config = DeepResearchConfig.from_env()
+    logger = configure_logging(level="INFO")
+
+    # ========================================================================
+    # Strategy Management
+    # ========================================================================
+
+    if config.strategies:
+        logger.info("="*70)
+        logger.info("Strategy-based Testing Mode")
+        logger.info(f"Will test {len(config.strategies)} strategies: {', '.join(config.strategies)}")
+        logger.info("="*70)
+
+        # Set default quantiles if not specified
+        quantiles = config.quantiles if config.quantiles else [0.1, 0.25, 0.5, 0.75, 0.99]
+
+        # Run experiment for each strategy
+        for strategy_name in config.strategies:
+            logger.info("\n" + "="*70)
+            logger.info(f"Setting up strategy: {strategy_name}")
+            logger.info("="*70)
+
+            # Setup this strategy (clear tasks and configure schedulers)
+            strategy_results = setup_scheduler_strategies(
+                strategies=[strategy_name],  # Only this strategy
+                scheduler_a_url=config.scheduler_a_url,
+                scheduler_b_url=config.scheduler_b_url,
+                target_quantile=config.target_quantile,
+                quantiles=quantiles,
+                logger=logger
+            )
+
+            if not strategy_results.get(strategy_name, False):
+                logger.error(f"Failed to setup strategy: {strategy_name}")
+                logger.error("Skipping this strategy")
+                continue
+
+            logger.info(f"Strategy {strategy_name} set up successfully")
+
+            # Run the experiment
+            logger.info("\n" + "="*70)
+            logger.info(f"Running experiment with strategy: {strategy_name}")
+            logger.info("="*70)
+            run_single_experiment(config, logger, strategy_name=strategy_name)
+
+            logger.info(f"\nCompleted experiment for strategy: {strategy_name}")
+
+        logger.info("\n" + "="*70)
+        logger.info("All strategy experiments completed!")
+        logger.info("="*70)
+
+    else:
+        # No strategies specified - run single experiment with current scheduler configuration
+        logger.info("Running single experiment (no strategy testing)")
+        run_single_experiment(config, logger)
 
 
 if __name__ == "__main__":

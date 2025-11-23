@@ -42,9 +42,32 @@ class DeepResearchConfig:
     output_dir: str = "output"
     metrics_file: str = "metrics.json"
 
+    # Scheduling strategy testing
+    strategies: Optional[list] = None  # List of strategy names to test
+    target_quantile: Optional[float] = None  # Target quantile for probabilistic strategy
+    quantiles: Optional[list] = None  # Custom quantiles for probabilistic strategy
+
     @classmethod
     def from_env(cls) -> "DeepResearchConfig":
         """Create configuration from environment variables."""
+        # Parse strategies from comma-separated string
+        strategies_str = os.getenv("STRATEGIES")
+        strategies = None
+        if strategies_str:
+            strategies = [s.strip() for s in strategies_str.split(",")]
+
+        # Parse quantiles from comma-separated string
+        quantiles_str = os.getenv("QUANTILES")
+        quantiles = None
+        if quantiles_str:
+            quantiles = [float(q.strip()) for q in quantiles_str.split(",")]
+
+        # Parse target quantile
+        target_quantile = None
+        target_quantile_str = os.getenv("TARGET_QUANTILE")
+        if target_quantile_str:
+            target_quantile = float(target_quantile_str)
+
         return cls(
             mode=os.getenv("MODE", "simulation"),
             qps=float(os.getenv("QPS", "1.0")),
@@ -63,4 +86,7 @@ class DeepResearchConfig:
             max_tokens=int(os.getenv("MAX_TOKENS", "512")),
             output_dir=os.getenv("OUTPUT_DIR", "output"),
             metrics_file=os.getenv("METRICS_FILE", "metrics.json"),
+            strategies=strategies,
+            target_quantile=target_quantile,
+            quantiles=quantiles,
         )

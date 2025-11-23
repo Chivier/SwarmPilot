@@ -445,3 +445,172 @@ def safe_divide(numerator: float, denominator: float, default: float = 0.0) -> f
         Result of division or default value
     """
     return numerator / denominator if denominator != 0 else default
+
+
+# ============================================================================
+# Scheduler Strategy Management
+# ============================================================================
+
+def clear_scheduler_tasks(scheduler_url: str, logger: Optional[logging.Logger] = None) -> bool:
+    """
+    Clear all tasks from a scheduler.
+
+    Args:
+        scheduler_url: Scheduler endpoint URL
+        logger: Optional logger instance
+
+    Returns:
+        True if successful, False otherwise
+    """
+    if logger:
+        logger.info(f"Clearing tasks from scheduler: {scheduler_url}")
+
+    try:
+        response = requests.post(
+            f"{scheduler_url}/task/clear",
+            timeout=30
+        )
+        response.raise_for_status()
+        result = response.json()
+
+        if logger:
+            logger.info(f"Cleared {result.get('cleared_count', 0)} tasks from scheduler")
+
+        return True
+    except Exception as e:
+        if logger:
+            logger.error(f"Failed to clear tasks from scheduler {scheduler_url}: {e}")
+        return False
+
+
+def set_scheduler_strategy(
+    scheduler_url: str,
+    strategy_name: str,
+    target_quantile: Optional[float] = None,
+    quantiles: Optional[list] = None,
+    logger: Optional[logging.Logger] = None
+) -> bool:
+    """
+    Set scheduling strategy for a scheduler.
+
+    Args:
+        scheduler_url: Scheduler endpoint URL
+        strategy_name: Strategy name (min_time, probabilistic, round_robin, random, po2, serverless)
+        target_quantile: Target quantile for probabilistic strategy (default: 0.9)
+        quantiles: Custom quantiles for probabilistic strategy (default: [0.1, 0.25, 0.5, 0.75, 0.99])
+        logger: Optional logger instance
+
+    Returns:
+        True if successful, False otherwise
+    """
+    # Default quantiles for probabilistic strategy
+    if quantiles is None and strategy_name == "probabilistic":
+        quantiles = [0.1, 0.25, 0.5, 0.75, 0.99]
+
+    # Build request payload
+    payload = {"strategy_name": strategy_name}
+    if target_quantile is not None:
+        payload["target_quantile"] = target_quantile
+    if quantiles is not None:
+        payload["quantiles"] = quantiles
+
+    if logger:
+        logger.info(f"Setting strategy '{strategy_name}' on scheduler: {scheduler_url}")
+        if quantiles:
+            logger.info(f"  Quantiles: {quantiles}")
+        if target_quantile:
+            logger.info(f"  Target quantile: {target_quantile}")
+
+    try:
+        response = requests.post(
+            f"{scheduler_url}/strategy/set",
+            json=payload,
+            timeout=30
+        )
+        response.raise_for_status()
+        result = response.json()
+
+        if logger:
+            logger.info(f"Successfully set strategy '{strategy_name}' on scheduler")
+            if result.get("previous_strategy"):
+                logger.info(f"  Previous strategy: {result['previous_strategy']}")
+
+        return True
+    except Exception as e:
+        if logger:
+            logger.error(f"Failed to set strategy on scheduler {scheduler_url}: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                logger.error(f"  Response: {e.response.text}")
+        return False
+
+
+def setup_scheduler_strategies(
+    strategies: list,
+    scheduler_a_url: str,
+    scheduler_b_url: Optional[str] = None,
+    target_quantile: Optional[float] = None,
+    quantiles: Optional[list] = None,
+    logger: Optional[logging.Logger] = None
+) -> Dict[str, bool]:
+    """
+    Setup scheduling strategies for experiment.
+
+    This function will test each strategy in the list. For each strategy:
+    1. Clear all tasks from schedulers
+    2. Set the strategy on all schedulers
+    3. Return whether setup was successful
+
+    Args:
+        strategies: List of strategy names to test
+        scheduler_a_url: Scheduler A endpoint URL
+        scheduler_b_url: Optional Scheduler B endpoint URL
+        target_quantile: Target quantile for probabilistic strategy
+        quantiles: Custom quantiles for probabilistic strategy
+        logger: Optional logger instance
+
+    Returns:
+        Dict mapping strategy names to success status
+    """
+    results = {}
+
+    for strategy_name in strategies:
+        if logger:
+            logger.info("=" * 80)
+            logger.info(f"Setting up strategy: {strategy_name}")
+            logger.info("=" * 80)
+
+        # Step 1: Clear tasks from Scheduler A
+        if not clear_scheduler_tasks(scheduler_a_url, logger):
+            results[strategy_name] = False
+            continue
+
+        # Step 2: Clear tasks from Scheduler B (if provided)
+        if scheduler_b_url and not clear_scheduler_tasks(scheduler_b_url, logger):
+            results[strategy_name] = False
+            continue
+
+        # Step 3: Set strategy on Scheduler A
+        if not set_scheduler_strategy(
+            scheduler_a_url,
+            strategy_name,
+            target_quantile,
+            quantiles,
+            logger
+        ):
+            results[strategy_name] = False
+            continue
+
+        # Step 4: Set strategy on Scheduler B (if provided)
+        if scheduler_b_url and not set_scheduler_strategy(
+            scheduler_b_url,
+            strategy_name,
+            target_quantile,
+            quantiles,
+            logger
+        ):
+            results[strategy_name] = False
+            continue
+
+        results[strategy_name] = True
+
+    return results
