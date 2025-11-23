@@ -394,12 +394,13 @@ def test_text2video_end_to_end():
 
 - [x] Task 11: Core Infrastructure
 - [x] Task 12: Metrics Collection
-- [ ] Task 13: Text2Video Simulation
+- [x] Task 13: Text2Video Simulation
   - [x] Config
-  - [ ] workflow_data.py
-  - [ ] submitters.py
-  - [ ] receivers.py
-  - [ ] main simulation script
+  - [x] workflow_data.py
+  - [x] submitters.py
+  - [x] receivers.py
+  - [x] main simulation script
+  - [x] comprehensive tests (17 tests, all passing)
 - [ ] Task 14: Deep Research Simulation
 - [ ] Task 15: Service Management
 - [ ] Task 16: Real Cluster Mode
