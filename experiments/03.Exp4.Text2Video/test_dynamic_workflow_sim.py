@@ -1785,14 +1785,29 @@ def test_strategy_workflow(
     start_time = time.time()
     timeout_seconds = timeout_minutes * 60
     completed_workflows = []
+    completed_workflow_ids = set()
 
-    # Calculate number of workflows that need to be completed for statistics
-    # Wait for all regular workflows to complete, then apply metric_portion filter at the end
-    num_target_for_stats = num_workflows
-    logger.info(f"Waiting for {num_target_for_stats} regular workflows to complete (will use first {max(1, int(num_workflows * metric_portion))} for metrics)")
-    logger.info(f"Total workflows to generate: {num_workflows_to_generate}")
+    # Identify which workflows are required for metrics
+    # These are the first N non-warmup workflows, where N is determined by metric_portion
+    # Since workflows are generated in order, we can identify them by ID
+    # workflow_states keys are ordered in Python 3.7+
+    
+    # Filter for non-warmup workflows
+    target_workflow_ids = [wid for wid, state in workflow_states.items() if not state.is_warmup]
+    
+    # Calculate how many we need
+    if 0.0 < metric_portion < 1.0:
+        num_required_for_metrics = max(1, int(len(target_workflow_ids) * metric_portion))
+        required_workflow_ids = set(target_workflow_ids[:num_required_for_metrics])
+        logger.info(f"Early termination enabled: Waiting for {len(required_workflow_ids)} specific workflows (portion={metric_portion})")
+    else:
+        num_required_for_metrics = len(target_workflow_ids)
+        required_workflow_ids = set(target_workflow_ids)
+        logger.info(f"Waiting for all {len(required_workflow_ids)} regular workflows to complete")
 
-    while len(completed_workflows) < num_workflows_to_generate:
+    logger.info(f"Total workflows generated: {num_workflows_to_generate}")
+
+    while True:
         # Check timeout
         elapsed = time.time() - start_time
         if elapsed > timeout_seconds:
@@ -1803,20 +1818,18 @@ def test_strategy_workflow(
         try:
             event = completion_queue.get(timeout=1.0)
             completed_workflows.append(event)
+            completed_workflow_ids.add(event.workflow_id)
 
-            # Count completed target workflows
-            completed_target_workflows = [e for e in completed_workflows if e.is_target_for_stats]
-            num_completed_targets = len(completed_target_workflows)
-
-            if len(completed_workflows) % 10 == 0:
-                logger.info(f"Progress: {len(completed_workflows)}/{num_workflows_to_generate} workflows completed "
-                           f"({num_completed_targets}/{num_target_for_stats} target workflows)")
-
-            # Check if all target workflows are completed
-            if num_completed_targets >= num_target_for_stats:
-                logger.info(f"All {num_target_for_stats} regular workflows completed.")
-                logger.info(f"Total workflows completed: {len(completed_workflows)}/{num_workflows_to_generate}")
+            # Check if all required workflows are completed
+            if required_workflow_ids.issubset(completed_workflow_ids):
+                logger.info(f"All {len(required_workflow_ids)} required workflows for metrics are complete.")
+                logger.info(f"Stopping early. Total completed: {len(completed_workflows)}/{num_workflows_to_generate}")
                 break
+            
+            if len(completed_workflows) % 10 == 0:
+                num_required_done = len(required_workflow_ids.intersection(completed_workflow_ids))
+                logger.info(f"Progress: {len(completed_workflows)}/{num_workflows_to_generate} completed "
+                           f"({num_required_done}/{len(required_workflow_ids)} required)")
 
         except Empty:
             continue
@@ -1845,11 +1858,12 @@ def test_strategy_workflow(
     if target_workflows and 0.0 < metric_portion < 1.0:
         # Sort by submission time (a1_submit_time)
         sorted_workflows = sorted(target_workflows, key=lambda e: e.a1_submit_time)
-        # Calculate number of workflows to use for metrics
-        num_for_metrics = max(1, int(len(sorted_workflows) * metric_portion))
+        # Calculate number of workflows to use for metrics based on TOTAL scheduled target workflows
+        # This prevents double filtering if we already stopped early
+        num_for_metrics = max(1, int(num_workflows * metric_portion))
         # Take the first N workflows
         workflows_for_metrics = sorted_workflows[:num_for_metrics]
-        logger.info(f"Using {num_for_metrics}/{len(target_workflows)} earliest submitted workflows for metrics (portion={metric_portion})")
+        logger.info(f"Using {len(workflows_for_metrics)}/{len(target_workflows)} earliest submitted workflows for metrics (portion={metric_portion})")
     else:
         # Use all target workflows
         workflows_for_metrics = target_workflows
