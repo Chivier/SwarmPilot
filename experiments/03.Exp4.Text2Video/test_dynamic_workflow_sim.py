@@ -30,6 +30,7 @@ import time
 import numpy as np
 import threading
 import traceback
+import random
 
 from queue import Queue, Empty
 from dataclasses import dataclass, field, asdict
@@ -49,6 +50,8 @@ from workload_generator import (
     print_sleep_model_stats,
     print_text2video_stats
 )
+
+random.seed(42)
 
 # Configure logging
 logging.basicConfig(
@@ -1565,7 +1568,7 @@ def test_strategy_workflow(
 
     # Create random number generator for B loop count assignment (using workload seed)
     # This ensures reproducibility across runs with the same seed
-    b_loop_rng = np.random.default_rng(42)  # Use fixed seed for B loop distribution
+    b_loop_rng = np.random.default_rng(42)
 
     for i in range(num_workflows_to_generate):
         workflow_id = f"{strategy}-workflow-{i:04d}"
@@ -1584,9 +1587,12 @@ def test_strategy_workflow(
         else:
             a1_prompt = workload.captions[i % len(workload.captions)]
             frame_count = workload.frame_counts[i % len(workload.frame_counts)]
+        
+        max_b_loop_choice_1 = int(b_loop_rng.integers(1, 4)) # From 1 to 3
+        max_b_loop_choice_2 = int(b_loop_rng.integers(5, 8)) # From 5 to 7
+        # Determine number of B loops for this workflow
+        max_b_loops = random.choice([max_b_loop_choice_1, max_b_loop_choice_2])
 
-        # Determine number of B loops for this workflow (1-4, random)
-        max_b_loops = int(b_loop_rng.integers(1, 5))  # Random 1-4
 
         # Task IDs
         a1_task_id = f"task-A1-{strategy}-workflow-{i:04d}"
