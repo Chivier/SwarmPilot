@@ -104,7 +104,7 @@ class TrainingRequest(BaseModel):
     @classmethod
     def validate_prediction_type(cls, v: str) -> str:
         """Validate that prediction_type is one of the allowed values."""
-        allowed_types = {'expect_error', 'quantile'}
+        allowed_types = {'expect_error', 'quantile', 'linear_regression', 'decision_tree'}
         if v not in allowed_types:
             raise ValueError(f"prediction_type must be one of {allowed_types}, got '{v}'")
         return v
@@ -149,7 +149,7 @@ class PredictionRequest(BaseModel):
     @classmethod
     def validate_prediction_type(cls, v: str) -> str:
         """Validate that prediction_type is one of the allowed values."""
-        allowed_types = {'expect_error', 'quantile'}
+        allowed_types = {'expect_error', 'quantile', 'linear_regression', 'decision_tree'}
         if v not in allowed_types:
             raise ValueError(f"prediction_type must be one of {allowed_types}, got '{v}'")
         return v

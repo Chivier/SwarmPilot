@@ -931,7 +931,30 @@ class MinimumExpectedTimeServerlessStrategy(SchedulingStrategy):
             f"Updated queue (expect_error) for {instance_id}: "
             f"expected_time_ms={new_expected:.2f}, error_margin_ms={new_error:.2f}"
         )
-        
+
+
+class MinimumExpectedTimeLRStrategy(MinimumExpectedTimeStrategy):
+    """
+    Strategy that selects the instance with minimum expected queue completion time
+    using Linear Regression predictions.
+    """
+
+    def get_prediction_type(self) -> str:
+        """Return prediction type for Linear Regression."""
+        return "linear_regression"
+
+
+class MinimumExpectedTimeDTStrategy(MinimumExpectedTimeStrategy):
+    """
+    Strategy that selects the instance with minimum expected queue completion time
+    using Decision Tree predictions.
+    """
+
+    def get_prediction_type(self) -> str:
+        """Return prediction type for Decision Tree."""
+        return "decision_tree"
+
+
 # Factory function to get strategy by name
 def get_strategy(
     strategy_name: str,
@@ -945,7 +968,7 @@ def get_strategy(
 
     Args:
         strategy_name: Name of strategy
-                      ("min_time", "probabilistic", "round_robin")
+                      ("min_time", "probabilistic", "round_robin", "min_time_lr", "min_time_dt")
         predictor_client: Predictor client instance
         instance_registry: Instance registry instance
         target_quantile: Target quantile for probabilistic strategy (default: 0.9)
@@ -956,6 +979,10 @@ def get_strategy(
     """
     if strategy_name == "min_time":
         return MinimumExpectedTimeStrategy(predictor_client, instance_registry)
+    elif strategy_name == "min_time_lr":
+        return MinimumExpectedTimeLRStrategy(predictor_client, instance_registry)
+    elif strategy_name == "min_time_dt":
+        return MinimumExpectedTimeDTStrategy(predictor_client, instance_registry)
     elif strategy_name == "probabilistic":
         return ProbabilisticSchedulingStrategy(
             predictor_client, instance_registry, target_quantile=target_quantile

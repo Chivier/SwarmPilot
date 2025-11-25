@@ -24,6 +24,8 @@ from .models import (
 from .storage.model_storage import ModelStorage
 from .predictor.expect_error import ExpectErrorPredictor
 from .predictor.quantile import QuantilePredictor
+from .predictor.linear_regression import LinearRegressionPredictor
+from .predictor.decision_tree import DecisionTreePredictor
 from .utils.experiment import is_experiment_mode, generate_experiment_prediction
 from .config import get_config
 from .utils.logging import get_logger, setup_logging
@@ -326,12 +328,16 @@ async def train_model(request: TrainingRequest):
             predictor = ExpectErrorPredictor()
         elif request.prediction_type == "quantile":
             predictor = QuantilePredictor()
+        elif request.prediction_type == "linear_regression":
+            predictor = LinearRegressionPredictor()
+        elif request.prediction_type == "decision_tree":
+            predictor = DecisionTreePredictor()
         else:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail={
                     "error": "Invalid prediction type",
-                    "message": f"prediction_type must be 'expect_error' or 'quantile', got '{request.prediction_type}'"
+                    "message": f"prediction_type must be 'expect_error', 'quantile', 'linear_regression', or 'decision_tree', got '{request.prediction_type}'"
                 }
             )
         
@@ -556,12 +562,16 @@ async def predict(request: PredictionRequest):
                 predictor = ExpectErrorPredictor()
             elif request.prediction_type == "quantile":
                 predictor = QuantilePredictor()
+            elif request.prediction_type == "linear_regression":
+                predictor = LinearRegressionPredictor()
+            elif request.prediction_type == "decision_tree":
+                predictor = DecisionTreePredictor()
             else:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail={
                         "error": "Invalid prediction type",
-                        "message": f"prediction_type must be 'expect_error' or 'quantile', got '{request.prediction_type}'"
+                        "message": f"prediction_type must be 'expect_error', 'quantile', 'linear_regression', or 'decision_tree', got '{request.prediction_type}'"
                     }
                 )
 
@@ -773,10 +783,14 @@ async def websocket_predict(websocket: WebSocket):
                         predictor = ExpectErrorPredictor()
                     elif request.prediction_type == "quantile":
                         predictor = QuantilePredictor()
+                    elif request.prediction_type == "linear_regression":
+                        predictor = LinearRegressionPredictor()
+                    elif request.prediction_type == "decision_tree":
+                        predictor = DecisionTreePredictor()
                     else:
                         await websocket.send_json({
                             "error": "Invalid prediction type",
-                            "message": f"prediction_type must be 'expect_error' or 'quantile', got '{request.prediction_type}'"
+                            "message": f"prediction_type must be 'expect_error', 'quantile', 'linear_regression', or 'decision_tree', got '{request.prediction_type}'"
                         })
                         continue
 
