@@ -48,7 +48,9 @@ from workload_generator import (
     Text2VideoWorkload,
     WorkloadConfig,
     print_sleep_model_stats,
-    print_text2video_stats
+    print_text2video_stats,
+    generate_four_peak_frames,
+    generate_four_peak_distribution,
 )
 
 random.seed(42)
@@ -1352,39 +1354,46 @@ class BTaskReceiver:
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(None, self.rate_limiter.acquire)
 
-        # Build task_input based on mode (all B iterations use same input)
+        # Build task_input based on mode (each B iteration uses its own sleep_time/frame_count)
         if self.mode == "simulation":
-            task_input = {"sleep_time": b_config["sleep_time"]}
+            # Get sleep time for this specific iteration
+            iteration_sleep_time = b_config["sleep_times"][next_task_index]
+            task_input = {"sleep_time": iteration_sleep_time}
             prompt = ""
         else:  # real mode
             # Use caption for both positive and negative prompts
             caption = b_config.get("caption", "")
-            
+            # Get frame count for this specific iteration
+            iteration_frame_count = b_config["frame_counts"][next_task_index]
+
             task_input = {
                 "prompt": caption,
                 "negative_prompt": caption,
-                "frames": b_config["frame_count"],
+                "frames": iteration_frame_count,
             }
             prompt = caption
 
         # Calculate token length
         token_length = estimate_token_length(prompt)
 
-        # Build metadata
+        # Build metadata with per-iteration values
         if self.mode == "simulation":
+            iteration_exp_runtime = b_config["exp_runtimes"][next_task_index]
+            iteration_frame_count = b_config["frame_counts"][next_task_index]
             metadata = {
                 "workflow_id": workflow_id,
-                "exp_runtime": b_config["exp_runtime"],
-                "frame_count": b_config["frame_count"],
+                "exp_runtime": iteration_exp_runtime,
+                "frame_count": iteration_frame_count,
                 "task_type": "B",
                 "b_iteration": workflow_state.b_loop_count,
                 "max_b_loops": workflow_state.max_b_loops
             }
         else:
+            iteration_frame_count = b_config["frame_counts"][next_task_index]
             metadata = {
                 "positive_prompt_length": estimate_token_length(prompt),
                 "negative_prompt_length": estimate_token_length(prompt),
-                "frames": b_config["frame_count"],
+                "frames": iteration_frame_count,
             }
 
         payload = {
@@ -1414,13 +1423,13 @@ class BTaskReceiver:
             # Extract assigned_instance
             assigned_instance = result.get("assigned_instance")
 
-            # Create task record
+            # Create task record with per-iteration values
             task_record = TaskRecord(
                 task_id=next_task_id,
                 workflow_id=workflow_id,
                 task_type="B",
-                sleep_time=b_config["sleep_time"] if self.mode == "simulation" else None,
-                exp_runtime=b_config["exp_runtime"] if self.mode == "simulation" else None,
+                sleep_time=b_config["sleep_times"][next_task_index] if self.mode == "simulation" else None,
+                exp_runtime=b_config["exp_runtimes"][next_task_index] if self.mode == "simulation" else None,
                 submit_time=submit_time,
                 assigned_instance=assigned_instance,
                 is_warmup=b_config["is_warmup"]
@@ -1578,20 +1587,32 @@ def test_strategy_workflow(
 
         is_target_for_stats = not is_warmup
 
-        # Get execution times and frame count from workload
+        # Determine number of B loops FIRST (before sampling frame counts)
+        max_b_loop_choice_1 = int(b_loop_rng.integers(1, 4)) # From 1 to 3
+        max_b_loop_choice_2 = int(b_loop_rng.integers(5, 8)) # From 5 to 7
+        max_b_loops = random.choice([max_b_loop_choice_1, max_b_loop_choice_2])
+
+        # Get execution times from workload (A1, A2 unchanged)
         if mode == "simulation":
             a1_sleep = workload.a1_times[i % len(workload.a1_times)]
             a2_sleep = workload.a2_times[i % len(workload.a2_times)]
-            b_sleep = workload.b_times[i % len(workload.b_times)]
-            frame_count = workload.frame_counts[i % len(workload.frame_counts)]
+            # Generate independent sleep times for each B iteration
+            # Use workflow index + iteration index as seed for reproducibility
+            b_sleep_times = generate_four_peak_distribution(
+                num_tasks=max_b_loops,
+                peaks=(15.0, 30.0, 60.0, 120.0),
+                peak_ratios=(0.4, 0.3, 0.2, 0.1),
+                seed=seed + i * 1000  # Unique seed per workflow
+            )
         else:
             a1_prompt = workload.captions[i % len(workload.captions)]
-            frame_count = workload.frame_counts[i % len(workload.frame_counts)]
-        
-        max_b_loop_choice_1 = int(b_loop_rng.integers(1, 4)) # From 1 to 3
-        max_b_loop_choice_2 = int(b_loop_rng.integers(5, 8)) # From 5 to 7
-        # Determine number of B loops for this workflow
-        max_b_loops = random.choice([max_b_loop_choice_1, max_b_loop_choice_2])
+
+        # Generate independent frame counts for each B iteration
+        # Each B loop iteration gets its own sampled frame count
+        b_frame_counts = generate_four_peak_frames(
+            num_items=max_b_loops,
+            seed=seed + i * 1000 + 500  # Unique seed per workflow, different from sleep times
+        )
 
 
         # Task IDs
@@ -1642,16 +1663,16 @@ def test_strategy_workflow(
             )
         all_a2_tasks_dict[workflow_id] = a2_task
 
-        # Create first B task data (subsequent iterations will use same config)
+        # Create first B task data (subsequent iterations use their own frame counts)
         if mode == "simulation":
             b_task_initial = WorkflowTaskData(
                 task_id=b_task_ids[0],  # First B task ID
                 workflow_id=workflow_id,
                 task_type="B",
-                sleep_time=b_sleep,
-                exp_runtime=b_sleep * 1000.0,  # Convert seconds to milliseconds
+                sleep_time=b_sleep_times[0],  # First iteration's sleep time
+                exp_runtime=b_sleep_times[0] * 1000.0,  # Convert seconds to milliseconds
                 is_warmup=is_warmup,
-                frame_count=frame_count
+                frame_count=b_frame_counts[0]  # First iteration's frame count
             )
         else:
             b_task_initial = WorkflowTaskData(
@@ -1660,27 +1681,27 @@ def test_strategy_workflow(
                 task_type="B",
                 is_warmup=is_warmup,
                 caption=a1_prompt,  # Use sampled caption
-                frame_count=frame_count
+                frame_count=b_frame_counts[0]  # First iteration's frame count
             )
 
         if mode == "simulation":
-            # Store B task configuration (used for all iterations)
+            # Store B task configuration with per-iteration values
             all_b_tasks_dict[workflow_id] = {
                 "initial_task": b_task_initial,
                 "max_loops": max_b_loops,
                 "task_ids": b_task_ids,
-                "sleep_time": b_sleep,
-                "exp_runtime": b_sleep * 1000.0,
-                "frame_count": frame_count,
+                "sleep_times": b_sleep_times,  # List of sleep times for each iteration
+                "exp_runtimes": [t * 1000.0 for t in b_sleep_times],  # List of expected runtimes
+                "frame_counts": b_frame_counts,  # List of frame counts for each iteration
                 "is_warmup": is_warmup
             }
         else:
-            # Store B task configuration (used for all iterations)
+            # Store B task configuration with per-iteration frame counts
             all_b_tasks_dict[workflow_id] = {
                 "initial_task": b_task_initial,
                 "max_loops": max_b_loops,
                 "task_ids": b_task_ids,
-                "frame_count": frame_count,
+                "frame_counts": b_frame_counts,  # List of frame counts for each iteration
                 "is_warmup": is_warmup,
                 "caption": a1_prompt  # Store caption for loop iterations
             }
