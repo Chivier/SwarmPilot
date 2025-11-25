@@ -87,8 +87,8 @@ node_modules/
 
 ood_results
 
-# Task files
-# tasks.json
-# tasks/ 
-
 *_no_git.*
+
+# Task files
+tasks.json
+tasks/ 
