@@ -18,14 +18,20 @@ class DeepResearchConfig:
     num_workflows: int = 600
     fanout_count: int = 3  # Number of B1/B2 tasks per workflow
 
-    # Model IDs
+    # Strategy for task scheduling (used in task IDs)
+    strategy: str = "probabilistic"
+
+    # Warmup workflows
+    num_warmup: int = 10
+
+    # Model IDs (will be auto-set in __post_init__ based on mode)
     model_a_id: str = "llm_service_small_model"
     model_b_id: str = "llm_service_small_model"
     model_merge_id: str = "llm_service_small_model"
 
     # Scheduler URLs
     scheduler_a_url: str = "http://127.0.0.1:8100"
-    scheduler_b_url: str = "http://127.0.0.1:8101"
+    scheduler_b_url: str = "http://127.0.0.1:8200"
 
     # Predictor and planner URLs
     predictor_url: str = "http://127.0.0.1:8102"
@@ -46,6 +52,25 @@ class DeepResearchConfig:
     strategies: Optional[list] = None  # List of strategy names to test
     target_quantile: Optional[float] = None  # Target quantile for probabilistic strategy
     quantiles: Optional[list] = None  # Custom quantiles for probabilistic strategy
+
+    def __post_init__(self):
+        """Post-initialization to set model IDs and scheduler URLs based on mode."""
+        if self.mode == "simulation":
+            # Use sleep models for simulation
+            self.model_a_id = "sleep_model_a"
+            self.model_b_id = "sleep_model_b"
+            self.model_merge_id = "sleep_model_a"
+            # Use local schedulers for simulation
+            self.scheduler_a_url = "http://127.0.0.1:8100"
+            self.scheduler_b_url = "http://127.0.0.1:8200"
+        else:  # real mode
+            # Use LLM models for real workload
+            self.model_a_id = "llm_service_small_model"
+            self.model_b_id = "llm_service_large_model"  # B tasks use large model
+            self.model_merge_id = "llm_service_small_model"  # Merge uses small model
+            # Use remote schedulers for real mode
+            self.scheduler_a_url = "http://29.209.114.51:8100"
+            self.scheduler_b_url = "http://29.209.113.228:8100"
 
     @classmethod
     def from_env(cls) -> "DeepResearchConfig":
@@ -74,11 +99,13 @@ class DeepResearchConfig:
             duration=int(os.getenv("DURATION", "600")),
             num_workflows=int(os.getenv("NUM_WORKFLOWS", "600")),
             fanout_count=int(os.getenv("FANOUT_COUNT", "3")),
+            strategy=os.getenv("STRATEGY", "probabilistic"),
+            num_warmup=int(os.getenv("NUM_WARMUP", "10")),
             model_a_id=os.getenv("MODEL_A_ID", "llm_service_small_model"),
             model_b_id=os.getenv("MODEL_B_ID", "llm_service_small_model"),
             model_merge_id=os.getenv("MODEL_MERGE_ID", "llm_service_small_model"),
             scheduler_a_url=os.getenv("SCHEDULER_A_URL", "http://127.0.0.1:8100"),
-            scheduler_b_url=os.getenv("SCHEDULER_B_URL", "http://127.0.0.1:8101"),
+            scheduler_b_url=os.getenv("SCHEDULER_B_URL", "http://127.0.0.1:8200"),
             predictor_url=os.getenv("PREDICTOR_URL", "http://127.0.0.1:8102"),
             planner_url=os.getenv("PLANNER_URL", "http://127.0.0.1:8103"),
             sleep_time_min=float(os.getenv("SLEEP_TIME_MIN", "5.0")),

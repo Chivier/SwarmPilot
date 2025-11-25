@@ -3,10 +3,10 @@
 import os
 import subprocess
 import socket
-import logging
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass
+from loguru import logger as loguru_logger
 
 
 @dataclass
@@ -33,17 +33,17 @@ class ServiceLauncher:
     - Process lifecycle management
     """
 
-    def __init__(self, log_dir: str = "/tmp/workflow_benchmark", logger: Optional[logging.Logger] = None):
+    def __init__(self, log_dir: str = "/tmp/workflow_benchmark", custom_logger: Optional[Any] = None):
         """
         Initialize service launcher.
 
         Args:
             log_dir: Directory for service logs
-            logger: Optional logger instance
+            custom_logger: Optional custom logger (defaults to loguru logger)
         """
         self.log_dir = Path(log_dir)
         self.log_dir.mkdir(parents=True, exist_ok=True)
-        self.logger = logger or logging.getLogger(__name__)
+        self.logger = custom_logger or loguru_logger
 
         # Track running processes
         self.processes: Dict[str, subprocess.Popen] = {}

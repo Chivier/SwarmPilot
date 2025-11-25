@@ -22,6 +22,8 @@ from .utils import (
     create_retry_session,
     ensure_directory,
     estimate_token_length,
+    extract_task_result,
+    extract_workflow_id_from_task_id,
     format_duration,
     format_timestamp,
     get_timestamp,
@@ -33,6 +35,8 @@ from .utils import (
     setup_console_handler,
     setup_file_handler,
     to_json,
+    setup_scheduler_strategies,
+    clear_scheduler_tasks
 )
 
 __version__ = "0.1.0"
@@ -73,4 +77,7 @@ __all__ = [
     "estimate_token_length",
     "ensure_directory",
     "safe_divide",
+    # Result extraction utilities
+    "extract_task_result",
+    "extract_workflow_id_from_task_id",
 ]

@@ -6,12 +6,12 @@ threads. Based on the reference implementation from experiments/03.Exp4.Text2Vid
 test_dynamic_workflow_sim.py:84-132.
 """
 
-import logging
 import math
 import random
 import threading
 import time
 from typing import Optional
+from loguru import logger as loguru_logger
 
 
 class RateLimiter:
@@ -42,7 +42,7 @@ class RateLimiter:
         self.tokens = 0.0  # Start with 0 tokens to enforce strict rate limit
         self.last_update = time.time()
         self.lock = threading.Lock()
-        self.logger = logging.getLogger("RateLimiter")
+        self.logger = loguru_logger.bind(component="RateLimiter")
 
     def acquire(self, tokens: int = 1) -> float:
         """

@@ -2,6 +2,7 @@
 
 import random
 import threading
+import time
 from queue import Queue, Empty
 from typing import Any, Dict, List, Optional
 
@@ -43,14 +44,25 @@ class A1TaskSubmitter(BaseTaskSubmitter):
         self.state_lock = state_lock
 
         # Pre-generate all workflow data
-        self.workflows = [
-            Text2VideoWorkflowData(
+        self.workflows = []
+        for i in range(config.num_workflows):
+            workflow = Text2VideoWorkflowData(
                 workflow_id=f"workflow-{i:04d}",
                 caption=captions[i % len(captions)],
-                max_b_loops=config.max_b_loops
+                max_b_loops=random.randint(1, 4) if config.max_b_loops == 0 else config.max_b_loops,
+                strategy=getattr(config, 'strategy', 'default'),
+                frame_count=getattr(config, 'frame_count', 16),
+                max_tokens=getattr(config, 'max_tokens', 512),
+                is_warmup=(i < getattr(config, 'num_warmup', 0))
             )
-            for i in range(config.num_workflows)
-        ]
+
+            # Pre-generate sleep times for simulation mode
+            if config.mode == "simulation":
+                workflow.a1_sleep_time = random.uniform(config.sleep_time_min, config.sleep_time_max)
+                workflow.a2_sleep_time = random.uniform(config.sleep_time_min, config.sleep_time_max)
+                workflow.b_sleep_time = random.uniform(config.sleep_time_min, config.sleep_time_max)
+
+            self.workflows.append(workflow)
 
         # Populate shared workflow_states
         with state_lock:
@@ -58,6 +70,7 @@ class A1TaskSubmitter(BaseTaskSubmitter):
                 workflow_states[workflow.workflow_id] = workflow
 
         self.index = 0
+        self.task_ids = []  # Track all A1 task IDs
         self.logger.info(f"Pre-generated {len(self.workflows)} workflows")
 
     def _prepare_task_payload(self, workflow_data: Text2VideoWorkflowData) -> Dict[str, Any]:
@@ -72,37 +85,41 @@ class A1TaskSubmitter(BaseTaskSubmitter):
         """
         # Build task_input based on mode
         if self.config.mode == "simulation":
-            sleep_time = random.uniform(
-                self.config.sleep_time_min,
-                self.config.sleep_time_max
-            )
-            task_input = {"sleep_time": sleep_time}
+            # Use pre-generated sleep_time or generate if not available
+            if workflow_data.a1_sleep_time is None:
+                workflow_data.a1_sleep_time = random.uniform(
+                    self.config.sleep_time_min,
+                    self.config.sleep_time_max
+                )
+            task_input = {"sleep_time": workflow_data.a1_sleep_time}
+
+            # Simulation mode metadata
+            metadata = {
+                "workflow_id": workflow_data.workflow_id,
+                "exp_runtime": workflow_data.a1_sleep_time * 1000.0,  # Convert to milliseconds
+                "task_type": "A1"
+            }
         else:  # real mode
+            sentence = A1_TEMPLATE.format(caption=workflow_data.caption)
             task_input = {
-                "sentence": A1_TEMPLATE.format(caption=workflow_data.caption),
-                "max_tokens": self.config.max_tokens
+                "sentence": sentence,
+                "max_tokens": workflow_data.max_tokens
             }
 
-        # Calculate token_length for metadata (useful for prediction)
-        token_length = estimate_token_length(workflow_data.caption)
-
-        # Build metadata
-        metadata = {
-            "workflow_id": workflow_data.workflow_id,
-            "caption": workflow_data.caption,
-            "task_type": "A1"
-        }
-
-        # Add real mode metadata
-        if self.config.mode == "real":
-            metadata.update({
-                "sentence": task_input["sentence"],
+            # Real mode metadata
+            token_length = estimate_token_length(workflow_data.caption)
+            metadata = {
+                "sentence": sentence,
                 "token_length": token_length,
-                "max_tokens": self.config.max_tokens
-            })
+                "max_tokens": workflow_data.max_tokens
+            }
+
+        # Generate task ID with strategy prefix
+        workflow_num = workflow_data.workflow_id.split('-')[-1]
+        task_id = f"task-A1-{workflow_data.strategy}-workflow-{workflow_num}"
 
         return {
-            "task_id": f"{workflow_data.workflow_id}-A1",
+            "task_id": task_id,
             "model_id": self.config.model_a_id,
             "task_input": task_input,
             "metadata": metadata
@@ -120,6 +137,43 @@ class A1TaskSubmitter(BaseTaskSubmitter):
             self.index += 1
             return workflow
         return None
+
+    def _submit_task(self, task_data: Any) -> bool:
+        """
+        Submit a single task to the scheduler and track timing.
+
+        Args:
+            task_data: Task data to submit
+
+        Returns:
+            True if submission succeeded, False otherwise
+        """
+        # Record workflow start in metrics before submission
+        if self.metrics and isinstance(task_data, Text2VideoWorkflowData):
+            self.metrics.record_workflow_start(
+                workflow_id=task_data.workflow_id,
+                workflow_type="text2video",
+                metadata={"max_b_loops": task_data.max_b_loops, "strategy": task_data.strategy}
+            )
+
+        # Set submit time BEFORE submission
+        submit_time = time.time()
+
+        # Call parent implementation
+        success = super()._submit_task(task_data)
+
+        if success and isinstance(task_data, Text2VideoWorkflowData):
+            # Update workflow state with submission time
+            with self.state_lock:
+                task_data.a1_submit_time = submit_time
+
+            # Track task ID (must match the format used in _prepare_task_payload)
+            workflow_num = task_data.workflow_id.split('-')[-1]
+            strategy = getattr(self.config, 'strategy', 'default')
+            task_id = f"task-A1-{strategy}-workflow-{workflow_num}"
+            self.task_ids.append(task_id)
+
+        return success
 
 
 class A2TaskSubmitter(BaseTaskSubmitter):
@@ -146,6 +200,7 @@ class A2TaskSubmitter(BaseTaskSubmitter):
         self.workflow_states = workflow_states
         self.state_lock = state_lock
         self.a1_result_queue = a1_result_queue
+        self.task_ids = []  # Track all A2 task IDs
 
     def _prepare_task_payload(self, task_data: tuple) -> Dict[str, Any]:
         """
@@ -159,44 +214,53 @@ class A2TaskSubmitter(BaseTaskSubmitter):
         """
         workflow_id, a1_result = task_data
 
+        # Get workflow_data
+        with self.state_lock:
+            workflow_data = self.workflow_states.get(workflow_id)
+
         # Build task_input based on mode
         if self.config.mode == "simulation":
-            sleep_time = random.uniform(
+            # Use pre-generated sleep_time or generate if not available
+            if workflow_data and workflow_data.a2_sleep_time is None:
+                workflow_data.a2_sleep_time = random.uniform(
+                    self.config.sleep_time_min,
+                    self.config.sleep_time_max
+                )
+            sleep_time = workflow_data.a2_sleep_time if workflow_data else random.uniform(
                 self.config.sleep_time_min,
                 self.config.sleep_time_max
             )
             task_input = {"sleep_time": sleep_time}
+
+            # Simulation mode metadata
+            metadata = {
+                "workflow_id": workflow_id,
+                "exp_runtime": sleep_time * 1000.0,  # Convert to milliseconds
+                "task_type": "A2"
+            }
         else:  # real mode
+            sentence = A2_TEMPLATE.format(positive_prompt=a1_result)
+            max_tokens = workflow_data.max_tokens if workflow_data else self.config.max_tokens
             task_input = {
-                "sentence": A2_TEMPLATE.format(positive_prompt=a1_result),
-                "max_tokens": self.config.max_tokens
+                "sentence": sentence,
+                "max_tokens": max_tokens
             }
 
-        # Calculate token length for metadata
-        if self.config.mode == "real":
-            sentence = task_input["sentence"]
+            # Real mode metadata
             token_length = estimate_token_length(sentence)
-        else:
-            sentence = ""
-            token_length = 0
-
-        # Build metadata
-        metadata = {
-            "workflow_id": workflow_id,
-            "positive_prompt": a1_result,
-            "task_type": "A2"
-        }
-
-        # Add real mode metadata
-        if self.config.mode == "real":
-            metadata.update({
+            metadata = {
                 "sentence": sentence,
                 "token_length": token_length,
-                "max_tokens": self.config.max_tokens
-            })
+                "max_tokens": max_tokens
+            }
+
+        # Generate task ID with strategy prefix
+        strategy = workflow_data.strategy if workflow_data else "probabilistic"
+        workflow_num = workflow_id.split('-')[-1]
+        task_id = f"task-A2-{strategy}-workflow-{workflow_num}"
 
         return {
-            "task_id": f"{workflow_id}-A2",
+            "task_id": task_id,
             "model_id": self.config.model_a_id,
             "task_input": task_input,
             "metadata": metadata
@@ -209,15 +273,47 @@ class A2TaskSubmitter(BaseTaskSubmitter):
         Returns:
             Tuple of (workflow_id, a1_result), or None if stopped
         """
-        try:
-            # Block for 0.1s to allow graceful shutdown
-            return self.a1_result_queue.get(timeout=0.1)
-        except Empty:
-            # Queue empty, check if we should stop
-            if self.stop_event.is_set():
-                return None
-            # Otherwise keep waiting
-            return self._get_next_task_data()
+        while not self.stop_event.is_set():
+            try:
+                # Block for 0.1s to allow graceful shutdown
+                return self.a1_result_queue.get(timeout=0.1)
+            except Empty:
+                # Queue empty, keep waiting
+                continue
+        return None
+
+    def _submit_task(self, task_data: Any) -> bool:
+        """
+        Submit a single task to the scheduler and track timing.
+
+        Args:
+            task_data: Task data to submit
+
+        Returns:
+            True if submission succeeded, False otherwise
+        """
+        # Set submit time BEFORE submission
+        submit_time = time.time()
+
+        # Call parent implementation
+        success = super()._submit_task(task_data)
+
+        if success and isinstance(task_data, tuple):
+            workflow_id = task_data[0]
+
+            # Update workflow state with submission time
+            with self.state_lock:
+                workflow_data = self.workflow_states.get(workflow_id)
+                if workflow_data:
+                    workflow_data.a2_submit_time = submit_time
+
+            # Track task ID (must match the format used in _prepare_task_payload)
+            workflow_num = workflow_id.split('-')[-1]
+            strategy = workflow_data.strategy if workflow_data else "probabilistic"
+            task_id = f"task-A2-{strategy}-workflow-{workflow_num}"
+            self.task_ids.append(task_id)
+
+        return success
 
 
 class BTaskSubmitter(BaseTaskSubmitter):
@@ -245,6 +341,7 @@ class BTaskSubmitter(BaseTaskSubmitter):
         self.workflow_states = workflow_states
         self.state_lock = state_lock
         self.a2_result_queue = a2_result_queue
+        self.task_ids = []  # Track all B task IDs (all iterations)
 
     def _prepare_task_payload(self, task_data: tuple) -> Dict[str, Any]:
         """
@@ -258,31 +355,58 @@ class BTaskSubmitter(BaseTaskSubmitter):
         """
         workflow_id, a2_result, loop_iteration = task_data
 
+        # Get workflow_data
+        with self.state_lock:
+            workflow_data = self.workflow_states.get(workflow_id)
+
         # Build task_input based on mode
         if self.config.mode == "simulation":
-            sleep_time = random.uniform(
+            # Use pre-generated sleep_time or generate if not available
+            if workflow_data and workflow_data.b_sleep_time is None:
+                workflow_data.b_sleep_time = random.uniform(
+                    self.config.sleep_time_min,
+                    self.config.sleep_time_max
+                )
+            sleep_time = workflow_data.b_sleep_time if workflow_data else random.uniform(
                 self.config.sleep_time_min,
                 self.config.sleep_time_max
             )
             task_input = {"sleep_time": sleep_time}
-        else:  # real mode
-            # B task (video generation) uses the negative prompt from A2
-            # In real mode, this would be the actual video generation parameters
+
+            # Simulation mode metadata - includes all necessary fields
+            metadata = {
+                "workflow_id": workflow_id,
+                "exp_runtime": sleep_time * 1000.0,  # Convert to milliseconds
+                "frame_count": workflow_data.frame_count if workflow_data else 16,
+                "task_type": "B",
+                "b_iteration": loop_iteration,
+                "max_b_loops": workflow_data.max_b_loops if workflow_data else 4
+            }
+        else:  # real mode - completely different structure
+            # Real mode uses caption for both prompt and negative_prompt (simplified)
+            caption = workflow_data.caption if workflow_data else ""
+            frame_count = workflow_data.frame_count if workflow_data else 16
+
             task_input = {
-                "negative_prompt": a2_result,
-                "num_frames": 16  # Example: generate 16 frame video
+                "prompt": caption,  # Use caption as positive prompt
+                "negative_prompt": caption,  # Simplified: also use caption as negative prompt
+                "frames": frame_count
             }
 
-        # Build metadata
-        metadata = {
-            "workflow_id": workflow_id,
-            "negative_prompt": a2_result,
-            "task_type": "B",
-            "loop_iteration": loop_iteration
-        }
+            # Real mode metadata - only includes prompt lengths and frames
+            metadata = {
+                "positive_prompt_length": estimate_token_length(caption),
+                "negative_prompt_length": estimate_token_length(caption),
+                "frames": frame_count
+            }
+
+        # Generate task ID with strategy prefix
+        strategy = workflow_data.strategy if workflow_data else "probabilistic"
+        workflow_num = workflow_id.split('-')[-1]
+        task_id = f"task-B{loop_iteration}-{strategy}-workflow-{workflow_num}"
 
         return {
-            "task_id": f"{workflow_id}-B{loop_iteration}",
+            "task_id": task_id,
             "model_id": self.config.model_b_id,
             "task_input": task_input,
             "metadata": metadata
@@ -295,13 +419,13 @@ class BTaskSubmitter(BaseTaskSubmitter):
         Returns:
             Tuple of (workflow_id, a2_result, loop_iteration), or None if stopped
         """
-        try:
-            # Block for 0.1s to allow graceful shutdown
-            return self.a2_result_queue.get(timeout=0.1)
-        except Empty:
-            if self.stop_event.is_set():
-                return None
-            return self._get_next_task_data()
+        while not self.stop_event.is_set():
+            try:
+                # Block for 0.1s to allow graceful shutdown
+                return self.a2_result_queue.get(timeout=0.1)
+            except Empty:
+                continue
+        return None
 
     def add_task(self, workflow_id: str, a2_result: str, loop_iteration: int):
         """
@@ -315,3 +439,42 @@ class BTaskSubmitter(BaseTaskSubmitter):
             loop_iteration: Current loop iteration number (1-based)
         """
         self.a2_result_queue.put((workflow_id, a2_result, loop_iteration))
+
+    def _submit_task(self, task_data: Any) -> bool:
+        """
+        Submit a single task to the scheduler and track timing.
+
+        Args:
+            task_data: Task data to submit
+
+        Returns:
+            True if submission succeeded, False otherwise
+        """
+        # Set submit time BEFORE submission
+        submit_time = time.time()
+
+        # Call parent implementation
+        success = super()._submit_task(task_data)
+
+        if success and isinstance(task_data, tuple):
+            workflow_id, a2_result, loop_iteration = task_data
+
+            # Update workflow state with submission time
+            with self.state_lock:
+                workflow_data = self.workflow_states.get(workflow_id)
+                if workflow_data:
+                    # First B iteration, initialize the list
+                    if loop_iteration == 1:
+                        workflow_data.b_submit_times = [submit_time]
+                    else:
+                        # Subsequent iterations
+                        if submit_time not in workflow_data.b_submit_times:
+                            workflow_data.b_submit_times.append(submit_time)
+
+            # Track task ID (must match the format used in _prepare_task_payload)
+            workflow_num = workflow_id.split('-')[-1]
+            strategy = workflow_data.strategy if workflow_data else "probabilistic"
+            task_id = f"task-B{loop_iteration}-{strategy}-workflow-{workflow_num}"
+            self.task_ids.append(task_id)
+
+        return success

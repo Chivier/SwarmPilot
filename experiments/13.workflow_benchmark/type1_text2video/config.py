@@ -24,7 +24,7 @@ class Text2VideoConfig:
 
     # Scheduler URLs
     scheduler_a_url: str = "http://127.0.0.1:8100"
-    scheduler_b_url: str = "http://127.0.0.1:8101"
+    scheduler_b_url: str = "http://127.0.0.1:8200"  # Consistent with type2 and from_env()
 
     # Predictor and planner URLs
     predictor_url: str = "http://127.0.0.1:8102"
@@ -48,6 +48,30 @@ class Text2VideoConfig:
     strategies: Optional[list] = None  # List of strategy names to test
     target_quantile: Optional[float] = None  # Target quantile for probabilistic strategy
     quantiles: Optional[list] = None  # Custom quantiles for probabilistic strategy
+
+    # Additional fields
+    strategy: str = "probabilistic"  # Single strategy name for workflow generation
+    num_warmup: int = 0  # Number of warmup workflows
+    frame_count: int = 16  # Default frame count for video generation
+
+    def __post_init__(self):
+        """Post-initialization to set mode-specific model IDs and scheduler URLs."""
+        if self.mode == "simulation":
+            # Override model IDs for simulation mode
+            self.model_a_id = "sleep_model_a"  # For A1/A2 tasks
+            self.model_b_id = "sleep_model_b"  # For B tasks
+            # Use local schedulers for simulation
+            self.scheduler_a_url = "http://127.0.0.1:8100"
+            self.scheduler_b_url = "http://127.0.0.1:8200"
+        else:  # real mode
+            # Keep or set real mode model IDs
+            if self.model_a_id == "sleep_model_a":  # Fix if incorrectly set
+                self.model_a_id = "llm_service_small_model"
+            if self.model_b_id == "sleep_model_b":  # Fix if incorrectly set
+                self.model_b_id = "t2vid"
+            # Use remote schedulers for real mode
+            self.scheduler_a_url = "http://29.209.114.51:8100"
+            self.scheduler_b_url = "http://29.209.113.228:8100"
 
     @classmethod
     def from_env(cls) -> "Text2VideoConfig":
@@ -79,7 +103,7 @@ class Text2VideoConfig:
             model_a_id=os.getenv("MODEL_A_ID", "llm_service_small_model"),
             model_b_id=os.getenv("MODEL_B_ID", "t2vid"),
             scheduler_a_url=os.getenv("SCHEDULER_A_URL", "http://127.0.0.1:8100"),
-            scheduler_b_url=os.getenv("SCHEDULER_B_URL", "http://127.0.0.1:8101"),
+            scheduler_b_url=os.getenv("SCHEDULER_B_URL", "http://127.0.0.1:8200"),
             predictor_url=os.getenv("PREDICTOR_URL", "http://127.0.0.1:8102"),
             planner_url=os.getenv("PLANNER_URL", "http://127.0.0.1:8103"),
             sleep_time_min=float(os.getenv("SLEEP_TIME_MIN", "5.0")),
@@ -91,4 +115,7 @@ class Text2VideoConfig:
             strategies=strategies,
             target_quantile=target_quantile,
             quantiles=quantiles,
+            strategy=os.getenv("STRATEGY", "probabilistic"),
+            num_warmup=int(os.getenv("NUM_WARMUP", "0")),
+            frame_count=int(os.getenv("FRAME_COUNT", "16")),
         )

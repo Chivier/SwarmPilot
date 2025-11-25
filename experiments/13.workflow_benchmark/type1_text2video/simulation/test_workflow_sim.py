@@ -57,8 +57,13 @@ def run_single_experiment(config, captions, logger, strategy_name=None):
         config: Text2VideoConfig instance
         captions: List of captions to use
         logger: Logger instance
-        strategy_name: Optional strategy name (for logging purposes)
+        strategy_name: Optional strategy name (for logging and task ID generation)
     """
+
+    # Update config.strategy if strategy_name is provided
+    if strategy_name:
+        config.strategy = strategy_name
+        logger.info(f"Using strategy: {strategy_name}")
 
     logger.info("="*70)
     if strategy_name:
@@ -89,7 +94,7 @@ def run_single_experiment(config, captions, logger, strategy_name=None):
     a2_result_queue = Queue()  # A2 receiver → B submitter
 
     # Metrics collector
-    metrics = MetricsCollector(logger=logger)
+    metrics = MetricsCollector(custom_logger=logger)
 
     # Rate limiter (shared across all submitters)
     rate_limiter = RateLimiter(rate=config.qps)
@@ -109,8 +114,21 @@ def run_single_experiment(config, captions, logger, strategy_name=None):
         state_lock=state_lock,
         scheduler_url=config.scheduler_a_url,
         rate_limiter=rate_limiter,
+        metrics=metrics,
         duration=config.duration,
     )
+
+    # Pre-generate task IDs for receivers to subscribe to
+    # Must match the format used in submitters.py
+    strategy = getattr(config, 'strategy', 'probabilistic')
+    a1_task_ids = [f"task-A1-{strategy}-workflow-{i:04d}" for i in range(config.num_workflows)]
+    a2_task_ids = [f"task-A2-{strategy}-workflow-{i:04d}" for i in range(config.num_workflows)]
+
+    # Generate all B task IDs (including all loop iterations)
+    b_task_ids = []
+    for i in range(config.num_workflows):
+        for loop in range(1, config.max_b_loops + 1):
+            b_task_ids.append(f"task-B{loop}-{strategy}-workflow-{i:04d}")
 
     # A2 Submitter (Thread 3)
     a2_submitter = A2TaskSubmitter(
@@ -142,8 +160,10 @@ def run_single_experiment(config, captions, logger, strategy_name=None):
         state_lock=state_lock,
         a2_submitter=a2_submitter,
         a1_result_queue=a1_result_queue,
+        task_ids=a1_task_ids,
         scheduler_url=config.scheduler_a_url,
         model_id=config.model_a_id,
+        metrics=metrics,
     )
 
     # A2 Receiver (Thread 4)
@@ -154,8 +174,10 @@ def run_single_experiment(config, captions, logger, strategy_name=None):
         state_lock=state_lock,
         b_submitter=b_submitter,
         a2_result_queue=a2_result_queue,
+        task_ids=a2_task_ids,
         scheduler_url=config.scheduler_a_url,
         model_id=config.model_a_id,
+        metrics=metrics,
     )
 
     # B Receiver (Thread 6)
@@ -165,8 +187,10 @@ def run_single_experiment(config, captions, logger, strategy_name=None):
         workflow_states=workflow_states,
         state_lock=state_lock,
         b_submitter=b_submitter,
+        task_ids=b_task_ids,
         scheduler_url=config.scheduler_b_url,
         model_id=config.model_b_id,
+        metrics=metrics,
     )
 
     # ========================================================================
@@ -309,6 +333,15 @@ def main():
     config = Text2VideoConfig.from_env()
     logger = configure_logging(level="INFO")
 
+    # Ensure mode is set to simulation (overrides any environment variable)
+    config.mode = "simulation"
+    config.model_a_id = "sleep_model_a"
+    config.model_b_id = "sleep_model_b"
+
+    logger.info(f"Mode: {config.mode} (forced for simulation test)")
+    logger.info(f"Model A: {config.model_a_id}")
+    logger.info(f"Model B: {config.model_b_id}")
+
     # Load captions
     project_root = Path(__file__).parent.parent.parent.parent.parent
     caption_path = project_root / config.caption_file
@@ -343,12 +376,12 @@ def main():
 
             # Setup this strategy (clear tasks and configure schedulers)
             strategy_results = setup_scheduler_strategies(
-                strategies=[strategy_name],  # Only this strategy
+                strategy_name=strategy_name,
                 scheduler_a_url=config.scheduler_a_url,
                 scheduler_b_url=config.scheduler_b_url,
                 target_quantile=config.target_quantile,
                 quantiles=quantiles,
-                logger=logger
+                custom_logger=logger
             )
 
             if not strategy_results.get(strategy_name, False):

@@ -54,13 +54,17 @@ def main():
     # Load configuration (mode=real)
     config = Text2VideoConfig.from_env()
 
-    # Ensure mode is set to real
-    if config.mode != "real":
-        print(f"Warning: MODE should be 'real', but got '{config.mode}'. Setting to 'real'.")
-        config.mode = "real"
+    # Ensure mode is set to real (overrides any environment variable)
+    config.mode = "real"
+    # Ensure model IDs are set for real mode
+    config.model_a_id = "llm_service_small_model"
+    config.model_b_id = "t2vid"
 
     # Setup logging
     logger = configure_logging(level="INFO")
+    logger.info(f"Mode: {config.mode} (forced for real test)")
+    logger.info(f"Model A: {config.model_a_id}")
+    logger.info(f"Model B: {config.model_b_id}")
     logger.info("=" * 80)
     logger.info("Text2Video Workflow - Real Cluster Mode")
     logger.info("=" * 80)
@@ -96,6 +100,18 @@ def main():
     a1_result_queue = Queue()
     a2_result_queue = Queue()
 
+    # Pre-generate task IDs for receivers to subscribe to
+    # Must match the format used in submitters.py
+    strategy = getattr(config, 'strategy', 'probabilistic')
+    a1_task_ids = [f"task-A1-{strategy}-workflow-{i:04d}" for i in range(config.num_workflows)]
+    a2_task_ids = [f"task-A2-{strategy}-workflow-{i:04d}" for i in range(config.num_workflows)]
+
+    # Generate all B task IDs (including all loop iterations)
+    b_task_ids = []
+    for i in range(config.num_workflows):
+        for loop in range(1, config.max_b_loops + 1):
+            b_task_ids.append(f"task-B{loop}-{strategy}-workflow-{i:04d}")
+
     # Create submitters
     a1_submitter = A1TaskSubmitter(
         name="A1Submitter",
@@ -106,7 +122,7 @@ def main():
         scheduler_url=config.scheduler_a_url,
         rate_limiter=rate_limiter,
         metrics=metrics,
-        logger=logger
+        custom_logger=logger
     )
 
     a2_submitter = A2TaskSubmitter(
@@ -118,7 +134,7 @@ def main():
         scheduler_url=config.scheduler_a_url,
         rate_limiter=None,  # No rate limiting for A2 (triggered by A1)
         metrics=metrics,
-        logger=logger
+        custom_logger=logger
     )
 
     b_submitter = BTaskSubmitter(
@@ -130,43 +146,49 @@ def main():
         scheduler_url=config.scheduler_b_url,
         rate_limiter=None,  # No rate limiting for B (triggered by A2)
         metrics=metrics,
-        logger=logger
+        custom_logger=logger
     )
 
     # Create receivers
     a1_receiver = A1TaskReceiver(
         name="A1Receiver",
+        config=config,
         model_id=config.model_a_id,
         a2_submitter=a2_submitter,
         a1_result_queue=a1_result_queue,
+        task_ids=a1_task_ids,
         workflow_states=workflow_states,
         state_lock=state_lock,
         scheduler_url=config.scheduler_a_url,
         metrics=metrics,
-        logger=logger
+        custom_logger=logger
     )
 
     a2_receiver = A2TaskReceiver(
         name="A2Receiver",
+        config=config,
         model_id=config.model_a_id,
         b_submitter=b_submitter,
         a2_result_queue=a2_result_queue,
+        task_ids=a2_task_ids,
         workflow_states=workflow_states,
         state_lock=state_lock,
         scheduler_url=config.scheduler_a_url,
         metrics=metrics,
-        logger=logger
+        custom_logger=logger
     )
 
     b_receiver = BTaskReceiver(
         name="BReceiver",
+        config=config,
         model_id=config.model_b_id,
         b_submitter=b_submitter,
+        task_ids=b_task_ids,
         workflow_states=workflow_states,
         state_lock=state_lock,
         scheduler_url=config.scheduler_b_url,
         metrics=metrics,
-        logger=logger
+        custom_logger=logger
     )
 
     # Start all threads

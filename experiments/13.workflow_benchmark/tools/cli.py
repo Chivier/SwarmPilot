@@ -10,7 +10,6 @@ Provides simple commands for running experiments:
 """
 
 import argparse
-import logging
 import sys
 from pathlib import Path
 
@@ -18,7 +17,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from tools.experiment_runner import ExperimentRunner
-from common import configure_logging
+from common.utils import configure_logging
 
 
 def main():
@@ -116,10 +115,10 @@ Examples:
         sys.exit(1)
 
     # Setup logging
-    logger = configure_logging(level=logging.INFO)
+    logger = configure_logging(level="INFO")
 
     # Create runner
-    runner = ExperimentRunner(logger=logger)
+    runner = ExperimentRunner(custom_logger=logger)
 
     # Execute command
     try:

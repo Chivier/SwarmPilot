@@ -220,7 +220,7 @@ def test_a1_submitter_payload_preparation():
     workflow = submitter.workflows[0]
     payload = submitter._prepare_task_payload(workflow)
 
-    assert payload["task_id"] == "workflow-0000-A1"
+    assert payload["task_id"] == "task-A1-default-workflow-0000"
     assert payload["model_id"] == config.model_a_id
     assert "sleep_time" in payload["task_input"]
     assert payload["metadata"]["workflow_id"] == "workflow-0000"
@@ -248,11 +248,10 @@ def test_a2_submitter_payload_preparation():
     task_data = ("workflow-0001", "positive prompt result")
     payload = submitter._prepare_task_payload(task_data)
 
-    assert payload["task_id"] == "workflow-0001-A2"
+    assert payload["task_id"] == "task-A2-default-workflow-0001"
     assert payload["model_id"] == config.model_a_id
     assert "sleep_time" in payload["task_input"]
     assert payload["metadata"]["workflow_id"] == "workflow-0001"
-    assert payload["metadata"]["positive_prompt"] == "positive prompt result"
     assert payload["metadata"]["task_type"] == "A2"
 
 
@@ -276,13 +275,12 @@ def test_b_submitter_payload_preparation():
     task_data = ("workflow-0001", "negative prompt result", 2)
     payload = submitter._prepare_task_payload(task_data)
 
-    assert payload["task_id"] == "workflow-0001-B2"
+    assert payload["task_id"] == "task-B2-default-workflow-0001"
     assert payload["model_id"] == config.model_b_id
     assert "sleep_time" in payload["task_input"]
     assert payload["metadata"]["workflow_id"] == "workflow-0001"
-    assert payload["metadata"]["negative_prompt"] == "negative prompt result"
     assert payload["metadata"]["task_type"] == "B"
-    assert payload["metadata"]["loop_iteration"] == 2
+    assert payload["metadata"]["b_iteration"] == 2
 
 
 # ============================================================================

@@ -10,7 +10,7 @@ import sys
 import time
 from pathlib import Path
 from typing import Dict, List, Optional, Union
-import logging
+from loguru import logger
 
 
 class ExperimentRunner:
@@ -26,16 +26,16 @@ class ExperimentRunner:
 
     def __init__(self,
                  workspace_dir: Optional[Union[str, Path]] = None,
-                 logger: Optional[logging.Logger] = None):
+                 custom_logger = None):
         """
         Initialize experiment runner.
 
         Args:
             workspace_dir: Root directory for experiments (default: current directory)
-            logger: Optional logger instance
+            custom_logger: Optional custom logger (defaults to loguru logger)
         """
         self.workspace_dir = Path(workspace_dir) if workspace_dir else Path.cwd()
-        self.logger = logger or logging.getLogger(__name__)
+        self.logger = custom_logger or logger
 
     def run_text2video_simulation(self,
                                    qps: float = 2.0,
@@ -85,16 +85,14 @@ class ExperimentRunner:
         result = subprocess.run(
             cmd,
             cwd=str(self.workspace_dir),
-            env={**dict(os.environ), **env},
-            capture_output=True,
-            text=True
+            env={**dict(os.environ), **env}
         )
         elapsed = time.time() - start_time
 
         self.logger.info(f"Experiment completed in {elapsed:.2f}s")
 
         if result.returncode != 0:
-            self.logger.error(f"Experiment failed: {result.stderr}")
+            self.logger.error(f"Experiment failed with exit code {result.returncode}")
             raise RuntimeError(f"Experiment failed with exit code {result.returncode}")
 
         # Parse output for metrics path
@@ -156,16 +154,14 @@ class ExperimentRunner:
         result = subprocess.run(
             cmd,
             cwd=str(self.workspace_dir),
-            env={**dict(os.environ), **env},
-            capture_output=True,
-            text=True
+            env={**dict(os.environ), **env}
         )
         elapsed = time.time() - start_time
 
         self.logger.info(f"Experiment completed in {elapsed:.2f}s")
 
         if result.returncode != 0:
-            self.logger.error(f"Experiment failed: {result.stderr}")
+            self.logger.error(f"Experiment failed with exit code {result.returncode}")
             raise RuntimeError(f"Experiment failed with exit code {result.returncode}")
 
         metrics_path = Path(output_dir) / "metrics.json"
@@ -226,16 +222,14 @@ class ExperimentRunner:
         result = subprocess.run(
             cmd,
             cwd=str(self.workspace_dir),
-            env={**dict(os.environ), **env},
-            capture_output=True,
-            text=True
+            env={**dict(os.environ), **env}
         )
         elapsed = time.time() - start_time
 
         self.logger.info(f"Experiment completed in {elapsed:.2f}s")
 
         if result.returncode != 0:
-            self.logger.error(f"Experiment failed: {result.stderr}")
+            self.logger.error(f"Experiment failed with exit code {result.returncode}")
             raise RuntimeError(f"Experiment failed with exit code {result.returncode}")
 
         metrics_path = Path(output_dir) / "metrics.json"
@@ -296,16 +290,14 @@ class ExperimentRunner:
         result = subprocess.run(
             cmd,
             cwd=str(self.workspace_dir),
-            env={**dict(os.environ), **env},
-            capture_output=True,
-            text=True
+            env={**dict(os.environ), **env}
         )
         elapsed = time.time() - start_time
 
         self.logger.info(f"Experiment completed in {elapsed:.2f}s")
 
         if result.returncode != 0:
-            self.logger.error(f"Experiment failed: {result.stderr}")
+            self.logger.error(f"Experiment failed with exit code {result.returncode}")
             raise RuntimeError(f"Experiment failed with exit code {result.returncode}")
 
         metrics_path = Path(output_dir) / "metrics.json"
@@ -324,7 +316,8 @@ import os
 
 if __name__ == "__main__":
     # Example usage
-    logging.basicConfig(level=logging.INFO)
+    from common.utils import configure_logging
+    configure_logging(level="INFO")
 
     runner = ExperimentRunner()
 

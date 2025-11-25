@@ -1,10 +1,10 @@
 """Resource binding utilities for CPU and GPU allocation."""
 
 import os
-import logging
 import subprocess
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Any
 from dataclasses import dataclass
+from loguru import logger as loguru_logger
 
 
 @dataclass
@@ -25,14 +25,14 @@ class ResourceBinder:
     - taskset command generation
     """
 
-    def __init__(self, logger: Optional[logging.Logger] = None):
+    def __init__(self, custom_logger: Optional[Any] = None):
         """
         Initialize resource binder.
 
         Args:
-            logger: Optional logger instance
+            custom_logger: Optional custom logger (defaults to loguru logger)
         """
-        self.logger = logger or logging.getLogger(__name__)
+        self.logger = custom_logger or loguru_logger
 
         # Detect available resources
         self.total_cpus = self._get_cpu_count()

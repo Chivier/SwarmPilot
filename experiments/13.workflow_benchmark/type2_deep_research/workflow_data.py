@@ -27,6 +27,29 @@ class DeepResearchWorkflowData:
     merge_task_id: Optional[str] = None
     merge_complete_time: Optional[float] = None
 
+    # Timing tracking (compatible with Exp07)
+    a_submit_time: Optional[float] = None
+    a_complete_time: Optional[float] = None
+    b1_submit_times: List[float] = field(default_factory=list)
+    b2_submit_times: List[float] = field(default_factory=list)
+    merge_submit_time: Optional[float] = None
+    workflow_complete_time: Optional[float] = None
+
+    # Additional fields for simulation mode
+    a_sleep_time: Optional[float] = None    # A task sleep time
+    b1_sleep_times: List[float] = field(default_factory=list)  # B1 task sleep times
+    b2_sleep_times: List[float] = field(default_factory=list)  # B2 task sleep times
+    merge_sleep_time: Optional[float] = None  # Merge task sleep time
+
+    # Additional fields for real mode
+    topic: str = ""  # Research topic for real mode
+    max_tokens: int = 512  # Max tokens for LLM tasks
+    sentences: List[str] = field(default_factory=list)  # Sentences for each task
+
+    # Additional tracking fields
+    strategy: str = "probabilistic"  # Scheduling strategy name
+    is_warmup: bool = False    # Whether this is a warmup workflow
+
     def all_b1_complete(self) -> bool:
         """Check if all B1 tasks are complete."""
         return len(self.b1_complete_times) >= self.fanout_count

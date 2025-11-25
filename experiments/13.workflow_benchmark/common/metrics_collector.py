@@ -7,14 +7,14 @@ performance metrics with thread-safe recording and statistical analysis.
 
 import csv
 import json
-import logging
 import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Union, Any
 
 import numpy as np
+from loguru import logger as loguru_logger
 
 
 @dataclass
@@ -71,14 +71,14 @@ class MetricsCollector:
     calculation and multiple export formats.
     """
 
-    def __init__(self, logger: Optional[logging.Logger] = None):
+    def __init__(self, custom_logger: Optional[Any] = None):
         """
         Initialize metrics collector.
 
         Args:
-            logger: Optional logger instance
+            custom_logger: Optional custom logger (defaults to loguru logger)
         """
-        self.logger = logger or logging.getLogger("MetricsCollector")
+        self.logger = custom_logger or loguru_logger.bind(component="MetricsCollector")
 
         # Thread-safe storage
         self.task_metrics: List[TaskMetrics] = []

@@ -66,13 +66,27 @@ def main():
     # Load configuration (mode=real)
     config = DeepResearchConfig.from_env()
 
-    # Ensure mode is set to real
-    if config.mode != "real":
-        print(f"Warning: MODE should be 'real', but got '{config.mode}'. Setting to 'real'.")
-        config.mode = "real"
+    # Ensure mode is set to real (overrides any environment variable)
+    config.mode = "real"
+    # Ensure model IDs are set for real mode
+    config.model_a_id = "llm_service_small_model"
+    config.model_b_id = "llm_service_small_model"
+    config.model_merge_id = "llm_service_small_model"
 
     # Setup logging
     logger = configure_logging(level="INFO")
+    logger.info(f"Mode: {config.mode} (forced for real test)")
+    logger.info(f"Model A: {config.model_a_id}")
+    logger.info(f"Model B: {config.model_b_id}")
+    logger.info(f"Model Merge: {config.model_merge_id}")
+
+    # Clear all tasks from schedulers before starting experiment
+    from common import clear_scheduler_tasks
+    logger.info("Clearing all tasks from schedulers before experiment...")
+    clear_scheduler_tasks(config.scheduler_a_url, logger)
+    if config.scheduler_b_url and config.scheduler_b_url != config.scheduler_a_url:
+        clear_scheduler_tasks(config.scheduler_b_url, logger)
+    logger.info("Task clearing complete")
     logger.info("=" * 80)
     logger.info("Deep Research Workflow - Real Cluster Mode")
     logger.info("=" * 80)
@@ -108,7 +122,7 @@ def main():
         scheduler_url=config.scheduler_a_url,
         rate_limiter=rate_limiter,
         metrics=metrics,
-        logger=logger
+        custom_logger=logger
     )
 
     b1_submitter = B1TaskSubmitter(
@@ -120,7 +134,7 @@ def main():
         scheduler_url=config.scheduler_b_url,
         rate_limiter=None,
         metrics=metrics,
-        logger=logger
+        custom_logger=logger
     )
 
     b2_submitter = B2TaskSubmitter(
@@ -132,7 +146,7 @@ def main():
         scheduler_url=config.scheduler_b_url,
         rate_limiter=None,
         metrics=metrics,
-        logger=logger
+        custom_logger=logger
     )
 
     merge_submitter = MergeTaskSubmitter(
@@ -144,54 +158,94 @@ def main():
         scheduler_url=config.scheduler_a_url,
         rate_limiter=None,
         metrics=metrics,
-        logger=logger
+        custom_logger=logger
     )
+
+    # Pre-generate task IDs for receivers
+    strategy = getattr(config, 'strategy', 'probabilistic')
+
+    # A task IDs (one per workflow)
+    a_task_ids = [
+        f"task-A-{strategy}-workflow-{i:04d}"
+        for i in range(config.num_workflows)
+    ]
+
+    # B1 task IDs (fanout_count per workflow)
+    b1_task_ids = [
+        f"task-B1-{strategy}-workflow-{i:04d}-{j}"
+        for i in range(config.num_workflows)
+        for j in range(config.fanout_count)
+    ]
+
+    # B2 task IDs (fanout_count per workflow)
+    b2_task_ids = [
+        f"task-B2-{strategy}-workflow-{i:04d}-{j}"
+        for i in range(config.num_workflows)
+        for j in range(config.fanout_count)
+    ]
+
+    # Merge task IDs (one per workflow)
+    merge_task_ids = [
+        f"task-merge-{strategy}-workflow-{i:04d}"
+        for i in range(config.num_workflows)
+    ]
+
+    logger.info(f"Pre-generated {len(a_task_ids)} A, {len(b1_task_ids)} B1, "
+                f"{len(b2_task_ids)} B2, {len(merge_task_ids)} Merge task IDs")
 
     # Create receivers
     a_receiver = ATaskReceiver(
         name="AReceiver",
-        model_id=config.model_a_id,
-        b1_submitter=b1_submitter,
-        a_result_queue=a_result_queue,
+        config=config,
         workflow_states=workflow_states,
         state_lock=state_lock,
+        b1_submitter=b1_submitter,
+        a_result_queue=a_result_queue,
+        task_ids=a_task_ids,
         scheduler_url=config.scheduler_a_url,
+        model_id=config.model_a_id,
         metrics=metrics,
-        logger=logger
+        custom_logger=logger
     )
 
     b1_receiver = B1TaskReceiver(
         name="B1Receiver",
-        model_id=config.model_b_id,
-        b2_submitter=b2_submitter,
-        b1_result_queue=b1_result_queue,
+        config=config,
         workflow_states=workflow_states,
         state_lock=state_lock,
+        b2_submitter=b2_submitter,
+        b1_result_queue=b1_result_queue,
+        task_ids=b1_task_ids,
         scheduler_url=config.scheduler_b_url,
+        model_id=config.model_b_id,
         metrics=metrics,
-        logger=logger
+        custom_logger=logger
     )
 
     b2_receiver = B2TaskReceiver(
         name="B2Receiver",
-        model_id=config.model_b_id,
-        merge_submitter=merge_submitter,
-        merge_trigger_queue=merge_trigger_queue,
+        config=config,
         workflow_states=workflow_states,
         state_lock=state_lock,
+        merge_submitter=merge_submitter,
+        merge_trigger_queue=merge_trigger_queue,
+        task_ids=b2_task_ids,
         scheduler_url=config.scheduler_b_url,
+        model_id=config.model_b_id,
         metrics=metrics,
-        logger=logger
+        custom_logger=logger
     )
 
     merge_receiver = MergeTaskReceiver(
         name="MergeReceiver",
-        model_id=config.model_merge_id,
+        config=config,
         workflow_states=workflow_states,
         state_lock=state_lock,
+        task_ids=merge_task_ids,
         scheduler_url=config.scheduler_a_url,
+        model_id=config.model_merge_id,
         metrics=metrics,
-        logger=logger
+        custom_logger=logger
     )
 
     # Start all threads

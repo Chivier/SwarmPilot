@@ -8,7 +8,6 @@ experiments/03.Exp4.Text2Video/test_dynamic_workflow_sim.py.
 
 import asyncio
 import json
-import logging
 import threading
 import time
 from abc import ABC, abstractmethod
@@ -16,6 +15,7 @@ from typing import Any, Dict, Optional
 
 import requests
 import websockets
+from loguru import logger
 
 
 class BaseTaskSubmitter(threading.Thread, ABC):
@@ -36,7 +36,8 @@ class BaseTaskSubmitter(threading.Thread, ABC):
                  qps: Optional[float] = None,
                  duration: Optional[float] = None,
                  rate_limiter: Optional[Any] = None,
-                 logger: Optional[logging.Logger] = None):
+                 metrics: Optional[Any] = None,
+                 custom_logger: Optional[Any] = None):
         """
         Initialize task submitter.
 
@@ -46,14 +47,16 @@ class BaseTaskSubmitter(threading.Thread, ABC):
             qps: Target queries per second (used for interval calculation if no rate_limiter)
             duration: Maximum duration to run in seconds (optional)
             rate_limiter: Optional RateLimiter instance for global rate control
-            logger: Optional logger instance
+            metrics: Optional MetricsCollector instance for recording workflow start
+            custom_logger: Optional custom logger instance (defaults to loguru logger)
         """
         super().__init__(name=name, daemon=True)
         self.scheduler_url = scheduler_url
         self.qps = qps
         self.duration = duration
         self.rate_limiter = rate_limiter
-        self.logger = logger or logging.getLogger(name)
+        self.metrics = metrics
+        self.logger = custom_logger or logger.bind(thread=name)
 
         # Thread control
         self.stop_event = threading.Event()
@@ -182,7 +185,8 @@ class BaseTaskReceiver(threading.Thread, ABC):
                  model_id: str,
                  workflow_states: Optional[Dict[str, Any]] = None,
                  state_lock: Optional[threading.Lock] = None,
-                 logger: Optional[logging.Logger] = None):
+                 metrics: Optional[Any] = None,
+                 custom_logger: Optional[Any] = None):
         """
         Initialize task receiver.
 
@@ -192,19 +196,21 @@ class BaseTaskReceiver(threading.Thread, ABC):
             model_id: Model ID to subscribe to results for
             workflow_states: Optional shared dictionary of workflow states
             state_lock: Optional lock for workflow state access
-            logger: Optional logger instance
+            metrics: Optional MetricsCollector instance for recording workflow completion
+            custom_logger: Optional custom logger instance (defaults to loguru logger)
         """
         super().__init__(name=name, daemon=True)
         self.scheduler_url = scheduler_url
         self.model_id = model_id
         self.workflow_states = workflow_states or {}
         self.state_lock = state_lock or threading.Lock()
-        self.logger = logger or logging.getLogger(name)
+        self.metrics = metrics
+        self.logger = custom_logger or logger.bind(thread=name)
 
         # Build WebSocket URL from HTTP URL
         ws_protocol = "wss" if scheduler_url.startswith("https") else "ws"
         http_base = scheduler_url.replace("http://", "").replace("https://", "")
-        self.ws_url = f"{ws_protocol}://{http_base}/task/subscribe"
+        self.ws_url = f"{ws_protocol}://{http_base}/task/get_result"
 
         # Thread control
         self.stop_event = threading.Event()

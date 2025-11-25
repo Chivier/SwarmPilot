@@ -1,10 +1,10 @@
 """Health monitoring for services and models."""
 
 import time
-import logging
 import requests
-from typing import Dict, List, Optional, Callable
+from typing import Dict, List, Optional, Callable, Any
 from enum import Enum
+from loguru import logger as loguru_logger
 
 
 class HealthStatus(Enum):
@@ -28,7 +28,7 @@ class HealthChecker:
         self,
         check_interval: float = 10.0,
         timeout: float = 5.0,
-        logger: Optional[logging.Logger] = None
+        custom_logger: Optional[Any] = None
     ):
         """
         Initialize health checker.
@@ -36,11 +36,11 @@ class HealthChecker:
         Args:
             check_interval: Time between health checks
             timeout: Request timeout
-            logger: Optional logger instance
+            custom_logger: Optional custom logger (defaults to loguru logger)
         """
         self.check_interval = check_interval
         self.timeout = timeout
-        self.logger = logger or logging.getLogger(__name__)
+        self.logger = custom_logger or loguru_logger
 
         # Track health status
         self.health_status: Dict[str, HealthStatus] = {}

@@ -17,7 +17,7 @@ class ATaskReceiver(BaseTaskReceiver):
     """
 
     def __init__(self, config, workflow_states: Dict, state_lock: threading.Lock,
-                 b1_submitter, a_result_queue: Queue, **kwargs):
+                 b1_submitter, a_result_queue: Queue, task_ids: list = None, **kwargs):
         """
         Initialize A task receiver.
 
@@ -27,6 +27,7 @@ class ATaskReceiver(BaseTaskReceiver):
             state_lock: Lock for workflow_states access
             b1_submitter: B1TaskSubmitter instance
             a_result_queue: Queue to send (workflow_id, a_result, b1_index) tuples
+            task_ids: List of task IDs to subscribe to
             **kwargs: Passed to BaseTaskReceiver (name, scheduler_url, model_id, etc.)
         """
         super().__init__(**kwargs)
@@ -35,12 +36,13 @@ class ATaskReceiver(BaseTaskReceiver):
         self.state_lock = state_lock
         self.b1_submitter = b1_submitter
         self.a_result_queue = a_result_queue
+        self.task_ids = task_ids or []
 
     def _get_subscription_payload(self) -> Dict[str, Any]:
         """Get WebSocket subscription payload."""
         return {
             "type": "subscribe",
-            "model_id": self.model_id
+            "task_ids": self.task_ids
         }
 
     async def _process_result(self, data: Dict[str, Any]):
@@ -53,31 +55,54 @@ class ATaskReceiver(BaseTaskReceiver):
             data: Result data from WebSocket message
         """
         try:
-            # Extract metadata
-            metadata = data.get("metadata", {})
-            workflow_id = metadata.get("workflow_id")
-            fanout_count = metadata.get("fanout_count", self.config.fanout_count)
+            # Extract task ID for identification
+            task_id = data.get("task_id")
+            if not task_id:
+                self.logger.warning("Received A result without task_id")
+                return
+
+            # Parse workflow_id from task_id (works for both simulation and real mode)
+            # Format: task-A-{strategy}-workflow-{num}
+            parts = task_id.split('-')
+            workflow_id = None
+
+            # Find "workflow" in parts and extract the number after it
+            for i, part in enumerate(parts):
+                if part == "workflow" and i + 1 < len(parts):
+                    workflow_num = parts[i + 1]
+                    workflow_id = f"workflow-{workflow_num}"
+                    break
 
             if not workflow_id:
-                self.logger.warning("Received A result without workflow_id")
+                self.logger.warning(f"Cannot parse workflow_id from task_id: {task_id}")
                 return
 
             # Extract result
             result = data.get("result", {})
             a_result = result.get("output", "")
 
+            # Record completion time
+            complete_time = time.time()
+
             # Update workflow state
             with self.state_lock:
                 workflow_data = self.workflow_states.get(workflow_id)
                 if workflow_data:
                     workflow_data.a_result = a_result
-                    # Pre-allocate B1 task IDs
+                    workflow_data.a_complete_time = complete_time
+
+                    # Pre-allocate B1 task IDs with correct format
+                    workflow_num = workflow_id.split('-')[-1]
                     workflow_data.b1_task_ids = [
-                        f"{workflow_id}-B1-{i}" for i in range(fanout_count)
+                        f"task-B1-{workflow_data.strategy}-workflow-{workflow_num}-{i}"
+                        for i in range(workflow_data.fanout_count)
                     ]
                     workflow_data.b2_task_ids = [
-                        f"{workflow_id}-B2-{i}" for i in range(fanout_count)
+                        f"task-B2-{workflow_data.strategy}-workflow-{workflow_num}-{i}"
+                        for i in range(workflow_data.fanout_count)
                     ]
+
+                    fanout_count = workflow_data.fanout_count
                 else:
                     self.logger.warning(f"Workflow {workflow_id} not found in state")
                     return
@@ -85,6 +110,13 @@ class ATaskReceiver(BaseTaskReceiver):
             # Fan out to n B1 tasks
             for b1_index in range(fanout_count):
                 self.a_result_queue.put((workflow_id, a_result, b1_index))
+
+                # Record B1 submit time
+                with self.state_lock:
+                    if b1_index < len(workflow_data.b1_submit_times):
+                        workflow_data.b1_submit_times[b1_index] = time.time()
+                    else:
+                        workflow_data.b1_submit_times.append(time.time())
 
             self.logger.debug(
                 f"A result processed for {workflow_id}, "
@@ -104,7 +136,7 @@ class B1TaskReceiver(BaseTaskReceiver):
     """
 
     def __init__(self, config, workflow_states: Dict, state_lock: threading.Lock,
-                 b2_submitter, b1_result_queue: Queue, **kwargs):
+                 b2_submitter, b1_result_queue: Queue, task_ids: list = None, **kwargs):
         """
         Initialize B1 task receiver.
 
@@ -114,6 +146,7 @@ class B1TaskReceiver(BaseTaskReceiver):
             state_lock: Lock for workflow_states access
             b2_submitter: B2TaskSubmitter instance
             b1_result_queue: Queue to send (workflow_id, b1_result, b1_index) tuples
+            task_ids: List of task IDs to subscribe to
             **kwargs: Passed to BaseTaskReceiver
         """
         super().__init__(**kwargs)
@@ -122,12 +155,13 @@ class B1TaskReceiver(BaseTaskReceiver):
         self.state_lock = state_lock
         self.b2_submitter = b2_submitter
         self.b1_result_queue = b1_result_queue
+        self.task_ids = task_ids or []
 
     def _get_subscription_payload(self) -> Dict[str, Any]:
         """Get WebSocket subscription payload."""
         return {
             "type": "subscribe",
-            "model_id": self.model_id
+            "task_ids": self.task_ids
         }
 
     async def _process_result(self, data: Dict[str, Any]):
@@ -140,14 +174,33 @@ class B1TaskReceiver(BaseTaskReceiver):
             data: Result data from WebSocket message
         """
         try:
-            # Extract metadata
-            metadata = data.get("metadata", {})
-            workflow_id = metadata.get("workflow_id")
-            b1_index = metadata.get("b1_index", 0)
+            # Extract task ID for identification
             task_id = data.get("task_id")
+            if not task_id:
+                self.logger.warning("Received B1 result without task_id")
+                return
 
-            if not workflow_id or task_id is None:
-                self.logger.warning("Received B1 result without workflow_id or task_id")
+            # Parse task_id to extract workflow_id and b_index
+            # Format: task-B1-{strategy}-workflow-{num}-{b_index}
+            parts = task_id.split('-')
+            workflow_id = None
+            b_index = None
+
+            # Find "workflow" in parts and extract the number and index after it
+            for i, part in enumerate(parts):
+                if part == "workflow" and i + 2 < len(parts):
+                    workflow_num = parts[i + 1]
+                    workflow_id = f"workflow-{workflow_num}"
+                    # The b_index is the part after workflow_num
+                    try:
+                        b_index = int(parts[i + 2])
+                    except (ValueError, IndexError):
+                        self.logger.warning(f"Cannot parse b_index from task_id: {task_id}")
+                        return
+                    break
+
+            if not workflow_id:
+                self.logger.warning(f"Cannot parse workflow_id from task_id: {task_id}")
                 return
 
             # Extract result
@@ -161,15 +214,21 @@ class B1TaskReceiver(BaseTaskReceiver):
                 workflow_data = self.workflow_states.get(workflow_id)
                 if workflow_data:
                     workflow_data.b1_complete_times[task_id] = complete_time
+
+                    # Record B2 submit time
+                    if b_index < len(workflow_data.b2_submit_times):
+                        workflow_data.b2_submit_times[b_index] = time.time()
+                    else:
+                        workflow_data.b2_submit_times.append(time.time())
                 else:
                     self.logger.warning(f"Workflow {workflow_id} not found in state")
                     return
 
             # Trigger corresponding B2 task (1:1 mapping)
-            self.b1_result_queue.put((workflow_id, b1_result, b1_index))
+            self.b1_result_queue.put((workflow_id, b1_result, b_index))
 
             self.logger.debug(
-                f"B1-{b1_index} complete for {workflow_id}, triggered B2-{b1_index}"
+                f"B1-{b_index} complete for {workflow_id}, triggered B2-{b_index}"
             )
 
         except Exception as e:
@@ -185,7 +244,7 @@ class B2TaskReceiver(BaseTaskReceiver):
     """
 
     def __init__(self, config, workflow_states: Dict, state_lock: threading.Lock,
-                 merge_submitter, merge_trigger_queue: Queue, **kwargs):
+                 merge_submitter, merge_trigger_queue: Queue, task_ids: list = None, **kwargs):
         """
         Initialize B2 task receiver.
 
@@ -195,6 +254,7 @@ class B2TaskReceiver(BaseTaskReceiver):
             state_lock: Lock for workflow_states access
             merge_submitter: MergeTaskSubmitter instance
             merge_trigger_queue: Queue to send workflow_id when all B2 complete
+            task_ids: List of task IDs to subscribe to
             **kwargs: Passed to BaseTaskReceiver
         """
         super().__init__(**kwargs)
@@ -203,12 +263,13 @@ class B2TaskReceiver(BaseTaskReceiver):
         self.state_lock = state_lock
         self.merge_submitter = merge_submitter
         self.merge_trigger_queue = merge_trigger_queue
+        self.task_ids = task_ids or []
 
     def _get_subscription_payload(self) -> Dict[str, Any]:
         """Get WebSocket subscription payload."""
         return {
             "type": "subscribe",
-            "model_id": self.model_id
+            "task_ids": self.task_ids
         }
 
     async def _process_result(self, data: Dict[str, Any]):
@@ -221,13 +282,26 @@ class B2TaskReceiver(BaseTaskReceiver):
             data: Result data from WebSocket message
         """
         try:
-            # Extract metadata
-            metadata = data.get("metadata", {})
-            workflow_id = metadata.get("workflow_id")
+            # Extract task ID for identification
             task_id = data.get("task_id")
+            if not task_id:
+                self.logger.warning("Received B2 result without task_id")
+                return
 
-            if not workflow_id or task_id is None:
-                self.logger.warning("Received B2 result without workflow_id or task_id")
+            # Parse task_id to extract workflow_id
+            # Format: task-B2-{strategy}-workflow-{num}-{b_index}
+            parts = task_id.split('-')
+            workflow_id = None
+
+            # Find "workflow" in parts and extract the number after it
+            for i, part in enumerate(parts):
+                if part == "workflow" and i + 1 < len(parts):
+                    workflow_num = parts[i + 1]
+                    workflow_id = f"workflow-{workflow_num}"
+                    break
+
+            if not workflow_id:
+                self.logger.warning(f"Cannot parse workflow_id from task_id: {task_id}")
                 return
 
             complete_time = time.time()
@@ -246,6 +320,8 @@ class B2TaskReceiver(BaseTaskReceiver):
                 # Check if all B2 tasks complete
                 if workflow_data.all_b2_complete():
                     should_trigger_merge = True
+                    # Record merge submit time
+                    workflow_data.merge_submit_time = time.time()
 
             # Trigger Merge outside lock to avoid deadlock
             if should_trigger_merge:
@@ -266,7 +342,7 @@ class MergeTaskReceiver(BaseTaskReceiver):
     """
 
     def __init__(self, config, workflow_states: Dict, state_lock: threading.Lock,
-                 **kwargs):
+                 task_ids: list = None, **kwargs):
         """
         Initialize Merge task receiver.
 
@@ -274,12 +350,14 @@ class MergeTaskReceiver(BaseTaskReceiver):
             config: DeepResearchConfig instance
             workflow_states: Shared workflow state dictionary
             state_lock: Lock for workflow_states access
+            task_ids: List of task IDs to subscribe to
             **kwargs: Passed to BaseTaskReceiver
         """
         super().__init__(**kwargs)
         self.config = config
         self.workflow_states = workflow_states
         self.state_lock = state_lock
+        self.task_ids = task_ids or []
 
         # Track workflow completions
         self.completed_workflows = 0
@@ -288,7 +366,7 @@ class MergeTaskReceiver(BaseTaskReceiver):
         """Get WebSocket subscription payload."""
         return {
             "type": "subscribe",
-            "model_id": self.model_id
+            "task_ids": self.task_ids
         }
 
     async def _process_result(self, data: Dict[str, Any]):
@@ -301,12 +379,26 @@ class MergeTaskReceiver(BaseTaskReceiver):
             data: Result data from WebSocket message
         """
         try:
-            # Extract metadata
-            metadata = data.get("metadata", {})
-            workflow_id = metadata.get("workflow_id")
+            # Extract task ID for identification
+            task_id = data.get("task_id")
+            if not task_id:
+                self.logger.warning("Received Merge result without task_id")
+                return
+
+            # Parse task_id to extract workflow_id
+            # Format: task-merge-{strategy}-workflow-{num}
+            parts = task_id.split('-')
+            workflow_id = None
+
+            # Find "workflow" in parts and extract the number after it
+            for i, part in enumerate(parts):
+                if part == "workflow" and i + 1 < len(parts):
+                    workflow_num = parts[i + 1]
+                    workflow_id = f"workflow-{workflow_num}"
+                    break
 
             if not workflow_id:
-                self.logger.warning("Received Merge result without workflow_id")
+                self.logger.warning(f"Cannot parse workflow_id from task_id: {task_id}")
                 return
 
             complete_time = time.time()
@@ -316,7 +408,17 @@ class MergeTaskReceiver(BaseTaskReceiver):
                 workflow_data = self.workflow_states.get(workflow_id)
                 if workflow_data:
                     workflow_data.merge_complete_time = complete_time
+                    workflow_data.workflow_complete_time = complete_time
                     self.completed_workflows += 1
+
+                    # Record workflow completion in metrics
+                    if self.metrics:
+                        self.metrics.record_workflow_complete(
+                            workflow_id=workflow_id,
+                            successful_tasks=workflow_data.fanout_count * 2 + 2,  # A + B1*n + B2*n + Merge
+                            failed_tasks=0
+                        )
+
                     self.logger.info(
                         f"Workflow {workflow_id} complete "
                         f"({self.completed_workflows} total, "

@@ -1,11 +1,11 @@
 """Model deployment manager with parallel deployment and retry logic."""
 
 import time
-import logging
 import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
+from loguru import logger as loguru_logger
 
 
 @dataclass
@@ -32,7 +32,7 @@ class DeploymentManager:
         max_retries: int = 3,
         retry_delay: float = 2.0,
         timeout: float = 30.0,
-        logger: Optional[logging.Logger] = None
+        custom_logger: Optional[Any] = None
     ):
         """
         Initialize deployment manager.
@@ -42,13 +42,13 @@ class DeploymentManager:
             max_retries: Maximum retry attempts per deployment
             retry_delay: Base delay between retries (exponential backoff)
             timeout: Request timeout in seconds
-            logger: Optional logger instance
+            custom_logger: Optional custom logger (defaults to loguru logger)
         """
         self.max_workers = max_workers
         self.max_retries = max_retries
         self.retry_delay = retry_delay
         self.timeout = timeout
-        self.logger = logger or logging.getLogger(__name__)
+        self.logger = custom_logger or loguru_logger
 
     def deploy_model(
         self,
