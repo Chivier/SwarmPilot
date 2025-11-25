@@ -1525,7 +1525,8 @@ def test_strategy_workflow(
     warmup_ratio: float = 0.0,
     continuous_mode: bool = False,
     timeout_minutes: int = 30,
-    metric_portion: float = 0.5
+    metric_portion: float = 0.5,
+    seed: int = 42
 ) -> Dict:
     """
     Test a single strategy with the given sleep model workload.
@@ -1602,7 +1603,7 @@ def test_strategy_workflow(
                 num_tasks=max_b_loops,
                 peaks=(15.0, 30.0, 60.0, 120.0),
                 peak_ratios=(0.4, 0.3, 0.2, 0.1),
-                seed=seed + i * 1000  # Unique seed per workflow
+                seed= seed + i * 1000  # Unique seed per workflow
             )
         else:
             a1_prompt = workload.captions[i % len(workload.captions)]
@@ -1611,7 +1612,7 @@ def test_strategy_workflow(
         # Each B loop iteration gets its own sampled frame count
         b_frame_counts = generate_four_peak_frames(
             num_items=max_b_loops,
-            seed=seed + i * 1000 + 500  # Unique seed per workflow, different from sleep times
+            seed= seed + i * 1000 + 500  # Unique seed per workflow, different from sleep times
         )
 
 
@@ -2373,7 +2374,8 @@ def main():
                 warmup_ratio=args.warmup,
                 continuous_mode=args.continuous,
                 timeout_minutes=args.timeout,
-                metric_portion=args.metric_portion
+                metric_portion=args.metric_portion,
+                seed=args.seed
             )
 
             all_results[strategy] = results
