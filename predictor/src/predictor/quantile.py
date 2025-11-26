@@ -2,16 +2,81 @@
 Quantile predictor using MLP with pinball loss.
 
 Provides quantile-based runtime predictions for SLA-aware scheduling.
+
+Architecture: Base + Delta design for guaranteed monotonicity.
+    - MLP outputs: [base, δ₁, δ₂, ..., δₙ₋₁]
+    - Quantiles: q₀ = base, qᵢ = qᵢ₋₁ + softplus(δᵢ)
+    - This ensures q₀ ≤ q₁ ≤ ... ≤ qₙ₋₁ by construction
 """
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.optim as optim
 import numpy as np
 from typing import Any, Dict, List
 
 from .base import BasePredictor
 from .mlp import MLP
+
+
+class BaseDeltaTransform(nn.Module):
+    """
+    Transform base + delta outputs to monotonic quantile predictions.
+
+    Takes raw MLP output [base, δ₁, δ₂, ...] and converts to
+    quantile values [q₀, q₁, q₂, ...] where qᵢ = qᵢ₋₁ + softplus(δᵢ).
+
+    This guarantees monotonicity by construction since softplus(x) > 0 for all x.
+    """
+
+    def __init__(self, num_quantiles: int, delta_scale: float = 1.0):
+        """
+        Initialize transform.
+
+        Args:
+            num_quantiles: Number of quantile levels to predict
+            delta_scale: Scale factor for deltas (default: 1.0).
+                Higher values allow larger gaps between quantiles.
+        """
+        super(BaseDeltaTransform, self).__init__()
+        self.num_quantiles = num_quantiles
+        self.delta_scale = delta_scale
+
+    def forward(self, raw_output: torch.Tensor) -> torch.Tensor:
+        """
+        Convert base + delta representation to quantile values.
+
+        Args:
+            raw_output: Shape (batch_size, num_quantiles) where:
+                - raw_output[:, 0] is the base value (lowest quantile)
+                - raw_output[:, 1:] are deltas to be transformed via softplus
+
+        Returns:
+            Quantile predictions of shape (batch_size, num_quantiles)
+            guaranteed to be monotonically non-decreasing
+        """
+        if self.num_quantiles == 1:
+            # Single quantile: just return the base
+            return raw_output
+
+        # Split into base and deltas
+        base = raw_output[:, 0:1]  # Shape: (batch_size, 1)
+        deltas = raw_output[:, 1:]  # Shape: (batch_size, num_quantiles - 1)
+
+        # Transform deltas to positive values using softplus
+        # softplus(x) = log(1 + exp(x)), always positive
+        positive_deltas = F.softplus(deltas) * self.delta_scale
+
+        # Build quantiles by cumulative sum of deltas
+        # q[0] = base
+        # q[i] = base + sum(positive_deltas[:i]) for i > 0
+        cumulative_deltas = torch.cumsum(positive_deltas, dim=1)
+
+        # Combine: [base, base + δ₁, base + δ₁ + δ₂, ...]
+        quantiles = torch.cat([base, base + cumulative_deltas], dim=1)
+
+        return quantiles
 
 
 class PinballLoss(nn.Module):
@@ -93,17 +158,24 @@ class QuantilePredictor(BasePredictor):
     Predictor for quantile-based runtime prediction.
 
     Trains MLP to predict multiple quantiles simultaneously using pinball loss.
+
+    Internal Architecture (Base + Delta):
+        - MLP outputs [base, δ₁, δ₂, ...] in normalized space
+        - BaseDeltaTransform converts to monotonic quantiles via softplus
+        - This guarantees monotonicity without post-processing or penalty terms
     """
 
     def __init__(self):
         """Initialize the predictor."""
         self.model = None
+        self.transform = None  # BaseDeltaTransform for converting MLP output
         self.feature_names = None
         self.quantiles = None
         self.feature_mean = None
         self.feature_std = None
         self.target_mean = None
         self.target_std = None
+        self.delta_scale = None  # Scale factor for deltas
 
     def train(self, features_list: List[Dict[str, Any]], config: Dict[str, Any] = None) -> Dict[str, Any]:
         """
@@ -117,7 +189,10 @@ class QuantilePredictor(BasePredictor):
                 - hidden_layers (list): Hidden layer sizes (default: [64, 32])
                 - quantiles (list): Quantile levels to predict (default: [0.5, 0.9, 0.95, 0.99])
                 - monotonicity_penalty (float): Weight for monotonicity constraint (default: 0.0)
-                  Higher values enforce stricter quantile ordering. Typical range: 0.1 - 10.0
+                  Note: With base+delta architecture, monotonicity is guaranteed by design.
+                  This parameter is kept for backward compatibility but is less critical.
+                - delta_scale (float): Scale factor for delta outputs (default: 1.0)
+                  Higher values allow larger gaps between quantiles.
 
         Returns:
             Training metadata dictionary
@@ -165,16 +240,27 @@ class QuantilePredictor(BasePredictor):
             if not (0 < q < 1):
                 raise ValueError(f"Invalid quantile value {q}. Must be between 0 and 1.")
 
+        # Sort quantiles to ensure proper ordering for base+delta transform
+        self.quantiles = sorted(self.quantiles)
+
         epochs = config.get('epochs', 500)
         learning_rate = config.get('learning_rate', 0.01)
         hidden_layers = config.get('hidden_layers', [64, 32])
         monotonicity_penalty = config.get('monotonicity_penalty', 0.0)
+        self.delta_scale = config.get('delta_scale', 1.0)
 
-        # Create and train model
+        # Create model and transform
         input_dim = len(feature_names)
-        output_dim = len(self.quantiles)  # One output per quantile
+        output_dim = len(self.quantiles)  # One output per quantile (base + deltas)
 
+        # MLP outputs raw [base, δ₁, δ₂, ...] values
         self.model = MLP(input_dim=input_dim, output_dim=output_dim, hidden_layers=hidden_layers)
+
+        # Transform converts raw outputs to monotonic quantiles
+        self.transform = BaseDeltaTransform(
+            num_quantiles=output_dim,
+            delta_scale=self.delta_scale
+        )
 
         criterion = PinballLoss(self.quantiles, monotonicity_penalty=monotonicity_penalty)
         optimizer = optim.Adam(self.model.parameters(), lr=learning_rate)
@@ -183,7 +269,11 @@ class QuantilePredictor(BasePredictor):
         self.model.train()
         for epoch in range(epochs):
             optimizer.zero_grad()
-            predictions = self.model(X_tensor)
+
+            # Forward pass: MLP → BaseDeltaTransform → quantile predictions
+            raw_output = self.model(X_tensor)
+            predictions = self.transform(raw_output)
+
             loss = criterion(predictions, y_tensor)
             loss.backward()
             optimizer.step()
@@ -256,12 +346,16 @@ class QuantilePredictor(BasePredictor):
 
         self.model.eval()
         with torch.no_grad():
-            predictions_normalized = self.model(X_tensor).numpy().flatten()
+            # Forward pass: MLP -> BaseDeltaTransform -> monotonic quantiles
+            raw_output = self.model(X_tensor)
+            predictions_normalized = self.transform(raw_output).numpy().flatten()
 
         # Denormalize predictions back to original scale
         predictions = predictions_normalized * self.target_std + self.target_mean
 
-        # Apply monotonicity enforcement if requested
+        # Apply additional monotonicity enforcement if requested
+        # Note: base+delta architecture guarantees monotonicity, but this
+        # provides extra safety for edge cases or numerical precision issues
         if enforce_monotonicity:
             predictions = self._enforce_monotonicity(predictions)
 
@@ -293,7 +387,8 @@ class QuantilePredictor(BasePredictor):
             'feature_mean': self.feature_mean.tolist(),
             'feature_std': self.feature_std.tolist(),
             'target_mean': float(self.target_mean),
-            'target_std': float(self.target_std)
+            'target_std': float(self.target_std),
+            'delta_scale': float(self.delta_scale) if self.delta_scale else 1.0
         }
 
     def load_model_state(self, state: Dict[str, Any]) -> None:
@@ -315,3 +410,12 @@ class QuantilePredictor(BasePredictor):
         self.feature_std = np.array(state['feature_std'])
         self.target_mean = state['target_mean']
         self.target_std = state['target_std']
+
+        # Restore delta_scale (with backward compatibility for old models)
+        self.delta_scale = state.get('delta_scale', 1.0)
+
+        # Recreate transform with correct parameters
+        self.transform = BaseDeltaTransform(
+            num_quantiles=len(self.quantiles),
+            delta_scale=self.delta_scale
+        )
