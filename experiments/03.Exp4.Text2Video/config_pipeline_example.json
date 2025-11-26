@@ -1,5 +1,5 @@
 {
-  "dataset": "experiments/03.Exp4.Text2Video/captions_10k.json",
+  "dataset": "captions_10k.json",
   "llm_service": {
     "instances": [
       {
