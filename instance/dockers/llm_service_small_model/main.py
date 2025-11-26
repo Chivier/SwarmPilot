@@ -72,7 +72,7 @@ async def lifespan(app: FastAPI):
     try:
         # Load model using sglang Engine
         # sgl.Engine() creates an engine instance with the model
-        sgl.Engine(model_path=MODEL_PATH, nccl_port=args.port + 10000)
+        runtime = sgl.Engine(model_path=MODEL_PATH, nccl_port=args.port + 10000)
         
         model_loaded = True
         print("Model loaded successfully!")
