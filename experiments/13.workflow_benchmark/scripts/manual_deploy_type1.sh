@@ -117,15 +117,15 @@ INSTANCE_PORT_LIST=(8200 8201 8202 8203 8204 8205 8206 8207)
 # Group A Hosts (llm_service_small_model for A1/A2 tasks)
 GROUP_A_HOSTS=(
   29.209.106.237
+)
+
+# Group B Hosts (t2vid for B tasks)
+GROUP_B_HOSTS=(
   29.209.114.56
   29.209.114.241
   29.209.112.177
   29.209.113.235
   29.209.105.60
-)
-
-# Group B Hosts (t2vid for B tasks)
-GROUP_B_HOSTS=(
   29.209.113.166
   29.209.113.176
   29.209.113.169
