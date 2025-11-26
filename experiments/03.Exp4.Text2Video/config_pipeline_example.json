@@ -49,198 +49,202 @@
         "hardware_name": "NVIDIA H20",
         "software_name": "sglang",
         "software_version": "0.5.5.post2"
-      },
+      }
+    ]
+  },
+  "t2vid_service": {
+    "instances": [
       {
         "url": "http://29.209.114.56:8200",
         "hardware_name": "NVIDIA H20",
-        "software_name": "sglang",
-        "software_version": "0.5.5.post2"
+        "software_name": "diffuser",
+        "software_version": "diffuser"
       },
       {
         "url": "http://29.209.114.56:8201",
         "hardware_name": "NVIDIA H20",
-        "software_name": "sglang",
-        "software_version": "0.5.5.post2"
+        "software_name": "diffuser",
+        "software_version": "diffuser"
       },
       {
         "url": "http://29.209.114.56:8202",
         "hardware_name": "NVIDIA H20",
-        "software_name": "sglang",
-        "software_version": "0.5.5.post2"
+        "software_name": "diffuser",
+        "software_version": "diffuser"
       },
       {
         "url": "http://29.209.114.56:8203",
         "hardware_name": "NVIDIA H20",
-        "software_name": "sglang",
-        "software_version": "0.5.5.post2"
+        "software_name": "diffuser",
+        "software_version": "diffuser"
       },
       {
         "url": "http://29.209.114.56:8204",
         "hardware_name": "NVIDIA H20",
-        "software_name": "sglang",
-        "software_version": "0.5.5.post2"
+        "software_name": "diffuser",
+        "software_version": "diffuser"
       },
       {
         "url": "http://29.209.114.56:8205",
         "hardware_name": "NVIDIA H20",
-        "software_name": "sglang",
-        "software_version": "0.5.5.post2"
+        "software_name": "diffuser",
+        "software_version": "diffuser"
       },
       {
         "url": "http://29.209.114.56:8206",
         "hardware_name": "NVIDIA H20",
-        "software_name": "sglang",
-        "software_version": "0.5.5.post2"
+        "software_name": "diffuser",
+        "software_version": "diffuser"
       },
       {
         "url": "http://29.209.114.56:8207",
         "hardware_name": "NVIDIA H20",
-        "software_name": "sglang",
-        "software_version": "0.5.5.post2"
+        "software_name": "diffuser",
+        "software_version": "diffuser"
       },
       {
         "url": "http://29.209.114.241:8200",
         "hardware_name": "NVIDIA H20",
-        "software_name": "sglang",
-        "software_version": "0.5.5.post2"
+        "software_name": "diffuser",
+        "software_version": "diffuser"
       },
       {
         "url": "http://29.209.114.241:8201",
         "hardware_name": "NVIDIA H20",
-        "software_name": "sglang",
-        "software_version": "0.5.5.post2"
+        "software_name": "diffuser",
+        "software_version": "diffuser"
       },
       {
         "url": "http://29.209.114.241:8202",
         "hardware_name": "NVIDIA H20",
-        "software_name": "sglang",
-        "software_version": "0.5.5.post2"
+        "software_name": "diffuser",
+        "software_version": "diffuser"
       },
       {
         "url": "http://29.209.114.241:8203",
         "hardware_name": "NVIDIA H20",
-        "software_name": "sglang",
-        "software_version": "0.5.5.post2"
+        "software_name": "diffuser",
+        "software_version": "diffuser"
       },
       {
         "url": "http://29.209.114.241:8204",
         "hardware_name": "NVIDIA H20",
-        "software_name": "sglang",
-        "software_version": "0.5.5.post2"
+        "software_name": "diffuser",
+        "software_version": "diffuser"
       },
       {
         "url": "http://29.209.114.241:8205",
         "hardware_name": "NVIDIA H20",
-        "software_name": "sglang",
-        "software_version": "0.5.5.post2"
+        "software_name": "diffuser",
+        "software_version": "diffuser"
       },
       {
         "url": "http://29.209.114.241:8206",
         "hardware_name": "NVIDIA H20",
-        "software_name": "sglang",
-        "software_version": "0.5.5.post2"
+        "software_name": "diffuser",
+        "software_version": "diffuser"
       },
       {
         "url": "http://29.209.114.241:8207",
         "hardware_name": "NVIDIA H20",
-        "software_name": "sglang",
-        "software_version": "0.5.5.post2"
+        "software_name": "diffuser",
+        "software_version": "diffuser"
       },
       {
         "url": "http://29.209.112.177:8200",
         "hardware_name": "NVIDIA H20",
-        "software_name": "sglang",
-        "software_version": "0.5.5.post2"
+        "software_name": "diffuser",
+        "software_version": "diffuser"
       },
       {
         "url": "http://29.209.112.177:8201",
         "hardware_name": "NVIDIA H20",
-        "software_name": "sglang",
-        "software_version": "0.5.5.post2"
+        "software_name": "diffuser",
+        "software_version": "diffuser"
       },
       {
         "url": "http://29.209.112.177:8202",
         "hardware_name": "NVIDIA H20",
-        "software_name": "sglang",
-        "software_version": "0.5.5.post2"
+        "software_name": "diffuser",
+        "software_version": "diffuser"
       },
       {
         "url": "http://29.209.112.177:8203",
         "hardware_name": "NVIDIA H20",
-        "software_name": "sglang",
-        "software_version": "0.5.5.post2"
+        "software_name": "diffuser",
+        "software_version": "diffuser"
       },
       {
         "url": "http://29.209.112.177:8204",
         "hardware_name": "NVIDIA H20",
-        "software_name": "sglang",
-        "software_version": "0.5.5.post2"
+        "software_name": "diffuser",
+        "software_version": "diffuser"
       },
       {
         "url": "http://29.209.112.177:8205",
         "hardware_name": "NVIDIA H20",
-        "software_name": "sglang",
-        "software_version": "0.5.5.post2"
+        "software_name": "diffuser",
+        "software_version": "diffuser"
       },
       {
         "url": "http://29.209.112.177:8206",
         "hardware_name": "NVIDIA H20",
-        "software_name": "sglang",
-        "software_version": "0.5.5.post2"
+        "software_name": "diffuser",
+        "software_version": "diffuser"
       },
       {
         "url": "http://29.209.112.177:8207",
         "hardware_name": "NVIDIA H20",
-        "software_name": "sglang",
-        "software_version": "0.5.5.post2"
+        "software_name": "diffuser",
+        "software_version": "diffuser"
       },
       {
         "url": "http://29.209.113.235:8200",
         "hardware_name": "NVIDIA H20",
-        "software_name": "sglang",
-        "software_version": "0.5.5.post2"
+        "software_name": "diffuser",
+        "software_version": "diffuser"
       },
       {
         "url": "http://29.209.113.235:8201",
         "hardware_name": "NVIDIA H20",
-        "software_name": "sglang",
-        "software_version": "0.5.5.post2"
+        "software_name": "diffuser",
+        "software_version": "diffuser"
       },
       {
         "url": "http://29.209.113.235:8202",
         "hardware_name": "NVIDIA H20",
-        "software_name": "sglang",
-        "software_version": "0.5.5.post2"
+        "software_name": "diffuser",
+        "software_version": "diffuser"
       },
       {
         "url": "http://29.209.113.235:8203",
         "hardware_name": "NVIDIA H20",
-        "software_name": "sglang",
-        "software_version": "0.5.5.post2"
+        "software_name": "diffuser",
+        "software_version": "diffuser"
       },
       {
         "url": "http://29.209.113.235:8204",
         "hardware_name": "NVIDIA H20",
-        "software_name": "sglang",
-        "software_version": "0.5.5.post2"
+        "software_name": "diffuser",
+        "software_version": "diffuser"
       },
       {
         "url": "http://29.209.113.235:8205",
         "hardware_name": "NVIDIA H20",
-        "software_name": "sglang",
-        "software_version": "0.5.5.post2"
+        "software_name": "diffuser",
+        "software_version": "diffuser"
       },
       {
         "url": "http://29.209.113.235:8206",
         "hardware_name": "NVIDIA H20",
-        "software_name": "sglang",
-        "software_version": "0.5.5.post2"
+        "software_name": "diffuser",
+        "software_version": "diffuser"
       },
       {
         "url": "http://29.209.113.235:8207",
         "hardware_name": "NVIDIA H20",
-        "software_name": "sglang",
-        "software_version": "0.5.5.post2"
+        "software_name": "diffuser",
+        "software_version": "diffuser"
       },
       {
         "url": "http://29.209.105.60:8200",
@@ -289,11 +293,7 @@
         "hardware_name": "NVIDIA H20",
         "software_name": "diffuser",
         "software_version": "latest"
-      }
-    ]
-  },
-  "t2vid_service": {
-    "instances": [
+      },
       {
         "url": "http://29.209.113.166:8200",
         "hardware_name": "NVIDIA H20",
