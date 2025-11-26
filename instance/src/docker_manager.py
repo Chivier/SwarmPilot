@@ -366,10 +366,8 @@ class DockerManager:
             "--name", container_name,
             "--publish", f"{port}:8000",
             "--detach",
-            "--restart", "unless-stopped",
-            "--rm",
             # Add healthcheck configuration
-            "--health-cmd", "curl -f http://localhost:8000/health || exit 1",
+            "--health-cmd", "wget -q --spider http://127.0.0.1:8000/health || exit 1",
             "--health-interval", "10s",
             "--health-timeout", "5s",
             "--health-retries", "3",

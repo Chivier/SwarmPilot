@@ -1,28 +1,40 @@
+# ============ Build Stage ============
+FROM python:3.11-slim AS builder
+
+# Install uv (official standalone installer is much smaller than pip install)
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+WORKDIR /app
+
+# Copy only dependency file first (better layer caching)
+COPY pyproject.toml ./
+
+# Install dependencies to system (no venv overhead in container)
+RUN uv sync --no-dev --no-install-project
+
+# ============ Runtime Stage ============
 FROM python:3.11-slim
 
-# Install curl for healthcheck and uv for dependency management
+# Install only runtime dependency (curl for healthcheck)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends curl && \
     apt-get clean && \
-    rm -rf /var/lib/apt/lists/* && \
-    pip install --no-cache-dir uv
+    rm -rf /var/lib/apt/lists/*
 
-# Set working directory
 WORKDIR /app
 
+# Copy installed packages from builder
+COPY --from=builder /app/.venv /app/.venv
+
 # Copy application files
-COPY pyproject.toml ./
-COPY main.py ./
-COPY start.sh ./
+COPY main.py start.sh ./
 
 # Make start script executable
 RUN chmod +x start.sh
 
-# Install dependencies using uv
-RUN uv sync
+# Use venv's Python
+ENV PATH="/app/.venv/bin:$PATH"
 
-# Expose port
 EXPOSE 8000
 
-# Set entry point
 CMD ["./start.sh"]
