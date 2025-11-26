@@ -4,6 +4,7 @@ CLI entry point for the Instance Service.
 This module provides the command-line interface using Typer.
 """
 
+import os
 import typer
 from typing import Optional
 import uvicorn
@@ -11,11 +12,15 @@ import uvicorn
 from .config import config
 from . import logger as _  # Import logger module to initialize logging
 
+# Disable rich/colors globally for typer
+os.environ["NO_COLOR"] = "1"
+
 app = typer.Typer(
     name="sinstance",
     help="Instance Service CLI - Manage model instances and task queues",
     add_completion=False,
-    no_args_is_help=True
+    no_args_is_help=True,
+    pretty_exceptions_enable=False,
 )
 
 

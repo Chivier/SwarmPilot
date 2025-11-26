@@ -58,12 +58,12 @@ def setup_logger():
     # Remove default handler
     logger.remove()
 
-    # Console handler with colored output
+    # Console handler without colored output
     logger.add(
         sys.stderr,
-        format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
+        format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} - {message}",
         level=config.logging.level,
-        colorize=True,
+        colorize=False,
     )
 
     # File handler with rotation (no colors for clean file output)

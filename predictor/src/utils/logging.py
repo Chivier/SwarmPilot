@@ -80,17 +80,17 @@ def setup_logging(
     # Remove default loguru handler
     logger.remove()
 
-    # Add console handler (stderr) with nice formatting
+    # Add console handler (stderr) without colors
     logger.add(
         sys.stderr,
         format=(
-            "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | "
-            "<level>{level: <8}</level> | "
-            "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> | "
-            "<level>{message}</level>"
+            "{time:YYYY-MM-DD HH:mm:ss.SSS} | "
+            "{level: <8} | "
+            "{name}:{function}:{line} | "
+            "{message}"
         ),
         level=log_level,
-        colorize=True,
+        colorize=False,
         backtrace=True,
         diagnose=True,
     )

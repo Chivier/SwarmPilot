@@ -3,6 +3,7 @@
 Provides commands to start, manage, and configure the predictor service.
 """
 
+import os
 import sys
 from pathlib import Path
 from typing import Optional
@@ -13,12 +14,15 @@ from typing_extensions import Annotated
 
 from .config import PredictorConfig, set_config
 
+# Disable rich/colors globally for typer
+os.environ["NO_COLOR"] = "1"
 
 # Create the main Typer app
 app = typer.Typer(
     name="spredictor",
     help="Runtime Predictor Service - MLP-based runtime prediction CLI",
     add_completion=False,
+    pretty_exceptions_enable=False,
 )
 
 # Create config subcommand group

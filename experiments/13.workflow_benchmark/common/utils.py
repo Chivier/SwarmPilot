@@ -149,18 +149,18 @@ def configure_logging(
 
     if format_string is None:
         format_string = (
-            '<green>{time:YYYY-MM-DD HH:mm:ss}</green> | '
-            '<level>{level: <6}</level> | '
-            '<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - '
-            '<level>{message}</level>'
+            '{time:YYYY-MM-DD HH:mm:ss} | '
+            '{level: <6} | '
+            '{name}:{function}:{line} - '
+            '{message}'
         )
 
-    # Add console handler
+    # Add console handler without colors
     logger.add(
         sys.stdout,
         format=format_string,
         level=level,
-        colorize=True
+        colorize=False
     )
 
     # Add file handler (if specified)
@@ -229,17 +229,17 @@ def setup_console_handler(
         level: Log level for console handler
     """
     console_format = (
-        '<green>{time:HH:mm:ss}</green> | '
-        '<level>{level: <8}</level> | '
-        '<cyan>{name}</cyan> - '
-        '<level>{message}</level>'
+        '{time:HH:mm:ss} | '
+        '{level: <8} | '
+        '{name} - '
+        '{message}'
     )
 
     logger.add(
         sys.stdout,
         format=console_format,
         level=level,
-        colorize=True
+        colorize=False
     )
 
 

@@ -18,7 +18,12 @@ app = typer.Typer(
     name="sscheduler",
     help="Scheduler service command-line interface",
     add_completion=True,
+    no_args_is_help=False,
+    pretty_exceptions_enable=False,
 )
+
+# Disable rich/colors globally for typer
+os.environ["NO_COLOR"] = "1"
 
 
 def load_config_file(config_path: Path) -> dict:

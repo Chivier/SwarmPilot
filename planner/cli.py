@@ -9,10 +9,14 @@ import typer
 import uvicorn
 from typing import Optional
 
+# Disable rich/colors globally for typer
+os.environ["NO_COLOR"] = "1"
+
 app = typer.Typer(
     name="splanner",
     help="Planner service CLI - Optimize model-to-instance deployment",
     add_completion=False,
+    pretty_exceptions_enable=False,
 )
 
 
