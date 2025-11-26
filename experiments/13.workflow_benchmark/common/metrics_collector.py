@@ -81,10 +81,13 @@ class MetricsCollector:
         self.logger = custom_logger or loguru_logger.bind(component="MetricsCollector")
 
         # Thread-safe storage
+        # Note: Use RLock (reentrant lock) to allow nested locking within the same thread.
+        # This is necessary because methods like export_to_json() call get_summary()
+        # while already holding the locks.
         self.task_metrics: List[TaskMetrics] = []
         self.workflow_metrics: List[WorkflowMetrics] = []
-        self._task_lock = threading.Lock()
-        self._workflow_lock = threading.Lock()
+        self._task_lock = threading.RLock()
+        self._workflow_lock = threading.RLock()
 
         # Quick lookup by ID
         self._task_by_id: Dict[str, TaskMetrics] = {}
