@@ -188,9 +188,20 @@ class MultiInstanceClient:
                 'instance_id': instance_id
             })
         self.current_idx = 0
+        self._lock = asyncio.Lock()  # Thread-safe round-robin
         logger.info(f"Initialized {len(self.clients)} instance(s) for {model_id}")
 
-    def get_next_client(self) -> ServiceClient:
+    async def get_next_client(self) -> ServiceClient:
+        """Thread-safe round-robin client selection."""
+        if not self.clients:
+            raise Exception("No clients initialized")
+        async with self._lock:
+            client_info = self.clients[self.current_idx]
+            self.current_idx = (self.current_idx + 1) % len(self.clients)
+        return client_info['client']
+
+    def get_next_client_sync(self) -> ServiceClient:
+        """Synchronous version for backward compatibility."""
         if not self.clients:
             raise Exception("No clients initialized")
         client_info = self.clients[self.current_idx]
@@ -202,6 +213,9 @@ class MultiInstanceClient:
             if client_info['instance_id'] == instance_id:
                 return client_info['config']
         return {}
+
+    def get_num_instances(self) -> int:
+        return len(self.clients)
 
     async def close_all(self):
         for client_info in self.clients:
@@ -372,12 +386,24 @@ async def execute_tasks(
     max_concurrent: int = 20,
     desc: str = "Executing tasks"
 ) -> List[Dict[str, Any]]:
-    
+    """
+    Execute tasks with high parallelism using round-robin instance selection.
+
+    Args:
+        multi_client: MultiInstanceClient with multiple instances
+        tasks: List of tasks to execute
+        max_concurrent: Maximum concurrent requests (default: 20)
+        desc: Description for progress bar
+
+    Returns:
+        List of successful task results
+    """
     semaphore = asyncio.Semaphore(max_concurrent)
 
     async def execute_task_with_semaphore(task: Dict[str, Any], task_idx: int) -> Optional[Dict[str, Any]]:
         async with semaphore:
-            client = multi_client.get_next_client()
+            # Use async round-robin selection for thread safety
+            client = await multi_client.get_next_client()
             result = await client.execute_task(task)
 
             if result["success"]:
@@ -398,7 +424,7 @@ async def execute_tasks(
                     features["token_length"] = float(estimate_token_length(task["sentence"]))
                     if "max_tokens" in task:
                         features["max_tokens"] = float(task["max_tokens"])
-                
+
                 # T2Vid Features (frames and input token count)
                 if "prompt" in task:
                     features["positive_prompt_length"] = float(estimate_token_length(task["prompt"]))
@@ -409,7 +435,7 @@ async def execute_tasks(
 
                 sample = features.copy()
                 sample["runtime_ms"] = float(result["execution_time_ms"])
-                    
+
                 # Store raw output for pipeline chaining
                 sample["_raw_output"] = result["result"]["result"].get("output", "")
                 sample["_entry_id"] = task.get("entry_id")
@@ -429,6 +455,122 @@ async def execute_tasks(
 
     samples = [r for r in results if r is not None]
     return samples
+
+
+async def execute_tasks_high_throughput(
+    multi_client: MultiInstanceClient,
+    tasks: List[Dict[str, Any]],
+    tasks_per_instance: int = 2,
+    desc: str = "Executing tasks"
+) -> List[Dict[str, Any]]:
+    """
+    Execute tasks with maximum throughput using continuous round-robin scheduling.
+
+    This executor maintains a constant number of in-flight requests per instance,
+    immediately dispatching new tasks as previous ones complete.
+
+    Args:
+        multi_client: MultiInstanceClient with multiple instances
+        tasks: List of tasks to execute
+        tasks_per_instance: Number of concurrent tasks per instance (default: 2)
+        desc: Description for progress bar
+
+    Returns:
+        List of successful task results
+    """
+    num_instances = multi_client.get_num_instances()
+    max_concurrent = num_instances * tasks_per_instance
+
+    logger.info(f"High-throughput execution: {num_instances} instances x {tasks_per_instance} tasks = {max_concurrent} concurrent")
+
+    # Use a queue-based approach for continuous scheduling
+    task_queue = asyncio.Queue()
+    results = []
+    results_lock = asyncio.Lock()
+
+    # Populate task queue
+    for idx, task in enumerate(tasks):
+        await task_queue.put((idx, task))
+
+    # Progress tracking
+    completed_count = [0]  # Use list for mutable in closure
+    pbar = tqdm(total=len(tasks), desc=desc)
+
+    async def worker(worker_id: int):
+        """Worker that continuously pulls and executes tasks."""
+        while True:
+            try:
+                # Non-blocking get with timeout
+                idx, task = await asyncio.wait_for(task_queue.get(), timeout=0.1)
+            except asyncio.TimeoutError:
+                # Check if we should exit (queue empty and no more tasks coming)
+                if task_queue.empty():
+                    break
+                continue
+
+            try:
+                # Get next client using round-robin
+                client = await multi_client.get_next_client()
+                result = await client.execute_task(task)
+
+                if result["success"]:
+                    instance_config = multi_client.get_instance_config(result["instance_id"])
+                    hardware_name = instance_config.get("hardware_name", "Unknown")
+                    hardware_specs = extract_gpu_specs(hardware_name) or {}
+
+                    features = {}
+
+                    # Add hardware specs
+                    for k, v in hardware_specs.items():
+                        if isinstance(v, (int, float)):
+                            features[k] = float(v)
+
+                    # LLM Features
+                    if "sentence" in task:
+                        features["sentence"] = task["sentence"]
+                        features["token_length"] = float(estimate_token_length(task["sentence"]))
+                        if "max_tokens" in task:
+                            features["max_tokens"] = float(task["max_tokens"])
+
+                    # T2Vid Features
+                    if "prompt" in task:
+                        features["positive_prompt_length"] = float(estimate_token_length(task["prompt"]))
+                        if "negative_prompt" in task:
+                            features["negative_prompt_length"] = float(estimate_token_length(task["negative_prompt"]))
+                        if "frames" in task:
+                            features["frames"] = float(task["frames"])
+
+                    sample = features.copy()
+                    sample["runtime_ms"] = float(result["execution_time_ms"])
+                    sample["_raw_output"] = result["result"]["result"].get("output", "")
+                    sample["_entry_id"] = task.get("entry_id")
+
+                    async with results_lock:
+                        results.append(sample)
+                else:
+                    logger.warning(f"Task {idx} failed on worker {worker_id}: {result.get('error')}")
+
+            except Exception as e:
+                logger.error(f"Worker {worker_id} error on task {idx}: {e}")
+            finally:
+                task_queue.task_done()
+                completed_count[0] += 1
+                pbar.update(1)
+
+    # Start workers (one per concurrent slot)
+    workers = [asyncio.create_task(worker(i)) for i in range(max_concurrent)]
+
+    # Wait for all tasks to complete
+    await task_queue.join()
+
+    # Cancel workers
+    for w in workers:
+        w.cancel()
+
+    pbar.close()
+
+    logger.info(f"Completed {len(results)}/{len(tasks)} tasks successfully")
+    return results
 
 
 async def collect_pipeline_samples(
@@ -531,7 +673,14 @@ async def collect_pipeline_samples(
                 })
         
         logger.info(f"Executing {len(t2vid_tasks)} T2Vid tasks ({len(t2vid_chains)} prompts * {len(frame_counts)} frame settings)...")
-        t2vid_samples = await execute_tasks(t2vid_client, t2vid_tasks, desc="T2Vid Tasks", max_concurrent=2) # Lower concurrency for video
+        # Use high-throughput executor with round-robin scheduling
+        # tasks_per_instance=2 means each instance handles 2 concurrent requests
+        t2vid_samples = await execute_tasks_high_throughput(
+            t2vid_client,
+            t2vid_tasks,
+            tasks_per_instance=2,  # Adjust based on GPU memory
+            desc="T2Vid Tasks"
+        )
         all_t2vid_samples.extend(t2vid_samples)
 
     finally:

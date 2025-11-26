@@ -46,12 +46,17 @@ class A1TaskSubmitter(BaseTaskSubmitter):
         # Pre-generate all workflow data
         self.workflows = []
         for i in range(config.num_workflows):
+            # Sample frame_count and max_b_loops from distributions
+            # These use the config's distribution samplers which respect config files and seeds
+            sampled_frame_count = config.sample_frame_count()
+            sampled_max_b_loops = config.sample_max_b_loops()
+
             workflow = Text2VideoWorkflowData(
                 workflow_id=f"workflow-{i:04d}",
                 caption=captions[i % len(captions)],
-                max_b_loops=random.randint(1, 4) if config.max_b_loops == 0 else config.max_b_loops,
+                max_b_loops=sampled_max_b_loops,
                 strategy=getattr(config, 'strategy', 'default'),
-                frame_count=getattr(config, 'frame_count', 16),
+                frame_count=sampled_frame_count,
                 max_tokens=getattr(config, 'max_tokens', 512),
                 is_warmup=(i < getattr(config, 'num_warmup', 0))
             )

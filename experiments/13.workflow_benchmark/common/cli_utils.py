@@ -141,7 +141,50 @@ def add_type1_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         "--max-b-loops",
         type=int,
         default=3,
-        help="Maximum B task iterations (default: 3)"
+        help="Maximum B task iterations (default: 3). "
+             "Ignored if --max-b-loops-config is specified."
+    )
+
+    parser.add_argument(
+        "--max-b-loops-config",
+        type=str,
+        default=None,
+        help="Path to JSON config file for max_b_loops distribution. "
+             "Supports: static, uniform, two_peak, four_peak distributions. "
+             "If not specified, uses --max-b-loops as static value."
+    )
+
+    parser.add_argument(
+        "--max-b-loops-seed",
+        type=int,
+        default=None,
+        help="Random seed for max_b_loops distribution sampling (default: None). "
+             "Use for reproducible max_b_loops values across runs."
+    )
+
+    parser.add_argument(
+        "--frame-count",
+        type=int,
+        default=16,
+        help="Frame count for video generation (default: 16). "
+             "Ignored if --frame-count-config is specified."
+    )
+
+    parser.add_argument(
+        "--frame-count-config",
+        type=str,
+        default=None,
+        help="Path to JSON config file for frame_count distribution. "
+             "Supports: static, uniform, two_peak, four_peak distributions. "
+             "If not specified, uses --frame-count as static value."
+    )
+
+    parser.add_argument(
+        "--frame-count-seed",
+        type=int,
+        default=None,
+        help="Random seed for frame_count distribution sampling (default: None). "
+             "Use for reproducible frame_count values across runs."
     )
 
     return parser

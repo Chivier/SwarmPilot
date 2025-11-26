@@ -100,6 +100,11 @@ class ExperimentRunner:
                                    warmup: float = 0.2,
                                    duration: int = 120,
                                    max_b_loops: int = 3,
+                                   frame_count: int = 16,
+                                   frame_count_config: Optional[str] = None,
+                                   frame_count_seed: Optional[int] = None,
+                                   max_b_loops_config: Optional[str] = None,
+                                   max_b_loops_seed: Optional[int] = None,
                                    portion_stats: float = 1.0) -> Dict:
         """
         Run Text2Video workflow in simulation mode.
@@ -112,21 +117,44 @@ class ExperimentRunner:
             warmup: Warmup ratio (0.0-1.0) (default: 0.2)
             duration: Maximum experiment duration in seconds (default: 120)
             max_b_loops: Maximum B task iterations (default: 3)
+            frame_count: Frame count for video generation (default: 16)
+            frame_count_config: Path to JSON config for frame_count distribution (optional)
+            frame_count_seed: Random seed for frame_count distribution (optional)
+            max_b_loops_config: Path to JSON config for max_b_loops distribution (optional)
+            max_b_loops_seed: Random seed for max_b_loops distribution (optional)
             portion_stats: Portion of non-warmup workflows for statistics (default: 1.0)
 
         Returns:
             Dict with experiment results and metrics path
         """
+        # Build distribution info string
+        frame_info = f"frame_count={frame_count}"
+        if frame_count_config:
+            frame_info = f"frame_count_config={frame_count_config}"
+        loops_info = f"max_b_loops={max_b_loops}"
+        if max_b_loops_config:
+            loops_info = f"max_b_loops_config={max_b_loops_config}"
+
         self.logger.info("=" * 80)
         self.logger.info("Running Text2Video Simulation")
         self.logger.info("=" * 80)
         self.logger.info(f"Config: num_workflows={num_workflows}, qps={qps}, "
-                        f"duration={duration}s, max_b_loops={max_b_loops}, "
+                        f"duration={duration}s, {loops_info}, {frame_info}, "
                         f"strategies={strategies}, portion_stats={portion_stats}")
 
         script_path = self.workspace_dir / "type1_text2video" / "simulation" / "test_workflow_sim.py"
         args = self._build_common_args(num_workflows, qps, seed, strategies, warmup, duration, portion_stats)
         args.extend(["--max-b-loops", str(max_b_loops)])
+        args.extend(["--frame-count", str(frame_count)])
+
+        if frame_count_config:
+            args.extend(["--frame-count-config", frame_count_config])
+        if frame_count_seed is not None:
+            args.extend(["--frame-count-seed", str(frame_count_seed)])
+        if max_b_loops_config:
+            args.extend(["--max-b-loops-config", max_b_loops_config])
+        if max_b_loops_seed is not None:
+            args.extend(["--max-b-loops-seed", str(max_b_loops_seed)])
 
         return self._run_script(script_path, args, "Text2Video Simulation")
 
@@ -138,6 +166,11 @@ class ExperimentRunner:
                             warmup: float = 0.2,
                             duration: int = 120,
                             max_b_loops: int = 3,
+                            frame_count: int = 16,
+                            frame_count_config: Optional[str] = None,
+                            frame_count_seed: Optional[int] = None,
+                            max_b_loops_config: Optional[str] = None,
+                            max_b_loops_seed: Optional[int] = None,
                             portion_stats: float = 1.0) -> Dict:
         """
         Run Text2Video workflow in real cluster mode.
@@ -150,21 +183,44 @@ class ExperimentRunner:
             warmup: Warmup ratio (0.0-1.0) (default: 0.2)
             duration: Maximum experiment duration in seconds (default: 120)
             max_b_loops: Maximum B task iterations (default: 3)
+            frame_count: Frame count for video generation (default: 16)
+            frame_count_config: Path to JSON config for frame_count distribution (optional)
+            frame_count_seed: Random seed for frame_count distribution (optional)
+            max_b_loops_config: Path to JSON config for max_b_loops distribution (optional)
+            max_b_loops_seed: Random seed for max_b_loops distribution (optional)
             portion_stats: Portion of non-warmup workflows for statistics (default: 1.0)
 
         Returns:
             Dict with experiment results and metrics path
         """
+        # Build distribution info string
+        frame_info = f"frame_count={frame_count}"
+        if frame_count_config:
+            frame_info = f"frame_count_config={frame_count_config}"
+        loops_info = f"max_b_loops={max_b_loops}"
+        if max_b_loops_config:
+            loops_info = f"max_b_loops_config={max_b_loops_config}"
+
         self.logger.info("=" * 80)
         self.logger.info("Running Text2Video Real Cluster Mode")
         self.logger.info("=" * 80)
         self.logger.info(f"Config: num_workflows={num_workflows}, qps={qps}, "
-                        f"duration={duration}s, max_b_loops={max_b_loops}, "
+                        f"duration={duration}s, {loops_info}, {frame_info}, "
                         f"strategies={strategies}, portion_stats={portion_stats}")
 
         script_path = self.workspace_dir / "type1_text2video" / "real" / "test_workflow_real.py"
         args = self._build_common_args(num_workflows, qps, seed, strategies, warmup, duration, portion_stats)
         args.extend(["--max-b-loops", str(max_b_loops)])
+        args.extend(["--frame-count", str(frame_count)])
+
+        if frame_count_config:
+            args.extend(["--frame-count-config", frame_count_config])
+        if frame_count_seed is not None:
+            args.extend(["--frame-count-seed", str(frame_count_seed)])
+        if max_b_loops_config:
+            args.extend(["--max-b-loops-config", max_b_loops_config])
+        if max_b_loops_seed is not None:
+            args.extend(["--max-b-loops-seed", str(max_b_loops_seed)])
 
         return self._run_script(script_path, args, "Text2Video Real")
 

@@ -72,7 +72,8 @@ def run_single_experiment(config, captions, logger, strategy_name=None):
     logger.info(f"QPS: {config.qps}")
     logger.info(f"Duration: {config.duration}s")
     logger.info(f"Workflows: {config.num_workflows}")
-    logger.info(f"Max B loops: {config.max_b_loops}")
+    logger.info(f"Max B loops config: {config.get_max_b_loops_config()}")
+    logger.info(f"Frame count config: {config.get_frame_count_config()}")
     logger.info(f"Scheduler A: {config.scheduler_a_url}")
     logger.info(f"Scheduler B: {config.scheduler_b_url}")
     if strategy_name:
@@ -123,10 +124,14 @@ def run_single_experiment(config, captions, logger, strategy_name=None):
     a2_task_ids = [f"task-A2-{strategy}-workflow-{i:04d}" for i in range(config.num_workflows)]
 
     # Generate all B task IDs (including all loop iterations)
+    # With distribution-based sampling, each workflow may have different max_b_loops,
+    # so we use each workflow's actual max_b_loops from the pre-generated workflow data
     b_task_ids = []
-    for i in range(config.num_workflows):
-        for loop in range(1, config.max_b_loops + 1):
-            b_task_ids.append(f"task-B{loop}-{strategy}-workflow-{i:04d}")
+    with state_lock:
+        for workflow_id, workflow_data in workflow_states.items():
+            workflow_num = workflow_id.split('-')[-1]
+            for loop in range(1, workflow_data.max_b_loops + 1):
+                b_task_ids.append(f"task-B{loop}-{strategy}-workflow-{workflow_num}")
 
     # A2 Submitter (Thread 3)
     a2_submitter = A2TaskSubmitter(
@@ -359,6 +364,11 @@ def main():
         num_warmup=warmup_count,
         strategies=strategies,
         portion_stats=args.portion_stats,
+        frame_count=args.frame_count,
+        frame_count_config=args.frame_count_config,
+        max_b_loops_config=args.max_b_loops_config,
+        frame_count_seed=args.frame_count_seed,
+        max_b_loops_seed=args.max_b_loops_seed,
     )
 
     logger = configure_logging(level="INFO")

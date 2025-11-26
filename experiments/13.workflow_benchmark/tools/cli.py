@@ -108,7 +108,41 @@ Examples:
         "--max-b-loops",
         type=int,
         default=3,
-        help="Maximum B task iterations (default: 3)"
+        help="Maximum B task iterations (default: 3). "
+             "Ignored if --max-b-loops-config is specified."
+    )
+    t2v_sim.add_argument(
+        "--max-b-loops-config",
+        type=str,
+        default=None,
+        help="Path to JSON config file for max_b_loops distribution. "
+             "Supports: static, uniform, two_peak, four_peak distributions."
+    )
+    t2v_sim.add_argument(
+        "--max-b-loops-seed",
+        type=int,
+        default=None,
+        help="Random seed for max_b_loops distribution sampling."
+    )
+    t2v_sim.add_argument(
+        "--frame-count",
+        type=int,
+        default=16,
+        help="Frame count for video generation (default: 16). "
+             "Ignored if --frame-count-config is specified."
+    )
+    t2v_sim.add_argument(
+        "--frame-count-config",
+        type=str,
+        default=None,
+        help="Path to JSON config file for frame_count distribution. "
+             "Supports: static, uniform, two_peak, four_peak distributions."
+    )
+    t2v_sim.add_argument(
+        "--frame-count-seed",
+        type=int,
+        default=None,
+        help="Random seed for frame_count distribution sampling."
     )
 
     # ========================================================================
@@ -123,7 +157,41 @@ Examples:
         "--max-b-loops",
         type=int,
         default=3,
-        help="Maximum B task iterations (default: 3)"
+        help="Maximum B task iterations (default: 3). "
+             "Ignored if --max-b-loops-config is specified."
+    )
+    t2v_real.add_argument(
+        "--max-b-loops-config",
+        type=str,
+        default=None,
+        help="Path to JSON config file for max_b_loops distribution. "
+             "Supports: static, uniform, two_peak, four_peak distributions."
+    )
+    t2v_real.add_argument(
+        "--max-b-loops-seed",
+        type=int,
+        default=None,
+        help="Random seed for max_b_loops distribution sampling."
+    )
+    t2v_real.add_argument(
+        "--frame-count",
+        type=int,
+        default=16,
+        help="Frame count for video generation (default: 16). "
+             "Ignored if --frame-count-config is specified."
+    )
+    t2v_real.add_argument(
+        "--frame-count-config",
+        type=str,
+        default=None,
+        help="Path to JSON config file for frame_count distribution. "
+             "Supports: static, uniform, two_peak, four_peak distributions."
+    )
+    t2v_real.add_argument(
+        "--frame-count-seed",
+        type=int,
+        default=None,
+        help="Random seed for frame_count distribution sampling."
     )
 
     # ========================================================================
@@ -208,6 +276,11 @@ Examples:
                 warmup=args.warmup,
                 duration=args.duration,
                 max_b_loops=args.max_b_loops,
+                frame_count=args.frame_count,
+                frame_count_config=args.frame_count_config,
+                frame_count_seed=args.frame_count_seed,
+                max_b_loops_config=args.max_b_loops_config,
+                max_b_loops_seed=args.max_b_loops_seed,
                 portion_stats=args.portion_stats,
             )
 
@@ -220,6 +293,11 @@ Examples:
                 warmup=args.warmup,
                 duration=args.duration,
                 max_b_loops=args.max_b_loops,
+                frame_count=args.frame_count,
+                frame_count_config=args.frame_count_config,
+                frame_count_seed=args.frame_count_seed,
+                max_b_loops_config=args.max_b_loops_config,
+                max_b_loops_seed=args.max_b_loops_seed,
                 portion_stats=args.portion_stats,
             )
 

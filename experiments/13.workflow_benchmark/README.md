@@ -10,6 +10,7 @@ experiments/13.workflow_benchmark/
 │   ├── base_classes.py              # BaseTaskSubmitter, BaseTaskReceiver
 │   ├── rate_limiter.py              # Token bucket rate limiting
 │   ├── data_structures.py           # WorkflowState, enums
+│   ├── distribution.py              # Generic distribution classes
 │   ├── metrics_collector.py         # Metrics tracking (✅ Complete)
 │   └── utils.py                     # JSON, logging, HTTP utilities
 │
@@ -18,6 +19,9 @@ experiments/13.workflow_benchmark/
 │   ├── workflow_data.py             # Data structures
 │   ├── submitters.py                # A1, A2, B task submitters
 │   ├── receivers.py                 # A1, A2, B task receivers
+│   ├── configs/                     # Parameter distribution configs
+│   │   ├── frame_count_*.json       # Frame count distribution configs
+│   │   └── max_b_loops_*.json       # Max B loops distribution configs
 │   ├── simulation/
 │   │   └── test_workflow_sim.py     # Simulation mode runner
 │   └── real/
@@ -135,6 +139,13 @@ python tools/cli.py run-text2video-sim --qps 2.0 --duration 300 --num-workflows 
 # Method 2: Direct Python with environment variables
 export QPS=2.0 DURATION=300 NUM_WORKFLOWS=600
 python type1_text2video/simulation/test_workflow_sim.py
+
+# Method 3: With custom frame_count and max_b_loops distributions
+python -m type1_text2video.simulation.test_workflow_sim \
+    --num-workflows 100 \
+    --frame-count-config type1_text2video/configs/frame_count_two_peak.json \
+    --max-b-loops-config type1_text2video/configs/max_b_loops_uniform.json \
+    --frame-count-seed 42 --max-b-loops-seed 42
 ```
 
 ### Running Deep Research Simulation
@@ -268,6 +279,106 @@ type2_deep_research/configs/
 ├── fanout_uniform.json     # Uniform: [2, 8]
 ├── fanout_two_peak.json    # Bimodal: peaks at 3 and 8
 └── fanout_four_peak.json   # Four peaks: 2, 5, 8, 12
+```
+
+## Text2Video Parameter Distribution
+
+The Text2Video workflow supports configurable distributions for `frame_count` (video frame count) and `max_b_loops` (B task iterations per workflow). This allows simulating realistic workload patterns with varying video complexity and iteration counts.
+
+### Supported Parameters
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `frame_count` | Number of frames for video generation | 16 |
+| `max_b_loops` | Maximum B task iterations per workflow | 3 |
+
+Both parameters support the same four distribution types as Deep Research fanout:
+- `static`: Fixed value for all workflows
+- `uniform`: Uniform distribution between min/max
+- `two_peak`: Bimodal distribution with two Gaussian peaks
+- `four_peak`: Four Gaussian peaks
+
+### Configuration File Format
+
+The configuration files use the same JSON schema as fanout distributions.
+
+**Frame Count - Static** (`frame_count_static.json`):
+```json
+{
+    "type": "static",
+    "value": 16
+}
+```
+
+**Frame Count - Two-Peak** (`frame_count_two_peak.json`):
+```json
+{
+    "type": "two_peak",
+    "peaks": [
+        {"mean": 8, "std": 1.0, "weight": 1.0},
+        {"mean": 24, "std": 2.0, "weight": 1.0}
+    ],
+    "min": 4,
+    "max": 32
+}
+```
+
+**Max B Loops - Uniform** (`max_b_loops_uniform.json`):
+```json
+{
+    "type": "uniform",
+    "min": 1,
+    "max": 5
+}
+```
+
+### CLI Arguments
+
+| Argument | Description | Default |
+|----------|-------------|---------|
+| `--frame-count` | Static frame count (ignored if `--frame-count-config` is specified) | 16 |
+| `--frame-count-config` | Path to JSON config file for frame_count distribution | None |
+| `--frame-count-seed` | Random seed for reproducible frame_count sampling | None |
+| `--max-b-loops` | Static max B loops (ignored if `--max-b-loops-config` is specified) | 3 |
+| `--max-b-loops-config` | Path to JSON config file for max_b_loops distribution | None |
+| `--max-b-loops-seed` | Random seed for reproducible max_b_loops sampling | None |
+
+### Example Usage
+
+```bash
+# Static values (default behavior)
+python -m type1_text2video.simulation.test_workflow_sim --frame-count 16 --max-b-loops 3
+
+# Uniform max_b_loops distribution (1-5 iterations)
+python -m type1_text2video.simulation.test_workflow_sim \
+    --max-b-loops-config type1_text2video/configs/max_b_loops_uniform.json
+
+# Two-peak frame count with reproducible sampling
+python -m type1_text2video.simulation.test_workflow_sim \
+    --frame-count-config type1_text2video/configs/frame_count_two_peak.json \
+    --frame-count-seed 42
+
+# Combined distributions for both parameters
+python -m type1_text2video.simulation.test_workflow_sim \
+    --num-workflows 100 \
+    --frame-count-config type1_text2video/configs/frame_count_two_peak.json \
+    --max-b-loops-config type1_text2video/configs/max_b_loops_uniform.json \
+    --frame-count-seed 42 --max-b-loops-seed 42
+```
+
+### Example Config Files
+
+Pre-built example configurations are available in `type1_text2video/configs/`:
+
+```
+type1_text2video/configs/
+├── frame_count_static.json      # Fixed value: 16
+├── frame_count_uniform.json     # Uniform: [8, 32]
+├── frame_count_two_peak.json    # Bimodal: peaks at 8 and 24
+├── frame_count_four_peak.json   # Four peaks: 8, 16, 24, 32
+├── max_b_loops_static.json      # Fixed value: 3
+├── max_b_loops_uniform.json     # Uniform: [1, 5]
+└── max_b_loops_two_peak.json    # Bimodal: peaks at 2 and 4
 ```
 
 ## Implementation Guide
