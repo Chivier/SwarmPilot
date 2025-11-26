@@ -3,7 +3,7 @@
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional, Union, TYPE_CHECKING
 
 from common.distribution import (
     Distribution,
@@ -12,6 +12,9 @@ from common.distribution import (
     create_distribution,
     load_distribution_config,
 )
+
+if TYPE_CHECKING:
+    from .data_loader import RealDataLoader
 
 
 @dataclass
@@ -72,11 +75,19 @@ class Text2VideoConfig:
     frame_count_config: Optional[Union[str, Path, Dict[str, Any]]] = None
     max_b_loops_config: Optional[Union[str, Path, Dict[str, Any]]] = None
     frame_count_seed: Optional[int] = None  # Random seed for frame_count distribution
-    max_b_loops_seed: Optional[int] = None  # Random seed for max_b_loops distribution
+    max_b_loops_seed: Optional[int] = 42  # Random seed for max_b_loops distribution (fixed to 42 for reproducibility)
+
+    # Real data configuration for simulation mode
+    # When use_real_data=True, sleep times are sampled from real benchmark data
+    use_real_data: bool = True  # Enable real data sampling in simulation mode
+    training_config_path: Optional[str] = None  # Path to training_config.json
+    captions_data_path: Optional[str] = None  # Path to captions_10k.jsonl
+    real_data_seed: int = 42  # Random seed for real data sampling
 
     # Internal samplers (initialized in __post_init__)
     _frame_count_sampler: Optional[DistributionSampler] = field(default=None, repr=False)
     _max_b_loops_sampler: Optional[DistributionSampler] = field(default=None, repr=False)
+    _data_loader: Optional["RealDataLoader"] = field(default=None, repr=False)
 
     def __post_init__(self):
         """Post-initialization to set mode-specific model IDs and scheduler URLs."""
@@ -99,6 +110,9 @@ class Text2VideoConfig:
 
         # Initialize distribution samplers
         self._init_samplers()
+
+        # Initialize real data loader for simulation mode
+        self._init_data_loader()
 
     def _init_samplers(self):
         """Initialize distribution samplers for frame_count and max_b_loops."""
@@ -142,6 +156,34 @@ class Text2VideoConfig:
                 distribution=StaticDistribution(value=self.max_b_loops),
                 seed=self.max_b_loops_seed
             )
+
+    def _init_data_loader(self):
+        """Initialize real data loader for simulation mode."""
+        if self.mode != "simulation" or not self.use_real_data:
+            return
+
+        from .data_loader import RealDataLoader
+
+        # Determine paths with defaults
+        training_path = self.training_config_path or "type1_text2video/data/training_config.json"
+        captions_path = self.captions_data_path or "type1_text2video/data/captions_10k.jsonl"
+
+        try:
+            self._data_loader = RealDataLoader(
+                training_config_path=training_path,
+                captions_path=captions_path,
+                seed=self.real_data_seed,
+            )
+        except Exception as e:
+            # Log warning but don't fail - fall back to uniform sampling
+            import logging
+            logging.warning(f"Failed to load real data, falling back to uniform sampling: {e}")
+            self._data_loader = None
+
+    @property
+    def data_loader(self) -> Optional["RealDataLoader"]:
+        """Get the real data loader (may be None if not initialized or failed)."""
+        return self._data_loader
 
     def sample_frame_count(self) -> int:
         """Sample a frame count value from the configured distribution."""
@@ -198,10 +240,16 @@ class Text2VideoConfig:
         if frame_count_seed_str:
             frame_count_seed = int(frame_count_seed_str)
 
-        max_b_loops_seed = None
+        max_b_loops_seed = 42  # Default to 42 for reproducibility
         max_b_loops_seed_str = os.getenv("MAX_B_LOOPS_SEED")
         if max_b_loops_seed_str:
             max_b_loops_seed = int(max_b_loops_seed_str)
+
+        # Parse real data config
+        use_real_data = os.getenv("USE_REAL_DATA", "true").lower() in ("true", "1", "yes")
+        training_config_path = os.getenv("TRAINING_CONFIG_PATH")
+        captions_data_path = os.getenv("CAPTIONS_DATA_PATH")
+        real_data_seed = int(os.getenv("REAL_DATA_SEED", "42"))
 
         return cls(
             mode=os.getenv("MODE", "simulation"),
@@ -232,4 +280,8 @@ class Text2VideoConfig:
             max_b_loops_config=max_b_loops_config,
             frame_count_seed=frame_count_seed,
             max_b_loops_seed=max_b_loops_seed,
+            use_real_data=use_real_data,
+            training_config_path=training_config_path,
+            captions_data_path=captions_data_path,
+            real_data_seed=real_data_seed,
         )

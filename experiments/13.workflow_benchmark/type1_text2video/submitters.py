@@ -63,9 +63,21 @@ class A1TaskSubmitter(BaseTaskSubmitter):
 
             # Pre-generate sleep times for simulation mode
             if config.mode == "simulation":
-                workflow.a1_sleep_time = random.uniform(config.sleep_time_min, config.sleep_time_max)
-                workflow.a2_sleep_time = random.uniform(config.sleep_time_min, config.sleep_time_max)
-                workflow.b_sleep_time = random.uniform(config.sleep_time_min, config.sleep_time_max)
+                if config.use_real_data and config.data_loader is not None:
+                    # Sample from real benchmark data
+                    # A1 and A2: independent samples from LLM benchmark runtimes
+                    workflow.a1_sleep_time = config.data_loader.sample_llm_runtime_ms() / 1000.0  # Convert to seconds
+                    workflow.a2_sleep_time = config.data_loader.sample_llm_runtime_ms() / 1000.0
+
+                    # B: sample frame from captions, then use regression to get runtime
+                    sampled_frames = config.data_loader.sample_frame_count()
+                    workflow.b_sleep_time = config.data_loader.get_t2vid_runtime_ms(sampled_frames) / 1000.0
+                    workflow.frame_count = sampled_frames  # Update frame_count with sampled value
+                else:
+                    # Fallback to uniform random sampling
+                    workflow.a1_sleep_time = random.uniform(config.sleep_time_min, config.sleep_time_max)
+                    workflow.a2_sleep_time = random.uniform(config.sleep_time_min, config.sleep_time_max)
+                    workflow.b_sleep_time = random.uniform(config.sleep_time_min, config.sleep_time_max)
 
             self.workflows.append(workflow)
 
@@ -98,10 +110,18 @@ class A1TaskSubmitter(BaseTaskSubmitter):
                 )
             task_input = {"sleep_time": workflow_data.a1_sleep_time}
 
+            # Calculate exp_runtime based on strategy
+            # min_time strategy: use dataset average
+            # other strategies: use actual sampled runtime
+            if workflow_data.strategy == "min_time" and self.config.data_loader is not None:
+                exp_runtime = self.config.data_loader.llm_avg_runtime_ms
+            else:
+                exp_runtime = workflow_data.a1_sleep_time * 1000.0  # Convert to milliseconds
+
             # Simulation mode metadata
             metadata = {
                 "workflow_id": workflow_data.workflow_id,
-                "exp_runtime": workflow_data.a1_sleep_time * 1000.0,  # Convert to milliseconds
+                "exp_runtime": exp_runtime,
                 "task_type": "A1"
             }
         else:  # real mode
@@ -247,10 +267,19 @@ class A2TaskSubmitter(BaseTaskSubmitter):
             )
             task_input = {"sleep_time": sleep_time}
 
+            # Calculate exp_runtime based on strategy
+            # min_time strategy: use dataset average
+            # other strategies: use actual sampled runtime
+            strategy = workflow_data.strategy if workflow_data else "probabilistic"
+            if strategy == "min_time" and self.config.data_loader is not None:
+                exp_runtime = self.config.data_loader.llm_avg_runtime_ms
+            else:
+                exp_runtime = sleep_time * 1000.0  # Convert to milliseconds
+
             # Simulation mode metadata
             metadata = {
                 "workflow_id": workflow_id,
-                "exp_runtime": sleep_time * 1000.0,  # Convert to milliseconds
+                "exp_runtime": exp_runtime,
                 "task_type": "A2"
             }
         else:  # real mode
@@ -402,10 +431,19 @@ class BTaskSubmitter(BaseTaskSubmitter):
             )
             task_input = {"sleep_time": sleep_time}
 
+            # Calculate exp_runtime based on strategy
+            # min_time strategy: use dataset average
+            # other strategies: use actual sampled runtime
+            strategy = workflow_data.strategy if workflow_data else "probabilistic"
+            if strategy == "min_time" and self.config.data_loader is not None:
+                exp_runtime = self.config.data_loader.t2vid_avg_runtime_ms
+            else:
+                exp_runtime = sleep_time * 1000.0  # Convert to milliseconds
+
             # Simulation mode metadata - includes all necessary fields
             metadata = {
                 "workflow_id": workflow_id,
-                "exp_runtime": sleep_time * 1000.0,  # Convert to milliseconds
+                "exp_runtime": exp_runtime,
                 "frame_count": workflow_data.frame_count if workflow_data else 16,
                 "task_type": "B",
                 "b_iteration": loop_iteration,

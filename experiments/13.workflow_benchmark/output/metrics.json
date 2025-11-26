@@ -1,0 +1,2374 @@
+{
+  "summary": {
+    "collection_duration": 124.90977144241333,
+    "warmup_stats": {
+      "warmup_workflows": 60,
+      "warmup_tasks": 124,
+      "excluded_from_stats": true
+    },
+    "portion_stats": {
+      "portion": 1.0,
+      "total_non_warmup_workflows": 0,
+      "included_workflows": 0,
+      "excluded_by_portion": 0
+    },
+    "task_stats": {
+      "total_submitted": 0,
+      "total_completed": 0,
+      "successful": 0,
+      "failed": 0,
+      "success_rate": 0,
+      "actual_qps": 0.0
+    },
+    "task_latency": {
+      "p50": 0.0,
+      "p95": 0.0,
+      "p99": 0.0,
+      "mean": 0,
+      "std": 0
+    },
+    "workflow_stats": {
+      "total_started": 0,
+      "total_completed": 0,
+      "completion_rate": 0
+    },
+    "workflow_duration": {
+      "mean": 0,
+      "std": 0,
+      "min": 0,
+      "max": 0
+    }
+  },
+  "tasks": [
+    {
+      "task_id": "task-A1-probabilistic-workflow-0000",
+      "workflow_id": "workflow-0000",
+      "task_type": "A1",
+      "submit_time": 1764184127.6200254,
+      "complete_time": 1764184131.6935537,
+      "duration": 4.073528289794922,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0001",
+      "workflow_id": "workflow-0001",
+      "task_type": "A1",
+      "submit_time": 1764184128.619565,
+      "complete_time": 1764184128.7226918,
+      "duration": 0.10312676429748535,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A2-probabilistic-workflow-0001",
+      "workflow_id": "workflow-0001",
+      "task_type": "A2",
+      "submit_time": 1764184129.6187022,
+      "complete_time": 1764184133.4240813,
+      "duration": 3.8053791522979736,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0002",
+      "workflow_id": "workflow-0002",
+      "task_type": "A1",
+      "submit_time": 1764184130.6258888,
+      "complete_time": 1764184134.4236536,
+      "duration": 3.797764778137207,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0003",
+      "workflow_id": "workflow-0003",
+      "task_type": "A1",
+      "submit_time": 1764184131.6257951,
+      "complete_time": 1764184135.657358,
+      "duration": 4.031562805175781,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0004",
+      "workflow_id": "workflow-0004",
+      "task_type": "A1",
+      "submit_time": 1764184132.6186538,
+      "complete_time": 1764184136.4636152,
+      "duration": 3.844961404800415,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A2-probabilistic-workflow-0000",
+      "workflow_id": "workflow-0000",
+      "task_type": "A2",
+      "submit_time": 1764184133.616477,
+      "complete_time": 1764184137.4349396,
+      "duration": 3.818462610244751,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B1-probabilistic-workflow-0001",
+      "workflow_id": "workflow-0001",
+      "task_type": "B",
+      "submit_time": 1764184134.6243901,
+      "complete_time": 1764184188.7081957,
+      "duration": 54.083805561065674,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A2-probabilistic-workflow-0002",
+      "workflow_id": "workflow-0002",
+      "task_type": "A2",
+      "submit_time": 1764184135.6219766,
+      "complete_time": 1764184138.984273,
+      "duration": 3.3622963428497314,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A2-probabilistic-workflow-0003",
+      "workflow_id": "workflow-0003",
+      "task_type": "A2",
+      "submit_time": 1764184136.6169846,
+      "complete_time": 1764184136.7177322,
+      "duration": 0.10074758529663086,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A2-probabilistic-workflow-0004",
+      "workflow_id": "workflow-0004",
+      "task_type": "A2",
+      "submit_time": 1764184137.6232133,
+      "complete_time": 1764184141.504212,
+      "duration": 3.8809986114501953,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B1-probabilistic-workflow-0003",
+      "workflow_id": "workflow-0003",
+      "task_type": "B",
+      "submit_time": 1764184138.6206853,
+      "complete_time": 1764184163.8291607,
+      "duration": 25.208475351333618,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0005",
+      "workflow_id": "workflow-0005",
+      "task_type": "A1",
+      "submit_time": 1764184139.617981,
+      "complete_time": 1764184144.3303254,
+      "duration": 4.712344408035278,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B1-probabilistic-workflow-0000",
+      "workflow_id": "workflow-0000",
+      "task_type": "B",
+      "submit_time": 1764184140.6168337,
+      "complete_time": 1764184197.7021852,
+      "duration": 57.08535146713257,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B1-probabilistic-workflow-0002",
+      "workflow_id": "workflow-0002",
+      "task_type": "B",
+      "submit_time": 1764184141.6225624,
+      "complete_time": 1764184203.581737,
+      "duration": 61.95917463302612,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0006",
+      "workflow_id": "workflow-0006",
+      "task_type": "A1",
+      "submit_time": 1764184142.621184,
+      "complete_time": 1764184146.3462358,
+      "duration": 3.7250516414642334,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B1-probabilistic-workflow-0004",
+      "workflow_id": "workflow-0004",
+      "task_type": "B",
+      "submit_time": 1764184143.6188269,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0007",
+      "workflow_id": "workflow-0007",
+      "task_type": "A1",
+      "submit_time": 1764184144.6166742,
+      "complete_time": 1764184148.6340895,
+      "duration": 4.017415285110474,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A2-probabilistic-workflow-0005",
+      "workflow_id": "workflow-0005",
+      "task_type": "A2",
+      "submit_time": 1764184145.6184566,
+      "complete_time": 1764184150.2395823,
+      "duration": 4.6211256980896,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A2-probabilistic-workflow-0006",
+      "workflow_id": "workflow-0006",
+      "task_type": "A2",
+      "submit_time": 1764184146.6180027,
+      "complete_time": 1764184150.4283152,
+      "duration": 3.810312509536743,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0008",
+      "workflow_id": "workflow-0008",
+      "task_type": "A1",
+      "submit_time": 1764184147.6184878,
+      "complete_time": 1764184151.398513,
+      "duration": 3.7800252437591553,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0009",
+      "workflow_id": "workflow-0009",
+      "task_type": "A1",
+      "submit_time": 1764184148.6209953,
+      "complete_time": 1764184152.5053322,
+      "duration": 3.8843369483947754,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A2-probabilistic-workflow-0007",
+      "workflow_id": "workflow-0007",
+      "task_type": "A2",
+      "submit_time": 1764184149.6209462,
+      "complete_time": 1764184154.2531512,
+      "duration": 4.632205009460449,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0010",
+      "workflow_id": "workflow-0010",
+      "task_type": "A1",
+      "submit_time": 1764184150.62035,
+      "complete_time": 1764184154.5553277,
+      "duration": 3.9349777698516846,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B1-probabilistic-workflow-0005",
+      "workflow_id": "workflow-0005",
+      "task_type": "B",
+      "submit_time": 1764184151.6194236,
+      "complete_time": 1764184204.957428,
+      "duration": 53.33800435066223,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B1-probabilistic-workflow-0006",
+      "workflow_id": "workflow-0006",
+      "task_type": "B",
+      "submit_time": 1764184152.6172066,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A2-probabilistic-workflow-0008",
+      "workflow_id": "workflow-0008",
+      "task_type": "A2",
+      "submit_time": 1764184153.6161795,
+      "complete_time": 1764184153.706936,
+      "duration": 0.09075641632080078,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A2-probabilistic-workflow-0009",
+      "workflow_id": "workflow-0009",
+      "task_type": "A2",
+      "submit_time": 1764184154.6250544,
+      "complete_time": 1764184158.4227998,
+      "duration": 3.7977454662323,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0011",
+      "workflow_id": "workflow-0011",
+      "task_type": "A1",
+      "submit_time": 1764184155.622419,
+      "complete_time": 1764184159.391482,
+      "duration": 3.7690629959106445,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0012",
+      "workflow_id": "workflow-0012",
+      "task_type": "A1",
+      "submit_time": 1764184156.6190786,
+      "complete_time": 1764184160.3343518,
+      "duration": 3.715273141860962,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0013",
+      "workflow_id": "workflow-0013",
+      "task_type": "A1",
+      "submit_time": 1764184157.620483,
+      "complete_time": 1764184161.3460774,
+      "duration": 3.7255945205688477,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A2-probabilistic-workflow-0010",
+      "workflow_id": "workflow-0010",
+      "task_type": "A2",
+      "submit_time": 1764184158.6249647,
+      "complete_time": 1764184162.4406896,
+      "duration": 3.8157248497009277,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0014",
+      "workflow_id": "workflow-0014",
+      "task_type": "A1",
+      "submit_time": 1764184159.6223876,
+      "complete_time": 1764184162.5015152,
+      "duration": 2.8791275024414062,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B1-probabilistic-workflow-0008",
+      "workflow_id": "workflow-0008",
+      "task_type": "B",
+      "submit_time": 1764184160.6200778,
+      "complete_time": 1764184215.0815468,
+      "duration": 54.46146893501282,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A2-probabilistic-workflow-0011",
+      "workflow_id": "workflow-0011",
+      "task_type": "A2",
+      "submit_time": 1764184161.6175587,
+      "complete_time": 1764184165.42488,
+      "duration": 3.807321310043335,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A2-probabilistic-workflow-0012",
+      "workflow_id": "workflow-0012",
+      "task_type": "A2",
+      "submit_time": 1764184162.6180217,
+      "complete_time": 1764184166.4361374,
+      "duration": 3.818115711212158,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A2-probabilistic-workflow-0013",
+      "workflow_id": "workflow-0013",
+      "task_type": "A2",
+      "submit_time": 1764184163.619566,
+      "complete_time": 1764184167.3798356,
+      "duration": 3.7602696418762207,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A2-probabilistic-workflow-0014",
+      "workflow_id": "workflow-0014",
+      "task_type": "A2",
+      "submit_time": 1764184164.6190283,
+      "complete_time": 1764184168.3285666,
+      "duration": 3.709538221359253,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0015",
+      "workflow_id": "workflow-0015",
+      "task_type": "A1",
+      "submit_time": 1764184165.6192648,
+      "complete_time": 1764184169.4163144,
+      "duration": 3.7970495223999023,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0016",
+      "workflow_id": "workflow-0016",
+      "task_type": "A1",
+      "submit_time": 1764184166.6183722,
+      "complete_time": 1764184170.6375659,
+      "duration": 4.019193649291992,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0017",
+      "workflow_id": "workflow-0017",
+      "task_type": "A1",
+      "submit_time": 1764184167.6248295,
+      "complete_time": 1764184171.4698558,
+      "duration": 3.8450262546539307,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B1-probabilistic-workflow-0007",
+      "workflow_id": "workflow-0007",
+      "task_type": "B",
+      "submit_time": 1764184168.622058,
+      "complete_time": 1764184205.8352678,
+      "duration": 37.21320986747742,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A2-probabilistic-workflow-0015",
+      "workflow_id": "workflow-0015",
+      "task_type": "A2",
+      "submit_time": 1764184169.6177576,
+      "complete_time": 1764184173.0406775,
+      "duration": 3.422919988632202,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0018",
+      "workflow_id": "workflow-0018",
+      "task_type": "A1",
+      "submit_time": 1764184170.6179626,
+      "complete_time": 1764184173.6040008,
+      "duration": 2.9860382080078125,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B1-probabilistic-workflow-0009",
+      "workflow_id": "workflow-0009",
+      "task_type": "B",
+      "submit_time": 1764184171.6251302,
+      "complete_time": 1764184211.8380165,
+      "duration": 40.212886333465576,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0019",
+      "workflow_id": "workflow-0019",
+      "task_type": "A1",
+      "submit_time": 1764184172.6229749,
+      "complete_time": 1764184176.580901,
+      "duration": 3.957926034927368,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A2-probabilistic-workflow-0016",
+      "workflow_id": "workflow-0016",
+      "task_type": "A2",
+      "submit_time": 1764184173.6205769,
+      "complete_time": 1764184176.9419718,
+      "duration": 3.321394920349121,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0020",
+      "workflow_id": "workflow-0020",
+      "task_type": "A1",
+      "submit_time": 1764184174.6180587,
+      "complete_time": 1764184174.7193167,
+      "duration": 0.1012580394744873,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B1-probabilistic-workflow-0010",
+      "workflow_id": "workflow-0010",
+      "task_type": "B",
+      "submit_time": 1764184175.6160538,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0021",
+      "workflow_id": "workflow-0021",
+      "task_type": "A1",
+      "submit_time": 1764184176.6236007,
+      "complete_time": 1764184181.4728925,
+      "duration": 4.849291801452637,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A2-probabilistic-workflow-0017",
+      "workflow_id": "workflow-0017",
+      "task_type": "A2",
+      "submit_time": 1764184177.6210444,
+      "complete_time": 1764184181.6656442,
+      "duration": 4.044599771499634,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B1-probabilistic-workflow-0011",
+      "workflow_id": "workflow-0011",
+      "task_type": "B",
+      "submit_time": 1764184178.6184015,
+      "complete_time": 1764184216.203163,
+      "duration": 37.58476138114929,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0022",
+      "workflow_id": "workflow-0022",
+      "task_type": "A1",
+      "submit_time": 1764184179.6167738,
+      "complete_time": 1764184183.4482384,
+      "duration": 3.8314645290374756,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A2-probabilistic-workflow-0018",
+      "workflow_id": "workflow-0018",
+      "task_type": "A2",
+      "submit_time": 1764184180.6230679,
+      "complete_time": 1764184183.3124876,
+      "duration": 2.689419746398926,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B1-probabilistic-workflow-0012",
+      "workflow_id": "workflow-0012",
+      "task_type": "B",
+      "submit_time": 1764184181.6223516,
+      "complete_time": 1764184215.454816,
+      "duration": 33.83246445655823,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0023",
+      "workflow_id": "workflow-0023",
+      "task_type": "A1",
+      "submit_time": 1764184182.6184752,
+      "complete_time": 1764184186.4238298,
+      "duration": 3.805354595184326,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0024",
+      "workflow_id": "workflow-0024",
+      "task_type": "A1",
+      "submit_time": 1764184183.6177642,
+      "complete_time": 1764184187.4374664,
+      "duration": 3.8197021484375,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0025",
+      "workflow_id": "workflow-0025",
+      "task_type": "A1",
+      "submit_time": 1764184184.6166654,
+      "complete_time": 1764184188.4112182,
+      "duration": 3.794552803039551,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A2-probabilistic-workflow-0020",
+      "workflow_id": "workflow-0020",
+      "task_type": "A2",
+      "submit_time": 1764184185.623776,
+      "complete_time": 1764184189.4183056,
+      "duration": 3.794529676437378,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A2-probabilistic-workflow-0019",
+      "workflow_id": "workflow-0019",
+      "task_type": "A2",
+      "submit_time": 1764184186.6181135,
+      "complete_time": 1764184189.6327138,
+      "duration": 3.0146002769470215,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B1-probabilistic-workflow-0013",
+      "workflow_id": "workflow-0013",
+      "task_type": "B",
+      "submit_time": 1764184187.6187508,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A2-probabilistic-workflow-0021",
+      "workflow_id": "workflow-0021",
+      "task_type": "A2",
+      "submit_time": 1764184188.6166832,
+      "complete_time": 1764184192.6277256,
+      "duration": 4.011042356491089,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A2-probabilistic-workflow-0022",
+      "workflow_id": "workflow-0022",
+      "task_type": "A2",
+      "submit_time": 1764184189.6246238,
+      "complete_time": 1764184191.8271246,
+      "duration": 2.202500820159912,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0026",
+      "workflow_id": "workflow-0026",
+      "task_type": "A1",
+      "submit_time": 1764184190.6211822,
+      "complete_time": 1764184194.4241073,
+      "duration": 3.8029251098632812,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B1-probabilistic-workflow-0014",
+      "workflow_id": "workflow-0014",
+      "task_type": "B",
+      "submit_time": 1764184191.6188815,
+      "complete_time": 1764184232.5747821,
+      "duration": 40.9559006690979,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0027",
+      "workflow_id": "workflow-0027",
+      "task_type": "A1",
+      "submit_time": 1764184192.6173275,
+      "complete_time": 1764184192.7288766,
+      "duration": 0.11154913902282715,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0028",
+      "workflow_id": "workflow-0028",
+      "task_type": "A1",
+      "submit_time": 1764184193.6180453,
+      "complete_time": 1764184197.6266167,
+      "duration": 4.00857138633728,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0029",
+      "workflow_id": "workflow-0029",
+      "task_type": "A1",
+      "submit_time": 1764184194.617096,
+      "complete_time": 1764184198.668712,
+      "duration": 4.051615953445435,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A2-probabilistic-workflow-0023",
+      "workflow_id": "workflow-0023",
+      "task_type": "A2",
+      "submit_time": 1764184195.6209457,
+      "complete_time": 1764184198.9399676,
+      "duration": 3.3190219402313232,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0030",
+      "workflow_id": "workflow-0030",
+      "task_type": "A1",
+      "submit_time": 1764184196.6178784,
+      "complete_time": 1764184200.5322146,
+      "duration": 3.9143362045288086,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0031",
+      "workflow_id": "workflow-0031",
+      "task_type": "A1",
+      "submit_time": 1764184197.6172836,
+      "complete_time": 1764184200.7194333,
+      "duration": 3.102149724960327,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B1-probabilistic-workflow-0015",
+      "workflow_id": "workflow-0015",
+      "task_type": "B",
+      "submit_time": 1764184198.62479,
+      "complete_time": 1764184233.2102196,
+      "duration": 34.585429668426514,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A2-probabilistic-workflow-0024",
+      "workflow_id": "workflow-0024",
+      "task_type": "A2",
+      "submit_time": 1764184199.6213858,
+      "complete_time": 1764184199.8467445,
+      "duration": 0.2253587245941162,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0032",
+      "workflow_id": "workflow-0032",
+      "task_type": "A1",
+      "submit_time": 1764184200.6181908,
+      "complete_time": 1764184204.427,
+      "duration": 3.808809280395508,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A2-probabilistic-workflow-0025",
+      "workflow_id": "workflow-0025",
+      "task_type": "A2",
+      "submit_time": 1764184201.617108,
+      "complete_time": 1764184205.1503594,
+      "duration": 3.5332512855529785,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A2-probabilistic-workflow-0027",
+      "workflow_id": "workflow-0027",
+      "task_type": "A2",
+      "submit_time": 1764184202.617399,
+      "complete_time": 1764184206.5230377,
+      "duration": 3.9056386947631836,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0033",
+      "workflow_id": "workflow-0033",
+      "task_type": "A1",
+      "submit_time": 1764184203.6234765,
+      "complete_time": 1764184207.1057732,
+      "duration": 3.4822967052459717,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0034",
+      "workflow_id": "workflow-0034",
+      "task_type": "A1",
+      "submit_time": 1764184204.6221886,
+      "complete_time": 1764184208.4158478,
+      "duration": 3.793659210205078,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0035",
+      "workflow_id": "workflow-0035",
+      "task_type": "A1",
+      "submit_time": 1764184205.6190007,
+      "complete_time": 1764184209.6801422,
+      "duration": 4.061141490936279,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A2-probabilistic-workflow-0026",
+      "workflow_id": "workflow-0026",
+      "task_type": "A2",
+      "submit_time": 1764184206.6164885,
+      "complete_time": 1764184210.6511116,
+      "duration": 4.034623146057129,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B1-probabilistic-workflow-0016",
+      "workflow_id": "workflow-0016",
+      "task_type": "B",
+      "submit_time": 1764184207.6244273,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A2-probabilistic-workflow-0028",
+      "workflow_id": "workflow-0028",
+      "task_type": "A2",
+      "submit_time": 1764184208.6228707,
+      "complete_time": 1764184212.7047856,
+      "duration": 4.081914901733398,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0036",
+      "workflow_id": "workflow-0036",
+      "task_type": "A1",
+      "submit_time": 1764184209.6196241,
+      "complete_time": 1764184213.3772266,
+      "duration": 3.7576024532318115,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B1-probabilistic-workflow-0017",
+      "workflow_id": "workflow-0017",
+      "task_type": "B",
+      "submit_time": 1764184210.6174572,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B1-probabilistic-workflow-0018",
+      "workflow_id": "workflow-0018",
+      "task_type": "B",
+      "submit_time": 1764184211.6172462,
+      "complete_time": 1764184250.3315868,
+      "duration": 38.714340686798096,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B2-probabilistic-workflow-0001",
+      "workflow_id": "workflow-0001",
+      "task_type": "B",
+      "submit_time": 1764184212.6164029,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0037",
+      "workflow_id": "workflow-0037",
+      "task_type": "A1",
+      "submit_time": 1764184213.6185043,
+      "complete_time": 1764184217.3886364,
+      "duration": 3.770132064819336,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0038",
+      "workflow_id": "workflow-0038",
+      "task_type": "A1",
+      "submit_time": 1764184214.618287,
+      "complete_time": 1764184218.6614754,
+      "duration": 4.0431883335113525,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0039",
+      "workflow_id": "workflow-0039",
+      "task_type": "A1",
+      "submit_time": 1764184215.617859,
+      "complete_time": 1764184219.4165478,
+      "duration": 3.7986888885498047,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0040",
+      "workflow_id": "workflow-0040",
+      "task_type": "A1",
+      "submit_time": 1764184216.6177092,
+      "complete_time": 1764184220.4011686,
+      "duration": 3.783459424972534,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0041",
+      "workflow_id": "workflow-0041",
+      "task_type": "A1",
+      "submit_time": 1764184217.6185794,
+      "complete_time": 1764184221.5789125,
+      "duration": 3.9603331089019775,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0042",
+      "workflow_id": "workflow-0042",
+      "task_type": "A1",
+      "submit_time": 1764184218.618192,
+      "complete_time": 1764184218.8362803,
+      "duration": 0.21808838844299316,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0043",
+      "workflow_id": "workflow-0043",
+      "task_type": "A1",
+      "submit_time": 1764184219.6179411,
+      "complete_time": 1764184223.3631742,
+      "duration": 3.7452330589294434,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0044",
+      "workflow_id": "workflow-0044",
+      "task_type": "A1",
+      "submit_time": 1764184220.6173232,
+      "complete_time": 1764184224.5059314,
+      "duration": 3.88860821723938,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0045",
+      "workflow_id": "workflow-0045",
+      "task_type": "A1",
+      "submit_time": 1764184221.6167488,
+      "complete_time": 1764184225.3526042,
+      "duration": 3.7358553409576416,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0046",
+      "workflow_id": "workflow-0046",
+      "task_type": "A1",
+      "submit_time": 1764184222.615991,
+      "complete_time": 1764184226.3899584,
+      "duration": 3.7739672660827637,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0047",
+      "workflow_id": "workflow-0047",
+      "task_type": "A1",
+      "submit_time": 1764184223.6163564,
+      "complete_time": 1764184227.519865,
+      "duration": 3.9035086631774902,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0048",
+      "workflow_id": "workflow-0048",
+      "task_type": "A1",
+      "submit_time": 1764184224.6164575,
+      "complete_time": 1764184228.647273,
+      "duration": 4.030815601348877,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B1-probabilistic-workflow-0020",
+      "workflow_id": "workflow-0020",
+      "task_type": "B",
+      "submit_time": 1764184225.6159894,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B1-probabilistic-workflow-0019",
+      "workflow_id": "workflow-0019",
+      "task_type": "B",
+      "submit_time": 1764184226.6162257,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0049",
+      "workflow_id": "workflow-0049",
+      "task_type": "A1",
+      "submit_time": 1764184227.618684,
+      "complete_time": 1764184231.5076468,
+      "duration": 3.888962745666504,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0050",
+      "workflow_id": "workflow-0050",
+      "task_type": "A1",
+      "submit_time": 1764184228.6192393,
+      "complete_time": 1764184232.0132267,
+      "duration": 3.3939874172210693,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0051",
+      "workflow_id": "workflow-0051",
+      "task_type": "A1",
+      "submit_time": 1764184229.6189094,
+      "complete_time": 1764184233.521504,
+      "duration": 3.902594566345215,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0052",
+      "workflow_id": "workflow-0052",
+      "task_type": "A1",
+      "submit_time": 1764184230.6184053,
+      "complete_time": 1764184234.5281897,
+      "duration": 3.9097843170166016,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0053",
+      "workflow_id": "workflow-0053",
+      "task_type": "A1",
+      "submit_time": 1764184231.6180422,
+      "complete_time": 1764184235.0949543,
+      "duration": 3.476912021636963,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0054",
+      "workflow_id": "workflow-0054",
+      "task_type": "A1",
+      "submit_time": 1764184232.6172574,
+      "complete_time": 1764184236.4321642,
+      "duration": 3.8149068355560303,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0055",
+      "workflow_id": "workflow-0055",
+      "task_type": "A1",
+      "submit_time": 1764184233.6173747,
+      "complete_time": 1764184237.4249558,
+      "duration": 3.8075811862945557,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A2-probabilistic-workflow-0029",
+      "workflow_id": "workflow-0029",
+      "task_type": "A2",
+      "submit_time": 1764184234.6160557,
+      "complete_time": 1764184238.4461637,
+      "duration": 3.8301079273223877,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A2-probabilistic-workflow-0030",
+      "workflow_id": "workflow-0030",
+      "task_type": "A2",
+      "submit_time": 1764184235.6167166,
+      "complete_time": 1764184239.6703594,
+      "duration": 4.053642749786377,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A2-probabilistic-workflow-0031",
+      "workflow_id": "workflow-0031",
+      "task_type": "A2",
+      "submit_time": 1764184236.616365,
+      "complete_time": 1764184240.6921124,
+      "duration": 4.075747489929199,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0056",
+      "workflow_id": "workflow-0056",
+      "task_type": "A1",
+      "submit_time": 1764184237.617407,
+      "complete_time": 1764184241.527463,
+      "duration": 3.9100558757781982,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0057",
+      "workflow_id": "workflow-0057",
+      "task_type": "A1",
+      "submit_time": 1764184238.6176643,
+      "complete_time": 1764184242.651953,
+      "duration": 4.034288644790649,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0058",
+      "workflow_id": "workflow-0058",
+      "task_type": "A1",
+      "submit_time": 1764184239.6175048,
+      "complete_time": 1764184243.5750582,
+      "duration": 3.9575533866882324,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A2-probabilistic-workflow-0032",
+      "workflow_id": "workflow-0032",
+      "task_type": "A2",
+      "submit_time": 1764184240.6165397,
+      "complete_time": 1764184240.722075,
+      "duration": 0.10553526878356934,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A2-probabilistic-workflow-0033",
+      "workflow_id": "workflow-0033",
+      "task_type": "A2",
+      "submit_time": 1764184241.6164148,
+      "complete_time": 1764184245.3505003,
+      "duration": 3.7340855598449707,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A2-probabilistic-workflow-0034",
+      "workflow_id": "workflow-0034",
+      "task_type": "A2",
+      "submit_time": 1764184242.6165574,
+      "complete_time": 1764184247.32848,
+      "duration": 4.711922645568848,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A2-probabilistic-workflow-0035",
+      "workflow_id": "workflow-0035",
+      "task_type": "A2",
+      "submit_time": 1764184243.616489,
+      "complete_time": 1764184247.4374986,
+      "duration": 3.821009635925293,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A2-probabilistic-workflow-0036",
+      "workflow_id": "workflow-0036",
+      "task_type": "A2",
+      "submit_time": 1764184244.616325,
+      "complete_time": 1764184248.5763125,
+      "duration": 3.9599876403808594,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A2-probabilistic-workflow-0037",
+      "workflow_id": "workflow-0037",
+      "task_type": "A2",
+      "submit_time": 1764184245.6162293,
+      "complete_time": 1764184245.7207215,
+      "duration": 0.1044921875,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A2-probabilistic-workflow-0038",
+      "workflow_id": "workflow-0038",
+      "task_type": "A2",
+      "submit_time": 1764184246.6161122,
+      "complete_time": 1764184250.52251,
+      "duration": 3.906397819519043,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A2-probabilistic-workflow-0042",
+      "workflow_id": "workflow-0042",
+      "task_type": "A2",
+      "submit_time": 1764184247.6164389,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A1-probabilistic-workflow-0059",
+      "workflow_id": "workflow-0059",
+      "task_type": "A1",
+      "submit_time": 1764184248.6200807,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B1-probabilistic-workflow-0022",
+      "workflow_id": "workflow-0022",
+      "task_type": "B",
+      "submit_time": 1764184249.620365,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A2-probabilistic-workflow-0039",
+      "workflow_id": "workflow-0039",
+      "task_type": "A2",
+      "submit_time": 1764184250.6187403,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    }
+  ],
+  "workflows": [
+    {
+      "workflow_id": "workflow-0000",
+      "workflow_type": "text2video",
+      "start_time": 1764184127.6200118,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 4,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0001",
+      "workflow_type": "text2video",
+      "start_time": 1764184128.6195424,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 4,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0002",
+      "workflow_type": "text2video",
+      "start_time": 1764184130.6258726,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 3,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0003",
+      "workflow_type": "text2video",
+      "start_time": 1764184131.625779,
+      "end_time": 1764184163.8291695,
+      "total_duration": 32.20339059829712,
+      "total_tasks": 3,
+      "successful_tasks": 3,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 1,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0004",
+      "workflow_type": "text2video",
+      "start_time": 1764184132.6186345,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 4,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0005",
+      "workflow_type": "text2video",
+      "start_time": 1764184139.6179664,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 5,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0006",
+      "workflow_type": "text2video",
+      "start_time": 1764184142.6211722,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 2,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0007",
+      "workflow_type": "text2video",
+      "start_time": 1764184144.61666,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 4,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0008",
+      "workflow_type": "text2video",
+      "start_time": 1764184147.6184733,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 2,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0009",
+      "workflow_type": "text2video",
+      "start_time": 1764184148.6209776,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 4,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0010",
+      "workflow_type": "text2video",
+      "start_time": 1764184150.6203365,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 4,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0011",
+      "workflow_type": "text2video",
+      "start_time": 1764184155.6224036,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 4,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0012",
+      "workflow_type": "text2video",
+      "start_time": 1764184156.6190608,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 2,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0013",
+      "workflow_type": "text2video",
+      "start_time": 1764184157.6204655,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 2,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0014",
+      "workflow_type": "text2video",
+      "start_time": 1764184159.6223736,
+      "end_time": 1764184232.5747938,
+      "total_duration": 72.95242023468018,
+      "total_tasks": 3,
+      "successful_tasks": 3,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 1,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0015",
+      "workflow_type": "text2video",
+      "start_time": 1764184165.6192508,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 4,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0016",
+      "workflow_type": "text2video",
+      "start_time": 1764184166.6183574,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 4,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0017",
+      "workflow_type": "text2video",
+      "start_time": 1764184167.6248133,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 4,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0018",
+      "workflow_type": "text2video",
+      "start_time": 1764184170.6179447,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 3,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0019",
+      "workflow_type": "text2video",
+      "start_time": 1764184172.6229565,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 2,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0020",
+      "workflow_type": "text2video",
+      "start_time": 1764184174.6180446,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 3,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0021",
+      "workflow_type": "text2video",
+      "start_time": 1764184176.623588,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 4,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0022",
+      "workflow_type": "text2video",
+      "start_time": 1764184179.6167593,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 2,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0023",
+      "workflow_type": "text2video",
+      "start_time": 1764184182.6184626,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 2,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0024",
+      "workflow_type": "text2video",
+      "start_time": 1764184183.6177506,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 4,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0025",
+      "workflow_type": "text2video",
+      "start_time": 1764184184.6166506,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 4,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0026",
+      "workflow_type": "text2video",
+      "start_time": 1764184190.6211672,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 4,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0027",
+      "workflow_type": "text2video",
+      "start_time": 1764184192.6173115,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 4,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0028",
+      "workflow_type": "text2video",
+      "start_time": 1764184193.6180322,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 3,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0029",
+      "workflow_type": "text2video",
+      "start_time": 1764184194.617082,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 4,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0030",
+      "workflow_type": "text2video",
+      "start_time": 1764184196.6178648,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 4,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0031",
+      "workflow_type": "text2video",
+      "start_time": 1764184197.6172667,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 2,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0032",
+      "workflow_type": "text2video",
+      "start_time": 1764184200.6181757,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 3,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0033",
+      "workflow_type": "text2video",
+      "start_time": 1764184203.6234658,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 2,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0034",
+      "workflow_type": "text2video",
+      "start_time": 1764184204.6221745,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 3,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0035",
+      "workflow_type": "text2video",
+      "start_time": 1764184205.6189818,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 5,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0036",
+      "workflow_type": "text2video",
+      "start_time": 1764184209.6196103,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 4,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0037",
+      "workflow_type": "text2video",
+      "start_time": 1764184213.6184819,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 5,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0038",
+      "workflow_type": "text2video",
+      "start_time": 1764184214.6182723,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 4,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0039",
+      "workflow_type": "text2video",
+      "start_time": 1764184215.6178463,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 4,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0040",
+      "workflow_type": "text2video",
+      "start_time": 1764184216.6176918,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 3,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0041",
+      "workflow_type": "text2video",
+      "start_time": 1764184217.6185682,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 4,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0042",
+      "workflow_type": "text2video",
+      "start_time": 1764184218.6181726,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 4,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0043",
+      "workflow_type": "text2video",
+      "start_time": 1764184219.6179285,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 4,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0044",
+      "workflow_type": "text2video",
+      "start_time": 1764184220.6173117,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 2,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0045",
+      "workflow_type": "text2video",
+      "start_time": 1764184221.6167376,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 2,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0046",
+      "workflow_type": "text2video",
+      "start_time": 1764184222.6159773,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 4,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0047",
+      "workflow_type": "text2video",
+      "start_time": 1764184223.6163397,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 2,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0048",
+      "workflow_type": "text2video",
+      "start_time": 1764184224.6164443,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 4,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0049",
+      "workflow_type": "text2video",
+      "start_time": 1764184227.618668,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 4,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0050",
+      "workflow_type": "text2video",
+      "start_time": 1764184228.6192243,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 4,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0051",
+      "workflow_type": "text2video",
+      "start_time": 1764184229.6188934,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 3,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0052",
+      "workflow_type": "text2video",
+      "start_time": 1764184230.61839,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 2,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0053",
+      "workflow_type": "text2video",
+      "start_time": 1764184231.6180298,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 4,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0054",
+      "workflow_type": "text2video",
+      "start_time": 1764184232.617244,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 4,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0055",
+      "workflow_type": "text2video",
+      "start_time": 1764184233.61736,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 4,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0056",
+      "workflow_type": "text2video",
+      "start_time": 1764184237.6173959,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 2,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0057",
+      "workflow_type": "text2video",
+      "start_time": 1764184238.617648,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 2,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0058",
+      "workflow_type": "text2video",
+      "start_time": 1764184239.617489,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 4,
+        "strategy": "probabilistic"
+      }
+    },
+    {
+      "workflow_id": "workflow-0059",
+      "workflow_type": "text2video",
+      "start_time": 1764184248.6200674,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "max_b_loops": 2,
+        "strategy": "probabilistic"
+      }
+    }
+  ]
+}

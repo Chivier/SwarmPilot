@@ -350,7 +350,19 @@ def run_single_experiment(config, captions, logger, strategy_name=None):
     output_dir = Path(config.output_dir)
     ensure_directory(str(output_dir))
 
-    metrics_path = output_dir / config.metrics_file
+    # Generate strategy-specific metrics filename to prevent overwriting
+    base_metrics_file = config.metrics_file
+    if strategy_name:
+        # Insert strategy name before extension: metrics.json -> metrics_probabilistic.json
+        if '.' in base_metrics_file:
+            name, ext = base_metrics_file.rsplit('.', 1)
+            metrics_filename = f"{name}_{strategy_name}.{ext}"
+        else:
+            metrics_filename = f"{base_metrics_file}_{strategy_name}"
+    else:
+        metrics_filename = base_metrics_file
+
+    metrics_path = output_dir / metrics_filename
     logger.info(f"\nExporting metrics to: {metrics_path}")
 
     # Export to JSON (with portion_stats filtering)
