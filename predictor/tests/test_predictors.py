@@ -301,6 +301,101 @@ class TestQuantilePredictor:
                     f"Monotonicity violated even with enforce_monotonicity=True: {values}"
 
 
+class TestConstantFeatureFiltering:
+    """Test automatic constant feature filtering."""
+
+    def test_constant_features_are_filtered(self):
+        """Should automatically filter out constant features during training."""
+        predictor = QuantilePredictor()
+
+        # Create data with constant features (same value across all samples)
+        training_data = []
+        for i in range(20):
+            training_data.append({
+                'constant_feature': 100,  # Same value - should be filtered
+                'another_constant': 50,   # Same value - should be filtered
+                'varying_feature': 16 + i,  # Varies - should be kept
+                'runtime_ms': 100 + i * 2
+            })
+
+        metadata = predictor.train(training_data, config={'epochs': 100})
+
+        # Verify constant features were removed
+        assert 'constant_feature' not in metadata['feature_names']
+        assert 'another_constant' not in metadata['feature_names']
+        assert 'varying_feature' in metadata['feature_names']
+
+        # Verify removed features are tracked
+        assert 'constant_feature' in metadata['removed_features']
+        assert 'another_constant' in metadata['removed_features']
+
+    def test_predict_with_full_feature_set(self):
+        """Should accept full feature set and automatically filter constants."""
+        predictor = QuantilePredictor()
+
+        training_data = []
+        for i in range(20):
+            training_data.append({
+                'constant_feature': 100,
+                'varying_feature': 16 + i,
+                'runtime_ms': 100 + i * 2
+            })
+
+        predictor.train(training_data, config={'epochs': 100})
+
+        # Predict with full feature set (including constant)
+        result = predictor.predict({
+            'constant_feature': 100,  # Will be auto-filtered
+            'varying_feature': 25
+        })
+
+        assert 'quantiles' in result
+        assert '0.5' in result['quantiles']
+
+    def test_serialization_preserves_removed_features(self):
+        """Should preserve removed features info through serialization."""
+        predictor1 = QuantilePredictor()
+
+        training_data = []
+        for i in range(20):
+            training_data.append({
+                'constant_feature': 100,
+                'varying_feature': 16 + i,
+                'runtime_ms': 100 + i * 2
+            })
+
+        predictor1.train(training_data, config={'epochs': 100})
+
+        # Serialize and deserialize
+        state = predictor1.get_model_state()
+        predictor2 = QuantilePredictor()
+        predictor2.load_model_state(state)
+
+        # Verify removed_features preserved
+        assert predictor2.removed_features == predictor1.removed_features
+        assert 'constant_feature' in predictor2.removed_features
+
+        # Verify prediction still works with full feature set
+        result = predictor2.predict({
+            'constant_feature': 100,
+            'varying_feature': 25
+        })
+        assert 'quantiles' in result
+
+    def test_all_constant_features_raises_error(self):
+        """Should raise error if all features are constant."""
+        predictor = QuantilePredictor()
+
+        # All features are constant
+        training_data = [
+            {'constant1': 100, 'constant2': 50, 'runtime_ms': 100 + i}
+            for i in range(20)
+        ]
+
+        with pytest.raises(ValueError, match="No valid features remaining"):
+            predictor.train(training_data, config={'epochs': 100})
+
+
 class TestFeatureValidation:
     """Test feature validation across predictors."""
 

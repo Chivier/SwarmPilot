@@ -169,7 +169,8 @@ class QuantilePredictor(BasePredictor):
         """Initialize the predictor."""
         self.model = None
         self.transform = None  # BaseDeltaTransform for converting MLP output
-        self.feature_names = None
+        self.feature_names = None  # Features actually used by model (after filtering)
+        self.removed_features = None  # Constant features removed during training
         self.quantiles = None
         self.feature_mean = None
         self.feature_std = None
@@ -207,7 +208,23 @@ class QuantilePredictor(BasePredictor):
             )
 
         # Extract features and labels
-        X, y, feature_names = self.extract_features_and_labels(features_list)
+        X, y, all_feature_names = self.extract_features_and_labels(features_list)
+
+        # Filter out constant features (zero variance)
+        # Constant features provide no predictive value and cause numerical issues
+        X, feature_names, self.removed_features = self.filter_constant_features(
+            X, all_feature_names
+        )
+
+        if self.removed_features:
+            print(f"Filtered {len(self.removed_features)} constant features: {self.removed_features}")
+
+        if not feature_names:
+            raise ValueError(
+                "No valid features remaining after filtering constant features. "
+                f"All features were constant: {all_feature_names}"
+            )
+
         self.feature_names = feature_names
 
         # Convert to numpy arrays
@@ -284,6 +301,7 @@ class QuantilePredictor(BasePredictor):
 
         return {
             'feature_names': self.feature_names,
+            'removed_features': self.removed_features,
             'samples_count': len(features_list),
             'quantiles': self.quantiles,
             'final_loss': float(loss.item())
@@ -316,8 +334,11 @@ class QuantilePredictor(BasePredictor):
         """
         Make a prediction for the given features.
 
+        Automatically filters out constant features that were removed during training.
+        Users can provide the full feature set - constant features will be ignored.
+
         Args:
-            features: Feature dictionary
+            features: Feature dictionary (may include constant features that will be filtered)
             enforce_monotonicity: If True, applies post-processing to strictly enforce
                 monotonic ordering of quantiles (default: False). Use this when you need
                 guaranteed monotonicity regardless of training configuration.
@@ -326,16 +347,22 @@ class QuantilePredictor(BasePredictor):
             Dict with 'quantiles' key containing dict of quantile: value pairs
 
         Raises:
-            ValueError: If model not trained or features invalid
+            ValueError: If model not trained or required features missing
         """
         if self.model is None:
             raise ValueError("Model not trained. Call train() first.")
 
-        # Validate features
-        self.validate_features(features, self.feature_names)
+        # Filter out constant features that were removed during training
+        # This allows users to pass the full feature set without manual filtering
+        filtered_features = self.filter_features_for_prediction(
+            features, self.feature_names
+        )
+
+        # Validate that all required (non-constant) features are present
+        self.validate_features(filtered_features, self.feature_names)
 
         # Extract feature values in correct order
-        feature_values = [features[fname] for fname in self.feature_names]
+        feature_values = [filtered_features[fname] for fname in self.feature_names]
         X = np.array([feature_values], dtype=np.float32)
 
         # Normalize using training statistics
@@ -383,6 +410,7 @@ class QuantilePredictor(BasePredictor):
             'model_config': self.model.get_config(),
             'model_state_dict': self.model.state_dict(),
             'feature_names': self.feature_names,
+            'removed_features': self.removed_features or [],  # Constant features filtered during training
             'quantiles': self.quantiles,
             'feature_mean': self.feature_mean.tolist(),
             'feature_std': self.feature_std.tolist(),
@@ -411,7 +439,10 @@ class QuantilePredictor(BasePredictor):
         self.target_mean = state['target_mean']
         self.target_std = state['target_std']
 
-        # Restore delta_scale (with backward compatibility for old models)
+        # Restore removed_features (backward compatible with old models)
+        self.removed_features = state.get('removed_features', [])
+
+        # Restore delta_scale (backward compatible with old models)
         self.delta_scale = state.get('delta_scale', 1.0)
 
         # Recreate transform with correct parameters

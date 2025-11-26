@@ -139,3 +139,64 @@ class BasePredictor(ABC):
             X.append(feature_values)
 
         return X, y, feature_names
+
+    def filter_constant_features(
+        self, X: List[List[Any]], feature_names: List[str]
+    ) -> tuple:
+        """
+        Filter out constant features (features with zero variance).
+
+        Constant features provide no predictive value and can cause numerical
+        issues during normalization (division by zero or near-zero std).
+
+        Args:
+            X: Feature matrix as list of lists
+            feature_names: Ordered list of feature names
+
+        Returns:
+            Tuple of (filtered_X, filtered_feature_names, removed_features) where:
+                filtered_X: Feature matrix with constant features removed
+                filtered_feature_names: Feature names after filtering
+                removed_features: List of feature names that were removed
+        """
+        if not X or not feature_names:
+            return X, feature_names, []
+
+        num_features = len(feature_names)
+        removed_features = []
+        keep_indices = []
+
+        # Check each feature for variance
+        for i in range(num_features):
+            values = [row[i] for row in X]
+            unique_values = set(values)
+
+            if len(unique_values) <= 1:
+                # Constant feature (0 or 1 unique value)
+                removed_features.append(feature_names[i])
+            else:
+                keep_indices.append(i)
+
+        # Filter X and feature_names
+        filtered_feature_names = [feature_names[i] for i in keep_indices]
+        filtered_X = [[row[i] for i in keep_indices] for row in X]
+
+        return filtered_X, filtered_feature_names, removed_features
+
+    def filter_features_for_prediction(
+        self, features: Dict[str, Any], valid_feature_names: List[str]
+    ) -> Dict[str, Any]:
+        """
+        Filter input features to only include valid (non-constant) features.
+
+        Used during prediction to automatically remove features that were
+        identified as constant during training.
+
+        Args:
+            features: Full feature dictionary from user
+            valid_feature_names: List of feature names that should be kept
+
+        Returns:
+            Filtered feature dictionary containing only valid features
+        """
+        return {k: v for k, v in features.items() if k in valid_feature_names}
