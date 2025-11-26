@@ -287,7 +287,8 @@ class BaseTaskReceiver(threading.Thread, ABC):
                 # Send subscription message
                 subscribe_msg = self._get_subscription_payload()
                 await websocket.send(json.dumps(subscribe_msg))
-                self.logger.info(f"Sent subscription request: {subscribe_msg}")
+                # Following line is for debug purpose only
+                # self.logger.info(f"Sent subscription request: {subscribe_msg}")
 
                 # Wait for acknowledgment
                 try:
