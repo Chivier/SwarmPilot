@@ -38,6 +38,14 @@ from .utils import (
     setup_scheduler_strategies,
     clear_scheduler_tasks
 )
+from .cli_utils import (
+    VALID_STRATEGIES,
+    DEFAULT_STRATEGIES,
+    parse_strategies,
+    create_base_parser,
+    add_type1_args,
+    add_type2_args,
+)
 
 __version__ = "0.1.0"
 
@@ -80,4 +88,11 @@ __all__ = [
     # Result extraction utilities
     "extract_task_result",
     "extract_workflow_id_from_task_id",
+    # CLI utilities
+    "VALID_STRATEGIES",
+    "DEFAULT_STRATEGIES",
+    "parse_strategies",
+    "create_base_parser",
+    "add_type1_args",
+    "add_type2_args",
 ]

@@ -22,20 +22,15 @@ Architecture:
 - Thread 8: Merge receiver
 
 Usage:
-    # Set mode to real
-    export MODE=real
-    export QPS=1.0
-    export NUM_WORKFLOWS=100
-    export FANOUT_COUNT=3
-
-    # Run experiment
-    python test_workflow_real.py
+    python -m type2_deep_research.real.test_workflow_real \\
+        --num-workflows 50 --qps 2.0 --fanout 4 --strategies min_time,probabilistic --duration 300
 """
 
 import sys
 import threading
 import time
 from pathlib import Path
+from queue import Queue
 
 # Add parent directories to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -44,7 +39,12 @@ from common import (
     configure_logging,
     MetricsCollector,
     RateLimiter,
-    ensure_directory
+    ensure_directory,
+    setup_scheduler_strategies,
+    clear_scheduler_tasks,
+    create_base_parser,
+    add_type2_args,
+    parse_strategies,
 )
 from type2_deep_research.config import DeepResearchConfig
 from type2_deep_research.submitters import (
@@ -59,48 +59,24 @@ from type2_deep_research.receivers import (
     B2TaskReceiver,
     MergeTaskReceiver
 )
-from queue import Queue
 
 
-def main():
-    # Load configuration (mode=real)
-    config = DeepResearchConfig.from_env()
+def run_single_experiment(config, logger, strategy_name=None):
+    """Run a single experiment with the given configuration."""
 
-    # Ensure mode is set to real (overrides any environment variable)
-    config.mode = "real"
-    # Ensure model IDs are set for real mode
-    config.model_a_id = "llm_service_small_model"
-    config.model_b_id = "llm_service_small_model"
-    config.model_merge_id = "llm_service_small_model"
+    # Update config.strategy if strategy_name is provided
+    if strategy_name:
+        config.strategy = strategy_name
 
-    # Setup logging
-    logger = configure_logging(level="INFO")
-    logger.info(f"Mode: {config.mode} (forced for real test)")
-    logger.info(f"Model A: {config.model_a_id}")
-    logger.info(f"Model B: {config.model_b_id}")
-    logger.info(f"Model Merge: {config.model_merge_id}")
-
-    # Clear all tasks from schedulers before starting experiment
-    from common import clear_scheduler_tasks
-    logger.info("Clearing all tasks from schedulers before experiment...")
-    clear_scheduler_tasks(config.scheduler_a_url, logger)
-    if config.scheduler_b_url and config.scheduler_b_url != config.scheduler_a_url:
-        clear_scheduler_tasks(config.scheduler_b_url, logger)
-    logger.info("Task clearing complete")
     logger.info("=" * 80)
-    logger.info("Deep Research Workflow - Real Cluster Mode")
+    logger.info(f"Deep Research Workflow - Real Cluster Mode - Strategy: {strategy_name or 'default'}")
     logger.info("=" * 80)
-    logger.info(f"Mode: {config.mode}")
     logger.info(f"QPS: {config.qps}")
     logger.info(f"Duration: {config.duration}s")
     logger.info(f"Workflows: {config.num_workflows}")
     logger.info(f"Fanout count: {config.fanout_count}")
-    logger.info(f"Model A: {config.model_a_id}")
-    logger.info(f"Model B: {config.model_b_id}")
-    logger.info(f"Model Merge: {config.model_merge_id}")
     logger.info(f"Scheduler A: {config.scheduler_a_url}")
     logger.info(f"Scheduler B: {config.scheduler_b_url}")
-    logger.info(f"Max tokens: {config.max_tokens}")
 
     # Initialize components
     metrics = MetricsCollector(logger)
@@ -112,6 +88,38 @@ def main():
     a_result_queue = Queue()
     b1_result_queue = Queue()
     merge_trigger_queue = Queue()
+
+    # Pre-generate task IDs for receivers
+    strategy = getattr(config, 'strategy', 'probabilistic')
+
+    # A task IDs (one per workflow)
+    a_task_ids = [
+        f"task-A-{strategy}-workflow-{i:04d}"
+        for i in range(config.num_workflows)
+    ]
+
+    # B1 task IDs (fanout_count per workflow)
+    b1_task_ids = [
+        f"task-B1-{strategy}-workflow-{i:04d}-{j}"
+        for i in range(config.num_workflows)
+        for j in range(config.fanout_count)
+    ]
+
+    # B2 task IDs (fanout_count per workflow)
+    b2_task_ids = [
+        f"task-B2-{strategy}-workflow-{i:04d}-{j}"
+        for i in range(config.num_workflows)
+        for j in range(config.fanout_count)
+    ]
+
+    # Merge task IDs (one per workflow)
+    merge_task_ids = [
+        f"task-merge-{strategy}-workflow-{i:04d}"
+        for i in range(config.num_workflows)
+    ]
+
+    logger.info(f"Pre-generated {len(a_task_ids)} A, {len(b1_task_ids)} B1, "
+                f"{len(b2_task_ids)} B2, {len(merge_task_ids)} Merge task IDs")
 
     # Create submitters
     a_submitter = ATaskSubmitter(
@@ -160,38 +168,6 @@ def main():
         metrics=metrics,
         custom_logger=logger
     )
-
-    # Pre-generate task IDs for receivers
-    strategy = getattr(config, 'strategy', 'probabilistic')
-
-    # A task IDs (one per workflow)
-    a_task_ids = [
-        f"task-A-{strategy}-workflow-{i:04d}"
-        for i in range(config.num_workflows)
-    ]
-
-    # B1 task IDs (fanout_count per workflow)
-    b1_task_ids = [
-        f"task-B1-{strategy}-workflow-{i:04d}-{j}"
-        for i in range(config.num_workflows)
-        for j in range(config.fanout_count)
-    ]
-
-    # B2 task IDs (fanout_count per workflow)
-    b2_task_ids = [
-        f"task-B2-{strategy}-workflow-{i:04d}-{j}"
-        for i in range(config.num_workflows)
-        for j in range(config.fanout_count)
-    ]
-
-    # Merge task IDs (one per workflow)
-    merge_task_ids = [
-        f"task-merge-{strategy}-workflow-{i:04d}"
-        for i in range(config.num_workflows)
-    ]
-
-    logger.info(f"Pre-generated {len(a_task_ids)} A, {len(b1_task_ids)} B1, "
-                f"{len(b2_task_ids)} B2, {len(merge_task_ids)} Merge task IDs")
 
     # Create receivers
     a_receiver = ATaskReceiver(
@@ -266,7 +242,6 @@ def main():
         while time.time() - start_time < config.duration:
             time.sleep(10)
 
-            # Log progress
             with state_lock:
                 completed = merge_receiver.completed_workflows
                 total = config.num_workflows
@@ -278,7 +253,6 @@ def main():
                     f"Elapsed: {time.time() - start_time:.1f}s"
                 )
 
-                # Early exit if all workflows complete
                 if completed >= total:
                     logger.info("All workflows completed! Stopping early.")
                     break
@@ -319,14 +293,127 @@ def main():
     logger.info(f"Completed workflows: {completed_workflows}/{config.num_workflows}")
     logger.info(f"Completion rate: {completed_workflows / config.num_workflows * 100:.1f}%")
 
-    # Export metrics
+    # Export metrics (with portion_stats filtering)
     output_dir = ensure_directory(config.output_dir)
     metrics_file = output_dir / config.metrics_file
-    metrics.export_to_json(str(metrics_file))
+    metrics.export_to_json(str(metrics_file), portion_stats=config.portion_stats)
     logger.info(f"Metrics exported to: {metrics_file}")
 
-    # Print metrics report
-    print("\n" + metrics.generate_text_report())
+    # Print metrics report (with portion_stats filtering)
+    print("\n" + metrics.generate_text_report(portion_stats=config.portion_stats))
+
+
+def main():
+    """Main entry point - handles strategy management and experiment orchestration."""
+
+    # ========================================================================
+    # Parse Command Line Arguments
+    # ========================================================================
+
+    parser = create_base_parser(description="Deep Research Workflow - Real Cluster Mode")
+    parser = add_type2_args(parser)
+    args = parser.parse_args()
+
+    # Parse and validate strategies
+    try:
+        strategies = parse_strategies(args.strategies)
+    except ValueError as e:
+        print(f"Error: {e}")
+        sys.exit(1)
+
+    # ========================================================================
+    # Configuration and Setup
+    # ========================================================================
+
+    # Compute warmup count from ratio
+    # warmup_count = num_workflows * warmup_ratio
+    warmup_count = int(args.num_workflows * args.warmup)
+
+    # Create config with hardcoded real mode
+    config = DeepResearchConfig(
+        mode="real",  # Hardcoded for real cluster
+        qps=args.qps,
+        duration=args.duration,
+        num_workflows=args.num_workflows,
+        fanout_count=args.fanout,
+        fanout_config=args.fanout_config,
+        fanout_seed=args.fanout_seed,
+        num_warmup=warmup_count,
+        strategies=strategies,
+        portion_stats=args.portion_stats,
+    )
+
+    logger = configure_logging(level="INFO")
+
+    logger.info(f"Mode: {config.mode} (hardcoded for real cluster)")
+    logger.info(f"Model A: {config.model_a_id}")
+    logger.info(f"Model B: {config.model_b_id}")
+    logger.info(f"Model Merge: {config.model_merge_id}")
+    logger.info(f"Scheduler A: {config.scheduler_a_url}")
+    logger.info(f"Scheduler B: {config.scheduler_b_url}")
+
+    # Log fanout distribution info
+    fanout_info = config.get_fanout_config_info()
+    logger.info(f"Fanout distribution: type={fanout_info['type']}")
+    if fanout_info['type'] != 'static':
+        logger.info(f"Fanout config details: {fanout_info}")
+
+    # ========================================================================
+    # Strategy Management
+    # ========================================================================
+
+    logger.info("=" * 70)
+    logger.info("Strategy-based Testing Mode")
+    logger.info(f"Will test {len(strategies)} strategies: {', '.join(strategies)}")
+    logger.info("=" * 70)
+
+    # Set default quantiles if not specified
+    quantiles = config.quantiles if config.quantiles else [0.1, 0.25, 0.5, 0.75, 0.99]
+
+    # Run experiment for each strategy
+    for strategy_name in strategies:
+        logger.info("\n" + "=" * 70)
+        logger.info(f"Setting up strategy: {strategy_name}")
+        logger.info("=" * 70)
+
+        # Clear all tasks from schedulers before each strategy test
+        logger.info("Clearing scheduler task queues...")
+        if not clear_scheduler_tasks(config.scheduler_a_url, logger):
+            logger.error("Failed to clear Scheduler A tasks, skipping strategy")
+            continue
+        if config.scheduler_b_url and config.scheduler_b_url != config.scheduler_a_url:
+            if not clear_scheduler_tasks(config.scheduler_b_url, logger):
+                logger.error("Failed to clear Scheduler B tasks, skipping strategy")
+                continue
+
+        # Setup this strategy on schedulers
+        strategy_results = setup_scheduler_strategies(
+            strategy_name=strategy_name,
+            scheduler_a_url=config.scheduler_a_url,
+            scheduler_b_url=config.scheduler_b_url,
+            target_quantile=config.target_quantile,
+            quantiles=quantiles,
+            custom_logger=logger
+        )
+
+        if not strategy_results.get(strategy_name, False):
+            logger.error(f"Failed to setup strategy: {strategy_name}")
+            logger.error("Skipping this strategy")
+            continue
+
+        logger.info(f"Strategy {strategy_name} set up successfully")
+
+        # Run the experiment
+        logger.info("\n" + "=" * 70)
+        logger.info(f"Running experiment with strategy: {strategy_name}")
+        logger.info("=" * 70)
+        run_single_experiment(config, logger, strategy_name=strategy_name)
+
+        logger.info(f"\nCompleted experiment for strategy: {strategy_name}")
+
+    logger.info("\n" + "=" * 70)
+    logger.info("All strategy experiments completed!")
+    logger.info("=" * 70)
 
 
 if __name__ == "__main__":

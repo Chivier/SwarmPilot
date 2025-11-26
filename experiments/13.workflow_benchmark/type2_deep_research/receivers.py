@@ -103,6 +103,14 @@ class ATaskReceiver(BaseTaskReceiver):
                     ]
 
                     fanout_count = workflow_data.fanout_count
+
+                    # Record task completion in metrics
+                    if self.metrics:
+                        a_task_id = f"task-A-{workflow_data.strategy}-workflow-{workflow_num}"
+                        self.metrics.record_task_complete(
+                            task_id=a_task_id,
+                            success=True
+                        )
                 else:
                     self.logger.warning(f"Workflow {workflow_id} not found in state")
                     return
@@ -220,6 +228,13 @@ class B1TaskReceiver(BaseTaskReceiver):
                         workflow_data.b2_submit_times[b_index] = time.time()
                     else:
                         workflow_data.b2_submit_times.append(time.time())
+
+                    # Record task completion in metrics
+                    if self.metrics:
+                        self.metrics.record_task_complete(
+                            task_id=task_id,
+                            success=True
+                        )
                 else:
                     self.logger.warning(f"Workflow {workflow_id} not found in state")
                     return
@@ -317,6 +332,13 @@ class B2TaskReceiver(BaseTaskReceiver):
                 # Record completion time
                 workflow_data.b2_complete_times[task_id] = complete_time
 
+                # Record task completion in metrics
+                if self.metrics:
+                    self.metrics.record_task_complete(
+                        task_id=task_id,
+                        success=True
+                    )
+
                 # Check if all B2 tasks complete
                 if workflow_data.all_b2_complete():
                     should_trigger_merge = True
@@ -410,6 +432,15 @@ class MergeTaskReceiver(BaseTaskReceiver):
                     workflow_data.merge_complete_time = complete_time
                     workflow_data.workflow_complete_time = complete_time
                     self.completed_workflows += 1
+
+                    # Record merge task completion in metrics
+                    workflow_num = workflow_id.split('-')[-1]
+                    merge_task_id = f"task-merge-{workflow_data.strategy}-workflow-{workflow_num}"
+                    if self.metrics:
+                        self.metrics.record_task_complete(
+                            task_id=merge_task_id,
+                            success=True
+                        )
 
                     # Record workflow completion in metrics
                     if self.metrics:

@@ -193,6 +193,34 @@ fi
 
 sleep 10
 
+# 仅当本机IP不是 SCHEDULER_B_HOST、SCHEDULER_A_HOST、PREDICTOR_HOST 和 CLIENT_HOST 任意一个时，启动instance
+if [[ "$LOCAL_IP" != "$SCHEDULER_B_HOST" ]] && \
+   [[ "$LOCAL_IP" != "$SCHEDULER_A_HOST" ]] && \
+   [[ "$LOCAL_IP" != "$PREDICTOR_HOST" ]] && \
+   [[ "$LOCAL_IP" != "$CLIENT_HOST" ]]; then
+  for i in {0..7}; do
+    INSTANCE_PORT=${INSTANCE_PORT_LIST[$i]}
+    GPU_ID=${GPU_BIND_ID_LIST[$i]}
+    CPU_RANGE=$(get_cpu_range $i)
+
+    start_bg "instance_${MODEL_ID}_gpu${GPU_ID}_port${INSTANCE_PORT}" \
+      "cd $PROJECT_ROOT/instance && \
+       MODEL_ID=$MODEL_ID \
+       CUDA_VISIBLE_DEVICES=${GPU_ID} \
+       MASTER_PORT=$((INSTANCE_PORT + 20000)) \
+       INSTANCE_PLATFORM_SOFTWARE_NAME=sglang \
+       INSTANCE_PLATFORM_SOFTWARE_VERSION=\"0.5.5.post2\" \
+       INSTANCE_PLATFORM_HARDWARE_NAME=\"NVIDIA H20\" \
+       INSTANCE_PORT=${INSTANCE_PORT} \
+       INSTANCE_ENDPOINT=http://${LOCAL_IP}:${INSTANCE_PORT} \
+       INSTANCE_ID=${LOCAL_IP}-${INSTANCE_PORT} \
+       python -m src.cli start --port ${INSTANCE_PORT}" \
+      "$CPU_RANGE"
+  done
+fi
+
+sleep 5
+
 # Health Checks
 echo -e "${BLUE}Performing Health Checks...${NC}"
 
@@ -208,6 +236,20 @@ if [[ "$LOCAL_IP" == "$PREDICTOR_HOST" ]]; then
 fi
 if [[ "$LOCAL_IP" == "$PLANNER_HOST" ]]; then
     curl -s http://$PLANNER_HOST:$PLANNER_PORT/health >/dev/null && echo -e "${GREEN}Planner Healthy${NC}" || echo -e "${RED}Planner Unhealthy${NC}"
+fi
+
+# Check instance if running locally
+if [[ "$LOCAL_IP" != "$SCHEDULER_B_HOST" ]] && \
+   [[ "$LOCAL_IP" != "$SCHEDULER_A_HOST" ]] && \
+   [[ "$LOCAL_IP" != "$PREDICTOR_HOST" ]] && \
+   [[ "$LOCAL_IP" != "$CLIENT_HOST" ]]; then
+  for i in {0..7}; do
+    INSTANCE_PORT=${INSTANCE_PORT_LIST[$i]}
+    GPU_ID=${GPU_BIND_ID_LIST[$i]}
+    CPU_RANGE=$(get_cpu_range $i)
+
+    curl -s http://$LOCAL_IP:$INSTANCE_PORT/health >/dev/null && echo -e "${GREEN}Instance ${LOCAL_IP}-${INSTANCE_PORT} Healthy${NC}" || echo -e "${RED}Instance ${LOCAL_IP}-${INSTANCE_PORT} Unhealthy${NC}"
+  done
 fi
 
 echo ""

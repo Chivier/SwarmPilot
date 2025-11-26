@@ -153,7 +153,17 @@ class A1TaskSubmitter(BaseTaskSubmitter):
             self.metrics.record_workflow_start(
                 workflow_id=task_data.workflow_id,
                 workflow_type="text2video",
-                metadata={"max_b_loops": task_data.max_b_loops, "strategy": task_data.strategy}
+                metadata={"max_b_loops": task_data.max_b_loops, "strategy": task_data.strategy},
+                is_warmup=task_data.is_warmup
+            )
+
+            # Record task submission in metrics
+            workflow_num = task_data.workflow_id.split('-')[-1]
+            task_id = f"task-A1-{task_data.strategy}-workflow-{workflow_num}"
+            self.metrics.record_task_submit(
+                task_id=task_id,
+                workflow_id=task_data.workflow_id,
+                task_type="A1"
             )
 
         # Set submit time BEFORE submission
@@ -292,6 +302,20 @@ class A2TaskSubmitter(BaseTaskSubmitter):
         Returns:
             True if submission succeeded, False otherwise
         """
+        # Record task submission in metrics before submission
+        if self.metrics and isinstance(task_data, tuple):
+            workflow_id = task_data[0]
+            with self.state_lock:
+                workflow_data = self.workflow_states.get(workflow_id)
+                if workflow_data:
+                    workflow_num = workflow_id.split('-')[-1]
+                    task_id = f"task-A2-{workflow_data.strategy}-workflow-{workflow_num}"
+                    self.metrics.record_task_submit(
+                        task_id=task_id,
+                        workflow_id=workflow_id,
+                        task_type="A2"
+                    )
+
         # Set submit time BEFORE submission
         submit_time = time.time()
 
@@ -450,6 +474,20 @@ class BTaskSubmitter(BaseTaskSubmitter):
         Returns:
             True if submission succeeded, False otherwise
         """
+        # Record task submission in metrics before submission
+        if self.metrics and isinstance(task_data, tuple):
+            workflow_id, a2_result, loop_iteration = task_data
+            with self.state_lock:
+                workflow_data = self.workflow_states.get(workflow_id)
+                if workflow_data:
+                    workflow_num = workflow_id.split('-')[-1]
+                    task_id = f"task-B{loop_iteration}-{workflow_data.strategy}-workflow-{workflow_num}"
+                    self.metrics.record_task_submit(
+                        task_id=task_id,
+                        workflow_id=workflow_id,
+                        task_type="B"
+                    )
+
         # Set submit time BEFORE submission
         submit_time = time.time()
 

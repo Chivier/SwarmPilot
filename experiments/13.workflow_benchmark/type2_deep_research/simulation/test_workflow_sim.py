@@ -21,18 +21,16 @@ Workflow Pattern:
 - Merge: Aggregation (synchronization point)
 
 Usage:
-    python -m type2_deep_research.simulation.test_workflow_sim --help
+    python -m type2_deep_research.simulation.test_workflow_sim \\
+        --num-workflows 50 --qps 2.0 --fanout 4 --strategies min_time,probabilistic --duration 300
 """
 
 import sys
 import threading
 import time
-import argparse
 import json
-import os
 import numpy as np
 from datetime import datetime
-from dataclasses import asdict
 from pathlib import Path
 from queue import Queue
 from typing import Dict, List, Any
@@ -46,6 +44,10 @@ from common import (
     RateLimiter,
     ensure_directory,
     setup_scheduler_strategies,
+    clear_scheduler_tasks,
+    create_base_parser,
+    add_type2_args,
+    parse_strategies,
 )
 from type2_deep_research.config import DeepResearchConfig
 from type2_deep_research.submitters import (
@@ -62,28 +64,35 @@ from type2_deep_research.receivers import (
 )
 
 
-def calculate_task_metrics_from_collector(collector: MetricsCollector, task_type: str, workflow_states: Dict) -> Dict:
+def calculate_task_metrics_from_collector(collector: MetricsCollector, task_type: str, workflow_states: Dict, portion_stats: float = 1.0) -> Dict:
     """
     Calculate metrics for a specific task type from the collector.
-    
+
     Args:
         collector: MetricsCollector instance
         task_type: Task type string ("A", "B1", "B2", "merge")
         workflow_states: Dictionary of workflow states to check for warmup status
-        
+        portion_stats: Portion of non-warmup workflows to include (0.0-1.0)
+
     Returns:
         Dictionary of metrics
     """
     # Filter tasks by type
     # Note: MetricsCollector stores task_type as passed during record_task_submit
     # The submitters use "A", "B1", "B2", "merge"
-    
+
     all_tasks = [t for t in collector.task_metrics if t.task_type == task_type]
-    
-    # Separate warmup and actual tasks
+
+    # Get included workflow IDs based on portion_stats
+    # Use collector's _non_warmup_workflow_order for submission order
+    total_non_warmup = len(collector._non_warmup_workflow_order)
+    num_to_include = int(total_non_warmup * portion_stats)
+    included_workflow_ids = set(collector._non_warmup_workflow_order[:num_to_include])
+
+    # Separate warmup, included, and excluded tasks
     actual_tasks = []
     warmup_tasks = []
-    
+
     for t in all_tasks:
         # Check if workflow is warmup
         wf_state = workflow_states.get(t.workflow_id)
@@ -91,10 +100,11 @@ def calculate_task_metrics_from_collector(collector: MetricsCollector, task_type
         if wf_state:
             # DeepResearchWorkflowData has is_warmup attribute
             is_warmup = getattr(wf_state, 'is_warmup', False)
-            
+
         if is_warmup:
             warmup_tasks.append(t)
-        else:
+        elif t.workflow_id in included_workflow_ids:
+            # Only include tasks from workflows within portion_stats
             actual_tasks.append(t)
             
     # Calculate stats for actual tasks
@@ -140,33 +150,42 @@ def calculate_task_metrics_from_collector(collector: MetricsCollector, task_type
     }
 
 
-def calculate_workflow_metrics_from_collector(collector: MetricsCollector, workflow_states: Dict) -> Dict:
+def calculate_workflow_metrics_from_collector(collector: MetricsCollector, workflow_states: Dict, portion_stats: float = 1.0) -> Dict:
     """
     Calculate workflow-level metrics from the collector.
-    
+
     Args:
         collector: MetricsCollector instance
         workflow_states: Dictionary of workflow states
-        
+        portion_stats: Portion of non-warmup workflows to include (0.0-1.0)
+
     Returns:
         Dictionary of workflow metrics
     """
     all_workflows = collector.workflow_metrics
-    
+
+    # Get included workflow IDs based on portion_stats
+    total_non_warmup = len(collector._non_warmup_workflow_order)
+    num_to_include = int(total_non_warmup * portion_stats)
+    included_workflow_ids = set(collector._non_warmup_workflow_order[:num_to_include])
+
     actual_workflows = []
     warmup_workflows = []
-    
+    excluded_by_portion = 0
+
     for w in all_workflows:
         # Check if workflow is warmup
         wf_state = workflow_states.get(w.workflow_id)
         is_warmup = False
         if wf_state:
             is_warmup = getattr(wf_state, 'is_warmup', False)
-            
+
         if is_warmup:
             warmup_workflows.append(w)
-        else:
+        elif w.workflow_id in included_workflow_ids:
             actual_workflows.append(w)
+        else:
+            excluded_by_portion += 1
             
     completed_workflows = [w for w in actual_workflows if w.end_time is not None]
     
@@ -205,7 +224,7 @@ def calculate_workflow_metrics_from_collector(collector: MetricsCollector, workf
     return {
         "num_completed": len(completed_workflows),
         "num_warmup": len(warmup_workflows),
-        "num_excluded": 0, # Not strictly tracking excluded in this simple version
+        "num_excluded": excluded_by_portion,  # Workflows excluded by portion_stats
         "workflow_times": workflow_times,
         "avg_workflow_time": avg_workflow,
         "median_workflow_time": median_workflow,
@@ -371,6 +390,7 @@ def run_single_experiment(config, logger, strategy_name=None):
         a_result_queue=a_result_queue,
         scheduler_url=config.scheduler_b_url,
         rate_limiter=rate_limiter,
+        metrics=metrics,
     )
 
     # B2 Submitter (Thread 5)
@@ -382,6 +402,7 @@ def run_single_experiment(config, logger, strategy_name=None):
         b1_result_queue=b1_result_queue,
         scheduler_url=config.scheduler_b_url,
         rate_limiter=rate_limiter,
+        metrics=metrics,
     )
 
     # Merge Submitter (Thread 7)
@@ -393,6 +414,7 @@ def run_single_experiment(config, logger, strategy_name=None):
         merge_trigger_queue=merge_trigger_queue,
         scheduler_url=config.scheduler_a_url,
         rate_limiter=rate_limiter,
+        metrics=metrics,
     )
 
     # ========================================================================
@@ -410,19 +432,17 @@ def run_single_experiment(config, logger, strategy_name=None):
         for i in range(config.num_workflows)
     ]
 
-    # B1 task IDs (fanout_count per workflow)
-    b1_task_ids = [
-        f"task-B1-{strategy}-workflow-{i:04d}-{j}"
-        for i in range(config.num_workflows)
-        for j in range(config.fanout_count)
-    ]
-
-    # B2 task IDs (fanout_count per workflow)
-    b2_task_ids = [
-        f"task-B2-{strategy}-workflow-{i:04d}-{j}"
-        for i in range(config.num_workflows)
-        for j in range(config.fanout_count)
-    ]
+    # B1/B2 task IDs - need to get from workflow states since each may have different fanout
+    # Note: workflows are created during ATaskSubmitter.__init__ with distribution-based fanout
+    b1_task_ids = []
+    b2_task_ids = []
+    with state_lock:
+        for workflow_id, workflow_data in workflow_states.items():
+            workflow_num = workflow_id.split('-')[-1]
+            fanout = workflow_data.fanout_count
+            for j in range(fanout):
+                b1_task_ids.append(f"task-B1-{strategy}-workflow-{workflow_num}-{j}")
+                b2_task_ids.append(f"task-B2-{strategy}-workflow-{workflow_num}-{j}")
 
     # Merge task IDs (one per workflow)
     merge_task_ids = [
@@ -587,12 +607,12 @@ def run_single_experiment(config, logger, strategy_name=None):
     logger.info("="*70)
     logger.info(f"Total runtime: {total_time:.2f}s")
 
-    # Calculate metrics
-    a_metrics = calculate_task_metrics_from_collector(metrics, "A", workflow_states)
-    b1_metrics = calculate_task_metrics_from_collector(metrics, "B1", workflow_states)
-    b2_metrics = calculate_task_metrics_from_collector(metrics, "B2", workflow_states)
-    merge_metrics = calculate_task_metrics_from_collector(metrics, "merge", workflow_states)
-    wf_metrics = calculate_workflow_metrics_from_collector(metrics, workflow_states)
+    # Calculate metrics (with portion_stats filtering)
+    a_metrics = calculate_task_metrics_from_collector(metrics, "A", workflow_states, config.portion_stats)
+    b1_metrics = calculate_task_metrics_from_collector(metrics, "B1", workflow_states, config.portion_stats)
+    b2_metrics = calculate_task_metrics_from_collector(metrics, "B2", workflow_states, config.portion_stats)
+    merge_metrics = calculate_task_metrics_from_collector(metrics, "merge", workflow_states, config.portion_stats)
+    wf_metrics = calculate_workflow_metrics_from_collector(metrics, workflow_states, config.portion_stats)
 
     # Print summary
     print_metrics_summary(strategy, a_metrics, b1_metrics, b2_metrics, merge_metrics, wf_metrics)
@@ -619,111 +639,72 @@ def run_single_experiment(config, logger, strategy_name=None):
 
 def main():
     """Main entry point - handles strategy management and experiment orchestration."""
-    
-    # Parse arguments
-    parser = argparse.ArgumentParser(
-        description="Deep Research Workflow Simulation",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter
-    )
 
-    parser.add_argument(
-        "--num-workflows",
-        type=int,
-        default=100,
-        help="Number of workflows to generate and execute per strategy"
-    )
+    # ========================================================================
+    # Parse Command Line Arguments
+    # ========================================================================
 
-    parser.add_argument(
-        "--qps",
-        type=float,
-        default=1.0,
-        help="Target queries per second (QPS) for A task submission"
-    )
-
-    parser.add_argument(
-        "--seed",
-        type=int,
-        default=42,
-        help="Random seed for reproducibility"
-    )
-
-    parser.add_argument(
-        "--strategies",
-        nargs="+",
-        default=None,
-        choices=["min_time", "round_robin", "probabilistic", "random", "po2", "serverless"],
-        help="Scheduling strategies to test (if not set, uses env var or default)"
-    )
-
-    parser.add_argument(
-        "--warmup",
-        type=float,
-        default=0.1,
-        help="Warmup task ratio (0.0-1.0)"
-    )
-    
-    parser.add_argument(
-        "--fanout",
-        type=int,
-        default=3,
-        help="Fanout count (B tasks per A task)"
-    )
-    
-    parser.add_argument(
-        "--duration",
-        type=int,
-        default=600,
-        help="Maximum duration in seconds"
-    )
-
+    parser = create_base_parser(description="Deep Research Workflow - Simulation Mode")
+    parser = add_type2_args(parser)
     args = parser.parse_args()
+
+    # Parse and validate strategies
+    try:
+        strategies = parse_strategies(args.strategies)
+    except ValueError as e:
+        print(f"Error: {e}")
+        sys.exit(1)
 
     # ========================================================================
     # Configuration and Setup
     # ========================================================================
 
-    # Initialize config from env first, then override with args
-    config = DeepResearchConfig.from_env()
+    # Compute warmup count from ratio
+    # warmup_count = num_workflows * warmup_ratio
+    warmup_count = int(args.num_workflows * args.warmup)
 
-    # Ensure mode is set to simulation (overrides any environment variable)
-    config.mode = "simulation"
-    config.model_a_id = "sleep_model_a"
-    config.model_b_id = "sleep_model_b"
-    config.model_merge_id = "sleep_model_a"
+    # Create config with hardcoded simulation mode
+    config = DeepResearchConfig(
+        mode="simulation",  # Hardcoded for simulation
+        qps=args.qps,
+        duration=args.duration,
+        num_workflows=args.num_workflows,
+        fanout_count=args.fanout,
+        fanout_config=args.fanout_config,
+        fanout_seed=args.fanout_seed,
+        num_warmup=warmup_count,
+        strategies=strategies,
+        portion_stats=args.portion_stats,
+    )
 
     logger = configure_logging(level="INFO")
-    logger.info(f"Mode: {config.mode} (forced for simulation test)")
+
+    logger.info(f"Mode: {config.mode} (hardcoded for simulation)")
     logger.info(f"Model A: {config.model_a_id}")
     logger.info(f"Model B: {config.model_b_id}")
     logger.info(f"Model Merge: {config.model_merge_id}")
+    logger.info(f"Scheduler A: {config.scheduler_a_url}")
+    logger.info(f"Scheduler B: {config.scheduler_b_url}")
 
-    # Override with args
-    config.num_workflows = args.num_workflows
-    config.qps = args.qps
-    config.fanout_count = args.fanout
-    config.duration = args.duration
-    
-    # Calculate num_warmup based on ratio
-    config.num_warmup = int(args.num_workflows * args.warmup)
-    
-    # Set strategies
-    strategies = args.strategies
-    if not strategies:
-        strategies = config.strategies if config.strategies else ["probabilistic"]
+    # Log fanout distribution info
+    fanout_info = config.get_fanout_config_info()
+    logger.info(f"Fanout distribution: type={fanout_info['type']}")
+    if fanout_info['type'] != 'static':
+        logger.info(f"Fanout config details: {fanout_info}")
 
     # ========================================================================
     # Strategy Management
     # ========================================================================
 
     logger.info("="*70)
-    logger.info("Deep Research Workflow Benchmark")
+    logger.info("Strategy-based Testing Mode")
+    logger.info(f"Will test {len(strategies)} strategies: {', '.join(strategies)}")
     logger.info(f"Configuration: {config.num_workflows} workflows, QPS={config.qps}, Fanout={config.fanout_count}")
-    logger.info(f"Strategies to test: {', '.join(strategies)}")
     logger.info("="*70)
 
     # Set default quantiles if not specified
     quantiles = config.quantiles if config.quantiles else [0.1, 0.25, 0.5, 0.75, 0.99]
-    
+
     all_results = []
 
     # Run experiment for each strategy
@@ -731,11 +712,21 @@ def main():
         logger.info("\n" + "="*70)
         logger.info(f"Setting up strategy: {strategy_name}")
         logger.info("="*70)
-        
+
         # Update config strategy
         config.strategy = strategy_name
 
-        # Setup this strategy (clear tasks and configure schedulers)
+        # Clear all tasks from schedulers before each strategy test
+        logger.info("Clearing scheduler task queues...")
+        if not clear_scheduler_tasks(config.scheduler_a_url, logger):
+            logger.error("Failed to clear Scheduler A tasks, skipping strategy")
+            continue
+        if config.scheduler_b_url and config.scheduler_b_url != config.scheduler_a_url:
+            if not clear_scheduler_tasks(config.scheduler_b_url, logger):
+                logger.error("Failed to clear Scheduler B tasks, skipping strategy")
+                continue
+
+        # Setup this strategy on schedulers
         strategy_results = setup_scheduler_strategies(
             strategy_name=strategy_name,
             scheduler_a_url=config.scheduler_a_url,
@@ -756,26 +747,26 @@ def main():
         logger.info("\n" + "="*70)
         logger.info(f"Running experiment with strategy: {strategy_name}")
         logger.info("="*70)
-        
+
         result = run_single_experiment(config, logger, strategy_name=strategy_name)
         all_results.append(result)
 
         logger.info(f"\nCompleted experiment for strategy: {strategy_name}")
-        
+
         # Brief pause between strategies
         time.sleep(2.0)
 
     logger.info("\n" + "="*70)
     logger.info("All strategy experiments completed!")
     logger.info("="*70)
-    
+
     # ========================================================================
     # Save Results
     # ========================================================================
-    
+
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     results_file = f"results/results_workflow_b1b2_{timestamp}.json"
-    
+
     output_data = {
         "experiment": "type2_deep_research_simulation",
         "timestamp": datetime.now().isoformat(),
@@ -783,14 +774,14 @@ def main():
             "num_workflows": config.num_workflows,
             "qps": config.qps,
             "fanout_count": config.fanout_count,
-            "warmup_ratio": args.warmup,
+            "warmup": args.warmup,
             "seed": args.seed
         },
         "results": all_results
     }
-    
+
     ensure_directory("results")
-    
+
     with open(results_file, 'w') as f:
         json.dump(output_data, f, indent=2)
 
@@ -799,7 +790,7 @@ def main():
     # ========================================================================
     # Print Comparison Table
     # ========================================================================
-    
+
     print("\n" + "=" * 100)
     print("Strategy Comparison")
     print("=" * 100)

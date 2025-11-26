@@ -53,6 +53,7 @@ class Text2VideoConfig:
     strategy: str = "probabilistic"  # Single strategy name for workflow generation
     num_warmup: int = 0  # Number of warmup workflows
     frame_count: int = 16  # Default frame count for video generation
+    portion_stats: float = 1.0  # Portion of non-warmup workflows to include in statistics (0.0-1.0)
 
     def __post_init__(self):
         """Post-initialization to set mode-specific model IDs and scheduler URLs."""
@@ -118,4 +119,5 @@ class Text2VideoConfig:
             strategy=os.getenv("STRATEGY", "probabilistic"),
             num_warmup=int(os.getenv("NUM_WARMUP", "0")),
             frame_count=int(os.getenv("FRAME_COUNT", "16")),
+            portion_stats=float(os.getenv("PORTION_STATS", "1.0")),
         )

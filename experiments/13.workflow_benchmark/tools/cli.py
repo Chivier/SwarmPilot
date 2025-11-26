@@ -7,6 +7,8 @@ Provides simple commands for running experiments:
   - run-text2video-real: Run Text2Video real cluster mode
   - run-deep-research-sim: Run Deep Research simulation
   - run-deep-research-real: Run Deep Research real cluster mode
+
+CLI parameters are unified with the individual test scripts.
 """
 
 import argparse
@@ -18,22 +20,77 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from tools.experiment_runner import ExperimentRunner
 from common.utils import configure_logging
+from common.cli_utils import VALID_STRATEGIES, DEFAULT_STRATEGIES
+
+
+def add_common_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+    """Add common arguments shared by all workflow commands."""
+    parser.add_argument(
+        "--num-workflows",
+        type=int,
+        default=10,
+        help="Number of workflows to run (default: 10)"
+    )
+    parser.add_argument(
+        "--qps",
+        type=float,
+        default=2.0,
+        help="Queries per second rate (default: 2.0)"
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Random seed for reproducibility (default: 42)"
+    )
+    parser.add_argument(
+        "--strategies",
+        type=str,
+        default="default",
+        help=f"Comma-separated strategies, 'default', or 'all'. "
+             f"Default: {DEFAULT_STRATEGIES}. All: {VALID_STRATEGIES}"
+    )
+    parser.add_argument(
+        "--warmup",
+        type=float,
+        default=0.2,
+        help="Warmup ratio (0.0-1.0). Warmup workflows = num_workflows * warmup. "
+             "E.g., num_workflows=100, warmup=0.2 submits 120 total, first 20 are warmup (default: 0.2)"
+    )
+    parser.add_argument(
+        "--duration",
+        type=int,
+        default=120,
+        help="Maximum experiment duration in seconds (default: 120)"
+    )
+    parser.add_argument(
+        "--portion-stats",
+        type=float,
+        default=1.0,
+        help="Portion of non-warmup workflows to include in statistics (0.0-1.0). "
+             "E.g., num_workflows=100, warmup=0.2, portion_stats=0.5 submits 120 total, "
+             "statistics include only the first 50 of the 100 non-warmup workflows (default: 1.0)"
+    )
+    return parser
 
 
 def main():
     parser = argparse.ArgumentParser(
         description="Unified Workflow Benchmark CLI",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
+        epilog=f"""
+Default strategies: {', '.join(DEFAULT_STRATEGIES)}
+All valid strategies: {', '.join(VALID_STRATEGIES)}
+
 Examples:
-  # Run Text2Video simulation for 1 minute
-  %(prog)s run-text2video-sim --duration 60 --num-workflows 120
+  # Run Text2Video simulation with default strategies
+  %(prog)s run-text2video-sim --num-workflows 50
 
-  # Run Deep Research simulation with custom QPS
-  %(prog)s run-deep-research-sim --qps 1.5 --duration 300
+  # Run Deep Research simulation with specific strategies
+  %(prog)s run-deep-research-sim --qps 1.5 --strategies probabilistic,min_time
 
-  # Run Text2Video in real cluster mode
-  %(prog)s run-text2video-real --qps 2.0 --duration 600
+  # Run Text2Video in real cluster mode with all strategies
+  %(prog)s run-text2video-real --num-workflows 20 --strategies all
         """
     )
 
@@ -46,14 +103,13 @@ Examples:
         "run-text2video-sim",
         help="Run Text2Video workflow in simulation mode"
     )
-    t2v_sim.add_argument("--qps", type=float, default=2.0, help="Query per second (default: 2.0)")
-    t2v_sim.add_argument("--duration", type=int, default=300, help="Duration in seconds (default: 300)")
-    t2v_sim.add_argument("--num-workflows", type=int, default=600, help="Number of workflows (default: 600)")
-    t2v_sim.add_argument("--max-b-loops", type=int, default=4, help="Max B iterations (default: 4)")
-    t2v_sim.add_argument("--output-dir", type=str, default="output", help="Output directory (default: output)")
-    t2v_sim.add_argument("--strategies", type=str, help="Comma-separated list of scheduling strategies to test (e.g., min_time,probabilistic,round_robin)")
-    t2v_sim.add_argument("--target-quantile", type=float, help="Target quantile for probabilistic strategy (default: 0.9)")
-    t2v_sim.add_argument("--quantiles", type=str, help="Comma-separated quantiles for probabilistic (default: 0.1,0.25,0.5,0.75,0.99)")
+    add_common_args(t2v_sim)
+    t2v_sim.add_argument(
+        "--max-b-loops",
+        type=int,
+        default=3,
+        help="Maximum B task iterations (default: 3)"
+    )
 
     # ========================================================================
     # Text2Video Real
@@ -62,16 +118,13 @@ Examples:
         "run-text2video-real",
         help="Run Text2Video workflow in real cluster mode"
     )
-    t2v_real.add_argument("--qps", type=float, default=2.0, help="Query per second (default: 2.0)")
-    t2v_real.add_argument("--duration", type=int, default=300, help="Duration in seconds (default: 300)")
-    t2v_real.add_argument("--num-workflows", type=int, default=100, help="Number of workflows (default: 100)")
-    t2v_real.add_argument("--max-b-loops", type=int, default=4, help="Max B iterations (default: 4)")
-    t2v_real.add_argument("--output-dir", type=str, default="output", help="Output directory (default: output)")
-    t2v_real.add_argument("--scheduler-a-url", type=str, help="Scheduler A URL")
-    t2v_real.add_argument("--scheduler-b-url", type=str, help="Scheduler B URL")
-    t2v_real.add_argument("--strategies", type=str, help="Comma-separated list of scheduling strategies to test (e.g., min_time,probabilistic,round_robin)")
-    t2v_real.add_argument("--target-quantile", type=float, help="Target quantile for probabilistic strategy (default: 0.9)")
-    t2v_real.add_argument("--quantiles", type=str, help="Comma-separated quantiles for probabilistic (default: 0.1,0.25,0.5,0.75,0.99)")
+    add_common_args(t2v_real)
+    t2v_real.add_argument(
+        "--max-b-loops",
+        type=int,
+        default=3,
+        help="Maximum B task iterations (default: 3)"
+    )
 
     # ========================================================================
     # Deep Research Simulation
@@ -80,14 +133,27 @@ Examples:
         "run-deep-research-sim",
         help="Run Deep Research workflow in simulation mode"
     )
-    dr_sim.add_argument("--qps", type=float, default=1.0, help="Query per second (default: 1.0)")
-    dr_sim.add_argument("--duration", type=int, default=600, help="Duration in seconds (default: 600)")
-    dr_sim.add_argument("--num-workflows", type=int, default=600, help="Number of workflows (default: 600)")
-    dr_sim.add_argument("--fanout-count", type=int, default=3, help="Fanout count (default: 3)")
-    dr_sim.add_argument("--output-dir", type=str, default="output", help="Output directory (default: output)")
-    dr_sim.add_argument("--strategies", type=str, help="Comma-separated list of scheduling strategies to test (e.g., min_time,probabilistic,round_robin)")
-    dr_sim.add_argument("--target-quantile", type=float, help="Target quantile for probabilistic strategy (default: 0.9)")
-    dr_sim.add_argument("--quantiles", type=str, help="Comma-separated quantiles for probabilistic (default: 0.1,0.25,0.5,0.75,0.99)")
+    add_common_args(dr_sim)
+    dr_sim.add_argument(
+        "--fanout",
+        type=int,
+        default=4,
+        help="Default fanout count for parallel B tasks (default: 4). "
+             "Ignored if --fanout-config is specified."
+    )
+    dr_sim.add_argument(
+        "--fanout-config",
+        type=str,
+        default=None,
+        help="Path to JSON config file for fanout distribution. "
+             "Supports: static, uniform, two_peak, four_peak distributions."
+    )
+    dr_sim.add_argument(
+        "--fanout-seed",
+        type=int,
+        default=None,
+        help="Random seed for fanout distribution sampling."
+    )
 
     # ========================================================================
     # Deep Research Real
@@ -96,16 +162,27 @@ Examples:
         "run-deep-research-real",
         help="Run Deep Research workflow in real cluster mode"
     )
-    dr_real.add_argument("--qps", type=float, default=1.0, help="Query per second (default: 1.0)")
-    dr_real.add_argument("--duration", type=int, default=600, help="Duration in seconds (default: 600)")
-    dr_real.add_argument("--num-workflows", type=int, default=100, help="Number of workflows (default: 100)")
-    dr_real.add_argument("--fanout-count", type=int, default=3, help="Fanout count (default: 3)")
-    dr_real.add_argument("--output-dir", type=str, default="output", help="Output directory (default: output)")
-    dr_real.add_argument("--scheduler-a-url", type=str, help="Scheduler A URL")
-    dr_real.add_argument("--scheduler-b-url", type=str, help="Scheduler B URL")
-    dr_real.add_argument("--strategies", type=str, help="Comma-separated list of scheduling strategies to test (e.g., min_time,probabilistic,round_robin)")
-    dr_real.add_argument("--target-quantile", type=float, help="Target quantile for probabilistic strategy (default: 0.9)")
-    dr_real.add_argument("--quantiles", type=str, help="Comma-separated quantiles for probabilistic (default: 0.1,0.25,0.5,0.75,0.99)")
+    add_common_args(dr_real)
+    dr_real.add_argument(
+        "--fanout",
+        type=int,
+        default=4,
+        help="Default fanout count for parallel B tasks (default: 4). "
+             "Ignored if --fanout-config is specified."
+    )
+    dr_real.add_argument(
+        "--fanout-config",
+        type=str,
+        default=None,
+        help="Path to JSON config file for fanout distribution. "
+             "Supports: static, uniform, two_peak, four_peak distributions."
+    )
+    dr_real.add_argument(
+        "--fanout-seed",
+        type=int,
+        default=None,
+        help="Random seed for fanout distribution sampling."
+    )
 
     # Parse arguments
     args = parser.parse_args()
@@ -123,83 +200,55 @@ Examples:
     # Execute command
     try:
         if args.command == "run-text2video-sim":
-            kwargs = {}
-            if args.strategies:
-                kwargs["STRATEGIES"] = args.strategies
-            if args.target_quantile:
-                kwargs["TARGET_QUANTILE"] = str(args.target_quantile)
-            if args.quantiles:
-                kwargs["QUANTILES"] = args.quantiles
-
             result = runner.run_text2video_simulation(
-                qps=args.qps,
-                duration=args.duration,
                 num_workflows=args.num_workflows,
+                qps=args.qps,
+                seed=args.seed,
+                strategies=args.strategies,
+                warmup=args.warmup,
+                duration=args.duration,
                 max_b_loops=args.max_b_loops,
-                output_dir=args.output_dir,
-                **kwargs
+                portion_stats=args.portion_stats,
             )
 
         elif args.command == "run-text2video-real":
-            kwargs = {}
-            if args.scheduler_a_url:
-                kwargs["SCHEDULER_A_URL"] = args.scheduler_a_url
-            if args.scheduler_b_url:
-                kwargs["SCHEDULER_B_URL"] = args.scheduler_b_url
-            if args.strategies:
-                kwargs["STRATEGIES"] = args.strategies
-            if args.target_quantile:
-                kwargs["TARGET_QUANTILE"] = str(args.target_quantile)
-            if args.quantiles:
-                kwargs["QUANTILES"] = args.quantiles
-
             result = runner.run_text2video_real(
-                qps=args.qps,
-                duration=args.duration,
                 num_workflows=args.num_workflows,
+                qps=args.qps,
+                seed=args.seed,
+                strategies=args.strategies,
+                warmup=args.warmup,
+                duration=args.duration,
                 max_b_loops=args.max_b_loops,
-                output_dir=args.output_dir,
-                **kwargs
+                portion_stats=args.portion_stats,
             )
 
         elif args.command == "run-deep-research-sim":
-            kwargs = {}
-            if args.strategies:
-                kwargs["STRATEGIES"] = args.strategies
-            if args.target_quantile:
-                kwargs["TARGET_QUANTILE"] = str(args.target_quantile)
-            if args.quantiles:
-                kwargs["QUANTILES"] = args.quantiles
-
             result = runner.run_deep_research_simulation(
-                qps=args.qps,
-                duration=args.duration,
                 num_workflows=args.num_workflows,
-                fanout_count=args.fanout_count,
-                output_dir=args.output_dir,
-                **kwargs
+                qps=args.qps,
+                seed=args.seed,
+                strategies=args.strategies,
+                warmup=args.warmup,
+                duration=args.duration,
+                fanout=args.fanout,
+                fanout_config=args.fanout_config,
+                fanout_seed=args.fanout_seed,
+                portion_stats=args.portion_stats,
             )
 
         elif args.command == "run-deep-research-real":
-            kwargs = {}
-            if args.scheduler_a_url:
-                kwargs["SCHEDULER_A_URL"] = args.scheduler_a_url
-            if args.scheduler_b_url:
-                kwargs["SCHEDULER_B_URL"] = args.scheduler_b_url
-            if args.strategies:
-                kwargs["STRATEGIES"] = args.strategies
-            if args.target_quantile:
-                kwargs["TARGET_QUANTILE"] = str(args.target_quantile)
-            if args.quantiles:
-                kwargs["QUANTILES"] = args.quantiles
-
             result = runner.run_deep_research_real(
-                qps=args.qps,
-                duration=args.duration,
                 num_workflows=args.num_workflows,
-                fanout_count=args.fanout_count,
-                output_dir=args.output_dir,
-                **kwargs
+                qps=args.qps,
+                seed=args.seed,
+                strategies=args.strategies,
+                warmup=args.warmup,
+                duration=args.duration,
+                fanout=args.fanout,
+                fanout_config=args.fanout_config,
+                fanout_seed=args.fanout_seed,
+                portion_stats=args.portion_stats,
             )
 
         else:

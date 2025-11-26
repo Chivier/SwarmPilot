@@ -1,0 +1,11 @@
+{
+    "type": "four_peak",
+    "peaks": [
+        {"mean": 2, "std": 0.3, "weight": 1.0},
+        {"mean": 5, "std": 0.5, "weight": 1.5},
+        {"mean": 8, "std": 0.5, "weight": 1.5},
+        {"mean": 12, "std": 1.0, "weight": 1.0}
+    ],
+    "min": 1,
+    "max": 15
+}

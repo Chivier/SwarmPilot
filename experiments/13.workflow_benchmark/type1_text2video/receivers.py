@@ -116,6 +116,15 @@ class A1TaskReceiver(BaseTaskReceiver):
                 if workflow_data:
                     workflow_data.a1_result = a1_result
                     workflow_data.a1_complete_time = complete_time
+
+                    # Record task completion in metrics
+                    if self.metrics:
+                        workflow_num = workflow_id.split('-')[-1]
+                        a1_task_id = f"task-A1-{workflow_data.strategy}-workflow-{workflow_num}"
+                        self.metrics.record_task_complete(
+                            task_id=a1_task_id,
+                            success=True
+                        )
                 else:
                     self.logger.warning(f"Workflow {workflow_id} not found in state")
                     return
@@ -234,6 +243,15 @@ class A2TaskReceiver(BaseTaskReceiver):
                     workflow_data.a2_complete_time = complete_time
                     # Initialize B loop counter
                     workflow_data.b_loop_count = 1
+
+                    # Record task completion in metrics
+                    if self.metrics:
+                        workflow_num = workflow_id.split('-')[-1]
+                        a2_task_id = f"task-A2-{workflow_data.strategy}-workflow-{workflow_num}"
+                        self.metrics.record_task_complete(
+                            task_id=a2_task_id,
+                            success=True
+                        )
                 else:
                     self.logger.warning(f"Workflow {workflow_id} not found in state")
                     return
@@ -365,6 +383,15 @@ class BTaskReceiver(BaseTaskReceiver):
 
                 # Record completion time
                 workflow_data.b_complete_times.append(complete_time)
+
+                # Record task completion in metrics
+                workflow_num = workflow_id.split('-')[-1]
+                b_task_id = f"task-B{loop_iteration}-{workflow_data.strategy}-workflow-{workflow_num}"
+                if self.metrics:
+                    self.metrics.record_task_complete(
+                        task_id=b_task_id,
+                        success=True
+                    )
 
                 # Check if we should continue B loop
                 if workflow_data.should_continue_b_loop():

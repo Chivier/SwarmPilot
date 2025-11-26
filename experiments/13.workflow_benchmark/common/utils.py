@@ -633,15 +633,13 @@ def setup_scheduler_strategies(
     custom_logger: Optional[Any] = None
 ) -> Dict[str, bool]:
     """
-    Setup scheduling strategies for experiment.
+    Setup scheduling strategy on schedulers.
 
-    This function will test each strategy in the list. For each strategy:
-    1. Clear all tasks from schedulers
-    2. Set the strategy on all schedulers
-    3. Return whether setup was successful
+    This function sets the strategy on all schedulers.
+    NOTE: Task queue clearing must be done explicitly before calling this function.
 
     Args:
-        strategy_name: Strategy name to test
+        strategy_name: Strategy name to set
         scheduler_a_url: Scheduler A endpoint URL
         scheduler_b_url: Optional Scheduler B endpoint URL
         target_quantile: Target quantile for probabilistic strategy
@@ -654,21 +652,9 @@ def setup_scheduler_strategies(
     results = {}
 
     log = custom_logger or logger
-    log.info("=" * 80)
-    log.info(f"Setting up strategy: {strategy_name}")
-    log.info("=" * 80)
+    log.info(f"Setting strategy: {strategy_name}")
 
-    # Step 1: Clear tasks from Scheduler A
-    if not clear_scheduler_tasks(scheduler_a_url, log):
-        results[strategy_name] = False
-        return results
-
-    # Step 2: Clear tasks from Scheduler B (if provided)
-    if scheduler_b_url and not clear_scheduler_tasks(scheduler_b_url, log):
-        results[strategy_name] = False
-        return results
-
-    # Step 3: Set strategy on Scheduler A
+    # Step 1: Set strategy on Scheduler A
     if not set_scheduler_strategy(
         scheduler_a_url,
         strategy_name,
@@ -679,7 +665,7 @@ def setup_scheduler_strategies(
         results[strategy_name] = False
         return results
 
-    # Step 4: Set strategy on Scheduler B (if provided)
+    # Step 2: Set strategy on Scheduler B (if provided)
     if scheduler_b_url and not set_scheduler_strategy(
         scheduler_b_url,
         strategy_name,

@@ -1,8 +1,17 @@
 """Configuration for Deep Research workflow experiments."""
 
 import os
-from dataclasses import dataclass
-from typing import Optional
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Dict, Optional, Union
+
+from .fanout_distribution import (
+    FanoutDistribution,
+    FanoutSampler,
+    StaticDistribution,
+    load_fanout_config,
+    create_distribution,
+)
 
 
 @dataclass
@@ -16,7 +25,12 @@ class DeepResearchConfig:
     qps: float = 1.0
     duration: int = 600  # seconds
     num_workflows: int = 600
-    fanout_count: int = 3  # Number of B1/B2 tasks per workflow
+    fanout_count: int = 3  # Default fanout (used if no distribution config)
+
+    # Fanout distribution configuration
+    # Can be: path to JSON config file, or dict with distribution config
+    fanout_config: Optional[Union[str, Path, Dict[str, Any]]] = None
+    fanout_seed: Optional[int] = None  # Random seed for reproducibility
 
     # Strategy for task scheduling (used in task IDs)
     strategy: str = "probabilistic"
@@ -53,6 +67,12 @@ class DeepResearchConfig:
     target_quantile: Optional[float] = None  # Target quantile for probabilistic strategy
     quantiles: Optional[list] = None  # Custom quantiles for probabilistic strategy
 
+    # Statistics filtering
+    portion_stats: float = 1.0  # Portion of non-warmup workflows to include in statistics (0.0-1.0)
+
+    # Internal: cached fanout sampler (created lazily)
+    _fanout_sampler: Optional[FanoutSampler] = field(default=None, repr=False)
+
     def __post_init__(self):
         """Post-initialization to set model IDs and scheduler URLs based on mode."""
         if self.mode == "simulation":
@@ -71,6 +91,59 @@ class DeepResearchConfig:
             # Use remote schedulers for real mode
             self.scheduler_a_url = "http://29.209.114.51:8100"
             self.scheduler_b_url = "http://29.209.113.228:8100"
+
+    def create_fanout_sampler(self) -> FanoutSampler:
+        """Create a fanout sampler based on configuration.
+
+        Returns:
+            FanoutSampler instance configured with the appropriate distribution
+        """
+        if self._fanout_sampler is not None:
+            return self._fanout_sampler
+
+        if self.fanout_config is None:
+            # Use static distribution with fanout_count
+            self._fanout_sampler = FanoutSampler(
+                distribution=StaticDistribution(value=self.fanout_count),
+                seed=self.fanout_seed
+            )
+        elif isinstance(self.fanout_config, (str, Path)):
+            # Load from JSON file
+            self._fanout_sampler = FanoutSampler(
+                config_path=self.fanout_config,
+                seed=self.fanout_seed
+            )
+        elif isinstance(self.fanout_config, dict):
+            # Create from dict config
+            distribution = create_distribution(self.fanout_config)
+            self._fanout_sampler = FanoutSampler(
+                distribution=distribution,
+                seed=self.fanout_seed
+            )
+        else:
+            raise ValueError(
+                f"Invalid fanout_config type: {type(self.fanout_config)}. "
+                "Expected str, Path, dict, or None."
+            )
+
+        return self._fanout_sampler
+
+    def sample_fanout(self) -> int:
+        """Sample a fanout value using the configured distribution.
+
+        Returns:
+            Integer fanout count
+        """
+        return self.create_fanout_sampler().sample()
+
+    def get_fanout_config_info(self) -> Dict[str, Any]:
+        """Get information about the current fanout configuration.
+
+        Returns:
+            Dictionary with distribution type and parameters
+        """
+        sampler = self.create_fanout_sampler()
+        return sampler.get_config()
 
     @classmethod
     def from_env(cls) -> "DeepResearchConfig":
@@ -93,12 +166,23 @@ class DeepResearchConfig:
         if target_quantile_str:
             target_quantile = float(target_quantile_str)
 
+        # Parse fanout config (path to JSON file)
+        fanout_config = os.getenv("FANOUT_CONFIG")
+
+        # Parse fanout seed for reproducibility
+        fanout_seed = None
+        fanout_seed_str = os.getenv("FANOUT_SEED")
+        if fanout_seed_str:
+            fanout_seed = int(fanout_seed_str)
+
         return cls(
             mode=os.getenv("MODE", "simulation"),
             qps=float(os.getenv("QPS", "1.0")),
             duration=int(os.getenv("DURATION", "600")),
             num_workflows=int(os.getenv("NUM_WORKFLOWS", "600")),
             fanout_count=int(os.getenv("FANOUT_COUNT", "3")),
+            fanout_config=fanout_config,
+            fanout_seed=fanout_seed,
             strategy=os.getenv("STRATEGY", "probabilistic"),
             num_warmup=int(os.getenv("NUM_WARMUP", "10")),
             model_a_id=os.getenv("MODEL_A_ID", "llm_service_small_model"),
@@ -116,4 +200,5 @@ class DeepResearchConfig:
             strategies=strategies,
             target_quantile=target_quantile,
             quantiles=quantiles,
+            portion_stats=float(os.getenv("PORTION_STATS", "1.0")),
         )

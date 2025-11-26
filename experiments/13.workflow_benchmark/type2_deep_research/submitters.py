@@ -43,12 +43,20 @@ class ATaskSubmitter(BaseTaskSubmitter):
         self.workflow_states = workflow_states
         self.state_lock = state_lock
 
+        # Create fanout sampler for distribution-based fanout
+        fanout_sampler = config.create_fanout_sampler()
+
         # Pre-generate all workflow data with pre-generated sleep times for simulation
         self.workflows = []
+        fanout_values = []  # Track fanout values for logging
         for i in range(config.num_workflows):
+            # Sample fanout from distribution (or use static value)
+            fanout_count = fanout_sampler.sample()
+            fanout_values.append(fanout_count)
+
             workflow = DeepResearchWorkflowData(
                 workflow_id=f"workflow-{i:04d}",
-                fanout_count=config.fanout_count,
+                fanout_count=fanout_count,
                 strategy=config.strategy,
                 is_warmup=(i < config.num_warmup)
             )
@@ -58,11 +66,11 @@ class ATaskSubmitter(BaseTaskSubmitter):
                 workflow.a_sleep_time = random.uniform(config.sleep_time_min, config.sleep_time_max)
                 workflow.b1_sleep_times = [
                     random.uniform(config.sleep_time_min, config.sleep_time_max)
-                    for _ in range(config.fanout_count)
+                    for _ in range(fanout_count)
                 ]
                 workflow.b2_sleep_times = [
                     random.uniform(config.sleep_time_min, config.sleep_time_max)
-                    for _ in range(config.fanout_count)
+                    for _ in range(fanout_count)
                 ]
                 workflow.merge_sleep_time = random.uniform(config.sleep_time_min, config.sleep_time_max)
 
@@ -78,7 +86,18 @@ class ATaskSubmitter(BaseTaskSubmitter):
                 workflow_states[workflow.workflow_id] = workflow
 
         self.index = 0
-        self.logger.info(f"Pre-generated {len(self.workflows)} workflows")
+
+        # Log fanout distribution statistics
+        if fanout_values:
+            avg_fanout = sum(fanout_values) / len(fanout_values)
+            min_fanout = min(fanout_values)
+            max_fanout = max(fanout_values)
+            fanout_config = config.get_fanout_config_info()
+            self.logger.info(
+                f"Pre-generated {len(self.workflows)} workflows with fanout "
+                f"distribution: type={fanout_config['type']}, "
+                f"avg={avg_fanout:.2f}, min={min_fanout}, max={max_fanout}"
+            )
 
     def _prepare_task_payload(self, workflow_data: DeepResearchWorkflowData) -> Dict[str, Any]:
         """
@@ -155,7 +174,17 @@ class ATaskSubmitter(BaseTaskSubmitter):
             self.metrics.record_workflow_start(
                 workflow_id=task_data.workflow_id,
                 workflow_type="deep_research",
-                metadata={"fanout_count": task_data.fanout_count, "strategy": task_data.strategy}
+                metadata={"fanout_count": task_data.fanout_count, "strategy": task_data.strategy},
+                is_warmup=task_data.is_warmup
+            )
+
+            # Record task submission in metrics
+            workflow_num = task_data.workflow_id.split('-')[-1]
+            task_id = f"task-A-{task_data.strategy}-workflow-{workflow_num}"
+            self.metrics.record_task_submit(
+                task_id=task_id,
+                workflow_id=task_data.workflow_id,
+                task_type="A"
             )
 
         # Call parent implementation to actually submit the task
@@ -258,6 +287,33 @@ class B1TaskSubmitter(BaseTaskSubmitter):
                 continue
         return None
 
+    def _submit_task(self, task_data: Any) -> bool:
+        """
+        Submit B1 task and record in metrics.
+
+        Args:
+            task_data: Tuple of (workflow_id, a_result, b1_index)
+
+        Returns:
+            True if submission succeeded, False otherwise
+        """
+        # Record task submission in metrics before submission
+        if self.metrics and isinstance(task_data, tuple):
+            workflow_id, a_result, b1_index = task_data
+            with self.state_lock:
+                workflow_data = self.workflow_states.get(workflow_id)
+                if workflow_data:
+                    workflow_num = workflow_id.split('-')[-1]
+                    task_id = f"task-B1-{workflow_data.strategy}-workflow-{workflow_num}-{b1_index}"
+                    self.metrics.record_task_submit(
+                        task_id=task_id,
+                        workflow_id=workflow_id,
+                        task_type="B1"
+                    )
+
+        # Call parent implementation to actually submit the task
+        return super()._submit_task(task_data)
+
 
 class B2TaskSubmitter(BaseTaskSubmitter):
     """
@@ -354,6 +410,33 @@ class B2TaskSubmitter(BaseTaskSubmitter):
             except Empty:
                 continue
         return None
+
+    def _submit_task(self, task_data: Any) -> bool:
+        """
+        Submit B2 task and record in metrics.
+
+        Args:
+            task_data: Tuple of (workflow_id, b1_result, b1_index)
+
+        Returns:
+            True if submission succeeded, False otherwise
+        """
+        # Record task submission in metrics before submission
+        if self.metrics and isinstance(task_data, tuple):
+            workflow_id, b1_result, b1_index = task_data
+            with self.state_lock:
+                workflow_data = self.workflow_states.get(workflow_id)
+                if workflow_data:
+                    workflow_num = workflow_id.split('-')[-1]
+                    task_id = f"task-B2-{workflow_data.strategy}-workflow-{workflow_num}-{b1_index}"
+                    self.metrics.record_task_submit(
+                        task_id=task_id,
+                        workflow_id=workflow_id,
+                        task_type="B2"
+                    )
+
+        # Call parent implementation to actually submit the task
+        return super()._submit_task(task_data)
 
 
 class MergeTaskSubmitter(BaseTaskSubmitter):
@@ -452,3 +535,30 @@ class MergeTaskSubmitter(BaseTaskSubmitter):
             except Empty:
                 continue
         return None
+
+    def _submit_task(self, task_data: Any) -> bool:
+        """
+        Submit Merge task and record in metrics.
+
+        Args:
+            task_data: workflow_id string
+
+        Returns:
+            True if submission succeeded, False otherwise
+        """
+        # Record task submission in metrics before submission
+        if self.metrics and isinstance(task_data, str):
+            workflow_id = task_data
+            with self.state_lock:
+                workflow_data = self.workflow_states.get(workflow_id)
+                if workflow_data:
+                    workflow_num = workflow_id.split('-')[-1]
+                    task_id = f"task-merge-{workflow_data.strategy}-workflow-{workflow_num}"
+                    self.metrics.record_task_submit(
+                        task_id=task_id,
+                        workflow_id=workflow_id,
+                        task_type="merge"
+                    )
+
+        # Call parent implementation to actually submit the task
+        return super()._submit_task(task_data)

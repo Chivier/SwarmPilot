@@ -28,8 +28,14 @@ experiments/13.workflow_benchmark/
 ├── type2_deep_research/             # Deep Research (A→n×B1→n×B2→Merge)
 │   ├── config.py
 │   ├── workflow_data.py
+│   ├── fanout_distribution.py       # Fanout distribution classes
 │   ├── submitters.py                # A, B1, B2, Merge submitters
 │   ├── receivers.py                 # A, B1, B2, Merge receivers
+│   ├── configs/                     # Fanout distribution configs
+│   │   ├── fanout_static.json
+│   │   ├── fanout_uniform.json
+│   │   ├── fanout_two_peak.json
+│   │   └── fanout_four_peak.json
 │   ├── simulation/
 │   │   └── test_workflow_sim.py
 │   └── real/
@@ -140,6 +146,128 @@ python tools/cli.py run-deep-research-sim --qps 1.0 --duration 600 --num-workflo
 # Method 2: Direct Python with environment variables
 export QPS=1.0 DURATION=600 NUM_WORKFLOWS=600 FANOUT_COUNT=3
 python type2_deep_research/simulation/test_workflow_sim.py
+
+# Method 3: With custom fanout distribution (see Fanout Distribution section)
+python tools/cli.py run-deep-research-sim --qps 1.0 --num-workflows 100 \
+    --fanout-config type2_deep_research/configs/fanout_two_peak.json \
+    --fanout-seed 42
+```
+
+## Deep Research Fanout Distribution
+
+The Deep Research workflow supports configurable fanout distributions for B1/B2 task parallelism. This allows simulating realistic workload patterns where different workflows may have varying degrees of parallelism.
+
+### Supported Distribution Types
+
+| Type | Description | Use Case |
+|------|-------------|----------|
+| `static` | Fixed fanout value for all workflows | Baseline testing, consistent load |
+| `uniform` | Uniform distribution between min/max | Random variation testing |
+| `two_peak` | Bimodal distribution with two Gaussian peaks | Simulating "small" vs "large" queries |
+| `four_peak` | Four Gaussian peaks | Complex workload patterns |
+
+### Configuration File Format
+
+Configuration files are JSON with the following schemas:
+
+**Static Distribution** (`fanout_static.json`):
+```json
+{
+    "type": "static",
+    "value": 4
+}
+```
+
+**Uniform Distribution** (`fanout_uniform.json`):
+```json
+{
+    "type": "uniform",
+    "min": 2,
+    "max": 8
+}
+```
+
+**Two-Peak Distribution** (`fanout_two_peak.json`):
+```json
+{
+    "type": "two_peak",
+    "peaks": [
+        {"mean": 3, "std": 0.5, "weight": 1.0},
+        {"mean": 8, "std": 1.0, "weight": 1.0}
+    ],
+    "min": 1,
+    "max": 12
+}
+```
+
+**Four-Peak Distribution** (`fanout_four_peak.json`):
+```json
+{
+    "type": "four_peak",
+    "peaks": [
+        {"mean": 2, "std": 0.3, "weight": 1.0},
+        {"mean": 5, "std": 0.5, "weight": 1.5},
+        {"mean": 8, "std": 0.5, "weight": 1.5},
+        {"mean": 12, "std": 1.0, "weight": 1.0}
+    ],
+    "min": 1,
+    "max": 15
+}
+```
+
+### Peak Configuration
+
+For `two_peak` and `four_peak` distributions, each peak is a Gaussian (normal) distribution with:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `mean` | float | Center of the peak (expected fanout value) |
+| `std` | float | Standard deviation (spread of the peak) |
+| `weight` | float | Relative probability of selecting this peak |
+
+The sampling process:
+1. Select a peak based on normalized weights
+2. Sample from that peak's Gaussian distribution
+3. Clamp to `[min, max]` range and round to integer
+
+### CLI Arguments
+
+| Argument | Description | Default |
+|----------|-------------|---------|
+| `--fanout` | Static fanout value (ignored if `--fanout-config` is specified) | 4 |
+| `--fanout-config` | Path to JSON config file for fanout distribution | None |
+| `--fanout-seed` | Random seed for reproducible fanout sampling | None |
+
+### Example Usage
+
+```bash
+# Static fanout (default behavior)
+python -m type2_deep_research.simulation.test_workflow_sim --fanout 4
+
+# Uniform distribution (2-8 parallel tasks)
+python -m type2_deep_research.simulation.test_workflow_sim \
+    --fanout-config type2_deep_research/configs/fanout_uniform.json
+
+# Two-peak distribution with reproducible sampling
+python -m type2_deep_research.simulation.test_workflow_sim \
+    --fanout-config type2_deep_research/configs/fanout_two_peak.json \
+    --fanout-seed 42
+
+# Using CLI tool
+python tools/cli.py run-deep-research-sim --num-workflows 100 \
+    --fanout-config type2_deep_research/configs/fanout_four_peak.json
+```
+
+### Example Config Files
+
+Pre-built example configurations are available in `type2_deep_research/configs/`:
+
+```
+type2_deep_research/configs/
+├── fanout_static.json      # Fixed value: 4
+├── fanout_uniform.json     # Uniform: [2, 8]
+├── fanout_two_peak.json    # Bimodal: peaks at 3 and 8
+└── fanout_four_peak.json   # Four peaks: 2, 5, 8, 12
 ```
 
 ## Implementation Guide
