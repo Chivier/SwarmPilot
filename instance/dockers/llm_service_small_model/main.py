@@ -161,11 +161,6 @@ async def inference(request: InferenceRequest) -> InferenceResponse:
     Returns:
         InferenceResponse with the LLM result and execution details
     """
-    if not model_loaded or runtime is None:
-        raise HTTPException(
-            status_code=503,
-            detail="Model not loaded"
-        )
 
     try:
         # Record start time
