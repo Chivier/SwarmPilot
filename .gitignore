@@ -92,3 +92,12 @@ ood_results
 # Task files
 tasks.json
 tasks/ 
+
+.taskmaster
+
+CLAUDE.md
+GEMINI.md
+AGENTS.md
+.mcp.json
+.gemini
+.env.example
