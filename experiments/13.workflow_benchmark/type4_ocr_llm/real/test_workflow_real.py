@@ -1,24 +1,21 @@
 #!/usr/bin/env python3
 """
-Text2Video Workflow - Simulation Mode
+OCR+LLM Workflow - Real Cluster Mode
 
-This script runs the Text2Video workflow (A1→A2→B) using sleep models for simulation.
+This script runs the OCR+LLM workflow (A→B) using real models deployed on the cluster.
 
 Architecture:
-- Thread 1 (A1 Submitter): Submit A1 tasks with Poisson arrivals
-- Thread 2 (A1 Receiver): Receive A1 results → trigger A2
-- Thread 3 (A2 Submitter): Submit A2 tasks
-- Thread 4 (A2 Receiver): Receive A2 results → trigger B
-- Thread 5 (B Submitter): Submit B tasks with loop support
-- Thread 6 (B Receiver): Receive B results → loop or complete
+- Thread 1 (A Submitter): Submit A tasks (OCR) with Poisson arrivals
+- Thread 2 (A Receiver): Receive A results → trigger B
+- Thread 3 (B Submitter): Submit B tasks (LLM)
+- Thread 4 (B Receiver): Receive B results → mark complete
 
 Workflow Pattern:
-- A1: caption → positive prompt
-- A2: positive prompt → negative prompt
-- B: video generation (1-4 iterations per workflow)
+- A: OCR (EasyOCR) - extract text from image
+- B: LLM (llm_service_small_model) - process extracted text
 
 Usage:
-    python -m type1_text2video.simulation.test_workflow_sim \\
+    python -m type4_ocr_llm.real.test_workflow_real \\
         --num-workflows 50 --qps 2.0 --strategies min_time,probabilistic --duration 300
 """
 
@@ -42,22 +39,73 @@ from common import (
     setup_scheduler_strategies,
     clear_scheduler_tasks,
     create_base_parser,
-    add_type1_args,
     parse_strategies,
     generate_strategy_comparison_table,
 )
-from type1_text2video.config import Text2VideoConfig
-from type1_text2video.workflow_data import load_captions
-from type1_text2video.submitters import A1TaskSubmitter, A2TaskSubmitter, BTaskSubmitter
-from type1_text2video.receivers import A1TaskReceiver, A2TaskReceiver, BTaskReceiver
+from type4_ocr_llm.config import OCRLLMConfig
+from type4_ocr_llm.workflow_data import (
+    load_images_from_directory,
+    load_images_from_json,
+    generate_dummy_images,
+)
+from type4_ocr_llm.submitters import ATaskSubmitter, BTaskSubmitter
+from type4_ocr_llm.receivers import ATaskReceiver, BTaskReceiver
 
 
-def run_single_experiment(config, captions, logger, strategy_name=None):
+def add_type4_real_args(parser):
+    """Add type4 OCR+LLM real mode specific arguments."""
+    parser.add_argument(
+        "--image-dir",
+        type=str,
+        default=None,
+        help="Directory containing images for OCR (supports jpg, png, etc.)"
+    )
+    parser.add_argument(
+        "--image-json",
+        type=str,
+        default=None,
+        help="JSON file containing base64-encoded images"
+    )
+    parser.add_argument(
+        "--ocr-languages",
+        type=str,
+        default="en",
+        help="OCR languages (comma-separated, e.g., 'en,ch_sim') (default: en)"
+    )
+    parser.add_argument(
+        "--ocr-detail-level",
+        type=str,
+        default="standard",
+        choices=["minimal", "standard", "detailed"],
+        help="OCR detail level (default: standard)"
+    )
+    parser.add_argument(
+        "--max-tokens",
+        type=int,
+        default=512,
+        help="Maximum tokens for LLM generation (default: 512)"
+    )
+    parser.add_argument(
+        "--scheduler-a-url",
+        type=str,
+        default=None,
+        help="URL for Scheduler A (OCR). If not specified, uses env or default."
+    )
+    parser.add_argument(
+        "--scheduler-b-url",
+        type=str,
+        default=None,
+        help="URL for Scheduler B (LLM). If not specified, uses env or default."
+    )
+    return parser
+
+
+def run_single_experiment(config, images, logger, strategy_name=None):
     """Run a single experiment with the given configuration.
 
     Args:
-        config: Text2VideoConfig instance
-        captions: List of captions to use
+        config: OCRLLMConfig instance
+        images: List of base64-encoded images to use
         logger: Logger instance
         strategy_name: Optional strategy name (for logging and task ID generation)
 
@@ -72,17 +120,19 @@ def run_single_experiment(config, captions, logger, strategy_name=None):
 
     logger.info("="*70)
     if strategy_name:
-        logger.info(f"Text2Video Workflow Simulation - Strategy: {strategy_name}")
+        logger.info(f"OCR+LLM Workflow Real Mode - Strategy: {strategy_name}")
     else:
-        logger.info("Text2Video Workflow Simulation")
+        logger.info("OCR+LLM Workflow Real Mode")
     logger.info("="*70)
     logger.info(f"QPS: {config.qps}")
     logger.info(f"Duration: {config.duration}s")
     logger.info(f"Workflows: {config.num_workflows}")
-    logger.info(f"Max B loops config: {config.get_max_b_loops_config()}")
-    logger.info(f"Frame count config: {config.get_frame_count_config()}")
-    logger.info(f"Scheduler A: {config.scheduler_a_url}")
-    logger.info(f"Scheduler B: {config.scheduler_b_url}")
+    logger.info(f"Model A (OCR): {config.model_a_id}")
+    logger.info(f"Model B (LLM): {config.model_b_id}")
+    logger.info(f"Scheduler A (OCR): {config.scheduler_a_url}")
+    logger.info(f"Scheduler B (LLM): {config.scheduler_b_url}")
+    logger.info(f"OCR Languages: {config.ocr_languages}")
+    logger.info(f"Max Tokens: {config.max_tokens}")
     if strategy_name:
         logger.info(f"Strategy: {strategy_name}")
     logger.info("="*70)
@@ -96,8 +146,7 @@ def run_single_experiment(config, captions, logger, strategy_name=None):
     state_lock = threading.Lock()
 
     # Queues for inter-thread communication
-    a1_result_queue = Queue()  # A1 receiver → A2 submitter
-    a2_result_queue = Queue()  # A2 receiver → B submitter
+    a_result_queue = Queue()  # A receiver → B submitter
 
     # Metrics collector
     metrics = MetricsCollector(custom_logger=logger)
@@ -111,10 +160,10 @@ def run_single_experiment(config, captions, logger, strategy_name=None):
 
     logger.info("Initializing components...")
 
-    # A1 Submitter (Thread 1)
-    a1_submitter = A1TaskSubmitter(
-        name="A1Submitter",
-        captions=captions,
+    # A Submitter (Thread 1) - OCR
+    a_submitter = ATaskSubmitter(
+        name="ASubmitter",
+        images=images,
         config=config,
         workflow_states=workflow_states,
         state_lock=state_lock,
@@ -126,80 +175,42 @@ def run_single_experiment(config, captions, logger, strategy_name=None):
     )
 
     # Pre-generate task IDs for receivers to subscribe to
-    # Must match the format used in submitters.py
     strategy = getattr(config, 'strategy', 'probabilistic')
-    a1_task_ids = [f"task-A1-{strategy}-workflow-{i:04d}" for i in range(config.num_workflows)]
-    a2_task_ids = [f"task-A2-{strategy}-workflow-{i:04d}" for i in range(config.num_workflows)]
+    a_task_ids = [f"task-A-{strategy}-workflow-{i:04d}" for i in range(config.num_workflows)]
+    b_task_ids = [f"task-B-{strategy}-workflow-{i:04d}" for i in range(config.num_workflows)]
 
-    # Generate all B task IDs (including all loop iterations)
-    # With distribution-based sampling, each workflow may have different max_b_loops,
-    # so we use each workflow's actual max_b_loops from the pre-generated workflow data
-    b_task_ids = []
-    with state_lock:
-        for workflow_id, workflow_data in workflow_states.items():
-            workflow_num = workflow_id.split('-')[-1]
-            for loop in range(1, workflow_data.max_b_loops + 1):
-                b_task_ids.append(f"task-B{loop}-{strategy}-workflow-{workflow_num}")
-
-    # A2 Submitter (Thread 3)
-    a2_submitter = A2TaskSubmitter(
-        name="A2Submitter",
-        config=config,
-        workflow_states=workflow_states,
-        state_lock=state_lock,
-        a1_result_queue=a1_result_queue,
-        scheduler_url=config.scheduler_a_url,
-        rate_limiter=rate_limiter,
-        metrics=metrics,
-    )
-
-    # B Submitter (Thread 5)
+    # B Submitter (Thread 3) - LLM
     b_submitter = BTaskSubmitter(
         name="BSubmitter",
         config=config,
         workflow_states=workflow_states,
         state_lock=state_lock,
-        a2_result_queue=a2_result_queue,
+        a_result_queue=a_result_queue,
         scheduler_url=config.scheduler_b_url,
         rate_limiter=rate_limiter,
         metrics=metrics,
     )
 
-    # A1 Receiver (Thread 2)
-    a1_receiver = A1TaskReceiver(
-        name="A1Receiver",
-        config=config,
-        workflow_states=workflow_states,
-        state_lock=state_lock,
-        a2_submitter=a2_submitter,
-        a1_result_queue=a1_result_queue,
-        task_ids=a1_task_ids,
-        scheduler_url=config.scheduler_a_url,
-        model_id=config.model_a_id,
-        metrics=metrics,
-    )
-
-    # A2 Receiver (Thread 4)
-    a2_receiver = A2TaskReceiver(
-        name="A2Receiver",
+    # A Receiver (Thread 2)
+    a_receiver = ATaskReceiver(
+        name="AReceiver",
         config=config,
         workflow_states=workflow_states,
         state_lock=state_lock,
         b_submitter=b_submitter,
-        a2_result_queue=a2_result_queue,
-        task_ids=a2_task_ids,
+        a_result_queue=a_result_queue,
+        task_ids=a_task_ids,
         scheduler_url=config.scheduler_a_url,
         model_id=config.model_a_id,
         metrics=metrics,
     )
 
-    # B Receiver (Thread 6)
+    # B Receiver (Thread 4)
     b_receiver = BTaskReceiver(
         name="BReceiver",
         config=config,
         workflow_states=workflow_states,
         state_lock=state_lock,
-        b_submitter=b_submitter,
         task_ids=b_task_ids,
         scheduler_url=config.scheduler_b_url,
         model_id=config.model_b_id,
@@ -214,17 +225,15 @@ def run_single_experiment(config, captions, logger, strategy_name=None):
     start_time = time.time()
 
     # Start receivers first (so they're ready to receive)
-    a1_receiver.start()
-    a2_receiver.start()
+    a_receiver.start()
     b_receiver.start()
 
     # Wait a moment for receivers to connect
     time.sleep(1.0)
 
     # Start submitters
-    a2_submitter.start()
     b_submitter.start()
-    a1_submitter.start()  # Start A1 last (it drives the workflow)
+    a_submitter.start()  # Start A last (it drives the workflow)
 
     logger.info("All threads started successfully")
 
@@ -234,19 +243,13 @@ def run_single_experiment(config, captions, logger, strategy_name=None):
 
     logger.info(f"Running experiment for up to {config.duration} seconds...")
 
-    # Calculate target workflows for early stopping based on SUBMISSION ORDER
-    # We need:
-    # 1. All warmup workflows (first num_warmup) to complete
-    # 2. The first portion_stats fraction of non-warmup workflows to complete
-    # This matches how MetricsCollector filters workflows for statistics
+    # Calculate target workflows for early stopping
     import math
     num_warmup = config.num_warmup
     num_non_warmup = config.num_workflows - num_warmup
     target_non_warmup = math.ceil(num_non_warmup * config.portion_stats)
 
     # Generate the list of workflow IDs that must complete for metrics
-    # Warmup workflows: workflow-0000 to workflow-(num_warmup-1)
-    # Target non-warmup: workflow-num_warmup to workflow-(num_warmup + target_non_warmup - 1)
     target_workflow_ids = set()
     for i in range(num_warmup):
         target_workflow_ids.add(f"workflow-{i:04d}")
@@ -267,7 +270,6 @@ def run_single_experiment(config, captions, logger, strategy_name=None):
         with state_lock:
             total_workflows = len(workflow_states)
             completed = sum(1 for w in workflow_states.values() if w.is_complete())
-            # Count how many of the TARGET workflows have completed
             target_completed = sum(
                 1 for wid, w in workflow_states.items()
                 if wid in target_workflow_ids and w.is_complete()
@@ -281,7 +283,7 @@ def run_single_experiment(config, captions, logger, strategy_name=None):
             f"total={completed}/{total_workflows} ({total_pct:.1f}%)"
         )
 
-        # Early stopping: check if all TARGET workflows (by submission order) have completed
+        # Early stopping
         if target_completed >= target_completion:
             logger.info(f"Early stopping: {target_completed} target workflows completed")
             logger.info("All workflows needed for metrics calculation are complete!")
@@ -295,23 +297,19 @@ def run_single_experiment(config, captions, logger, strategy_name=None):
     logger.info("Stopping all threads...")
 
     # Stop submitters first (no new tasks)
-    a1_submitter.stop()
-    a2_submitter.stop()
+    a_submitter.stop()
     b_submitter.stop()
 
     # Wait for submitters to finish
-    a1_submitter.join(timeout=10)
-    a2_submitter.join(timeout=10)
+    a_submitter.join(timeout=10)
     b_submitter.join(timeout=10)
 
     # Stop receivers
-    a1_receiver.stop()
-    a2_receiver.stop()
+    a_receiver.stop()
     b_receiver.stop()
 
     # Wait for receivers to finish
-    a1_receiver.join(timeout=10)
-    a2_receiver.join(timeout=10)
+    a_receiver.join(timeout=10)
     b_receiver.join(timeout=10)
 
     logger.info("All threads stopped")
@@ -333,23 +331,18 @@ def run_single_experiment(config, captions, logger, strategy_name=None):
     with state_lock:
         total_workflows = len(workflow_states)
         completed_workflows = sum(1 for w in workflow_states.values() if w.is_complete())
-        total_b_iterations = sum(len(w.b_complete_times) for w in workflow_states.values())
 
     logger.info(f"Total workflows: {total_workflows}")
     logger.info(f"Completed workflows: {completed_workflows}")
     logger.info(f"Completion rate: {100*completed_workflows/total_workflows if total_workflows > 0 else 0:.1f}%")
-    logger.info(f"Total B iterations: {total_b_iterations}")
-    logger.info(f"Avg B iterations/workflow: {total_b_iterations/total_workflows if total_workflows > 0 else 0:.2f}")
 
     logger.info("\nSubmitter Statistics:")
-    logger.info(f"  A1: {a1_submitter.submitted_count} submitted, {a1_submitter.failed_count} failed")
-    logger.info(f"  A2: {a2_submitter.submitted_count} submitted, {a2_submitter.failed_count} failed")
-    logger.info(f"  B:  {b_submitter.submitted_count} submitted, {b_submitter.failed_count} failed")
+    logger.info(f"  A (OCR): {a_submitter.submitted_count} submitted, {a_submitter.failed_count} failed")
+    logger.info(f"  B (LLM): {b_submitter.submitted_count} submitted, {b_submitter.failed_count} failed")
 
     logger.info("\nReceiver Statistics:")
-    logger.info(f"  A1: {a1_receiver.received_count} received")
-    logger.info(f"  A2: {a2_receiver.received_count} received")
-    logger.info(f"  B:  {b_receiver.received_count} received, {b_receiver.completed_workflows} workflows completed")
+    logger.info(f"  A (OCR): {a_receiver.received_count} received")
+    logger.info(f"  B (LLM): {b_receiver.received_count} received, {b_receiver.completed_workflows} workflows completed")
 
     # ========================================================================
     # Export Metrics
@@ -358,10 +351,9 @@ def run_single_experiment(config, captions, logger, strategy_name=None):
     output_dir = Path(config.output_dir)
     ensure_directory(str(output_dir))
 
-    # Generate strategy-specific metrics filename to prevent overwriting
+    # Generate strategy-specific metrics filename
     base_metrics_file = config.metrics_file
     if strategy_name:
-        # Insert strategy name before extension: metrics.json -> metrics_probabilistic.json
         if '.' in base_metrics_file:
             name, ext = base_metrics_file.rsplit('.', 1)
             metrics_filename = f"{name}_{strategy_name}.{ext}"
@@ -378,20 +370,20 @@ def run_single_experiment(config, captions, logger, strategy_name=None):
 
     # Generate detailed text report with per-task-type metrics (Avg, P90, P99)
     report = metrics.generate_detailed_text_report(
-        task_types=["A1", "A2", "B"],
+        task_types=["A", "B"],
         portion_stats=config.portion_stats
     )
     print("\n" + report)
 
     logger.info("="*70)
     if strategy_name:
-        logger.info(f"Simulation complete for strategy: {strategy_name}!")
+        logger.info(f"Real mode complete for strategy: {strategy_name}!")
     else:
-        logger.info("Simulation complete!")
+        logger.info("Real mode complete!")
     logger.info("="*70)
 
     # Collect and return strategy results for comparison table
-    task_types = ["A1", "A2", "B"]
+    task_types = ["A", "B"]
     task_metrics_result = {}
     for task_type in task_types:
         task_metrics_result[task_type] = metrics.get_task_metrics_by_type(
@@ -399,10 +391,8 @@ def run_single_experiment(config, captions, logger, strategy_name=None):
         )
 
     # Get workflow metrics
-    summary = metrics.get_summary(exclude_warmup=True, portion_stats=config.portion_stats)
     workflow_durations = []
     with metrics._workflow_lock:
-        # Get included workflow IDs based on portion_stats
         total_non_warmup = len(metrics._non_warmup_workflow_order)
         num_to_include = int(total_non_warmup * config.portion_stats)
         included_workflow_ids = set(metrics._non_warmup_workflow_order[:num_to_include])
@@ -443,8 +433,8 @@ def main():
     # Parse Command Line Arguments
     # ========================================================================
 
-    parser = create_base_parser(description="Text2Video Workflow - Simulation Mode")
-    parser = add_type1_args(parser)
+    parser = create_base_parser(description="OCR+LLM Workflow - Real Cluster Mode")
+    parser = add_type4_real_args(parser)
     args = parser.parse_args()
 
     # Parse and validate strategies
@@ -459,46 +449,60 @@ def main():
     # ========================================================================
 
     # Compute warmup count from ratio
-    # warmup_count = num_workflows * warmup_ratio
     warmup_count = int(args.num_workflows * args.warmup)
 
-    # Create config with hardcoded simulation mode
-    config = Text2VideoConfig(
-        mode="simulation",  # Hardcoded for simulation
+    # Create config with hardcoded real mode
+    config = OCRLLMConfig(
+        mode="real",  # Hardcoded for real mode
         qps=args.qps,
         duration=args.duration,
         num_workflows=args.num_workflows,
-        max_b_loops=args.max_b_loops,
         num_warmup=warmup_count,
         strategies=strategies,
         portion_stats=args.portion_stats,
-        frame_count=args.frame_count,
-        frame_count_config=args.frame_count_config,
-        max_b_loops_config=args.max_b_loops_config,
-        frame_count_seed=args.frame_count_seed,
-        max_b_loops_seed=args.max_b_loops_seed,
+        ocr_languages=args.ocr_languages,
+        ocr_detail_level=args.ocr_detail_level,
+        max_tokens=args.max_tokens,
     )
+
+    # Override scheduler URLs if provided
+    if args.scheduler_a_url:
+        config.scheduler_a_url = args.scheduler_a_url
+    if args.scheduler_b_url:
+        config.scheduler_b_url = args.scheduler_b_url
 
     logger = configure_logging(level="INFO")
 
-    logger.info(f"Mode: {config.mode} (hardcoded for simulation)")
-    logger.info(f"Model A: {config.model_a_id}")
-    logger.info(f"Model B: {config.model_b_id}")
+    logger.info(f"Mode: {config.mode} (hardcoded for real)")
+    logger.info(f"Model A (OCR): {config.model_a_id}")
+    logger.info(f"Model B (LLM): {config.model_b_id}")
     logger.info(f"Scheduler A: {config.scheduler_a_url}")
     logger.info(f"Scheduler B: {config.scheduler_b_url}")
 
-    # Load captions
-    project_root = Path(__file__).parent.parent.parent.parent.parent
-    caption_path = project_root / config.caption_file
-
-    logger.info(f"Loading captions from: {caption_path}")
-    try:
-        captions = load_captions(str(caption_path))
-        logger.info(f"Loaded {len(captions)} captions")
-    except FileNotFoundError:
-        logger.error(f"Caption file not found: {caption_path}")
-        logger.error("Please ensure captions_10k.json exists in project root")
-        sys.exit(1)
+    # Load images
+    images = None
+    if args.image_dir:
+        logger.info(f"Loading images from directory: {args.image_dir}")
+        try:
+            images = load_images_from_directory(args.image_dir, max_count=config.num_workflows)
+            logger.info(f"Loaded {len(images)} images from directory")
+        except Exception as e:
+            logger.error(f"Failed to load images from directory: {e}")
+            sys.exit(1)
+    elif args.image_json:
+        logger.info(f"Loading images from JSON: {args.image_json}")
+        try:
+            images = load_images_from_json(args.image_json)
+            logger.info(f"Loaded {len(images)} images from JSON")
+        except Exception as e:
+            logger.error(f"Failed to load images from JSON: {e}")
+            sys.exit(1)
+    else:
+        # Generate dummy images for testing
+        logger.warning("No image source specified, generating dummy images")
+        logger.warning("For production use, specify --image-dir or --image-json")
+        images = generate_dummy_images(config.num_workflows)
+        logger.info(f"Generated {len(images)} dummy images")
 
     # ========================================================================
     # Strategy Management
@@ -510,7 +514,7 @@ def main():
     logger.info("="*70)
 
     # Set default quantiles if not specified
-    quantiles = config.quantiles if config.quantiles else [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99]
+    quantiles = config.quantiles if config.quantiles else [0.1, 0.25, 0.5, 0.75, 0.99]
 
     # Collect results from all strategies for comparison
     all_strategy_results = {}
@@ -552,7 +556,7 @@ def main():
         logger.info("\n" + "="*70)
         logger.info(f"Running experiment with strategy: {strategy_name}")
         logger.info("="*70)
-        experiment_results = run_single_experiment(config, captions, logger, strategy_name=strategy_name)
+        experiment_results = run_single_experiment(config, images, logger, strategy_name=strategy_name)
 
         # Store results for comparison
         all_strategy_results[strategy_name] = experiment_results
@@ -563,7 +567,7 @@ def main():
     if len(all_strategy_results) > 1:
         comparison_table = generate_strategy_comparison_table(
             all_strategy_results,
-            task_types=["A1", "A2", "B"]
+            task_types=["A", "B"]
         )
         print(comparison_table)
         logger.info("Strategy comparison table generated")

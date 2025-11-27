@@ -43,6 +43,9 @@ class ATaskSubmitter(BaseTaskSubmitter):
         self.workflow_states = workflow_states
         self.state_lock = state_lock
 
+        # Set random seed for reproducibility (uniform sampling)
+        random.seed(42)
+
         # Create fanout sampler for distribution-based fanout
         fanout_sampler = config.create_fanout_sampler()
 
@@ -87,6 +90,27 @@ class ATaskSubmitter(BaseTaskSubmitter):
 
         self.index = 0
 
+        # Calculate average sleep times for min_time strategy (simulation mode only)
+        if config.mode == "simulation":
+            a_times = [w.a_sleep_time for w in self.workflows]
+            b1_times = [t for w in self.workflows for t in w.b1_sleep_times]
+            b2_times = [t for w in self.workflows for t in w.b2_sleep_times]
+            merge_times = [w.merge_sleep_time for w in self.workflows]
+
+            # Store averages in config for other submitters to use
+            config.avg_a_sleep_time_ms = (sum(a_times) / len(a_times)) * 1000.0 if a_times else 10000.0
+            config.avg_b1_sleep_time_ms = (sum(b1_times) / len(b1_times)) * 1000.0 if b1_times else 10000.0
+            config.avg_b2_sleep_time_ms = (sum(b2_times) / len(b2_times)) * 1000.0 if b2_times else 10000.0
+            config.avg_merge_sleep_time_ms = (sum(merge_times) / len(merge_times)) * 1000.0 if merge_times else 10000.0
+
+            self.logger.info(
+                f"Calculated average sleep times for min_time strategy: "
+                f"A={config.avg_a_sleep_time_ms:.1f}ms, "
+                f"B1={config.avg_b1_sleep_time_ms:.1f}ms, "
+                f"B2={config.avg_b2_sleep_time_ms:.1f}ms, "
+                f"merge={config.avg_merge_sleep_time_ms:.1f}ms"
+            )
+
         # Log fanout distribution statistics
         if fanout_values:
             avg_fanout = sum(fanout_values) / len(fanout_values)
@@ -118,10 +142,18 @@ class ATaskSubmitter(BaseTaskSubmitter):
             # Use pre-generated sleep time
             task_input = {"sleep_time": workflow_data.a_sleep_time}
 
+            # Calculate exp_runtime based on strategy
+            # min_time strategy: use dataset average
+            # other strategies: use actual sampled runtime
+            if workflow_data.strategy == "min_time" and hasattr(self.config, 'avg_a_sleep_time_ms'):
+                exp_runtime = self.config.avg_a_sleep_time_ms
+            else:
+                exp_runtime = workflow_data.a_sleep_time * 1000.0  # Convert to milliseconds
+
             # Simulation mode metadata (minimal)
             metadata = {
                 "workflow_id": workflow_data.workflow_id,
-                "exp_runtime": workflow_data.a_sleep_time * 1000.0,  # Convert to milliseconds
+                "exp_runtime": exp_runtime,
                 "task_type": "A"
             }
         else:  # real mode
@@ -244,10 +276,18 @@ class B1TaskSubmitter(BaseTaskSubmitter):
             sleep_time = workflow_data.b1_sleep_times[b1_index]
             task_input = {"sleep_time": sleep_time}
 
+            # Calculate exp_runtime based on strategy
+            # min_time strategy: use dataset average
+            # other strategies: use actual sampled runtime
+            if workflow_data.strategy == "min_time" and hasattr(self.config, 'avg_b1_sleep_time_ms'):
+                exp_runtime = self.config.avg_b1_sleep_time_ms
+            else:
+                exp_runtime = sleep_time * 1000.0  # Convert to milliseconds
+
             # Simulation mode metadata (minimal)
             metadata = {
                 "workflow_id": workflow_id,
-                "exp_runtime": sleep_time * 1000.0,  # Convert to milliseconds
+                "exp_runtime": exp_runtime,
                 "task_type": "B1",
                 "b_index": b1_index  # B index for pairing with B2
             }
@@ -368,10 +408,18 @@ class B2TaskSubmitter(BaseTaskSubmitter):
             sleep_time = workflow_data.b2_sleep_times[b1_index]  # Use same index as B1
             task_input = {"sleep_time": sleep_time}
 
+            # Calculate exp_runtime based on strategy
+            # min_time strategy: use dataset average
+            # other strategies: use actual sampled runtime
+            if workflow_data.strategy == "min_time" and hasattr(self.config, 'avg_b2_sleep_time_ms'):
+                exp_runtime = self.config.avg_b2_sleep_time_ms
+            else:
+                exp_runtime = sleep_time * 1000.0  # Convert to milliseconds
+
             # Simulation mode metadata (minimal)
             metadata = {
                 "workflow_id": workflow_id,
-                "exp_runtime": sleep_time * 1000.0,  # Convert to milliseconds
+                "exp_runtime": exp_runtime,
                 "task_type": "B2",
                 "b_index": b1_index  # B index for pairing with B1
             }
@@ -494,10 +542,18 @@ class MergeTaskSubmitter(BaseTaskSubmitter):
             sleep_time = workflow_data.merge_sleep_time
             task_input = {"sleep_time": sleep_time}
 
+            # Calculate exp_runtime based on strategy
+            # min_time strategy: use dataset average
+            # other strategies: use actual sampled runtime
+            if workflow_data.strategy == "min_time" and hasattr(self.config, 'avg_merge_sleep_time_ms'):
+                exp_runtime = self.config.avg_merge_sleep_time_ms
+            else:
+                exp_runtime = sleep_time * 1000.0  # Convert to milliseconds
+
             # Simulation mode metadata (minimal)
             metadata = {
                 "workflow_id": workflow_id,
-                "exp_runtime": sleep_time * 1000.0,  # Convert to milliseconds
+                "exp_runtime": exp_runtime,
                 "task_type": "merge"  # Use lowercase "merge" to match experiment 07
             }
         else:  # real mode

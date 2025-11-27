@@ -1,0 +1,9 @@
+{
+    "type": "two_peak",
+    "peaks": [
+        {"mean": 8, "std": 1.0, "weight": 1.0},
+        {"mean": 24, "std": 2.0, "weight": 1.0}
+    ],
+    "min": 4,
+    "max": 32
+}

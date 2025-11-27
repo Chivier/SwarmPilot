@@ -30,7 +30,7 @@ class DeepResearchConfig:
     # Fanout distribution configuration
     # Can be: path to JSON config file, or dict with distribution config
     fanout_config: Optional[Union[str, Path, Dict[str, Any]]] = None
-    fanout_seed: Optional[int] = None  # Random seed for reproducibility
+    fanout_seed: Optional[int] = 42  # Random seed for reproducibility (fixed to 42)
 
     # Strategy for task scheduling (used in task IDs)
     strategy: str = "probabilistic"
@@ -169,11 +169,8 @@ class DeepResearchConfig:
         # Parse fanout config (path to JSON file)
         fanout_config = os.getenv("FANOUT_CONFIG")
 
-        # Parse fanout seed for reproducibility
-        fanout_seed = None
-        fanout_seed_str = os.getenv("FANOUT_SEED")
-        if fanout_seed_str:
-            fanout_seed = int(fanout_seed_str)
+        # Parse fanout seed for reproducibility (default to 42)
+        fanout_seed = int(os.getenv("FANOUT_SEED", "42"))
 
         return cls(
             mode=os.getenv("MODE", "simulation"),

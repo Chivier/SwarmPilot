@@ -1,0 +1,3746 @@
+{
+  "summary": {
+    "collection_duration": 122.01656222343445,
+    "warmup_stats": {
+      "warmup_workflows": 20,
+      "warmup_tasks": 40,
+      "excluded_from_stats": true
+    },
+    "portion_stats": {
+      "portion": 0.5,
+      "total_non_warmup_workflows": 80,
+      "included_workflows": 40,
+      "excluded_by_portion": 40
+    },
+    "task_stats": {
+      "total_submitted": 80,
+      "total_completed": 40,
+      "successful": 40,
+      "failed": 0,
+      "success_rate": 1.0,
+      "actual_qps": 0.6556486967195937
+    },
+    "task_latency": {
+      "p50": 0.5547372102737427,
+      "p95": 0.5754422545433044,
+      "p99": 0.5808367657661438,
+      "mean": 0.553872799873352,
+      "std": 0.014983555642343938
+    },
+    "workflow_stats": {
+      "total_started": 40,
+      "total_completed": 0,
+      "completion_rate": 0.0
+    },
+    "workflow_duration": {
+      "mean": 0,
+      "std": 0,
+      "min": 0,
+      "max": 0
+    }
+  },
+  "tasks": [
+    {
+      "task_id": "task-A-min_time-workflow-0000",
+      "workflow_id": "workflow-0000",
+      "task_type": "A",
+      "submit_time": 1764248509.3498769,
+      "complete_time": 1764248509.9323804,
+      "duration": 0.5825035572052002,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0001",
+      "workflow_id": "workflow-0001",
+      "task_type": "A",
+      "submit_time": 1764248509.3531985,
+      "complete_time": 1764248509.933663,
+      "duration": 0.5804643630981445,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0002",
+      "workflow_id": "workflow-0002",
+      "task_type": "A",
+      "submit_time": 1764248509.8500166,
+      "complete_time": 1764248510.3881178,
+      "duration": 0.5381011962890625,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0003",
+      "workflow_id": "workflow-0003",
+      "task_type": "A",
+      "submit_time": 1764248510.3551178,
+      "complete_time": 1764248510.8729014,
+      "duration": 0.5177836418151855,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0000",
+      "workflow_id": "workflow-0000",
+      "task_type": "B",
+      "submit_time": 1764248510.8493783,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0004",
+      "workflow_id": "workflow-0004",
+      "task_type": "A",
+      "submit_time": 1764248511.3516097,
+      "complete_time": 1764248511.9009936,
+      "duration": 0.5493838787078857,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0005",
+      "workflow_id": "workflow-0005",
+      "task_type": "A",
+      "submit_time": 1764248511.8518538,
+      "complete_time": 1764248512.3991861,
+      "duration": 0.5473322868347168,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0001",
+      "workflow_id": "workflow-0001",
+      "task_type": "B",
+      "submit_time": 1764248512.3494296,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0006",
+      "workflow_id": "workflow-0006",
+      "task_type": "A",
+      "submit_time": 1764248512.8547995,
+      "complete_time": 1764248513.4013762,
+      "duration": 0.546576738357544,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0002",
+      "workflow_id": "workflow-0002",
+      "task_type": "B",
+      "submit_time": 1764248513.3485715,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0007",
+      "workflow_id": "workflow-0007",
+      "task_type": "A",
+      "submit_time": 1764248513.8526635,
+      "complete_time": 1764248514.4257765,
+      "duration": 0.573112964630127,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0003",
+      "workflow_id": "workflow-0003",
+      "task_type": "B",
+      "submit_time": 1764248514.354208,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0008",
+      "workflow_id": "workflow-0008",
+      "task_type": "A",
+      "submit_time": 1764248514.8507779,
+      "complete_time": 1764248515.421176,
+      "duration": 0.5703980922698975,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0009",
+      "workflow_id": "workflow-0009",
+      "task_type": "A",
+      "submit_time": 1764248515.3531241,
+      "complete_time": 1764248515.907133,
+      "duration": 0.554008960723877,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0004",
+      "workflow_id": "workflow-0004",
+      "task_type": "B",
+      "submit_time": 1764248515.8483553,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0010",
+      "workflow_id": "workflow-0010",
+      "task_type": "A",
+      "submit_time": 1764248516.3510683,
+      "complete_time": 1764248516.8912134,
+      "duration": 0.5401451587677002,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0005",
+      "workflow_id": "workflow-0005",
+      "task_type": "B",
+      "submit_time": 1764248516.8547227,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0006",
+      "workflow_id": "workflow-0006",
+      "task_type": "B",
+      "submit_time": 1764248517.3497822,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0011",
+      "workflow_id": "workflow-0011",
+      "task_type": "A",
+      "submit_time": 1764248517.8550904,
+      "complete_time": 1764248518.4000673,
+      "duration": 0.5449769496917725,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0007",
+      "workflow_id": "workflow-0007",
+      "task_type": "B",
+      "submit_time": 1764248518.3480392,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0008",
+      "workflow_id": "workflow-0008",
+      "task_type": "B",
+      "submit_time": 1764248518.8486617,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0012",
+      "workflow_id": "workflow-0012",
+      "task_type": "A",
+      "submit_time": 1764248519.3571498,
+      "complete_time": 1764248519.9352593,
+      "duration": 0.5781095027923584,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0009",
+      "workflow_id": "workflow-0009",
+      "task_type": "B",
+      "submit_time": 1764248519.8527591,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0013",
+      "workflow_id": "workflow-0013",
+      "task_type": "A",
+      "submit_time": 1764248520.3508728,
+      "complete_time": 1764248520.915395,
+      "duration": 0.5645222663879395,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0014",
+      "workflow_id": "workflow-0014",
+      "task_type": "A",
+      "submit_time": 1764248520.8506649,
+      "complete_time": 1764248521.4279952,
+      "duration": 0.5773303508758545,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0015",
+      "workflow_id": "workflow-0015",
+      "task_type": "A",
+      "submit_time": 1764248521.3506522,
+      "complete_time": 1764248521.915657,
+      "duration": 0.565004825592041,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0016",
+      "workflow_id": "workflow-0016",
+      "task_type": "A",
+      "submit_time": 1764248521.8507724,
+      "complete_time": 1764248522.3861775,
+      "duration": 0.535405158996582,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0010",
+      "workflow_id": "workflow-0010",
+      "task_type": "B",
+      "submit_time": 1764248522.349568,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0011",
+      "workflow_id": "workflow-0011",
+      "task_type": "B",
+      "submit_time": 1764248522.8486233,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0017",
+      "workflow_id": "workflow-0017",
+      "task_type": "A",
+      "submit_time": 1764248523.351441,
+      "complete_time": 1764248523.8827417,
+      "duration": 0.5313007831573486,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0012",
+      "workflow_id": "workflow-0012",
+      "task_type": "B",
+      "submit_time": 1764248523.8508315,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0018",
+      "workflow_id": "workflow-0018",
+      "task_type": "A",
+      "submit_time": 1764248524.350966,
+      "complete_time": 1764248524.9180114,
+      "duration": 0.5670454502105713,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0013",
+      "workflow_id": "workflow-0013",
+      "task_type": "B",
+      "submit_time": 1764248524.85627,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0019",
+      "workflow_id": "workflow-0019",
+      "task_type": "A",
+      "submit_time": 1764248525.3514366,
+      "complete_time": 1764248525.8770404,
+      "duration": 0.5256037712097168,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0020",
+      "workflow_id": "workflow-0020",
+      "task_type": "A",
+      "submit_time": 1764248525.8561106,
+      "complete_time": 1764248526.401365,
+      "duration": 0.5452544689178467,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0014",
+      "workflow_id": "workflow-0014",
+      "task_type": "B",
+      "submit_time": 1764248526.349981,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0015",
+      "workflow_id": "workflow-0015",
+      "task_type": "B",
+      "submit_time": 1764248526.8485577,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0021",
+      "workflow_id": "workflow-0021",
+      "task_type": "A",
+      "submit_time": 1764248527.3490481,
+      "complete_time": 1764248527.9153419,
+      "duration": 0.5662937164306641,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0016",
+      "workflow_id": "workflow-0016",
+      "task_type": "B",
+      "submit_time": 1764248527.8485134,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0022",
+      "workflow_id": "workflow-0022",
+      "task_type": "A",
+      "submit_time": 1764248528.3494308,
+      "complete_time": 1764248528.923019,
+      "duration": 0.5735881328582764,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0017",
+      "workflow_id": "workflow-0017",
+      "task_type": "B",
+      "submit_time": 1764248528.8499827,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0018",
+      "workflow_id": "workflow-0018",
+      "task_type": "B",
+      "submit_time": 1764248529.3486638,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0023",
+      "workflow_id": "workflow-0023",
+      "task_type": "A",
+      "submit_time": 1764248529.8553681,
+      "complete_time": 1764248530.411266,
+      "duration": 0.5558979511260986,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0019",
+      "workflow_id": "workflow-0019",
+      "task_type": "B",
+      "submit_time": 1764248530.3511002,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0020",
+      "workflow_id": "workflow-0020",
+      "task_type": "B",
+      "submit_time": 1764248530.8479822,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0024",
+      "workflow_id": "workflow-0024",
+      "task_type": "A",
+      "submit_time": 1764248531.3539152,
+      "complete_time": 1764248531.9149272,
+      "duration": 0.5610120296478271,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0021",
+      "workflow_id": "workflow-0021",
+      "task_type": "B",
+      "submit_time": 1764248531.8509827,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0025",
+      "workflow_id": "workflow-0025",
+      "task_type": "A",
+      "submit_time": 1764248532.3478792,
+      "complete_time": 1764248532.9232876,
+      "duration": 0.5754084587097168,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0026",
+      "workflow_id": "workflow-0026",
+      "task_type": "A",
+      "submit_time": 1764248532.847929,
+      "complete_time": 1764248533.3855658,
+      "duration": 0.5376367568969727,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0027",
+      "workflow_id": "workflow-0027",
+      "task_type": "A",
+      "submit_time": 1764248533.349362,
+      "complete_time": 1764248533.9164264,
+      "duration": 0.5670645236968994,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0028",
+      "workflow_id": "workflow-0028",
+      "task_type": "A",
+      "submit_time": 1764248533.8479831,
+      "complete_time": 1764248534.3893507,
+      "duration": 0.5413675308227539,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0022",
+      "workflow_id": "workflow-0022",
+      "task_type": "B",
+      "submit_time": 1764248534.3517802,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0029",
+      "workflow_id": "workflow-0029",
+      "task_type": "A",
+      "submit_time": 1764248534.8545058,
+      "complete_time": 1764248535.438381,
+      "duration": 0.5838751792907715,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0023",
+      "workflow_id": "workflow-0023",
+      "task_type": "B",
+      "submit_time": 1764248535.3498256,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0030",
+      "workflow_id": "workflow-0030",
+      "task_type": "A",
+      "submit_time": 1764248535.8515043,
+      "complete_time": 1764248536.4157457,
+      "duration": 0.5642414093017578,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0031",
+      "workflow_id": "workflow-0031",
+      "task_type": "A",
+      "submit_time": 1764248536.3482068,
+      "complete_time": 1764248536.89371,
+      "duration": 0.5455031394958496,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0024",
+      "workflow_id": "workflow-0024",
+      "task_type": "B",
+      "submit_time": 1764248536.8510184,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0032",
+      "workflow_id": "workflow-0032",
+      "task_type": "A",
+      "submit_time": 1764248537.3542776,
+      "complete_time": 1764248537.8995695,
+      "duration": 0.5452919006347656,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0033",
+      "workflow_id": "workflow-0033",
+      "task_type": "A",
+      "submit_time": 1764248537.857611,
+      "complete_time": 1764248538.3821645,
+      "duration": 0.5245535373687744,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0025",
+      "workflow_id": "workflow-0025",
+      "task_type": "B",
+      "submit_time": 1764248538.3514802,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0026",
+      "workflow_id": "workflow-0026",
+      "task_type": "B",
+      "submit_time": 1764248538.8546138,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0034",
+      "workflow_id": "workflow-0034",
+      "task_type": "A",
+      "submit_time": 1764248539.3521173,
+      "complete_time": 1764248539.920551,
+      "duration": 0.5684337615966797,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0035",
+      "workflow_id": "workflow-0035",
+      "task_type": "A",
+      "submit_time": 1764248539.852488,
+      "complete_time": 1764248540.40072,
+      "duration": 0.548231840133667,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0036",
+      "workflow_id": "workflow-0036",
+      "task_type": "A",
+      "submit_time": 1764248540.3521755,
+      "complete_time": 1764248540.9215899,
+      "duration": 0.5694143772125244,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0037",
+      "workflow_id": "workflow-0037",
+      "task_type": "A",
+      "submit_time": 1764248540.8518438,
+      "complete_time": 1764248541.4142258,
+      "duration": 0.5623819828033447,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0038",
+      "workflow_id": "workflow-0038",
+      "task_type": "A",
+      "submit_time": 1764248541.3518555,
+      "complete_time": 1764248541.92794,
+      "duration": 0.5760843753814697,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0027",
+      "workflow_id": "workflow-0027",
+      "task_type": "B",
+      "submit_time": 1764248541.8498113,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0028",
+      "workflow_id": "workflow-0028",
+      "task_type": "B",
+      "submit_time": 1764248542.3488488,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0039",
+      "workflow_id": "workflow-0039",
+      "task_type": "A",
+      "submit_time": 1764248542.8555825,
+      "complete_time": 1764248543.3840752,
+      "duration": 0.5284926891326904,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0029",
+      "workflow_id": "workflow-0029",
+      "task_type": "B",
+      "submit_time": 1764248543.3501232,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0030",
+      "workflow_id": "workflow-0030",
+      "task_type": "B",
+      "submit_time": 1764248543.8547027,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0040",
+      "workflow_id": "workflow-0040",
+      "task_type": "A",
+      "submit_time": 1764248544.3483489,
+      "complete_time": 1764248544.9134407,
+      "duration": 0.5650918483734131,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0031",
+      "workflow_id": "workflow-0031",
+      "task_type": "B",
+      "submit_time": 1764248544.8509789,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0032",
+      "workflow_id": "workflow-0032",
+      "task_type": "B",
+      "submit_time": 1764248545.349013,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0033",
+      "workflow_id": "workflow-0033",
+      "task_type": "B",
+      "submit_time": 1764248545.848405,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0041",
+      "workflow_id": "workflow-0041",
+      "task_type": "A",
+      "submit_time": 1764248546.3538618,
+      "complete_time": 1764248546.9097576,
+      "duration": 0.5558958053588867,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0034",
+      "workflow_id": "workflow-0034",
+      "task_type": "B",
+      "submit_time": 1764248546.8483384,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0035",
+      "workflow_id": "workflow-0035",
+      "task_type": "B",
+      "submit_time": 1764248547.3525214,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0036",
+      "workflow_id": "workflow-0036",
+      "task_type": "B",
+      "submit_time": 1764248547.848692,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0042",
+      "workflow_id": "workflow-0042",
+      "task_type": "A",
+      "submit_time": 1764248548.3503428,
+      "complete_time": 1764248548.9218605,
+      "duration": 0.5715177059173584,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0037",
+      "workflow_id": "workflow-0037",
+      "task_type": "B",
+      "submit_time": 1764248548.8502483,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0043",
+      "workflow_id": "workflow-0043",
+      "task_type": "A",
+      "submit_time": 1764248549.355937,
+      "complete_time": 1764248549.906114,
+      "duration": 0.5501770973205566,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0038",
+      "workflow_id": "workflow-0038",
+      "task_type": "B",
+      "submit_time": 1764248549.8497398,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0044",
+      "workflow_id": "workflow-0044",
+      "task_type": "A",
+      "submit_time": 1764248550.3557177,
+      "complete_time": 1764248550.8930929,
+      "duration": 0.5373752117156982,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0039",
+      "workflow_id": "workflow-0039",
+      "task_type": "B",
+      "submit_time": 1764248550.8491418,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0045",
+      "workflow_id": "workflow-0045",
+      "task_type": "A",
+      "submit_time": 1764248551.3531501,
+      "complete_time": 1764248551.897968,
+      "duration": 0.5448179244995117,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0046",
+      "workflow_id": "workflow-0046",
+      "task_type": "A",
+      "submit_time": 1764248551.851267,
+      "complete_time": 1764248552.3904176,
+      "duration": 0.5391504764556885,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0047",
+      "workflow_id": "workflow-0047",
+      "task_type": "A",
+      "submit_time": 1764248552.3497841,
+      "complete_time": 1764248552.8993144,
+      "duration": 0.5495302677154541,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0048",
+      "workflow_id": "workflow-0048",
+      "task_type": "A",
+      "submit_time": 1764248552.856675,
+      "complete_time": 1764248553.4102535,
+      "duration": 0.5535786151885986,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0049",
+      "workflow_id": "workflow-0049",
+      "task_type": "A",
+      "submit_time": 1764248553.3489466,
+      "complete_time": 1764248553.8942032,
+      "duration": 0.5452566146850586,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0050",
+      "workflow_id": "workflow-0050",
+      "task_type": "A",
+      "submit_time": 1764248553.848614,
+      "complete_time": 1764248554.4106662,
+      "duration": 0.5620522499084473,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0040",
+      "workflow_id": "workflow-0040",
+      "task_type": "B",
+      "submit_time": 1764248554.3566446,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0051",
+      "workflow_id": "workflow-0051",
+      "task_type": "A",
+      "submit_time": 1764248554.8502748,
+      "complete_time": 1764248555.4201827,
+      "duration": 0.5699079036712646,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0041",
+      "workflow_id": "workflow-0041",
+      "task_type": "B",
+      "submit_time": 1764248555.3523295,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0042",
+      "workflow_id": "workflow-0042",
+      "task_type": "B",
+      "submit_time": 1764248555.8517625,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0052",
+      "workflow_id": "workflow-0052",
+      "task_type": "A",
+      "submit_time": 1764248556.3505113,
+      "complete_time": 1764248556.8826227,
+      "duration": 0.532111406326294,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0043",
+      "workflow_id": "workflow-0043",
+      "task_type": "B",
+      "submit_time": 1764248556.8540165,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0053",
+      "workflow_id": "workflow-0053",
+      "task_type": "A",
+      "submit_time": 1764248557.3498542,
+      "complete_time": 1764248557.895332,
+      "duration": 0.5454778671264648,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0044",
+      "workflow_id": "workflow-0044",
+      "task_type": "B",
+      "submit_time": 1764248557.8547587,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0054",
+      "workflow_id": "workflow-0054",
+      "task_type": "A",
+      "submit_time": 1764248558.357516,
+      "complete_time": 1764248558.8972383,
+      "duration": 0.539722204208374,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0045",
+      "workflow_id": "workflow-0045",
+      "task_type": "B",
+      "submit_time": 1764248558.8515863,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0046",
+      "workflow_id": "workflow-0046",
+      "task_type": "B",
+      "submit_time": 1764248559.3532233,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0055",
+      "workflow_id": "workflow-0055",
+      "task_type": "A",
+      "submit_time": 1764248559.848363,
+      "complete_time": 1764248560.3868754,
+      "duration": 0.5385124683380127,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0056",
+      "workflow_id": "workflow-0056",
+      "task_type": "A",
+      "submit_time": 1764248560.3516839,
+      "complete_time": 1764248560.8768184,
+      "duration": 0.5251345634460449,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0057",
+      "workflow_id": "workflow-0057",
+      "task_type": "A",
+      "submit_time": 1764248560.8492491,
+      "complete_time": 1764248561.4078631,
+      "duration": 0.5586140155792236,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0058",
+      "workflow_id": "workflow-0058",
+      "task_type": "A",
+      "submit_time": 1764248561.3498707,
+      "complete_time": 1764248561.9141665,
+      "duration": 0.564295768737793,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0059",
+      "workflow_id": "workflow-0059",
+      "task_type": "A",
+      "submit_time": 1764248561.8498383,
+      "complete_time": 1764248562.4165025,
+      "duration": 0.5666642189025879,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0047",
+      "workflow_id": "workflow-0047",
+      "task_type": "B",
+      "submit_time": 1764248562.3489623,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0048",
+      "workflow_id": "workflow-0048",
+      "task_type": "B",
+      "submit_time": 1764248562.8484201,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0049",
+      "workflow_id": "workflow-0049",
+      "task_type": "B",
+      "submit_time": 1764248563.3540766,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0060",
+      "workflow_id": "workflow-0060",
+      "task_type": "A",
+      "submit_time": 1764248563.8507233,
+      "complete_time": 1764248564.4016721,
+      "duration": 0.5509488582611084,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0050",
+      "workflow_id": "workflow-0050",
+      "task_type": "B",
+      "submit_time": 1764248564.3524978,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0051",
+      "workflow_id": "workflow-0051",
+      "task_type": "B",
+      "submit_time": 1764248564.8491142,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0052",
+      "workflow_id": "workflow-0052",
+      "task_type": "B",
+      "submit_time": 1764248565.3500445,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0053",
+      "workflow_id": "workflow-0053",
+      "task_type": "B",
+      "submit_time": 1764248565.8490965,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0061",
+      "workflow_id": "workflow-0061",
+      "task_type": "A",
+      "submit_time": 1764248566.349556,
+      "complete_time": 1764248566.868846,
+      "duration": 0.5192899703979492,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0054",
+      "workflow_id": "workflow-0054",
+      "task_type": "B",
+      "submit_time": 1764248566.853154,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0055",
+      "workflow_id": "workflow-0055",
+      "task_type": "B",
+      "submit_time": 1764248567.3557174,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0062",
+      "workflow_id": "workflow-0062",
+      "task_type": "A",
+      "submit_time": 1764248567.850227,
+      "complete_time": 1764248568.4220812,
+      "duration": 0.5718541145324707,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0063",
+      "workflow_id": "workflow-0063",
+      "task_type": "A",
+      "submit_time": 1764248568.3541965,
+      "complete_time": 1764248568.9108782,
+      "duration": 0.5566816329956055,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0056",
+      "workflow_id": "workflow-0056",
+      "task_type": "B",
+      "submit_time": 1764248568.8491151,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0057",
+      "workflow_id": "workflow-0057",
+      "task_type": "B",
+      "submit_time": 1764248569.3486433,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0064",
+      "workflow_id": "workflow-0064",
+      "task_type": "A",
+      "submit_time": 1764248569.8532405,
+      "complete_time": 1764248570.4041646,
+      "duration": 0.5509240627288818,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0065",
+      "workflow_id": "workflow-0065",
+      "task_type": "A",
+      "submit_time": 1764248570.3512168,
+      "complete_time": 1764248570.8995829,
+      "duration": 0.5483660697937012,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0058",
+      "workflow_id": "workflow-0058",
+      "task_type": "B",
+      "submit_time": 1764248570.8523908,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0059",
+      "workflow_id": "workflow-0059",
+      "task_type": "B",
+      "submit_time": 1764248571.3503165,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0060",
+      "workflow_id": "workflow-0060",
+      "task_type": "B",
+      "submit_time": 1764248571.8494935,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0061",
+      "workflow_id": "workflow-0061",
+      "task_type": "B",
+      "submit_time": 1764248572.3494663,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0062",
+      "workflow_id": "workflow-0062",
+      "task_type": "B",
+      "submit_time": 1764248572.8499193,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0063",
+      "workflow_id": "workflow-0063",
+      "task_type": "B",
+      "submit_time": 1764248573.3492646,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0064",
+      "workflow_id": "workflow-0064",
+      "task_type": "B",
+      "submit_time": 1764248573.8481743,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0066",
+      "workflow_id": "workflow-0066",
+      "task_type": "A",
+      "submit_time": 1764248574.3511796,
+      "complete_time": 1764248574.9268491,
+      "duration": 0.575669527053833,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0067",
+      "workflow_id": "workflow-0067",
+      "task_type": "A",
+      "submit_time": 1764248574.8553421,
+      "complete_time": 1764248575.4056368,
+      "duration": 0.5502946376800537,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0065",
+      "workflow_id": "workflow-0065",
+      "task_type": "B",
+      "submit_time": 1764248575.351089,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0068",
+      "workflow_id": "workflow-0068",
+      "task_type": "A",
+      "submit_time": 1764248575.850525,
+      "complete_time": 1764248576.4082742,
+      "duration": 0.5577492713928223,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0069",
+      "workflow_id": "workflow-0069",
+      "task_type": "A",
+      "submit_time": 1764248576.3483057,
+      "complete_time": 1764248576.8978724,
+      "duration": 0.5495667457580566,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0070",
+      "workflow_id": "workflow-0070",
+      "task_type": "A",
+      "submit_time": 1764248576.8508859,
+      "complete_time": 1764248577.3671217,
+      "duration": 0.5162358283996582,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0066",
+      "workflow_id": "workflow-0066",
+      "task_type": "B",
+      "submit_time": 1764248577.3546884,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0071",
+      "workflow_id": "workflow-0071",
+      "task_type": "A",
+      "submit_time": 1764248577.8563795,
+      "complete_time": 1764248578.424409,
+      "duration": 0.5680294036865234,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0067",
+      "workflow_id": "workflow-0067",
+      "task_type": "B",
+      "submit_time": 1764248578.3502808,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0072",
+      "workflow_id": "workflow-0072",
+      "task_type": "A",
+      "submit_time": 1764248578.855102,
+      "complete_time": 1764248579.4162192,
+      "duration": 0.5611171722412109,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0068",
+      "workflow_id": "workflow-0068",
+      "task_type": "B",
+      "submit_time": 1764248579.3511183,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0069",
+      "workflow_id": "workflow-0069",
+      "task_type": "B",
+      "submit_time": 1764248579.8511705,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0073",
+      "workflow_id": "workflow-0073",
+      "task_type": "A",
+      "submit_time": 1764248580.3557847,
+      "complete_time": 1764248580.9118288,
+      "duration": 0.5560441017150879,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0074",
+      "workflow_id": "workflow-0074",
+      "task_type": "A",
+      "submit_time": 1764248580.8519685,
+      "complete_time": 1764248581.4182036,
+      "duration": 0.5662350654602051,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0075",
+      "workflow_id": "workflow-0075",
+      "task_type": "A",
+      "submit_time": 1764248581.3503773,
+      "complete_time": 1764248581.924013,
+      "duration": 0.5736355781555176,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0076",
+      "workflow_id": "workflow-0076",
+      "task_type": "A",
+      "submit_time": 1764248581.8499365,
+      "complete_time": 1764248582.405444,
+      "duration": 0.5555074214935303,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0077",
+      "workflow_id": "workflow-0077",
+      "task_type": "A",
+      "submit_time": 1764248582.3492074,
+      "complete_time": 1764248582.8928711,
+      "duration": 0.543663740158081,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0070",
+      "workflow_id": "workflow-0070",
+      "task_type": "B",
+      "submit_time": 1764248582.8559923,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0078",
+      "workflow_id": "workflow-0078",
+      "task_type": "A",
+      "submit_time": 1764248583.3508656,
+      "complete_time": 1764248583.8865414,
+      "duration": 0.5356757640838623,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0079",
+      "workflow_id": "workflow-0079",
+      "task_type": "A",
+      "submit_time": 1764248583.8548086,
+      "complete_time": 1764248584.4263186,
+      "duration": 0.5715100765228271,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0071",
+      "workflow_id": "workflow-0071",
+      "task_type": "B",
+      "submit_time": 1764248584.3484933,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0072",
+      "workflow_id": "workflow-0072",
+      "task_type": "B",
+      "submit_time": 1764248584.8500288,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0073",
+      "workflow_id": "workflow-0073",
+      "task_type": "B",
+      "submit_time": 1764248585.3489497,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0074",
+      "workflow_id": "workflow-0074",
+      "task_type": "B",
+      "submit_time": 1764248585.8479517,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0080",
+      "workflow_id": "workflow-0080",
+      "task_type": "A",
+      "submit_time": 1764248586.3530703,
+      "complete_time": 1764248586.9040353,
+      "duration": 0.5509650707244873,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0075",
+      "workflow_id": "workflow-0075",
+      "task_type": "B",
+      "submit_time": 1764248586.8480196,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0081",
+      "workflow_id": "workflow-0081",
+      "task_type": "A",
+      "submit_time": 1764248587.3513117,
+      "complete_time": 1764248587.9090872,
+      "duration": 0.5577754974365234,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0076",
+      "workflow_id": "workflow-0076",
+      "task_type": "B",
+      "submit_time": 1764248587.855816,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0082",
+      "workflow_id": "workflow-0082",
+      "task_type": "A",
+      "submit_time": 1764248588.3503294,
+      "complete_time": 1764248588.9158657,
+      "duration": 0.5655362606048584,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0077",
+      "workflow_id": "workflow-0077",
+      "task_type": "B",
+      "submit_time": 1764248588.851206,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0078",
+      "workflow_id": "workflow-0078",
+      "task_type": "B",
+      "submit_time": 1764248589.3503633,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0079",
+      "workflow_id": "workflow-0079",
+      "task_type": "B",
+      "submit_time": 1764248589.8550873,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0080",
+      "workflow_id": "workflow-0080",
+      "task_type": "B",
+      "submit_time": 1764248590.3525138,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0081",
+      "workflow_id": "workflow-0081",
+      "task_type": "B",
+      "submit_time": 1764248590.8501577,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0083",
+      "workflow_id": "workflow-0083",
+      "task_type": "A",
+      "submit_time": 1764248591.3502045,
+      "complete_time": 1764248591.914041,
+      "duration": 0.5638365745544434,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0084",
+      "workflow_id": "workflow-0084",
+      "task_type": "A",
+      "submit_time": 1764248591.8498657,
+      "complete_time": 1764248592.4289997,
+      "duration": 0.5791339874267578,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0082",
+      "workflow_id": "workflow-0082",
+      "task_type": "B",
+      "submit_time": 1764248592.3510313,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0083",
+      "workflow_id": "workflow-0083",
+      "task_type": "B",
+      "submit_time": 1764248592.849628,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0085",
+      "workflow_id": "workflow-0085",
+      "task_type": "A",
+      "submit_time": 1764248593.349001,
+      "complete_time": 1764248593.8931692,
+      "duration": 0.54416823387146,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0084",
+      "workflow_id": "workflow-0084",
+      "task_type": "B",
+      "submit_time": 1764248593.8495376,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0086",
+      "workflow_id": "workflow-0086",
+      "task_type": "A",
+      "submit_time": 1764248594.3537233,
+      "complete_time": 1764248594.878765,
+      "duration": 0.5250418186187744,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0085",
+      "workflow_id": "workflow-0085",
+      "task_type": "B",
+      "submit_time": 1764248594.8499782,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0087",
+      "workflow_id": "workflow-0087",
+      "task_type": "A",
+      "submit_time": 1764248595.3518229,
+      "complete_time": 1764248595.923624,
+      "duration": 0.5718011856079102,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0088",
+      "workflow_id": "workflow-0088",
+      "task_type": "A",
+      "submit_time": 1764248595.8515995,
+      "complete_time": 1764248596.39885,
+      "duration": 0.547250509262085,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0086",
+      "workflow_id": "workflow-0086",
+      "task_type": "B",
+      "submit_time": 1764248596.351157,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0087",
+      "workflow_id": "workflow-0087",
+      "task_type": "B",
+      "submit_time": 1764248596.8501945,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0089",
+      "workflow_id": "workflow-0089",
+      "task_type": "A",
+      "submit_time": 1764248597.3486154,
+      "complete_time": 1764248597.8928888,
+      "duration": 0.5442733764648438,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0088",
+      "workflow_id": "workflow-0088",
+      "task_type": "B",
+      "submit_time": 1764248597.853526,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0089",
+      "workflow_id": "workflow-0089",
+      "task_type": "B",
+      "submit_time": 1764248598.3568711,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0090",
+      "workflow_id": "workflow-0090",
+      "task_type": "A",
+      "submit_time": 1764248598.8507864,
+      "complete_time": 1764248599.4161558,
+      "duration": 0.5653693675994873,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0091",
+      "workflow_id": "workflow-0091",
+      "task_type": "A",
+      "submit_time": 1764248599.353001,
+      "complete_time": 1764248599.8757026,
+      "duration": 0.5227015018463135,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0090",
+      "workflow_id": "workflow-0090",
+      "task_type": "B",
+      "submit_time": 1764248599.849739,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0092",
+      "workflow_id": "workflow-0092",
+      "task_type": "A",
+      "submit_time": 1764248600.3505807,
+      "complete_time": 1764248600.8824036,
+      "duration": 0.531822919845581,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0093",
+      "workflow_id": "workflow-0093",
+      "task_type": "A",
+      "submit_time": 1764248600.8510413,
+      "complete_time": 1764248601.414908,
+      "duration": 0.5638666152954102,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0094",
+      "workflow_id": "workflow-0094",
+      "task_type": "A",
+      "submit_time": 1764248601.348193,
+      "complete_time": 1764248601.9171371,
+      "duration": 0.5689442157745361,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0095",
+      "workflow_id": "workflow-0095",
+      "task_type": "A",
+      "submit_time": 1764248601.8479798,
+      "complete_time": 1764248602.3962343,
+      "duration": 0.5482544898986816,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0091",
+      "workflow_id": "workflow-0091",
+      "task_type": "B",
+      "submit_time": 1764248602.3574028,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0096",
+      "workflow_id": "workflow-0096",
+      "task_type": "A",
+      "submit_time": 1764248602.8516176,
+      "complete_time": 1764248603.3863022,
+      "duration": 0.5346846580505371,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0092",
+      "workflow_id": "workflow-0092",
+      "task_type": "B",
+      "submit_time": 1764248603.3530838,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0093",
+      "workflow_id": "workflow-0093",
+      "task_type": "B",
+      "submit_time": 1764248603.8501256,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0094",
+      "workflow_id": "workflow-0094",
+      "task_type": "B",
+      "submit_time": 1764248604.349989,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0095",
+      "workflow_id": "workflow-0095",
+      "task_type": "B",
+      "submit_time": 1764248604.8485935,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0096",
+      "workflow_id": "workflow-0096",
+      "task_type": "B",
+      "submit_time": 1764248605.3492763,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0097",
+      "workflow_id": "workflow-0097",
+      "task_type": "A",
+      "submit_time": 1764248605.8534162,
+      "complete_time": 1764248606.444979,
+      "duration": 0.5915627479553223,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0098",
+      "workflow_id": "workflow-0098",
+      "task_type": "A",
+      "submit_time": 1764248606.3559487,
+      "complete_time": 1764248606.89974,
+      "duration": 0.5437912940979004,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0097",
+      "workflow_id": "workflow-0097",
+      "task_type": "B",
+      "submit_time": 1764248606.8480759,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-A-min_time-workflow-0099",
+      "workflow_id": "workflow-0099",
+      "task_type": "A",
+      "submit_time": 1764248607.3568172,
+      "complete_time": 1764248607.896576,
+      "duration": 0.5397586822509766,
+      "success": true,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0098",
+      "workflow_id": "workflow-0098",
+      "task_type": "B",
+      "submit_time": 1764248607.85017,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    },
+    {
+      "task_id": "task-B-min_time-workflow-0099",
+      "workflow_id": "workflow-0099",
+      "task_type": "B",
+      "submit_time": 1764248608.35226,
+      "complete_time": null,
+      "duration": null,
+      "success": false,
+      "execution_time_ms": null,
+      "assigned_instance": null,
+      "error": null
+    }
+  ],
+  "workflows": [
+    {
+      "workflow_id": "workflow-0000",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248509.349866,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0001",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248509.3531914,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0002",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248509.8499897,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0003",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248510.3551006,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0004",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248511.3515823,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0005",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248511.8518295,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0006",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248512.854777,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0007",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248513.852641,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0008",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248514.850753,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0009",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248515.3530993,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0010",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248516.3510513,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0011",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248517.8550754,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0012",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248519.357122,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0013",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248520.350845,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0014",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248520.8506386,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0015",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248521.3506277,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0016",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248521.8507493,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0017",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248523.3514223,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0018",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248524.3509505,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0019",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248525.3514147,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0020",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248525.856096,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0021",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248527.3490303,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0022",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248528.349406,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0023",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248529.8553443,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0024",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248531.35389,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0025",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248532.3478537,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0026",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248532.8479056,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0027",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248533.349347,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0028",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248533.847965,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0029",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248534.8544822,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0030",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248535.851487,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0031",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248536.348184,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0032",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248537.3542619,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0033",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248537.8575952,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0034",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248539.3520935,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0035",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248539.8524637,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0036",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248540.3521473,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0037",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248540.8518178,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0038",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248541.3518305,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0039",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248542.8555655,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0040",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248544.3483279,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0041",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248546.3538373,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0042",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248548.3503137,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0043",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248549.3559113,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0044",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248550.3557014,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0045",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248551.3531342,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0046",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248551.851249,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0047",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248552.349768,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0048",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248552.8566513,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0049",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248553.3489208,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0050",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248553.8485985,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0051",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248554.8502507,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0052",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248556.3504941,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0053",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248557.3498397,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0054",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248558.3575,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0055",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248559.848345,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0056",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248560.3516657,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0057",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248560.8492346,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0058",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248561.349845,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0059",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248561.8498182,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0060",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248563.8506975,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0061",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248566.3495388,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0062",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248567.8502045,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0063",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248568.3541758,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0064",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248569.853217,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0065",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248570.351201,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0066",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248574.3511562,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0067",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248574.8553185,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0068",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248575.850506,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0069",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248576.3482876,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0070",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248576.8508708,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0071",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248577.856354,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0072",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248578.8550758,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0073",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248580.3557675,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0074",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248580.8519452,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0075",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248581.3503542,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0076",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248581.849911,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0077",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248582.3491917,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0078",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248583.3508472,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0079",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248583.854791,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0080",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248586.3530488,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0081",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248587.3512926,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0082",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248588.350307,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0083",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248591.350182,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0084",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248591.8498392,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0085",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248593.348982,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0086",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248594.353703,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0087",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248595.3518016,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0088",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248595.8515768,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0089",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248597.3486013,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0090",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248598.8507614,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0091",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248599.3529792,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0092",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248600.350556,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0093",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248600.8510232,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0094",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248601.3481672,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0095",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248601.8479555,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0096",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248602.8515987,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0097",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248605.853392,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0098",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248606.3559232,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    },
+    {
+      "workflow_id": "workflow-0099",
+      "workflow_type": "ocr_llm",
+      "start_time": 1764248607.3568003,
+      "end_time": null,
+      "total_duration": null,
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "failed_tasks": 0,
+      "metadata": {
+        "strategy": "min_time"
+      }
+    }
+  ]
+}

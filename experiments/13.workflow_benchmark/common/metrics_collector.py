@@ -347,6 +347,200 @@ class MetricsCollector:
                 }
             }
 
+    def get_task_metrics_by_type(self, task_type: str,
+                                  exclude_warmup: bool = True,
+                                  portion_stats: float = 1.0) -> Dict:
+        """
+        Calculate metrics for a specific task type.
+
+        Args:
+            task_type: Task type to filter by (e.g., "A1", "A2", "B")
+            exclude_warmup: If True, exclude warmup workflows from statistics
+            portion_stats: Portion of non-warmup workflows to include (0.0-1.0)
+
+        Returns:
+            Dict with keys: submitted, completed, failed, success_rate,
+                           avg, p50, p90, p99, std
+        """
+        with self._task_lock, self._workflow_lock:
+            # Determine included workflow IDs (same logic as get_summary)
+            if exclude_warmup:
+                total_non_warmup = len(self._non_warmup_workflow_order)
+                num_to_include = int(total_non_warmup * portion_stats)
+                included_workflow_ids = set(self._non_warmup_workflow_order[:num_to_include])
+            else:
+                included_workflow_ids = set(w.workflow_id for w in self.workflow_metrics)
+
+            # Filter tasks by type AND workflow inclusion
+            tasks = [t for t in self.task_metrics
+                     if t.task_type == task_type and t.workflow_id in included_workflow_ids]
+
+            completed = [t for t in tasks if t.complete_time is not None]
+            successful = [t for t in completed if t.success]
+            durations = [t.duration for t in completed if t.duration is not None]
+
+            # Calculate percentiles
+            if durations:
+                avg = float(np.mean(durations))
+                p50 = float(np.percentile(durations, 50))
+                p90 = float(np.percentile(durations, 90))
+                p99 = float(np.percentile(durations, 99))
+                std = float(np.std(durations))
+            else:
+                avg = p50 = p90 = p99 = std = 0.0
+
+            return {
+                'task_type': task_type,
+                'submitted': len(tasks),
+                'completed': len(completed),
+                'failed': len(completed) - len(successful),
+                'success_rate': len(successful) / len(completed) if completed else 0,
+                'avg': avg,
+                'p50': p50,
+                'p90': p90,
+                'p99': p99,
+                'std': std,
+            }
+
+    def generate_detailed_text_report(self, task_types: List[str],
+                                       filepath: Optional[Union[str, Path]] = None,
+                                       exclude_warmup: bool = True,
+                                       portion_stats: float = 1.0) -> str:
+        """
+        Generate human-readable report with per-task-type breakdown.
+
+        Includes both aggregate metrics AND per-task-type metrics with Avg, P90, P99.
+
+        Args:
+            task_types: List of task types to include (e.g., ["A1", "A2", "B"])
+            filepath: Optional output file path
+            exclude_warmup: If True, exclude warmup workflows from statistics
+            portion_stats: Portion of non-warmup workflows to include (0.0-1.0)
+
+        Returns:
+            Report as string
+        """
+        summary = self.get_summary(exclude_warmup=exclude_warmup, portion_stats=portion_stats)
+
+        report_lines = [
+            "=" * 80,
+            "WORKFLOW EXPERIMENT METRICS REPORT",
+            "=" * 80,
+            "",
+            f"Collection Duration: {summary['collection_duration']:.2f}s",
+        ]
+
+        # Add warmup info if applicable
+        warmup_stats = summary.get('warmup_stats', {})
+        if warmup_stats.get('warmup_workflows', 0) > 0:
+            report_lines.extend([
+                "",
+                "WARMUP (excluded from statistics):",
+                f"  Warmup Workflows: {warmup_stats['warmup_workflows']}",
+                f"  Warmup Tasks: {warmup_stats['warmup_tasks']}",
+            ])
+
+        # Add portion filtering info if applicable
+        portion_info = summary.get('portion_stats', {})
+        if portion_info.get('portion', 1.0) < 1.0:
+            report_lines.extend([
+                "",
+                "PORTION FILTERING:",
+                f"  Portion: {portion_info['portion']*100:.1f}%",
+                f"  Total Non-Warmup Workflows: {portion_info['total_non_warmup_workflows']}",
+                f"  Included in Stats: {portion_info['included_workflows']}",
+                f"  Excluded by Portion: {portion_info['excluded_by_portion']}",
+            ])
+
+        # Aggregate task statistics
+        report_lines.extend([
+            "",
+            "TASK STATISTICS (aggregate):",
+            f"  Total Submitted: {summary['task_stats']['total_submitted']}",
+            f"  Total Completed: {summary['task_stats']['total_completed']}",
+            f"  Successful: {summary['task_stats']['successful']}",
+            f"  Failed: {summary['task_stats']['failed']}",
+            f"  Success Rate: {summary['task_stats']['success_rate']*100:.2f}%",
+            f"  Actual QPS: {summary['task_stats']['actual_qps']:.2f}",
+        ])
+
+        # Aggregate task latency with P90
+        durations = []
+        with self._task_lock, self._workflow_lock:
+            if exclude_warmup:
+                total_non_warmup = len(self._non_warmup_workflow_order)
+                num_to_include = int(total_non_warmup * portion_stats)
+                included_workflow_ids = set(self._non_warmup_workflow_order[:num_to_include])
+            else:
+                included_workflow_ids = set(w.workflow_id for w in self.workflow_metrics)
+
+            all_tasks = [t for t in self.task_metrics if t.workflow_id in included_workflow_ids]
+            completed_tasks = [t for t in all_tasks if t.complete_time]
+            durations = [t.duration for t in completed_tasks if t.duration]
+
+        if durations:
+            p90_agg = float(np.percentile(durations, 90))
+        else:
+            p90_agg = 0.0
+
+        report_lines.extend([
+            "",
+            "TASK LATENCY - aggregate (seconds):",
+            f"  Avg: {summary['task_latency']['mean']:.3f}  |  P90: {p90_agg:.3f}  |  P99: {summary['task_latency']['p99']:.3f}",
+        ])
+
+        # Per-task-type metrics
+        report_lines.extend([
+            "",
+            "PER-TASK-TYPE METRICS:",
+            "-" * 80,
+        ])
+
+        for task_type in task_types:
+            task_metrics = self.get_task_metrics_by_type(
+                task_type, exclude_warmup=exclude_warmup, portion_stats=portion_stats
+            )
+            report_lines.extend([
+                f"Task Type: {task_type}",
+                f"  Submitted: {task_metrics['submitted']}  |  Completed: {task_metrics['completed']}  |  Failed: {task_metrics['failed']}",
+                f"  Latency (s):  Avg: {task_metrics['avg']:.3f}  |  P90: {task_metrics['p90']:.3f}  |  P99: {task_metrics['p99']:.3f}",
+                "",
+            ])
+
+        # Workflow metrics with P90
+        workflow_durations = []
+        with self._workflow_lock:
+            all_workflows = [w for w in self.workflow_metrics if w.workflow_id in included_workflow_ids]
+            completed_workflows = [w for w in all_workflows if w.end_time]
+            workflow_durations = [w.total_duration for w in completed_workflows if w.total_duration]
+
+        if workflow_durations:
+            wf_avg = float(np.mean(workflow_durations))
+            wf_p90 = float(np.percentile(workflow_durations, 90))
+            wf_p99 = float(np.percentile(workflow_durations, 99))
+        else:
+            wf_avg = wf_p90 = wf_p99 = 0.0
+
+        report_lines.extend([
+            "WORKFLOW METRICS:",
+            "-" * 80,
+            f"  Total Started: {summary['workflow_stats']['total_started']}  |  Total Completed: {summary['workflow_stats']['total_completed']}",
+            f"  Duration (s):  Avg: {wf_avg:.3f}  |  P90: {wf_p90:.3f}  |  P99: {wf_p99:.3f}",
+            "",
+            "=" * 80,
+        ])
+
+        report = "\n".join(report_lines)
+
+        if filepath:
+            filepath = Path(filepath)
+            filepath.parent.mkdir(parents=True, exist_ok=True)
+            with open(filepath, 'w') as f:
+                f.write(report)
+            self.logger.info(f"Detailed text report exported to {filepath}")
+
+        return report
+
     def export_to_json(self, filepath: Union[str, Path],
                        exclude_warmup: bool = True,
                        portion_stats: float = 1.0):
@@ -515,3 +709,103 @@ class MetricsCollector:
             self.logger.info(f"Text report exported to {filepath}")
 
         return report
+
+
+def generate_strategy_comparison_table(
+    strategy_results: Dict[str, Dict],
+    task_types: List[str],
+) -> str:
+    """
+    Generate a comparison table across different strategies.
+
+    Args:
+        strategy_results: Dict mapping strategy_name -> {
+            'task_metrics': {task_type: {avg, p90, p99, ...}},
+            'workflow_metrics': {avg, p90, p99, ...}
+        }
+        task_types: List of task types to include
+
+    Returns:
+        Formatted comparison table as string
+    """
+    if not strategy_results:
+        return "No strategy results to compare."
+
+    strategies = list(strategy_results.keys())
+
+    lines = [
+        "",
+        "=" * 100,
+        "STRATEGY COMPARISON TABLE",
+        "=" * 100,
+        "",
+    ]
+
+    # Build header row
+    header = f"{'Metric':<30}"
+    for strategy in strategies:
+        header += f" | {strategy:>12}"
+    lines.append(header)
+    lines.append("-" * len(header))
+
+    # Per-task-type metrics
+    for task_type in task_types:
+        lines.append(f"Task {task_type}:")
+
+        # Avg latency
+        row = f"  {'Avg Latency (s)':<28}"
+        for strategy in strategies:
+            task_data = strategy_results[strategy].get('task_metrics', {}).get(task_type, {})
+            avg = task_data.get('avg', 0)
+            row += f" | {avg:>12.3f}"
+        lines.append(row)
+
+        # P90 latency
+        row = f"  {'P90 Latency (s)':<28}"
+        for strategy in strategies:
+            task_data = strategy_results[strategy].get('task_metrics', {}).get(task_type, {})
+            p90 = task_data.get('p90', 0)
+            row += f" | {p90:>12.3f}"
+        lines.append(row)
+
+        # P99 latency
+        row = f"  {'P99 Latency (s)':<28}"
+        for strategy in strategies:
+            task_data = strategy_results[strategy].get('task_metrics', {}).get(task_type, {})
+            p99 = task_data.get('p99', 0)
+            row += f" | {p99:>12.3f}"
+        lines.append(row)
+
+        lines.append("")
+
+    # Workflow metrics
+    lines.append("Workflow (end-to-end):")
+
+    # Avg duration
+    row = f"  {'Avg Duration (s)':<28}"
+    for strategy in strategies:
+        wf_data = strategy_results[strategy].get('workflow_metrics', {})
+        avg = wf_data.get('avg', 0)
+        row += f" | {avg:>12.3f}"
+    lines.append(row)
+
+    # P90 duration
+    row = f"  {'P90 Duration (s)':<28}"
+    for strategy in strategies:
+        wf_data = strategy_results[strategy].get('workflow_metrics', {})
+        p90 = wf_data.get('p90', 0)
+        row += f" | {p90:>12.3f}"
+    lines.append(row)
+
+    # P99 duration
+    row = f"  {'P99 Duration (s)':<28}"
+    for strategy in strategies:
+        wf_data = strategy_results[strategy].get('workflow_metrics', {})
+        p99 = wf_data.get('p99', 0)
+        row += f" | {p99:>12.3f}"
+    lines.append(row)
+
+    lines.append("")
+    lines.append("=" * 100)
+
+    return "\n".join(lines)

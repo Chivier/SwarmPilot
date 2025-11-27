@@ -24,10 +24,13 @@ Usage:
         --num-workflows 50 --qps 2.0 --strategies min_time,probabilistic --duration 300
 """
 
+import random
 import sys
 import threading
 import time
 from pathlib import Path
+
+import numpy as np
 
 # Add parent directories to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -42,6 +45,7 @@ from common import (
     create_base_parser,
     add_type1_args,
     parse_strategies,
+    generate_strategy_comparison_table,
 )
 from type1_text2video.config import Text2VideoConfig
 from type1_text2video.workflow_data import load_captions
@@ -51,7 +55,11 @@ from queue import Queue
 
 
 def run_single_experiment(config, captions, logger, strategy_name=None):
-    """Run a single experiment with the given configuration."""
+    """Run a single experiment with the given configuration.
+
+    Returns:
+        Dict with strategy results containing task_metrics and workflow_metrics
+    """
 
     # Update config.strategy if strategy_name is provided
     if strategy_name:
@@ -91,6 +99,8 @@ def run_single_experiment(config, captions, logger, strategy_name=None):
         workflow_states=workflow_states,
         state_lock=state_lock,
         scheduler_url=config.scheduler_a_url,
+        qps=config.qps,
+        duration=config.duration,
         rate_limiter=rate_limiter,
         metrics=metrics,
         custom_logger=logger
@@ -291,12 +301,58 @@ def run_single_experiment(config, captions, logger, strategy_name=None):
     metrics.export_to_json(str(metrics_file), portion_stats=config.portion_stats)
     logger.info(f"Metrics exported to: {metrics_file}")
 
-    # Print metrics report (with portion_stats filtering)
-    print("\n" + metrics.generate_text_report(portion_stats=config.portion_stats))
+    # Print detailed metrics report with per-task-type metrics (Avg, P90, P99)
+    print("\n" + metrics.generate_detailed_text_report(
+        task_types=["A1", "A2", "B"],
+        portion_stats=config.portion_stats
+    ))
+
+    # Collect and return strategy results for comparison table
+    task_types = ["A1", "A2", "B"]
+    task_metrics_result = {}
+    for task_type in task_types:
+        task_metrics_result[task_type] = metrics.get_task_metrics_by_type(
+            task_type, exclude_warmup=True, portion_stats=config.portion_stats
+        )
+
+    # Get workflow metrics
+    workflow_durations = []
+    with metrics._workflow_lock:
+        total_non_warmup = len(metrics._non_warmup_workflow_order)
+        num_to_include = int(total_non_warmup * config.portion_stats)
+        included_workflow_ids = set(metrics._non_warmup_workflow_order[:num_to_include])
+
+        completed_workflows = [
+            w for w in metrics.workflow_metrics
+            if w.workflow_id in included_workflow_ids and w.end_time
+        ]
+        workflow_durations = [w.total_duration for w in completed_workflows if w.total_duration]
+
+    if workflow_durations:
+        wf_avg = float(np.mean(workflow_durations))
+        wf_p90 = float(np.percentile(workflow_durations, 90))
+        wf_p99 = float(np.percentile(workflow_durations, 99))
+    else:
+        wf_avg = wf_p90 = wf_p99 = 0.0
+
+    return {
+        'task_metrics': task_metrics_result,
+        'workflow_metrics': {
+            'avg': wf_avg,
+            'p90': wf_p90,
+            'p99': wf_p99,
+        }
+    }
 
 
 def main():
     """Main entry point - handles strategy management and experiment orchestration."""
+
+    # ========================================================================
+    # Set Random Seeds for Reproducibility
+    # ========================================================================
+    random.seed(42)
+    np.random.seed(42)
 
     # ========================================================================
     # Parse Command Line Arguments
@@ -369,6 +425,9 @@ def main():
     # Set default quantiles if not specified
     quantiles = config.quantiles if config.quantiles else [0.1, 0.25, 0.5, 0.75, 0.99]
 
+    # Collect results from all strategies for comparison
+    all_strategy_results = {}
+
     # Run experiment for each strategy
     for strategy_name in strategies:
         logger.info("\n" + "=" * 70)
@@ -406,9 +465,21 @@ def main():
         logger.info("\n" + "=" * 70)
         logger.info(f"Running experiment with strategy: {strategy_name}")
         logger.info("=" * 70)
-        run_single_experiment(config, captions, logger, strategy_name=strategy_name)
+        experiment_results = run_single_experiment(config, captions, logger, strategy_name=strategy_name)
+
+        # Store results for comparison
+        all_strategy_results[strategy_name] = experiment_results
 
         logger.info(f"\nCompleted experiment for strategy: {strategy_name}")
+
+    # Generate strategy comparison table
+    if len(all_strategy_results) > 1:
+        comparison_table = generate_strategy_comparison_table(
+            all_strategy_results,
+            task_types=["A1", "A2", "B"]
+        )
+        print(comparison_table)
+        logger.info("Strategy comparison table generated")
 
     logger.info("\n" + "=" * 70)
     logger.info("All strategy experiments completed!")

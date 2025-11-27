@@ -1,0 +1,6 @@
+{
+    "type": "weighted_choice",
+    "choices": [
+        {"value": "1024x1024", "weight": 1.0}
+    ]
+}

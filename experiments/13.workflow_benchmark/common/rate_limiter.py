@@ -29,13 +29,14 @@ class RateLimiter:
     - Support for Poisson distribution intervals
     """
 
-    def __init__(self, rate: float, burst_size: Optional[float] = None):
+    def __init__(self, rate: float, burst_size: Optional[float] = None, seed: Optional[int] = 42):
         """
         Initialize rate limiter.
 
         Args:
             rate: Target rate in requests per second (e.g., 10.0 for 10 QPS)
             burst_size: Maximum burst capacity (default: rate * 2)
+            seed: Random seed for reproducibility (default: 42)
         """
         self.rate = rate
         self.max_tokens = burst_size if burst_size is not None else rate * 2
@@ -43,6 +44,11 @@ class RateLimiter:
         self.last_update = time.time()
         self.lock = threading.Lock()
         self.logger = loguru_logger.bind(component="RateLimiter")
+
+        # Create a dedicated Random instance for Poisson intervals
+        # This ensures reproducibility without affecting global random state
+        self._rng = random.Random(seed)
+        self.logger.debug(f"RateLimiter initialized with seed={seed}")
 
     def acquire(self, tokens: int = 1) -> float:
         """
@@ -102,7 +108,8 @@ class RateLimiter:
         # Using -1.0/rate * log(random()) formula from reference
         # This is mathematically equivalent to random.expovariate(rate)
         # but matches the reference implementation exactly
-        interval = -1.0 / self.rate * math.log(random.random())
+        # Use instance RNG for reproducibility
+        interval = -1.0 / self.rate * math.log(self._rng.random())
         self.logger.debug(f"Poisson interval: {interval:.3f}s (mean: {1.0/self.rate:.3f}s)")
         return interval
 
@@ -143,15 +150,16 @@ class PoissonRateLimiter(RateLimiter):
     automatically sleep for a Poisson-distributed interval.
     """
 
-    def __init__(self, rate: float, burst_size: Optional[float] = None):
+    def __init__(self, rate: float, burst_size: Optional[float] = None, seed: Optional[int] = 42):
         """
         Initialize Poisson rate limiter.
 
         Args:
             rate: Target rate in requests per second (e.g., 10.0 for 10 QPS)
             burst_size: Maximum burst capacity (default: rate * 2)
+            seed: Random seed for reproducibility (default: 42)
         """
-        super().__init__(rate, burst_size)
+        super().__init__(rate, burst_size, seed)
 
     def acquire(self, tokens: int = 1) -> float:
         """

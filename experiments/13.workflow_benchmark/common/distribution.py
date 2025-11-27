@@ -54,16 +54,18 @@ class StaticDistribution(Distribution):
             "type": "static",
             "value": 4
         }
+
+    Note: Returns float. Callers should convert to int if needed.
     """
 
-    value: int = 3
+    value: float = 3.0
 
     def __post_init__(self):
-        if self.value < 1:
-            raise ValueError(f"Static value must be >= 1, got {self.value}")
+        if self.value < 0:
+            raise ValueError(f"Static value must be >= 0, got {self.value}")
 
-    def sample(self) -> int:
-        return self.value
+    def sample(self) -> float:
+        return float(self.value)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -73,12 +75,12 @@ class StaticDistribution(Distribution):
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "StaticDistribution":
-        return cls(value=data.get("value", 3))
+        return cls(value=float(data.get("value", 3)))
 
 
 @dataclass
 class UniformDistribution(Distribution):
-    """Uniform distribution between min and max values (inclusive).
+    """Uniform distribution between min and max values.
 
     Example config:
         {
@@ -86,19 +88,21 @@ class UniformDistribution(Distribution):
             "min": 2,
             "max": 8
         }
+
+    Note: Returns float. Callers should convert to int if needed.
     """
 
-    min_value: int = 1
-    max_value: int = 5
+    min_value: float = 1.0
+    max_value: float = 5.0
 
     def __post_init__(self):
-        if self.min_value < 1:
-            raise ValueError(f"Min value must be >= 1, got {self.min_value}")
+        if self.min_value < 0:
+            raise ValueError(f"Min value must be >= 0, got {self.min_value}")
         if self.max_value < self.min_value:
             raise ValueError(f"Max value ({self.max_value}) must be >= min value ({self.min_value})")
 
-    def sample(self) -> int:
-        return random.randint(self.min_value, self.max_value)
+    def sample(self) -> float:
+        return random.uniform(self.min_value, self.max_value)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -110,8 +114,57 @@ class UniformDistribution(Distribution):
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "UniformDistribution":
         return cls(
-            min_value=data.get("min", 1),
-            max_value=data.get("max", 5)
+            min_value=float(data.get("min", 1)),
+            max_value=float(data.get("max", 5))
+        )
+
+
+@dataclass
+class NormalDistribution(Distribution):
+    """Normal (Gaussian) distribution for continuous values like sleep times.
+
+    Example config:
+        {
+            "type": "normal",
+            "mean": 0.8,
+            "std": 0.2,
+            "min": 0.1,   # optional, clips negative values
+            "max": 10.0   # optional, clips extreme values
+        }
+    """
+
+    mean: float = 1.0
+    std: float = 0.5
+    min_value: float = 0.0
+    max_value: float = float('inf')
+
+    def __post_init__(self):
+        if self.std < 0:
+            raise ValueError(f"Standard deviation must be >= 0, got {self.std}")
+        if self.min_value > self.max_value:
+            raise ValueError(f"Min value ({self.min_value}) must be <= max value ({self.max_value})")
+
+    def sample(self) -> float:
+        """Sample from the normal distribution, clamped to [min, max]."""
+        value = random.gauss(self.mean, self.std)
+        return max(self.min_value, min(self.max_value, value))
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "type": "normal",
+            "mean": self.mean,
+            "std": self.std,
+            "min": self.min_value,
+            "max": self.max_value
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "NormalDistribution":
+        return cls(
+            mean=data.get("mean", 1.0),
+            std=data.get("std", 0.5),
+            min_value=data.get("min", 0.0),
+            max_value=data.get("max", float('inf'))
         )
 
 
@@ -163,22 +216,24 @@ class TwoPeakDistribution(Distribution):
             "min": 1,
             "max": 12
         }
+
+    Note: Returns float. Callers should convert to int if needed.
     """
 
     peaks: List[GaussianPeak] = field(default_factory=lambda: [
         GaussianPeak(mean=3, std=0.5),
         GaussianPeak(mean=8, std=1.0)
     ])
-    min_value: int = 1
-    max_value: int = 20
+    min_value: float = 1.0
+    max_value: float = 20.0
 
     def __post_init__(self):
         if len(self.peaks) != 2:
             raise ValueError(f"TwoPeakDistribution requires exactly 2 peaks, got {len(self.peaks)}")
-        if self.min_value < 1:
-            raise ValueError(f"Min value must be >= 1, got {self.min_value}")
+        if self.min_value < 0:
+            raise ValueError(f"Min value must be >= 0, got {self.min_value}")
 
-    def sample(self) -> int:
+    def sample(self) -> float:
         """Sample from the two-peak distribution."""
         # Select a peak based on weights
         total_weight = sum(p.weight for p in self.peaks)
@@ -194,7 +249,7 @@ class TwoPeakDistribution(Distribution):
 
         # Sample from the selected Gaussian and clamp to valid range
         value = selected_peak.sample()
-        return max(self.min_value, min(self.max_value, round(value)))
+        return max(self.min_value, min(self.max_value, value))
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -213,8 +268,8 @@ class TwoPeakDistribution(Distribution):
         peaks = [GaussianPeak.from_dict(p) for p in peaks_data]
         return cls(
             peaks=peaks,
-            min_value=data.get("min", 1),
-            max_value=data.get("max", 20)
+            min_value=float(data.get("min", 1)),
+            max_value=float(data.get("max", 20))
         )
 
 
@@ -234,6 +289,8 @@ class FourPeakDistribution(Distribution):
             "min": 1,
             "max": 16
         }
+
+    Note: Returns float. Callers should convert to int if needed.
     """
 
     peaks: List[GaussianPeak] = field(default_factory=lambda: [
@@ -242,16 +299,16 @@ class FourPeakDistribution(Distribution):
         GaussianPeak(mean=8, std=0.5),
         GaussianPeak(mean=12, std=1.0)
     ])
-    min_value: int = 1
-    max_value: int = 20
+    min_value: float = 1.0
+    max_value: float = 20.0
 
     def __post_init__(self):
         if len(self.peaks) != 4:
             raise ValueError(f"FourPeakDistribution requires exactly 4 peaks, got {len(self.peaks)}")
-        if self.min_value < 1:
-            raise ValueError(f"Min value must be >= 1, got {self.min_value}")
+        if self.min_value < 0:
+            raise ValueError(f"Min value must be >= 0, got {self.min_value}")
 
-    def sample(self) -> int:
+    def sample(self) -> float:
         """Sample from the four-peak distribution."""
         # Select a peak based on weights
         total_weight = sum(p.weight for p in self.peaks)
@@ -267,7 +324,7 @@ class FourPeakDistribution(Distribution):
 
         # Sample from the selected Gaussian and clamp to valid range
         value = selected_peak.sample()
-        return max(self.min_value, min(self.max_value, round(value)))
+        return max(self.min_value, min(self.max_value, value))
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -286,17 +343,84 @@ class FourPeakDistribution(Distribution):
         peaks = [GaussianPeak.from_dict(p) for p in peaks_data]
         return cls(
             peaks=peaks,
-            min_value=data.get("min", 1),
-            max_value=data.get("max", 20)
+            min_value=float(data.get("min", 1)),
+            max_value=float(data.get("max", 20))
         )
+
+
+@dataclass
+class WeightedChoiceDistribution(Distribution):
+    """Weighted random choice between discrete values.
+
+    Unlike other distributions that return integers, this returns
+    the "value" field from the selected choice (can be any type).
+
+    Example config:
+        {
+            "type": "weighted_choice",
+            "choices": [
+                {"value": "512x512", "weight": 0.7},
+                {"value": "1024x1024", "weight": 0.3}
+            ]
+        }
+
+    Note: The sample() method returns the value directly, which may not be an int.
+    Use with DistributionSampler for consistent interface.
+    """
+
+    choices: List[Dict[str, Any]] = field(default_factory=lambda: [
+        {"value": "512x512", "weight": 0.7},
+        {"value": "1024x1024", "weight": 0.3}
+    ])
+
+    def __post_init__(self):
+        if not self.choices:
+            raise ValueError("WeightedChoiceDistribution requires at least one choice")
+        for choice in self.choices:
+            if "value" not in choice:
+                raise ValueError("Each choice must have a 'value' field")
+            if "weight" not in choice:
+                choice["weight"] = 1.0  # Default weight
+
+    def sample(self) -> Any:
+        """Sample a value based on weights.
+
+        Returns:
+            The selected choice's value (can be any type)
+        """
+        total_weight = sum(c["weight"] for c in self.choices)
+        r = random.uniform(0, total_weight)
+
+        cumulative = 0
+        for choice in self.choices:
+            cumulative += choice["weight"]
+            if r <= cumulative:
+                return choice["value"]
+
+        return self.choices[-1]["value"]  # Fallback
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "type": "weighted_choice",
+            "choices": self.choices
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "WeightedChoiceDistribution":
+        choices = data.get("choices", [])
+        if not choices:
+            raise ValueError("WeightedChoiceDistribution requires 'choices' in config")
+        return cls(choices=choices)
 
 
 # Registry of distribution types
 DISTRIBUTION_TYPES = {
     "static": StaticDistribution,
     "uniform": UniformDistribution,
+    "normal": NormalDistribution,
     "two_peak": TwoPeakDistribution,
     "four_peak": FourPeakDistribution,
+    "weighted_choice": WeightedChoiceDistribution,
 }
 
 
@@ -378,18 +502,22 @@ class DistributionSampler:
         else:
             self.distribution = StaticDistribution(value=default_value)
 
-    def sample(self) -> int:
-        """Sample a value."""
+    def sample(self) -> float:
+        """Sample a value from the distribution.
+
+        Returns:
+            Float value. Callers should convert to int if needed.
+        """
         return self.distribution.sample()
 
-    def sample_batch(self, count: int) -> List[int]:
+    def sample_batch(self, count: int) -> List[float]:
         """Sample multiple values.
 
         Args:
             count: Number of values to sample
 
         Returns:
-            List of values
+            List of float values. Callers should convert to int if needed.
         """
         return [self.sample() for _ in range(count)]
 

@@ -1,24 +1,31 @@
 #!/usr/bin/env python3
 """
-Text2Video Workflow - Simulation Mode
+Text2Image+Video Workflow - Simulation Mode
 
-This script runs the Text2Video workflow (A1→A2→B) using sleep models for simulation.
+This script runs the Text2Image+Video workflow (A→C→B) using sleep models for simulation.
 
 Architecture:
-- Thread 1 (A1 Submitter): Submit A1 tasks with Poisson arrivals
-- Thread 2 (A1 Receiver): Receive A1 results → trigger A2
-- Thread 3 (A2 Submitter): Submit A2 tasks
-- Thread 4 (A2 Receiver): Receive A2 results → trigger B
+- Thread 1 (A Submitter): Submit A (LLM) tasks with Poisson arrivals
+- Thread 2 (A Receiver): Receive A results → trigger C (FLUX)
+- Thread 3 (C Submitter): Submit C (FLUX) tasks
+- Thread 4 (C Receiver): Receive C results → trigger B (T2VID)
 - Thread 5 (B Submitter): Submit B tasks with loop support
 - Thread 6 (B Receiver): Receive B results → loop or complete
 
 Workflow Pattern:
-- A1: caption → positive prompt
-- A2: positive prompt → negative prompt
-- B: video generation (1-4 iterations per workflow)
+- A: caption → positive prompt (LLM)
+- C: positive prompt → image (FLUX, with resolution-based timing)
+- B: video generation (1-4 iterations per workflow, negative_prompt="blur")
+
+Key differences from Type1:
+- Type1: A1 → A2 → B (two LLM steps)
+- Type3: A → C → B (one LLM + one FLUX + T2VID)
+- FLUX uses separate scheduler C (port 8300)
+- Resolution-based timing for FLUX (~7s for 512x512, ~19s for 1024x1024)
+- B task negative_prompt is fixed as "blur"
 
 Usage:
-    python -m type1_text2video.simulation.test_workflow_sim \\
+    python -m type3_text2image_video.simulation.test_workflow_sim \\
         --num-workflows 50 --qps 2.0 --strategies min_time,probabilistic --duration 300
 """
 
@@ -42,21 +49,21 @@ from common import (
     setup_scheduler_strategies,
     clear_scheduler_tasks,
     create_base_parser,
-    add_type1_args,
+    add_type3_args,
     parse_strategies,
     generate_strategy_comparison_table,
 )
-from type1_text2video.config import Text2VideoConfig
-from type1_text2video.workflow_data import load_captions
-from type1_text2video.submitters import A1TaskSubmitter, A2TaskSubmitter, BTaskSubmitter
-from type1_text2video.receivers import A1TaskReceiver, A2TaskReceiver, BTaskReceiver
+from type3_text2image_video.config import Text2ImageVideoConfig
+from type3_text2image_video.workflow_data import load_captions
+from type3_text2image_video.submitters import ATaskSubmitter, CTaskSubmitter, BTaskSubmitter
+from type3_text2image_video.receivers import ATaskReceiver, CTaskReceiver, BTaskReceiver
 
 
 def run_single_experiment(config, captions, logger, strategy_name=None):
     """Run a single experiment with the given configuration.
 
     Args:
-        config: Text2VideoConfig instance
+        config: Text2ImageVideoConfig instance
         captions: List of captions to use
         logger: Logger instance
         strategy_name: Optional strategy name (for logging and task ID generation)
@@ -72,17 +79,19 @@ def run_single_experiment(config, captions, logger, strategy_name=None):
 
     logger.info("="*70)
     if strategy_name:
-        logger.info(f"Text2Video Workflow Simulation - Strategy: {strategy_name}")
+        logger.info(f"Text2Image+Video Workflow Simulation - Strategy: {strategy_name}")
     else:
-        logger.info("Text2Video Workflow Simulation")
+        logger.info("Text2Image+Video Workflow Simulation")
     logger.info("="*70)
     logger.info(f"QPS: {config.qps}")
     logger.info(f"Duration: {config.duration}s")
     logger.info(f"Workflows: {config.num_workflows}")
     logger.info(f"Max B loops config: {config.get_max_b_loops_config()}")
     logger.info(f"Frame count config: {config.get_frame_count_config()}")
-    logger.info(f"Scheduler A: {config.scheduler_a_url}")
-    logger.info(f"Scheduler B: {config.scheduler_b_url}")
+    logger.info(f"Resolution config: {config.get_resolution_config()}")
+    logger.info(f"Scheduler A (LLM): {config.scheduler_a_url}")
+    logger.info(f"Scheduler C (FLUX): {config.scheduler_c_url}")
+    logger.info(f"Scheduler B (T2VID): {config.scheduler_b_url}")
     if strategy_name:
         logger.info(f"Strategy: {strategy_name}")
     logger.info("="*70)
@@ -96,8 +105,8 @@ def run_single_experiment(config, captions, logger, strategy_name=None):
     state_lock = threading.Lock()
 
     # Queues for inter-thread communication
-    a1_result_queue = Queue()  # A1 receiver → A2 submitter
-    a2_result_queue = Queue()  # A2 receiver → B submitter
+    a_result_queue = Queue()  # A receiver → C submitter
+    c_result_queue = Queue()  # C receiver → B submitter
 
     # Metrics collector
     metrics = MetricsCollector(custom_logger=logger)
@@ -111,9 +120,9 @@ def run_single_experiment(config, captions, logger, strategy_name=None):
 
     logger.info("Initializing components...")
 
-    # A1 Submitter (Thread 1)
-    a1_submitter = A1TaskSubmitter(
-        name="A1Submitter",
+    # A Submitter (Thread 1) - LLM task with Poisson arrivals
+    a_submitter = ATaskSubmitter(
+        name="ASubmitter",
         captions=captions,
         config=config,
         workflow_states=workflow_states,
@@ -128,8 +137,8 @@ def run_single_experiment(config, captions, logger, strategy_name=None):
     # Pre-generate task IDs for receivers to subscribe to
     # Must match the format used in submitters.py
     strategy = getattr(config, 'strategy', 'probabilistic')
-    a1_task_ids = [f"task-A1-{strategy}-workflow-{i:04d}" for i in range(config.num_workflows)]
-    a2_task_ids = [f"task-A2-{strategy}-workflow-{i:04d}" for i in range(config.num_workflows)]
+    a_task_ids = [f"task-A-{strategy}-workflow-{i:04d}" for i in range(config.num_workflows)]
+    c_task_ids = [f"task-C-{strategy}-workflow-{i:04d}" for i in range(config.num_workflows)]
 
     # Generate all B task IDs (including all loop iterations)
     # With distribution-based sampling, each workflow may have different max_b_loops,
@@ -141,59 +150,59 @@ def run_single_experiment(config, captions, logger, strategy_name=None):
             for loop in range(1, workflow_data.max_b_loops + 1):
                 b_task_ids.append(f"task-B{loop}-{strategy}-workflow-{workflow_num}")
 
-    # A2 Submitter (Thread 3)
-    a2_submitter = A2TaskSubmitter(
-        name="A2Submitter",
+    # C Submitter (Thread 3) - FLUX task (separate scheduler)
+    c_submitter = CTaskSubmitter(
+        name="CSubmitter",
         config=config,
         workflow_states=workflow_states,
         state_lock=state_lock,
-        a1_result_queue=a1_result_queue,
-        scheduler_url=config.scheduler_a_url,
+        a_result_queue=a_result_queue,
+        scheduler_url=config.scheduler_c_url,  # Separate scheduler for FLUX
         rate_limiter=rate_limiter,
         metrics=metrics,
     )
 
-    # B Submitter (Thread 5)
+    # B Submitter (Thread 5) - T2VID task with loop support
     b_submitter = BTaskSubmitter(
         name="BSubmitter",
         config=config,
         workflow_states=workflow_states,
         state_lock=state_lock,
-        a2_result_queue=a2_result_queue,
+        c_result_queue=c_result_queue,
         scheduler_url=config.scheduler_b_url,
         rate_limiter=rate_limiter,
         metrics=metrics,
     )
 
-    # A1 Receiver (Thread 2)
-    a1_receiver = A1TaskReceiver(
-        name="A1Receiver",
+    # A Receiver (Thread 2) - receives LLM results, triggers FLUX
+    a_receiver = ATaskReceiver(
+        name="AReceiver",
         config=config,
         workflow_states=workflow_states,
         state_lock=state_lock,
-        a2_submitter=a2_submitter,
-        a1_result_queue=a1_result_queue,
-        task_ids=a1_task_ids,
+        c_submitter=c_submitter,
+        a_result_queue=a_result_queue,
+        task_ids=a_task_ids,
         scheduler_url=config.scheduler_a_url,
         model_id=config.model_a_id,
         metrics=metrics,
     )
 
-    # A2 Receiver (Thread 4)
-    a2_receiver = A2TaskReceiver(
-        name="A2Receiver",
+    # C Receiver (Thread 4) - receives FLUX results, triggers T2VID
+    c_receiver = CTaskReceiver(
+        name="CReceiver",
         config=config,
         workflow_states=workflow_states,
         state_lock=state_lock,
         b_submitter=b_submitter,
-        a2_result_queue=a2_result_queue,
-        task_ids=a2_task_ids,
-        scheduler_url=config.scheduler_a_url,
-        model_id=config.model_a_id,
+        c_result_queue=c_result_queue,
+        task_ids=c_task_ids,
+        scheduler_url=config.scheduler_c_url,  # Separate scheduler for FLUX
+        model_id=config.model_c_id,
         metrics=metrics,
     )
 
-    # B Receiver (Thread 6)
+    # B Receiver (Thread 6) - receives T2VID results, implements loop logic
     b_receiver = BTaskReceiver(
         name="BReceiver",
         config=config,
@@ -214,17 +223,17 @@ def run_single_experiment(config, captions, logger, strategy_name=None):
     start_time = time.time()
 
     # Start receivers first (so they're ready to receive)
-    a1_receiver.start()
-    a2_receiver.start()
+    a_receiver.start()
+    c_receiver.start()
     b_receiver.start()
 
     # Wait a moment for receivers to connect
     time.sleep(1.0)
 
     # Start submitters
-    a2_submitter.start()
+    c_submitter.start()
     b_submitter.start()
-    a1_submitter.start()  # Start A1 last (it drives the workflow)
+    a_submitter.start()  # Start A last (it drives the workflow)
 
     logger.info("All threads started successfully")
 
@@ -295,23 +304,23 @@ def run_single_experiment(config, captions, logger, strategy_name=None):
     logger.info("Stopping all threads...")
 
     # Stop submitters first (no new tasks)
-    a1_submitter.stop()
-    a2_submitter.stop()
+    a_submitter.stop()
+    c_submitter.stop()
     b_submitter.stop()
 
     # Wait for submitters to finish
-    a1_submitter.join(timeout=10)
-    a2_submitter.join(timeout=10)
+    a_submitter.join(timeout=10)
+    c_submitter.join(timeout=10)
     b_submitter.join(timeout=10)
 
     # Stop receivers
-    a1_receiver.stop()
-    a2_receiver.stop()
+    a_receiver.stop()
+    c_receiver.stop()
     b_receiver.stop()
 
     # Wait for receivers to finish
-    a1_receiver.join(timeout=10)
-    a2_receiver.join(timeout=10)
+    a_receiver.join(timeout=10)
+    c_receiver.join(timeout=10)
     b_receiver.join(timeout=10)
 
     logger.info("All threads stopped")
@@ -342,14 +351,14 @@ def run_single_experiment(config, captions, logger, strategy_name=None):
     logger.info(f"Avg B iterations/workflow: {total_b_iterations/total_workflows if total_workflows > 0 else 0:.2f}")
 
     logger.info("\nSubmitter Statistics:")
-    logger.info(f"  A1: {a1_submitter.submitted_count} submitted, {a1_submitter.failed_count} failed")
-    logger.info(f"  A2: {a2_submitter.submitted_count} submitted, {a2_submitter.failed_count} failed")
-    logger.info(f"  B:  {b_submitter.submitted_count} submitted, {b_submitter.failed_count} failed")
+    logger.info(f"  A (LLM): {a_submitter.submitted_count} submitted, {a_submitter.failed_count} failed")
+    logger.info(f"  C (FLUX): {c_submitter.submitted_count} submitted, {c_submitter.failed_count} failed")
+    logger.info(f"  B (T2VID): {b_submitter.submitted_count} submitted, {b_submitter.failed_count} failed")
 
     logger.info("\nReceiver Statistics:")
-    logger.info(f"  A1: {a1_receiver.received_count} received")
-    logger.info(f"  A2: {a2_receiver.received_count} received")
-    logger.info(f"  B:  {b_receiver.received_count} received, {b_receiver.completed_workflows} workflows completed")
+    logger.info(f"  A (LLM): {a_receiver.received_count} received")
+    logger.info(f"  C (FLUX): {c_receiver.received_count} received")
+    logger.info(f"  B (T2VID): {b_receiver.received_count} received, {b_receiver.completed_workflows} workflows completed")
 
     # ========================================================================
     # Export Metrics
@@ -378,7 +387,7 @@ def run_single_experiment(config, captions, logger, strategy_name=None):
 
     # Generate detailed text report with per-task-type metrics (Avg, P90, P99)
     report = metrics.generate_detailed_text_report(
-        task_types=["A1", "A2", "B"],
+        task_types=["A", "C", "B"],
         portion_stats=config.portion_stats
     )
     print("\n" + report)
@@ -391,7 +400,7 @@ def run_single_experiment(config, captions, logger, strategy_name=None):
     logger.info("="*70)
 
     # Collect and return strategy results for comparison table
-    task_types = ["A1", "A2", "B"]
+    task_types = ["A", "C", "B"]
     task_metrics_result = {}
     for task_type in task_types:
         task_metrics_result[task_type] = metrics.get_task_metrics_by_type(
@@ -399,10 +408,8 @@ def run_single_experiment(config, captions, logger, strategy_name=None):
         )
 
     # Get workflow metrics
-    summary = metrics.get_summary(exclude_warmup=True, portion_stats=config.portion_stats)
     workflow_durations = []
     with metrics._workflow_lock:
-        # Get included workflow IDs based on portion_stats
         total_non_warmup = len(metrics._non_warmup_workflow_order)
         num_to_include = int(total_non_warmup * config.portion_stats)
         included_workflow_ids = set(metrics._non_warmup_workflow_order[:num_to_include])
@@ -443,8 +450,8 @@ def main():
     # Parse Command Line Arguments
     # ========================================================================
 
-    parser = create_base_parser(description="Text2Video Workflow - Simulation Mode")
-    parser = add_type1_args(parser)
+    parser = create_base_parser(description="Text2Image+Video Workflow - Simulation Mode")
+    parser = add_type3_args(parser)
     args = parser.parse_args()
 
     # Parse and validate strategies
@@ -463,7 +470,7 @@ def main():
     warmup_count = int(args.num_workflows * args.warmup)
 
     # Create config with hardcoded simulation mode
-    config = Text2VideoConfig(
+    config = Text2ImageVideoConfig(
         mode="simulation",  # Hardcoded for simulation
         qps=args.qps,
         duration=args.duration,
@@ -477,14 +484,19 @@ def main():
         max_b_loops_config=args.max_b_loops_config,
         frame_count_seed=args.frame_count_seed,
         max_b_loops_seed=args.max_b_loops_seed,
+        resolution=args.resolution,
+        resolution_config=args.resolution_config,
+        resolution_seed=args.resolution_seed,
     )
 
     logger = configure_logging(level="INFO")
 
     logger.info(f"Mode: {config.mode} (hardcoded for simulation)")
-    logger.info(f"Model A: {config.model_a_id}")
-    logger.info(f"Model B: {config.model_b_id}")
+    logger.info(f"Model A (LLM): {config.model_a_id}")
+    logger.info(f"Model C (FLUX): {config.model_c_id}")
+    logger.info(f"Model B (T2VID): {config.model_b_id}")
     logger.info(f"Scheduler A: {config.scheduler_a_url}")
+    logger.info(f"Scheduler C: {config.scheduler_c_url}")
     logger.info(f"Scheduler B: {config.scheduler_b_url}")
 
     # Load captions
@@ -510,7 +522,7 @@ def main():
     logger.info("="*70)
 
     # Set default quantiles if not specified
-    quantiles = config.quantiles if config.quantiles else [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99]
+    quantiles = config.quantiles if config.quantiles else [0.1, 0.25, 0.5, 0.75, 0.99]
 
     # Collect results from all strategies for comparison
     all_strategy_results = {}
@@ -526,12 +538,16 @@ def main():
         if not clear_scheduler_tasks(config.scheduler_a_url, logger):
             logger.error("Failed to clear Scheduler A tasks, skipping strategy")
             continue
+        if config.scheduler_c_url and config.scheduler_c_url != config.scheduler_a_url:
+            if not clear_scheduler_tasks(config.scheduler_c_url, logger):
+                logger.error("Failed to clear Scheduler C tasks, skipping strategy")
+                continue
         if config.scheduler_b_url and config.scheduler_b_url != config.scheduler_a_url:
             if not clear_scheduler_tasks(config.scheduler_b_url, logger):
                 logger.error("Failed to clear Scheduler B tasks, skipping strategy")
                 continue
 
-        # Setup this strategy on schedulers
+        # Setup this strategy on all three schedulers
         strategy_results = setup_scheduler_strategies(
             strategy_name=strategy_name,
             scheduler_a_url=config.scheduler_a_url,
@@ -541,12 +557,24 @@ def main():
             custom_logger=logger
         )
 
+        # Also setup strategy on Scheduler C (FLUX)
+        if config.scheduler_c_url and config.scheduler_c_url != config.scheduler_a_url:
+            c_results = setup_scheduler_strategies(
+                strategy_name=strategy_name,
+                scheduler_a_url=config.scheduler_c_url,  # Use scheduler_c as the "A" parameter
+                scheduler_b_url=None,  # No B for this call
+                target_quantile=config.target_quantile,
+                quantiles=quantiles,
+                custom_logger=logger
+            )
+            strategy_results.update(c_results)
+
         if not strategy_results.get(strategy_name, False):
             logger.error(f"Failed to setup strategy: {strategy_name}")
             logger.error("Skipping this strategy")
             continue
 
-        logger.info(f"Strategy {strategy_name} set up successfully")
+        logger.info(f"Strategy {strategy_name} set up successfully on all schedulers")
 
         # Run the experiment
         logger.info("\n" + "="*70)
@@ -563,7 +591,7 @@ def main():
     if len(all_strategy_results) > 1:
         comparison_table = generate_strategy_comparison_table(
             all_strategy_results,
-            task_types=["A1", "A2", "B"]
+            task_types=["A", "C", "B"]
         )
         print(comparison_table)
         logger.info("Strategy comparison table generated")

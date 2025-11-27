@@ -1,0 +1,5 @@
+# Downloaded datasets (large files, download separately)
+data/omnidocbench/
+
+# Keep data directory structure
+!data/.gitkeep

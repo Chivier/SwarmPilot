@@ -25,6 +25,7 @@ Usage:
         --num-workflows 50 --qps 2.0 --fanout 4 --strategies min_time,probabilistic --duration 300
 """
 
+import random
 import sys
 import threading
 import time
@@ -48,6 +49,7 @@ from common import (
     create_base_parser,
     add_type2_args,
     parse_strategies,
+    generate_strategy_comparison_table,
 )
 from type2_deep_research.config import DeepResearchConfig
 from type2_deep_research.submitters import (
@@ -376,9 +378,10 @@ def run_single_experiment(config, logger, strategy_name=None):
         workflow_states=workflow_states,
         state_lock=state_lock,
         scheduler_url=config.scheduler_a_url,
+        qps=config.qps,
+        duration=config.duration,
         rate_limiter=rate_limiter,
         metrics=metrics,
-        duration=config.duration,
     )
 
     # B1 Submitter (Thread 3)
@@ -607,15 +610,19 @@ def run_single_experiment(config, logger, strategy_name=None):
     logger.info("="*70)
     logger.info(f"Total runtime: {total_time:.2f}s")
 
-    # Calculate metrics (with portion_stats filtering)
+    # Print detailed metrics report with per-task-type metrics (Avg, P90, P99)
+    report = metrics.generate_detailed_text_report(
+        task_types=["A", "B1", "B2", "merge"],
+        portion_stats=config.portion_stats
+    )
+    print("\n" + report)
+
+    # Also calculate metrics for return value (backward compatibility)
     a_metrics = calculate_task_metrics_from_collector(metrics, "A", workflow_states, config.portion_stats)
     b1_metrics = calculate_task_metrics_from_collector(metrics, "B1", workflow_states, config.portion_stats)
     b2_metrics = calculate_task_metrics_from_collector(metrics, "B2", workflow_states, config.portion_stats)
     merge_metrics = calculate_task_metrics_from_collector(metrics, "merge", workflow_states, config.portion_stats)
     wf_metrics = calculate_workflow_metrics_from_collector(metrics, workflow_states, config.portion_stats)
-
-    # Print summary
-    print_metrics_summary(strategy, a_metrics, b1_metrics, b2_metrics, merge_metrics, wf_metrics)
     
     # Calculate actual QPS
     actual_qps = 0.0
@@ -639,6 +646,12 @@ def run_single_experiment(config, logger, strategy_name=None):
 
 def main():
     """Main entry point - handles strategy management and experiment orchestration."""
+
+    # ========================================================================
+    # Set Random Seeds for Reproducibility
+    # ========================================================================
+    random.seed(42)
+    np.random.seed(42)
 
     # ========================================================================
     # Parse Command Line Arguments
@@ -788,27 +801,50 @@ def main():
     logger.info(f"\nResults saved to: {results_file}")
 
     # ========================================================================
-    # Print Comparison Table
+    # Print Comparison Table (using standard format)
     # ========================================================================
 
-    print("\n" + "=" * 100)
-    print("Strategy Comparison")
-    print("=" * 100)
-    print(f"{'Strategy':<15} {'A Avg (s)':<12} {'B1 Avg (s)':<12} {'B2 Avg (s)':<12} {'WF Avg (s)':<12} {'WF P95 (s)':<12} {'Completed':<12}")
-    print("-" * 100)
+    if len(all_results) > 1:
+        # Convert results to standard format for comparison table
+        all_strategy_results = {}
+        for result in all_results:
+            strategy = result['strategy']
+            all_strategy_results[strategy] = {
+                'task_metrics': {
+                    'A': {
+                        'avg': result['a_tasks']['avg_completion_time'],
+                        'p90': float(np.percentile(result['a_tasks']['completion_times'], 90)) if result['a_tasks']['completion_times'] else 0.0,
+                        'p99': result['a_tasks']['p99_completion_time'],
+                    },
+                    'B1': {
+                        'avg': result['b1_tasks']['avg_completion_time'],
+                        'p90': float(np.percentile(result['b1_tasks']['completion_times'], 90)) if result['b1_tasks']['completion_times'] else 0.0,
+                        'p99': result['b1_tasks']['p99_completion_time'],
+                    },
+                    'B2': {
+                        'avg': result['b2_tasks']['avg_completion_time'],
+                        'p90': float(np.percentile(result['b2_tasks']['completion_times'], 90)) if result['b2_tasks']['completion_times'] else 0.0,
+                        'p99': result['b2_tasks']['p99_completion_time'],
+                    },
+                    'merge': {
+                        'avg': result['merge_tasks']['avg_completion_time'],
+                        'p90': float(np.percentile(result['merge_tasks']['completion_times'], 90)) if result['merge_tasks']['completion_times'] else 0.0,
+                        'p99': result['merge_tasks']['p99_completion_time'],
+                    },
+                },
+                'workflow_metrics': {
+                    'avg': result['workflows']['avg_workflow_time'],
+                    'p90': float(np.percentile(result['workflows']['workflow_times'], 90)) if result['workflows']['workflow_times'] else 0.0,
+                    'p99': result['workflows']['p99_workflow_time'],
+                }
+            }
 
-    for result in all_results:
-        strategy = result['strategy']
-        a_avg = result['a_tasks']['avg_completion_time']
-        b1_avg = result['b1_tasks']['avg_completion_time']
-        b2_avg = result['b2_tasks']['avg_completion_time']
-        wf_avg = result['workflows']['avg_workflow_time']
-        wf_p95 = result['workflows']['p95_workflow_time']
-        wf_completed = result['workflows']['num_completed']
-
-        print(f"{strategy:<15} {a_avg:<12.2f} {b1_avg:<12.2f} {b2_avg:<12.2f} {wf_avg:<12.2f} {wf_p95:<12.2f} {wf_completed:<12}")
-
-    print("=" * 100)
+        comparison_table = generate_strategy_comparison_table(
+            all_strategy_results,
+            task_types=["A", "B1", "B2", "merge"]
+        )
+        print(comparison_table)
+        logger.info("Strategy comparison table generated")
 
 
 if __name__ == "__main__":

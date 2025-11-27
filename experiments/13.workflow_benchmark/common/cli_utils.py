@@ -226,3 +226,94 @@ def add_type2_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     )
 
     return parser
+
+
+def add_type3_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+    """
+    Add Type3 (Text2Image+Video) specific arguments.
+
+    Type3 extends Type1 with a FLUX text-to-image step (C) between LLM (A) and T2VID (B).
+    Workflow: LLM (A) -> FLUX (C) -> T2VID (B loops)
+
+    Args:
+        parser: ArgumentParser to extend
+
+    Returns:
+        Parser with Type3 arguments added
+    """
+    parser.add_argument(
+        "--max-b-loops",
+        type=int,
+        default=3,
+        help="Maximum B task iterations (default: 3). "
+             "Ignored if --max-b-loops-config is specified."
+    )
+
+    parser.add_argument(
+        "--max-b-loops-config",
+        type=str,
+        default=None,
+        help="Path to JSON config file for max_b_loops distribution. "
+             "Supports: static, uniform, two_peak, four_peak distributions. "
+             "If not specified, uses --max-b-loops as static value."
+    )
+
+    parser.add_argument(
+        "--max-b-loops-seed",
+        type=int,
+        default=None,
+        help="Random seed for max_b_loops distribution sampling (default: None). "
+             "Use for reproducible max_b_loops values across runs."
+    )
+
+    parser.add_argument(
+        "--frame-count",
+        type=int,
+        default=16,
+        help="Frame count for video generation (default: 16). "
+             "Ignored if --frame-count-config is specified."
+    )
+
+    parser.add_argument(
+        "--frame-count-config",
+        type=str,
+        default=None,
+        help="Path to JSON config file for frame_count distribution. "
+             "Supports: static, uniform, two_peak, four_peak distributions. "
+             "If not specified, uses --frame-count as static value."
+    )
+
+    parser.add_argument(
+        "--frame-count-seed",
+        type=int,
+        default=None,
+        help="Random seed for frame_count distribution sampling (default: None). "
+             "Use for reproducible frame_count values across runs."
+    )
+
+    parser.add_argument(
+        "--resolution",
+        type=str,
+        default="512x512",
+        help="Default resolution for FLUX image generation (default: 512x512). "
+             "Supported: 512x512, 1024x1024. Ignored if --resolution-config is specified."
+    )
+
+    parser.add_argument(
+        "--resolution-config",
+        type=str,
+        default=None,
+        help="Path to JSON config file for resolution distribution. "
+             "Supports weighted_choice distribution for selecting between resolutions. "
+             "If not specified, uses --resolution as static value."
+    )
+
+    parser.add_argument(
+        "--resolution-seed",
+        type=int,
+        default=None,
+        help="Random seed for resolution distribution sampling (default: None). "
+             "Use for reproducible resolution values across runs."
+    )
+
+    return parser

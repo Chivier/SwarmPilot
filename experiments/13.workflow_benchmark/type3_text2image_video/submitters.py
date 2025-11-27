@@ -1,4 +1,12 @@
-"""Text2Video workflow task submitters."""
+"""Text2Image+Video workflow task submitters.
+
+Workflow pattern: LLM (A) -> FLUX (C) -> T2VID (B loops)
+
+This module provides three submitters:
+- ATaskSubmitter: LLM task (caption → positive prompt) with Poisson arrivals
+- CTaskSubmitter: FLUX task (positive prompt → image) triggered by A completion
+- BTaskSubmitter: T2VID task (video generation) with loop control
+"""
 
 import random
 import threading
@@ -7,33 +15,32 @@ from queue import Queue, Empty
 from typing import Any, Dict, List, Optional
 
 from common import BaseTaskSubmitter, estimate_token_length
-from .workflow_data import Text2VideoWorkflowData
+from .workflow_data import Text2ImageVideoWorkflowData
 
 
 # ============================================================================
 # Prompt Templates
 # ============================================================================
 
-A1_TEMPLATE = "Generate a detailed image generation prompt based on this caption: {caption}"
-A2_TEMPLATE = "Generate a negative prompt for image generation to avoid artifacts, based on this positive prompt: Positive prompt: {positive_prompt}"
+A_TEMPLATE = "Generate a detailed image generation prompt based on this caption: {caption}"
 
 
-class A1TaskSubmitter(BaseTaskSubmitter):
+class ATaskSubmitter(BaseTaskSubmitter):
     """
-    Submits A1 tasks (caption → positive prompt) with Poisson arrivals.
+    Submits A tasks (caption → positive prompt) with Poisson arrivals.
 
-    Pre-generates all workflow data upfront, then submits A1 tasks
+    Pre-generates all workflow data upfront, then submits A tasks
     following a Poisson process controlled by the rate limiter.
     """
 
     def __init__(self, captions: List[str], config, workflow_states: Dict,
                  state_lock: threading.Lock, **kwargs):
         """
-        Initialize A1 task submitter.
+        Initialize A task submitter.
 
         Args:
             captions: List of video captions
-            config: Text2VideoConfig instance
+            config: Text2ImageVideoConfig instance
             workflow_states: Shared workflow state dictionary
             state_lock: Lock for workflow_states access
             **kwargs: Passed to BaseTaskSubmitter (name, scheduler_url, rate_limiter, etc.)
@@ -49,15 +56,16 @@ class A1TaskSubmitter(BaseTaskSubmitter):
         # Pre-generate all workflow data
         self.workflows = []
         for i in range(config.num_workflows):
-            # Sample frame_count and max_b_loops from distributions
-            # These use the config's distribution samplers which respect config files and seeds
+            # Sample frame_count, max_b_loops, and resolution from distributions
             sampled_frame_count = config.sample_frame_count()
             sampled_max_b_loops = config.sample_max_b_loops()
+            sampled_resolution = config.sample_resolution()
 
-            workflow = Text2VideoWorkflowData(
+            workflow = Text2ImageVideoWorkflowData(
                 workflow_id=f"workflow-{i:04d}",
                 caption=captions[i % len(captions)],
                 max_b_loops=sampled_max_b_loops,
+                resolution=sampled_resolution,
                 strategy=getattr(config, 'strategy', 'default'),
                 frame_count=sampled_frame_count,
                 max_tokens=getattr(config, 'max_tokens', 512),
@@ -68,9 +76,11 @@ class A1TaskSubmitter(BaseTaskSubmitter):
             if config.mode == "simulation":
                 if config.use_real_data and config.data_loader is not None:
                     # Sample from real benchmark data
-                    # A1 and A2: independent samples from LLM benchmark runtimes
-                    workflow.a1_sleep_time = config.data_loader.sample_llm_runtime_ms() / 1000.0  # Convert to seconds
-                    workflow.a2_sleep_time = config.data_loader.sample_llm_runtime_ms() / 1000.0
+                    # A: sample from LLM benchmark runtimes
+                    workflow.a_sleep_time = config.data_loader.sample_llm_runtime_ms() / 1000.0  # Convert to seconds
+
+                    # C (FLUX): use resolution-based timing
+                    workflow.c_sleep_time = config.data_loader.get_flux_runtime_ms(sampled_resolution) / 1000.0
 
                     # B: sample frame from captions, then use regression to get runtime
                     sampled_frames = config.data_loader.sample_frame_count()
@@ -78,8 +88,8 @@ class A1TaskSubmitter(BaseTaskSubmitter):
                     workflow.frame_count = sampled_frames  # Update frame_count with sampled value
                 else:
                     # Fallback to uniform random sampling
-                    workflow.a1_sleep_time = random.uniform(config.sleep_time_min, config.sleep_time_max)
-                    workflow.a2_sleep_time = random.uniform(config.sleep_time_min, config.sleep_time_max)
+                    workflow.a_sleep_time = random.uniform(config.sleep_time_min, config.sleep_time_max)
+                    workflow.c_sleep_time = random.uniform(config.sleep_time_min, config.sleep_time_max)
                     workflow.b_sleep_time = random.uniform(config.sleep_time_min, config.sleep_time_max)
 
             self.workflows.append(workflow)
@@ -90,12 +100,12 @@ class A1TaskSubmitter(BaseTaskSubmitter):
                 workflow_states[workflow.workflow_id] = workflow
 
         self.index = 0
-        self.task_ids = []  # Track all A1 task IDs
+        self.task_ids = []  # Track all A task IDs
         self.logger.info(f"Pre-generated {len(self.workflows)} workflows")
 
-    def _prepare_task_payload(self, workflow_data: Text2VideoWorkflowData) -> Dict[str, Any]:
+    def _prepare_task_payload(self, workflow_data: Text2ImageVideoWorkflowData) -> Dict[str, Any]:
         """
-        Prepare task submission payload for A1.
+        Prepare task submission payload for A.
 
         Args:
             workflow_data: Workflow data with caption
@@ -106,12 +116,12 @@ class A1TaskSubmitter(BaseTaskSubmitter):
         # Build task_input based on mode
         if self.config.mode == "simulation":
             # Use pre-generated sleep_time or generate if not available
-            if workflow_data.a1_sleep_time is None:
-                workflow_data.a1_sleep_time = random.uniform(
+            if workflow_data.a_sleep_time is None:
+                workflow_data.a_sleep_time = random.uniform(
                     self.config.sleep_time_min,
                     self.config.sleep_time_max
                 )
-            task_input = {"sleep_time": workflow_data.a1_sleep_time}
+            task_input = {"sleep_time": workflow_data.a_sleep_time}
 
             # Calculate exp_runtime based on strategy
             # min_time strategy: use dataset average
@@ -119,16 +129,16 @@ class A1TaskSubmitter(BaseTaskSubmitter):
             if workflow_data.strategy == "min_time" and self.config.data_loader is not None:
                 exp_runtime = self.config.data_loader.llm_avg_runtime_ms
             else:
-                exp_runtime = workflow_data.a1_sleep_time * 1000.0  # Convert to milliseconds
+                exp_runtime = workflow_data.a_sleep_time * 1000.0  # Convert to milliseconds
 
             # Simulation mode metadata
             metadata = {
                 "workflow_id": workflow_data.workflow_id,
                 "exp_runtime": exp_runtime,
-                "task_type": "A1"
+                "task_type": "A"
             }
         else:  # real mode
-            sentence = A1_TEMPLATE.format(caption=workflow_data.caption)
+            sentence = A_TEMPLATE.format(caption=workflow_data.caption)
             task_input = {
                 "sentence": sentence,
                 "max_tokens": workflow_data.max_tokens
@@ -144,7 +154,7 @@ class A1TaskSubmitter(BaseTaskSubmitter):
 
         # Generate task ID with strategy prefix
         workflow_num = workflow_data.workflow_id.split('-')[-1]
-        task_id = f"task-A1-{workflow_data.strategy}-workflow-{workflow_num}"
+        task_id = f"task-A-{workflow_data.strategy}-workflow-{workflow_num}"
 
         return {
             "task_id": task_id,
@@ -153,7 +163,7 @@ class A1TaskSubmitter(BaseTaskSubmitter):
             "metadata": metadata
         }
 
-    def _get_next_task_data(self) -> Optional[Text2VideoWorkflowData]:
+    def _get_next_task_data(self) -> Optional[Text2ImageVideoWorkflowData]:
         """
         Get next workflow to submit.
 
@@ -177,21 +187,25 @@ class A1TaskSubmitter(BaseTaskSubmitter):
             True if submission succeeded, False otherwise
         """
         # Record workflow start in metrics before submission
-        if self.metrics and isinstance(task_data, Text2VideoWorkflowData):
+        if self.metrics and isinstance(task_data, Text2ImageVideoWorkflowData):
             self.metrics.record_workflow_start(
                 workflow_id=task_data.workflow_id,
-                workflow_type="text2video",
-                metadata={"max_b_loops": task_data.max_b_loops, "strategy": task_data.strategy},
+                workflow_type="text2image_video",
+                metadata={
+                    "max_b_loops": task_data.max_b_loops,
+                    "strategy": task_data.strategy,
+                    "resolution": task_data.resolution
+                },
                 is_warmup=task_data.is_warmup
             )
 
             # Record task submission in metrics
             workflow_num = task_data.workflow_id.split('-')[-1]
-            task_id = f"task-A1-{task_data.strategy}-workflow-{workflow_num}"
+            task_id = f"task-A-{task_data.strategy}-workflow-{workflow_num}"
             self.metrics.record_task_submit(
                 task_id=task_id,
                 workflow_id=task_data.workflow_id,
-                task_type="A1"
+                task_type="A"
             )
 
         # Set submit time BEFORE submission
@@ -200,71 +214,79 @@ class A1TaskSubmitter(BaseTaskSubmitter):
         # Call parent implementation
         success = super()._submit_task(task_data)
 
-        if success and isinstance(task_data, Text2VideoWorkflowData):
+        if success and isinstance(task_data, Text2ImageVideoWorkflowData):
             # Update workflow state with submission time
             with self.state_lock:
-                task_data.a1_submit_time = submit_time
+                task_data.a_submit_time = submit_time
 
             # Track task ID (must match the format used in _prepare_task_payload)
             workflow_num = task_data.workflow_id.split('-')[-1]
             strategy = getattr(self.config, 'strategy', 'default')
-            task_id = f"task-A1-{strategy}-workflow-{workflow_num}"
+            task_id = f"task-A-{strategy}-workflow-{workflow_num}"
             self.task_ids.append(task_id)
 
         return success
 
 
-class A2TaskSubmitter(BaseTaskSubmitter):
+class CTaskSubmitter(BaseTaskSubmitter):
     """
-    Submits A2 tasks (positive prompt → negative prompt).
+    Submits C tasks (FLUX text-to-image generation).
 
-    Receives A1 completion events from queue and submits corresponding A2 tasks.
+    Receives A completion events from queue and submits corresponding C tasks.
+    C tasks use a separate scheduler (scheduler_c_url on port 8300).
     """
 
     def __init__(self, config, workflow_states: Dict, state_lock: threading.Lock,
-                 a1_result_queue: Queue, **kwargs):
+                 a_result_queue: Queue, **kwargs):
         """
-        Initialize A2 task submitter.
+        Initialize C task submitter.
 
         Args:
-            config: Text2VideoConfig instance
+            config: Text2ImageVideoConfig instance
             workflow_states: Shared workflow state dictionary
             state_lock: Lock for workflow_states access
-            a1_result_queue: Queue receiving (workflow_id, a1_result) tuples from A1 receiver
+            a_result_queue: Queue receiving (workflow_id, a_result) tuples from A receiver
             **kwargs: Passed to BaseTaskSubmitter
         """
         super().__init__(**kwargs)
         self.config = config
         self.workflow_states = workflow_states
         self.state_lock = state_lock
-        self.a1_result_queue = a1_result_queue
-        self.task_ids = []  # Track all A2 task IDs
+        self.a_result_queue = a_result_queue
+        self.task_ids = []  # Track all C task IDs
 
     def _prepare_task_payload(self, task_data: tuple) -> Dict[str, Any]:
         """
-        Prepare task submission payload for A2.
+        Prepare task submission payload for C (FLUX).
 
         Args:
-            task_data: Tuple of (workflow_id, a1_result)
+            task_data: Tuple of (workflow_id, a_result)
 
         Returns:
             JSON payload for /task/submit
         """
-        workflow_id, a1_result = task_data
+        workflow_id, a_result = task_data
 
         # Get workflow_data
         with self.state_lock:
             workflow_data = self.workflow_states.get(workflow_id)
 
+        # Get resolution from workflow data
+        resolution = workflow_data.resolution if workflow_data else "512x512"
+
         # Build task_input based on mode
         if self.config.mode == "simulation":
             # Use pre-generated sleep_time or generate if not available
-            if workflow_data and workflow_data.a2_sleep_time is None:
-                workflow_data.a2_sleep_time = random.uniform(
-                    self.config.sleep_time_min,
-                    self.config.sleep_time_max
-                )
-            sleep_time = workflow_data.a2_sleep_time if workflow_data else random.uniform(
+            if workflow_data and workflow_data.c_sleep_time is None:
+                # Use data loader if available for resolution-based timing
+                if self.config.data_loader is not None:
+                    workflow_data.c_sleep_time = self.config.data_loader.get_flux_runtime_ms(resolution) / 1000.0
+                else:
+                    workflow_data.c_sleep_time = random.uniform(
+                        self.config.sleep_time_min,
+                        self.config.sleep_time_max
+                    )
+            sleep_time = workflow_data.c_sleep_time if workflow_data else random.uniform(
                 self.config.sleep_time_min,
                 self.config.sleep_time_max
             )
@@ -275,7 +297,7 @@ class A2TaskSubmitter(BaseTaskSubmitter):
             # other strategies: use actual sampled runtime
             strategy = workflow_data.strategy if workflow_data else "probabilistic"
             if strategy == "min_time" and self.config.data_loader is not None:
-                exp_runtime = self.config.data_loader.llm_avg_runtime_ms
+                exp_runtime = self.config.data_loader.flux_avg_runtime_ms
             else:
                 exp_runtime = sleep_time * 1000.0  # Convert to milliseconds
 
@@ -283,47 +305,52 @@ class A2TaskSubmitter(BaseTaskSubmitter):
             metadata = {
                 "workflow_id": workflow_id,
                 "exp_runtime": exp_runtime,
-                "task_type": "A2"
+                "task_type": "C",
+                "resolution": resolution
             }
         else:  # real mode
-            sentence = A2_TEMPLATE.format(positive_prompt=a1_result)
-            max_tokens = workflow_data.max_tokens if workflow_data else self.config.max_tokens
+            # Parse resolution to width/height
+            width, height = map(int, resolution.split('x'))
+
             task_input = {
-                "sentence": sentence,
-                "max_tokens": max_tokens
+                "sentence": a_result,  # Positive prompt from LLM
+                "width": width,
+                "height": height
             }
 
             # Real mode metadata
-            token_length = estimate_token_length(sentence)
+            token_length = estimate_token_length(a_result)
             metadata = {
-                "sentence": sentence,
+                "sentence": a_result,
                 "token_length": token_length,
-                "max_tokens": max_tokens
+                "resolution": resolution,
+                "width": width,
+                "height": height
             }
 
         # Generate task ID with strategy prefix
         strategy = workflow_data.strategy if workflow_data else "probabilistic"
         workflow_num = workflow_id.split('-')[-1]
-        task_id = f"task-A2-{strategy}-workflow-{workflow_num}"
+        task_id = f"task-C-{strategy}-workflow-{workflow_num}"
 
         return {
             "task_id": task_id,
-            "model_id": self.config.model_a_id,
+            "model_id": self.config.model_c_id,
             "task_input": task_input,
             "metadata": metadata
         }
 
     def _get_next_task_data(self) -> Optional[tuple]:
         """
-        Get next A2 task from queue (blocking until available).
+        Get next C task from queue (blocking until available).
 
         Returns:
-            Tuple of (workflow_id, a1_result), or None if stopped
+            Tuple of (workflow_id, a_result), or None if stopped
         """
         while not self.stop_event.is_set():
             try:
                 # Block for 0.1s to allow graceful shutdown
-                return self.a1_result_queue.get(timeout=0.1)
+                return self.a_result_queue.get(timeout=0.1)
             except Empty:
                 # Queue empty, keep waiting
                 continue
@@ -346,11 +373,11 @@ class A2TaskSubmitter(BaseTaskSubmitter):
                 workflow_data = self.workflow_states.get(workflow_id)
                 if workflow_data:
                     workflow_num = workflow_id.split('-')[-1]
-                    task_id = f"task-A2-{workflow_data.strategy}-workflow-{workflow_num}"
+                    task_id = f"task-C-{workflow_data.strategy}-workflow-{workflow_num}"
                     self.metrics.record_task_submit(
                         task_id=task_id,
                         workflow_id=workflow_id,
-                        task_type="A2"
+                        task_type="C"
                     )
 
         # Set submit time BEFORE submission
@@ -366,12 +393,12 @@ class A2TaskSubmitter(BaseTaskSubmitter):
             with self.state_lock:
                 workflow_data = self.workflow_states.get(workflow_id)
                 if workflow_data:
-                    workflow_data.a2_submit_time = submit_time
+                    workflow_data.c_submit_time = submit_time
 
             # Track task ID (must match the format used in _prepare_task_payload)
             workflow_num = workflow_id.split('-')[-1]
             strategy = workflow_data.strategy if workflow_data else "probabilistic"
-            task_id = f"task-A2-{strategy}-workflow-{workflow_num}"
+            task_id = f"task-C-{strategy}-workflow-{workflow_num}"
             self.task_ids.append(task_id)
 
         return success
@@ -379,42 +406,44 @@ class A2TaskSubmitter(BaseTaskSubmitter):
 
 class BTaskSubmitter(BaseTaskSubmitter):
     """
-    Submits B tasks (video generation) with loop control.
+    Submits B tasks (T2VID video generation) with loop control.
 
-    Receives A2 completion events from queue and submits B tasks.
+    Receives C completion events from queue and submits B tasks.
     Implements B-loop logic: re-submits B task if loop count < max_b_loops.
+
+    Key difference from type1: negative_prompt is fixed as "blur" for all B tasks.
     """
 
     def __init__(self, config, workflow_states: Dict, state_lock: threading.Lock,
-                 a2_result_queue: Queue, **kwargs):
+                 c_result_queue: Queue, **kwargs):
         """
         Initialize B task submitter.
 
         Args:
-            config: Text2VideoConfig instance
+            config: Text2ImageVideoConfig instance
             workflow_states: Shared workflow state dictionary
             state_lock: Lock for workflow_states access
-            a2_result_queue: Queue receiving (workflow_id, a2_result) tuples from A2 receiver
+            c_result_queue: Queue receiving (workflow_id, c_result, loop_iteration) tuples
             **kwargs: Passed to BaseTaskSubmitter
         """
         super().__init__(**kwargs)
         self.config = config
         self.workflow_states = workflow_states
         self.state_lock = state_lock
-        self.a2_result_queue = a2_result_queue
+        self.c_result_queue = c_result_queue
         self.task_ids = []  # Track all B task IDs (all iterations)
 
     def _prepare_task_payload(self, task_data: tuple) -> Dict[str, Any]:
         """
-        Prepare task submission payload for B.
+        Prepare task submission payload for B (T2VID).
 
         Args:
-            task_data: Tuple of (workflow_id, a2_result, loop_iteration)
+            task_data: Tuple of (workflow_id, positive_prompt, loop_iteration)
 
         Returns:
             JSON payload for /task/submit
         """
-        workflow_id, a2_result, loop_iteration = task_data
+        workflow_id, positive_prompt, loop_iteration = task_data
 
         # Get workflow_data
         with self.state_lock:
@@ -452,22 +481,24 @@ class BTaskSubmitter(BaseTaskSubmitter):
                 "b_iteration": loop_iteration,
                 "max_b_loops": workflow_data.max_b_loops if workflow_data else 4
             }
-        else:  # real mode - completely different structure
-            # Real mode uses caption for both prompt and negative_prompt (simplified)
-            caption = workflow_data.caption if workflow_data else ""
+        else:  # real mode
+            # Real mode uses positive_prompt from LLM (A task output)
+            # negative_prompt is FIXED as "blur" for type3 workflow
             frame_count = workflow_data.frame_count if workflow_data else 16
+            negative_prompt = workflow_data.negative_prompt if workflow_data else "blur"
 
             task_input = {
-                "prompt": caption,  # Use caption as positive prompt
-                "negative_prompt": caption,  # Simplified: also use caption as negative prompt
+                "prompt": positive_prompt,  # Positive prompt from LLM
+                "negative_prompt": negative_prompt,  # Fixed "blur"
                 "frames": frame_count
             }
 
-            # Real mode metadata - only includes prompt lengths and frames
+            # Real mode metadata
             metadata = {
-                "positive_prompt_length": estimate_token_length(caption),
-                "negative_prompt_length": estimate_token_length(caption),
-                "frames": frame_count
+                "positive_prompt_length": estimate_token_length(positive_prompt),
+                "negative_prompt_length": estimate_token_length(negative_prompt),
+                "frames": frame_count,
+                "b_iteration": loop_iteration
             }
 
         # Generate task ID with strategy prefix
@@ -487,17 +518,17 @@ class BTaskSubmitter(BaseTaskSubmitter):
         Get next B task from queue (blocking until available).
 
         Returns:
-            Tuple of (workflow_id, a2_result, loop_iteration), or None if stopped
+            Tuple of (workflow_id, positive_prompt, loop_iteration), or None if stopped
         """
         while not self.stop_event.is_set():
             try:
                 # Block for 0.1s to allow graceful shutdown
-                return self.a2_result_queue.get(timeout=0.1)
+                return self.c_result_queue.get(timeout=0.1)
             except Empty:
                 continue
         return None
 
-    def add_task(self, workflow_id: str, a2_result: str, loop_iteration: int):
+    def add_task(self, workflow_id: str, positive_prompt: str, loop_iteration: int):
         """
         Add a B task to the submission queue.
 
@@ -505,10 +536,10 @@ class BTaskSubmitter(BaseTaskSubmitter):
 
         Args:
             workflow_id: Workflow identifier
-            a2_result: Negative prompt from A2
+            positive_prompt: Positive prompt from A (LLM) task
             loop_iteration: Current loop iteration number (1-based)
         """
-        self.a2_result_queue.put((workflow_id, a2_result, loop_iteration))
+        self.c_result_queue.put((workflow_id, positive_prompt, loop_iteration))
 
     def _submit_task(self, task_data: Any) -> bool:
         """
@@ -522,7 +553,7 @@ class BTaskSubmitter(BaseTaskSubmitter):
         """
         # Record task submission in metrics before submission
         if self.metrics and isinstance(task_data, tuple):
-            workflow_id, a2_result, loop_iteration = task_data
+            workflow_id, positive_prompt, loop_iteration = task_data
             with self.state_lock:
                 workflow_data = self.workflow_states.get(workflow_id)
                 if workflow_data:
@@ -541,7 +572,7 @@ class BTaskSubmitter(BaseTaskSubmitter):
         success = super()._submit_task(task_data)
 
         if success and isinstance(task_data, tuple):
-            workflow_id, a2_result, loop_iteration = task_data
+            workflow_id, positive_prompt, loop_iteration = task_data
 
             # Update workflow state with submission time
             with self.state_lock:

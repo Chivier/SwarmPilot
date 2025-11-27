@@ -14,7 +14,7 @@ Core Components:
 
 from .base_classes import BaseTaskReceiver, BaseTaskSubmitter
 from .data_structures import TaskStatus, WorkflowState, WorkflowType
-from .metrics_collector import MetricsCollector, TaskMetrics, WorkflowMetrics
+from .metrics_collector import MetricsCollector, TaskMetrics, WorkflowMetrics, generate_strategy_comparison_table
 from .rate_limiter import PoissonRateLimiter, RateLimiter
 from .utils import (
     calculate_duration,
@@ -45,6 +45,7 @@ from .cli_utils import (
     create_base_parser,
     add_type1_args,
     add_type2_args,
+    add_type3_args,
 )
 
 __version__ = "0.1.0"
@@ -64,6 +65,7 @@ __all__ = [
     "MetricsCollector",
     "TaskMetrics",
     "WorkflowMetrics",
+    "generate_strategy_comparison_table",
     # JSON utilities
     "to_json",
     "save_json",
@@ -95,4 +97,5 @@ __all__ = [
     "create_base_parser",
     "add_type1_args",
     "add_type2_args",
+    "add_type3_args",
 ]

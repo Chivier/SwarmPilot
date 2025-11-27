@@ -1,29 +1,32 @@
 #!/usr/bin/env python3
 """
-Deep Research Workflow - Real Cluster Mode
+Text2Image+Video Workflow - Real Cluster Mode
 
-This script runs the Deep Research workflow (A→n×B1→n×B2→Merge) in real cluster mode
+This script runs the Text2Image+Video workflow (A→C→B) in real cluster mode
 using actual model IDs and task inputs instead of sleep simulations.
 
 Key differences from simulation mode:
-- Uses real model inputs (sentence, max_tokens) instead of sleep_time
-- Includes token estimation in metadata for performance prediction
-- Supports predictor and planner integration
-- Can be deployed across distributed schedulers
+- Uses real model inputs instead of sleep_time
+- A: Uses sentence + max_tokens for LLM
+- C: Uses sentence + width/height for FLUX image generation
+- B: Uses prompt + negative_prompt + frames for T2VID
 
 Architecture:
 - Thread 1: A submitter (Poisson process, QPS-controlled)
-- Thread 2: A receiver → fans out to n B1 tasks
-- Thread 3: B1 submitter
-- Thread 4: B1 receiver → triggers B2 tasks
-- Thread 5: B2 submitter
-- Thread 6: B2 receiver → synchronizes and triggers Merge
-- Thread 7: Merge submitter
-- Thread 8: Merge receiver
+- Thread 2: A receiver → triggers C
+- Thread 3: C submitter
+- Thread 4: C receiver → triggers B
+- Thread 5: B submitter
+- Thread 6: B receiver (with loop control)
+
+Workflow Pattern:
+- A: caption → positive prompt (LLM)
+- C: positive prompt → image (FLUX, with resolution)
+- B: video generation (1-4 iterations, negative_prompt="blur")
 
 Usage:
-    python -m type2_deep_research.real.test_workflow_real \\
-        --num-workflows 50 --qps 2.0 --fanout 4 --strategies min_time,probabilistic --duration 300
+    python -m type3_text2image_video.real.test_workflow_real \\
+        --num-workflows 50 --qps 2.0 --strategies min_time,probabilistic --duration 300
 """
 
 import random
@@ -46,26 +49,17 @@ from common import (
     setup_scheduler_strategies,
     clear_scheduler_tasks,
     create_base_parser,
-    add_type2_args,
+    add_type3_args,
     parse_strategies,
     generate_strategy_comparison_table,
 )
-from type2_deep_research.config import DeepResearchConfig
-from type2_deep_research.submitters import (
-    ATaskSubmitter,
-    B1TaskSubmitter,
-    B2TaskSubmitter,
-    MergeTaskSubmitter
-)
-from type2_deep_research.receivers import (
-    ATaskReceiver,
-    B1TaskReceiver,
-    B2TaskReceiver,
-    MergeTaskReceiver
-)
+from type3_text2image_video.config import Text2ImageVideoConfig
+from type3_text2image_video.workflow_data import load_captions
+from type3_text2image_video.submitters import ATaskSubmitter, CTaskSubmitter, BTaskSubmitter
+from type3_text2image_video.receivers import ATaskReceiver, CTaskReceiver, BTaskReceiver
 
 
-def run_single_experiment(config, logger, strategy_name=None):
+def run_single_experiment(config, captions, logger, strategy_name=None):
     """Run a single experiment with the given configuration.
 
     Returns:
@@ -77,14 +71,17 @@ def run_single_experiment(config, logger, strategy_name=None):
         config.strategy = strategy_name
 
     logger.info("=" * 80)
-    logger.info(f"Deep Research Workflow - Real Cluster Mode - Strategy: {strategy_name or 'default'}")
+    logger.info(f"Text2Image+Video Workflow - Real Cluster Mode - Strategy: {strategy_name or 'default'}")
     logger.info("=" * 80)
     logger.info(f"QPS: {config.qps}")
     logger.info(f"Duration: {config.duration}s")
     logger.info(f"Workflows: {config.num_workflows}")
-    logger.info(f"Fanout count: {config.fanout_count}")
-    logger.info(f"Scheduler A: {config.scheduler_a_url}")
-    logger.info(f"Scheduler B: {config.scheduler_b_url}")
+    logger.info(f"Max B loops config: {config.get_max_b_loops_config()}")
+    logger.info(f"Frame count config: {config.get_frame_count_config()}")
+    logger.info(f"Resolution config: {config.get_resolution_config()}")
+    logger.info(f"Scheduler A (LLM): {config.scheduler_a_url}")
+    logger.info(f"Scheduler C (FLUX): {config.scheduler_c_url}")
+    logger.info(f"Scheduler B (T2VID): {config.scheduler_b_url}")
 
     # Initialize components
     metrics = MetricsCollector(logger)
@@ -94,44 +91,17 @@ def run_single_experiment(config, logger, strategy_name=None):
 
     # Create inter-thread queues
     a_result_queue = Queue()
-    b1_result_queue = Queue()
-    merge_trigger_queue = Queue()
+    c_result_queue = Queue()
 
-    # Pre-generate task IDs for receivers
+    # Pre-generate task IDs for receivers to subscribe to
     strategy = getattr(config, 'strategy', 'probabilistic')
+    a_task_ids = [f"task-A-{strategy}-workflow-{i:04d}" for i in range(config.num_workflows)]
+    c_task_ids = [f"task-C-{strategy}-workflow-{i:04d}" for i in range(config.num_workflows)]
 
-    # A task IDs (one per workflow)
-    a_task_ids = [
-        f"task-A-{strategy}-workflow-{i:04d}"
-        for i in range(config.num_workflows)
-    ]
-
-    # B1 task IDs (fanout_count per workflow)
-    b1_task_ids = [
-        f"task-B1-{strategy}-workflow-{i:04d}-{j}"
-        for i in range(config.num_workflows)
-        for j in range(config.fanout_count)
-    ]
-
-    # B2 task IDs (fanout_count per workflow)
-    b2_task_ids = [
-        f"task-B2-{strategy}-workflow-{i:04d}-{j}"
-        for i in range(config.num_workflows)
-        for j in range(config.fanout_count)
-    ]
-
-    # Merge task IDs (one per workflow)
-    merge_task_ids = [
-        f"task-merge-{strategy}-workflow-{i:04d}"
-        for i in range(config.num_workflows)
-    ]
-
-    logger.info(f"Pre-generated {len(a_task_ids)} A, {len(b1_task_ids)} B1, "
-                f"{len(b2_task_ids)} B2, {len(merge_task_ids)} Merge task IDs")
-
-    # Create submitters
+    # Create submitters first (ATaskSubmitter populates workflow_states)
     a_submitter = ATaskSubmitter(
         name="ASubmitter",
+        captions=captions,
         config=config,
         workflow_states=workflow_states,
         state_lock=state_lock,
@@ -143,37 +113,25 @@ def run_single_experiment(config, logger, strategy_name=None):
         custom_logger=logger
     )
 
-    b1_submitter = B1TaskSubmitter(
-        name="B1Submitter",
+    c_submitter = CTaskSubmitter(
+        name="CSubmitter",
         config=config,
         workflow_states=workflow_states,
         state_lock=state_lock,
         a_result_queue=a_result_queue,
-        scheduler_url=config.scheduler_b_url,
+        scheduler_url=config.scheduler_c_url,
         rate_limiter=None,
         metrics=metrics,
         custom_logger=logger
     )
 
-    b2_submitter = B2TaskSubmitter(
-        name="B2Submitter",
+    b_submitter = BTaskSubmitter(
+        name="BSubmitter",
         config=config,
         workflow_states=workflow_states,
         state_lock=state_lock,
-        b1_result_queue=b1_result_queue,
+        c_result_queue=c_result_queue,
         scheduler_url=config.scheduler_b_url,
-        rate_limiter=None,
-        metrics=metrics,
-        custom_logger=logger
-    )
-
-    merge_submitter = MergeTaskSubmitter(
-        name="MergeSubmitter",
-        config=config,
-        workflow_states=workflow_states,
-        state_lock=state_lock,
-        merge_trigger_queue=merge_trigger_queue,
-        scheduler_url=config.scheduler_a_url,
         rate_limiter=None,
         metrics=metrics,
         custom_logger=logger
@@ -183,53 +141,50 @@ def run_single_experiment(config, logger, strategy_name=None):
     a_receiver = ATaskReceiver(
         name="AReceiver",
         config=config,
-        workflow_states=workflow_states,
-        state_lock=state_lock,
-        b1_submitter=b1_submitter,
+        model_id=config.model_a_id,
+        c_submitter=c_submitter,
         a_result_queue=a_result_queue,
         task_ids=a_task_ids,
+        workflow_states=workflow_states,
+        state_lock=state_lock,
         scheduler_url=config.scheduler_a_url,
-        model_id=config.model_a_id,
         metrics=metrics,
         custom_logger=logger
     )
 
-    b1_receiver = B1TaskReceiver(
-        name="B1Receiver",
+    c_receiver = CTaskReceiver(
+        name="CReceiver",
         config=config,
+        model_id=config.model_c_id,
+        b_submitter=b_submitter,
+        c_result_queue=c_result_queue,
+        task_ids=c_task_ids,
         workflow_states=workflow_states,
         state_lock=state_lock,
-        b2_submitter=b2_submitter,
-        b1_result_queue=b1_result_queue,
-        task_ids=b1_task_ids,
-        scheduler_url=config.scheduler_b_url,
+        scheduler_url=config.scheduler_c_url,
+        metrics=metrics,
+        custom_logger=logger
+    )
+
+    # Generate all B task IDs (including all loop iterations)
+    # With distribution-based sampling, each workflow may have different max_b_loops,
+    # so we use each workflow's actual max_b_loops from the pre-generated workflow data
+    b_task_ids = []
+    with state_lock:
+        for workflow_id, workflow_data in workflow_states.items():
+            workflow_num = workflow_id.split('-')[-1]
+            for loop in range(1, workflow_data.max_b_loops + 1):
+                b_task_ids.append(f"task-B{loop}-{strategy}-workflow-{workflow_num}")
+
+    b_receiver = BTaskReceiver(
+        name="BReceiver",
+        config=config,
         model_id=config.model_b_id,
-        metrics=metrics,
-        custom_logger=logger
-    )
-
-    b2_receiver = B2TaskReceiver(
-        name="B2Receiver",
-        config=config,
+        b_submitter=b_submitter,
+        task_ids=b_task_ids,
         workflow_states=workflow_states,
         state_lock=state_lock,
-        merge_submitter=merge_submitter,
-        merge_trigger_queue=merge_trigger_queue,
-        task_ids=b2_task_ids,
         scheduler_url=config.scheduler_b_url,
-        model_id=config.model_b_id,
-        metrics=metrics,
-        custom_logger=logger
-    )
-
-    merge_receiver = MergeTaskReceiver(
-        name="MergeReceiver",
-        config=config,
-        workflow_states=workflow_states,
-        state_lock=state_lock,
-        task_ids=merge_task_ids,
-        scheduler_url=config.scheduler_a_url,
-        model_id=config.model_merge_id,
         metrics=metrics,
         custom_logger=logger
     )
@@ -240,31 +195,58 @@ def run_single_experiment(config, logger, strategy_name=None):
 
     a_submitter.start()
     a_receiver.start()
-    b1_submitter.start()
-    b1_receiver.start()
-    b2_submitter.start()
-    b2_receiver.start()
-    merge_submitter.start()
-    merge_receiver.start()
+    c_submitter.start()
+    c_receiver.start()
+    b_submitter.start()
+    b_receiver.start()
+
+    # Calculate target workflows for early stopping based on SUBMISSION ORDER
+    import math
+    num_warmup = config.num_warmup
+    num_non_warmup = config.num_workflows - num_warmup
+    target_non_warmup = math.ceil(num_non_warmup * config.portion_stats)
+
+    # Generate the list of workflow IDs that must complete for metrics
+    target_workflow_ids = set()
+    for i in range(num_warmup):
+        target_workflow_ids.add(f"workflow-{i:04d}")
+    for i in range(num_warmup, num_warmup + target_non_warmup):
+        target_workflow_ids.add(f"workflow-{i:04d}")
+
+    target_completion = len(target_workflow_ids)
+    logger.info(f"Early stopping target: {target_completion} specific workflows by submission order "
+                f"(warmup={num_warmup}, non-warmup needed for stats={target_non_warmup})")
 
     # Monitor progress
+    early_stop = False
     try:
         while time.time() - start_time < config.duration:
             time.sleep(10)
 
             with state_lock:
-                completed = merge_receiver.completed_workflows
+                completed = b_receiver.completed_workflows
                 total = config.num_workflows
                 progress_pct = (completed / total * 100) if total > 0 else 0
 
-                logger.info(
-                    f"Progress: {completed}/{total} workflows "
-                    f"({progress_pct:.1f}%) - "
-                    f"Elapsed: {time.time() - start_time:.1f}s"
+                # Count how many of the TARGET workflows have completed
+                target_completed = sum(
+                    1 for wid, w in workflow_states.items()
+                    if wid in target_workflow_ids and w.is_complete()
                 )
 
-                if completed >= total:
-                    logger.info("All workflows completed! Stopping early.")
+                target_pct = 100 * target_completed / target_completion if target_completion > 0 else 0
+                elapsed = time.time() - start_time
+                logger.info(
+                    f"Progress [{elapsed:.1f}s]: "
+                    f"target={target_completed}/{target_completion} ({target_pct:.1f}%), "
+                    f"total={completed}/{total} ({progress_pct:.1f}%)"
+                )
+
+                # Early stopping: check if all TARGET workflows (by submission order) have completed
+                if target_completed >= target_completion:
+                    logger.info(f"Early stopping: {target_completed} target workflows completed")
+                    logger.info("All workflows needed for metrics calculation are complete!")
+                    early_stop = True
                     break
 
     except KeyboardInterrupt:
@@ -274,32 +256,30 @@ def run_single_experiment(config, logger, strategy_name=None):
     logger.info("Stopping all threads...")
     a_submitter.stop()
     a_receiver.stop()
-    b1_submitter.stop()
-    b1_receiver.stop()
-    b2_submitter.stop()
-    b2_receiver.stop()
-    merge_submitter.stop()
-    merge_receiver.stop()
+    c_submitter.stop()
+    c_receiver.stop()
+    b_submitter.stop()
+    b_receiver.stop()
 
     # Wait for threads to finish
     a_submitter.join()
     a_receiver.join()
-    b1_submitter.join()
-    b1_receiver.join()
-    b2_submitter.join()
-    b2_receiver.join()
-    merge_submitter.join()
-    merge_receiver.join()
+    c_submitter.join()
+    c_receiver.join()
+    b_submitter.join()
+    b_receiver.join()
 
     # Calculate final statistics
     elapsed_time = time.time() - start_time
     with state_lock:
-        completed_workflows = merge_receiver.completed_workflows
+        completed_workflows = b_receiver.completed_workflows
 
     logger.info("=" * 80)
     logger.info("Experiment Complete")
     logger.info("=" * 80)
     logger.info(f"Duration: {elapsed_time:.2f}s")
+    if early_stop:
+        logger.info(f"Stopped early: All {target_completion} workflows needed for metrics completed")
     logger.info(f"Completed workflows: {completed_workflows}/{config.num_workflows}")
     logger.info(f"Completion rate: {completed_workflows / config.num_workflows * 100:.1f}%")
 
@@ -324,12 +304,12 @@ def run_single_experiment(config, logger, strategy_name=None):
 
     # Print detailed metrics report with per-task-type metrics (Avg, P90, P99)
     print("\n" + metrics.generate_detailed_text_report(
-        task_types=["A", "B1", "B2", "merge"],
+        task_types=["A", "C", "B"],
         portion_stats=config.portion_stats
     ))
 
     # Collect and return strategy results for comparison table
-    task_types = ["A", "B1", "B2", "merge"]
+    task_types = ["A", "C", "B"]
     task_metrics_result = {}
     for task_type in task_types:
         task_metrics_result[task_type] = metrics.get_task_metrics_by_type(
@@ -379,8 +359,8 @@ def main():
     # Parse Command Line Arguments
     # ========================================================================
 
-    parser = create_base_parser(description="Deep Research Workflow - Real Cluster Mode")
-    parser = add_type2_args(parser)
+    parser = create_base_parser(description="Text2Image+Video Workflow - Real Cluster Mode")
+    parser = add_type3_args(parser)
     args = parser.parse_args()
 
     # Parse and validate strategies
@@ -395,37 +375,48 @@ def main():
     # ========================================================================
 
     # Compute warmup count from ratio
-    # warmup_count = num_workflows * warmup_ratio
     warmup_count = int(args.num_workflows * args.warmup)
 
     # Create config with hardcoded real mode
-    config = DeepResearchConfig(
+    config = Text2ImageVideoConfig(
         mode="real",  # Hardcoded for real cluster
         qps=args.qps,
         duration=args.duration,
         num_workflows=args.num_workflows,
-        fanout_count=args.fanout,
-        fanout_config=args.fanout_config,
-        fanout_seed=args.fanout_seed,
+        max_b_loops=args.max_b_loops,
         num_warmup=warmup_count,
         strategies=strategies,
         portion_stats=args.portion_stats,
+        frame_count=args.frame_count,
+        frame_count_config=args.frame_count_config,
+        max_b_loops_config=args.max_b_loops_config,
+        frame_count_seed=args.frame_count_seed,
+        max_b_loops_seed=args.max_b_loops_seed,
+        resolution=args.resolution,
+        resolution_config=args.resolution_config,
+        resolution_seed=args.resolution_seed,
     )
 
     logger = configure_logging(level="INFO")
 
     logger.info(f"Mode: {config.mode} (hardcoded for real cluster)")
-    logger.info(f"Model A: {config.model_a_id}")
-    logger.info(f"Model B: {config.model_b_id}")
-    logger.info(f"Model Merge: {config.model_merge_id}")
+    logger.info(f"Model A (LLM): {config.model_a_id}")
+    logger.info(f"Model C (FLUX): {config.model_c_id}")
+    logger.info(f"Model B (T2VID): {config.model_b_id}")
     logger.info(f"Scheduler A: {config.scheduler_a_url}")
+    logger.info(f"Scheduler C: {config.scheduler_c_url}")
     logger.info(f"Scheduler B: {config.scheduler_b_url}")
 
-    # Log fanout distribution info
-    fanout_info = config.get_fanout_config_info()
-    logger.info(f"Fanout distribution: type={fanout_info['type']}")
-    if fanout_info['type'] != 'static':
-        logger.info(f"Fanout config details: {fanout_info}")
+    # Load captions
+    caption_path = Path(__file__).parent.parent.parent.parent.parent / config.caption_file
+    if not caption_path.exists():
+        logger.warning(f"Caption file not found: {caption_path}")
+        logger.warning("Using dummy captions")
+        captions = [f"Sample caption {i}" for i in range(100)]
+    else:
+        captions = load_captions(str(caption_path))
+
+    logger.info(f"Loaded {len(captions)} captions")
 
     # ========================================================================
     # Strategy Management
@@ -453,12 +444,16 @@ def main():
         if not clear_scheduler_tasks(config.scheduler_a_url, logger):
             logger.error("Failed to clear Scheduler A tasks, skipping strategy")
             continue
+        if config.scheduler_c_url and config.scheduler_c_url != config.scheduler_a_url:
+            if not clear_scheduler_tasks(config.scheduler_c_url, logger):
+                logger.error("Failed to clear Scheduler C tasks, skipping strategy")
+                continue
         if config.scheduler_b_url and config.scheduler_b_url != config.scheduler_a_url:
             if not clear_scheduler_tasks(config.scheduler_b_url, logger):
                 logger.error("Failed to clear Scheduler B tasks, skipping strategy")
                 continue
 
-        # Setup this strategy on schedulers
+        # Setup this strategy on all three schedulers
         strategy_results = setup_scheduler_strategies(
             strategy_name=strategy_name,
             scheduler_a_url=config.scheduler_a_url,
@@ -468,18 +463,30 @@ def main():
             custom_logger=logger
         )
 
+        # Also setup strategy on Scheduler C (FLUX)
+        if config.scheduler_c_url and config.scheduler_c_url != config.scheduler_a_url:
+            c_results = setup_scheduler_strategies(
+                strategy_name=strategy_name,
+                scheduler_a_url=config.scheduler_c_url,
+                scheduler_b_url=None,
+                target_quantile=config.target_quantile,
+                quantiles=quantiles,
+                custom_logger=logger
+            )
+            strategy_results.update(c_results)
+
         if not strategy_results.get(strategy_name, False):
             logger.error(f"Failed to setup strategy: {strategy_name}")
             logger.error("Skipping this strategy")
             continue
 
-        logger.info(f"Strategy {strategy_name} set up successfully")
+        logger.info(f"Strategy {strategy_name} set up successfully on all schedulers")
 
         # Run the experiment
         logger.info("\n" + "=" * 70)
         logger.info(f"Running experiment with strategy: {strategy_name}")
         logger.info("=" * 70)
-        experiment_results = run_single_experiment(config, logger, strategy_name=strategy_name)
+        experiment_results = run_single_experiment(config, captions, logger, strategy_name=strategy_name)
 
         # Store results for comparison
         all_strategy_results[strategy_name] = experiment_results
@@ -490,7 +497,7 @@ def main():
     if len(all_strategy_results) > 1:
         comparison_table = generate_strategy_comparison_table(
             all_strategy_results,
-            task_types=["A", "B1", "B2", "merge"]
+            task_types=["A", "C", "B"]
         )
         print(comparison_table)
         logger.info("Strategy comparison table generated")
