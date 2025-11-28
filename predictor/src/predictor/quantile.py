@@ -178,6 +178,11 @@ class QuantilePredictor(BasePredictor):
         self.target_std = None
         self.delta_scale = None  # Scale factor for deltas
 
+        # Residual calibration parameters (learned from training data)
+        self.residual_calibration_enabled = False
+        self.residual_mu = None      # Log-space mean of residuals
+        self.residual_sigma = None   # Log-space std of residuals
+
     def train(self, features_list: List[Dict[str, Any]], config: Dict[str, Any] = None) -> Dict[str, Any]:
         """
         Train the predictor on the given data.
@@ -195,6 +200,24 @@ class QuantilePredictor(BasePredictor):
                 - delta_scale (float): Scale factor for delta outputs (default: 1.0)
                   Higher values allow larger gaps between quantiles.
 
+                Data Augmentation (for single-sample-per-feature data):
+                - data_augmentation (dict): Enable runtime augmentation to simulate variance
+                    - enabled (bool): Enable data augmentation (default: True)
+                      Set to False to disable augmentation entirely.
+                    - cv (float): Coefficient of variation for augmentation.
+                      If not specified, auto-calculated from training data:
+                      * For multi-sample groups: weighted average of group CVs
+                      * For single-sample data: heuristic based on overall distribution
+                      * Bounded to [0.1, 1.5] range
+                      User-specified value overrides auto-calculation.
+                    - samples_per_point (int): Number of augmented samples per original (default: 5)
+                    - distribution (str): "lognormal" or "normal" (default: "lognormal")
+
+                Residual Calibration (post-training distribution adjustment):
+                - residual_calibration (dict): Calibrate quantiles using residual analysis
+                    - enabled (bool): Enable residual calibration (default: False)
+                    - min_sigma (float): Minimum residual sigma (default: 0.1)
+
         Returns:
             Training metadata dictionary
 
@@ -207,8 +230,42 @@ class QuantilePredictor(BasePredictor):
                 f"Insufficient training data: need at least 10 samples, got {len(features_list)}"
             )
 
+        # Get config
+        if config is None:
+            config = {}
+
+        # ============================================================
+        # Data Augmentation: Generate synthetic samples to simulate variance
+        # Default: ENABLED with auto-calculated parameters
+        # ============================================================
+        augmentation_config = config.get('data_augmentation', {})
+
+        # Default to enabled unless explicitly disabled
+        augmentation_enabled = augmentation_config.get('enabled', True)
+        augmented_features_list = features_list
+
+        if augmentation_enabled:
+            # Auto-calculate CV from training data if not explicitly specified
+            auto_cv = self._estimate_cv_from_data(features_list)
+
+            # Get parameters with auto-calculated defaults
+            # User-specified values override auto-calculated ones
+            aug_cv = augmentation_config.get('cv', auto_cv)
+            aug_samples = augmentation_config.get('samples_per_point', 5)
+            aug_dist = augmentation_config.get('distribution', 'lognormal')
+
+            print(f"Data augmentation enabled: cv={aug_cv:.3f} (auto={auto_cv:.3f}), "
+                  f"samples_per_point={aug_samples}, distribution={aug_dist}")
+
+            augmented_features_list = self._augment_training_data(
+                features_list, cv=aug_cv, samples_per_point=aug_samples, distribution=aug_dist
+            )
+            print(f"Augmented {len(features_list)} samples to {len(augmented_features_list)} samples")
+        else:
+            print("Data augmentation disabled by user configuration")
+
         # Extract features and labels
-        X, y, all_feature_names = self.extract_features_and_labels(features_list)
+        X, y, all_feature_names = self.extract_features_and_labels(augmented_features_list)
 
         # Filter out constant features (zero variance)
         # Constant features provide no predictive value and cause numerical issues
@@ -244,10 +301,6 @@ class QuantilePredictor(BasePredictor):
         # Convert to PyTorch tensors
         X_tensor = torch.tensor(X_normalized, dtype=torch.float32)
         y_tensor = torch.tensor(y_normalized, dtype=torch.float32).unsqueeze(1)
-
-        # Get training hyperparameters from config
-        if config is None:
-            config = {}
 
         # Get quantiles from config or use defaults
         self.quantiles = config.get('quantiles', [0.5, 0.9, 0.95, 0.99])
@@ -299,13 +352,230 @@ class QuantilePredictor(BasePredictor):
             if (epoch + 1) % 50 == 0 or (epoch + 1) == epochs:
                 print(f"Epoch [{epoch + 1}/{epochs}], Loss: {loss.item():.6f}")
 
+        # ============================================================
+        # Residual Calibration: Analyze prediction residuals for better quantile estimation
+        # ============================================================
+        residual_config = config.get('residual_calibration', {})
+        self.residual_calibration_enabled = residual_config.get('enabled', False)
+        min_sigma = residual_config.get('min_sigma', 0.1)
+
+        calibration_stats = {}
+        if self.residual_calibration_enabled:
+            calibration_stats = self._compute_residual_calibration(
+                X_tensor, y, min_sigma=min_sigma
+            )
+            print(f"\nResidual calibration enabled:")
+            print(f"  Residual μ (log-space): {self.residual_mu:.4f}")
+            print(f"  Residual σ (log-space): {self.residual_sigma:.4f}")
+            print(f"  Estimated CV: {calibration_stats.get('estimated_cv', 0):.4f}")
+
         return {
             'feature_names': self.feature_names,
             'removed_features': self.removed_features,
             'samples_count': len(features_list),
+            'augmented_samples_count': len(augmented_features_list) if augmentation_enabled else len(features_list),
             'quantiles': self.quantiles,
-            'final_loss': float(loss.item())
+            'final_loss': float(loss.item()),
+            'data_augmentation': augmentation_config if augmentation_enabled else None,
+            'residual_calibration': calibration_stats if self.residual_calibration_enabled else None
         }
+
+    def _estimate_cv_from_data(self, features_list: List[Dict[str, Any]]) -> float:
+        """
+        Estimate coefficient of variation (CV) from training data.
+
+        Strategy:
+        1. Group samples by feature values (excluding runtime_ms)
+        2. For groups with multiple samples, calculate CV directly
+        3. For single-sample groups, use overall runtime distribution as fallback
+        4. Return weighted average CV with reasonable bounds
+
+        Args:
+            features_list: Training samples with features and runtime_ms
+
+        Returns:
+            Estimated CV (bounded between 0.1 and 1.5)
+        """
+        from collections import defaultdict
+
+        # Extract runtimes
+        runtimes = np.array([s['runtime_ms'] for s in features_list])
+
+        # Group samples by feature signature (excluding runtime_ms)
+        groups = defaultdict(list)
+        for sample in features_list:
+            # Create hashable key from features (excluding runtime_ms and metadata)
+            feature_key = tuple(
+                (k, round(v, 6) if isinstance(v, float) else v)
+                for k, v in sorted(sample.items())
+                if k != 'runtime_ms' and not k.startswith('_')
+            )
+            groups[feature_key].append(sample['runtime_ms'])
+
+        # Calculate CV for groups with multiple samples
+        group_cvs = []
+        group_weights = []
+
+        for key, runtime_values in groups.items():
+            if len(runtime_values) >= 2:
+                arr = np.array(runtime_values)
+                mean_val = np.mean(arr)
+                std_val = np.std(arr, ddof=1)  # Sample std
+                if mean_val > 0:
+                    cv = std_val / mean_val
+                    group_cvs.append(cv)
+                    group_weights.append(len(runtime_values))
+
+        if group_cvs:
+            # Weighted average CV from groups with multiple samples
+            weighted_cv = np.average(group_cvs, weights=group_weights)
+            estimated_cv = float(weighted_cv)
+        else:
+            # Fallback: estimate from overall runtime distribution
+            # For single-sample-per-feature data, use a heuristic based on
+            # the ratio of runtime range to mean
+            mean_runtime = np.mean(runtimes)
+            std_runtime = np.std(runtimes)
+
+            if mean_runtime > 0:
+                # Use overall CV as a rough estimate, but scale it down
+                # since feature variation contributes to this spread
+                overall_cv = std_runtime / mean_runtime
+                # Assume about 30-50% of the spread is due to actual runtime variance
+                estimated_cv = overall_cv * 0.4
+            else:
+                estimated_cv = 0.3  # Default fallback
+
+        # Bound CV to reasonable range
+        # - Minimum 0.1: ensure some spread for quantile predictions
+        # - Maximum 1.5: prevent extreme augmentation
+        estimated_cv = max(0.1, min(1.5, estimated_cv))
+
+        return estimated_cv
+
+    def _augment_training_data(
+        self,
+        features_list: List[Dict[str, Any]],
+        cv: float = 0.3,
+        samples_per_point: int = 5,
+        distribution: str = 'lognormal'
+    ) -> List[Dict[str, Any]]:
+        """
+        Augment training data by generating synthetic runtime variations.
+
+        For each original sample, generates multiple samples with the same features
+        but different runtime values sampled from a distribution around the original.
+
+        This helps the MLP learn variance patterns when each feature combination
+        has only one original runtime sample.
+
+        Args:
+            features_list: Original training samples
+            cv: Coefficient of variation for noise (default: 0.3 = 30%)
+            samples_per_point: Number of augmented samples per original (default: 5)
+            distribution: "lognormal" or "normal" (default: "lognormal")
+
+        Returns:
+            Augmented features list with synthetic samples
+        """
+        np.random.seed(42)
+        augmented = []
+
+        for sample in features_list:
+            original_runtime = sample['runtime_ms']
+            augmented.append(sample.copy())
+
+            for _ in range(samples_per_point - 1):
+                new_sample = sample.copy()
+
+                if distribution == 'lognormal':
+                    sigma_ln = np.sqrt(np.log(1 + cv ** 2))
+                    mu_ln = np.log(original_runtime) - sigma_ln ** 2 / 2
+                    new_runtime = np.random.lognormal(mu_ln, sigma_ln)
+                else:
+                    sigma = original_runtime * cv
+                    new_runtime = np.random.normal(original_runtime, sigma)
+                    new_runtime = max(new_runtime, 1.0)
+
+                new_sample['runtime_ms'] = float(new_runtime)
+                augmented.append(new_sample)
+
+        return augmented
+
+    def _compute_residual_calibration(
+        self,
+        X_tensor: torch.Tensor,
+        y_original: np.ndarray,
+        min_sigma: float = 0.1
+    ) -> Dict[str, Any]:
+        """
+        Compute residual distribution parameters for calibration.
+
+        Analyzes the ratio between actual runtimes and model predictions
+        to estimate the uncertainty distribution.
+
+        Args:
+            X_tensor: Normalized feature tensor
+            y_original: Original (non-normalized) runtime values
+            min_sigma: Minimum sigma to prevent degenerate distributions
+
+        Returns:
+            Dict with calibration statistics
+        """
+        from scipy import stats
+
+        self.model.eval()
+        with torch.no_grad():
+            raw_output = self.model(X_tensor)
+            predictions_normalized = self.transform(raw_output).numpy()
+
+        median_idx = 0
+        for i, q in enumerate(self.quantiles):
+            if q == 0.5:
+                median_idx = i
+                break
+
+        predictions_median_normalized = predictions_normalized[:, median_idx]
+        predictions_median = predictions_median_normalized * self.target_std + self.target_mean
+
+        predictions_clipped = np.maximum(predictions_median, 1e-6)
+        residuals = y_original / predictions_clipped
+
+        log_residuals = np.log(np.maximum(residuals, 1e-6))
+
+        self.residual_mu = float(np.mean(log_residuals))
+        self.residual_sigma = float(max(np.std(log_residuals), min_sigma))
+
+        estimated_cv = np.sqrt(np.exp(self.residual_sigma ** 2) - 1)
+
+        return {
+            'residual_mu': self.residual_mu,
+            'residual_sigma': self.residual_sigma,
+            'estimated_cv': float(estimated_cv),
+            'residual_mean': float(np.mean(residuals)),
+            'residual_std': float(np.std(residuals))
+        }
+
+    def _get_residual_quantile_multiplier(self, quantile: float) -> float:
+        """
+        Get the multiplier for a given quantile based on residual distribution.
+
+        For log-normal residuals with parameters (mu, sigma):
+            quantile(p) = exp(mu + sigma * z_p)
+
+        Args:
+            quantile: Quantile level (0 < q < 1)
+
+        Returns:
+            Multiplier to apply to base prediction
+        """
+        from scipy import stats
+
+        if self.residual_mu is None or self.residual_sigma is None:
+            return 1.0
+
+        z = stats.norm.ppf(quantile)
+        return float(np.exp(self.residual_mu + self.residual_sigma * z))
 
     @staticmethod
     def _enforce_monotonicity(predictions: np.ndarray) -> np.ndarray:
@@ -416,7 +686,11 @@ class QuantilePredictor(BasePredictor):
             'feature_std': self.feature_std.tolist(),
             'target_mean': float(self.target_mean),
             'target_std': float(self.target_std),
-            'delta_scale': float(self.delta_scale) if self.delta_scale else 1.0
+            'delta_scale': float(self.delta_scale) if self.delta_scale else 1.0,
+            # Residual calibration parameters
+            'residual_calibration_enabled': self.residual_calibration_enabled,
+            'residual_mu': self.residual_mu,
+            'residual_sigma': self.residual_sigma
         }
 
     def load_model_state(self, state: Dict[str, Any]) -> None:
@@ -450,3 +724,8 @@ class QuantilePredictor(BasePredictor):
             num_quantiles=len(self.quantiles),
             delta_scale=self.delta_scale
         )
+
+        # Restore residual calibration parameters (backward compatible)
+        self.residual_calibration_enabled = state.get('residual_calibration_enabled', False)
+        self.residual_mu = state.get('residual_mu', None)
+        self.residual_sigma = state.get('residual_sigma', None)

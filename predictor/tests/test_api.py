@@ -330,7 +330,7 @@ class TestExperimentMode:
         data = response.json()
         result = data['result']
         assert result['expected_runtime_ms'] == 150.0
-        assert result['error_margin_ms'] == 7.5  # 5% of 150
+        assert result['error_margin_ms'] == 45.0  # 30% of 150 (default CV)
 
     def test_experiment_mode_with_exp_platform(self, client):
         """Should use experiment mode when platform is all 'exp'."""
@@ -379,11 +379,14 @@ class TestExperimentMode:
         assert 'quantiles' in result
 
         quantiles = result['quantiles']
-        # Use larger tolerance due to random sampling (fixed seed but still has variance)
-        assert quantiles['0.5'] == pytest.approx(100.0, rel=0.01)  # 1% tolerance
-        assert quantiles['0.9'] == pytest.approx(105.0, rel=0.02)  # 2% tolerance
-        assert quantiles['0.95'] == pytest.approx(107.5, rel=0.02)  # 2% tolerance
-        assert quantiles['0.99'] == pytest.approx(112.0, rel=0.03)  # 3% tolerance
+        # Default CV is 30% in experiment mode, so quantiles spread more
+        # With CV=0.3, σ=30 for exp_runtime=100
+        # q50 ≈ 100 (median), q90 ≈ 138, q95 ≈ 149, q99 ≈ 170
+        # Use larger tolerance due to random sampling
+        assert quantiles['0.5'] == pytest.approx(100.0, rel=0.05)  # 5% tolerance for median
+        assert quantiles['0.9'] == pytest.approx(138.0, rel=0.10)  # 10% tolerance
+        assert quantiles['0.95'] == pytest.approx(149.0, rel=0.10)  # 10% tolerance
+        assert quantiles['0.99'] == pytest.approx(170.0, rel=0.10)  # 10% tolerance
 
 
 class TestQuantilePrediction:

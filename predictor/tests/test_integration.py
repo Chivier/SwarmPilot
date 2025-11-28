@@ -480,7 +480,7 @@ class TestExperimentModeIntegration:
 
         result = response.json()['result']
         assert result['expected_runtime_ms'] == 250.0
-        assert result['error_margin_ms'] == pytest.approx(12.5)  # 5% of 250
+        assert result['error_margin_ms'] == pytest.approx(75.0)  # 30% of 250 (default CV)
 
     def test_switch_between_normal_and_experiment_mode(self, client):
         """Test switching between normal predictions and experiment mode."""

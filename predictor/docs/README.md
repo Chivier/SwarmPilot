@@ -23,6 +23,8 @@ The Predictor is a prediction service component of swarmpilot that accepts task 
 
 ### Advanced Topics
 - **[Prediction Types](6.PREDICTION_TYPES.md)** - Understanding expect_error vs quantile predictions
+- **[Experiment Mode Distributions](EXPERIMENT_MODE_DISTRIBUTIONS.md)** - Configure synthetic distribution types (normal, long-tail, multimodal)
+- **[Custom Quantiles](CUSTOM_QUANTILES.md)** - Configure custom quantile levels
 - **[Error Handling](7.ERROR_HANDLING.md)** - Troubleshooting and debugging guide
 - **[Best Practices](8.BEST_PRACTICES.md)** - Tips for optimal usage and performance
 
