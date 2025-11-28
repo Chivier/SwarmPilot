@@ -255,7 +255,7 @@ class CentralTaskQueue:
                 await self._try_dispatch_tasks()
 
             except Exception as e:
-                logger.error(f"Error in dispatch loop: {e}", exc_info=True)
+                logger.error(f"[central_queue] Error in dispatch loop: {e}", exc_info=True)
                 await asyncio.sleep(1.0)  # Prevent tight loop on error
 
         logger.info("Dispatch loop stopped")
@@ -339,7 +339,7 @@ class CentralTaskQueue:
                         available_instances=available_instances,
                     )
                 except Exception as e:
-                    logger.error(f"Scheduling failed for task {task.task_id}: {e}")
+                    logger.error(f"[central_queue] Scheduling failed for task {task.task_id}: {e}", exc_info=True)
                     return False
 
                 if not schedule_result.selected_instance_id:
@@ -379,5 +379,5 @@ class CentralTaskQueue:
                 return True
 
             except Exception as e:
-                logger.error(f"Error dispatching task {task.task_id}: {e}", exc_info=True)
+                logger.error(f"[central_queue] Error dispatching task {task.task_id}: {e}", exc_info=True)
                 return False

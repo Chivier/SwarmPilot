@@ -201,7 +201,8 @@ class TrainingClient:
                     },
                 )
                 logger.error(
-                    f"Failed to train {model_id} on {platform_info['hardware_name']}: {e}"
+                    f"[training_client] Failed to train {model_id} on {platform_info['hardware_name']}: {e}",
+                    exc_info=True
                 )
                 failure_count += 1
 

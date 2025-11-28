@@ -325,33 +325,28 @@ async def register_instance(request: InstanceRegisterRequest):
     """
     # Check if instance already exists
     if await instance_registry.get(request.instance_id):
+        error_msg = "Instance with this ID already exists"
+        logger.error(f"[register_instance] {error_msg} | instance_id={request.instance_id}")
         raise HTTPException(
             status_code=400,
-            detail={"success": False, "error": "Instance with this ID already exists"},
+            detail={"success": False, "error": error_msg},
         )
 
     # Validate platform_info has required keys
     required_keys = {"software_name", "software_version", "hardware_name"}
     if not required_keys.issubset(request.platform_info.keys()):
         missing_keys = required_keys - request.platform_info.keys()
+        error_msg = f"platform_info missing required keys: {missing_keys}"
+        logger.error(f"[register_instance] {error_msg} | instance_id={request.instance_id}")
         raise HTTPException(
             status_code=400,
             detail={
                 "success": False,
-                "error": f"platform_info missing required keys: {missing_keys}",
+                "error": error_msg,
             },
         )
 
     # TODO: Optional - validate that the endpoint is reachable
-    # try:
-    #     async with httpx.AsyncClient(timeout=5.0) as client:
-    #         response = await client.get(f"{request.endpoint}/health")
-    #         response.raise_for_status()
-    # except Exception:
-    #     raise HTTPException(
-    #         status_code=400,
-    #         detail={"success": False, "error": "Instance endpoint is not reachable"},
-    #     )
 
     # Create Instance object
     instance = Instance(
@@ -374,9 +369,10 @@ async def register_instance(request: InstanceRegisterRequest):
             planner_reporter.set_model_id(request.model_id)
 
     except ValueError as e:
-        logger.warning(f"Failed to register instance {request.instance_id}: {e}")
+        error_msg = str(e)
+        logger.error(f"[register_instance] Failed to register instance | instance_id={request.instance_id} | error={error_msg}", exc_info=True)
         raise HTTPException(
-            status_code=400, detail={"success": False, "error": str(e)}
+            status_code=400, detail={"success": False, "error": error_msg}
         )
 
     return InstanceRegisterResponse(
@@ -406,9 +402,11 @@ async def remove_instance(request: InstanceRemoveRequest):
     """
     # Check if instance exists
     if not await instance_registry.get(request.instance_id):
+        error_msg = "Instance not found"
+        logger.error(f"[remove_instance] {error_msg} | instance_id={request.instance_id}")
         raise HTTPException(
             status_code=404,
-            detail={"success": False, "error": "Instance not found"},
+            detail={"success": False, "error": error_msg},
         )
 
     # Use safe_remove which validates draining state and pending tasks
@@ -416,18 +414,20 @@ async def remove_instance(request: InstanceRemoveRequest):
         await instance_registry.safe_remove(request.instance_id)
         logger.info(f"Safely removed instance {request.instance_id}")
     except KeyError:
-        logger.warning(f"Attempted to remove non-existent instance {request.instance_id}")
+        error_msg = "Instance not found"
+        logger.error(f"[remove_instance] Attempted to remove non-existent instance | instance_id={request.instance_id}", exc_info=True)
         raise HTTPException(
             status_code=404,
-            detail={"success": False, "error": "Instance not found"},
+            detail={"success": False, "error": error_msg},
         )
     except ValueError as e:
-        logger.warning(f"Cannot safely remove instance {request.instance_id}: {e}")
+        error_msg = str(e)
+        logger.error(f"[remove_instance] Cannot safely remove instance | instance_id={request.instance_id} | error={error_msg}", exc_info=True)
         raise HTTPException(
             status_code=400,
             detail={
                 "success": False,
-                "error": str(e),
+                "error": error_msg,
                 "hint": "Use /instance/drain first and wait for tasks to complete"
             }
         )
@@ -458,9 +458,11 @@ async def drain_instance(request: InstanceDrainRequest):
         HTTPException 400: If instance is not in ACTIVE state
     """
     if not await instance_registry.get(request.instance_id):
+        error_msg = "Instance not found"
+        logger.error(f"[drain_instance] {error_msg} | instance_id={request.instance_id}")
         raise HTTPException(
             status_code=404,
-            detail={"success": False, "error": "Instance not found"},
+            detail={"success": False, "error": error_msg},
         )
 
     try:
@@ -499,10 +501,11 @@ async def drain_instance(request: InstanceDrainRequest):
         )
 
     except ValueError as e:
-        logger.warning(f"Failed to drain instance {request.instance_id}: {e}")
+        error_msg = str(e)
+        logger.error(f"[drain_instance] Failed to drain instance | instance_id={request.instance_id} | error={error_msg}", exc_info=True)
         raise HTTPException(
             status_code=400,
-            detail={"success": False, "error": str(e)}
+            detail={"success": False, "error": error_msg}
         )
 
 
@@ -543,10 +546,11 @@ async def get_drain_status(instance_id: str = Query(..., description="ID of the 
         )
 
     except KeyError:
-        logger.warning(f"Attempted to check drain status for non-existent instance {instance_id}")
+        error_msg = "Instance not found"
+        logger.error(f"[get_drain_status] Attempted to check drain status for non-existent instance | instance_id={instance_id}", exc_info=True)
         raise HTTPException(
             status_code=404,
-            detail={"success": False, "error": "Instance not found"}
+            detail={"success": False, "error": error_msg}
         )
 
 
@@ -575,17 +579,21 @@ async def start_instance_redeploy(request: InstanceRedeployRequest):
     # Step 1: Validate instance exists and is in ACTIVE state
     instance = await instance_registry.get(request.instance_id)
     if not instance:
+        error_msg = "Instance not found"
+        logger.error(f"[start_instance_redeploy] {error_msg} | instance_id={request.instance_id}")
         raise HTTPException(
             status_code=404,
-            detail={"success": False, "error": "Instance not found"},
+            detail={"success": False, "error": error_msg},
         )
 
     if instance.status != InstanceStatus.ACTIVE:
+        error_msg = f"Instance must be in ACTIVE state, current state: {instance.status}"
+        logger.error(f"[start_instance_redeploy] {error_msg} | instance_id={request.instance_id}")
         raise HTTPException(
             status_code=400,
             detail={
                 "success": False,
-                "error": f"Instance must be in ACTIVE state, current state: {instance.status}"
+                "error": error_msg
             }
         )
 
@@ -595,10 +603,11 @@ async def start_instance_redeploy(request: InstanceRedeployRequest):
     try:
         await instance_registry.update_status(request.instance_id, InstanceStatus.REDEPLOYING)
     except Exception as e:
-        logger.error(f"Failed to update instance status: {e}")
+        error_msg = f"Failed to update instance status: {str(e)}"
+        logger.error(f"[start_instance_redeploy] {error_msg} | instance_id={request.instance_id}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail={"success": False, "error": f"Failed to update instance status: {str(e)}"}
+            detail={"success": False, "error": error_msg}
         )
 
     # Step 3: Communicate with instance to start redeployment and extract tasks
@@ -637,14 +646,15 @@ async def start_instance_redeploy(request: InstanceRedeployRequest):
             context="instance redeploy start",
             extra={"instance_id": request.instance_id},
         )
-        logger.error(f"Instance redeploy request failed with status {e.response.status_code}: {e}")
+        error_msg = f"Instance redeploy request failed: {e.response.text}"
+        logger.error(f"[start_instance_redeploy] Instance redeploy request failed with status {e.response.status_code} | instance_id={request.instance_id} | error={error_msg}", exc_info=True)
         # Revert instance status
         await instance_registry.update_status(request.instance_id, InstanceStatus.ACTIVE)
         raise HTTPException(
             status_code=500,
             detail={
                 "success": False,
-                "error": f"Instance redeploy request failed: {e.response.text}"
+                "error": error_msg
             }
         )
     except Exception as e:
@@ -659,14 +669,15 @@ async def start_instance_redeploy(request: InstanceRedeployRequest):
             context="instance redeploy communication error",
             extra={"instance_id": request.instance_id},
         )
-        logger.error(f"Failed to communicate with instance {request.instance_id}: {e}")
+        error_msg = f"Failed to communicate with instance: {str(e)}"
+        logger.error(f"[start_instance_redeploy] Failed to communicate with instance | instance_id={request.instance_id} | error={error_msg}", exc_info=True)
         # Revert instance status
         await instance_registry.update_status(request.instance_id, InstanceStatus.ACTIVE)
         raise HTTPException(
             status_code=500,
             detail={
                 "success": False,
-                "error": f"Failed to communicate with instance: {str(e)}"
+                "error": error_msg
             }
         )
 
@@ -758,18 +769,22 @@ async def complete_instance_redeploy(request: InstanceRegisterRequest):
     # Check if instance exists
     existing_instance = await instance_registry.get(request.instance_id)
     if not existing_instance:
+        error_msg = "Instance not found"
+        logger.error(f"[complete_instance_redeploy] {error_msg} | instance_id={request.instance_id}")
         raise HTTPException(
             status_code=404,
-            detail={"success": False, "error": "Instance not found"},
+            detail={"success": False, "error": error_msg},
         )
 
     # Verify instance is in REDEPLOYING state
     if existing_instance.status != InstanceStatus.REDEPLOYING:
+        error_msg = f"Instance must be in REDEPLOYING state, current state: {existing_instance.status}"
+        logger.error(f"[complete_instance_redeploy] {error_msg} | instance_id={request.instance_id}")
         raise HTTPException(
             status_code=400,
             detail={
                 "success": False,
-                "error": f"Instance must be in REDEPLOYING state, current state: {existing_instance.status}"
+                "error": error_msg
             }
         )
 
@@ -777,11 +792,13 @@ async def complete_instance_redeploy(request: InstanceRegisterRequest):
     required_keys = {"software_name", "software_version", "hardware_name"}
     if not required_keys.issubset(request.platform_info.keys()):
         missing_keys = required_keys - request.platform_info.keys()
+        error_msg = f"platform_info missing required keys: {missing_keys}"
+        logger.error(f"[complete_instance_redeploy] {error_msg} | instance_id={request.instance_id}")
         raise HTTPException(
             status_code=400,
             detail={
                 "success": False,
-                "error": f"platform_info missing required keys: {missing_keys}",
+                "error": error_msg,
             },
         )
 
@@ -810,10 +827,11 @@ async def complete_instance_redeploy(request: InstanceRegisterRequest):
         )
 
     except Exception as e:
-        logger.error(f"Failed to complete redeployment for {request.instance_id}: {e}")
+        error_msg = f"Failed to complete redeployment: {str(e)}"
+        logger.error(f"[complete_instance_redeploy] Failed to complete redeployment | instance_id={request.instance_id} | error={error_msg}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail={"success": False, "error": f"Failed to complete redeployment: {str(e)}"}
+            detail={"success": False, "error": error_msg}
         )
 
     return InstanceRegisterResponse(
@@ -861,27 +879,33 @@ async def get_instance_info(instance_id: str = Query(...)):
     # Get instance
     instance = await instance_registry.get(instance_id)
     if not instance:
+        error_msg = "Instance not found"
+        logger.error(f"[get_instance_info] {error_msg} | instance_id={instance_id}")
         raise HTTPException(
             status_code=404,
-            detail={"success": False, "error": "Instance not found"},
+            detail={"success": False, "error": error_msg},
         )
 
     # Get queue information
     queue_info = await instance_registry.get_queue_info(instance_id)
     if not queue_info:
         # Shouldn't happen, but handle gracefully
+        error_msg = "Queue info not found"
+        logger.error(f"[get_instance_info] {error_msg} | instance_id={instance_id}")
         raise HTTPException(
             status_code=500,
-            detail={"success": False, "error": "Queue info not found"},
+            detail={"success": False, "error": error_msg},
         )
 
     # Get statistics
     stats = await instance_registry.get_stats(instance_id)
     if not stats:
         # Shouldn't happen, but handle gracefully
+        error_msg = "Statistics not found"
+        logger.error(f"[get_instance_info] {error_msg} | instance_id={instance_id}")
         raise HTTPException(
             status_code=500,
-            detail={"success": False, "error": "Statistics not found"},
+            detail={"success": False, "error": error_msg},
         )
 
     return InstanceInfoResponse(
@@ -917,28 +941,33 @@ async def submit_task(request: TaskSubmitRequest):
     """
     # 0. Check if clear operation is in progress
     if _clearing_in_progress:
+        error_msg = "Task clear operation in progress. Please retry."
+        logger.error(f"[submit_task] {error_msg} | task_id={request.task_id}")
         raise HTTPException(
             status_code=503,
-            detail={"success": False, "error": "Task clear operation in progress. Please retry."},
+            detail={"success": False, "error": error_msg},
         )
 
     # 1. Validate that task doesn't already exist
     if await task_registry.get(request.task_id):
+        error_msg = "Task with this ID already exists"
+        logger.error(f"[submit_task] {error_msg} | task_id={request.task_id}")
         raise HTTPException(
             status_code=400,
-            detail={"success": False, "error": "Task with this ID already exists"},
+            detail={"success": False, "error": error_msg},
         )
 
     # 2. Quick check that at least one instance exists for this model
     # (Detailed scheduling happens in background)
     available_instances = await instance_registry.list_active(model_id=request.model_id)
     if not available_instances:
-        logger.error(f"No available instance for model_id: {request.model_id}")
+        error_msg = f"No available instance for model_id: {request.model_id}"
+        logger.error(f"[submit_task] {error_msg} | task_id={request.task_id} | model_id={request.model_id}")
         raise HTTPException(
             status_code=404,
             detail={
                 "success": False,
-                "error": f"No available instance for model_id: {request.model_id}",
+                "error": error_msg,
             },
         )
 
@@ -956,10 +985,11 @@ async def submit_task(request: TaskSubmitRequest):
             predicted_quantiles=None,
         )
     except ValueError as e:
-        logger.error(str(e))
+        error_msg = str(e)
+        logger.error(f"[submit_task] Failed to create task | task_id={request.task_id} | error={error_msg}", exc_info=True)
         raise HTTPException(
             status_code=400,
-            detail={"success": False, "error": str(e)}
+            detail={"success": False, "error": error_msg}
         )
 
     # 4. Enqueue task to central queue (non-blocking)
@@ -1063,9 +1093,11 @@ async def get_task_info(task_id: str = Query(...)):
     # Get task
     task = await task_registry.get(task_id)
     if not task:
+        error_msg = "Task not found"
+        logger.error(f"[get_task_info] {error_msg} | task_id={task_id}")
         raise HTTPException(
             status_code=404,
-            detail={"success": False, "error": "Task not found"},
+            detail={"success": False, "error": error_msg},
         )
 
     # Create detailed task info
@@ -1111,9 +1143,11 @@ async def clear_tasks():
     # Set clearing flag to prevent new task submissions
     async with _clearing_lock:
         if _clearing_in_progress:
+            error_msg = "Clear operation already in progress"
+            logger.error(f"[clear_tasks] {error_msg}")
             raise HTTPException(
                 status_code=409,
-                detail={"success": False, "error": "Clear operation already in progress"},
+                detail={"success": False, "error": error_msg},
             )
         _clearing_in_progress = True
 
@@ -1229,9 +1263,11 @@ async def resubmit_task(request: TaskResubmitRequest):
     # 1. Validate task exists
     task = await task_registry.get(request.task_id)
     if not task:
+        error_msg = "Task not found"
+        logger.error(f"[resubmit_task] {error_msg} | task_id={request.task_id}")
         raise HTTPException(
             status_code=404,
-            detail={"success": False, "error": "Task not found"},
+            detail={"success": False, "error": error_msg},
         )
 
     # 2. Record previous state for logging
@@ -1240,20 +1276,24 @@ async def resubmit_task(request: TaskResubmitRequest):
 
     # 3. Validate task status - can only resubmit PENDING or RUNNING tasks
     if previous_status in (TaskStatus.COMPLETED, TaskStatus.FAILED):
+        error_msg = f"Cannot resubmit task in {previous_status} state. Only PENDING or RUNNING tasks can be resubmitted."
+        logger.error(f"[resubmit_task] {error_msg} | task_id={request.task_id} | status={previous_status}")
         raise HTTPException(
             status_code=400,
             detail={
                 "success": False,
-                "error": f"Cannot resubmit task in {previous_status} state. Only PENDING or RUNNING tasks can be resubmitted.",
+                "error": error_msg,
             },
         )
 
     # 4. Validate original instance exists (for statistics update)
     original_instance = await instance_registry.get(request.original_instance_id)
     if not original_instance:
+        error_msg = "Original instance not found"
+        logger.error(f"[resubmit_task] {error_msg} | task_id={request.task_id} | original_instance_id={request.original_instance_id}")
         raise HTTPException(
             status_code=404,
-            detail={"success": False, "error": "Original instance not found"},
+            detail={"success": False, "error": error_msg},
         )
 
     # 5. Decrement pending tasks count on original instance
@@ -1269,9 +1309,11 @@ async def resubmit_task(request: TaskResubmitRequest):
         await task_registry.reset_for_resubmit(request.task_id)
         logger.debug(f"Reset task {request.task_id} for resubmission")
     except KeyError:
+        error_msg = "Task not found"
+        logger.error(f"[resubmit_task] Task not found during reset | task_id={request.task_id}", exc_info=True)
         raise HTTPException(
             status_code=404,
-            detail={"success": False, "error": "Task not found"},
+            detail={"success": False, "error": error_msg},
         )
 
     # 7. Resubmit task to central queue with original submission time
@@ -1328,18 +1370,22 @@ async def callback_task_result(request: TaskResultCallbackRequest):
     if background_scheduler.scheduling_strategy.__class__.__name__ == "PowerOfTwoStrategy":
         request.execution_time_ms = 1.0
     if not task:
+        error_msg = "Task not found"
+        logger.error(f"[callback_task_result] {error_msg} | task_id={request.task_id}")
         raise HTTPException(
             status_code=404,
-            detail={"success": False, "error": "Task not found"},
+            detail={"success": False, "error": error_msg},
         )
 
     # Validate status
     if request.status not in ("completed", "failed"):
+        error_msg = f"Invalid status: {request.status}. Must be 'completed' or 'failed'"
+        logger.error(f"[callback_task_result] {error_msg} | task_id={request.task_id} | status={request.status}")
         raise HTTPException(
             status_code=400,
             detail={
                 "success": False,
-                "error": f"Invalid status: {request.status}. Must be 'completed' or 'failed'",
+                "error": error_msg,
             },
         )
 
@@ -1694,11 +1740,13 @@ async def set_strategy_endpoint(request: StrategySetRequest):
     # Check if there are any running tasks
     running_count = await task_registry.get_count_by_status(TaskStatus.RUNNING)
     if running_count > 0:
+        error_msg = f"Cannot switch strategy while {running_count} task(s) are running. Please wait for tasks to complete or fail them first."
+        logger.error(f"[set_strategy] {error_msg} | strategy={request.strategy_name.value} | running_count={running_count}")
         raise HTTPException(
             status_code=400,
             detail={
                 "success": False,
-                "error": f"Cannot switch strategy while {running_count} task(s) are running. Please wait for tasks to complete or fail them first.",
+                "error": error_msg,
             },
         )
 
@@ -1807,13 +1855,14 @@ async def health_check():
 
     except Exception as e:
         # Log the health check failure
-        logger.error(f"Health check failed: {e}", exc_info=True)
+        error_msg = str(e)
+        logger.error(f"[health_check] Health check failed | error={error_msg}", exc_info=True)
         raise HTTPException(
             status_code=503,
             detail={
                 "success": False,
                 "status": "unhealthy",
-                "error": str(e),
+                "error": error_msg,
                 "timestamp": datetime.now().isoformat() + "Z",
             },
         )

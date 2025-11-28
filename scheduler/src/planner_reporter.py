@@ -116,7 +116,7 @@ class PlannerReporter:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error(f"Error in planner report loop: {e}", exc_info=True)
+                logger.error(f"[planner_reporter] Error in planner report loop: {e}", exc_info=True)
                 # Continue running despite errors
 
         logger.debug("Planner report loop stopped")
@@ -170,4 +170,4 @@ class PlannerReporter:
             )
             logger.warning(f"Planner report HTTP error: {e}")
         except Exception as e:
-            logger.error(f"Planner report error: {e}", exc_info=True)
+            logger.error(f"[planner_reporter] Planner report error: {e}", exc_info=True)

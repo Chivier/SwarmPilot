@@ -148,7 +148,7 @@ class BackgroundScheduler:
                     error_msg = str(e)
                     await self.task_registry.update_status(task_id, TaskStatus.FAILED)
                     await self.task_registry.set_error(task_id, f"Scheduling failed: {error_msg}")
-                    logger.error(f"Task {task_id}: Scheduling failed - {error_msg}")
+                    logger.error(f"[background_scheduler] Task {task_id}: Scheduling failed - {error_msg}", exc_info=True)
                     return
 
                 # 3. Update task with scheduling results
@@ -180,7 +180,7 @@ class BackgroundScheduler:
             except Exception as e:
                 # Unexpected error - mark task as failed
                 logger.error(
-                    f"Task {task_id}: Unexpected error in background scheduling - {e}",
+                    f"[background_scheduler] Task {task_id}: Unexpected error in background scheduling - {e}",
                     exc_info=True
                 )
                 try:
@@ -190,7 +190,7 @@ class BackgroundScheduler:
                         f"Internal scheduling error: {str(e)}"
                     )
                 except Exception:
-                    logger.error(f"Task {task_id}: Failed to update task status after error")
+                    logger.error(f"[background_scheduler] Task {task_id}: Failed to update task status after error", exc_info=True)
 
     async def reassign_task(
         self,
@@ -296,7 +296,7 @@ class BackgroundScheduler:
 
         except Exception as e:
             logger.error(
-                f"Task {task_id}: Failed to reassign task - {e}",
+                f"[background_scheduler] Task {task_id}: Failed to reassign task - {e}",
                 exc_info=True
             )
             return False
