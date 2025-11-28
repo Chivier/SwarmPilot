@@ -13,6 +13,7 @@ import httpx
 from loguru import logger
 
 from .predictor_client import Prediction
+from .http_error_logger import log_http_error
 
 if TYPE_CHECKING:
     from .model import InstanceQueueBase, Instance
@@ -168,6 +169,16 @@ class SchedulingStrategy(ABC):
 
         except httpx.HTTPStatusError as e:
             # Convert HTTP status errors to appropriate Python exceptions
+            log_http_error(
+                e,
+                request_body={
+                    "model_id": model_id,
+                    "instances": [i.instance_id for i in available_instances],
+                    "prediction_type": prediction_type,
+                    "metadata": metadata,
+                },
+                context="scheduler prediction request",
+            )
             if e.response.status_code == 404:
                 raise ValueError(
                     "No trained model available for this platform. "
@@ -183,12 +194,28 @@ class SchedulingStrategy(ABC):
                 ) from e
 
         except httpx.TimeoutException as e:
+            log_http_error(
+                e,
+                request_body={
+                    "model_id": model_id,
+                    "prediction_type": prediction_type,
+                },
+                context="scheduler prediction timeout",
+            )
             raise TimeoutError(
                 f"Predictor service timeout: {str(e)}"
             ) from e
 
         except httpx.HTTPError as e:
             # Network errors
+            log_http_error(
+                e,
+                request_body={
+                    "model_id": model_id,
+                    "prediction_type": prediction_type,
+                },
+                context="scheduler prediction connection error",
+            )
             raise ConnectionError(
                 f"Predictor service unavailable: {str(e)}"
             ) from e

@@ -8,15 +8,21 @@ including sending task requests and processing results.
 from typing import Dict, Any, Optional, TYPE_CHECKING
 import asyncio
 import httpx
+from loguru import logger
 
 from .model import TaskStatus, InstanceQueueExpectError, InstanceQueueProbabilistic
 from .task_registry import TaskRegistry
 from .instance_registry import InstanceRegistry
 from .websocket_manager import ConnectionManager
+from .http_error_logger import log_http_error
 
 if TYPE_CHECKING:
     from .training_client import TrainingClient
     from .central_queue import CentralTaskQueue
+
+# Default retry configuration for transient connection errors
+DEFAULT_DISPATCH_RETRIES = 3
+DEFAULT_DISPATCH_RETRY_DELAY = 0.1  # 100ms initial delay
 
 
 class TaskDispatcher:
@@ -30,6 +36,8 @@ class TaskDispatcher:
         training_client: Optional["TrainingClient"] = None,
         timeout: float = 60.0,
         callback_base_url: str = "http://localhost:8000",
+        dispatch_retries: int = DEFAULT_DISPATCH_RETRIES,
+        dispatch_retry_delay: float = DEFAULT_DISPATCH_RETRY_DELAY,
     ):
         """
         Initialize task dispatcher.
@@ -41,6 +49,8 @@ class TaskDispatcher:
             training_client: Optional training client for collecting runtime data
             timeout: Task execution timeout in seconds
             callback_base_url: Base URL for task result callbacks
+            dispatch_retries: Number of retry attempts for transient connection errors
+            dispatch_retry_delay: Initial delay between retries (uses exponential backoff)
         """
         self.task_registry = task_registry
         self.instance_registry = instance_registry
@@ -48,10 +58,23 @@ class TaskDispatcher:
         self.training_client = training_client
         self.timeout = timeout
         self.callback_base_url = callback_base_url
+        self.dispatch_retries = dispatch_retries
+        self.dispatch_retry_delay = dispatch_retry_delay
+
+        # Configure connection pool with shorter keepalive to avoid stale connections
+        # This helps prevent ReadError when server closes idle connections
+        # The keepalive_expiry should be shorter than uvicorn's default (5s)
+        limits = httpx.Limits(
+            max_keepalive_connections=100,
+            max_connections=200,
+            keepalive_expiry=3.0,  # Close idle connections after 3 seconds
+        )
+
         # Reusable HTTP client with SSL verification disabled for internal network
         self._http_client = httpx.AsyncClient(
             timeout=timeout,
             verify=False,  # Disable SSL verification for internal network usage
+            limits=limits,
         )
         # Reference to central queue (set by api.py)
         self._central_queue: Optional["CentralTaskQueue"] = None
@@ -104,8 +127,21 @@ class TaskDispatcher:
             # Task is now dispatched and running on instance
             # Result will arrive via callback (HTTP)
 
-        except httpx.TimeoutException:
+        except httpx.TimeoutException as e:
             # Task dispatch timed out (not execution timeout - that's handled by instance)
+            log_http_error(
+                e,
+                request_url=f"{instance.endpoint}/task/submit",
+                request_method="POST",
+                request_body={
+                    "task_id": task.task_id,
+                    "model_id": task.model_id,
+                    "task_input": task.task_input,
+                    "callback_url": f"{self.callback_base_url}/callback/task_result",
+                },
+                context="task dispatch timeout",
+                extra={"task_id": task_id, "instance_id": instance.instance_id},
+            )
             await self.task_registry.update_status(task_id, TaskStatus.FAILED)
             await self.task_registry.set_error(
                 task_id, f"Task dispatch timed out after {self.timeout}s"
@@ -115,6 +151,19 @@ class TaskDispatcher:
 
         except httpx.HTTPError as e:
             # HTTP error from instance during dispatch
+            log_http_error(
+                e,
+                request_url=f"{instance.endpoint}/task/submit",
+                request_method="POST",
+                request_body={
+                    "task_id": task.task_id,
+                    "model_id": task.model_id,
+                    "task_input": task.task_input,
+                    "callback_url": f"{self.callback_base_url}/callback/task_result",
+                },
+                context="task dispatch HTTP error",
+                extra={"task_id": task_id, "instance_id": instance.instance_id},
+            )
             await self.task_registry.update_status(task_id, TaskStatus.FAILED)
             await self.task_registry.set_error(task_id, f"Task dispatch failed: {str(e)}")
             await self.instance_registry.increment_failed(instance.instance_id)
@@ -122,6 +171,19 @@ class TaskDispatcher:
 
         except Exception as e:
             # Unexpected error during dispatch
+            log_http_error(
+                e,
+                request_url=f"{instance.endpoint}/task/submit",
+                request_method="POST",
+                request_body={
+                    "task_id": task.task_id,
+                    "model_id": task.model_id,
+                    "task_input": task.task_input,
+                    "callback_url": f"{self.callback_base_url}/callback/task_result",
+                },
+                context="task dispatch unexpected error",
+                extra={"task_id": task_id, "instance_id": instance.instance_id},
+            )
             await self.task_registry.update_status(task_id, TaskStatus.FAILED)
             await self.task_registry.set_error(task_id, f"Task dispatch error: {str(e)}")
             await self.instance_registry.increment_failed(instance.instance_id)
@@ -211,8 +273,6 @@ class TaskDispatcher:
         Args:
             task_id: ID of completed task
         """
-        from loguru import logger
-
         task = await self.task_registry.get(task_id)
         if not task:
             logger.warning(f"Cannot notify completion for {task_id}: task not found in registry")
@@ -350,6 +410,39 @@ class TaskDispatcher:
                 )
                 await self.instance_registry.update_queue_info(instance_id, updated_queue)
 
+    def _is_transient_connection_error(self, error: Exception) -> bool:
+        """
+        Check if an error is a transient connection error that should be retried.
+
+        Transient errors include:
+        - ReadError: Connection was reset by peer (stale keep-alive connection)
+        - ConnectError: Temporary network issues
+        - RemoteProtocolError: Protocol-level issues
+
+        Args:
+            error: The exception to check
+
+        Returns:
+            True if the error is transient and should be retried
+        """
+        # Check for specific httpx error types that indicate transient issues
+        error_type = type(error).__name__
+
+        # ReadError occurs when server closes connection unexpectedly
+        # This commonly happens with stale keep-alive connections
+        if error_type == "ReadError":
+            return True
+
+        # ConnectError can be transient (e.g., temporary network issues)
+        if error_type == "ConnectError":
+            return True
+
+        # RemoteProtocolError indicates protocol-level issues
+        if error_type == "RemoteProtocolError":
+            return True
+
+        return False
+
     async def _submit_via_http(
         self,
         instance: Any,
@@ -359,7 +452,11 @@ class TaskDispatcher:
         enqueue_time: Optional[float] = None,
     ) -> None:
         """
-        Submit task to instance via HTTP (fallback method).
+        Submit task to instance via HTTP with retry logic for transient errors.
+
+        This method includes automatic retry for transient connection errors
+        (e.g., ReadError from stale keep-alive connections). The retry uses
+        exponential backoff to avoid overwhelming the target instance.
 
         Args:
             instance: Instance object
@@ -369,10 +466,8 @@ class TaskDispatcher:
             enqueue_time: Optional Unix timestamp for task priority ordering
 
         Raises:
-            httpx.HTTPError: If HTTP request fails
+            httpx.HTTPError: If HTTP request fails after all retries
         """
-        from loguru import logger
-
         logger.info(f"Submitting task {task_id} to instance {instance.instance_id} via HTTP")
 
         # Prepare callback URL for result notification
@@ -390,18 +485,42 @@ class TaskDispatcher:
         if enqueue_time is not None:
             payload["enqueue_time"] = enqueue_time
 
-        # Send task to instance for execution
-        response = await self._http_client.post(
-            f"{instance.endpoint}/task/submit",
-            json=payload,
-        )
-        response.raise_for_status()
-        submit_result = response.json()
+        url = f"{instance.endpoint}/task/submit"
+        last_error: Optional[Exception] = None
 
-        # Verify task was accepted by instance
-        if not submit_result.get("success", False):
-            raise ValueError(
-                f"Instance rejected task: {submit_result.get('message', 'Unknown error')}"
-            )
+        # Retry loop for transient connection errors
+        for attempt in range(self.dispatch_retries):
+            try:
+                # Send task to instance for execution
+                response = await self._http_client.post(url, json=payload)
+                response.raise_for_status()
+                submit_result = response.json()
 
-        logger.info(f"Task {task_id} accepted by instance {instance.instance_id} via HTTP")
+                # Verify task was accepted by instance
+                if not submit_result.get("success", False):
+                    raise ValueError(
+                        f"Instance rejected task: {submit_result.get('message', 'Unknown error')}"
+                    )
+
+                logger.info(f"Task {task_id} accepted by instance {instance.instance_id} via HTTP")
+                return  # Success - exit the retry loop
+
+            except httpx.HTTPError as e:
+                last_error = e
+
+                # Check if this is a transient error that should be retried
+                if self._is_transient_connection_error(e) and attempt < self.dispatch_retries - 1:
+                    delay = self.dispatch_retry_delay * (2 ** attempt)  # Exponential backoff
+                    logger.warning(
+                        f"Task dispatch transient error ({type(e).__name__}) for {task_id}, "
+                        f"retrying in {delay:.2f}s (attempt {attempt + 1}/{self.dispatch_retries})"
+                    )
+                    await asyncio.sleep(delay)
+                    continue  # Retry
+
+                # Not a transient error or last attempt - re-raise
+                raise
+
+        # Should not reach here, but just in case
+        if last_error:
+            raise last_error

@@ -19,6 +19,8 @@ from pyinstrument.renderers.html import HTMLRenderer
 from pyinstrument.renderers.speedscope import SpeedscopeRenderer
 from loguru import logger
 
+from .http_error_logger import log_http_error
+
 from .model import (
     # Instance models
     InstanceRegisterRequest,
@@ -622,6 +624,15 @@ async def start_instance_redeploy(request: InstanceRedeployRequest):
             )
 
     except httpx.HTTPStatusError as e:
+        log_http_error(
+            e,
+            request_body={
+                "reason": request.redeploy_reason or "Scheduler-initiated redeployment",
+                "target_model_id": request.target_model_id,
+            },
+            context="instance redeploy start",
+            extra={"instance_id": request.instance_id},
+        )
         logger.error(f"Instance redeploy request failed with status {e.response.status_code}: {e}")
         # Revert instance status
         await instance_registry.update_status(request.instance_id, InstanceStatus.ACTIVE)
@@ -633,6 +644,17 @@ async def start_instance_redeploy(request: InstanceRedeployRequest):
             }
         )
     except Exception as e:
+        log_http_error(
+            e,
+            request_url=f"{instance.endpoint}/redeploy/start",
+            request_method="POST",
+            request_body={
+                "reason": request.redeploy_reason or "Scheduler-initiated redeployment",
+                "target_model_id": request.target_model_id,
+            },
+            context="instance redeploy communication error",
+            extra={"instance_id": request.instance_id},
+        )
         logger.error(f"Failed to communicate with instance {request.instance_id}: {e}")
         # Revert instance status
         await instance_registry.update_status(request.instance_id, InstanceStatus.ACTIVE)
@@ -1096,6 +1118,13 @@ async def clear_tasks():
                 "cleared": result.get("cleared_count", {}).get("total", 0)
             }
         except Exception as e:
+            log_http_error(
+                e,
+                request_url=f"{instance.endpoint}/task/clear",
+                request_method="POST",
+                context="task clear on instance",
+                extra={"instance_id": instance.instance_id},
+            )
             logger.warning(
                 f"Failed to clear tasks from instance {instance.instance_id}: {e}"
             )

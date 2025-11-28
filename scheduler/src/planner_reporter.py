@@ -11,6 +11,8 @@ import asyncio
 import httpx
 from loguru import logger
 
+from .http_error_logger import log_http_error
+
 if TYPE_CHECKING:
     from .task_registry import TaskRegistry
 
@@ -143,11 +145,29 @@ class PlannerReporter:
             )
 
         except httpx.HTTPStatusError as e:
+            log_http_error(
+                e,
+                request_body={
+                    "model_id": self._model_id,
+                    "value": float(total_uncompleted),
+                },
+                context="planner report",
+            )
             logger.warning(
                 f"Planner report failed with status {e.response.status_code}: "
                 f"{e.response.text}"
             )
         except httpx.HTTPError as e:
+            log_http_error(
+                e,
+                request_url=f"{self._planner_url}/submit_target",
+                request_method="POST",
+                request_body={
+                    "model_id": self._model_id,
+                    "value": float(total_uncompleted),
+                },
+                context="planner report connection error",
+            )
             logger.warning(f"Planner report HTTP error: {e}")
         except Exception as e:
             logger.error(f"Planner report error: {e}", exc_info=True)

@@ -11,6 +11,8 @@ from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from loguru import logger
 
+from .http_error_logger import log_http_error
+
 
 @dataclass
 class TrainingSample:
@@ -185,6 +187,19 @@ class TrainingClient:
                     success_count += 1
 
             except httpx.HTTPError as e:
+                log_http_error(
+                    e,
+                    request_url=f"{self.predictor_url}/train",
+                    request_method="POST",
+                    request_body=training_data,
+                    context="training data submission",
+                    extra={
+                        "model_id": model_id,
+                        "prediction_type": prediction_type,
+                        "platform": platform_info.get("hardware_name"),
+                        "sample_count": len(samples),
+                    },
+                )
                 logger.error(
                     f"Failed to train {model_id} on {platform_info['hardware_name']}: {e}"
                 )

@@ -1026,3 +1026,238 @@ class TestWebSocketErrorPaths:
         # Verify instance stats updated
         stats = await instance_registry.get_stats(sample_instance.instance_id)
         assert stats.failed_tasks == 1
+
+
+# ============================================================================
+# Transient Error Retry Tests
+# ============================================================================
+
+class TestTransientErrorRetry:
+    """Tests for transient connection error retry logic."""
+
+    def test_is_transient_connection_error_read_error(
+        self,
+        task_dispatcher
+    ):
+        """Test that ReadError is identified as transient."""
+        # Create a mock ReadError (httpx internal error)
+        class MockReadError(httpx.HTTPError):
+            pass
+        MockReadError.__name__ = "ReadError"
+
+        error = MockReadError("Connection reset")
+        assert task_dispatcher._is_transient_connection_error(error) is True
+
+    def test_is_transient_connection_error_connect_error(
+        self,
+        task_dispatcher
+    ):
+        """Test that ConnectError is identified as transient."""
+        class MockConnectError(httpx.HTTPError):
+            pass
+        MockConnectError.__name__ = "ConnectError"
+
+        error = MockConnectError("Connection refused")
+        assert task_dispatcher._is_transient_connection_error(error) is True
+
+    def test_is_transient_connection_error_remote_protocol_error(
+        self,
+        task_dispatcher
+    ):
+        """Test that RemoteProtocolError is identified as transient."""
+        class MockRemoteProtocolError(httpx.HTTPError):
+            pass
+        MockRemoteProtocolError.__name__ = "RemoteProtocolError"
+
+        error = MockRemoteProtocolError("Protocol error")
+        assert task_dispatcher._is_transient_connection_error(error) is True
+
+    def test_is_transient_connection_error_http_status_error(
+        self,
+        task_dispatcher
+    ):
+        """Test that HTTPStatusError is NOT identified as transient."""
+        error = httpx.HTTPStatusError(
+            "500 Server Error",
+            request=MagicMock(),
+            response=MagicMock()
+        )
+        assert task_dispatcher._is_transient_connection_error(error) is False
+
+    def test_is_transient_connection_error_timeout(
+        self,
+        task_dispatcher
+    ):
+        """Test that TimeoutException is NOT identified as transient."""
+        error = httpx.TimeoutException("Timeout")
+        assert task_dispatcher._is_transient_connection_error(error) is False
+
+    @pytest.mark.asyncio
+    async def test_retry_on_read_error_success(
+        self,
+        task_dispatcher,
+        instance_registry,
+        task_registry,
+        sample_instance
+    ):
+        """Test that ReadError triggers retry and succeeds on second attempt."""
+        await instance_registry.register(sample_instance)
+        await task_registry.create_task(
+            task_id="task-1",
+            model_id="model-1",
+            task_input={"prompt": "test"},
+            metadata={},
+            assigned_instance=sample_instance.instance_id
+        )
+        await instance_registry.increment_pending(sample_instance.instance_id)
+
+        # Create a mock ReadError
+        class MockReadError(httpx.HTTPError):
+            pass
+        MockReadError.__name__ = "ReadError"
+
+        # Create successful response mock
+        success_response = MagicMock()
+        success_response.raise_for_status = MagicMock()
+        success_response.json = MagicMock(return_value={"success": True})
+
+        # First call raises ReadError, second succeeds
+        call_count = 0
+        async def mock_post(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise MockReadError("Connection reset by peer")
+            return success_response
+
+        task_dispatcher._http_client.post = mock_post
+
+        # Execute
+        await task_dispatcher.dispatch_task("task-1")
+
+        # Verify retry happened (2 calls total)
+        assert call_count == 2
+
+        # Task should be successful (RUNNING status after dispatch)
+        task = await task_registry.get("task-1")
+        assert task.status == TaskStatus.RUNNING
+
+    @pytest.mark.asyncio
+    async def test_retry_exhausted_on_read_error(
+        self,
+        task_dispatcher,
+        instance_registry,
+        task_registry,
+        sample_instance
+    ):
+        """Test that task fails after all retries are exhausted."""
+        await instance_registry.register(sample_instance)
+        await task_registry.create_task(
+            task_id="task-1",
+            model_id="model-1",
+            task_input={"prompt": "test"},
+            metadata={},
+            assigned_instance=sample_instance.instance_id
+        )
+        await instance_registry.increment_pending(sample_instance.instance_id)
+
+        # Create a mock ReadError
+        class MockReadError(httpx.HTTPError):
+            pass
+        MockReadError.__name__ = "ReadError"
+
+        # All calls fail with ReadError
+        call_count = 0
+        async def mock_post(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            raise MockReadError("Connection reset by peer")
+
+        task_dispatcher._http_client.post = mock_post
+
+        # Execute
+        await task_dispatcher.dispatch_task("task-1")
+
+        # Verify all retries were attempted (default is 3)
+        assert call_count == task_dispatcher.dispatch_retries
+
+        # Task should be failed
+        task = await task_registry.get("task-1")
+        assert task.status == TaskStatus.FAILED
+        assert "dispatch failed" in task.error.lower()
+
+    @pytest.mark.asyncio
+    async def test_no_retry_on_http_status_error(
+        self,
+        task_dispatcher,
+        instance_registry,
+        task_registry,
+        sample_instance
+    ):
+        """Test that HTTPStatusError (non-transient) does not trigger retry."""
+        await instance_registry.register(sample_instance)
+        await task_registry.create_task(
+            task_id="task-1",
+            model_id="model-1",
+            task_input={"prompt": "test"},
+            metadata={},
+            assigned_instance=sample_instance.instance_id
+        )
+        await instance_registry.increment_pending(sample_instance.instance_id)
+
+        # All calls fail with HTTPStatusError (non-transient)
+        call_count = 0
+        async def mock_post(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            raise httpx.HTTPStatusError(
+                "500 Server Error",
+                request=MagicMock(),
+                response=MagicMock()
+            )
+
+        task_dispatcher._http_client.post = mock_post
+
+        # Execute
+        await task_dispatcher.dispatch_task("task-1")
+
+        # Verify NO retry happened (only 1 call)
+        assert call_count == 1
+
+        # Task should be failed
+        task = await task_registry.get("task-1")
+        assert task.status == TaskStatus.FAILED
+
+    def test_initialization_with_retry_params(
+        self,
+        task_registry,
+        instance_registry,
+        websocket_manager
+    ):
+        """Test TaskDispatcher initialization with custom retry parameters."""
+        dispatcher = TaskDispatcher(
+            task_registry=task_registry,
+            instance_registry=instance_registry,
+            websocket_manager=websocket_manager,
+            dispatch_retries=5,
+            dispatch_retry_delay=0.2
+        )
+
+        assert dispatcher.dispatch_retries == 5
+        assert dispatcher.dispatch_retry_delay == 0.2
+
+    def test_default_retry_params(
+        self,
+        task_registry,
+        instance_registry,
+        websocket_manager
+    ):
+        """Test TaskDispatcher uses default retry parameters."""
+        dispatcher = TaskDispatcher(
+            task_registry=task_registry,
+            instance_registry=instance_registry,
+            websocket_manager=websocket_manager
+        )
+
+        assert dispatcher.dispatch_retries == 3
+        assert dispatcher.dispatch_retry_delay == 0.1

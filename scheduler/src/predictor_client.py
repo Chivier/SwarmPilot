@@ -13,6 +13,8 @@ import asyncio
 import json
 from loguru import logger
 
+from .http_error_logger import log_http_error
+
 if TYPE_CHECKING:
     from .model import Instance
 
@@ -168,6 +170,14 @@ class PredictorClient:
                             error_type = "Invalid request"
                             error_message = response.text
 
+                        log_http_error(
+                            ValueError(f"{error_type}: {error_message}"),
+                            request_url=self._predict_endpoint,
+                            request_method="POST",
+                            request_body=json_data,
+                            response=response,
+                            context="predictor bad request (400)",
+                        )
                         logger.debug(f"Non-retryable error ({error_type}), not retrying")
                         raise ValueError(f"{error_type}: {error_message}")
                     elif response.status_code == 404:
@@ -185,17 +195,41 @@ class PredictorClient:
                             error_type = "Model not found"
                             error_message = response.text
 
+                        log_http_error(
+                            ValueError(f"{error_type}: {error_message}"),
+                            request_url=self._predict_endpoint,
+                            request_method="POST",
+                            request_body=json_data,
+                            response=response,
+                            context="predictor model not found (404)",
+                        )
                         logger.debug(f"Non-retryable error ({error_type}), not retrying")
                         raise ValueError(f"{error_type}: {error_message}")
                     elif response.status_code >= 500:
                         # Server error - retry
                         await self._close_client()
                         error_msg = response.text
+                        log_http_error(
+                            RuntimeError(f"Server error (HTTP {response.status_code}): {error_msg}"),
+                            request_url=self._predict_endpoint,
+                            request_method="POST",
+                            request_body=json_data,
+                            response=response,
+                            context="predictor server error (5xx)",
+                        )
                         raise RuntimeError(f"Server error (HTTP {response.status_code}): {error_msg}")
                     else:
                         # Other HTTP errors
                         await self._close_client()
                         error_msg = response.text
+                        log_http_error(
+                            ValueError(f"HTTP {response.status_code}: {error_msg}"),
+                            request_url=self._predict_endpoint,
+                            request_method="POST",
+                            request_body=json_data,
+                            response=response,
+                            context="predictor HTTP error",
+                        )
                         raise ValueError(f"HTTP {response.status_code}: {error_msg}")
 
                 except (httpx.NetworkError, httpx.ConnectError, httpx.PoolTimeout, ConnectionError, OSError) as e:
@@ -211,6 +245,14 @@ class PredictorClient:
                         )
                         await asyncio.sleep(delay)
                     else:
+                        log_http_error(
+                            e,
+                            request_url=self._predict_endpoint,
+                            request_method="POST",
+                            request_body=json_data,
+                            context="predictor connection error",
+                            extra={"attempts": self.max_retries},
+                        )
                         logger.error(
                             f"Predictor request failed after {self.max_retries} attempts"
                         )
@@ -231,6 +273,14 @@ class PredictorClient:
                         )
                         await asyncio.sleep(delay)
                     else:
+                        log_http_error(
+                            e,
+                            request_url=self._predict_endpoint,
+                            request_method="POST",
+                            request_body=json_data,
+                            context="predictor timeout",
+                            extra={"attempts": self.max_retries, "timeout_seconds": self.timeout},
+                        )
                         logger.error(
                             f"Predictor request failed after {self.max_retries} attempts"
                         )
