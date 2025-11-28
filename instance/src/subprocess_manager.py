@@ -11,6 +11,7 @@ primary in the background.
 import asyncio
 import json
 import os
+import signal
 import subprocess
 import traceback
 from datetime import UTC, datetime
@@ -221,7 +222,8 @@ class SubprocessManager:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 env=port_env,
-                cwd=str(model_dir)
+                cwd=str(model_dir),
+                start_new_session=True  # Create new process group for proper cleanup
             )
 
             port_info.process = process
@@ -963,7 +965,10 @@ class SubprocessManager:
         process: asyncio.subprocess.Process
     ):
         """
-        Stop a subprocess using SIGKILL (signal 9) for immediate termination.
+        Stop a subprocess and all its children using SIGKILL (signal 9).
+
+        Since uv spawns child processes (Python interpreter), we need to kill
+        the entire process group to ensure all related processes are terminated.
 
         Args:
             process: The subprocess to stop
@@ -974,7 +979,8 @@ class SubprocessManager:
         if process is None:
             return
 
-        logger.info(f"Stopping subprocess with SIGKILL (PID: {process.pid})")
+        pid = process.pid
+        logger.info(f"Stopping subprocess and its children with SIGKILL (PID: {pid})")
 
         # Check if process is still running
         if process.returncode is not None:
@@ -982,18 +988,26 @@ class SubprocessManager:
             return
 
         try:
-            # Force kill immediately using SIGKILL (signal 9)
-            process.kill()
+            # Kill the entire process group using SIGKILL (signal 9)
+            # The process was started with start_new_session=True, so its PID is the PGID
+            try:
+                os.killpg(pid, signal.SIGKILL)
+                logger.info(f"Sent SIGKILL to process group (PGID: {pid})")
+            except ProcessLookupError:
+                # Process group already gone, try killing just the process
+                logger.debug(f"Process group not found, trying single process kill (PID: {pid})")
+                process.kill()
+
             await process.wait()
-            logger.info(f"Subprocess killed with SIGKILL (PID: {process.pid})")
+            logger.info(f"Subprocess and children killed with SIGKILL (PID: {pid})")
 
         except ProcessLookupError:
             # Process already finished
-            logger.debug(f"Subprocess already finished (PID: {process.pid})")
+            logger.debug(f"Subprocess already finished (PID: {pid})")
         except Exception as e:
             log_error_with_traceback(
                 error=e,
-                context=f"_stop_subprocess(PID={process.pid})",
+                context=f"_stop_subprocess(PID={pid})",
             )
             raise RuntimeError(f"Failed to stop subprocess: {e}")
 
