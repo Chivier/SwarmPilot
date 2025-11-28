@@ -66,3 +66,38 @@ models:
       memory: "8Gi"
       gpu: true
       gpu_count: 1
+
+  # Type3 (Text2Image+Video) workflow models
+  - model_id: "sleep_model_c"
+    name: "Sleep Model C (FLUX simulation)"
+    directory: "sleep_model"
+    resource_requirements:
+      cpu: "1"
+      memory: "512Mi"
+      gpu: false
+
+  - model_id: "t2img"
+    name: "Text-to-Image (FLUX)"
+    directory: "t2img"
+    resource_requirements:
+      cpu: "4"
+      memory: "16Gi"
+      gpu: true
+      gpu_count: 1
+
+  # Type4 (OCR+LLM) workflow models
+  - model_id: "sleep_model_ocr"
+    name: "Sleep Model OCR (EasyOCR simulation)"
+    directory: "sleep_model"
+    resource_requirements:
+      cpu: "2"
+      memory: "2Gi"
+      gpu: false
+
+  - model_id: "ocr_model"
+    name: "OCR Model (EasyOCR)"
+    directory: "ocr_model"
+    resource_requirements:
+      cpu: "2"
+      memory: "4Gi"
+      gpu: false

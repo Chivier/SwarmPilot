@@ -1110,6 +1110,7 @@ async def submit_task(request: TaskSubmitRequest):
 
     # Check if model is running
     if not await docker_manager.is_model_running():
+        logger.warning("No model is currently running")
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="No model is currently running"
@@ -1118,6 +1119,8 @@ async def submit_task(request: TaskSubmitRequest):
     # Validate model_id matches currently running model
     current_model = await docker_manager.get_current_model()
     if current_model and current_model.model_id != request.model_id:
+        logger.warning(f"Model ID does not match the currently running model. "
+                       f"Expected: {current_model.model_id}, Got: {request.model_id}")
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=f"Model ID does not match the currently running model. "
@@ -1382,10 +1385,21 @@ async def get_info():
     current_model = await docker_manager.get_current_model()
     current_model_info = None
     if current_model:
+        # Sanitize parameters to ensure JSON-serializable values only
+        # Some parameters may contain non-serializable objects (locks, handles, etc.)
+        import json
+        try:
+            # Deep copy and filter to only JSON-serializable values
+            sanitized_params = json.loads(json.dumps(current_model.parameters, default=str))
+        except (TypeError, ValueError):
+            # If serialization fails, use empty dict as fallback
+            sanitized_params = {}
+            logger.warning("Failed to serialize model parameters, using empty dict")
+
         current_model_info = ModelInfo(
             model_id=current_model.model_id,
             started_at=current_model.started_at,
-            parameters=current_model.parameters
+            parameters=sanitized_params
         )
 
     # Get task queue stats
