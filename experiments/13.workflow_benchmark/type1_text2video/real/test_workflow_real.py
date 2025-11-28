@@ -25,12 +25,28 @@ Usage:
 """
 
 import random
+import string
 import sys
 import threading
 import time
 from pathlib import Path
 
 import numpy as np
+
+
+def generate_run_prefix(length: int = 4) -> str:
+    """Generate a random alphanumeric prefix for this run.
+
+    Used in real mode to prevent ID collisions in the scheduler
+    when running multiple experiments.
+
+    Args:
+        length: Length of the prefix (default: 4)
+
+    Returns:
+        Random alphanumeric string (lowercase + digits)
+    """
+    return ''.join(random.choices(string.ascii_lowercase + string.digits, k=length))
 
 # Add parent directories to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -54,7 +70,7 @@ from type1_text2video.receivers import A1TaskReceiver, A2TaskReceiver, BTaskRece
 from queue import Queue
 
 
-def run_single_experiment(config, captions, logger, strategy_name=None, pre_generated_workflows=None):
+def run_single_experiment(config, captions, logger, strategy_name=None, pre_generated_workflows=None, run_prefix=""):
     """Run a single experiment with the given configuration.
 
     Args:
@@ -64,6 +80,7 @@ def run_single_experiment(config, captions, logger, strategy_name=None, pre_gene
         strategy_name: Optional strategy name (for logging and task ID generation)
         pre_generated_workflows: Optional pre-generated workflow data for reproducibility.
                                  If provided, all strategies use identical workflow data.
+        run_prefix: Optional prefix for workflow/task IDs to prevent collisions (real mode)
 
     Returns:
         Dict with strategy results containing task_metrics and workflow_metrics
@@ -99,8 +116,9 @@ def run_single_experiment(config, captions, logger, strategy_name=None, pre_gene
 
     # Pre-generate task IDs for receivers to subscribe to
     strategy = getattr(config, 'strategy', 'probabilistic')
-    a1_task_ids = [f"task-A1-{strategy}-workflow-{i:04d}" for i in range(config.num_workflows)]
-    a2_task_ids = [f"task-A2-{strategy}-workflow-{i:04d}" for i in range(config.num_workflows)]
+    prefix_part = f"{run_prefix}-" if run_prefix else ""
+    a1_task_ids = [f"task-A1-{strategy}-workflow-{prefix_part}{i:04d}" for i in range(config.num_workflows)]
+    a2_task_ids = [f"task-A2-{strategy}-workflow-{prefix_part}{i:04d}" for i in range(config.num_workflows)]
 
     # Create submitters first (A1TaskSubmitter populates workflow_states)
     a1_submitter = A1TaskSubmitter(
@@ -110,6 +128,7 @@ def run_single_experiment(config, captions, logger, strategy_name=None, pre_gene
         workflow_states=workflow_states,
         state_lock=state_lock,
         pre_generated_workflows=pre_generated_workflows,
+        run_prefix=run_prefix,
         scheduler_url=config.scheduler_a_url,
         qps=config.qps,
         duration=config.duration,
@@ -177,9 +196,11 @@ def run_single_experiment(config, captions, logger, strategy_name=None, pre_gene
     b_task_ids = []
     with state_lock:
         for workflow_id, workflow_data in workflow_states.items():
-            workflow_num = workflow_id.split('-')[-1]
+            # workflow_id format: workflow-{prefix}-{num} or workflow-{num}
+            # Extract the suffix after "workflow-" to use in task ID
+            workflow_suffix = workflow_id.replace("workflow-", "")  # Gets "a7b3-0001" or "0001"
             for loop in range(1, workflow_data.max_b_loops + 1):
-                b_task_ids.append(f"task-B{loop}-{strategy}-workflow-{workflow_num}")
+                b_task_ids.append(f"task-B{loop}-{strategy}-workflow-{workflow_suffix}")
 
     b_receiver = BTaskReceiver(
         name="BReceiver",
@@ -216,13 +237,13 @@ def run_single_experiment(config, captions, logger, strategy_name=None, pre_gene
     target_non_warmup = math.ceil(num_non_warmup * config.portion_stats)
 
     # Generate the list of workflow IDs that must complete for metrics
-    # Warmup workflows: workflow-0000 to workflow-(num_warmup-1)
-    # Target non-warmup: workflow-num_warmup to workflow-(num_warmup + target_non_warmup - 1)
+    # Warmup workflows: workflow-{prefix}-0000 to workflow-{prefix}-(num_warmup-1)
+    # Target non-warmup: workflow-{prefix}-num_warmup to workflow-{prefix}-(num_warmup + target_non_warmup - 1)
     target_workflow_ids = set()
     for i in range(num_warmup):
-        target_workflow_ids.add(f"workflow-{i:04d}")
+        target_workflow_ids.add(f"workflow-{prefix_part}{i:04d}")
     for i in range(num_warmup, num_warmup + target_non_warmup):
-        target_workflow_ids.add(f"workflow-{i:04d}")
+        target_workflow_ids.add(f"workflow-{prefix_part}{i:04d}")
 
     target_completion = len(target_workflow_ids)
     logger.info(f"Early stopping target: {target_completion} specific workflows by submission order "
@@ -367,6 +388,13 @@ def main():
     np.random.seed(42)
 
     # ========================================================================
+    # Generate Run Prefix for ID Collision Avoidance
+    # ========================================================================
+    # Generate a unique prefix AFTER setting seeds to ensure workflow data
+    # remains reproducible, while still getting a unique prefix for this run
+    run_prefix = generate_run_prefix()
+
+    # ========================================================================
     # Parse Command Line Arguments
     # ========================================================================
 
@@ -409,6 +437,7 @@ def main():
     logger = configure_logging(level="INFO")
 
     logger.info(f"Mode: {config.mode} (hardcoded for real cluster)")
+    logger.info(f"Run prefix: {run_prefix} (for ID collision avoidance)")
     logger.info(f"Model A: {config.model_a_id}")
     logger.info(f"Model B: {config.model_b_id}")
     logger.info(f"Scheduler A: {config.scheduler_a_url}")
@@ -434,7 +463,7 @@ def main():
     # Frame counts are sampled from the benchmark dataset (captions_10k.jsonl).
 
     logger.info("Pre-generating workflow data from benchmark dataset...")
-    pre_generated_workflows = pre_generate_workflows(config, captions, seed=args.seed)
+    pre_generated_workflows = pre_generate_workflows(config, captions, seed=args.seed, run_prefix=run_prefix)
     logger.info(f"Generated {len(pre_generated_workflows)} workflows")
     if pre_generated_workflows:
         logger.info(f"Sample workflow[0]: max_b_loops={pre_generated_workflows[0].max_b_loops}, "
@@ -495,7 +524,8 @@ def main():
         experiment_results = run_single_experiment(
             config, captions, logger,
             strategy_name=strategy_name,
-            pre_generated_workflows=pre_generated_workflows
+            pre_generated_workflows=pre_generated_workflows,
+            run_prefix=run_prefix
         )
 
         # Store results for comparison

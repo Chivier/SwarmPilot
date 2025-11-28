@@ -28,6 +28,7 @@ class A1TaskSubmitter(BaseTaskSubmitter):
 
     def __init__(self, captions: List[str], config, workflow_states: Dict,
                  state_lock: threading.Lock, pre_generated_workflows: Optional[List[Text2VideoWorkflowData]] = None,
+                 run_prefix: str = "",
                  **kwargs):
         """
         Initialize A1 task submitter.
@@ -40,10 +41,12 @@ class A1TaskSubmitter(BaseTaskSubmitter):
             pre_generated_workflows: Optional pre-generated workflow data for reproducibility.
                                     If provided, these workflows are used directly (with strategy updated).
                                     If None, workflows are generated on-the-fly.
+            run_prefix: Optional prefix for workflow/task IDs to prevent collisions (real mode)
             **kwargs: Passed to BaseTaskSubmitter (name, scheduler_url, rate_limiter, etc.)
         """
         super().__init__(**kwargs)
         self.config = config
+        self.run_prefix = run_prefix
         self.workflow_states = workflow_states
         self.state_lock = state_lock
 
@@ -89,8 +92,11 @@ class A1TaskSubmitter(BaseTaskSubmitter):
                 else:
                     sampled_frame_count = config.data_loader.sample_frame_count()
 
+                # Generate workflow_id with optional run_prefix for ID collision avoidance
+                workflow_id = f"workflow-{self.run_prefix}-{i:04d}" if self.run_prefix else f"workflow-{i:04d}"
+
                 workflow = Text2VideoWorkflowData(
-                    workflow_id=f"workflow-{i:04d}",
+                    workflow_id=workflow_id,
                     caption=captions[i % len(captions)],
                     max_b_loops=sampled_max_b_loops,
                     strategy=getattr(config, 'strategy', 'default'),

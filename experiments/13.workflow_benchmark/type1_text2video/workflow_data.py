@@ -61,7 +61,8 @@ class Text2VideoWorkflowData:
 def pre_generate_workflows(
     config,
     captions: List[str],
-    seed: int = 42
+    seed: int = 42,
+    run_prefix: str = ""
 ) -> List["Text2VideoWorkflowData"]:
     """Pre-generate all workflow data before strategy testing.
 
@@ -103,8 +104,11 @@ def pre_generate_workflows(
             # Default: sample from benchmark dataset for realistic distribution
             sampled_frame_count = config.data_loader.sample_frame_count()
 
+        # Generate workflow_id with optional run_prefix for ID collision avoidance
+        workflow_id = f"workflow-{run_prefix}-{i:04d}" if run_prefix else f"workflow-{i:04d}"
+
         workflow = Text2VideoWorkflowData(
-            workflow_id=f"workflow-{i:04d}",
+            workflow_id=workflow_id,
             caption=captions[i % len(captions)],
             max_b_loops=sampled_max_b_loops,
             strategy="pending",  # Will be set per-strategy run

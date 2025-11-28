@@ -67,15 +67,21 @@ class A1TaskReceiver(BaseTaskReceiver):
                 return
 
             # Extract workflow_id from task_id (scheduler does NOT return metadata)
-            # Format: task-A1-{strategy}-workflow-XXXX
+            # Format: task-A1-{strategy}-workflow-{num} (old) or task-A1-{strategy}-workflow-{prefix}-{num} (new)
             workflow_id = None
             if task_id:
                 # Extract workflow ID from task_id
-                # Expected format: "task-A1-{strategy}-workflow-{num}"
+                # Old format: "task-A1-{strategy}-workflow-{num}"
+                # New format: "task-A1-{strategy}-workflow-{prefix}-{num}"
                 parts = task_id.split("-")
                 if "workflow" in parts:
                     idx = parts.index("workflow")
-                    if idx + 1 < len(parts):
+                    # Check format: new (workflow-{prefix}-{num}) vs old (workflow-{num})
+                    if idx + 2 < len(parts) and not parts[idx + 1].isdigit():
+                        # New format: parts[idx+1] is prefix (alphanumeric), parts[idx+2] is num
+                        workflow_id = f"workflow-{parts[idx + 1]}-{parts[idx + 2]}"
+                    elif idx + 1 < len(parts):
+                        # Old format: parts[idx+1] is the num
                         workflow_id = f"workflow-{parts[idx + 1]}"
 
                 if not workflow_id:
@@ -205,15 +211,21 @@ class A2TaskReceiver(BaseTaskReceiver):
                 return
 
             # Extract workflow_id from task_id (scheduler does NOT return metadata)
-            # Format: task-A2-{strategy}-workflow-XXXX
+            # Format: task-A2-{strategy}-workflow-{num} (old) or task-A2-{strategy}-workflow-{prefix}-{num} (new)
             workflow_id = None
             if task_id:
                 # Extract workflow ID from task_id
-                # Expected format: "task-A2-{strategy}-workflow-{num}"
+                # Old format: "task-A2-{strategy}-workflow-{num}"
+                # New format: "task-A2-{strategy}-workflow-{prefix}-{num}"
                 parts = task_id.split("-")
                 if "workflow" in parts:
                     idx = parts.index("workflow")
-                    if idx + 1 < len(parts):
+                    # Check format: new (workflow-{prefix}-{num}) vs old (workflow-{num})
+                    if idx + 2 < len(parts) and not parts[idx + 1].isdigit():
+                        # New format: parts[idx+1] is prefix (alphanumeric), parts[idx+2] is num
+                        workflow_id = f"workflow-{parts[idx + 1]}-{parts[idx + 2]}"
+                    elif idx + 1 < len(parts):
+                        # Old format: parts[idx+1] is the num
                         workflow_id = f"workflow-{parts[idx + 1]}"
 
                 if not workflow_id:
@@ -348,17 +360,23 @@ class BTaskReceiver(BaseTaskReceiver):
                 return
 
             # Extract workflow_id and loop_iteration from task_id (scheduler does NOT return metadata)
-            # Format: task-B{N}-{strategy}-workflow-XXXX
+            # Format: task-B{N}-{strategy}-workflow-{num} (old) or task-B{N}-{strategy}-workflow-{prefix}-{num} (new)
             import re
             workflow_id = None
             loop_iteration = 1
 
             # Extract workflow ID from task_id
-            # Expected format: "task-B{N}-{strategy}-workflow-{num}"
+            # Old format: "task-B{N}-{strategy}-workflow-{num}"
+            # New format: "task-B{N}-{strategy}-workflow-{prefix}-{num}"
             parts = task_id.split("-")
             if "workflow" in parts:
                 idx = parts.index("workflow")
-                if idx + 1 < len(parts):
+                # Check format: new (workflow-{prefix}-{num}) vs old (workflow-{num})
+                if idx + 2 < len(parts) and not parts[idx + 1].isdigit():
+                    # New format: parts[idx+1] is prefix (alphanumeric), parts[idx+2] is num
+                    workflow_id = f"workflow-{parts[idx + 1]}-{parts[idx + 2]}"
+                elif idx + 1 < len(parts):
+                    # Old format: parts[idx+1] is the num
                     workflow_id = f"workflow-{parts[idx + 1]}"
 
                 # Extract loop iteration from task_id (B1, B2, etc.)
