@@ -42,10 +42,6 @@ class Text2VideoConfig:
     predictor_url: str = "http://127.0.0.1:8102"
     planner_url: str = "http://127.0.0.1:8103"
 
-    # Task parameters (simulation mode)
-    sleep_time_min: float = 5.0
-    sleep_time_max: float = 15.0
-
     # Task parameters (real mode)
     max_tokens: int = 512  # For A1/A2 LLM tasks
 
@@ -77,11 +73,9 @@ class Text2VideoConfig:
     frame_count_seed: Optional[int] = 42  # Random seed for frame_count distribution (fixed to 42 for reproducibility)
     max_b_loops_seed: Optional[int] = 42  # Random seed for max_b_loops distribution (fixed to 42 for reproducibility)
 
-    # Real data configuration for simulation mode
-    # When use_real_data=True, sleep times are sampled from real benchmark data
-    use_real_data: bool = True  # Enable real data sampling in simulation mode
-    training_config_path: Optional[str] = None  # Path to training_config.json
-    captions_data_path: Optional[str] = None  # Path to captions_10k.jsonl
+    # Simulation mode: sleep time scaling
+    # Maximum sleep time in seconds for sleep_model (0-600 seconds supported by sleep_model)
+    max_sleep_time_seconds: float = 600.0
     real_data_seed: int = 42  # Random seed for real data sampling
 
     # Internal samplers (initialized in __post_init__)
@@ -158,27 +152,36 @@ class Text2VideoConfig:
             )
 
     def _init_data_loader(self):
-        """Initialize real data loader for simulation mode."""
-        if self.mode != "simulation" or not self.use_real_data:
+        """Initialize real data loader for simulation mode.
+
+        In simulation mode, this method MUST successfully load the benchmark data.
+        The data files are expected at fixed paths:
+        - type1_text2video/data/training_config.json
+        - type1_text2video/data/captions_10k.jsonl
+
+        Raises:
+            FileNotFoundError: If required data files are not found
+            ValueError: If data files are invalid or empty
+        """
+        if self.mode != "simulation":
             return
 
         from .data_loader import RealDataLoader
 
-        # Determine paths with defaults
-        training_path = self.training_config_path or "type1_text2video/data/training_config.json"
-        captions_path = self.captions_data_path or "type1_text2video/data/captions_10k.jsonl"
+        # Fixed paths for benchmark data (no configuration needed)
+        training_path = "type1_text2video/data/training_config.json"
+        captions_path = "type1_text2video/data/captions_10k.jsonl"
 
-        try:
-            self._data_loader = RealDataLoader(
-                training_config_path=training_path,
-                captions_path=captions_path,
-                seed=self.real_data_seed,
-            )
-        except Exception as e:
-            # Log warning but don't fail - fall back to uniform sampling
-            import logging
-            logging.warning(f"Failed to load real data, falling back to uniform sampling: {e}")
-            self._data_loader = None
+        # Convert max_sleep_time from seconds to milliseconds for data_loader
+        max_sleep_time_ms = self.max_sleep_time_seconds * 1000.0
+
+        # Data loader initialization is mandatory - no fallback
+        self._data_loader = RealDataLoader(
+            training_config_path=training_path,
+            captions_path=captions_path,
+            seed=self.real_data_seed,
+            max_sleep_time_ms=max_sleep_time_ms,
+        )
 
     @property
     def data_loader(self) -> Optional["RealDataLoader"]:
@@ -246,10 +249,8 @@ class Text2VideoConfig:
         frame_count_seed = int(os.getenv("FRAME_COUNT_SEED", "42"))
         max_b_loops_seed = int(os.getenv("MAX_B_LOOPS_SEED", "42"))
 
-        # Parse real data config
-        use_real_data = os.getenv("USE_REAL_DATA", "true").lower() in ("true", "1", "yes")
-        training_config_path = os.getenv("TRAINING_CONFIG_PATH")
-        captions_data_path = os.getenv("CAPTIONS_DATA_PATH")
+        # Parse simulation mode scaling config
+        max_sleep_time_seconds = float(os.getenv("MAX_SLEEP_TIME_SECONDS", "600.0"))
         real_data_seed = int(os.getenv("REAL_DATA_SEED", "42"))
 
         return cls(
@@ -264,8 +265,6 @@ class Text2VideoConfig:
             scheduler_b_url=os.getenv("SCHEDULER_B_URL", "http://127.0.0.1:8200"),
             predictor_url=os.getenv("PREDICTOR_URL", "http://127.0.0.1:8102"),
             planner_url=os.getenv("PLANNER_URL", "http://127.0.0.1:8103"),
-            sleep_time_min=float(os.getenv("SLEEP_TIME_MIN", "5.0")),
-            sleep_time_max=float(os.getenv("SLEEP_TIME_MAX", "15.0")),
             max_tokens=int(os.getenv("MAX_TOKENS", "512")),
             caption_file=os.getenv("CAPTION_FILE", "captions_10k.json"),
             output_dir=os.getenv("OUTPUT_DIR", "output"),
@@ -281,8 +280,6 @@ class Text2VideoConfig:
             max_b_loops_config=max_b_loops_config,
             frame_count_seed=frame_count_seed,
             max_b_loops_seed=max_b_loops_seed,
-            use_real_data=use_real_data,
-            training_config_path=training_config_path,
-            captions_data_path=captions_data_path,
+            max_sleep_time_seconds=max_sleep_time_seconds,
             real_data_seed=real_data_seed,
         )

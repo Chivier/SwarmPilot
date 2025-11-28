@@ -28,7 +28,9 @@ class ATaskSubmitter(BaseTaskSubmitter):
     """
 
     def __init__(self, config, workflow_states: Dict,
-                 state_lock: threading.Lock, **kwargs):
+                 state_lock: threading.Lock,
+                 pre_generated_workflows: Optional[List[DeepResearchWorkflowData]] = None,
+                 **kwargs):
         """
         Initialize A task submitter.
 
@@ -36,6 +38,8 @@ class ATaskSubmitter(BaseTaskSubmitter):
             config: DeepResearchConfig instance
             workflow_states: Shared workflow state dictionary
             state_lock: Lock for workflow_states access
+            pre_generated_workflows: Optional pre-generated workflow data for reproducibility.
+                                     If provided, uses deep copies with current strategy applied.
             **kwargs: Passed to BaseTaskSubmitter (name, scheduler_url, rate_limiter, etc.)
         """
         super().__init__(**kwargs)
@@ -46,42 +50,70 @@ class ATaskSubmitter(BaseTaskSubmitter):
         # Set random seed for reproducibility (uniform sampling)
         random.seed(42)
 
-        # Create fanout sampler for distribution-based fanout
-        fanout_sampler = config.create_fanout_sampler()
+        if pre_generated_workflows is not None:
+            # Use pre-generated workflows (deep copy to avoid mutation)
+            import copy
+            self.workflows = []
+            for w in pre_generated_workflows:
+                workflow_copy = copy.deepcopy(w)
+                # Update strategy for this run
+                workflow_copy.strategy = getattr(config, 'strategy', 'probabilistic')
+                # Reset timing fields for fresh run
+                workflow_copy.a_submit_time = None
+                workflow_copy.a_complete_time = None
+                workflow_copy.b1_submit_times = []
+                workflow_copy.b2_submit_times = []
+                workflow_copy.b1_complete_times = {}
+                workflow_copy.b2_complete_times = {}
+                workflow_copy.merge_submit_time = None
+                workflow_copy.merge_complete_time = None
+                workflow_copy.workflow_complete_time = None
+                workflow_copy.b1_task_ids = []
+                workflow_copy.b2_task_ids = []
+                workflow_copy.merge_task_id = None
+                workflow_copy.a_result = None
+                self.workflows.append(workflow_copy)
+            self.logger.info(f"Using {len(self.workflows)} pre-generated workflows")
+            fanout_values = [w.fanout_count for w in self.workflows]
+        else:
+            # Fallback: generate workflows on-the-fly (legacy behavior)
+            # Create fanout sampler for distribution-based fanout
+            fanout_sampler = config.create_fanout_sampler()
 
-        # Pre-generate all workflow data with pre-generated sleep times for simulation
-        self.workflows = []
-        fanout_values = []  # Track fanout values for logging
-        for i in range(config.num_workflows):
-            # Sample fanout from distribution (or use static value)
-            fanout_count = fanout_sampler.sample()
-            fanout_values.append(fanout_count)
+            # Pre-generate all workflow data with pre-generated sleep times for simulation
+            self.workflows = []
+            fanout_values = []  # Track fanout values for logging
+            for i in range(config.num_workflows):
+                # Sample fanout from distribution (or use static value)
+                fanout_count = fanout_sampler.sample()
+                fanout_values.append(fanout_count)
 
-            workflow = DeepResearchWorkflowData(
-                workflow_id=f"workflow-{i:04d}",
-                fanout_count=fanout_count,
-                strategy=config.strategy,
-                is_warmup=(i < config.num_warmup)
-            )
+                workflow = DeepResearchWorkflowData(
+                    workflow_id=f"workflow-{i:04d}",
+                    fanout_count=fanout_count,
+                    strategy=config.strategy,
+                    is_warmup=(i < config.num_warmup)
+                )
 
-            # Pre-generate sleep times for simulation mode
-            if config.mode == "simulation":
-                workflow.a_sleep_time = random.uniform(config.sleep_time_min, config.sleep_time_max)
-                workflow.b1_sleep_times = [
-                    random.uniform(config.sleep_time_min, config.sleep_time_max)
-                    for _ in range(fanout_count)
-                ]
-                workflow.b2_sleep_times = [
-                    random.uniform(config.sleep_time_min, config.sleep_time_max)
-                    for _ in range(fanout_count)
-                ]
-                workflow.merge_sleep_time = random.uniform(config.sleep_time_min, config.sleep_time_max)
+                # Pre-generate sleep times for simulation mode
+                if config.mode == "simulation":
+                    workflow.a_sleep_time = random.uniform(config.sleep_time_min, config.sleep_time_max)
+                    workflow.b1_sleep_times = [
+                        random.uniform(config.sleep_time_min, config.sleep_time_max)
+                        for _ in range(fanout_count)
+                    ]
+                    workflow.b2_sleep_times = [
+                        random.uniform(config.sleep_time_min, config.sleep_time_max)
+                        for _ in range(fanout_count)
+                    ]
+                    workflow.merge_sleep_time = random.uniform(config.sleep_time_min, config.sleep_time_max)
 
-            # Pre-generate topic for real mode
-            if config.mode == "real":
-                workflow.topic = f"Deep research topic {i+1}: Advanced computing architectures"
+                # Pre-generate topic for real mode
+                if config.mode == "real":
+                    workflow.topic = f"Deep research topic {i+1}: Advanced computing architectures"
 
-            self.workflows.append(workflow)
+                self.workflows.append(workflow)
+            self.logger.info(f"Generated {len(self.workflows)} workflows on-the-fly (legacy mode)")
 
         # Populate shared workflow_states
         with state_lock:
@@ -92,10 +124,10 @@ class ATaskSubmitter(BaseTaskSubmitter):
 
         # Calculate average sleep times for min_time strategy (simulation mode only)
         if config.mode == "simulation":
-            a_times = [w.a_sleep_time for w in self.workflows]
+            a_times = [w.a_sleep_time for w in self.workflows if w.a_sleep_time is not None]
             b1_times = [t for w in self.workflows for t in w.b1_sleep_times]
             b2_times = [t for w in self.workflows for t in w.b2_sleep_times]
-            merge_times = [w.merge_sleep_time for w in self.workflows]
+            merge_times = [w.merge_sleep_time for w in self.workflows if w.merge_sleep_time is not None]
 
             # Store averages in config for other submitters to use
             config.avg_a_sleep_time_ms = (sum(a_times) / len(a_times)) * 1000.0 if a_times else 10000.0
@@ -118,7 +150,7 @@ class ATaskSubmitter(BaseTaskSubmitter):
             max_fanout = max(fanout_values)
             fanout_config = config.get_fanout_config_info()
             self.logger.info(
-                f"Pre-generated {len(self.workflows)} workflows with fanout "
+                f"Using {len(self.workflows)} workflows with fanout "
                 f"distribution: type={fanout_config['type']}, "
                 f"avg={avg_fanout:.2f}, min={min_fanout}, max={max_fanout}"
             )

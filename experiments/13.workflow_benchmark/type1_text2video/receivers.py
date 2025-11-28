@@ -85,7 +85,20 @@ class A1TaskReceiver(BaseTaskReceiver):
             # Check task status
             status = data.get("status")
             if status != "completed":
-                self.logger.warning(f"A1 task {task_id} failed with status: {status}")
+                # Extract detailed error information
+                error_msg = data.get("error", "")
+                error_details = data.get("error_details", "")
+                result_info = data.get("result", {})
+                if isinstance(result_info, dict):
+                    error_msg = error_msg or result_info.get("error", "")
+                    error_details = error_details or result_info.get("details", "")
+
+                self.logger.warning(
+                    f"A1 task {task_id} failed with status: {status}"
+                    + (f", error: {error_msg}" if error_msg else "")
+                    + (f", details: {error_details}" if error_details else "")
+                    + (f", raw data: {data}" if not error_msg and not error_details else "")
+                )
                 return
 
             # Extract result (positive prompt)
@@ -210,7 +223,20 @@ class A2TaskReceiver(BaseTaskReceiver):
             # Check task status
             status = data.get("status")
             if status != "completed":
-                self.logger.warning(f"A2 task {task_id} failed with status: {status}")
+                # Extract detailed error information
+                error_msg = data.get("error", "")
+                error_details = data.get("error_details", "")
+                result_info = data.get("result", {})
+                if isinstance(result_info, dict):
+                    error_msg = error_msg or result_info.get("error", "")
+                    error_details = error_details or result_info.get("details", "")
+
+                self.logger.warning(
+                    f"A2 task {task_id} failed with status: {status}"
+                    + (f", error: {error_msg}" if error_msg else "")
+                    + (f", details: {error_details}" if error_details else "")
+                    + (f", raw data: {data}" if not error_msg and not error_details else "")
+                )
                 return
 
             # Extract result (negative prompt)
@@ -347,7 +373,20 @@ class BTaskReceiver(BaseTaskReceiver):
             # Check task status
             status = data.get("status")
             if status != "completed":
-                self.logger.warning(f"B task {task_id} failed with status: {status}")
+                # Extract detailed error information
+                error_msg = data.get("error", "")
+                error_details = data.get("error_details", "")
+                result_info = data.get("result", {})
+                if isinstance(result_info, dict):
+                    error_msg = error_msg or result_info.get("error", "")
+                    error_details = error_details or result_info.get("details", "")
+
+                self.logger.warning(
+                    f"B task {task_id} failed with status: {status}"
+                    + (f", error: {error_msg}" if error_msg else "")
+                    + (f", details: {error_details}" if error_details else "")
+                    + (f", raw data: {data}" if not error_msg and not error_details else "")
+                )
                 # Mark workflow as failed/complete even on failure
                 with self.state_lock:
                     workflow_data = self.workflow_states.get(workflow_id)

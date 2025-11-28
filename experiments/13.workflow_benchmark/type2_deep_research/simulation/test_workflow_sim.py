@@ -52,6 +52,7 @@ from common import (
     generate_strategy_comparison_table,
 )
 from type2_deep_research.config import DeepResearchConfig
+from type2_deep_research.workflow_data import pre_generate_workflows
 from type2_deep_research.submitters import (
     ATaskSubmitter,
     B1TaskSubmitter,
@@ -308,14 +309,16 @@ def print_metrics_summary(
     print("=" * 80)
 
 
-def run_single_experiment(config, logger, strategy_name=None):
+def run_single_experiment(config, logger, strategy_name=None, pre_generated_workflows=None):
     """Run a single experiment with the given configuration.
 
     Args:
         config: DeepResearchConfig instance
         logger: Logger instance
         strategy_name: Optional strategy name (for logging purposes)
-        
+        pre_generated_workflows: Optional pre-generated workflow data for reproducibility.
+                                 If provided, all strategies use identical workflow data.
+
     Returns:
         Dictionary of results
     """
@@ -377,6 +380,7 @@ def run_single_experiment(config, logger, strategy_name=None):
         config=config,
         workflow_states=workflow_states,
         state_lock=state_lock,
+        pre_generated_workflows=pre_generated_workflows,
         scheduler_url=config.scheduler_a_url,
         qps=config.qps,
         duration=config.duration,
@@ -706,6 +710,26 @@ def main():
         logger.info(f"Fanout config details: {fanout_info}")
 
     # ========================================================================
+    # Pre-generate Workflow Data (BEFORE strategy loop)
+    # ========================================================================
+
+    logger.info("="*70)
+    logger.info("Pre-generating Workflow Data")
+    logger.info("="*70)
+
+    # Pre-generate all workflow data ONCE before testing any strategies.
+    # This ensures all strategies use IDENTICAL input data for fair comparison.
+    pre_generated_workflows = pre_generate_workflows(config, seed=42)
+
+    logger.info(f"Pre-generated {len(pre_generated_workflows)} workflows")
+    if pre_generated_workflows and pre_generated_workflows[0].a_sleep_time is not None:
+        logger.info(f"  Sample workflow[0]: sleep_times A={pre_generated_workflows[0].a_sleep_time:.3f}s, "
+                    f"B1[0]={pre_generated_workflows[0].b1_sleep_times[0]:.3f}s, "
+                    f"B2[0]={pre_generated_workflows[0].b2_sleep_times[0]:.3f}s, "
+                    f"merge={pre_generated_workflows[0].merge_sleep_time:.3f}s, "
+                    f"fanout={pre_generated_workflows[0].fanout_count}")
+
+    # ========================================================================
     # Strategy Management
     # ========================================================================
 
@@ -761,7 +785,11 @@ def main():
         logger.info(f"Running experiment with strategy: {strategy_name}")
         logger.info("="*70)
 
-        result = run_single_experiment(config, logger, strategy_name=strategy_name)
+        result = run_single_experiment(
+            config, logger,
+            strategy_name=strategy_name,
+            pre_generated_workflows=pre_generated_workflows
+        )
         all_results.append(result)
 
         logger.info(f"\nCompleted experiment for strategy: {strategy_name}")

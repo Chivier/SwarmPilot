@@ -26,7 +26,9 @@ class ATaskSubmitter(BaseTaskSubmitter):
     """
 
     def __init__(self, images: List[str], config, workflow_states: Dict,
-                 state_lock: threading.Lock, **kwargs):
+                 state_lock: threading.Lock,
+                 pre_generated_workflows: Optional[List[OCRLLMWorkflowData]] = None,
+                 **kwargs):
         """
         Initialize A task submitter (OCR).
 
@@ -35,6 +37,9 @@ class ATaskSubmitter(BaseTaskSubmitter):
             config: OCRLLMConfig instance
             workflow_states: Shared workflow state dictionary
             state_lock: Lock for workflow_states access
+            pre_generated_workflows: Optional list of pre-generated workflow data
+                                     for fair strategy comparison. If provided,
+                                     workflows are deep-copied and reused.
             **kwargs: Passed to BaseTaskSubmitter (name, scheduler_url, rate_limiter, etc.)
         """
         super().__init__(**kwargs)
@@ -45,30 +50,48 @@ class ATaskSubmitter(BaseTaskSubmitter):
         # Set random seed for reproducibility (distribution sampling)
         random.seed(42)
 
-        # Use provided images or generate dummy ones
-        if not images:
-            self.logger.info("No images provided, generating dummy images")
-            images = generate_dummy_images(config.num_workflows)
+        # Use pre-generated workflows if provided (for fair strategy comparison)
+        if pre_generated_workflows is not None:
+            import copy
+            self.workflows = []
+            for w in pre_generated_workflows:
+                # Deep copy to avoid mutation across strategy runs
+                workflow_copy = copy.deepcopy(w)
+                # Update strategy for this run
+                workflow_copy.strategy = getattr(config, 'strategy', 'probabilistic')
+                # Reset timing fields for fresh run
+                workflow_copy.a_submit_time = None
+                workflow_copy.a_complete_time = None
+                workflow_copy.b_submit_time = None
+                workflow_copy.b_complete_time = None
+                workflow_copy.workflow_complete_time = None
+                self.workflows.append(workflow_copy)
+            self.logger.info(f"Using {len(self.workflows)} pre-generated workflows for fair comparison")
+        else:
+            # Use provided images or generate dummy ones
+            if not images:
+                self.logger.info("No images provided, generating dummy images")
+                images = generate_dummy_images(config.num_workflows)
 
-        # Pre-generate all workflow data
-        self.workflows = []
-        for i in range(config.num_workflows):
-            workflow = OCRLLMWorkflowData(
-                workflow_id=f"workflow-{i:04d}",
-                image_data=images[i % len(images)],
-                strategy=getattr(config, 'strategy', 'probabilistic'),
-                ocr_languages=config.ocr_languages.split(",") if isinstance(config.ocr_languages, str) else config.ocr_languages,
-                ocr_detail_level=getattr(config, 'ocr_detail_level', 'standard'),
-                max_tokens=getattr(config, 'max_tokens', 512),
-                is_warmup=(i < getattr(config, 'num_warmup', 0))
-            )
+            # Pre-generate all workflow data
+            self.workflows = []
+            for i in range(config.num_workflows):
+                workflow = OCRLLMWorkflowData(
+                    workflow_id=f"workflow-{i:04d}",
+                    image_data=images[i % len(images)],
+                    strategy=getattr(config, 'strategy', 'probabilistic'),
+                    ocr_languages=config.ocr_languages.split(",") if isinstance(config.ocr_languages, str) else config.ocr_languages,
+                    ocr_detail_level=getattr(config, 'ocr_detail_level', 'standard'),
+                    max_tokens=getattr(config, 'max_tokens', 512),
+                    is_warmup=(i < getattr(config, 'num_warmup', 0))
+                )
 
-            # Pre-generate sleep times for simulation mode
-            if config.mode == "simulation":
-                workflow.a_sleep_time = config.sample_sleep_time_a()
-                workflow.b_sleep_time = config.sample_sleep_time_b()
+                # Pre-generate sleep times for simulation mode
+                if config.mode == "simulation":
+                    workflow.a_sleep_time = config.sample_sleep_time_a()
+                    workflow.b_sleep_time = config.sample_sleep_time_b()
 
-            self.workflows.append(workflow)
+                self.workflows.append(workflow)
 
         # Populate shared workflow_states
         with state_lock:

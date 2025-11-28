@@ -105,7 +105,8 @@ class ExperimentRunner:
                                    frame_count_seed: Optional[int] = None,
                                    max_b_loops_config: Optional[str] = None,
                                    max_b_loops_seed: Optional[int] = None,
-                                   portion_stats: float = 1.0) -> Dict:
+                                   portion_stats: float = 1.0,
+                                   max_sleep_time: float = 600.0) -> Dict:
         """
         Run Text2Video workflow in simulation mode.
 
@@ -123,6 +124,7 @@ class ExperimentRunner:
             max_b_loops_config: Path to JSON config for max_b_loops distribution (optional)
             max_b_loops_seed: Random seed for max_b_loops distribution (optional)
             portion_stats: Portion of non-warmup workflows for statistics (default: 1.0)
+            max_sleep_time: Maximum sleep time in seconds for scaling (default: 600.0)
 
         Returns:
             Dict with experiment results and metrics path
@@ -140,12 +142,14 @@ class ExperimentRunner:
         self.logger.info("=" * 80)
         self.logger.info(f"Config: num_workflows={num_workflows}, qps={qps}, "
                         f"duration={duration}s, {loops_info}, {frame_info}, "
-                        f"strategies={strategies}, portion_stats={portion_stats}")
+                        f"strategies={strategies}, portion_stats={portion_stats}, "
+                        f"max_sleep_time={max_sleep_time}s")
 
         script_path = self.workspace_dir / "type1_text2video" / "simulation" / "test_workflow_sim.py"
         args = self._build_common_args(num_workflows, qps, seed, strategies, warmup, duration, portion_stats)
         args.extend(["--max-b-loops", str(max_b_loops)])
         args.extend(["--frame-count", str(frame_count)])
+        args.extend(["--max-sleep-time", str(max_sleep_time)])
 
         if frame_count_config:
             args.extend(["--frame-count-config", frame_count_config])

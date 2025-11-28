@@ -47,12 +47,12 @@ from common import (
     generate_strategy_comparison_table,
 )
 from type1_text2video.config import Text2VideoConfig
-from type1_text2video.workflow_data import load_captions
+from type1_text2video.workflow_data import load_captions, pre_generate_workflows
 from type1_text2video.submitters import A1TaskSubmitter, A2TaskSubmitter, BTaskSubmitter
 from type1_text2video.receivers import A1TaskReceiver, A2TaskReceiver, BTaskReceiver
 
 
-def run_single_experiment(config, captions, logger, strategy_name=None):
+def run_single_experiment(config, captions, logger, strategy_name=None, pre_generated_workflows=None):
     """Run a single experiment with the given configuration.
 
     Args:
@@ -60,6 +60,8 @@ def run_single_experiment(config, captions, logger, strategy_name=None):
         captions: List of captions to use
         logger: Logger instance
         strategy_name: Optional strategy name (for logging and task ID generation)
+        pre_generated_workflows: Optional pre-generated workflow data for reproducibility.
+                                 If provided, all strategies use identical workflow data.
 
     Returns:
         Dict with strategy results containing task_metrics and workflow_metrics
@@ -76,15 +78,7 @@ def run_single_experiment(config, captions, logger, strategy_name=None):
     else:
         logger.info("Text2Video Workflow Simulation")
     logger.info("="*70)
-    logger.info(f"QPS: {config.qps}")
-    logger.info(f"Duration: {config.duration}s")
-    logger.info(f"Workflows: {config.num_workflows}")
-    logger.info(f"Max B loops config: {config.get_max_b_loops_config()}")
-    logger.info(f"Frame count config: {config.get_frame_count_config()}")
-    logger.info(f"Scheduler A: {config.scheduler_a_url}")
-    logger.info(f"Scheduler B: {config.scheduler_b_url}")
-    if strategy_name:
-        logger.info(f"Strategy: {strategy_name}")
+    logger.info(f"QPS: {config.qps}, Duration: {config.duration}s, Workflows: {config.num_workflows}")
     logger.info("="*70)
 
     # ========================================================================
@@ -118,6 +112,7 @@ def run_single_experiment(config, captions, logger, strategy_name=None):
         config=config,
         workflow_states=workflow_states,
         state_lock=state_lock,
+        pre_generated_workflows=pre_generated_workflows,
         scheduler_url=config.scheduler_a_url,
         qps=config.qps,
         duration=config.duration,
@@ -477,15 +472,59 @@ def main():
         max_b_loops_config=args.max_b_loops_config,
         frame_count_seed=args.frame_count_seed,
         max_b_loops_seed=args.max_b_loops_seed,
+        max_sleep_time_seconds=args.max_sleep_time,
     )
 
     logger = configure_logging(level="INFO")
 
-    logger.info(f"Mode: {config.mode} (hardcoded for simulation)")
-    logger.info(f"Model A: {config.model_a_id}")
-    logger.info(f"Model B: {config.model_b_id}")
+    # ========================================================================
+    # Display Configuration and Data Statistics
+    # ========================================================================
+    logger.info("="*70)
+    logger.info("Configuration Summary")
+    logger.info("="*70)
+    logger.info(f"Mode: {config.mode}")
+    logger.info(f"Model A (LLM): {config.model_a_id}")
+    logger.info(f"Model B (T2VID): {config.model_b_id}")
     logger.info(f"Scheduler A: {config.scheduler_a_url}")
     logger.info(f"Scheduler B: {config.scheduler_b_url}")
+
+    # Display data statistics from data_loader
+    logger.info("-"*70)
+    logger.info("Benchmark Data Statistics")
+    logger.info("-"*70)
+    data_stats = config.data_loader.get_statistics_summary()
+
+    # LLM statistics
+    llm = data_stats["llm"]
+    logger.info(f"LLM Samples: {llm['sample_count']} samples")
+    logger.info(f"  Runtime range: {llm['min_runtime_ms']:.1f}ms - {llm['max_runtime_ms']:.1f}ms")
+    logger.info(f"  Average runtime: {llm['avg_runtime_ms']:.1f}ms ({llm['avg_runtime_ms']/1000:.2f}s)")
+
+    # T2VID statistics
+    t2vid = data_stats["t2vid"]
+    logger.info(f"T2VID Samples: {t2vid['training_sample_count']} training samples")
+    logger.info(f"  Regression model: runtime = {t2vid['regression_slope']:.2f} * frames + {t2vid['regression_intercept']:.2f}")
+    logger.info(f"  Scale factor: {t2vid['scale_factor']:.4f}")
+    logger.info(f"  Runtime range (scaled): {t2vid['min_runtime_ms']:.1f}ms - {t2vid['max_runtime_ms']:.1f}ms")
+    logger.info(f"  Average runtime: {t2vid['avg_runtime_ms']:.1f}ms ({t2vid['avg_runtime_ms']/1000:.2f}s)")
+
+    # Frame statistics
+    frames = data_stats["frames"]
+    logger.info(f"Frame Data: {frames['caption_count']} captions")
+    logger.info(f"  Frame range: {frames['min_frames']} - {frames['max_frames']}")
+
+    # Config statistics
+    cfg = data_stats["config"]
+    logger.info(f"Max sleep time: {cfg['max_sleep_time_ms']/1000:.1f}s")
+    logger.info(f"Data sampling seed: {cfg['seed']}")
+
+    logger.info("-"*70)
+    logger.info("Distribution Configurations")
+    logger.info("-"*70)
+    logger.info(f"Max B loops: {config.get_max_b_loops_config()}")
+    logger.info(f"Frame count: {config.get_frame_count_config()}")
+    logger.info("="*70)
 
     # Load captions
     project_root = Path(__file__).parent.parent.parent.parent.parent
@@ -499,6 +538,25 @@ def main():
         logger.error(f"Caption file not found: {caption_path}")
         logger.error("Please ensure captions_10k.json exists in project root")
         sys.exit(1)
+
+    # ========================================================================
+    # Pre-generate Workflow Data (BEFORE strategy loop)
+    # ========================================================================
+
+    logger.info("="*70)
+    logger.info("Pre-generating Workflow Data")
+    logger.info("="*70)
+
+    # Pre-generate all workflow data ONCE before testing any strategies.
+    # This ensures all strategies use IDENTICAL input data for fair comparison.
+    pre_generated_workflows = pre_generate_workflows(config, captions, seed=42)
+
+    logger.info(f"Pre-generated {len(pre_generated_workflows)} workflows")
+    logger.info(f"  Sample workflow[0]: sleep_times A1={pre_generated_workflows[0].a1_sleep_time:.3f}s, "
+                f"A2={pre_generated_workflows[0].a2_sleep_time:.3f}s, "
+                f"B={pre_generated_workflows[0].b_sleep_time:.3f}s, "
+                f"max_b_loops={pre_generated_workflows[0].max_b_loops}, "
+                f"frame_count={pre_generated_workflows[0].frame_count}")
 
     # ========================================================================
     # Strategy Management
@@ -552,7 +610,11 @@ def main():
         logger.info("\n" + "="*70)
         logger.info(f"Running experiment with strategy: {strategy_name}")
         logger.info("="*70)
-        experiment_results = run_single_experiment(config, captions, logger, strategy_name=strategy_name)
+        experiment_results = run_single_experiment(
+            config, captions, logger,
+            strategy_name=strategy_name,
+            pre_generated_workflows=pre_generated_workflows
+        )
 
         # Store results for comparison
         all_strategy_results[strategy_name] = experiment_results

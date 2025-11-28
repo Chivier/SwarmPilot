@@ -68,6 +68,51 @@ class OCRLLMWorkflowData:
         return None
 
 
+def pre_generate_workflows(
+    config,
+    images: List[str],
+    seed: int = 42
+) -> List["OCRLLMWorkflowData"]:
+    """Pre-generate all workflow data before strategy testing.
+
+    This ensures all strategies use identical workflow data (same sleep times,
+    image assignments, etc.) for fair comparison.
+
+    Args:
+        config: OCRLLMConfig instance
+        images: List of base64-encoded images to use
+        seed: Random seed for reproducibility
+
+    Returns:
+        List of pre-generated OCRLLMWorkflowData instances
+    """
+    import random
+
+    # Set random seed for reproducibility
+    random.seed(seed)
+
+    workflows = []
+    for i in range(config.num_workflows):
+        workflow = OCRLLMWorkflowData(
+            workflow_id=f"workflow-{i:04d}",
+            image_data=images[i % len(images)],
+            strategy="pending",  # Will be set per-strategy run
+            ocr_languages=config.ocr_languages.split(",") if isinstance(config.ocr_languages, str) else config.ocr_languages,
+            ocr_detail_level=getattr(config, 'ocr_detail_level', 'standard'),
+            max_tokens=getattr(config, 'max_tokens', 512),
+            is_warmup=(i < getattr(config, 'num_warmup', 0))
+        )
+
+        # Pre-generate sleep times for simulation mode
+        if config.mode == "simulation":
+            workflow.a_sleep_time = config.sample_sleep_time_a()
+            workflow.b_sleep_time = config.sample_sleep_time_b()
+
+        workflows.append(workflow)
+
+    return workflows
+
+
 def load_images_from_directory(directory: str, max_count: Optional[int] = None) -> List[str]:
     """Load images from a directory and encode them as base64.
 

@@ -43,7 +43,7 @@ from common import (
     generate_strategy_comparison_table,
 )
 from type4_ocr_llm.config import OCRLLMConfig
-from type4_ocr_llm.workflow_data import generate_dummy_images
+from type4_ocr_llm.workflow_data import generate_dummy_images, pre_generate_workflows, OCRLLMWorkflowData
 from type4_ocr_llm.submitters import ATaskSubmitter, BTaskSubmitter
 from type4_ocr_llm.receivers import ATaskReceiver, BTaskReceiver
 
@@ -75,7 +75,11 @@ def add_type4_args(parser):
     return parser
 
 
-def run_single_experiment(config, images, logger, strategy_name=None):
+from typing import List, Optional
+
+
+def run_single_experiment(config, images, logger, strategy_name=None,
+                          pre_generated_workflows: Optional[List[OCRLLMWorkflowData]] = None):
     """Run a single experiment with the given configuration.
 
     Args:
@@ -83,6 +87,8 @@ def run_single_experiment(config, images, logger, strategy_name=None):
         images: List of base64-encoded images to use
         logger: Logger instance
         strategy_name: Optional strategy name (for logging and task ID generation)
+        pre_generated_workflows: Optional list of pre-generated workflow data
+                                 for fair strategy comparison
 
     Returns:
         Dict with strategy results containing task_metrics and workflow_metrics
@@ -138,6 +144,7 @@ def run_single_experiment(config, images, logger, strategy_name=None):
         config=config,
         workflow_states=workflow_states,
         state_lock=state_lock,
+        pre_generated_workflows=pre_generated_workflows,
         scheduler_url=config.scheduler_a_url,
         qps=config.qps,
         duration=config.duration,
@@ -451,6 +458,28 @@ def main():
     logger.info(f"Generated {len(images)} dummy images")
 
     # ========================================================================
+    # Pre-generate Workflow Data for Fair Strategy Comparison
+    # ========================================================================
+    # This ensures ALL strategies use identical workflow data (same sleep times,
+    # image assignments, etc.) for fair comparison.
+    logger.info("="*70)
+    logger.info("Pre-generating workflow data for fair strategy comparison...")
+    logger.info("="*70)
+
+    pre_generated_workflows = pre_generate_workflows(
+        config=config,
+        images=images,
+        seed=42
+    )
+
+    logger.info(f"Pre-generated {len(pre_generated_workflows)} workflows")
+    if config.mode == "simulation":
+        # Log sample sleep times for verification
+        sample_workflow = pre_generated_workflows[0]
+        logger.info(f"Sample workflow sleep times - A: {sample_workflow.a_sleep_time:.3f}s, "
+                    f"B: {sample_workflow.b_sleep_time:.3f}s")
+
+    # ========================================================================
     # Strategy Management
     # ========================================================================
 
@@ -502,7 +531,11 @@ def main():
         logger.info("\n" + "="*70)
         logger.info(f"Running experiment with strategy: {strategy_name}")
         logger.info("="*70)
-        experiment_results = run_single_experiment(config, images, logger, strategy_name=strategy_name)
+        experiment_results = run_single_experiment(
+            config, images, logger,
+            strategy_name=strategy_name,
+            pre_generated_workflows=pre_generated_workflows
+        )
 
         # Store results for comparison
         all_strategy_results[strategy_name] = experiment_results

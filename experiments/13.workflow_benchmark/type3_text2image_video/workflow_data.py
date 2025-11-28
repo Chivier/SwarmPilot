@@ -78,6 +78,72 @@ class Text2ImageVideoWorkflowData:
         return 512 * 512  # Default
 
 
+def pre_generate_workflows(
+    config,
+    captions: List[str],
+    seed: int = 42
+) -> List["Text2ImageVideoWorkflowData"]:
+    """Pre-generate all workflow data before strategy testing.
+
+    This ensures all strategies use identical workflow data (same sleep times,
+    frame counts, max_b_loops, resolutions, etc.) for fair comparison.
+
+    Args:
+        config: Text2ImageVideoConfig instance
+        captions: List of captions to use
+        seed: Random seed for reproducibility
+
+    Returns:
+        List of pre-generated Text2ImageVideoWorkflowData instances
+    """
+    import random
+
+    # Set random seed for reproducibility
+    random.seed(seed)
+
+    workflows = []
+    for i in range(config.num_workflows):
+        # Sample frame_count, max_b_loops, and resolution from distributions
+        sampled_frame_count = config.sample_frame_count()
+        sampled_max_b_loops = config.sample_max_b_loops()
+        sampled_resolution = config.sample_resolution()
+
+        workflow = Text2ImageVideoWorkflowData(
+            workflow_id=f"workflow-{i:04d}",
+            caption=captions[i % len(captions)],
+            max_b_loops=sampled_max_b_loops,
+            resolution=sampled_resolution,
+            strategy="pending",  # Will be set per-strategy run
+            frame_count=sampled_frame_count,
+            max_tokens=getattr(config, 'max_tokens', 512),
+            is_warmup=(i < getattr(config, 'num_warmup', 0))
+        )
+
+        # Pre-generate sleep times for simulation mode
+        if config.mode == "simulation":
+            if config.use_real_data and config.data_loader is not None:
+                # Sample from real benchmark data
+                # A: sample from LLM benchmark runtimes
+                workflow.a_sleep_time = config.data_loader.sample_llm_runtime_ms() / 1000.0
+
+                # C (FLUX): use resolution-based timing
+                workflow.c_sleep_time = config.data_loader.get_flux_runtime_ms(sampled_resolution) / 1000.0
+
+                # B: sample frame from captions, then use regression to get runtime
+                sampled_frames = config.data_loader.sample_frame_count()
+                workflow.b_sleep_time = config.data_loader.get_t2vid_runtime_ms(sampled_frames) / 1000.0
+                workflow.frame_count = sampled_frames  # Update frame_count with sampled value
+            else:
+                # Fallback to uniform random sampling
+                workflow.a_sleep_time = random.uniform(config.sleep_time_min, config.sleep_time_max)
+                workflow.c_sleep_time = random.uniform(config.sleep_time_min, config.sleep_time_max)
+                workflow.b_sleep_time = random.uniform(config.sleep_time_min, config.sleep_time_max)
+
+        workflows.append(workflow)
+
+    return workflows
+
+
 def load_captions(filepath: str) -> List[str]:
     """
     Load captions from JSON file.

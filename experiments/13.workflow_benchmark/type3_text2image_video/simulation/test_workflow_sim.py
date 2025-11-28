@@ -54,12 +54,12 @@ from common import (
     generate_strategy_comparison_table,
 )
 from type3_text2image_video.config import Text2ImageVideoConfig
-from type3_text2image_video.workflow_data import load_captions
+from type3_text2image_video.workflow_data import load_captions, pre_generate_workflows
 from type3_text2image_video.submitters import ATaskSubmitter, CTaskSubmitter, BTaskSubmitter
 from type3_text2image_video.receivers import ATaskReceiver, CTaskReceiver, BTaskReceiver
 
 
-def run_single_experiment(config, captions, logger, strategy_name=None):
+def run_single_experiment(config, captions, logger, strategy_name=None, pre_generated_workflows=None):
     """Run a single experiment with the given configuration.
 
     Args:
@@ -67,6 +67,8 @@ def run_single_experiment(config, captions, logger, strategy_name=None):
         captions: List of captions to use
         logger: Logger instance
         strategy_name: Optional strategy name (for logging and task ID generation)
+        pre_generated_workflows: Optional pre-generated workflow data for reproducibility.
+                                 If provided, all strategies use identical workflow data.
 
     Returns:
         Dict with strategy results containing task_metrics and workflow_metrics
@@ -127,6 +129,7 @@ def run_single_experiment(config, captions, logger, strategy_name=None):
         config=config,
         workflow_states=workflow_states,
         state_lock=state_lock,
+        pre_generated_workflows=pre_generated_workflows,
         scheduler_url=config.scheduler_a_url,
         qps=config.qps,
         duration=config.duration,
@@ -513,6 +516,27 @@ def main():
         sys.exit(1)
 
     # ========================================================================
+    # Pre-generate Workflow Data (BEFORE strategy loop)
+    # ========================================================================
+
+    logger.info("="*70)
+    logger.info("Pre-generating Workflow Data")
+    logger.info("="*70)
+
+    # Pre-generate all workflow data ONCE before testing any strategies.
+    # This ensures all strategies use IDENTICAL input data for fair comparison.
+    pre_generated_workflows = pre_generate_workflows(config, captions, seed=42)
+
+    logger.info(f"Pre-generated {len(pre_generated_workflows)} workflows")
+    if pre_generated_workflows and pre_generated_workflows[0].a_sleep_time is not None:
+        logger.info(f"  Sample workflow[0]: sleep_times A={pre_generated_workflows[0].a_sleep_time:.3f}s, "
+                    f"C={pre_generated_workflows[0].c_sleep_time:.3f}s, "
+                    f"B={pre_generated_workflows[0].b_sleep_time:.3f}s, "
+                    f"max_b_loops={pre_generated_workflows[0].max_b_loops}, "
+                    f"resolution={pre_generated_workflows[0].resolution}, "
+                    f"frame_count={pre_generated_workflows[0].frame_count}")
+
+    # ========================================================================
     # Strategy Management
     # ========================================================================
 
@@ -580,7 +604,11 @@ def main():
         logger.info("\n" + "="*70)
         logger.info(f"Running experiment with strategy: {strategy_name}")
         logger.info("="*70)
-        experiment_results = run_single_experiment(config, captions, logger, strategy_name=strategy_name)
+        experiment_results = run_single_experiment(
+            config, captions, logger,
+            strategy_name=strategy_name,
+            pre_generated_workflows=pre_generated_workflows
+        )
 
         # Store results for comparison
         all_strategy_results[strategy_name] = experiment_results

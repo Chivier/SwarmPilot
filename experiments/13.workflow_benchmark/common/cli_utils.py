@@ -187,6 +187,15 @@ def add_type1_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
              "Use for reproducible frame_count values across runs."
     )
 
+    parser.add_argument(
+        "--max-sleep-time",
+        type=float,
+        default=600.0,
+        help="Maximum sleep time in seconds for simulation mode (default: 600.0). "
+             "Sleep times from benchmark data will be scaled proportionally to fit within this limit. "
+             "The sleep_model supports 0-600 seconds."
+    )
+
     return parser
 
 

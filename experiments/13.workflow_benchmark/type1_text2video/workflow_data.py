@@ -58,6 +58,64 @@ class Text2VideoWorkflowData:
         return None
 
 
+def pre_generate_workflows(
+    config,
+    captions: List[str],
+    seed: int = 42
+) -> List["Text2VideoWorkflowData"]:
+    """Pre-generate all workflow data before strategy testing.
+
+    This ensures all strategies use identical workflow data (same sleep times,
+    frame counts, max_b_loops, etc.) for fair comparison.
+
+    Args:
+        config: Text2VideoConfig instance
+        captions: List of captions to use
+        seed: Random seed for reproducibility
+
+    Returns:
+        List of pre-generated Text2VideoWorkflowData instances
+    """
+    import random
+
+    # Set random seed for reproducibility
+    random.seed(seed)
+
+    workflows = []
+    for i in range(config.num_workflows):
+        # Sample frame_count and max_b_loops from distributions
+        # These use the config's distribution samplers which respect config files and seeds
+        sampled_frame_count = config.sample_frame_count()
+        sampled_max_b_loops = config.sample_max_b_loops()
+
+        workflow = Text2VideoWorkflowData(
+            workflow_id=f"workflow-{i:04d}",
+            caption=captions[i % len(captions)],
+            max_b_loops=sampled_max_b_loops,
+            strategy="pending",  # Will be set per-strategy run
+            frame_count=sampled_frame_count,
+            max_tokens=getattr(config, 'max_tokens', 512),
+            is_warmup=(i < getattr(config, 'num_warmup', 0))
+        )
+
+        # Pre-generate sleep times for simulation mode
+        # In simulation mode, data_loader is mandatory (no fallback)
+        if config.mode == "simulation":
+            # Sample from real benchmark data (data_loader must exist)
+            # A1 and A2: independent samples from LLM benchmark runtimes
+            workflow.a1_sleep_time = config.data_loader.sample_llm_runtime_ms() / 1000.0
+            workflow.a2_sleep_time = config.data_loader.sample_llm_runtime_ms() / 1000.0
+
+            # B: sample frame from captions, then use regression to get runtime
+            sampled_frames = config.data_loader.sample_frame_count()
+            workflow.b_sleep_time = config.data_loader.get_t2vid_runtime_ms(sampled_frames) / 1000.0
+            workflow.frame_count = sampled_frames  # Update frame_count with sampled value
+
+        workflows.append(workflow)
+
+    return workflows
+
+
 def load_captions(filepath: str) -> List[str]:
     """
     Load captions from JSON file.

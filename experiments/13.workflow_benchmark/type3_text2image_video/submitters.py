@@ -34,7 +34,9 @@ class ATaskSubmitter(BaseTaskSubmitter):
     """
 
     def __init__(self, captions: List[str], config, workflow_states: Dict,
-                 state_lock: threading.Lock, **kwargs):
+                 state_lock: threading.Lock,
+                 pre_generated_workflows: Optional[List[Text2ImageVideoWorkflowData]] = None,
+                 **kwargs):
         """
         Initialize A task submitter.
 
@@ -43,6 +45,8 @@ class ATaskSubmitter(BaseTaskSubmitter):
             config: Text2ImageVideoConfig instance
             workflow_states: Shared workflow state dictionary
             state_lock: Lock for workflow_states access
+            pre_generated_workflows: Optional pre-generated workflow data for reproducibility.
+                                     If provided, uses deep copies with current strategy applied.
             **kwargs: Passed to BaseTaskSubmitter (name, scheduler_url, rate_limiter, etc.)
         """
         super().__init__(**kwargs)
@@ -53,46 +57,69 @@ class ATaskSubmitter(BaseTaskSubmitter):
         # Set random seed for reproducibility (fallback uniform sampling)
         random.seed(42)
 
-        # Pre-generate all workflow data
-        self.workflows = []
-        for i in range(config.num_workflows):
-            # Sample frame_count, max_b_loops, and resolution from distributions
-            sampled_frame_count = config.sample_frame_count()
-            sampled_max_b_loops = config.sample_max_b_loops()
-            sampled_resolution = config.sample_resolution()
+        if pre_generated_workflows is not None:
+            # Use pre-generated workflows (deep copy to avoid mutation)
+            import copy
+            self.workflows = []
+            for w in pre_generated_workflows:
+                workflow_copy = copy.deepcopy(w)
+                # Update strategy for this run
+                workflow_copy.strategy = getattr(config, 'strategy', 'probabilistic')
+                # Reset timing fields for fresh run
+                workflow_copy.a_submit_time = None
+                workflow_copy.a_complete_time = None
+                workflow_copy.c_submit_time = None
+                workflow_copy.c_complete_time = None
+                workflow_copy.b_submit_times = []
+                workflow_copy.b_complete_times = []
+                workflow_copy.workflow_complete_time = None
+                workflow_copy.b_loop_count = 0
+                workflow_copy.a_result = None
+                workflow_copy.c_result = None
+                self.workflows.append(workflow_copy)
+            self.logger.info(f"Using {len(self.workflows)} pre-generated workflows")
+        else:
+            # Fallback: generate workflows on-the-fly (legacy behavior)
+            self.workflows = []
+            for i in range(config.num_workflows):
+                # Sample frame_count, max_b_loops, and resolution from distributions
+                sampled_frame_count = config.sample_frame_count()
+                sampled_max_b_loops = config.sample_max_b_loops()
+                sampled_resolution = config.sample_resolution()
 
-            workflow = Text2ImageVideoWorkflowData(
-                workflow_id=f"workflow-{i:04d}",
-                caption=captions[i % len(captions)],
-                max_b_loops=sampled_max_b_loops,
-                resolution=sampled_resolution,
-                strategy=getattr(config, 'strategy', 'default'),
-                frame_count=sampled_frame_count,
-                max_tokens=getattr(config, 'max_tokens', 512),
-                is_warmup=(i < getattr(config, 'num_warmup', 0))
-            )
+                workflow = Text2ImageVideoWorkflowData(
+                    workflow_id=f"workflow-{i:04d}",
+                    caption=captions[i % len(captions)],
+                    max_b_loops=sampled_max_b_loops,
+                    resolution=sampled_resolution,
+                    strategy=getattr(config, 'strategy', 'default'),
+                    frame_count=sampled_frame_count,
+                    max_tokens=getattr(config, 'max_tokens', 512),
+                    is_warmup=(i < getattr(config, 'num_warmup', 0))
+                )
 
-            # Pre-generate sleep times for simulation mode
-            if config.mode == "simulation":
-                if config.use_real_data and config.data_loader is not None:
-                    # Sample from real benchmark data
-                    # A: sample from LLM benchmark runtimes
-                    workflow.a_sleep_time = config.data_loader.sample_llm_runtime_ms() / 1000.0  # Convert to seconds
+                # Pre-generate sleep times for simulation mode
+                if config.mode == "simulation":
+                    if config.use_real_data and config.data_loader is not None:
+                        # Sample from real benchmark data
+                        # A: sample from LLM benchmark runtimes
+                        workflow.a_sleep_time = config.data_loader.sample_llm_runtime_ms() / 1000.0
 
-                    # C (FLUX): use resolution-based timing
-                    workflow.c_sleep_time = config.data_loader.get_flux_runtime_ms(sampled_resolution) / 1000.0
+                        # C (FLUX): use resolution-based timing
+                        workflow.c_sleep_time = config.data_loader.get_flux_runtime_ms(sampled_resolution) / 1000.0
 
-                    # B: sample frame from captions, then use regression to get runtime
-                    sampled_frames = config.data_loader.sample_frame_count()
-                    workflow.b_sleep_time = config.data_loader.get_t2vid_runtime_ms(sampled_frames) / 1000.0
-                    workflow.frame_count = sampled_frames  # Update frame_count with sampled value
-                else:
-                    # Fallback to uniform random sampling
-                    workflow.a_sleep_time = random.uniform(config.sleep_time_min, config.sleep_time_max)
-                    workflow.c_sleep_time = random.uniform(config.sleep_time_min, config.sleep_time_max)
-                    workflow.b_sleep_time = random.uniform(config.sleep_time_min, config.sleep_time_max)
+                        # B: sample frame from captions, then use regression to get runtime
+                        sampled_frames = config.data_loader.sample_frame_count()
+                        workflow.b_sleep_time = config.data_loader.get_t2vid_runtime_ms(sampled_frames) / 1000.0
+                        workflow.frame_count = sampled_frames  # Update frame_count with sampled value
+                    else:
+                        # Fallback to uniform random sampling
+                        workflow.a_sleep_time = random.uniform(config.sleep_time_min, config.sleep_time_max)
+                        workflow.c_sleep_time = random.uniform(config.sleep_time_min, config.sleep_time_max)
+                        workflow.b_sleep_time = random.uniform(config.sleep_time_min, config.sleep_time_max)
 
-            self.workflows.append(workflow)
+                self.workflows.append(workflow)
+            self.logger.info(f"Generated {len(self.workflows)} workflows on-the-fly (legacy mode)")
 
         # Populate shared workflow_states
         with state_lock:
@@ -101,7 +128,6 @@ class ATaskSubmitter(BaseTaskSubmitter):
 
         self.index = 0
         self.task_ids = []  # Track all A task IDs
-        self.logger.info(f"Pre-generated {len(self.workflows)} workflows")
 
     def _prepare_task_payload(self, workflow_data: Text2ImageVideoWorkflowData) -> Dict[str, Any]:
         """

@@ -158,6 +158,13 @@ Examples:
         default=None,
         help="Random seed for frame_count distribution sampling."
     )
+    t2v_sim.add_argument(
+        "--max-sleep-time",
+        type=float,
+        default=600.0,
+        help="Maximum sleep time in seconds for simulation mode (default: 600.0). "
+             "Sleep times from benchmark data will be scaled proportionally to fit within this limit."
+    )
 
     # ========================================================================
     # Text2Video Real
@@ -515,6 +522,7 @@ Examples:
                 max_b_loops_config=args.max_b_loops_config,
                 max_b_loops_seed=args.max_b_loops_seed,
                 portion_stats=args.portion_stats,
+                max_sleep_time=args.max_sleep_time,
             )
 
         elif args.command == "run-text2video-real":

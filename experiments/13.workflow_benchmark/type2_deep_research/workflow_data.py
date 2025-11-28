@@ -81,3 +81,61 @@ class DeepResearchWorkflowData:
         except ValueError:
             pass
         return None
+
+
+def pre_generate_workflows(
+    config,
+    seed: int = 42
+) -> List["DeepResearchWorkflowData"]:
+    """Pre-generate all workflow data before strategy testing.
+
+    This ensures all strategies use identical workflow data (same sleep times,
+    fanout counts, etc.) for fair comparison.
+
+    Args:
+        config: DeepResearchConfig instance
+        seed: Random seed for reproducibility
+
+    Returns:
+        List of pre-generated DeepResearchWorkflowData instances
+    """
+    import random
+
+    # Set random seed for reproducibility
+    random.seed(seed)
+
+    # Create fanout sampler for distribution-based fanout
+    fanout_sampler = config.create_fanout_sampler()
+
+    workflows = []
+    for i in range(config.num_workflows):
+        # Sample fanout from distribution (or use static value)
+        fanout_count = fanout_sampler.sample()
+
+        workflow = DeepResearchWorkflowData(
+            workflow_id=f"workflow-{i:04d}",
+            fanout_count=fanout_count,
+            strategy="pending",  # Will be set per-strategy run
+            is_warmup=(i < getattr(config, 'num_warmup', 0))
+        )
+
+        # Pre-generate sleep times for simulation mode
+        if config.mode == "simulation":
+            workflow.a_sleep_time = random.uniform(config.sleep_time_min, config.sleep_time_max)
+            workflow.b1_sleep_times = [
+                random.uniform(config.sleep_time_min, config.sleep_time_max)
+                for _ in range(fanout_count)
+            ]
+            workflow.b2_sleep_times = [
+                random.uniform(config.sleep_time_min, config.sleep_time_max)
+                for _ in range(fanout_count)
+            ]
+            workflow.merge_sleep_time = random.uniform(config.sleep_time_min, config.sleep_time_max)
+
+        # Pre-generate topic for real mode
+        if config.mode == "real":
+            workflow.topic = f"Deep research topic {i+1}: Advanced computing architectures"
+
+        workflows.append(workflow)
+
+    return workflows

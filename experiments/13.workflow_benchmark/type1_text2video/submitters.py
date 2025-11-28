@@ -22,20 +22,24 @@ class A1TaskSubmitter(BaseTaskSubmitter):
     """
     Submits A1 tasks (caption → positive prompt) with Poisson arrivals.
 
-    Pre-generates all workflow data upfront, then submits A1 tasks
-    following a Poisson process controlled by the rate limiter.
+    Uses pre-generated workflow data (from pre_generate_workflows) or generates
+    workflows on-the-fly if not provided.
     """
 
     def __init__(self, captions: List[str], config, workflow_states: Dict,
-                 state_lock: threading.Lock, **kwargs):
+                 state_lock: threading.Lock, pre_generated_workflows: Optional[List[Text2VideoWorkflowData]] = None,
+                 **kwargs):
         """
         Initialize A1 task submitter.
 
         Args:
-            captions: List of video captions
+            captions: List of video captions (used if pre_generated_workflows is None)
             config: Text2VideoConfig instance
             workflow_states: Shared workflow state dictionary
             state_lock: Lock for workflow_states access
+            pre_generated_workflows: Optional pre-generated workflow data for reproducibility.
+                                    If provided, these workflows are used directly (with strategy updated).
+                                    If None, workflows are generated on-the-fly.
             **kwargs: Passed to BaseTaskSubmitter (name, scheduler_url, rate_limiter, etc.)
         """
         super().__init__(**kwargs)
@@ -43,46 +47,56 @@ class A1TaskSubmitter(BaseTaskSubmitter):
         self.workflow_states = workflow_states
         self.state_lock = state_lock
 
-        # Set random seed for reproducibility (fallback uniform sampling)
-        random.seed(42)
+        if pre_generated_workflows is not None:
+            # Use pre-generated workflows (deep copy to avoid mutation across strategies)
+            import copy
+            self.workflows = []
+            for w in pre_generated_workflows:
+                workflow_copy = copy.deepcopy(w)
+                # Update strategy for this run
+                workflow_copy.strategy = getattr(config, 'strategy', 'probabilistic')
+                # Reset timing fields for fresh run
+                workflow_copy.a1_submit_time = None
+                workflow_copy.a1_complete_time = None
+                workflow_copy.a2_submit_time = None
+                workflow_copy.a2_complete_time = None
+                workflow_copy.b_loop_count = 0
+                workflow_copy.b_submit_times = []
+                workflow_copy.b_complete_times = []
+                workflow_copy.workflow_complete_time = None
+                workflow_copy.a1_result = None
+                workflow_copy.a2_result = None
+                self.workflows.append(workflow_copy)
+            self.logger.info(f"Using {len(self.workflows)} pre-generated workflows")
+        else:
+            # Fallback: generate workflows on-the-fly (legacy behavior)
+            # Set random seed for reproducibility
+            random.seed(42)
 
-        # Pre-generate all workflow data
-        self.workflows = []
-        for i in range(config.num_workflows):
-            # Sample frame_count and max_b_loops from distributions
-            # These use the config's distribution samplers which respect config files and seeds
-            sampled_frame_count = config.sample_frame_count()
-            sampled_max_b_loops = config.sample_max_b_loops()
+            self.workflows = []
+            for i in range(config.num_workflows):
+                sampled_frame_count = config.sample_frame_count()
+                sampled_max_b_loops = config.sample_max_b_loops()
 
-            workflow = Text2VideoWorkflowData(
-                workflow_id=f"workflow-{i:04d}",
-                caption=captions[i % len(captions)],
-                max_b_loops=sampled_max_b_loops,
-                strategy=getattr(config, 'strategy', 'default'),
-                frame_count=sampled_frame_count,
-                max_tokens=getattr(config, 'max_tokens', 512),
-                is_warmup=(i < getattr(config, 'num_warmup', 0))
-            )
+                workflow = Text2VideoWorkflowData(
+                    workflow_id=f"workflow-{i:04d}",
+                    caption=captions[i % len(captions)],
+                    max_b_loops=sampled_max_b_loops,
+                    strategy=getattr(config, 'strategy', 'default'),
+                    frame_count=sampled_frame_count,
+                    max_tokens=getattr(config, 'max_tokens', 512),
+                    is_warmup=(i < getattr(config, 'num_warmup', 0))
+                )
 
-            # Pre-generate sleep times for simulation mode
-            if config.mode == "simulation":
-                if config.use_real_data and config.data_loader is not None:
-                    # Sample from real benchmark data
-                    # A1 and A2: independent samples from LLM benchmark runtimes
-                    workflow.a1_sleep_time = config.data_loader.sample_llm_runtime_ms() / 1000.0  # Convert to seconds
+                if config.mode == "simulation":
+                    workflow.a1_sleep_time = config.data_loader.sample_llm_runtime_ms() / 1000.0
                     workflow.a2_sleep_time = config.data_loader.sample_llm_runtime_ms() / 1000.0
-
-                    # B: sample frame from captions, then use regression to get runtime
                     sampled_frames = config.data_loader.sample_frame_count()
                     workflow.b_sleep_time = config.data_loader.get_t2vid_runtime_ms(sampled_frames) / 1000.0
-                    workflow.frame_count = sampled_frames  # Update frame_count with sampled value
-                else:
-                    # Fallback to uniform random sampling
-                    workflow.a1_sleep_time = random.uniform(config.sleep_time_min, config.sleep_time_max)
-                    workflow.a2_sleep_time = random.uniform(config.sleep_time_min, config.sleep_time_max)
-                    workflow.b_sleep_time = random.uniform(config.sleep_time_min, config.sleep_time_max)
+                    workflow.frame_count = sampled_frames
 
-            self.workflows.append(workflow)
+                self.workflows.append(workflow)
+            self.logger.info(f"Generated {len(self.workflows)} workflows on-the-fly")
 
         # Populate shared workflow_states
         with state_lock:
@@ -91,7 +105,6 @@ class A1TaskSubmitter(BaseTaskSubmitter):
 
         self.index = 0
         self.task_ids = []  # Track all A1 task IDs
-        self.logger.info(f"Pre-generated {len(self.workflows)} workflows")
 
     def _prepare_task_payload(self, workflow_data: Text2VideoWorkflowData) -> Dict[str, Any]:
         """
@@ -105,26 +118,24 @@ class A1TaskSubmitter(BaseTaskSubmitter):
         """
         # Build task_input based on mode
         if self.config.mode == "simulation":
-            # Use pre-generated sleep_time or generate if not available
-            if workflow_data.a1_sleep_time is None:
-                workflow_data.a1_sleep_time = random.uniform(
-                    self.config.sleep_time_min,
-                    self.config.sleep_time_max
-                )
+            # Use pre-generated sleep_time (always exists in simulation mode)
             task_input = {"sleep_time": workflow_data.a1_sleep_time}
 
             # Calculate exp_runtime based on strategy
             # min_time strategy: use dataset average
             # other strategies: use actual sampled runtime
-            if workflow_data.strategy == "min_time" and self.config.data_loader is not None:
+            if workflow_data.strategy == "min_time":
                 exp_runtime = self.config.data_loader.llm_avg_runtime_ms
             else:
                 exp_runtime = workflow_data.a1_sleep_time * 1000.0  # Convert to milliseconds
 
             # Simulation mode metadata
+            # A tasks (LLM) have moderate variability (CV ~39% in real data)
             metadata = {
                 "workflow_id": workflow_data.workflow_id,
                 "exp_runtime": exp_runtime,
+                "exp_cv": 0.40,  # Match real LLM task CV (~39%)
+                "exp_skewness": 0.0,  # LLM tasks are approximately symmetric
                 "task_type": "A1"
             }
         else:  # real mode
@@ -258,31 +269,26 @@ class A2TaskSubmitter(BaseTaskSubmitter):
 
         # Build task_input based on mode
         if self.config.mode == "simulation":
-            # Use pre-generated sleep_time or generate if not available
-            if workflow_data and workflow_data.a2_sleep_time is None:
-                workflow_data.a2_sleep_time = random.uniform(
-                    self.config.sleep_time_min,
-                    self.config.sleep_time_max
-                )
-            sleep_time = workflow_data.a2_sleep_time if workflow_data else random.uniform(
-                self.config.sleep_time_min,
-                self.config.sleep_time_max
-            )
+            # Use pre-generated sleep_time (always exists in simulation mode)
+            sleep_time = workflow_data.a2_sleep_time
             task_input = {"sleep_time": sleep_time}
 
             # Calculate exp_runtime based on strategy
             # min_time strategy: use dataset average
             # other strategies: use actual sampled runtime
-            strategy = workflow_data.strategy if workflow_data else "probabilistic"
-            if strategy == "min_time" and self.config.data_loader is not None:
+            strategy = workflow_data.strategy
+            if strategy == "min_time":
                 exp_runtime = self.config.data_loader.llm_avg_runtime_ms
             else:
                 exp_runtime = sleep_time * 1000.0  # Convert to milliseconds
 
             # Simulation mode metadata
+            # A tasks (LLM) have moderate variability (CV ~39% in real data)
             metadata = {
                 "workflow_id": workflow_id,
                 "exp_runtime": exp_runtime,
+                "exp_cv": 0.40,  # Match real LLM task CV (~39%)
+                "exp_skewness": 0.0,  # LLM tasks are approximately symmetric
                 "task_type": "A2"
             }
         else:  # real mode
@@ -422,35 +428,30 @@ class BTaskSubmitter(BaseTaskSubmitter):
 
         # Build task_input based on mode
         if self.config.mode == "simulation":
-            # Use pre-generated sleep_time or generate if not available
-            if workflow_data and workflow_data.b_sleep_time is None:
-                workflow_data.b_sleep_time = random.uniform(
-                    self.config.sleep_time_min,
-                    self.config.sleep_time_max
-                )
-            sleep_time = workflow_data.b_sleep_time if workflow_data else random.uniform(
-                self.config.sleep_time_min,
-                self.config.sleep_time_max
-            )
+            # Use pre-generated sleep_time (always exists in simulation mode)
+            sleep_time = workflow_data.b_sleep_time
             task_input = {"sleep_time": sleep_time}
 
             # Calculate exp_runtime based on strategy
             # min_time strategy: use dataset average
             # other strategies: use actual sampled runtime
-            strategy = workflow_data.strategy if workflow_data else "probabilistic"
-            if strategy == "min_time" and self.config.data_loader is not None:
+            strategy = workflow_data.strategy
+            if strategy == "min_time":
                 exp_runtime = self.config.data_loader.t2vid_avg_runtime_ms
             else:
                 exp_runtime = sleep_time * 1000.0  # Convert to milliseconds
 
             # Simulation mode metadata - includes all necessary fields
+            # B tasks (T2VID) have high variability and long tail (CV ~112%, skewness ~2.7 in real data)
             metadata = {
                 "workflow_id": workflow_id,
                 "exp_runtime": exp_runtime,
-                "frame_count": workflow_data.frame_count if workflow_data else 16,
+                "exp_cv": 1.0,  # Match real T2VID task CV (~112%)
+                "exp_skewness": 2.5,  # Match real T2VID skewness (~2.7)
+                "frame_count": workflow_data.frame_count,
                 "task_type": "B",
                 "b_iteration": loop_iteration,
-                "max_b_loops": workflow_data.max_b_loops if workflow_data else 4
+                "max_b_loops": workflow_data.max_b_loops
             }
         else:  # real mode - completely different structure
             # Real mode uses caption for both prompt and negative_prompt (simplified)
@@ -533,6 +534,24 @@ class BTaskSubmitter(BaseTaskSubmitter):
                         workflow_id=workflow_id,
                         task_type="B"
                     )
+
+        # Log first and last B request parameters for debugging
+        if isinstance(task_data, tuple):
+            workflow_id, a2_result, loop_iteration = task_data
+            with self.state_lock:
+                workflow_data = self.workflow_states.get(workflow_id)
+                if workflow_data:
+                    is_first = (loop_iteration == 1)
+                    is_last = (loop_iteration == workflow_data.max_b_loops)
+                    if is_first or is_last:
+                        position = "FIRST" if is_first else "LAST"
+                        self.logger.info(
+                            f"[{position} B] {workflow_id}: "
+                            f"iteration={loop_iteration}/{workflow_data.max_b_loops}, "
+                            f"sleep_time={workflow_data.b_sleep_time:.3f}s, "
+                            f"frame_count={workflow_data.frame_count}, "
+                            f"strategy={workflow_data.strategy}"
+                        )
 
         # Set submit time BEFORE submission
         submit_time = time.time()
