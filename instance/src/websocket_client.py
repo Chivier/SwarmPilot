@@ -7,12 +7,42 @@ to communicate with the Scheduler.
 
 import asyncio
 import json
+import traceback
 import uuid
 from datetime import datetime, UTC
 from typing import Dict, Optional, Callable, Any
 import websockets
 from websockets import ClientConnection
 from loguru import logger
+
+
+def log_error_with_traceback(
+    error: Exception,
+    context: str,
+    additional_info: str = "",
+) -> None:
+    """
+    Log error with detailed information and traceback.
+
+    Args:
+        error: The exception that occurred
+        context: Context description of where the error occurred
+        additional_info: Additional context information
+    """
+    tb_str = traceback.format_exc()
+    if additional_info:
+        logger.error(
+            f"[WebSocketClient] [{context}] Error occurred:\n"
+            f"  Internal error: {type(error).__name__}: {error}\n"
+            f"  {additional_info}\n"
+            f"  Traceback:\n{tb_str}"
+        )
+    else:
+        logger.error(
+            f"[WebSocketClient] [{context}] Error occurred:\n"
+            f"  Internal error: {type(error).__name__}: {error}\n"
+            f"  Traceback:\n{tb_str}"
+        )
 
 
 class WebSocketClient:
@@ -236,7 +266,11 @@ class WebSocketClient:
                 logger.info(f"Task result for {task_id} acknowledged by Scheduler")
             return success
         except Exception as e:
-            logger.error(f"Failed to send task result for {task_id}: {e}")
+            log_error_with_traceback(
+                error=e,
+                context=f"send_task_result({task_id})",
+                additional_info=f"Status: {status}",
+            )
             return False
 
     async def send_unregister(self) -> None:
@@ -250,7 +284,11 @@ class WebSocketClient:
             await self.send_message(message, require_ack=False)
             logger.info("Sent unregister message to Scheduler")
         except Exception as e:
-            logger.error(f"Failed to send unregister message: {e}")
+            log_error_with_traceback(
+                error=e,
+                context="send_unregister",
+                additional_info=f"Instance ID: {self.instance_id}",
+            )
 
     def is_connected(self) -> bool:
         """Check if connected to Scheduler."""
@@ -293,11 +331,19 @@ class WebSocketClient:
                 await self._receive_task
 
             except websockets.exceptions.WebSocketException as e:
-                logger.error(f"WebSocket error: {e}")
+                log_error_with_traceback(
+                    error=e,
+                    context="_connection_loop/websocket",
+                    additional_info=f"Scheduler URL: {self.scheduler_url}",
+                )
                 self.connected = False
 
             except Exception as e:
-                logger.error(f"Connection error: {e}", exc_info=True)
+                log_error_with_traceback(
+                    error=e,
+                    context="_connection_loop",
+                    additional_info=f"Scheduler URL: {self.scheduler_url}",
+                )
                 self.connected = False
 
             finally:
@@ -338,7 +384,11 @@ class WebSocketClient:
             await self.send_message(register_msg, require_ack=False, skip_connection_check=True)
             logger.info("Sent registration message to Scheduler")
         except Exception as e:
-            logger.error(f"Failed to send registration: {e}")
+            log_error_with_traceback(
+                error=e,
+                context="_send_register",
+                additional_info=f"Instance ID: {self.instance_id}, Model ID: {self.model_id}",
+            )
             raise
 
     async def _receive_loop(self) -> None:
@@ -356,19 +406,31 @@ class WebSocketClient:
                     await self._handle_message(message)
 
                 except json.JSONDecodeError as e:
-                    logger.error(f"Failed to parse message: {e}")
+                    log_error_with_traceback(
+                        error=e,
+                        context="_receive_loop/parse",
+                    )
 
                 except Exception as e:
-                    logger.error(f"Error handling message: {e}", exc_info=True)
+                    log_error_with_traceback(
+                        error=e,
+                        context="_receive_loop/handle",
+                    )
 
         except websockets.exceptions.ConnectionClosedOK:
             logger.info("Connection closed normally")
 
         except websockets.exceptions.ConnectionClosedError as e:
-            logger.warning(f"Connection closed with error: {e}")
+            log_error_with_traceback(
+                error=e,
+                context="_receive_loop/connection_closed",
+            )
 
         except Exception as e:
-            logger.error(f"Receive loop error: {e}", exc_info=True)
+            log_error_with_traceback(
+                error=e,
+                context="_receive_loop",
+            )
 
         finally:
             self.connected = False
@@ -409,7 +471,11 @@ class WebSocketClient:
             try:
                 await handler(message)
             except Exception as e:
-                logger.error(f"Handler error for {msg_type}: {e}", exc_info=True)
+                log_error_with_traceback(
+                    error=e,
+                    context=f"_handle_message/{msg_type}",
+                    additional_info=f"Message ID: {message_id}",
+                )
         else:
             logger.warning(f"No handler for message type: {msg_type}")
 
@@ -432,4 +498,7 @@ class WebSocketClient:
         except asyncio.CancelledError:
             logger.debug("Heartbeat loop cancelled")
         except Exception as e:
-            logger.error(f"Heartbeat loop error: {e}", exc_info=True)
+            log_error_with_traceback(
+                error=e,
+                context="_heartbeat_loop",
+            )

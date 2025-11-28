@@ -5,9 +5,39 @@ Task queue management with FIFO processing
 import asyncio
 import heapq
 import time
+import traceback
 from typing import Dict, List, Optional, Tuple, Any
 
 from loguru import logger
+
+
+def log_error_with_traceback(
+    error: Exception,
+    context: str,
+    additional_info: str = "",
+) -> None:
+    """
+    Log error with detailed information and traceback.
+
+    Args:
+        error: The exception that occurred
+        context: Context description of where the error occurred
+        additional_info: Additional context information
+    """
+    tb_str = traceback.format_exc()
+    if additional_info:
+        logger.error(
+            f"[TaskQueue] [{context}] Error occurred:\n"
+            f"  Internal error: {type(error).__name__}: {error}\n"
+            f"  {additional_info}\n"
+            f"  Traceback:\n{tb_str}"
+        )
+    else:
+        logger.error(
+            f"[TaskQueue] [{context}] Error occurred:\n"
+            f"  Internal error: {type(error).__name__}: {error}\n"
+            f"  Traceback:\n{tb_str}"
+        )
 
 from .config import config
 from .manager_factory import get_docker_manager
@@ -186,7 +216,11 @@ class TaskQueue:
                 try:
                     await self._execute_task(task)
                 except Exception as e:
-                    logger.error(f"Error processing task {task_id}: {e}")
+                    log_error_with_traceback(
+                        error=e,
+                        context=f"_process_queue({task_id})",
+                        additional_info=f"Model: {task.model_id}",
+                    )
                     task.mark_failed(str(e))
 
                 self.current_task_id = None
@@ -251,7 +285,11 @@ class TaskQueue:
             # Mark task as failed
             error_msg = str(e)
             task.mark_failed(error_msg)
-            logger.error(f"Task {task.task_id} failed: {error_msg}")
+            log_error_with_traceback(
+                error=e,
+                context=f"_execute_task({task.task_id})",
+                additional_info=f"Model: {task.model_id}, Execution time: {execution_time_ms:.2f}ms",
+            )
 
             # Send callback if URL is provided
             await self._send_callback(
@@ -300,7 +338,12 @@ class TaskQueue:
                     logger.info(f"Task result sent via WebSocket for {task_id}")
                     return
             except Exception as e:
-                logger.warning(f"WebSocket callback failed for {task_id}: {e}, falling back to HTTP")
+                tb_str = traceback.format_exc()
+                logger.warning(
+                    f"WebSocket callback failed for {task_id}, falling back to HTTP:\n"
+                    f"  Error: {type(e).__name__}: {e}\n"
+                    f"  Traceback:\n{tb_str}"
+                )
 
         # Fallback to HTTP
         scheduler_client = get_scheduler_client()
@@ -319,7 +362,11 @@ class TaskQueue:
             else:
                 logger.warning(f"HTTP callback failed for task {task_id}")
         except Exception as e:
-            logger.error(f"Error sending callback for task {task_id}: {e}")
+            log_error_with_traceback(
+                error=e,
+                context=f"_send_callback({task_id})/http",
+                additional_info=f"Status: {status}",
+            )
 
     async def clear_all_tasks(self) -> Dict[str, int]:
         """
@@ -459,7 +506,12 @@ class TaskQueue:
                 estimated_remaining_ms = max(0, avg_task_duration_ms - elapsed_ms)
                 estimated_completion_ms = estimated_remaining_ms
             except Exception as e:
-                logger.warning(f"Failed to calculate estimated completion time: {e}")
+                tb_str = traceback.format_exc()
+                logger.warning(
+                    f"Failed to calculate estimated completion time:\n"
+                    f"  Error: {type(e).__name__}: {e}\n"
+                    f"  Traceback:\n{tb_str}"
+                )
 
         return {
             "task_id": self.current_task_id,

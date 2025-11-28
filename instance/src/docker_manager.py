@@ -6,11 +6,41 @@ import asyncio
 import json
 import os
 import subprocess
+import traceback
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 import httpx
 from loguru import logger
+
+
+def log_error_with_traceback(
+    error: Exception,
+    context: str,
+    additional_info: str = "",
+) -> None:
+    """
+    Log error with detailed information and traceback.
+
+    Args:
+        error: The exception that occurred
+        context: Context description of where the error occurred
+        additional_info: Additional context information
+    """
+    tb_str = traceback.format_exc()
+    if additional_info:
+        logger.error(
+            f"[DockerManager] [{context}] Error occurred:\n"
+            f"  Internal error: {type(error).__name__}: {error}\n"
+            f"  {additional_info}\n"
+            f"  Traceback:\n{tb_str}"
+        )
+    else:
+        logger.error(
+            f"[DockerManager] [{context}] Error occurred:\n"
+            f"  Internal error: {type(error).__name__}: {error}\n"
+            f"  Traceback:\n{tb_str}"
+        )
 
 from .config import config
 from .model_registry import get_registry
@@ -79,6 +109,11 @@ class DockerManager:
         try:
             await self._build_docker_image(model_dir, image_name)
         except Exception as e:
+            log_error_with_traceback(
+                error=e,
+                context=f"start_model({model_id})/build_image",
+                additional_info=f"Image: {image_name}, Directory: {model_dir}",
+            )
             raise RuntimeError(f"Failed to build Docker image: {e}")
 
         # Run Docker container
@@ -91,6 +126,11 @@ class DockerManager:
             )
             logger.info(f"Docker container started: {container_name}")
         except Exception as e:
+            log_error_with_traceback(
+                error=e,
+                context=f"start_model({model_id})/run_container",
+                additional_info=f"Container: {container_name}, Image: {image_name}",
+            )
             raise RuntimeError(f"Failed to start Docker container: {e}")
 
         # Wait for container to be healthy
@@ -98,7 +138,11 @@ class DockerManager:
             await self._wait_for_health(config.model_port)
         except Exception as e:
             # If health check fails, try to stop the container
-            logger.error(f"Health check failed, stopping container: {e}")
+            log_error_with_traceback(
+                error=e,
+                context=f"start_model({model_id})/health_check",
+                additional_info=f"Container: {container_name}, Port: {config.model_port}",
+            )
             try:
                 await self._stop_docker_container(container_name)
             except Exception:
@@ -140,12 +184,20 @@ class DockerManager:
             await self._stop_docker_container(container_name)
             logger.info(f"Docker container stopped: {container_name}")
         except Exception as e:
-            logger.error(f"Error stopping container: {e}")
+            log_error_with_traceback(
+                error=e,
+                context=f"stop_model({model_id})/stop_container",
+                additional_info=f"Container: {container_name}",
+            )
             # Try to force remove the container
             try:
                 await self._force_remove_container(container_name)
             except Exception as e2:
-                logger.error(f"Failed to force remove container: {e2}")
+                log_error_with_traceback(
+                    error=e2,
+                    context=f"stop_model({model_id})/force_remove",
+                    additional_info=f"Container: {container_name}",
+                )
                 raise RuntimeError(f"Failed to stop container: {e}")
 
         self.current_model = None
@@ -189,7 +241,11 @@ class DockerManager:
             return model_id
 
         except Exception as e:
-            logger.error(f"Failed to restart container: {e}")
+            log_error_with_traceback(
+                error=e,
+                context=f"restart_model({model_id})",
+                additional_info=f"Container: {container_name}",
+            )
             # If restart fails, ensure current_model is cleared
             self.current_model = None
             raise RuntimeError(f"Failed to restart container: {e}")
@@ -220,7 +276,12 @@ class DockerManager:
                 return data.get("status") == "healthy"
             return False
         except Exception as e:
-            logger.error(f"Health check failed: {e}")
+            tb_str = traceback.format_exc()
+            logger.error(
+                f"Health check failed:\n"
+                f"  Error: {type(e).__name__}: {e}\n"
+                f"  Traceback:\n{tb_str}"
+            )
             return False
 
     async def invoke_inference(

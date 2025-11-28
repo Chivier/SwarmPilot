@@ -2,12 +2,44 @@
 Model Registry management
 """
 
+import traceback
 import yaml
 from pathlib import Path
 from typing import Dict, Optional
 
+from loguru import logger
+
 from .config import config
 from .models import ModelRegistryEntry
+
+
+def log_error_with_traceback(
+    error: Exception,
+    context: str,
+    additional_info: str = "",
+) -> None:
+    """
+    Log error with detailed information and traceback.
+
+    Args:
+        error: The exception that occurred
+        context: Context description of where the error occurred
+        additional_info: Additional context information
+    """
+    tb_str = traceback.format_exc()
+    if additional_info:
+        logger.error(
+            f"[ModelRegistry] [{context}] Error occurred:\n"
+            f"  Internal error: {type(error).__name__}: {error}\n"
+            f"  {additional_info}\n"
+            f"  Traceback:\n{tb_str}"
+        )
+    else:
+        logger.error(
+            f"[ModelRegistry] [{context}] Error occurred:\n"
+            f"  Internal error: {type(error).__name__}: {error}\n"
+            f"  Traceback:\n{tb_str}"
+        )
 
 
 class ModelRegistry:
@@ -25,19 +57,46 @@ class ModelRegistry:
     def _load_registry(self):
         """Load model registry from YAML file"""
         if not self.registry_path.exists():
-            raise FileNotFoundError(
-                f"Model registry not found at: {self.registry_path}"
+            error_msg = f"Model registry not found at: {self.registry_path}"
+            logger.error(
+                f"[ModelRegistry] [_load_registry] Error occurred:\n"
+                f"  Internal error: FileNotFoundError: {error_msg}\n"
+                f"  Registry path: {self.registry_path}"
             )
+            raise FileNotFoundError(error_msg)
 
-        with open(self.registry_path, "r") as f:
-            data = yaml.safe_load(f)
+        try:
+            with open(self.registry_path, "r") as f:
+                data = yaml.safe_load(f)
+        except Exception as e:
+            log_error_with_traceback(
+                error=e,
+                context="_load_registry/yaml_parse",
+                additional_info=f"Registry path: {self.registry_path}",
+            )
+            raise
 
         if not data or "models" not in data:
-            raise ValueError("Invalid registry format: 'models' key not found")
+            error_msg = "Invalid registry format: 'models' key not found"
+            logger.error(
+                f"[ModelRegistry] [_load_registry] Error occurred:\n"
+                f"  Internal error: ValueError: {error_msg}\n"
+                f"  Registry path: {self.registry_path}\n"
+                f"  Data keys: {list(data.keys()) if data else 'None'}"
+            )
+            raise ValueError(error_msg)
 
         for model_data in data["models"]:
-            entry = ModelRegistryEntry(**model_data)
-            self.models[entry.model_id] = entry
+            try:
+                entry = ModelRegistryEntry(**model_data)
+                self.models[entry.model_id] = entry
+            except Exception as e:
+                log_error_with_traceback(
+                    error=e,
+                    context="_load_registry/create_entry",
+                    additional_info=f"Model data: {model_data}",
+                )
+                raise
 
     def get_model(self, model_id: str) -> Optional[ModelRegistryEntry]:
         """Get model entry by ID"""

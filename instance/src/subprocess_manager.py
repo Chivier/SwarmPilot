@@ -12,12 +12,38 @@ import asyncio
 import json
 import os
 import subprocess
+import traceback
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 import httpx
 from loguru import logger
+
+
+def log_error_with_traceback(
+    error: Exception,
+    context: str,
+    additional_info: str = "",
+) -> None:
+    """
+    Log error with detailed information and traceback.
+
+    Args:
+        error: The exception that occurred
+        context: Context description of where the error occurred
+        additional_info: Additional context information
+    """
+    tb_str = traceback.format_exc()
+    logger.error(
+        f"[SubprocessManager] [{context}] Error occurred:\n"
+        f"  Internal error: {type(error).__name__}: {error}\n"
+        f"  {additional_info}\n"
+        f"  Traceback:\n{tb_str}" if additional_info else
+        f"[SubprocessManager] [{context}] Error occurred:\n"
+        f"  Internal error: {type(error).__name__}: {error}\n"
+        f"  Traceback:\n{tb_str}"
+    )
 
 from .config import config
 from .model_registry import get_registry
@@ -223,7 +249,11 @@ class SubprocessManager:
 
         except Exception as e:
             error_msg = str(e)
-            logger.error(f"[{role}] Failed to start process on port {port}: {error_msg}")
+            log_error_with_traceback(
+                error=e,
+                context=f"_start_port_process({role}, port={port})",
+                additional_info=f"Model: {model_id}, Directory: {model_dir}",
+            )
 
             # Update state to FAILED
             port_info.state = PortState.FAILED
@@ -287,8 +317,11 @@ class SubprocessManager:
                 return  # Success!
 
             except Exception as e:
+                tb_str = traceback.format_exc()
                 logger.warning(
-                    f"[standby] Attempt {attempt} failed: {e}"
+                    f"[standby] Attempt {attempt} failed:\n"
+                    f"  Error: {type(e).__name__}: {e}\n"
+                    f"  Traceback:\n{tb_str}"
                 )
 
                 # Check if we have more retries
@@ -341,7 +374,10 @@ class SubprocessManager:
             logger.info(f"[{role}] Process stopped on port {port}")
 
         except Exception as e:
-            logger.error(f"[{role}] Error stopping process on port {port}: {e}")
+            log_error_with_traceback(
+                error=e,
+                context=f"_stop_port_process({role}, port={port})",
+            )
             port_info.state = PortState.FAILED
             port_info.error_message = str(e)
             port_info.process = None
@@ -439,7 +475,11 @@ class SubprocessManager:
             logger.info(f"[primary] Model subprocess is healthy on port {primary.port}")
 
         except Exception as e:
-            logger.error(f"Primary port failed to start: {e}")
+            log_error_with_traceback(
+                error=e,
+                context=f"start_model({model_id})",
+                additional_info=f"Primary port: {primary.port}, Directory: {model_dir}",
+            )
             # Clean up dual port state on failure
             self._dual_port_state = None
             self._model_dir = None
@@ -509,7 +549,11 @@ class SubprocessManager:
                 await self._stop_port_process(self._dual_port_state.standby)
                 logger.info(f"Model subprocess stopped: {container_name}")
             except Exception as e:
-                logger.error(f"Error stopping subprocess: {e}")
+                log_error_with_traceback(
+                    error=e,
+                    context=f"stop_model({model_id})",
+                    additional_info=f"Container: {container_name}",
+                )
                 raise RuntimeError(f"Failed to stop subprocess: {e}")
             finally:
                 self._dual_port_state = None
@@ -522,7 +566,11 @@ class SubprocessManager:
                     await self._stop_subprocess(self.uv_run_process)
                     logger.info(f"Model subprocess stopped: {container_name}")
                 except Exception as e:
-                    logger.error(f"Error stopping subprocess: {e}")
+                    log_error_with_traceback(
+                        error=e,
+                        context=f"stop_model({model_id})/legacy",
+                        additional_info=f"Container: {container_name}",
+                    )
                     raise RuntimeError(f"Failed to stop subprocess: {e}")
                 finally:
                     self.uv_run_process = None
@@ -562,7 +610,12 @@ class SubprocessManager:
                 logger.info(f"[hot-switch] Model restarted via hot-switch: {container_name}")
                 return model_id
             except Exception as e:
-                logger.error(f"[hot-switch] Hot-switch failed: {e}, falling back to traditional restart")
+                tb_str = traceback.format_exc()
+                logger.error(
+                    f"[hot-switch] Hot-switch failed, falling back to traditional restart:\n"
+                    f"  Error: {type(e).__name__}: {e}\n"
+                    f"  Traceback:\n{tb_str}"
+                )
                 # Fall through to traditional restart
 
         # Traditional restart (blocking)
@@ -582,7 +635,11 @@ class SubprocessManager:
             return model_id
 
         except Exception as e:
-            logger.error(f"Failed to restart subprocess: {e}")
+            log_error_with_traceback(
+                error=e,
+                context=f"restart_model({model_id})",
+                additional_info=f"Container: {container_name}",
+            )
             raise RuntimeError(f"Failed to restart subprocess: {e}")
 
     # =========================================================================
@@ -672,7 +729,12 @@ class SubprocessManager:
         try:
             await self._stop_port_process(standby)
         except Exception as e:
-            logger.error(f"[standby-restart] Failed to stop old process: {e}")
+            tb_str = traceback.format_exc()
+            logger.error(
+                f"[standby-restart] Failed to stop old process:\n"
+                f"  Error: {type(e).__name__}: {e}\n"
+                f"  Traceback:\n{tb_str}"
+            )
             # Continue anyway - the process might have crashed
 
         # Reset standby for new startup
@@ -720,7 +782,12 @@ class SubprocessManager:
                 return data.get("status") == "healthy"
             return False
         except Exception as e:
-            logger.error(f"Health check failed: {e}")
+            tb_str = traceback.format_exc()
+            logger.error(
+                f"Health check failed:\n"
+                f"  Error: {type(e).__name__}: {e}\n"
+                f"  Traceback:\n{tb_str}"
+            )
             return False
 
     async def invoke_inference(
@@ -752,7 +819,7 @@ class SubprocessManager:
                 response = await self.http_client.post(
                     url,
                     json=task_input,
-                    timeout=600.0  # 10 minutes timeout for inference
+                    timeout=1200.0  # 20min timeout for inference
                 )
 
                 if response.status_code == 200:
@@ -888,7 +955,10 @@ class SubprocessManager:
             # Process already finished
             logger.debug(f"Subprocess already finished (PID: {process.pid})")
         except Exception as e:
-            logger.error(f"Error stopping subprocess (PID: {process.pid}): {e}")
+            log_error_with_traceback(
+                error=e,
+                context=f"_stop_subprocess(PID={process.pid})",
+            )
             raise RuntimeError(f"Failed to stop subprocess: {e}")
 
     async def _wait_for_health(

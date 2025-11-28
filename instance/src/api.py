@@ -7,6 +7,7 @@ It provides endpoints for model management, task management, and instance monito
 
 import asyncio
 import time
+import traceback
 import uuid
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -15,6 +16,28 @@ from typing import Any, Dict, List, Optional
 from fastapi import FastAPI, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
 from loguru import logger
+
+
+def log_error_with_traceback(
+    error: Exception,
+    context: str,
+    client_message: str,
+) -> None:
+    """
+    Log error with detailed information, client message, and traceback.
+
+    Args:
+        error: The exception that occurred
+        context: Context description of where the error occurred
+        client_message: The message that will be returned to the client
+    """
+    tb_str = traceback.format_exc()
+    logger.error(
+        f"[{context}] Error occurred:\n"
+        f"  Internal error: {type(error).__name__}: {error}\n"
+        f"  Client message: {client_message}\n"
+        f"  Traceback:\n{tb_str}"
+    )
 
 from .config import config
 from .manager_factory import get_docker_manager
@@ -438,9 +461,15 @@ async def start_model(request: ModelStartRequest):
             status="running"
         )
     except Exception as e:
+        client_message = f"Failed to start model: {str(e)}"
+        log_error_with_traceback(
+            error=e,
+            context=f"start_model(model_id={request.model_id})",
+            client_message=client_message,
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to start model: {str(e)}"
+            detail=client_message
         )
 
 
@@ -486,9 +515,15 @@ async def stop_model():
             model_id=model_id or "unknown"
         )
     except Exception as e:
+        client_message = f"Failed to stop model: {str(e)}"
+        log_error_with_traceback(
+            error=e,
+            context="stop_model",
+            client_message=client_message,
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to stop model: {str(e)}"
+            detail=client_message
         )
 
 @app.post(
@@ -699,11 +734,17 @@ async def _perform_deregister_operation(operation_id: str):
         logger.info(f"Deregister operation {operation_id} completed successfully")
 
     except Exception as e:
-        logger.error(f"Deregister operation {operation_id} failed: {str(e)}")
+        error_msg = str(e)
+        tb_str = traceback.format_exc()
+        logger.error(
+            f"Deregister operation {operation_id} failed:\n"
+            f"  Internal error: {type(e).__name__}: {error_msg}\n"
+            f"  Traceback:\n{tb_str}"
+        )
         async with _deregister_operation_lock:
             operation = _deregister_operations.get(operation_id)
             if operation:
-                operation.update_status(DeregisterStatus.FAILED, error=str(e))
+                operation.update_status(DeregisterStatus.FAILED, error=error_msg)
 
 
 @app.get(
@@ -811,10 +852,15 @@ async def register_model(request: ModelRegisterRequest):
                     message=f"Failed to register with scheduler at {request.scheduler_url}"
                 )
         except Exception as e:
-            logger.error(f"Error during registration: {str(e)}")
+            client_message = f"Failed to register with scheduler: {str(e)}"
+            log_error_with_traceback(
+                error=e,
+                context=f"register_model(scheduler_url={request.scheduler_url})",
+                client_message=client_message,
+            )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to register with scheduler: {str(e)}"
+                detail=client_message
             )
 
     return ModelRegisterResponse(
@@ -1089,11 +1135,17 @@ async def _perform_restart_operation(operation_id: str):
         logger.info(f"Restart operation {operation_id} completed successfully")
 
     except Exception as e:
-        logger.error(f"Restart operation {operation_id} failed: {str(e)}")
+        error_msg = str(e)
+        tb_str = traceback.format_exc()
+        logger.error(
+            f"Restart operation {operation_id} failed:\n"
+            f"  Internal error: {type(e).__name__}: {error_msg}\n"
+            f"  Traceback:\n{tb_str}"
+        )
         async with _restart_operation_lock:
             operation = _restart_operations.get(operation_id)
             if operation:
-                operation.update_status(RestartStatus.FAILED, error=str(e))
+                operation.update_status(RestartStatus.FAILED, error=error_msg)
 
 
 # =============================================================================
@@ -1158,10 +1210,15 @@ async def submit_task(request: TaskSubmitRequest):
             position=position
         )
     except ValueError as e:
-        logger.error(f"Task submission error: {str(e)}")
+        client_message = str(e)
+        log_error_with_traceback(
+            error=e,
+            context=f"submit_task(task_id={request.task_id})",
+            client_message=client_message,
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
+            detail=client_message
         )
 
 
@@ -1305,9 +1362,15 @@ async def delete_task(task_id: str):
             task_id=task_id
         )
     except ValueError as e:
+        client_message = str(e)
+        log_error_with_traceback(
+            error=e,
+            context=f"delete_task(task_id={task_id})",
+            client_message=client_message,
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
+            detail=client_message
         )
 
 
@@ -1354,10 +1417,15 @@ async def clear_tasks():
                 if model_id:
                     logger.info(f"Successfully restarted Docker container for model: {model_id}")
             except Exception as e:
-                logger.error(f"Failed to restart Docker container: {e}")
+                client_message = f"Failed to restart Docker container: {str(e)}"
+                log_error_with_traceback(
+                    error=e,
+                    context="clear_tasks/restart_container",
+                    client_message=client_message,
+                )
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"Failed to restart Docker container: {str(e)}"
+                    detail=client_message
                 )
 
         return TaskClearResponse(
@@ -1366,10 +1434,15 @@ async def clear_tasks():
             cleared_count=cleared_count
         )
     except RuntimeError as e:
-        logger.error(str(e))
+        client_message = str(e)
+        log_error_with_traceback(
+            error=e,
+            context="clear_tasks",
+            client_message=client_message,
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
+            detail=client_message
         )
 
 

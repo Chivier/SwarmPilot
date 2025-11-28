@@ -58,12 +58,43 @@ import socket
 import subprocess
 import sys
 import time
+import traceback
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
 from urllib.parse import urlparse
 
 import httpx
+from loguru import logger
+
+
+def log_error_with_traceback(
+    error: Exception,
+    context: str,
+    additional_info: str = "",
+) -> None:
+    """
+    Log error with detailed information and traceback.
+
+    Args:
+        error: The exception that occurred
+        context: Context description of where the error occurred
+        additional_info: Additional context information
+    """
+    tb_str = traceback.format_exc()
+    if additional_info:
+        logger.error(
+            f"[SchedulerClient] [{context}] Error occurred:\n"
+            f"  Internal error: {type(error).__name__}: {error}\n"
+            f"  {additional_info}\n"
+            f"  Traceback:\n{tb_str}"
+        )
+    else:
+        logger.error(
+            f"[SchedulerClient] [{context}] Error occurred:\n"
+            f"  Internal error: {type(error).__name__}: {error}\n"
+            f"  Traceback:\n{tb_str}"
+        )
 
 
 # ==================== GPU Detection Utility ====================
@@ -423,10 +454,18 @@ class SchedulerClient:
                     return False
 
         except httpx.HTTPError as e:
-            print(f"✗ Predictor service not reachable: {e}")
+            log_error_with_traceback(
+                error=e,
+                context="_check_predictor_available",
+                additional_info=f"Predictor URL: {self.predictor_config.url}",
+            )
             return False
         except Exception as e:
-            print(f"✗ Unexpected error checking predictor: {e}")
+            log_error_with_traceback(
+                error=e,
+                context="_check_predictor_available",
+                additional_info=f"Predictor URL: {self.predictor_config.url}",
+            )
             return False
 
     async def _wait_for_scheduler_ready(self, timeout: float = 30.0, check_interval: float = 1.0) -> bool:
@@ -592,7 +631,11 @@ class SchedulerClient:
             print(f"✓ Scheduler process started (PID: {self._scheduler_process.pid})")
 
         except Exception as e:
-            print(f"✗ Failed to start scheduler process: {e}")
+            log_error_with_traceback(
+                error=e,
+                context="start_scheduler",
+                additional_info=f"Scheduler module path: {self.scheduler_module_path}",
+            )
             return False
 
         # Step 6: Wait for scheduler to become ready
@@ -639,7 +682,10 @@ class SchedulerClient:
             self._scheduler_process = None
             return True
         except Exception as e:
-            print(f"✗ Error stopping scheduler: {e}")
+            log_error_with_traceback(
+                error=e,
+                context="stop_scheduler",
+            )
             return False
 
     # ==================== Instance Registration API ====================
@@ -712,7 +758,11 @@ class SchedulerClient:
                     return False
 
             except httpx.HTTPError as e:
-                print(f"Registration attempt {attempt + 1}/{self.max_retries} failed: {str(e)}")
+                log_error_with_traceback(
+                    error=e,
+                    context=f"register_instance({model_id})/attempt_{attempt + 1}",
+                    additional_info=f"Scheduler URL: {self.scheduler_url}",
+                )
                 if attempt < self.max_retries - 1:
                     delay = self.retry_delay * (2**attempt)  # Exponential backoff
                     print(f"  Retrying in {delay}s...")
@@ -722,7 +772,11 @@ class SchedulerClient:
                     return False
 
             except Exception as e:
-                print(f"✗ Unexpected error during registration: {str(e)}")
+                log_error_with_traceback(
+                    error=e,
+                    context=f"register_instance({model_id})",
+                    additional_info=f"Scheduler URL: {self.scheduler_url}",
+                )
                 return False
 
         return False
@@ -763,11 +817,19 @@ class SchedulerClient:
                 return False
 
         except httpx.HTTPError as e:
-            print(f"✗ Failed to deregister instance: {str(e)}")
+            log_error_with_traceback(
+                error=e,
+                context="deregister_instance",
+                additional_info=f"Instance ID: {self.instance_id}, Scheduler URL: {self.scheduler_url}",
+            )
             return False
 
         except Exception as e:
-            print(f"✗ Unexpected error during deregistration: {str(e)}")
+            log_error_with_traceback(
+                error=e,
+                context="deregister_instance",
+                additional_info=f"Instance ID: {self.instance_id}",
+            )
             return False
 
     async def drain_instance(self) -> Dict[str, Any]:
@@ -810,9 +872,19 @@ class SchedulerClient:
                 raise Exception(f"Drain request failed: {error_msg}")
 
         except httpx.HTTPError as e:
+            log_error_with_traceback(
+                error=e,
+                context="drain_instance",
+                additional_info=f"Instance ID: {self.instance_id}",
+            )
             raise Exception(f"Failed to drain instance: {str(e)}")
 
         except Exception as e:
+            log_error_with_traceback(
+                error=e,
+                context="drain_instance",
+                additional_info=f"Instance ID: {self.instance_id}",
+            )
             raise Exception(f"Unexpected error during drain: {str(e)}")
 
     async def resubmit_task(
@@ -865,9 +937,10 @@ class SchedulerClient:
                         return False
 
             except httpx.HTTPError as e:
-                print(
-                    f"Resubmit attempt {attempt + 1}/{self.max_retries} failed "
-                    f"for task {task_id}: {str(e)}"
+                log_error_with_traceback(
+                    error=e,
+                    context=f"resubmit_task({task_id})/attempt_{attempt + 1}",
+                    additional_info=f"Original instance: {original_instance_id}",
                 )
                 if attempt < self.max_retries - 1:
                     delay = self.retry_delay * (2**attempt)
@@ -880,7 +953,11 @@ class SchedulerClient:
                     return False
 
             except Exception as e:
-                print(f"✗ Unexpected error during task resubmission: {str(e)}")
+                log_error_with_traceback(
+                    error=e,
+                    context=f"resubmit_task({task_id})",
+                    additional_info=f"Original instance: {original_instance_id}",
+                )
                 return False
 
         return False
@@ -946,7 +1023,11 @@ class SchedulerClient:
                         return False
 
             except httpx.HTTPError as e:
-                print(f"Callback attempt {attempt + 1}/{self.max_retries} failed for task {task_id}: {str(e)}")
+                log_error_with_traceback(
+                    error=e,
+                    context=f"send_task_result({task_id})/attempt_{attempt + 1}",
+                    additional_info=f"Status: {status}, Callback URL: {callback_url}",
+                )
                 if attempt < self.max_retries - 1:
                     delay = self.retry_delay * (2**attempt)
                     await asyncio.sleep(delay)
@@ -955,7 +1036,11 @@ class SchedulerClient:
                     return False
 
             except Exception as e:
-                print(f"✗ Unexpected error during callback: {str(e)}")
+                log_error_with_traceback(
+                    error=e,
+                    context=f"send_task_result({task_id})",
+                    additional_info=f"Status: {status}, Callback URL: {callback_url}",
+                )
                 return False
 
         return False
