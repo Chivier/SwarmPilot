@@ -152,9 +152,12 @@ class Text2VideoConfig:
             )
 
     def _init_data_loader(self):
-        """Initialize real data loader for simulation mode.
+        """Initialize real data loader for both simulation and real modes.
 
-        In simulation mode, this method MUST successfully load the benchmark data.
+        The data loader is used for:
+        - Simulation mode: sampling sleep times AND frame counts from benchmark data
+        - Real mode: sampling frame counts from benchmark data (for consistent distribution)
+
         The data files are expected at fixed paths:
         - type1_text2video/data/training_config.json
         - type1_text2video/data/captions_10k.jsonl
@@ -163,9 +166,6 @@ class Text2VideoConfig:
             FileNotFoundError: If required data files are not found
             ValueError: If data files are invalid or empty
         """
-        if self.mode != "simulation":
-            return
-
         from .data_loader import RealDataLoader
 
         # Fixed paths for benchmark data (no configuration needed)
@@ -175,7 +175,9 @@ class Text2VideoConfig:
         # Convert max_sleep_time from seconds to milliseconds for data_loader
         max_sleep_time_ms = self.max_sleep_time_seconds * 1000.0
 
-        # Data loader initialization is mandatory - no fallback
+        # Data loader initialization is mandatory for both modes
+        # - Simulation: uses sleep times and frame counts
+        # - Real: uses frame counts only (for consistent distribution with simulation)
         self._data_loader = RealDataLoader(
             training_config_path=training_path,
             captions_path=captions_path,

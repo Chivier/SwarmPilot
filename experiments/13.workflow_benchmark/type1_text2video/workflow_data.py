@@ -68,6 +68,9 @@ def pre_generate_workflows(
     This ensures all strategies use identical workflow data (same sleep times,
     frame counts, max_b_loops, etc.) for fair comparison.
 
+    Both simulation and real modes sample frame_count from the benchmark dataset
+    (captions_10k.jsonl) to ensure consistent distribution across modes.
+
     Args:
         config: Text2VideoConfig instance
         captions: List of captions to use
@@ -83,10 +86,12 @@ def pre_generate_workflows(
 
     workflows = []
     for i in range(config.num_workflows):
-        # Sample frame_count and max_b_loops from distributions
-        # These use the config's distribution samplers which respect config files and seeds
-        sampled_frame_count = config.sample_frame_count()
+        # Sample max_b_loops from distribution sampler (config-based)
         sampled_max_b_loops = config.sample_max_b_loops()
+
+        # Sample frame_count from benchmark dataset (data_loader)
+        # This ensures both simulation and real modes use the same frame distribution
+        sampled_frame_count = config.data_loader.sample_frame_count()
 
         workflow = Text2VideoWorkflowData(
             workflow_id=f"workflow-{i:04d}",
@@ -98,18 +103,16 @@ def pre_generate_workflows(
             is_warmup=(i < getattr(config, 'num_warmup', 0))
         )
 
-        # Pre-generate sleep times for simulation mode
-        # In simulation mode, data_loader is mandatory (no fallback)
+        # Pre-generate sleep times for simulation mode only
+        # In simulation mode, data_loader provides runtime estimates
         if config.mode == "simulation":
             # Sample from real benchmark data (data_loader must exist)
             # A1 and A2: independent samples from LLM benchmark runtimes
             workflow.a1_sleep_time = config.data_loader.sample_llm_runtime_ms() / 1000.0
             workflow.a2_sleep_time = config.data_loader.sample_llm_runtime_ms() / 1000.0
 
-            # B: sample frame from captions, then use regression to get runtime
-            sampled_frames = config.data_loader.sample_frame_count()
-            workflow.b_sleep_time = config.data_loader.get_t2vid_runtime_ms(sampled_frames) / 1000.0
-            workflow.frame_count = sampled_frames  # Update frame_count with sampled value
+            # B: use the already-sampled frame_count to get runtime via regression
+            workflow.b_sleep_time = config.data_loader.get_t2vid_runtime_ms(sampled_frame_count) / 1000.0
 
         workflows.append(workflow)
 

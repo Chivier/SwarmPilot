@@ -75,8 +75,12 @@ class A1TaskSubmitter(BaseTaskSubmitter):
 
             self.workflows = []
             for i in range(config.num_workflows):
-                sampled_frame_count = config.sample_frame_count()
+                # Sample max_b_loops from distribution sampler (config-based)
                 sampled_max_b_loops = config.sample_max_b_loops()
+
+                # Sample frame_count from benchmark dataset (data_loader)
+                # This ensures both simulation and real modes use the same frame distribution
+                sampled_frame_count = config.data_loader.sample_frame_count()
 
                 workflow = Text2VideoWorkflowData(
                     workflow_id=f"workflow-{i:04d}",
@@ -88,12 +92,11 @@ class A1TaskSubmitter(BaseTaskSubmitter):
                     is_warmup=(i < getattr(config, 'num_warmup', 0))
                 )
 
+                # Pre-generate sleep times for simulation mode only
                 if config.mode == "simulation":
                     workflow.a1_sleep_time = config.data_loader.sample_llm_runtime_ms() / 1000.0
                     workflow.a2_sleep_time = config.data_loader.sample_llm_runtime_ms() / 1000.0
-                    sampled_frames = config.data_loader.sample_frame_count()
-                    workflow.b_sleep_time = config.data_loader.get_t2vid_runtime_ms(sampled_frames) / 1000.0
-                    workflow.frame_count = sampled_frames
+                    workflow.b_sleep_time = config.data_loader.get_t2vid_runtime_ms(sampled_frame_count) / 1000.0
 
                 self.workflows.append(workflow)
             self.logger.info(f"Generated {len(self.workflows)} workflows on-the-fly")

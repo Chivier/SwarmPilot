@@ -48,14 +48,22 @@ from common import (
     generate_strategy_comparison_table,
 )
 from type1_text2video.config import Text2VideoConfig
-from type1_text2video.workflow_data import load_captions
+from type1_text2video.workflow_data import load_captions, pre_generate_workflows
 from type1_text2video.submitters import A1TaskSubmitter, A2TaskSubmitter, BTaskSubmitter
 from type1_text2video.receivers import A1TaskReceiver, A2TaskReceiver, BTaskReceiver
 from queue import Queue
 
 
-def run_single_experiment(config, captions, logger, strategy_name=None):
+def run_single_experiment(config, captions, logger, strategy_name=None, pre_generated_workflows=None):
     """Run a single experiment with the given configuration.
+
+    Args:
+        config: Text2VideoConfig instance
+        captions: List of captions to use
+        logger: Logger instance
+        strategy_name: Optional strategy name (for logging and task ID generation)
+        pre_generated_workflows: Optional pre-generated workflow data for reproducibility.
+                                 If provided, all strategies use identical workflow data.
 
     Returns:
         Dict with strategy results containing task_metrics and workflow_metrics
@@ -72,7 +80,7 @@ def run_single_experiment(config, captions, logger, strategy_name=None):
     logger.info(f"Duration: {config.duration}s")
     logger.info(f"Workflows: {config.num_workflows}")
     logger.info(f"Max B loops config: {config.get_max_b_loops_config()}")
-    logger.info(f"Frame count config: {config.get_frame_count_config()}")
+    logger.info(f"Frame count (from dataset): sampled from captions_10k.jsonl")
     logger.info(f"Scheduler A: {config.scheduler_a_url}")
     logger.info(f"Scheduler B: {config.scheduler_b_url}")
 
@@ -98,6 +106,7 @@ def run_single_experiment(config, captions, logger, strategy_name=None):
         config=config,
         workflow_states=workflow_states,
         state_lock=state_lock,
+        pre_generated_workflows=pre_generated_workflows,
         scheduler_url=config.scheduler_a_url,
         qps=config.qps,
         duration=config.duration,
@@ -414,6 +423,21 @@ def main():
     logger.info(f"Loaded {len(captions)} captions")
 
     # ========================================================================
+    # Pre-generate Workflow Data
+    # ========================================================================
+    # Pre-generate all workflow data ONCE before strategy testing
+    # This ensures all strategies use identical workflow data (same frame_counts,
+    # max_b_loops, etc.) for fair comparison.
+    # Frame counts are sampled from the benchmark dataset (captions_10k.jsonl).
+
+    logger.info("Pre-generating workflow data from benchmark dataset...")
+    pre_generated_workflows = pre_generate_workflows(config, captions, seed=args.seed)
+    logger.info(f"Generated {len(pre_generated_workflows)} workflows")
+    if pre_generated_workflows:
+        logger.info(f"Sample workflow[0]: max_b_loops={pre_generated_workflows[0].max_b_loops}, "
+                    f"frame_count={pre_generated_workflows[0].frame_count}")
+
+    # ========================================================================
     # Strategy Management
     # ========================================================================
 
@@ -465,7 +489,11 @@ def main():
         logger.info("\n" + "=" * 70)
         logger.info(f"Running experiment with strategy: {strategy_name}")
         logger.info("=" * 70)
-        experiment_results = run_single_experiment(config, captions, logger, strategy_name=strategy_name)
+        experiment_results = run_single_experiment(
+            config, captions, logger,
+            strategy_name=strategy_name,
+            pre_generated_workflows=pre_generated_workflows
+        )
 
         # Store results for comparison
         all_strategy_results[strategy_name] = experiment_results
