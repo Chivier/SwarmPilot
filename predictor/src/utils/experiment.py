@@ -23,8 +23,13 @@ Example multimodal configuration:
     }
 """
 
+import traceback
 from typing import Any, Dict, List, Optional
 import numpy as np
+
+from .logging import get_logger
+
+logger = get_logger()
 
 
 def is_experiment_mode(features: Dict[str, Any], platform_info: Dict[str, str]) -> bool:
@@ -69,15 +74,34 @@ def get_exp_runtime(features: Dict[str, Any]) -> float:
         ValueError: If exp_runtime not found or invalid
     """
     if 'exp_runtime' not in features:
-        raise ValueError("Experiment mode requires 'exp_runtime' in features")
+        error_msg = "Experiment mode requires 'exp_runtime' in features"
+        logger.error(
+            f"Experiment mode validation failed\n"
+            f"Error: {error_msg}\n"
+            f"Features provided: {list(features.keys())}"
+        )
+        raise ValueError(error_msg)
 
     exp_runtime = features['exp_runtime']
 
     if not isinstance(exp_runtime, (int, float)):
-        raise ValueError(f"exp_runtime must be numeric, got {type(exp_runtime)}")
+        error_msg = f"exp_runtime must be numeric, got {type(exp_runtime)}"
+        logger.error(
+            f"Experiment mode validation failed\n"
+            f"Error: {error_msg}\n"
+            f"exp_runtime value: {exp_runtime}\n"
+            f"exp_runtime type: {type(exp_runtime)}"
+        )
+        raise ValueError(error_msg)
 
     if exp_runtime <= 0:
-        raise ValueError(f"exp_runtime must be positive, got {exp_runtime}")
+        error_msg = f"exp_runtime must be positive, got {exp_runtime}"
+        logger.error(
+            f"Experiment mode validation failed\n"
+            f"Error: {error_msg}\n"
+            f"exp_runtime value: {exp_runtime}"
+        )
+        raise ValueError(error_msg)
 
     return float(exp_runtime)
 
@@ -133,7 +157,9 @@ def generate_multimodal_samples(
         rng = np.random.RandomState(42)
 
     if not modes:
-        raise ValueError("At least one mode is required")
+        error_msg = "At least one mode is required"
+        logger.error(f"Multimodal sample generation failed: {error_msg}")
+        raise ValueError(error_msg)
 
     # Normalize weights
     total_weight = sum(m.get('weight', 1.0) for m in modes)
@@ -391,4 +417,10 @@ def generate_experiment_prediction(
         )
 
     else:
-        raise ValueError(f"Unknown prediction_type: {prediction_type}")
+        error_msg = f"Unknown prediction_type: {prediction_type}"
+        logger.error(
+            f"Experiment prediction generation failed\n"
+            f"Error: {error_msg}\n"
+            f"Valid types: 'expect_error', 'quantile'"
+        )
+        raise ValueError(error_msg)

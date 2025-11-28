@@ -34,6 +34,36 @@ from .preprocessor.preprocessors_registry import PreprocessorsRegistry
 logger = get_logger()
 
 
+def _log_error(
+    error_context: str,
+    error_detail: dict,
+    exception: Exception = None,
+    include_traceback: bool = True
+) -> None:
+    """
+    Log error with standardized format including context, client response, and traceback.
+
+    Args:
+        error_context: Description of where/what the error occurred
+        error_detail: The error detail dict that will be returned to client
+        exception: The exception object (if any)
+        include_traceback: Whether to include full traceback in log
+    """
+    log_lines = [
+        f"Error occurred: {error_context}",
+        f"Client response: {error_detail}",
+    ]
+
+    if exception:
+        log_lines.append(f"Exception type: {type(exception).__name__}")
+        log_lines.append(f"Exception message: {str(exception)}")
+
+    if include_traceback:
+        log_lines.append(f"Traceback:\n{traceback.format_exc()}")
+
+    logger.error("\n".join(log_lines))
+
+
 # Initialize storage (will use config when available, otherwise default)
 def get_storage() -> ModelStorage:
     """Get ModelStorage instance using current configuration."""
@@ -197,23 +227,35 @@ async def health_check():
         storage_info = storage.get_storage_info()
 
         if not storage_info['is_accessible']:
+            error_detail = {
+                "status": "unhealthy",
+                "reason": f"Storage directory not accessible: {storage_info['storage_dir']}"
+            }
+            _log_error(
+                error_context="Health check - storage not accessible",
+                error_detail=error_detail,
+                include_traceback=False
+            )
             return JSONResponse(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                content={
-                    "status": "unhealthy",
-                    "reason": f"Storage directory not accessible: {storage_info['storage_dir']}"
-                }
+                content=error_detail
             )
 
         return HealthResponse(status="healthy")
 
     except Exception as e:
+        error_detail = {
+            "status": "unhealthy",
+            "reason": f"Health check failed: {str(e)}"
+        }
+        _log_error(
+            error_context="Health check - unexpected exception",
+            error_detail=error_detail,
+            exception=e
+        )
         return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            content={
-                "status": "unhealthy",
-                "reason": f"Health check failed: {str(e)}"
-            }
+            content=error_detail
         )
 
 
@@ -235,12 +277,19 @@ async def get_cache_stats():
             }
         )
     except Exception as e:
+        error_detail = {
+            "error": "Failed to get cache stats",
+            "message": str(e),
+            "traceback": traceback.format_exc()
+        }
+        _log_error(
+            error_context="Cache stats retrieval failed",
+            error_detail=error_detail,
+            exception=e
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={
-                "error": "Failed to get cache stats",
-                "message": str(e)
-            }
+            detail=error_detail
         )
 
 
@@ -262,12 +311,19 @@ async def clear_cache():
             }
         )
     except Exception as e:
+        error_detail = {
+            "error": "Failed to clear cache",
+            "message": str(e),
+            "traceback": traceback.format_exc()
+        }
+        _log_error(
+            error_context="Cache clear operation failed",
+            error_detail=error_detail,
+            exception=e
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={
-                "error": "Failed to clear cache",
-                "message": str(e)
-            }
+            detail=error_detail
         )
 
 
@@ -296,9 +352,19 @@ async def list_models():
         return ModelListResponse(models=models)
 
     except Exception as e:
+        error_detail = {
+            "error": "Failed to list models",
+            "message": str(e),
+            "traceback": traceback.format_exc()
+        }
+        _log_error(
+            error_context="List models operation failed",
+            error_detail=error_detail,
+            exception=e
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to list models: {str(e)}"
+            detail=error_detail
         )
 
 
@@ -313,14 +379,20 @@ async def train_model(request: TrainingRequest):
     try:
         # Validate minimum samples
         if len(request.features_list) < 10:
+            error_detail = {
+                "error": "Insufficient training data",
+                "message": f"Need at least 10 samples, got {len(request.features_list)}",
+                "samples_provided": len(request.features_list),
+                "minimum_required": 10
+            }
+            _log_error(
+                error_context=f"Training validation failed for model_id={request.model_id}",
+                error_detail=error_detail,
+                include_traceback=False
+            )
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail={
-                    "error": "Insufficient training data",
-                    "message": f"Need at least 10 samples, got {len(request.features_list)}",
-                    "samples_provided": len(request.features_list),
-                    "minimum_required": 10
-                }
+                detail=error_detail
             )
 
         # Create appropriate predictor
@@ -333,12 +405,18 @@ async def train_model(request: TrainingRequest):
         elif request.prediction_type == "decision_tree":
             predictor = DecisionTreePredictor()
         else:
+            error_detail = {
+                "error": "Invalid prediction type",
+                "message": f"prediction_type must be 'expect_error', 'quantile', 'linear_regression', or 'decision_tree', got '{request.prediction_type}'"
+            }
+            _log_error(
+                error_context=f"Training failed - invalid prediction_type for model_id={request.model_id}",
+                error_detail=error_detail,
+                include_traceback=False
+            )
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail={
-                    "error": "Invalid prediction type",
-                    "message": f"prediction_type must be 'expect_error', 'quantile', 'linear_regression', or 'decision_tree', got '{request.prediction_type}'"
-                }
+                detail=error_detail
             )
         
         try:
@@ -376,14 +454,21 @@ async def train_model(request: TrainingRequest):
                     processed_features_list.append(processed_features_dict)
             else:
                 processed_features_list = request.features_list
-                            
+
         except Exception as e:
+            error_detail = {
+                "error": "Preprocessor error",
+                "message": str(e),
+                "traceback": traceback.format_exc()
+            }
+            _log_error(
+                error_context=f"Preprocessing failed for model_id={request.model_id}",
+                error_detail=error_detail,
+                exception=e
+            )
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail={
-                    "error": "Preprocessor error",
-                    "message": str(e)
-                }
+                detail=error_detail
             )
         # Train the model
         try:
@@ -392,21 +477,34 @@ async def train_model(request: TrainingRequest):
                 config=request.training_config or {}
             )
         except ValueError as e:
+            error_detail = {
+                "error": "Training validation error",
+                "message": str(e),
+                "traceback": traceback.format_exc()
+            }
+            _log_error(
+                error_context=f"Training validation error for model_id={request.model_id}",
+                error_detail=error_detail,
+                exception=e
+            )
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail={
-                    "error": "Training validation error",
-                    "message": str(e)
-                }
+                detail=error_detail
             )
         except Exception as e:
+            error_detail = {
+                "error": "Training failed",
+                "message": str(e),
+                "traceback": traceback.format_exc()
+            }
+            _log_error(
+                error_context=f"Training failed for model_id={request.model_id}",
+                error_detail=error_detail,
+                exception=e
+            )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail={
-                    "error": "Training failed",
-                    "message": str(e),
-                    "traceback": traceback.format_exc()
-                }
+                detail=error_detail
             )
 
         # Generate model key with prediction_type
@@ -433,12 +531,19 @@ async def train_model(request: TrainingRequest):
             logger.info(f"Invalidated cache for retrained model: {model_key}")
 
         except Exception as e:
+            error_detail = {
+                "error": "Model save failed",
+                "message": str(e),
+                "traceback": traceback.format_exc()
+            }
+            _log_error(
+                error_context=f"Model save failed for model_id={request.model_id}, model_key={model_key}",
+                error_detail=error_detail,
+                exception=e
+            )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail={
-                    "error": "Model save failed",
-                    "message": str(e)
-                }
+                detail=error_detail
             )
 
         return TrainingResponse(
@@ -451,13 +556,19 @@ async def train_model(request: TrainingRequest):
     except HTTPException:
         raise
     except Exception as e:
+        error_detail = {
+            "error": "Unexpected error",
+            "message": str(e),
+            "traceback": traceback.format_exc()
+        }
+        _log_error(
+            error_context=f"Unexpected error in /train endpoint for model_id={request.model_id}",
+            error_detail=error_detail,
+            exception=e
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={
-                "error": "Unexpected error",
-                "message": str(e),
-                "traceback": traceback.format_exc()
-            }
+            detail=error_detail
         )
 
 
@@ -496,12 +607,19 @@ async def predict(request: PredictionRequest):
                 )
 
             except ValueError as e:
+                error_detail = {
+                    "error": "Experiment mode error",
+                    "message": str(e),
+                    "traceback": traceback.format_exc()
+                }
+                _log_error(
+                    error_context=f"Experiment mode error for model_id={request.model_id}",
+                    error_detail=error_detail,
+                    exception=e
+                )
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail={
-                        "error": "Experiment mode error",
-                        "message": str(e)
-                    }
+                    detail=error_detail
                 )
 
         # Normal mode: load model and predict
@@ -520,41 +638,59 @@ async def predict(request: PredictionRequest):
 
             # Validate prediction type matches
             if stored_prediction_type != request.prediction_type:
+                error_detail = {
+                    "error": "Prediction type mismatch",
+                    "message": f"Model was trained with prediction_type='{stored_prediction_type}', but request has '{request.prediction_type}'",
+                    "model_prediction_type": stored_prediction_type,
+                    "request_prediction_type": request.prediction_type
+                }
+                _log_error(
+                    error_context=f"Prediction type mismatch (cached) for model_id={request.model_id}",
+                    error_detail=error_detail,
+                    include_traceback=False
+                )
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail={
-                        "error": "Prediction type mismatch",
-                        "message": f"Model was trained with prediction_type='{stored_prediction_type}', but request has '{request.prediction_type}'",
-                        "model_prediction_type": stored_prediction_type,
-                        "request_prediction_type": request.prediction_type
-                    }
+                    detail=error_detail
                 )
         else:
             # Cache miss - load model from storage
             model_data = storage.load_model(model_key)
             if model_data is None:
+                error_detail = {
+                    "error": "Model not found",
+                    "message": f"No trained model found for model_id='{request.model_id}' with given platform_info",
+                    "model_id": request.model_id,
+                    "platform_info": request.platform_info.model_dump(),
+                    "model_key": model_key
+                }
+                _log_error(
+                    error_context=f"Model not found for model_id={request.model_id}",
+                    error_detail=error_detail,
+                    include_traceback=False
+                )
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail={
-                        "error": "Model not found",
-                        "message": f"No trained model found for model_id='{request.model_id}' with given platform_info",
-                        "model_id": request.model_id,
-                        "platform_info": request.platform_info.model_dump(),
-                        "model_key": model_key
-                    }
+                    detail=error_detail
                 )
 
             # Validate prediction type matches
             stored_prediction_type = model_data['metadata'].get('prediction_type')
             if stored_prediction_type != request.prediction_type:
+                error_detail = {
+                    "error": "Prediction type mismatch",
+                    "message": f"Model was trained with prediction_type='{stored_prediction_type}', but request has '{request.prediction_type}'",
+                    "model_prediction_type": stored_prediction_type,
+                    "request_prediction_type": request.prediction_type
+                }
+                _log_error(
+                    error_context=f"Prediction type mismatch (storage) for model_id={request.model_id}",
+                    error_detail=error_detail,
+                    include_traceback=False
+                )
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail={
-                        "error": "Prediction type mismatch",
-                        "message": f"Model was trained with prediction_type='{stored_prediction_type}', but request has '{request.prediction_type}'",
-                        "model_prediction_type": stored_prediction_type,
-                        "request_prediction_type": request.prediction_type
-                    }
+                    detail=error_detail
                 )
 
             # Create predictor and load state
@@ -567,12 +703,18 @@ async def predict(request: PredictionRequest):
             elif request.prediction_type == "decision_tree":
                 predictor = DecisionTreePredictor()
             else:
+                error_detail = {
+                    "error": "Invalid prediction type",
+                    "message": f"prediction_type must be 'expect_error', 'quantile', 'linear_regression', or 'decision_tree', got '{request.prediction_type}'"
+                }
+                _log_error(
+                    error_context=f"Invalid prediction_type in /predict for model_id={request.model_id}",
+                    error_detail=error_detail,
+                    include_traceback=False
+                )
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail={
-                        "error": "Invalid prediction type",
-                        "message": f"prediction_type must be 'expect_error', 'quantile', 'linear_regression', or 'decision_tree', got '{request.prediction_type}'"
-                    }
+                    detail=error_detail
                 )
 
             predictor.load_model_state(model_data['predictor_state'])
@@ -626,35 +768,52 @@ async def predict(request: PredictionRequest):
 
         except ValueError as e:
             # Feature validation errors
+            error_detail = {
+                "error": "Invalid features",
+                "message": str(e),
+                "traceback": traceback.format_exc()
+            }
+            _log_error(
+                error_context=f"Feature validation error in /predict for model_id={request.model_id}",
+                error_detail=error_detail,
+                exception=e
+            )
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail={
-                    "error": "Invalid features",
-                    "message": str(e)
-                }
+                detail=error_detail
             )
         except Exception as e:
-            logger.error(traceback.format_exc())
+            error_detail = {
+                "error": "Prediction failed",
+                "message": str(e),
+                "traceback": traceback.format_exc()
+            }
+            _log_error(
+                error_context=f"Prediction failed for model_id={request.model_id}",
+                error_detail=error_detail,
+                exception=e
+            )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail={
-                    "error": "Prediction failed",
-                    "message": str(e),
-                    "traceback": traceback.format_exc()
-                }
+                detail=error_detail
             )
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(traceback.format_exc())
+        error_detail = {
+            "error": "Unexpected error",
+            "message": str(e),
+            "traceback": traceback.format_exc()
+        }
+        _log_error(
+            error_context=f"Unexpected error in /predict endpoint for model_id={request.model_id}",
+            error_detail=error_detail,
+            exception=e
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={
-                "error": "Unexpected error",
-                "message": str(e),
-                "traceback": traceback.format_exc()
-            }
+            detail=error_detail
         )
 
 
@@ -675,26 +834,47 @@ async def websocket_predict(websocket: WebSocket):
                 data = await websocket.receive_text()
                 request_data = json.loads(data)
             except json.JSONDecodeError as e:
-                await websocket.send_json({
+                error_detail = {
                     "error": "Invalid JSON",
-                    "message": f"Failed to parse JSON: {str(e)}"
-                })
+                    "message": f"Failed to parse JSON: {str(e)}",
+                    "traceback": traceback.format_exc()
+                }
+                _log_error(
+                    error_context="WebSocket - JSON parsing error",
+                    error_detail=error_detail,
+                    exception=e
+                )
+                await websocket.send_json(error_detail)
                 continue
             except Exception as e:
-                await websocket.send_json({
+                error_detail = {
                     "error": "Receive error",
-                    "message": str(e)
-                })
+                    "message": str(e),
+                    "traceback": traceback.format_exc()
+                }
+                _log_error(
+                    error_context="WebSocket - receive error",
+                    error_detail=error_detail,
+                    exception=e
+                )
+                await websocket.send_json(error_detail)
                 continue
 
             # Validate and parse request
             try:
                 request = PredictionRequest(**request_data)
             except Exception as e:
-                await websocket.send_json({
+                error_detail = {
                     "error": "Invalid request",
-                    "message": f"Failed to validate request: {str(e)}"
-                })
+                    "message": f"Failed to validate request: {str(e)}",
+                    "traceback": traceback.format_exc()
+                }
+                _log_error(
+                    error_context="WebSocket - request validation error",
+                    error_detail=error_detail,
+                    exception=e
+                )
+                await websocket.send_json(error_detail)
                 continue
 
             try:
@@ -725,10 +905,17 @@ async def websocket_predict(websocket: WebSocket):
                         continue
 
                     except ValueError as e:
-                        await websocket.send_json({
+                        error_detail = {
                             "error": "Experiment mode error",
-                            "message": str(e)
-                        })
+                            "message": str(e),
+                            "traceback": traceback.format_exc()
+                        }
+                        _log_error(
+                            error_context=f"WebSocket - experiment mode error for model_id={request.model_id}",
+                            error_detail=error_detail,
+                            exception=e
+                        )
+                        await websocket.send_json(error_detail)
                         continue
 
                 # Normal mode: load model and predict
@@ -747,35 +934,53 @@ async def websocket_predict(websocket: WebSocket):
 
                     # Validate prediction type matches
                     if stored_prediction_type != request.prediction_type:
-                        await websocket.send_json({
+                        error_detail = {
                             "error": "Prediction type mismatch",
                             "message": f"Model was trained with prediction_type='{stored_prediction_type}', but request has '{request.prediction_type}'",
                             "model_prediction_type": stored_prediction_type,
                             "request_prediction_type": request.prediction_type
-                        })
+                        }
+                        _log_error(
+                            error_context=f"WebSocket - prediction type mismatch (cached) for model_id={request.model_id}",
+                            error_detail=error_detail,
+                            include_traceback=False
+                        )
+                        await websocket.send_json(error_detail)
                         continue
                 else:
                     # Cache miss - load model from storage
                     model_data = storage.load_model(model_key)
                     if model_data is None:
-                        await websocket.send_json({
+                        error_detail = {
                             "error": "Model not found",
                             "message": f"No trained model found for model_id='{request.model_id}' with given platform_info",
                             "model_id": request.model_id,
                             "platform_info": request.platform_info.model_dump(),
                             "model_key": model_key
-                        })
+                        }
+                        _log_error(
+                            error_context=f"WebSocket - model not found for model_id={request.model_id}",
+                            error_detail=error_detail,
+                            include_traceback=False
+                        )
+                        await websocket.send_json(error_detail)
                         continue
 
                     # Validate prediction type matches
                     stored_prediction_type = model_data['metadata'].get('prediction_type')
                     if stored_prediction_type != request.prediction_type:
-                        await websocket.send_json({
+                        error_detail = {
                             "error": "Prediction type mismatch",
                             "message": f"Model was trained with prediction_type='{stored_prediction_type}', but request has '{request.prediction_type}'",
                             "model_prediction_type": stored_prediction_type,
                             "request_prediction_type": request.prediction_type
-                        })
+                        }
+                        _log_error(
+                            error_context=f"WebSocket - prediction type mismatch (storage) for model_id={request.model_id}",
+                            error_detail=error_detail,
+                            include_traceback=False
+                        )
+                        await websocket.send_json(error_detail)
                         continue
 
                     # Create predictor and load state
@@ -788,10 +993,16 @@ async def websocket_predict(websocket: WebSocket):
                     elif request.prediction_type == "decision_tree":
                         predictor = DecisionTreePredictor()
                     else:
-                        await websocket.send_json({
+                        error_detail = {
                             "error": "Invalid prediction type",
                             "message": f"prediction_type must be 'expect_error', 'quantile', 'linear_regression', or 'decision_tree', got '{request.prediction_type}'"
-                        })
+                        }
+                        _log_error(
+                            error_context=f"WebSocket - invalid prediction_type for model_id={request.model_id}",
+                            error_detail=error_detail,
+                            include_traceback=False
+                        )
+                        await websocket.send_json(error_detail)
                         continue
 
                     predictor.load_model_state(model_data['predictor_state'])
@@ -815,35 +1026,62 @@ async def websocket_predict(websocket: WebSocket):
 
                 except ValueError as e:
                     # Feature validation errors
-                    await websocket.send_json({
+                    error_detail = {
                         "error": "Invalid features",
-                        "message": str(e)
-                    })
+                        "message": str(e),
+                        "traceback": traceback.format_exc()
+                    }
+                    _log_error(
+                        error_context=f"WebSocket - feature validation error for model_id={request.model_id}",
+                        error_detail=error_detail,
+                        exception=e
+                    )
+                    await websocket.send_json(error_detail)
                 except Exception as e:
-                    await websocket.send_json({
+                    error_detail = {
                         "error": "Prediction failed",
                         "message": str(e),
                         "traceback": traceback.format_exc()
-                    })
+                    }
+                    _log_error(
+                        error_context=f"WebSocket - prediction failed for model_id={request.model_id}",
+                        error_detail=error_detail,
+                        exception=e
+                    )
+                    await websocket.send_json(error_detail)
 
             except Exception as e:
-                await websocket.send_json({
+                error_detail = {
                     "error": "Unexpected error",
                     "message": str(e),
                     "traceback": traceback.format_exc()
-                })
+                }
+                _log_error(
+                    error_context="WebSocket - unexpected error in request processing",
+                    error_detail=error_detail,
+                    exception=e
+                )
+                await websocket.send_json(error_detail)
 
     except WebSocketDisconnect:
         # Client disconnected, close gracefully
+        logger.debug("WebSocket client disconnected")
         pass
     except Exception as e:
         # Unexpected error, try to send error message before closing
+        error_detail = {
+            "error": "WebSocket error",
+            "message": str(e),
+            "traceback": traceback.format_exc()
+        }
+        _log_error(
+            error_context="WebSocket - connection-level error",
+            error_detail=error_detail,
+            exception=e
+        )
         try:
-            await websocket.send_json({
-                "error": "WebSocket error",
-                "message": str(e)
-            })
-        except:
+            await websocket.send_json(error_detail)
+        except Exception:
             pass
         finally:
             await websocket.close()

@@ -9,6 +9,7 @@ Architecture: Base + Delta design for guaranteed monotonicity.
     - This ensures q₀ ≤ q₁ ≤ ... ≤ qₙ₋₁ by construction
 """
 
+import traceback
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -18,6 +19,9 @@ from typing import Any, Dict, List
 
 from .base import BasePredictor
 from .mlp import MLP
+from ..utils.logging import get_logger
+
+logger = get_logger()
 
 
 class BaseDeltaTransform(nn.Module):
@@ -226,9 +230,14 @@ class QuantilePredictor(BasePredictor):
         """
         # Validate minimum samples
         if len(features_list) < 10:
-            raise ValueError(
-                f"Insufficient training data: need at least 10 samples, got {len(features_list)}"
+            error_msg = f"Insufficient training data: need at least 10 samples, got {len(features_list)}"
+            logger.error(
+                f"QuantilePredictor training failed\n"
+                f"Error: {error_msg}\n"
+                f"Samples provided: {len(features_list)}\n"
+                f"Minimum required: 10"
             )
+            raise ValueError(error_msg)
 
         # Get config
         if config is None:
@@ -277,10 +286,16 @@ class QuantilePredictor(BasePredictor):
             print(f"Filtered {len(self.removed_features)} constant features: {self.removed_features}")
 
         if not feature_names:
-            raise ValueError(
+            error_msg = (
                 "No valid features remaining after filtering constant features. "
                 f"All features were constant: {all_feature_names}"
             )
+            logger.error(
+                f"QuantilePredictor training failed - no valid features\n"
+                f"Error: {error_msg}\n"
+                f"Removed features: {self.removed_features}"
+            )
+            raise ValueError(error_msg)
 
         self.feature_names = feature_names
 
@@ -308,7 +323,13 @@ class QuantilePredictor(BasePredictor):
         # Validate quantiles
         for q in self.quantiles:
             if not (0 < q < 1):
-                raise ValueError(f"Invalid quantile value {q}. Must be between 0 and 1.")
+                error_msg = f"Invalid quantile value {q}. Must be between 0 and 1."
+                logger.error(
+                    f"QuantilePredictor training failed - invalid quantile\n"
+                    f"Error: {error_msg}\n"
+                    f"Quantiles provided: {self.quantiles}"
+                )
+                raise ValueError(error_msg)
 
         # Sort quantiles to ensure proper ordering for base+delta transform
         self.quantiles = sorted(self.quantiles)
@@ -620,7 +641,9 @@ class QuantilePredictor(BasePredictor):
             ValueError: If model not trained or required features missing
         """
         if self.model is None:
-            raise ValueError("Model not trained. Call train() first.")
+            error_msg = "Model not trained. Call train() first."
+            logger.error(f"QuantilePredictor prediction failed: {error_msg}")
+            raise ValueError(error_msg)
 
         # Filter out constant features that were removed during training
         # This allows users to pass the full feature set without manual filtering
@@ -674,7 +697,9 @@ class QuantilePredictor(BasePredictor):
             Dict containing all model parameters and metadata
         """
         if self.model is None:
-            raise ValueError("No model to serialize")
+            error_msg = "No model to serialize"
+            logger.error(f"QuantilePredictor get_model_state failed: {error_msg}")
+            raise ValueError(error_msg)
 
         return {
             'model_config': self.model.get_config(),

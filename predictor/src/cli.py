@@ -5,6 +5,7 @@ Provides commands to start, manage, and configure the predictor service.
 
 import os
 import sys
+import traceback
 from pathlib import Path
 from typing import Optional
 
@@ -13,6 +14,9 @@ from typer import Option
 from typing_extensions import Annotated
 
 from .config import PredictorConfig, set_config
+from .utils.logging import get_logger
+
+logger = get_logger()
 
 # Disable rich/colors globally for typer
 os.environ["NO_COLOR"] = "1"
@@ -144,14 +148,37 @@ def health(
             typer.echo(f"❌ Service returned status {response.status_code}", err=True)
             sys.exit(1)
 
-    except httpx.ConnectError:
-        typer.echo(f"❌ Cannot connect to {url}", err=True)
+    except httpx.ConnectError as e:
+        error_msg = f"Cannot connect to {url}"
+        logger.error(
+            f"CLI health check failed\n"
+            f"Error: {error_msg}\n"
+            f"Host: {host}, Port: {port}\n"
+            f"Exception: {type(e).__name__}: {str(e)}\n"
+            f"Traceback:\n{traceback.format_exc()}"
+        )
+        typer.echo(f"❌ {error_msg}", err=True)
         typer.echo(f"   Make sure the service is running on {host}:{port}", err=True)
         sys.exit(1)
-    except httpx.TimeoutException:
-        typer.echo(f"❌ Request timed out", err=True)
+    except httpx.TimeoutException as e:
+        error_msg = "Request timed out"
+        logger.error(
+            f"CLI health check failed\n"
+            f"Error: {error_msg}\n"
+            f"URL: {url}\n"
+            f"Exception: {type(e).__name__}: {str(e)}\n"
+            f"Traceback:\n{traceback.format_exc()}"
+        )
+        typer.echo(f"❌ {error_msg}", err=True)
         sys.exit(1)
     except Exception as e:
+        logger.error(
+            f"CLI health check failed\n"
+            f"Error: {str(e)}\n"
+            f"URL: {url}\n"
+            f"Exception: {type(e).__name__}\n"
+            f"Traceback:\n{traceback.format_exc()}"
+        )
         typer.echo(f"❌ Error: {e}", err=True)
         sys.exit(1)
 
@@ -234,6 +261,12 @@ def list_models(
                     typer.echo("")
 
         except Exception as e:
+            logger.warning(
+                f"Failed to load model metadata\n"
+                f"Model ID: {model_id}\n"
+                f"Exception: {type(e).__name__}: {str(e)}\n"
+                f"Traceback:\n{traceback.format_exc()}"
+            )
             typer.echo(f"{model_id:<30} {'Error':<20} {str(e)}")
 
 
@@ -316,6 +349,13 @@ app_version = "0.1.0"
         typer.echo(f"  1. Edit {output} to customize your settings")
         typer.echo(f"  2. Start the service with: spredictor start --config {output}")
     except Exception as e:
+        logger.error(
+            f"Failed to create configuration file\n"
+            f"Output path: {output}\n"
+            f"Force overwrite: {force}\n"
+            f"Exception: {type(e).__name__}: {str(e)}\n"
+            f"Traceback:\n{traceback.format_exc()}"
+        )
         typer.echo(f"❌ Error creating configuration file: {e}", err=True)
         sys.exit(1)
 

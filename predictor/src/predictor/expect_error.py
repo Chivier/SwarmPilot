@@ -4,6 +4,7 @@ Expect/Error predictor using MLP with MSE loss.
 Provides expected runtime and error margin predictions.
 """
 
+import traceback
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -12,6 +13,9 @@ from typing import Any, Dict, List
 
 from .base import BasePredictor
 from .mlp import MLP
+from ..utils.logging import get_logger
+
+logger = get_logger()
 
 
 class ExpectErrorPredictor(BasePredictor):
@@ -45,9 +49,14 @@ class ExpectErrorPredictor(BasePredictor):
         """
         # Validate minimum samples
         if len(features_list) < 10:
-            raise ValueError(
-                f"Insufficient training data: need at least 10 samples, got {len(features_list)}"
+            error_msg = f"Insufficient training data: need at least 10 samples, got {len(features_list)}"
+            logger.error(
+                f"ExpectErrorPredictor training failed\n"
+                f"Error: {error_msg}\n"
+                f"Samples provided: {len(features_list)}\n"
+                f"Minimum required: 10"
             )
+            raise ValueError(error_msg)
 
         # Extract features and labels
         X, y, feature_names = self.extract_features_and_labels(features_list)
@@ -117,7 +126,9 @@ class ExpectErrorPredictor(BasePredictor):
             ValueError: If model not trained or features invalid
         """
         if self.model is None:
-            raise ValueError("Model not trained. Call train() first.")
+            error_msg = "Model not trained. Call train() first."
+            logger.error(f"ExpectErrorPredictor prediction failed: {error_msg}")
+            raise ValueError(error_msg)
 
         # Validate features
         self.validate_features(features, self.feature_names)
@@ -149,7 +160,9 @@ class ExpectErrorPredictor(BasePredictor):
             Dict containing all model parameters and metadata
         """
         if self.model is None:
-            raise ValueError("No model to serialize")
+            error_msg = "No model to serialize"
+            logger.error(f"ExpectErrorPredictor get_model_state failed: {error_msg}")
+            raise ValueError(error_msg)
 
         return {
             'model_config': self.model.get_config(),

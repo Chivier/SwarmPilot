@@ -6,9 +6,14 @@ Uses joblib for serialization and local filesystem for storage.
 
 import os
 import joblib
+import traceback
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any
 from pathlib import Path
+
+from ..utils.logging import get_logger
+
+logger = get_logger()
 
 
 class ModelStorage:
@@ -67,6 +72,9 @@ class ModelStorage:
             model_key: Unique key for the model
             predictor_state: Complete predictor state from get_model_state()
             metadata: Additional metadata (model_id, platform_info, samples_count, etc.)
+
+        Raises:
+            Exception: If saving fails (joblib error, disk error, etc.)
         """
         # Create complete state with metadata
         complete_state = {
@@ -77,7 +85,19 @@ class ModelStorage:
 
         # Save to disk
         model_path = self.storage_dir / f"{model_key}.joblib"
-        joblib.dump(complete_state, model_path)
+        try:
+            joblib.dump(complete_state, model_path)
+            logger.debug(f"Model saved successfully: {model_path}")
+        except Exception as e:
+            logger.error(
+                f"Failed to save model\n"
+                f"Model key: {model_key}\n"
+                f"Model path: {model_path}\n"
+                f"Metadata: {metadata}\n"
+                f"Exception: {type(e).__name__}: {str(e)}\n"
+                f"Traceback:\n{traceback.format_exc()}"
+            )
+            raise
 
     def load_model(self, model_key: str) -> Optional[Dict[str, Any]]:
         """
@@ -88,13 +108,29 @@ class ModelStorage:
 
         Returns:
             Dict with 'predictor_state' and 'metadata' keys, or None if not found
+
+        Raises:
+            Exception: If loading fails (corrupted file, deserialization error, etc.)
         """
         model_path = self.storage_dir / f"{model_key}.joblib"
 
         if not model_path.exists():
+            logger.debug(f"Model not found at path: {model_path}")
             return None
 
-        return joblib.load(model_path)
+        try:
+            result = joblib.load(model_path)
+            logger.debug(f"Model loaded successfully: {model_path}")
+            return result
+        except Exception as e:
+            logger.error(
+                f"Failed to load model\n"
+                f"Model key: {model_key}\n"
+                f"Model path: {model_path}\n"
+                f"Exception: {type(e).__name__}: {str(e)}\n"
+                f"Traceback:\n{traceback.format_exc()}"
+            )
+            raise
 
     def model_exists(self, model_key: str) -> bool:
         """
@@ -135,8 +171,13 @@ class ModelStorage:
                 models.append(model_info)
 
             except Exception as e:
-                # Skip corrupted files
-                print(f"Warning: Failed to load {model_file}: {e}")
+                # Log corrupted files with full details
+                logger.warning(
+                    f"Failed to load model file (skipping)\n"
+                    f"File: {model_file}\n"
+                    f"Exception: {type(e).__name__}: {str(e)}\n"
+                    f"Traceback:\n{traceback.format_exc()}"
+                )
                 continue
 
         return models

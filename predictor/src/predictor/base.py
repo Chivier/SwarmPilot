@@ -7,6 +7,10 @@ Defines the abstract base class for all predictor implementations.
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List
 
+from ..utils.logging import get_logger
+
+logger = get_logger()
+
 
 class BasePredictor(ABC):
     """Abstract base class for runtime predictors."""
@@ -81,17 +85,24 @@ class BasePredictor(ABC):
         # Check for missing features
         missing = expected_features_set - provided_features
         if missing:
-            raise ValueError(
+            error_msg = (
                 f"Missing required features: {sorted(missing)}. "
                 f"Expected: {sorted(expected_features)}, "
                 f"Got: {sorted(provided_features)}"
             )
+            logger.error(
+                f"Feature validation failed\n"
+                f"Error: {error_msg}\n"
+                f"Missing features: {sorted(missing)}\n"
+                f"Provided features: {sorted(provided_features)}\n"
+                f"Expected features: {sorted(expected_features)}"
+            )
+            raise ValueError(error_msg)
 
         # Check for extra features (warning via extra key, but not failing)
         extra = provided_features - expected_features_set
         if extra:
-            # Store extra features for potential logging, but don't fail
-            pass
+            logger.debug(f"Extra features provided (ignored): {sorted(extra)}")
 
     def extract_features_and_labels(self, features_list: List[Dict[str, Any]]) -> tuple:
         """
@@ -110,7 +121,9 @@ class BasePredictor(ABC):
             ValueError: If samples have inconsistent features
         """
         if not features_list:
-            raise ValueError("features_list is empty")
+            error_msg = "features_list is empty"
+            logger.error(f"Feature extraction failed: {error_msg}")
+            raise ValueError(error_msg)
 
         # Extract runtime_ms labels
         y = [sample['runtime_ms'] for sample in features_list]
@@ -120,7 +133,13 @@ class BasePredictor(ABC):
         feature_names = sorted([k for k in first_sample.keys() if k != 'runtime_ms'])
 
         if not feature_names:
-            raise ValueError("No features found (only runtime_ms present)")
+            error_msg = "No features found (only runtime_ms present)"
+            logger.error(
+                f"Feature extraction failed\n"
+                f"Error: {error_msg}\n"
+                f"First sample keys: {list(first_sample.keys())}"
+            )
+            raise ValueError(error_msg)
 
         # Extract feature values in consistent order
         X = []
@@ -129,10 +148,18 @@ class BasePredictor(ABC):
 
             # Validate all samples have same features
             if sample_features != feature_names:
-                raise ValueError(
+                error_msg = (
                     f"Sample at index {idx} has different features. "
                     f"Expected: {feature_names}, Got: {sample_features}"
                 )
+                logger.error(
+                    f"Feature extraction failed - inconsistent features\n"
+                    f"Error: {error_msg}\n"
+                    f"Sample index: {idx}\n"
+                    f"Expected features: {feature_names}\n"
+                    f"Got features: {sample_features}"
+                )
+                raise ValueError(error_msg)
 
             # Extract values in the same order as feature_names
             feature_values = [sample[fname] for fname in feature_names]

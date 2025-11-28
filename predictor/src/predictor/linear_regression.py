@@ -4,11 +4,15 @@ Linear Regression predictor.
 Provides expected runtime and error margin predictions using Scikit-Learn.
 """
 
+import traceback
 import numpy as np
 from typing import Any, Dict, List
 from sklearn.linear_model import LinearRegression
 
 from .base import BasePredictor
+from ..utils.logging import get_logger
+
+logger = get_logger()
 
 
 class LinearRegressionPredictor(BasePredictor):
@@ -40,9 +44,14 @@ class LinearRegressionPredictor(BasePredictor):
         """
         # Validate minimum samples
         if len(features_list) < 10:
-            raise ValueError(
-                f"Insufficient training data: need at least 10 samples, got {len(features_list)}"
+            error_msg = f"Insufficient training data: need at least 10 samples, got {len(features_list)}"
+            logger.error(
+                f"LinearRegressionPredictor training failed\n"
+                f"Error: {error_msg}\n"
+                f"Samples provided: {len(features_list)}\n"
+                f"Minimum required: 10"
             )
+            raise ValueError(error_msg)
 
         # Extract features and labels
         X, y, feature_names = self.extract_features_and_labels(features_list)
@@ -82,7 +91,9 @@ class LinearRegressionPredictor(BasePredictor):
             ValueError: If model not trained or features invalid
         """
         if self.model is None:
-            raise ValueError("Model not trained. Call train() first.")
+            error_msg = "Model not trained. Call train() first."
+            logger.error(f"LinearRegressionPredictor prediction failed: {error_msg}")
+            raise ValueError(error_msg)
 
         # Validate features
         self.validate_features(features, self.feature_names)
@@ -107,7 +118,9 @@ class LinearRegressionPredictor(BasePredictor):
             Dict containing all model parameters and metadata
         """
         if self.model is None:
-            raise ValueError("No model to serialize")
+            error_msg = "No model to serialize"
+            logger.error(f"LinearRegressionPredictor get_model_state failed: {error_msg}")
+            raise ValueError(error_msg)
 
         return {
             'coef': self.model.coef_.tolist(),
