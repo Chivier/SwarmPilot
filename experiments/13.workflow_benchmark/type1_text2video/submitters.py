@@ -170,8 +170,9 @@ class A1TaskSubmitter(BaseTaskSubmitter):
             }
 
         # Generate task ID with strategy prefix
-        workflow_num = workflow_data.workflow_id.split('-')[-1]
-        task_id = f"task-A1-{workflow_data.strategy}-workflow-{workflow_num}"
+        # Use the full suffix after "workflow-" to include run_prefix if present
+        workflow_suffix = workflow_data.workflow_id.replace("workflow-", "")
+        task_id = f"task-A1-{workflow_data.strategy}-workflow-{workflow_suffix}"
 
         return {
             "task_id": task_id,
@@ -213,8 +214,8 @@ class A1TaskSubmitter(BaseTaskSubmitter):
             )
 
             # Record task submission in metrics
-            workflow_num = task_data.workflow_id.split('-')[-1]
-            task_id = f"task-A1-{task_data.strategy}-workflow-{workflow_num}"
+            workflow_suffix = task_data.workflow_id.replace("workflow-", "")
+            task_id = f"task-A1-{task_data.strategy}-workflow-{workflow_suffix}"
             self.metrics.record_task_submit(
                 task_id=task_id,
                 workflow_id=task_data.workflow_id,
@@ -233,9 +234,9 @@ class A1TaskSubmitter(BaseTaskSubmitter):
                 task_data.a1_submit_time = submit_time
 
             # Track task ID (must match the format used in _prepare_task_payload)
-            workflow_num = task_data.workflow_id.split('-')[-1]
+            workflow_suffix = task_data.workflow_id.replace("workflow-", "")
             strategy = getattr(self.config, 'strategy', 'default')
-            task_id = f"task-A1-{strategy}-workflow-{workflow_num}"
+            task_id = f"task-A1-{strategy}-workflow-{workflow_suffix}"
             self.task_ids.append(task_id)
 
         return success
@@ -325,8 +326,8 @@ class A2TaskSubmitter(BaseTaskSubmitter):
 
         # Generate task ID with strategy prefix
         strategy = workflow_data.strategy if workflow_data else "probabilistic"
-        workflow_num = workflow_id.split('-')[-1]
-        task_id = f"task-A2-{strategy}-workflow-{workflow_num}"
+        workflow_suffix = workflow_id.replace("workflow-", "")
+        task_id = f"task-A2-{strategy}-workflow-{workflow_suffix}"
 
         return {
             "task_id": task_id,
@@ -367,8 +368,8 @@ class A2TaskSubmitter(BaseTaskSubmitter):
             with self.state_lock:
                 workflow_data = self.workflow_states.get(workflow_id)
                 if workflow_data:
-                    workflow_num = workflow_id.split('-')[-1]
-                    task_id = f"task-A2-{workflow_data.strategy}-workflow-{workflow_num}"
+                    workflow_suffix = workflow_id.replace("workflow-", "")
+                    task_id = f"task-A2-{workflow_data.strategy}-workflow-{workflow_suffix}"
                     self.metrics.record_task_submit(
                         task_id=task_id,
                         workflow_id=workflow_id,
@@ -391,9 +392,9 @@ class A2TaskSubmitter(BaseTaskSubmitter):
                     workflow_data.a2_submit_time = submit_time
 
             # Track task ID (must match the format used in _prepare_task_payload)
-            workflow_num = workflow_id.split('-')[-1]
+            workflow_suffix = workflow_id.replace("workflow-", "")
             strategy = workflow_data.strategy if workflow_data else "probabilistic"
-            task_id = f"task-A2-{strategy}-workflow-{workflow_num}"
+            task_id = f"task-A2-{strategy}-workflow-{workflow_suffix}"
             self.task_ids.append(task_id)
 
         return success
@@ -489,8 +490,9 @@ class BTaskSubmitter(BaseTaskSubmitter):
 
         # Generate task ID with strategy prefix
         strategy = workflow_data.strategy if workflow_data else "probabilistic"
-        workflow_num = workflow_id.split('-')[-1]
-        task_id = f"task-B{loop_iteration}-{strategy}-workflow-{workflow_num}"
+        # Use replace to preserve full suffix (e.g., "a7b3-0001" from "workflow-a7b3-0001")
+        workflow_suffix = workflow_id.replace("workflow-", "")
+        task_id = f"task-B{loop_iteration}-{strategy}-workflow-{workflow_suffix}"
 
         return {
             "task_id": task_id,
@@ -543,8 +545,9 @@ class BTaskSubmitter(BaseTaskSubmitter):
             with self.state_lock:
                 workflow_data = self.workflow_states.get(workflow_id)
                 if workflow_data:
-                    workflow_num = workflow_id.split('-')[-1]
-                    task_id = f"task-B{loop_iteration}-{workflow_data.strategy}-workflow-{workflow_num}"
+                    # Use replace to preserve full suffix (e.g., "a7b3-0001" from "workflow-a7b3-0001")
+                    workflow_suffix = workflow_id.replace("workflow-", "")
+                    task_id = f"task-B{loop_iteration}-{workflow_data.strategy}-workflow-{workflow_suffix}"
                     self.metrics.record_task_submit(
                         task_id=task_id,
                         workflow_id=workflow_id,
@@ -591,9 +594,10 @@ class BTaskSubmitter(BaseTaskSubmitter):
                             workflow_data.b_submit_times.append(submit_time)
 
             # Track task ID (must match the format used in _prepare_task_payload)
-            workflow_num = workflow_id.split('-')[-1]
+            # Use replace to preserve full suffix (e.g., "a7b3-0001" from "workflow-a7b3-0001")
+            workflow_suffix = workflow_id.replace("workflow-", "")
             strategy = workflow_data.strategy if workflow_data else "probabilistic"
-            task_id = f"task-B{loop_iteration}-{strategy}-workflow-{workflow_num}"
+            task_id = f"task-B{loop_iteration}-{strategy}-workflow-{workflow_suffix}"
             self.task_ids.append(task_id)
 
         return success
