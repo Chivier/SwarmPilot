@@ -14,6 +14,39 @@ Usage:
         --config config_pipeline.json \
         --llm_limit 1000 \
         --t2vid_limit 100
+
+Training Configuration:
+    The predictor service now supports data augmentation enabled by default.
+    The coefficient of variation (CV) is auto-calculated from training data.
+
+    Default training_config (can be overridden in config file):
+    {
+        "data_augmentation": {
+            "enabled": true,           # Enabled by default
+            "samples_per_point": 5,    # Synthetic samples per real sample
+            "distribution": "lognormal" # Runtime distribution model
+            # "cv": auto-calculated if not specified
+        },
+        "residual_calibration": {
+            "enabled": true,           # Post-training calibration
+            "min_sigma": 0.1           # Minimum spread
+        },
+        "epochs": 200,
+        "learning_rate": 0.001,
+        "quantiles": [0.5, 0.9, 0.95, 0.99]
+    }
+
+    To override in config file, add "training_config" section:
+    {
+        "predictor": {"url": "http://localhost:8101"},
+        "training_config": {
+            "data_augmentation": {
+                "cv": 0.4  # Override auto-calculated CV
+            },
+            "epochs": 300
+        },
+        "prediction_types": ["quantile", "expect_error"]  # Default: both types
+    }
 """
 
 import argparse
@@ -222,12 +255,44 @@ class MultiInstanceClient:
             await client_info['client'].close()
 
 
+def get_default_training_config() -> Dict[str, Any]:
+    """
+    Get default training configuration optimized for predictor service.
+
+    Data augmentation is now ENABLED BY DEFAULT in the predictor, and CV is
+    auto-calculated from training data. This config allows customization when needed.
+
+    Key parameters:
+    - data_augmentation.enabled: True by default (auto-calculated CV)
+    - data_augmentation.cv: If specified, overrides auto-calculated CV
+    - data_augmentation.samples_per_point: Number of synthetic samples per real sample
+    - residual_calibration.enabled: Post-training calibration for quantile spread
+    - epochs: Training epochs for MLP
+    - quantiles: Quantile levels for quantile prediction type
+    """
+    return {
+        'data_augmentation': {
+            'enabled': True,  # Now default, but explicit for clarity
+            # 'cv': auto-calculated from data if not specified
+            'samples_per_point': 5,  # Generate 5 synthetic samples per real sample
+            'distribution': 'lognormal'  # Better models positive-valued runtimes
+        },
+        'residual_calibration': {
+            'enabled': True,  # Enable residual-based calibration
+            'min_sigma': 0.1  # Minimum spread to prevent collapse
+        },
+        'epochs': 200,
+        'learning_rate': 0.001,
+        'quantiles': [0.5, 0.9, 0.95, 0.99]  # Percentiles for scheduling decisions
+    }
+
+
 class PredictorClient:
     def __init__(self, predictor_url: str, timeout: float = 600.0):
         self.predictor_url = predictor_url.rstrip('/')
         self.timeout = timeout
         self.client = httpx.AsyncClient(timeout=timeout)
-    
+
     async def submit_training_data(self, model_id: str, platform_info: Dict[str, str], prediction_type: str, features_list: List[Dict[str, Any]], training_config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         pending_features = features_list.copy()
         new_feature_list = []
@@ -803,7 +868,7 @@ async def main():
     # Train/Validate if predictor is configured
     if 'predictor' in config:
         predictor_client = PredictorClient(config['predictor']['url'])
-        
+
         # Helper to get platform info from first instance of a service
         def get_platform_info(service_config):
             if not service_config or not service_config.get('instances'):
@@ -815,29 +880,52 @@ async def main():
                 "software_version": inst.get("software_version", "0.0")
             }
 
+        # Get training config: start with defaults, then override with config file values
+        training_config = get_default_training_config()
+        if config.get('training_config'):
+            user_config = config['training_config']
+            # Deep merge user config into defaults
+            for key, value in user_config.items():
+                if isinstance(value, dict) and key in training_config and isinstance(training_config[key], dict):
+                    training_config[key].update(value)
+                else:
+                    training_config[key] = value
+
+        logger.info(f"Training config: {json.dumps(training_config, indent=2)}")
+
+        # Get prediction types from config, default to both quantile and expect_error for experiments
+        prediction_types = config.get('prediction_types', ['quantile', 'expect_error'])
+        quantiles = training_config.get('quantiles', [0.5, 0.9, 0.95, 0.99])
+
         try:
             # Train LLM Model
             if llm_samples:
                 llm_platform = get_platform_info(config.get('llm_service'))
-                for p_type in config.get('prediction_types', ['expect_error', 'quantile']):
-                    await predictor_client.submit_training_data(
-                        "llm_service_small_model", llm_platform, p_type, llm_samples, config.get('training_config')
+                logger.info(f"Training LLM model with {len(llm_samples)} samples, platform: {llm_platform}")
+                for p_type in prediction_types:
+                    logger.info(f"  Training {p_type} model...")
+                    result = await predictor_client.submit_training_data(
+                        "llm_service_small_model", llm_platform, p_type, llm_samples, training_config
                     )
+                    logger.info(f"  Training result: {result.get('status', 'unknown')}")
                     await validate_model(
                         predictor_client, "llm_service_small_model", llm_platform, p_type, llm_samples,
-                        quantiles=config.get('training_config', {}).get('quantiles')
+                        quantiles=quantiles
                     )
 
             # Train T2Vid Model
             if t2vid_samples:
                 t2vid_platform = get_platform_info(config.get('t2vid_service'))
-                for p_type in config.get('prediction_types', ['expect_error', 'quantile']):
-                    await predictor_client.submit_training_data(
-                        "t2vid", t2vid_platform, p_type, t2vid_samples, config.get('training_config')
+                logger.info(f"Training T2Vid model with {len(t2vid_samples)} samples, platform: {t2vid_platform}")
+                for p_type in prediction_types:
+                    logger.info(f"  Training {p_type} model...")
+                    result = await predictor_client.submit_training_data(
+                        "t2vid", t2vid_platform, p_type, t2vid_samples, training_config
                     )
+                    logger.info(f"  Training result: {result.get('status', 'unknown')}")
                     await validate_model(
                         predictor_client, "t2vid", t2vid_platform, p_type, t2vid_samples,
-                        quantiles=config.get('training_config', {}).get('quantiles')
+                        quantiles=quantiles
                     )
 
         finally:
