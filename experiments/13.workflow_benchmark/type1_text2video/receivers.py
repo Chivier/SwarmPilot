@@ -138,8 +138,9 @@ class A1TaskReceiver(BaseTaskReceiver):
 
                     # Record task completion in metrics
                     if self.metrics:
-                        workflow_num = workflow_id.split('-')[-1]
-                        a1_task_id = f"task-A1-{workflow_data.strategy}-workflow-{workflow_num}"
+                        # Use replace to preserve full suffix (e.g., "a7b3-0001" from "workflow-a7b3-0001")
+                        workflow_suffix = workflow_id.replace("workflow-", "")
+                        a1_task_id = f"task-A1-{workflow_data.strategy}-workflow-{workflow_suffix}"
                         self.metrics.record_task_complete(
                             task_id=a1_task_id,
                             success=True
@@ -284,8 +285,9 @@ class A2TaskReceiver(BaseTaskReceiver):
 
                     # Record task completion in metrics
                     if self.metrics:
-                        workflow_num = workflow_id.split('-')[-1]
-                        a2_task_id = f"task-A2-{workflow_data.strategy}-workflow-{workflow_num}"
+                        # Use replace to preserve full suffix (e.g., "a7b3-0001" from "workflow-a7b3-0001")
+                        workflow_suffix = workflow_id.replace("workflow-", "")
+                        a2_task_id = f"task-A2-{workflow_data.strategy}-workflow-{workflow_suffix}"
                         self.metrics.record_task_complete(
                             task_id=a2_task_id,
                             success=True
@@ -442,8 +444,9 @@ class BTaskReceiver(BaseTaskReceiver):
                 workflow_data.b_complete_times.append(complete_time)
 
                 # Record task completion in metrics
-                workflow_num = workflow_id.split('-')[-1]
-                b_task_id = f"task-B{loop_iteration}-{workflow_data.strategy}-workflow-{workflow_num}"
+                # Use replace to preserve full suffix (e.g., "a7b3-0001" from "workflow-a7b3-0001")
+                workflow_suffix = workflow_id.replace("workflow-", "")
+                b_task_id = f"task-B{loop_iteration}-{workflow_data.strategy}-workflow-{workflow_suffix}"
                 if self.metrics:
                     self.metrics.record_task_complete(
                         task_id=b_task_id,

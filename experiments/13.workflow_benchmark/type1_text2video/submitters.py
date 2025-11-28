@@ -235,8 +235,8 @@ class A1TaskSubmitter(BaseTaskSubmitter):
 
             # Track task ID (must match the format used in _prepare_task_payload)
             workflow_suffix = task_data.workflow_id.replace("workflow-", "")
-            strategy = getattr(self.config, 'strategy', 'default')
-            task_id = f"task-A1-{strategy}-workflow-{workflow_suffix}"
+            # Use workflow's strategy, not config.strategy (they should match, but use workflow for consistency)
+            task_id = f"task-A1-{task_data.strategy}-workflow-{workflow_suffix}"
             self.task_ids.append(task_id)
 
         return success
