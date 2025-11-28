@@ -47,6 +47,15 @@ class Config:
         self.health_check_interval: int = int(os.getenv("HEALTH_CHECK_INTERVAL", "10"))
         self.health_check_timeout: int = int(os.getenv("HEALTH_CHECK_TIMEOUT", "30"))
 
+        # Hot-standby configuration
+        self.standby_port_offset: int = int(os.getenv("INSTANCE_STANDBY_PORT_OFFSET", "1000"))
+        self.hot_standby_max_retries: int = int(os.getenv("INSTANCE_HOT_STANDBY_MAX_RETRIES", "3"))
+        self.hot_standby_initial_delay: float = float(os.getenv("INSTANCE_HOT_STANDBY_INITIAL_DELAY", "5.0"))
+        self.hot_standby_max_delay: float = float(os.getenv("INSTANCE_HOT_STANDBY_MAX_DELAY", "30.0"))
+        self.hot_standby_backoff_multiplier: float = float(os.getenv("INSTANCE_HOT_STANDBY_BACKOFF_MULTIPLIER", "2.0"))
+        self.standby_restart_delay: int = int(os.getenv("INSTANCE_STANDBY_RESTART_DELAY", "30"))
+        self.backup_health_check_timeout: int = int(os.getenv("INSTANCE_BACKUP_HEALTH_TIMEOUT", "600"))
+
         # Platform information overrides
         # These allow users to specify platform info instead of auto-detection
         self.platform_software_name: Optional[str] = os.getenv(

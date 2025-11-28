@@ -2,7 +2,9 @@
 Core data models for Instance Service
 """
 
+import asyncio
 import time
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
 from typing import Any, Dict, Optional
@@ -48,6 +50,140 @@ class DeregisterStatus(str, Enum):
     DEREGISTERING = "deregistering"
     COMPLETED = "completed"
     FAILED = "failed"
+
+
+# =============================================================================
+# Hot-Standby Port System Models
+# =============================================================================
+
+class PortRole(str, Enum):
+    """
+    Role of a port in the hot-standby system.
+
+    PRIMARY: Currently active, serving inference requests
+    STANDBY: Hot-standby, ready to take over on restart
+    """
+    PRIMARY = "primary"
+    STANDBY = "standby"
+
+
+class PortState(str, Enum):
+    """
+    State of an individual port's process lifecycle.
+
+    State transitions:
+    UNINITIALIZED -> STARTING -> HEALTHY -> STOPPING -> STOPPED
+                           |-> FAILED (can happen from STARTING)
+    STOPPED can transition back to STARTING (for restart scenarios)
+    """
+    UNINITIALIZED = "uninitialized"  # No process has been started
+    STARTING = "starting"             # Process spawned, waiting for health
+    HEALTHY = "healthy"               # Process healthy, ready to serve
+    STOPPING = "stopping"             # Graceful shutdown in progress
+    STOPPED = "stopped"               # Process terminated
+    FAILED = "failed"                 # Process failed to start or crashed
+
+
+@dataclass
+class PortInfo:
+    """
+    Information about a single port/process pair in the hot-standby system.
+
+    Tracks everything needed to manage one model process instance.
+    """
+    port: int
+    role: PortRole
+    state: PortState = PortState.UNINITIALIZED
+    process: Optional[asyncio.subprocess.Process] = None
+    started_at: Optional[str] = None
+    last_health_check: Optional[str] = None
+    health_check_failures: int = 0
+    error_message: Optional[str] = None
+
+    # Retry tracking during standby startup
+    startup_attempts: int = 0
+    max_startup_attempts: int = 3
+
+    def is_ready(self) -> bool:
+        """Check if port is ready to serve traffic."""
+        return self.state == PortState.HEALTHY
+
+    def can_start(self) -> bool:
+        """Check if port can be started (not already running)."""
+        return self.state in (PortState.UNINITIALIZED, PortState.STOPPED, PortState.FAILED)
+
+    def reset_for_restart(self):
+        """Reset state for a new start attempt."""
+        self.state = PortState.UNINITIALIZED
+        self.process = None
+        self.started_at = None
+        self.last_health_check = None
+        self.health_check_failures = 0
+        self.error_message = None
+        self.startup_attempts += 1
+
+
+@dataclass
+class DualPortState:
+    """
+    Container for managing the two-port hot-standby system.
+
+    Key invariants:
+    1. Exactly one port should have role=PRIMARY when system is active
+    2. At most one port should have role=STANDBY
+    3. The active_port property returns the port currently serving traffic
+    4. After a swap, roles change but port objects remain
+
+    Port naming convention:
+    - port_a: Uses base model_port (e.g., instance_port + 1000)
+    - port_b: Uses backup port (e.g., instance_port + 2000)
+    """
+    port_a: PortInfo
+    port_b: PortInfo
+    _primary_port_name: str = "port_a"  # "port_a" or "port_b"
+
+    @property
+    def primary(self) -> PortInfo:
+        """Get the current primary (active) port."""
+        return self.port_a if self._primary_port_name == "port_a" else self.port_b
+
+    @property
+    def standby(self) -> PortInfo:
+        """Get the current standby port."""
+        return self.port_b if self._primary_port_name == "port_a" else self.port_a
+
+    @property
+    def active_port(self) -> int:
+        """
+        Get the port number currently serving traffic.
+
+        This is what external code should use for inference/health checks.
+        """
+        return self.primary.port
+
+    def swap_roles(self):
+        """
+        Swap PRIMARY and STANDBY roles between ports.
+
+        This is the core operation for hot-switching:
+        - The standby becomes primary
+        - The old primary becomes standby
+
+        Precondition: standby must be HEALTHY before calling
+        """
+        old_primary = self.primary
+        old_standby = self.standby
+
+        old_primary.role = PortRole.STANDBY
+        old_standby.role = PortRole.PRIMARY
+
+        self._primary_port_name = "port_b" if self._primary_port_name == "port_a" else "port_a"
+
+    def get_port_by_role(self, role: PortRole) -> PortInfo:
+        """Get port by its current role."""
+        if role == PortRole.PRIMARY:
+            return self.primary
+        return self.standby
 
 
 class Task(BaseModel):

@@ -46,6 +46,15 @@ def mock_config(monkeypatch):
     config.enable_json_logs = False
     config.get_model_directory = Mock(return_value=Path("/tmp/test_base/test_dockers/test_model"))
     config.get_model_container_name = Mock(return_value="test-instance-test_model")
+    # Hot-standby configuration
+    config.standby_port_offset = 1000
+    config.hot_standby_max_retries = 3
+    config.hot_standby_initial_delay = 5.0
+    config.hot_standby_max_delay = 30.0
+    config.hot_standby_backoff_multiplier = 2.0
+    config.standby_restart_delay = 30
+    config.backup_health_check_timeout = 600
+    config.health_check_timeout = 30
     return config
 
 

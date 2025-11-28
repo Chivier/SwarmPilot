@@ -172,6 +172,15 @@ class TaskQueueStats(BaseModel):
     failed: int
 
 
+class StandbyInfo(BaseModel):
+    """Hot-standby port information"""
+    enabled: bool = Field(..., description="Whether hot-standby is enabled")
+    primary_port: Optional[int] = Field(None, description="Current primary (active) port")
+    standby_port: Optional[int] = Field(None, description="Current standby port")
+    standby_ready: bool = Field(False, description="Whether standby is healthy and ready for hot-switch")
+    standby_state: Optional[str] = Field(None, description="Standby port state: uninitialized, starting, healthy, stopping, stopped, failed")
+
+
 class InstanceInfo(BaseModel):
     """Instance information"""
     instance_id: str
@@ -183,6 +192,8 @@ class InstanceInfo(BaseModel):
     hardware_name: Optional[str] = Field(None, description="Hardware name (e.g., GPU name)")
     software_name: Optional[str] = Field(None, description="Software platform name (e.g., sglang, vllm)")
     software_version: Optional[str] = Field(None, description="Software platform version")
+    active_port: Optional[int] = Field(None, description="Currently active model port")
+    standby: Optional[StandbyInfo] = Field(None, description="Hot-standby port information (SubprocessManager only)")
 
 
 class InfoResponse(BaseModel):
@@ -1461,6 +1472,31 @@ async def get_info():
         software_name = None
         software_version = None
 
+    # Get hot-standby information (SubprocessManager only)
+    standby_info = None
+    active_port = None
+
+    # Check if using SubprocessManager with hot-standby support
+    from .subprocess_manager import SubprocessManager
+    if isinstance(docker_manager, SubprocessManager):
+        active_port = docker_manager.active_port
+
+        # Get dual-port state if available
+        dual_state = docker_manager._dual_port_state
+        if dual_state is not None:
+            standby_info = StandbyInfo(
+                enabled=True,
+                primary_port=dual_state.primary.port,
+                standby_port=dual_state.standby.port,
+                standby_ready=docker_manager.is_standby_ready(),
+                standby_state=dual_state.standby.state.value
+            )
+        else:
+            standby_info = StandbyInfo(
+                enabled=False,
+                standby_ready=False
+            )
+
     # Build response
     instance_info = InstanceInfo(
         instance_id=config.instance_id,
@@ -1471,7 +1507,9 @@ async def get_info():
         version="1.0.0",
         hardware_name=hardware_name,
         software_name=software_name,
-        software_version=software_version
+        software_version=software_version,
+        active_port=active_port,
+        standby=standby_info
     )
 
     return InfoResponse(
