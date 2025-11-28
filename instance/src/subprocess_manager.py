@@ -429,10 +429,12 @@ class SubprocessManager:
         # Build environment variables
         env_vars = self._build_env_vars(model_id, parameters or {})
 
-        logger.info(f"Starting model with subprocess (hot-standby enabled): {model_id}")
+        standby_status = "enabled" if config.standby_enabled else "disabled"
+        logger.info(f"Starting model with subprocess (standby {standby_status}): {model_id}")
         logger.info(f"Model directory: {model_dir}")
         logger.info(f"Primary port: {config.model_port}")
-        logger.info(f"Standby port: {config.model_port + config.standby_port_offset}")
+        if config.standby_enabled:
+            logger.info(f"Standby port: {config.model_port + config.standby_port_offset}")
 
         # Run uv sync first
         uv_sync_process = await asyncio.create_subprocess_exec(
@@ -489,15 +491,18 @@ class SubprocessManager:
         # Set current model
         self.current_model = model_info
 
-        # Schedule standby startup in background (non-blocking)
-        logger.info("[standby] Scheduling background startup...")
-        self._standby_startup_task = asyncio.create_task(
-            self._start_standby_async(
-                model_id=model_id,
-                model_dir=model_dir,
-                env_vars=env_vars
+        # Schedule standby startup in background (non-blocking) only if enabled
+        if config.standby_enabled:
+            logger.info("[standby] Scheduling background startup...")
+            self._standby_startup_task = asyncio.create_task(
+                self._start_standby_async(
+                    model_id=model_id,
+                    model_dir=model_dir,
+                    env_vars=env_vars
+                )
             )
-        )
+        else:
+            logger.info("[standby] Standby mode is disabled, skipping standby startup")
 
         return model_info
 
@@ -619,14 +624,19 @@ class SubprocessManager:
                 # Fall through to traditional restart
 
         # Traditional restart (blocking)
-        logger.info("Performing traditional restart (standby not available)...")
+        # Use configured delay when standby is disabled (default 30s for /task/clear)
+        restart_delay = config.traditional_restart_delay if not config.standby_enabled else 5
+        logger.info(
+            f"Performing traditional restart (standby not available), "
+            f"delay: {restart_delay}s..."
+        )
         parameters = self.current_model.parameters
 
         try:
             # Stop all processes
             await self.stop_model()
 
-            await asyncio.sleep(5)
+            await asyncio.sleep(restart_delay)
 
             # Restart the model with same parameters
             await self.start_model(model_id, parameters)
