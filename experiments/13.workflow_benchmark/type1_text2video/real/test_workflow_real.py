@@ -25,6 +25,7 @@ Usage:
 """
 
 import random
+import secrets
 import string
 import sys
 import threading
@@ -35,10 +36,12 @@ import numpy as np
 
 
 def generate_run_prefix(length: int = 4) -> str:
-    """Generate a random alphanumeric prefix for this run.
+    """Generate a cryptographically random alphanumeric prefix for this run.
 
-    Used in real mode to prevent ID collisions in the scheduler
-    when running multiple experiments.
+    Uses secrets module to ensure the prefix is truly random and NOT affected
+    by random.seed(). This is critical because we want:
+    - Workflow data (sleep times, frame counts) to be reproducible via seed
+    - Run prefix to be unique each time to prevent ID collisions
 
     Args:
         length: Length of the prefix (default: 4)
@@ -46,7 +49,8 @@ def generate_run_prefix(length: int = 4) -> str:
     Returns:
         Random alphanumeric string (lowercase + digits)
     """
-    return ''.join(random.choices(string.ascii_lowercase + string.digits, k=length))
+    alphabet = string.ascii_lowercase + string.digits
+    return ''.join(secrets.choice(alphabet) for _ in range(length))
 
 # Add parent directories to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
