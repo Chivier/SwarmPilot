@@ -47,7 +47,7 @@ def log_error_with_traceback(
 
 from .config import config
 from .model_registry import get_registry
-from .models import ModelInfo, PortRole, PortState, PortInfo, DualPortState
+from .models import ModelInfo, PortRole, PortState, PortInfo, DualPortState, RuntimeStandbyConfig
 from .port_utils import find_available_port, calculate_backoff_delay
 
 
@@ -74,6 +74,9 @@ class SubprocessManager:
 
         # Hot-standby dual-port state management
         self._dual_port_state: Optional[DualPortState] = None
+
+        # Runtime standby configuration (set during start_model, used for restart)
+        self._standby_config: Optional[RuntimeStandbyConfig] = None
 
         # Locks for thread safety during hot-switch
         self._state_lock = asyncio.Lock()
@@ -131,11 +134,18 @@ class SubprocessManager:
         Called during first model start. Sets up both port info objects
         with correct port numbers and initial roles.
 
+        Uses self._standby_config for port offset and retry settings.
+
         Returns:
             Initialized DualPortState
         """
+        # Use runtime standby config if available, otherwise fall back to global config
+        standby_cfg = self._standby_config
+        port_offset = standby_cfg.port_offset if standby_cfg else config.standby_port_offset
+        max_retries = standby_cfg.max_retries if standby_cfg else config.hot_standby_max_retries
+
         primary_port = config.model_port
-        standby_port = config.model_port + config.standby_port_offset
+        standby_port = config.model_port + port_offset
 
         logger.info(f"Initializing dual-port state: primary={primary_port}, standby={standby_port}")
 
@@ -144,13 +154,13 @@ class SubprocessManager:
                 port=primary_port,
                 role=PortRole.PRIMARY,
                 state=PortState.UNINITIALIZED,
-                max_startup_attempts=config.hot_standby_max_retries
+                max_startup_attempts=max_retries
             ),
             port_b=PortInfo(
                 port=standby_port,
                 role=PortRole.STANDBY,
                 state=PortState.UNINITIALIZED,
-                max_startup_attempts=config.hot_standby_max_retries
+                max_startup_attempts=max_retries
             ),
             _primary_port_name="port_a"
         )
@@ -234,8 +244,12 @@ class SubprocessManager:
 
             logger.info(f"[{role}] Process started (PID: {process.pid}), waiting for health...")
 
-            # Wait for health check
-            timeout = config.backup_health_check_timeout if port_info.role == PortRole.STANDBY else 600
+            # Wait for health check - use runtime config for standby timeout
+            if port_info.role == PortRole.STANDBY:
+                standby_cfg = self._standby_config
+                timeout = standby_cfg.health_check_timeout if standby_cfg else config.backup_health_check_timeout
+            else:
+                timeout = 600
             await self._wait_for_health(port, timeout=timeout, interval=2)
 
             # Update state to HEALTHY
@@ -334,12 +348,13 @@ class SubprocessManager:
                     standby.error_message = f"All startup attempts failed. Last error: {e}"
                     return
 
-                # Calculate backoff delay
+                # Calculate backoff delay using runtime config
+                standby_cfg = self._standby_config
                 delay = calculate_backoff_delay(
                     attempt=standby.startup_attempts - 1,  # 0-indexed
-                    initial_delay=config.hot_standby_initial_delay,
-                    max_delay=config.hot_standby_max_delay,
-                    multiplier=config.hot_standby_backoff_multiplier
+                    initial_delay=standby_cfg.initial_delay if standby_cfg else config.hot_standby_initial_delay,
+                    max_delay=standby_cfg.max_delay if standby_cfg else config.hot_standby_max_delay,
+                    multiplier=standby_cfg.backoff_multiplier if standby_cfg else config.hot_standby_backoff_multiplier
                 )
 
                 logger.info(f"[standby] Retrying in {delay:.1f} seconds...")
@@ -386,20 +401,25 @@ class SubprocessManager:
     async def start_model(
         self,
         model_id: str,
-        parameters: Optional[Dict[str, Any]] = None
+        parameters: Optional[Dict[str, Any]] = None,
+        standby_enabled: Optional[bool] = None,
+        standby_config: Optional[Dict[str, Any]] = None
     ) -> ModelInfo:
         """
         Start a model subprocess with hot-standby support.
 
         This method:
         1. Validates the model and prepares environment
-        2. Initializes the dual-port state
-        3. Starts the primary port process (blocking until healthy)
-        4. Schedules standby port startup in the background (non-blocking)
+        2. Creates runtime standby configuration from env + API overrides
+        3. Initializes the dual-port state
+        4. Starts the primary port process (blocking until healthy)
+        5. Schedules standby port startup in the background (non-blocking) if enabled
 
         Args:
             model_id: The model identifier from the registry
             parameters: Optional model-specific parameters
+            standby_enabled: Override for standby enabled (None uses env default)
+            standby_config: Dict of standby config overrides from API request
 
         Returns:
             ModelInfo object with subprocess details
@@ -408,6 +428,12 @@ class SubprocessManager:
             ValueError: If model not found in registry
             RuntimeError: If subprocess fails to start
         """
+        # Build runtime standby configuration from env defaults + API overrides
+        self._standby_config = RuntimeStandbyConfig.from_config_and_overrides(
+            config=config,
+            standby_enabled=standby_enabled,
+            overrides=standby_config
+        )
         # Validate model exists in registry
         registry = get_registry()
         model_entry = registry.get_model(model_id)
@@ -429,12 +455,13 @@ class SubprocessManager:
         # Build environment variables
         env_vars = self._build_env_vars(model_id, parameters or {})
 
-        standby_status = "enabled" if config.standby_enabled else "disabled"
+        standby_status = "enabled" if self._standby_config.enabled else "disabled"
         logger.info(f"Starting model with subprocess (standby {standby_status}): {model_id}")
         logger.info(f"Model directory: {model_dir}")
         logger.info(f"Primary port: {config.model_port}")
-        if config.standby_enabled:
-            logger.info(f"Standby port: {config.model_port + config.standby_port_offset}")
+        if self._standby_config.enabled:
+            standby_port = config.model_port + self._standby_config.port_offset
+            logger.info(f"Standby port: {standby_port}")
 
         # Run uv sync first
         uv_sync_process = await asyncio.create_subprocess_exec(
@@ -484,6 +511,7 @@ class SubprocessManager:
             )
             # Clean up dual port state on failure
             self._dual_port_state = None
+            self._standby_config = None
             self._model_dir = None
             self._env_vars = None
             raise RuntimeError(f"Model failed to start: {e}")
@@ -492,7 +520,7 @@ class SubprocessManager:
         self.current_model = model_info
 
         # Schedule standby startup in background (non-blocking) only if enabled
-        if config.standby_enabled:
+        if self._standby_config.enabled:
             logger.info("[standby] Scheduling background startup...")
             self._standby_startup_task = asyncio.create_task(
                 self._start_standby_async(
@@ -562,6 +590,7 @@ class SubprocessManager:
                 raise RuntimeError(f"Failed to stop subprocess: {e}")
             finally:
                 self._dual_port_state = None
+                self._standby_config = None
                 self._model_dir = None
                 self._env_vars = None
         else:
@@ -624,8 +653,12 @@ class SubprocessManager:
                 # Fall through to traditional restart
 
         # Traditional restart (blocking)
-        # Use configured delay when standby is disabled (default 30s for /task/clear)
-        restart_delay = config.traditional_restart_delay if not config.standby_enabled else 5
+        # Use runtime config delay when standby is disabled (default 30s for /task/clear)
+        standby_cfg = self._standby_config
+        if standby_cfg and not standby_cfg.enabled:
+            restart_delay = standby_cfg.traditional_restart_delay
+        else:
+            restart_delay = 5  # Quick restart when standby was supposed to be available
         logger.info(
             f"Performing traditional restart (standby not available), "
             f"delay: {restart_delay}s..."
@@ -725,14 +758,18 @@ class SubprocessManager:
         standby = self._dual_port_state.standby
         model_id = self.current_model.model_id
 
+        # Use runtime config for restart delay
+        standby_cfg = self._standby_config
+        restart_delay = standby_cfg.restart_delay if standby_cfg else config.standby_restart_delay
+
         logger.info(
             f"[standby-restart] Starting background restart for port {standby.port} "
-            f"(delay: {config.standby_restart_delay}s)"
+            f"(delay: {restart_delay}s)"
         )
 
         # Wait for the configured delay before restarting
         # This allows the old process to fully drain any remaining connections
-        await asyncio.sleep(config.standby_restart_delay)
+        await asyncio.sleep(restart_delay)
 
         # Stop the old process
         logger.info(f"[standby-restart] Stopping old process on port {standby.port}...")

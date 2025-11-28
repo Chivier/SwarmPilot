@@ -55,6 +55,42 @@ from . import logger as _  # Import logger module to initialize logging
 
 
 # Model Management Schemas
+class StandbyConfig(BaseModel):
+    """Configuration for standby (hot-standby) behavior"""
+    port_offset: Optional[int] = Field(
+        default=None,
+        description="Port offset for standby process (default: from env INSTANCE_STANDBY_PORT_OFFSET or 1000)"
+    )
+    max_retries: Optional[int] = Field(
+        default=None,
+        description="Maximum retries for standby startup (default: from env INSTANCE_HOT_STANDBY_MAX_RETRIES or 3)"
+    )
+    initial_delay: Optional[float] = Field(
+        default=None,
+        description="Initial delay before retry in seconds (default: from env INSTANCE_HOT_STANDBY_INITIAL_DELAY or 5.0)"
+    )
+    max_delay: Optional[float] = Field(
+        default=None,
+        description="Maximum delay between retries in seconds (default: from env INSTANCE_HOT_STANDBY_MAX_DELAY or 30.0)"
+    )
+    backoff_multiplier: Optional[float] = Field(
+        default=None,
+        description="Backoff multiplier for retry delays (default: from env INSTANCE_HOT_STANDBY_BACKOFF_MULTIPLIER or 2.0)"
+    )
+    restart_delay: Optional[int] = Field(
+        default=None,
+        description="Delay before restarting standby after hot-switch in seconds (default: from env INSTANCE_STANDBY_RESTART_DELAY or 30)"
+    )
+    health_check_timeout: Optional[int] = Field(
+        default=None,
+        description="Health check timeout for standby process in seconds (default: from env INSTANCE_BACKUP_HEALTH_TIMEOUT or 600)"
+    )
+    traditional_restart_delay: Optional[int] = Field(
+        default=None,
+        description="Delay for traditional restart when standby disabled in seconds (default: from env INSTANCE_TRADITIONAL_RESTART_DELAY or 30)"
+    )
+
+
 class ModelStartRequest(BaseModel):
     """Request schema for starting a model"""
     model_id: str = Field(..., description="Unique identifier of the model/tool to start")
@@ -63,6 +99,14 @@ class ModelStartRequest(BaseModel):
         description="Model-specific initialization parameters"
     )
     scheduler_url: str = Field(..., description="Scheduler URL to register with (must not be empty)")
+    standby: Optional[bool] = Field(
+        default=None,
+        description="Enable/disable standby mode. If None, uses env INSTANCE_STANDBY_ENABLED (default: true)"
+    )
+    standby_config: Optional[StandbyConfig] = Field(
+        default=None,
+        description="Standby configuration overrides. Values override environment variable defaults."
+    )
 
 
 class ModelStartResponse(BaseModel):
@@ -419,11 +463,21 @@ async def start_model(request: ModelStartRequest):
             detail=f"Model not found in registry: {request.model_id}"
         )
 
+    # Build standby configuration dict from request (only include non-None values)
+    standby_config_dict = None
+    if request.standby_config is not None:
+        standby_config_dict = {
+            k: v for k, v in request.standby_config.model_dump().items()
+            if v is not None
+        }
+
     # Start the model
     try:
         model_info = await docker_manager.start_model(
             request.model_id,
-            request.parameters
+            request.parameters,
+            standby_enabled=request.standby,
+            standby_config=standby_config_dict
         )
 
         software_name = request.parameters.get("software_name", None)

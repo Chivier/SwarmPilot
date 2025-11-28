@@ -124,6 +124,81 @@ class PortInfo:
 
 
 @dataclass
+class RuntimeStandbyConfig:
+    """
+    Runtime configuration for standby (hot-standby) behavior.
+
+    This stores the effective standby configuration for a running model,
+    combining environment variable defaults with API request overrides.
+    Used by SubprocessManager to control standby behavior during model lifecycle.
+    """
+    enabled: bool = True
+    port_offset: int = 1000
+    max_retries: int = 3
+    initial_delay: float = 5.0
+    max_delay: float = 30.0
+    backoff_multiplier: float = 2.0
+    restart_delay: int = 30
+    health_check_timeout: int = 600
+    traditional_restart_delay: int = 30
+
+    @classmethod
+    def from_config_and_overrides(
+        cls,
+        config,
+        standby_enabled: Optional[bool] = None,
+        overrides: Optional[Dict[str, Any]] = None
+    ) -> "RuntimeStandbyConfig":
+        """
+        Create RuntimeStandbyConfig from environment config and API overrides.
+
+        Args:
+            config: The global config object with environment variable defaults
+            standby_enabled: Override for standby enabled (from API request)
+            overrides: Dict of config overrides (from API standby_config)
+
+        Returns:
+            RuntimeStandbyConfig with merged values
+        """
+        # Start with environment defaults
+        instance = cls(
+            enabled=config.standby_enabled,
+            port_offset=config.standby_port_offset,
+            max_retries=config.hot_standby_max_retries,
+            initial_delay=config.hot_standby_initial_delay,
+            max_delay=config.hot_standby_max_delay,
+            backoff_multiplier=config.hot_standby_backoff_multiplier,
+            restart_delay=config.standby_restart_delay,
+            health_check_timeout=config.backup_health_check_timeout,
+            traditional_restart_delay=config.traditional_restart_delay,
+        )
+
+        # Override with API request values
+        if standby_enabled is not None:
+            instance.enabled = standby_enabled
+
+        if overrides:
+            if "port_offset" in overrides:
+                instance.port_offset = overrides["port_offset"]
+            if "max_retries" in overrides:
+                instance.max_retries = overrides["max_retries"]
+            if "initial_delay" in overrides:
+                instance.initial_delay = overrides["initial_delay"]
+            if "max_delay" in overrides:
+                instance.max_delay = overrides["max_delay"]
+            if "backoff_multiplier" in overrides:
+                instance.backoff_multiplier = overrides["backoff_multiplier"]
+            if "restart_delay" in overrides:
+                instance.restart_delay = overrides["restart_delay"]
+            if "health_check_timeout" in overrides:
+                instance.health_check_timeout = overrides["health_check_timeout"]
+            if "traditional_restart_delay" in overrides:
+                instance.traditional_restart_delay = overrides["traditional_restart_delay"]
+
+        return instance
+
+
+@dataclass
 class DualPortState:
     """
     Container for managing the two-port hot-standby system.
