@@ -963,7 +963,7 @@ class SubprocessManager:
         process: asyncio.subprocess.Process
     ):
         """
-        Stop a subprocess cleanly.
+        Stop a subprocess using SIGKILL (signal 9) for immediate termination.
 
         Args:
             process: The subprocess to stop
@@ -974,7 +974,7 @@ class SubprocessManager:
         if process is None:
             return
 
-        logger.info(f"Stopping subprocess (PID: {process.pid})")
+        logger.info(f"Stopping subprocess with SIGKILL (PID: {process.pid})")
 
         # Check if process is still running
         if process.returncode is not None:
@@ -982,21 +982,10 @@ class SubprocessManager:
             return
 
         try:
-            # Try graceful termination first
-            process.terminate()
-
-            # Wait up to 5 seconds for graceful shutdown
-            try:
-                await asyncio.wait_for(process.wait(), timeout=5.0)
-                logger.info(f"Subprocess terminated gracefully (PID: {process.pid})")
-                return
-            except asyncio.TimeoutError:
-                logger.warning(f"Subprocess did not terminate gracefully, killing (PID: {process.pid})")
-
-            # Force kill if graceful termination didn't work
+            # Force kill immediately using SIGKILL (signal 9)
             process.kill()
             await process.wait()
-            logger.info(f"Subprocess killed (PID: {process.pid})")
+            logger.info(f"Subprocess killed with SIGKILL (PID: {process.pid})")
 
         except ProcessLookupError:
             # Process already finished
