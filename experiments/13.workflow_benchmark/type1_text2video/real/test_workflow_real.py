@@ -80,7 +80,10 @@ def run_single_experiment(config, captions, logger, strategy_name=None, pre_gene
     logger.info(f"Duration: {config.duration}s")
     logger.info(f"Workflows: {config.num_workflows}")
     logger.info(f"Max B loops config: {config.get_max_b_loops_config()}")
-    logger.info(f"Frame count (from dataset): sampled from captions_10k.jsonl")
+    if config.frame_count_config is not None:
+        logger.info(f"Frame count: from config ({config.get_frame_count_config()})")
+    else:
+        logger.info(f"Frame count: from dataset (captions_10k.jsonl)")
     logger.info(f"Scheduler A: {config.scheduler_a_url}")
     logger.info(f"Scheduler B: {config.scheduler_b_url}")
 

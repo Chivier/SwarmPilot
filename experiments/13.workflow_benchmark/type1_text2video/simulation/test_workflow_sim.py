@@ -523,7 +523,10 @@ def main():
     logger.info("Distribution Configurations")
     logger.info("-"*70)
     logger.info(f"Max B loops: {config.get_max_b_loops_config()}")
-    logger.info(f"Frame count: {config.get_frame_count_config()}")
+    if config.frame_count_config is not None:
+        logger.info(f"Frame count: from config ({config.get_frame_count_config()})")
+    else:
+        logger.info(f"Frame count: from dataset (captions_10k.jsonl)")
     logger.info("="*70)
 
     # Load captions

@@ -68,8 +68,9 @@ def pre_generate_workflows(
     This ensures all strategies use identical workflow data (same sleep times,
     frame counts, max_b_loops, etc.) for fair comparison.
 
-    Both simulation and real modes sample frame_count from the benchmark dataset
-    (captions_10k.jsonl) to ensure consistent distribution across modes.
+    Frame count source priority:
+    1. If --frame-count-config is specified: use the configured distribution
+    2. Otherwise: sample from benchmark dataset (captions_10k.jsonl)
 
     Args:
         config: Text2VideoConfig instance
@@ -84,14 +85,23 @@ def pre_generate_workflows(
     # Set random seed for reproducibility
     random.seed(seed)
 
+    # Determine frame_count source:
+    # - If frame_count_config is specified, use config.sample_frame_count() (from distribution sampler)
+    # - Otherwise, use data_loader.sample_frame_count() (from benchmark dataset)
+    use_config_frame_count = config.frame_count_config is not None
+
     workflows = []
     for i in range(config.num_workflows):
         # Sample max_b_loops from distribution sampler (config-based)
         sampled_max_b_loops = config.sample_max_b_loops()
 
-        # Sample frame_count from benchmark dataset (data_loader)
-        # This ensures both simulation and real modes use the same frame distribution
-        sampled_frame_count = config.data_loader.sample_frame_count()
+        # Sample frame_count based on configuration
+        if use_config_frame_count:
+            # User specified --frame-count-config, use the configured distribution
+            sampled_frame_count = config.sample_frame_count()
+        else:
+            # Default: sample from benchmark dataset for realistic distribution
+            sampled_frame_count = config.data_loader.sample_frame_count()
 
         workflow = Text2VideoWorkflowData(
             workflow_id=f"workflow-{i:04d}",

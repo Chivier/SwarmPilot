@@ -73,14 +73,21 @@ class A1TaskSubmitter(BaseTaskSubmitter):
             # Set random seed for reproducibility
             random.seed(42)
 
+            # Determine frame_count source:
+            # - If frame_count_config is specified, use config.sample_frame_count()
+            # - Otherwise, use data_loader.sample_frame_count() (from benchmark dataset)
+            use_config_frame_count = config.frame_count_config is not None
+
             self.workflows = []
             for i in range(config.num_workflows):
                 # Sample max_b_loops from distribution sampler (config-based)
                 sampled_max_b_loops = config.sample_max_b_loops()
 
-                # Sample frame_count from benchmark dataset (data_loader)
-                # This ensures both simulation and real modes use the same frame distribution
-                sampled_frame_count = config.data_loader.sample_frame_count()
+                # Sample frame_count based on configuration
+                if use_config_frame_count:
+                    sampled_frame_count = config.sample_frame_count()
+                else:
+                    sampled_frame_count = config.data_loader.sample_frame_count()
 
                 workflow = Text2VideoWorkflowData(
                     workflow_id=f"workflow-{i:04d}",
