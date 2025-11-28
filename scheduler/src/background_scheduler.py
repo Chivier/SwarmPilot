@@ -246,12 +246,12 @@ class BackgroundScheduler:
             existing_task = await self.task_registry.get(task_id)
             if not existing_task:
                 # Task doesn't exist in registry, create it
-                from .model import Task
-                await self.task_registry.create(
+                await self.task_registry.create_task(
                     task_id=task_id,
                     model_id=model_id,
                     task_input=task_input,
                     metadata=metadata or {},
+                    assigned_instance="",  # Will be assigned by scheduling below
                 )
             else:
                 # Task exists, update status to PENDING for rescheduling

@@ -27,12 +27,15 @@ class QueuedTask:
         task_input: Dict[str, Any],
         metadata: Dict[str, Any],
         enqueue_time: float,
+        generation: int = 0,
     ):
         self.task_id = task_id
         self.model_id = model_id
         self.task_input = task_input
         self.metadata = metadata
         self.enqueue_time = enqueue_time
+        # Generation counter to track which clear cycle this task belongs to
+        self.generation = generation
 
 
 class CentralTaskQueue:
@@ -91,6 +94,11 @@ class CentralTaskQueue:
 
         # Reference to task dispatcher (set by api.py)
         self._task_dispatcher = None
+
+        # Generation counter to invalidate stale tasks after clear
+        # Increments on each clear() call, used to prevent race conditions
+        # where tasks popped before clear get re-added after clear
+        self._generation = 0
 
         logger.info(
             f"CentralTaskQueue initialized with high_water_mark={high_water_mark}, "
@@ -159,15 +167,16 @@ class CentralTaskQueue:
         if enqueue_time is None:
             enqueue_time = time.time()
 
-        queued_task = QueuedTask(
-            task_id=task_id,
-            model_id=model_id,
-            task_input=task_input,
-            metadata=metadata,
-            enqueue_time=enqueue_time,
-        )
-
         async with self._queue_lock:
+            current_generation = self._generation
+            queued_task = QueuedTask(
+                task_id=task_id,
+                model_id=model_id,
+                task_input=task_input,
+                metadata=metadata,
+                enqueue_time=enqueue_time,
+                generation=current_generation,
+            )
             self._queue.append(queued_task)
             position = len(self._queue)
 
@@ -213,12 +222,20 @@ class CentralTaskQueue:
         This should be called as part of a full task clear operation to ensure
         consistency between the task registry and the queue.
 
+        This method also increments the generation counter to invalidate any
+        tasks that were popped from the queue before the clear and might be
+        re-added by _try_dispatch_tasks() after the clear completes.
+
         Returns:
             Count of tasks that were cleared from the queue
         """
         async with self._queue_lock:
             count = len(self._queue)
             self._queue.clear()
+            # Increment generation to invalidate any tasks that were popped
+            # before clear and might be re-added after clear completes
+            self._generation += 1
+            logger.info(f"Queue generation incremented to {self._generation}")
 
         if count > 0:
             logger.warning(f"Cleared {count} tasks from central queue")
@@ -267,6 +284,12 @@ class CentralTaskQueue:
         Tasks are processed in FIFO order. If an instance is not available
         for a task's model, the task is skipped (remains in queue) and we
         try the next task.
+
+        Uses generation counter to prevent race conditions with clear():
+        - Tasks are tagged with current generation when enqueued
+        - If clear() is called while tasks are being processed, generation increments
+        - Skipped tasks are only re-queued if their generation matches current generation
+        - This prevents stale tasks from being re-added after a clear operation
         """
         if not self._scheduling_strategy or not self._task_dispatcher:
             logger.warning("Scheduling strategy or task dispatcher not set")
@@ -302,9 +325,28 @@ class CentralTaskQueue:
                 skipped_tasks.append(task)
 
         # Put skipped tasks back at the front of the queue (maintain FIFO)
+        # Only re-queue tasks that still have valid generation (not invalidated by clear())
         if skipped_tasks:
             async with self._queue_lock:
-                for task in reversed(skipped_tasks):
+                current_generation = self._generation
+                valid_tasks = []
+                discarded_count = 0
+
+                for task in skipped_tasks:
+                    if task.generation == current_generation:
+                        valid_tasks.append(task)
+                    else:
+                        # Task was invalidated by a clear() call
+                        discarded_count += 1
+
+                if discarded_count > 0:
+                    logger.warning(
+                        f"Discarded {discarded_count} stale tasks from previous generation "
+                        f"(current generation: {current_generation})"
+                    )
+
+                # Re-queue only valid tasks (maintain FIFO order)
+                for task in reversed(valid_tasks):
                     self._queue.appendleft(task)
 
         if dispatched_count > 0:
@@ -322,6 +364,15 @@ class CentralTaskQueue:
         """
         async with self._semaphore:
             try:
+                # Check if task was invalidated by a clear() call before processing
+                async with self._queue_lock:
+                    if task.generation != self._generation:
+                        logger.debug(
+                            f"Task {task.task_id} has stale generation {task.generation}, "
+                            f"current is {self._generation}, skipping dispatch"
+                        )
+                        return True  # Return True to not re-queue this stale task
+
                 # Get available instances below high water mark
                 available_instances = await self._instance_registry.get_instances_below_water_mark(
                     task.model_id, self._high_water_mark
