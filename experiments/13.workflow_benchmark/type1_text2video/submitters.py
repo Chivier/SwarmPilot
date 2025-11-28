@@ -536,7 +536,7 @@ class BTaskSubmitter(BaseTaskSubmitter):
                     )
 
         # Log first and last B request parameters for debugging
-        if isinstance(task_data, tuple):
+        if isinstance(task_data, tuple) and self.config.mode == "simulation":
             workflow_id, a2_result, loop_iteration = task_data
             with self.state_lock:
                 workflow_data = self.workflow_states.get(workflow_id)
