@@ -206,6 +206,25 @@ class CentralTaskQueue:
                 "low_water_mark": self._low_water_mark,
             }
 
+    async def clear(self) -> int:
+        """
+        Clear all tasks from the central queue.
+
+        This should be called as part of a full task clear operation to ensure
+        consistency between the task registry and the queue.
+
+        Returns:
+            Count of tasks that were cleared from the queue
+        """
+        async with self._queue_lock:
+            count = len(self._queue)
+            self._queue.clear()
+
+        if count > 0:
+            logger.warning(f"Cleared {count} tasks from central queue")
+
+        return count
+
     async def _dispatch_loop(self) -> None:
         """
         Background loop that dispatches tasks when instances are available.

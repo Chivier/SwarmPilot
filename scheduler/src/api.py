@@ -283,6 +283,10 @@ logger.info(
     f"low_water_mark={config.queue.low_water_mark}"
 )
 
+# Task clearing state - prevents new task submissions during clear operation
+_clearing_in_progress = False
+_clearing_lock = asyncio.Lock()
+
 # Initialize planner reporter (if configured)
 planner_reporter = None
 if config.planner_report.url and config.planner_report.interval > 0:
@@ -911,6 +915,13 @@ async def submit_task(request: TaskSubmitRequest):
         HTTPException 400: If task with this ID already exists
         HTTPException 404: If no available instance for the model_id
     """
+    # 0. Check if clear operation is in progress
+    if _clearing_in_progress:
+        raise HTTPException(
+            status_code=503,
+            detail={"success": False, "error": "Task clear operation in progress. Please retry."},
+        )
+
     # 1. Validate that task doesn't already exist
     if await task_registry.get(request.task_id):
         raise HTTPException(
@@ -1083,84 +1094,112 @@ async def clear_tasks():
     Clear all tasks from the scheduler and all registered instances.
 
     This endpoint:
-    1. Clears all task records from the scheduler's registry
-    2. Calls /task/clear on all registered instances to clear their task queues
-    3. Resets the pending_tasks counter for all instances
+    1. Sets clearing flag to prevent new task submissions
+    2. Clears all tasks from central queue
+    3. Clears all task records from the scheduler's registry
+    4. Calls /task/clear on all registered instances to clear their task queues
+    5. Resets the pending_tasks counter for all instances
+    6. Clears the clearing flag
 
     Use with caution as this operation cannot be undone.
 
     Returns:
         TaskClearResponse with count of cleared tasks from scheduler
     """
-    # Clear all tasks from scheduler registry
-    cleared_count = await task_registry.clear_all()
-    logger.warning(f"Cleared {cleared_count} tasks from scheduler registry")
+    global _clearing_in_progress
 
-    # Get all registered instances
-    all_instances = await instance_registry.list_all()
-
-    # Clear tasks from each instance in parallel
-    async def clear_instance_tasks(client: httpx.AsyncClient, instance):
-        """Helper function to clear tasks from a single instance."""
-        try:
-            # Call instance's /task/clear endpoint
-            response = await client.post(f"{instance.endpoint}/task/clear")
-            response.raise_for_status()
-            result = response.json()
-
-            logger.info(
-                f"Cleared {result.get('cleared_count', {}).get('total', 0)} tasks "
-                f"from instance {instance.instance_id}"
+    # Set clearing flag to prevent new task submissions
+    async with _clearing_lock:
+        if _clearing_in_progress:
+            raise HTTPException(
+                status_code=409,
+                detail={"success": False, "error": "Clear operation already in progress"},
             )
-            return {
-                "instance_id": instance.instance_id,
-                "success": True,
-                "cleared": result.get("cleared_count", {}).get("total", 0)
-            }
-        except Exception as e:
-            log_http_error(
-                e,
-                request_url=f"{instance.endpoint}/task/clear",
-                request_method="POST",
-                context="task clear on instance",
-                extra={"instance_id": instance.instance_id},
-            )
-            logger.warning(
-                f"Failed to clear tasks from instance {instance.instance_id}: {e}"
-            )
-            return {
-                "instance_id": instance.instance_id,
-                "success": False,
-                "error": str(e)
-            }
+        _clearing_in_progress = True
 
-    instance_clear_results = []
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        # Execute all clear requests in parallel
-        instance_clear_results = await asyncio.gather(
-            *[clear_instance_tasks(client, instance) for instance in all_instances],
-            return_exceptions=False
+    try:
+        logger.warning("Starting task clear operation")
+
+        # 1. Clear central queue first to prevent new dispatches
+        queue_cleared = await central_queue.clear()
+        logger.warning(f"Cleared {queue_cleared} tasks from central queue")
+
+        # 2. Clear all tasks from scheduler registry
+        cleared_count = await task_registry.clear_all()
+        logger.warning(f"Cleared {cleared_count} tasks from scheduler registry")
+
+        # 3. Get all registered instances
+        all_instances = await instance_registry.list_all()
+
+        # Clear tasks from each instance in parallel
+        async def clear_instance_tasks(client: httpx.AsyncClient, instance):
+            """Helper function to clear tasks from a single instance."""
+            try:
+                # Call instance's /task/clear endpoint
+                response = await client.post(f"{instance.endpoint}/task/clear")
+                response.raise_for_status()
+                result = response.json()
+
+                logger.info(
+                    f"Cleared {result.get('cleared_count', {}).get('total', 0)} tasks "
+                    f"from instance {instance.instance_id}"
+                )
+                return {
+                    "instance_id": instance.instance_id,
+                    "success": True,
+                    "cleared": result.get("cleared_count", {}).get("total", 0)
+                }
+            except Exception as e:
+                log_http_error(
+                    e,
+                    request_url=f"{instance.endpoint}/task/clear",
+                    request_method="POST",
+                    context="task clear on instance",
+                    extra={"instance_id": instance.instance_id},
+                )
+                logger.warning(
+                    f"Failed to clear tasks from instance {instance.instance_id}: {e}"
+                )
+                return {
+                    "instance_id": instance.instance_id,
+                    "success": False,
+                    "error": str(e)
+                }
+
+        instance_clear_results = []
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            # Execute all clear requests in parallel
+            instance_clear_results = await asyncio.gather(
+                *[clear_instance_tasks(client, instance) for instance in all_instances],
+                return_exceptions=False
+            )
+
+        # 4. Reset pending_tasks counter for all instances to maintain consistency
+        reset_count = await instance_registry.reset_all_pending_tasks()
+        logger.info(f"Reset pending_tasks counter for {reset_count} instance(s)")
+
+        # Log summary
+        successful_clears = sum(1 for r in instance_clear_results if r["success"])
+        total_instance_tasks = sum(
+            r.get("cleared", 0) for r in instance_clear_results if r["success"]
+        )
+        logger.warning(
+            f"Task clear operation complete: scheduler={cleared_count}, queue={queue_cleared}, "
+            f"instances={successful_clears}/{len(all_instances)} ({total_instance_tasks} tasks)"
         )
 
-    # Reset pending_tasks counter for all instances to maintain consistency
-    reset_count = await instance_registry.reset_all_pending_tasks()
-    logger.info(f"Reset pending_tasks counter for {reset_count} instance(s)")
-
-    # Log summary
-    successful_clears = sum(1 for r in instance_clear_results if r["success"])
-    total_instance_tasks = sum(
-        r.get("cleared", 0) for r in instance_clear_results if r["success"]
-    )
-    logger.info(
-        f"Successfully cleared tasks from {successful_clears}/{len(all_instances)} instances "
-        f"(total {total_instance_tasks} instance tasks)"
-    )
-
-    return TaskClearResponse(
-        success=True,
-        message=f"Successfully cleared {cleared_count} scheduler task(s) and tasks from {successful_clears}/{len(all_instances)} instance(s)",
-        cleared_count=cleared_count,
-    )
+        return TaskClearResponse(
+            success=True,
+            message=f"Successfully cleared {cleared_count} scheduler task(s), "
+                    f"{queue_cleared} queued task(s), and tasks from "
+                    f"{successful_clears}/{len(all_instances)} instance(s)",
+            cleared_count=cleared_count,
+        )
+    finally:
+        # Clear the clearing flag to allow new task submissions
+        async with _clearing_lock:
+            _clearing_in_progress = False
+        logger.info("Task clear operation finished, accepting new submissions")
 
 
 @app.post("/task/resubmit", response_model=TaskResubmitResponse)
