@@ -2,6 +2,7 @@
 
 import os
 from typing import Optional
+from loguru import logger
 
 
 class PlannerConfig:
@@ -46,22 +47,34 @@ class PlannerConfig:
             ValueError: If configuration is invalid
         """
         if self.instance_timeout <= 0:
-            raise ValueError(f"INSTANCE_TIMEOUT must be positive, got {self.instance_timeout}")
+            error_msg = f"INSTANCE_TIMEOUT must be positive, got {self.instance_timeout}"
+            logger.error(f"Configuration validation failed: {error_msg}")
+            raise ValueError(error_msg)
 
         if self.instance_max_retries < 0:
-            raise ValueError(f"INSTANCE_MAX_RETRIES must be non-negative, got {self.instance_max_retries}")
+            error_msg = f"INSTANCE_MAX_RETRIES must be non-negative, got {self.instance_max_retries}"
+            logger.error(f"Configuration validation failed: {error_msg}")
+            raise ValueError(error_msg)
 
         if self.instance_retry_delay < 0:
-            raise ValueError(f"INSTANCE_RETRY_DELAY must be non-negative, got {self.instance_retry_delay}")
+            error_msg = f"INSTANCE_RETRY_DELAY must be non-negative, got {self.instance_retry_delay}"
+            logger.error(f"Configuration validation failed: {error_msg}")
+            raise ValueError(error_msg)
 
         if not (0 < self.planner_port < 65536):
-            raise ValueError(f"PLANNER_PORT must be 1-65535, got {self.planner_port}")
+            error_msg = f"PLANNER_PORT must be 1-65535, got {self.planner_port}"
+            logger.error(f"Configuration validation failed: {error_msg}")
+            raise ValueError(error_msg)
 
         if self.auto_optimize_interval <= 0:
-            raise ValueError(f"AUTO_OPTIMIZE_INTERVAL must be positive, got {self.auto_optimize_interval}")
+            error_msg = f"AUTO_OPTIMIZE_INTERVAL must be positive, got {self.auto_optimize_interval}"
+            logger.error(f"Configuration validation failed: {error_msg}")
+            raise ValueError(error_msg)
 
         if self.auto_optimize_cooldown < 0:
-            raise ValueError(f"AUTO_OPTIMIZE_COOLDOWN must be non-negative, got {self.auto_optimize_cooldown}")
+            error_msg = f"AUTO_OPTIMIZE_COOLDOWN must be non-negative, got {self.auto_optimize_cooldown}"
+            logger.error(f"Configuration validation failed: {error_msg}")
+            raise ValueError(error_msg)
 
 
 # Global configuration instance

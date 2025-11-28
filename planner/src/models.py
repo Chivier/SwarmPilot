@@ -2,6 +2,7 @@
 
 from typing import List, Optional, Dict, Any, Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
+from loguru import logger
 
 
 class PlannerInput(BaseModel):
@@ -46,17 +47,47 @@ class PlannerInput(BaseModel):
         N = info.data.get("N")
 
         if M is not None and len(v) != M:
-            raise ValueError(f"B must have {M} rows (M instances), got {len(v)}")
+            error_msg = f"B must have {M} rows (M instances), got {len(v)}"
+            logger.error(f"PlannerInput validation failed: {error_msg}")
+            raise ValueError(error_msg)
 
         if N is not None:
             for i, row in enumerate(v):
                 if len(row) != N:
-                    raise ValueError(f"B row {i} must have {N} columns (N models), got {len(row)}")
+                    error_msg = f"B row {i} must have {N} columns (N models), got {len(row)}"
+                    logger.error(f"PlannerInput validation failed: {error_msg}")
+                    raise ValueError(error_msg)
                 if any(val < 0 for val in row):
-                    raise ValueError(f"B row {i} contains negative values")
+                    error_msg = f"B row {i} contains negative values"
+                    logger.error(f"PlannerInput validation failed: {error_msg}")
+                    raise ValueError(error_msg)
 
         return v
 
+    @field_validator("initial")
+    @classmethod
+    def validate_initial(cls, v, info):
+        """Validate initial deployment array."""
+        if v is None:
+            return v
+
+        M = info.data.get("M")
+        N = info.data.get("N")
+
+        if M is not None and len(v) != M:
+            error_msg = f"initial must have length {M}, got {len(v)}"
+            logger.error(f"PlannerInput validation failed: {error_msg}")
+            raise ValueError(error_msg)
+
+        if N is not None:
+            for i, model_id in enumerate(v):
+                # Valid values: -1 (no model) or 0 to N-1 (valid model IDs)
+                if model_id != -1 and (model_id < 0 or model_id >= N):
+                    error_msg = f"initial[{i}] has invalid model ID {model_id}, must be -1 or in range [0, {N-1}]"
+                    logger.error(f"PlannerInput validation failed: {error_msg}")
+                    raise ValueError(error_msg)
+
+        return v
 
     @field_validator("target")
     @classmethod
@@ -65,10 +96,14 @@ class PlannerInput(BaseModel):
         N = info.data.get("N")
 
         if N is not None and len(v) != N:
-            raise ValueError(f"target must have length {N}, got {len(v)}")
+            error_msg = f"target must have length {N}, got {len(v)}"
+            logger.error(f"PlannerInput validation failed: {error_msg}")
+            raise ValueError(error_msg)
 
         if any(val < 0 for val in v):
-            raise ValueError("target contains negative values")
+            error_msg = "target contains negative values"
+            logger.error(f"PlannerInput validation failed: {error_msg}")
+            raise ValueError(error_msg)
 
         return v
 
@@ -76,7 +111,9 @@ class PlannerInput(BaseModel):
     def validate_temperature_range(self):
         """Validate temperature parameters."""
         if self.final_temp >= self.initial_temp:
-            raise ValueError("final_temp must be less than initial_temp")
+            error_msg = f"final_temp ({self.final_temp}) must be less than initial_temp ({self.initial_temp})"
+            logger.error(f"PlannerInput validation failed: {error_msg}")
+            raise ValueError(error_msg)
         return self
 
 
@@ -109,9 +146,9 @@ class DeploymentInput(BaseModel):
     def validate_instances_match(self):
         """Validate that number of instances matches M."""
         if len(self.instances) != self.planner_input.M:
-            raise ValueError(
-                f"Number of instances ({len(self.instances)}) must match M ({self.planner_input.M})"
-            )
+            error_msg = f"Number of instances ({len(self.instances)}) must match M ({self.planner_input.M})"
+            logger.error(f"DeploymentInput validation failed: {error_msg}")
+            raise ValueError(error_msg)
         return self
 
 

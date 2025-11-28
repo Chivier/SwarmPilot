@@ -118,7 +118,8 @@ class TestPlannerInput:
         sample_planner_input["final_temp"] = 20.0
         with pytest.raises(ValidationError) as exc_info:
             PlannerInput(**sample_planner_input)
-        assert "final_temp must be less than initial_temp" in str(exc_info.value)
+        # Error message now includes specific values for better debugging
+        assert "must be less than initial_temp" in str(exc_info.value)
 
     def test_default_values(self):
         """Test default values are set correctly."""

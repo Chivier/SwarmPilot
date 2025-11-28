@@ -196,7 +196,10 @@ async def _trigger_optimization():
                 pending_change_original_model.append(cur)
                 target_instance = await instance_store.fetch_one_available_instance(target_model)
                 if not target_instance:
-                    raise ValueError(f"No available target endpoint for model {target_model}")
+                    error_msg = f"No available target endpoint for model {target_model}"
+                    client_msg = error_msg
+                    logger.error(f"Auto-optimization failed: {error_msg}. Client will receive: {client_msg}")
+                    raise ValueError(error_msg)
                 pending_change_target.append(target_instance.endpoint)
 
         # Perform migration if needed
@@ -398,9 +401,12 @@ async def plan_deployment(input_data: PlannerInput):
             )
 
         else:
+            error_msg = f"Unknown algorithm: {input_data.algorithm}"
+            client_msg = error_msg
+            logger.error(f"/plan request failed: {error_msg}. Returning HTTP 400. Client will receive: {client_msg}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Unknown algorithm: {input_data.algorithm}"
+                detail=client_msg
             )
 
         # Compute service capacity and changes
@@ -419,22 +425,25 @@ async def plan_deployment(input_data: PlannerInput):
         return result
 
     except ImportError as e:
-        logger.error(f"Import error: {e}")
+        client_msg = f"Algorithm dependency not available: {str(e)}"
+        logger.error(f"/plan request failed - ImportError: {e}. Returning HTTP 500. Client will receive: {client_msg}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Algorithm dependency not available: {str(e)}"
+            detail=client_msg
         )
     except ValueError as e:
-        logger.error(f"Validation error: {e}")
+        client_msg = f"Invalid input: {str(e)}"
+        logger.error(f"/plan request failed - ValueError: {e}. Returning HTTP 400. Client will receive: {client_msg}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid input: {str(e)}"
+            detail=client_msg
         )
     except Exception as e:
-        logger.error(f"Optimization failed: {e}", exc_info=True)
+        client_msg = f"Optimization failed: {str(e)}"
+        logger.error(f"/plan request failed - Unexpected error: {e}. Returning HTTP 500. Client will receive: {client_msg}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Optimization failed: {str(e)}"
+            detail=client_msg
         )
 
 
@@ -490,9 +499,11 @@ async def deploy_with_migration(input_data: DeploymentInput):
         try:
             initial_ids = mapper.map_names_to_ids(current_models, model_mapping)
         except ValueError as e:
+            client_msg = f"Model mapping failed: {str(e)}"
+            logger.error(f"Deployment request failed - Model mapping error: {e}. Returning HTTP 400. Client will receive: {client_msg}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Model mapping failed: {str(e)}"
+                detail=client_msg
             )
 
         # Override the initial field in planner_input
@@ -542,9 +553,12 @@ async def deploy_with_migration(input_data: DeploymentInput):
             )
 
         else:
+            error_msg = f"Unknown algorithm: {planner_params.algorithm}"
+            client_msg = error_msg
+            logger.error(f"/deploy/migration request failed: {error_msg}. Returning HTTP 400. Client will receive: {client_msg}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Unknown algorithm: {planner_params.algorithm}"
+                detail=client_msg
             )
 
         service_capacity = optimizer.compute_service_capacity(deployment)
@@ -566,10 +580,13 @@ async def deploy_with_migration(input_data: DeploymentInput):
                 pending_change_original_model.append(cur)
                 target_instance = await instance_store.fetch_one_available_instance(target_model)
                 if not target_instance:
-                    raise ValueError(f"No available target endpoint for model {target_model}")
+                    error_msg = f"No available target endpoint for model {target_model}"
+                    client_msg = f"Invalid input: {error_msg}"
+                    logger.error(f"/deploy/migration failed: {error_msg}. Returning HTTP 400. Client will receive: {client_msg}")
+                    raise ValueError(error_msg)
                 pending_change_target.append(target_instance.endpoint)
-                
-            
+
+
 
         logger.info(f"Optimization completed: score={score:.4f}, changes={changes_count}")
         logger.info(f"Pending change original: {pending_change_original}")
@@ -580,9 +597,11 @@ async def deploy_with_migration(input_data: DeploymentInput):
         try:
             target_models = mapper.map_ids_to_names(deployment.tolist(), reverse_mapping)
         except ValueError as e:
+            client_msg = f"Failed to map deployment IDs to names: {str(e)}"
+            logger.error(f"/deploy/migration failed - ID mapping error: {e}. Returning HTTP 500. Client will receive: {client_msg}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to map deployment IDs to names: {str(e)}"
+                detail=client_msg
             )
 
         logger.info(f"Target models: {target_models}")
@@ -650,22 +669,25 @@ async def deploy_with_migration(input_data: DeploymentInput):
     except HTTPException:
         raise
     except ImportError as e:
-        logger.error(f"Import error: {e}")
+        client_msg = f"Algorithm dependency not available: {str(e)}"
+        logger.error(f"/deploy/migration failed - ImportError: {e}. Returning HTTP 500. Client will receive: {client_msg}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Algorithm dependency not available: {str(e)}"
+            detail=client_msg
         )
     except ValueError as e:
-        logger.error(f"Validation error: {e}")
+        client_msg = f"Invalid input: {str(e)}"
+        logger.error(f"/deploy/migration failed - ValueError: {e}. Returning HTTP 400. Client will receive: {client_msg}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid input: {str(e)}"
+            detail=client_msg
         )
     except Exception as e:
-        logger.error(f"Deployment failed: {e}", exc_info=True)
+        client_msg = f"Deployment failed: {str(e)}"
+        logger.error(f"/deploy/migration failed - Unexpected error: {e}. Returning HTTP 500. Client will receive: {client_msg}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Deployment failed: {str(e)}"
+            detail=client_msg
         )
 
 @app.post("/deploy", response_model=DeploymentOutput)
@@ -720,9 +742,11 @@ async def deploy_with_optimization(input_data: DeploymentInput):
         try:
             initial_ids = mapper.map_names_to_ids(current_models, model_mapping)
         except ValueError as e:
+            client_msg = f"Model mapping failed: {str(e)}"
+            logger.error(f"Deployment request failed - Model mapping error: {e}. Returning HTTP 400. Client will receive: {client_msg}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Model mapping failed: {str(e)}"
+                detail=client_msg
             )
 
         # Override the initial field in planner_input
@@ -772,9 +796,12 @@ async def deploy_with_optimization(input_data: DeploymentInput):
             )
 
         else:
+            error_msg = f"Unknown algorithm: {planner_params.algorithm}"
+            client_msg = error_msg
+            logger.error(f"/deploy request failed: {error_msg}. Returning HTTP 400. Client will receive: {client_msg}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Unknown algorithm: {planner_params.algorithm}"
+                detail=client_msg
             )
 
         service_capacity = optimizer.compute_service_capacity(deployment)
@@ -786,9 +813,11 @@ async def deploy_with_optimization(input_data: DeploymentInput):
         try:
             target_models = mapper.map_ids_to_names(deployment.tolist(), reverse_mapping)
         except ValueError as e:
+            client_msg = f"Failed to map deployment IDs to names: {str(e)}"
+            logger.error(f"/deploy failed - ID mapping error: {e}. Returning HTTP 500. Client will receive: {client_msg}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to map deployment IDs to names: {str(e)}"
+                detail=client_msg
             )
 
         logger.info(f"Target models: {target_models}")
@@ -843,22 +872,25 @@ async def deploy_with_optimization(input_data: DeploymentInput):
     except HTTPException:
         raise
     except ImportError as e:
-        logger.error(f"Import error: {e}")
+        client_msg = f"Algorithm dependency not available: {str(e)}"
+        logger.error(f"/deploy failed - ImportError: {e}. Returning HTTP 500. Client will receive: {client_msg}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Algorithm dependency not available: {str(e)}"
+            detail=client_msg
         )
     except ValueError as e:
-        logger.error(f"Validation error: {e}")
+        client_msg = f"Invalid input: {str(e)}"
+        logger.error(f"/deploy failed - ValueError: {e}. Returning HTTP 400. Client will receive: {client_msg}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid input: {str(e)}"
+            detail=client_msg
         )
     except Exception as e:
-        logger.error(f"Deployment failed: {e}", exc_info=True)
+        client_msg = f"Deployment failed: {str(e)}"
+        logger.error(f"/deploy failed - Unexpected error: {e}. Returning HTTP 500. Client will receive: {client_msg}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Deployment failed: {str(e)}"
+            detail=client_msg
         )
 
 
@@ -907,10 +939,11 @@ async def register_available_instance(request: InstanceRegisterRequest):
         )
 
     except Exception as e:
-        logger.error(f"Failed to register instance: {e}", exc_info=True)
+        client_msg = f"Failed to register instance: {str(e)}"
+        logger.error(f"/instance/register failed - Error: {e}. Returning HTTP 500. Client will receive: {client_msg}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to register instance: {str(e)}"
+            detail=client_msg
         )
 
 @app.get("/migration/info")

@@ -52,7 +52,9 @@ class ModelMapper:
         result = []
         for name in names:
             if name not in mapping:
-                raise ValueError(f"Model name '{name}' not found in mapping")
+                error_msg = f"Model name '{name}' not found in mapping. Available mappings: {list(mapping.keys())}"
+                logger.error(f"Model mapping failed: {error_msg}")
+                raise ValueError(error_msg)
             result.append(mapping[name])
         return result
 
@@ -74,7 +76,9 @@ class ModelMapper:
         result = []
         for model_id in ids:
             if model_id not in reverse_mapping:
-                raise ValueError(f"Model ID {model_id} not found in reverse mapping")
+                error_msg = f"Model ID {model_id} not found in reverse mapping. Available IDs: {list(reverse_mapping.keys())}"
+                logger.error(f"ID to name mapping failed: {error_msg}")
+                raise ValueError(error_msg)
             result.append(reverse_mapping[model_id])
         return result
 
@@ -141,7 +145,7 @@ class InstanceDeployer:
                 data = response.json()
                 return data.get("instance", {})
         except Exception as e:
-            logger.error(f"Failed to get info from {endpoint}: {e}")
+            logger.error(f"Failed to get info from {endpoint}: {e}", exc_info=True)
             return None
 
     async def deploy_model(
@@ -346,7 +350,7 @@ class InstanceDeployer:
                 response.raise_for_status()
                 return response.json()
         except Exception as e:
-            logger.error(f"Failed to initiate restart on {endpoint}: {e}")
+            logger.error(f"Failed to initiate restart on {endpoint}: {e}", exc_info=True)
             raise
 
     async def get_restart_status(
@@ -376,7 +380,7 @@ class InstanceDeployer:
                 response.raise_for_status()
                 return response.json()
         except Exception as e:
-            logger.error(f"Failed to get restart status from {endpoint}: {e}")
+            logger.error(f"Failed to get restart status from {endpoint}: {e}", exc_info=True)
             raise
 
     async def deploy_to_instances(
@@ -489,99 +493,186 @@ class InstanceMigrator:
                 data = response.json()
                 return data.get("instance", {})
         except Exception as e:
-            logger.error(f"Failed to get info from {endpoint}: {e}")
+            logger.error(f"Failed to get info from {endpoint}: {e}", exc_info=True)
             return None
 
     async def migration_model(
-        self, 
+        self,
         original_endpoint: str,
         target_endpoint: str,
         instance_index: int
     ) -> MigrationStatus:
         start_time = time.time()
-        error_message = None
-        
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            # Step 1: get the information
-            info_response = await client.get(f"{original_endpoint}/info")
-            info_response.raise_for_status()
-            info_data = info_response.json()
+        current_model_id = None
+        target_model_id = None
 
-            current_model_data = info_data.get("instance", {}).get("current_model")
-            current_instance_id = info_data.get("instance", {}).get("instance_id")
-            current_model_id = current_model_data.get("model_id") if current_model_data else None
-            
-            info_response = await client.get(f"{target_endpoint}/info")
-            info_response.raise_for_status()
-            info_data = info_response.json()
-            
-            target_model_data = info_data.get("instance", {}).get("current_model")
-            target_instance_id = info_data.get('instance', {}).get("instance_id")
-            target_model_id = target_model_data.get("model_id") if target_model_data else None
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                # Step 1: get the information from original endpoint
+                try:
+                    info_response = await client.get(f"{original_endpoint}/info")
+                    info_response.raise_for_status()
+                    info_data = info_response.json()
+                except httpx.HTTPStatusError as e:
+                    error_msg = f"Failed to get info from original endpoint {original_endpoint}: HTTP {e.response.status_code}"
+                    logger.error(f"Migration failed: {error_msg}", exc_info=True)
+                    return MigrationStatus(
+                        instance_index=instance_index,
+                        endpoint=original_endpoint,
+                        target_model=target_model_id,
+                        previous_model=current_model_id,
+                        success=False,
+                        error_message=error_msg,
+                        deployment_time=time.time() - start_time
+                    )
+                except httpx.RequestError as e:
+                    error_msg = f"Request error getting info from original endpoint {original_endpoint}: {str(e)}"
+                    logger.error(f"Migration failed: {error_msg}", exc_info=True)
+                    return MigrationStatus(
+                        instance_index=instance_index,
+                        endpoint=original_endpoint,
+                        target_model=target_model_id,
+                        previous_model=current_model_id,
+                        success=False,
+                        error_message=error_msg,
+                        deployment_time=time.time() - start_time
+                    )
 
-            if current_model_id == target_model_id:
-                logger.info(f"Instance {current_instance_id} have same model as {target_instance_id}, skip migration")
-                migration_time = time.time() - start_time
-                return MigrationStatus(
-                    instance_index = instance_index,
-                    endpoint = original_endpoint,
-                    target_model = target_model_id,
-                    previous_model = current_model_id,
-                    success = True,
-                    error_message = None,
-                    deployment_time = migration_time
-                )             
-            
-            # Step 3: Deregister original instance from its scheduler
-            # Step 4: Register new instance to scheduler (run in parallel)
+                current_model_data = info_data.get("instance", {}).get("current_model")
+                current_instance_id = info_data.get("instance", {}).get("instance_id")
+                current_model_id = current_model_data.get("model_id") if current_model_data else None
 
-            # Validate scheduler_mapping has the target model
-            if not self.scheduler_mapping or target_model_id not in self.scheduler_mapping:
-                error_msg = f"No scheduler mapping found for model {target_model_id}. Available models: {list(self.scheduler_mapping.keys()) if self.scheduler_mapping else []}"
-                logger.error(error_msg)
-                migration_time = time.time() - start_time
-                return MigrationStatus(
-                    instance_index=instance_index,
-                    endpoint=original_endpoint,
-                    target_model=target_model_id,
-                    previous_model=current_model_id,
-                    success=False,
-                    error_message=error_msg,
-                    deployment_time=migration_time
-                )
+                # Step 2: get the information from target endpoint
+                try:
+                    info_response = await client.get(f"{target_endpoint}/info")
+                    info_response.raise_for_status()
+                    info_data = info_response.json()
+                except httpx.HTTPStatusError as e:
+                    error_msg = f"Failed to get info from target endpoint {target_endpoint}: HTTP {e.response.status_code}"
+                    logger.error(f"Migration failed: {error_msg}", exc_info=True)
+                    return MigrationStatus(
+                        instance_index=instance_index,
+                        endpoint=original_endpoint,
+                        target_model=target_model_id,
+                        previous_model=current_model_id,
+                        success=False,
+                        error_message=error_msg,
+                        deployment_time=time.time() - start_time
+                    )
+                except httpx.RequestError as e:
+                    error_msg = f"Request error getting info from target endpoint {target_endpoint}: {str(e)}"
+                    logger.error(f"Migration failed: {error_msg}", exc_info=True)
+                    return MigrationStatus(
+                        instance_index=instance_index,
+                        endpoint=original_endpoint,
+                        target_model=target_model_id,
+                        previous_model=current_model_id,
+                        success=False,
+                        error_message=error_msg,
+                        deployment_time=time.time() - start_time
+                    )
 
-            scheduler_url = self.scheduler_mapping[target_model_id]
-            logger.info(f"Registering {target_endpoint} with model {target_model_id} to scheduler {scheduler_url}")
+                target_model_data = info_data.get("instance", {}).get("current_model")
+                target_instance_id = info_data.get('instance', {}).get("instance_id")
+                target_model_id = target_model_data.get("model_id") if target_model_data else None
 
-            payload = {
-                "scheduler_url": scheduler_url
-            }
+                if current_model_id == target_model_id:
+                    logger.info(f"Instance {current_instance_id} have same model as {target_instance_id}, skip migration")
+                    migration_time = time.time() - start_time
+                    return MigrationStatus(
+                        instance_index=instance_index,
+                        endpoint=original_endpoint,
+                        target_model=target_model_id,
+                        previous_model=current_model_id,
+                        success=True,
+                        error_message=None,
+                        deployment_time=migration_time
+                    )
 
-            # Create tasks for parallel execution
-            register_task = asyncio.create_task(
-                client.post(f"{target_endpoint}/model/register", json=payload)
+                # Step 3: Validate scheduler_mapping has the target model
+                if not self.scheduler_mapping or target_model_id not in self.scheduler_mapping:
+                    error_msg = f"No scheduler mapping found for model {target_model_id}. Available models: {list(self.scheduler_mapping.keys()) if self.scheduler_mapping else []}"
+                    logger.error(f"Migration failed: {error_msg}")
+                    migration_time = time.time() - start_time
+                    return MigrationStatus(
+                        instance_index=instance_index,
+                        endpoint=original_endpoint,
+                        target_model=target_model_id,
+                        previous_model=current_model_id,
+                        success=False,
+                        error_message=error_msg,
+                        deployment_time=migration_time
+                    )
+
+                scheduler_url = self.scheduler_mapping[target_model_id]
+                logger.info(f"Registering {target_endpoint} with model {target_model_id} to scheduler {scheduler_url}")
+
+                payload = {
+                    "scheduler_url": scheduler_url
+                }
+
+                # Step 4: Deregister original and register new instance in parallel
+                try:
+                    register_task = asyncio.create_task(
+                        client.post(f"{target_endpoint}/model/register", json=payload)
+                    )
+                    deregister_task = asyncio.create_task(self.deregister_model(original_endpoint))
+                    # Get the register and deregister result
+                    deregister_response = await deregister_task
+                    register_response = await register_task
+                    register_response.raise_for_status()
+                except httpx.HTTPStatusError as e:
+                    error_msg = f"Failed to register/deregister: HTTP {e.response.status_code} - {e.response.text}"
+                    logger.error(f"Migration failed during register/deregister: {error_msg}", exc_info=True)
+                    return MigrationStatus(
+                        instance_index=instance_index,
+                        endpoint=original_endpoint,
+                        target_model=target_model_id,
+                        previous_model=current_model_id,
+                        success=False,
+                        error_message=error_msg,
+                        deployment_time=time.time() - start_time
+                    )
+                except httpx.RequestError as e:
+                    error_msg = f"Request error during register/deregister: {str(e)}"
+                    logger.error(f"Migration failed during register/deregister: {error_msg}", exc_info=True)
+                    return MigrationStatus(
+                        instance_index=instance_index,
+                        endpoint=original_endpoint,
+                        target_model=target_model_id,
+                        previous_model=current_model_id,
+                        success=False,
+                        error_message=error_msg,
+                        deployment_time=time.time() - start_time
+                    )
+
+            # Now everything is done
+            migration_time = time.time() - start_time
+            logger.info(
+                f"Successfully migrated from {original_endpoint} to {target_endpoint} "
+                f"in {migration_time:.2f}s"
             )
-            deregister_task = asyncio.create_task(self.deregister_model(original_endpoint))
-            # Get the register and deregister result
-            deregister_response = await deregister_task
-            register_response = await register_task
-            register_response.raise_for_status()
-            
-        # Now everything is done
-        migration_time = time.time() - start_time
-        logger.info(
-            f"Successfully migrated from {original_endpoint} to {target_endpoint} "
-            f"in {migration_time:.2f}s"
-        )
-        return MigrationStatus(
-            instance_index = instance_index,
-            endpoint = original_endpoint,
-            target_model = target_model_id,
-            previous_model = current_model_id,
-            success = True,
-            error_message = None,
-            deployment_time = migration_time
-        )
+            return MigrationStatus(
+                instance_index=instance_index,
+                endpoint=original_endpoint,
+                target_model=target_model_id,
+                previous_model=current_model_id,
+                success=True,
+                error_message=None,
+                deployment_time=migration_time
+            )
+        except Exception as e:
+            error_msg = f"Unexpected error during migration: {str(e)}"
+            logger.error(f"Migration from {original_endpoint} to {target_endpoint} failed: {error_msg}", exc_info=True)
+            return MigrationStatus(
+                instance_index=instance_index,
+                endpoint=original_endpoint,
+                target_model=target_model_id,
+                previous_model=current_model_id,
+                success=False,
+                error_message=error_msg,
+                deployment_time=time.time() - start_time
+            )
  
 
     async def deregister_model(
@@ -612,7 +703,7 @@ class InstanceMigrator:
                 response.raise_for_status()
                 return response.json()
         except Exception as e:
-            logger.error(f"Failed to initiate restart on {endpoint}: {e}")
+            logger.error(f"Failed to deregister model on {endpoint}: {e}", exc_info=True)
             raise
 
     async def migration_instances(
