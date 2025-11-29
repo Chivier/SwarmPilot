@@ -222,6 +222,17 @@ class TaskClearResponse(BaseModel):
     )
 
 
+class TaskFetchResponse(BaseModel):
+    """Response schema for fetching the first queued task with full details"""
+    exist: bool = Field(..., description="Whether a task was found and fetched")
+    task_id: str = Field(..., description="ID of the fetched task, empty string if none")
+    # Additional fields for task redistribution (optional for backward compatibility)
+    model_id: Optional[str] = Field(None, description="Model ID of the fetched task")
+    task_input: Optional[Dict[str, Any]] = Field(None, description="Task input data")
+    enqueue_time: Optional[float] = Field(None, description="Original enqueue timestamp for priority ordering")
+    submitted_at: Optional[str] = Field(None, description="Original submission timestamp (ISO 8601)")
+
+
 # Management Schemas
 class ModelInfo(BaseModel):
     """Current model information"""
@@ -1337,6 +1348,48 @@ async def list_tasks(
         total=len(task_details),
         tasks=task_details
     )
+
+
+@app.get(
+    "/task/fetch",
+    response_model=TaskFetchResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def fetch_task():
+    """
+    Fetch the first queued task from the task queue.
+
+    This endpoint allows clients to retrieve the oldest queued task
+    (lowest enqueue_time) from the instance's task queue. The fetched
+    task is marked as FETCHED and will not be executed by this instance.
+    No callback will be sent for fetched tasks.
+
+    Use this for work redistribution scenarios where another instance
+    or external client needs to take over pending tasks.
+
+    Returns:
+        - exist: True if a task was fetched, False if no eligible task
+        - task_id: The ID of the fetched task, or empty string if none
+    """
+    task_queue = get_task_queue()
+
+    # Fetch the oldest queued task
+    task = await task_queue.fetch_task()
+
+    if task:
+        return TaskFetchResponse(
+            exist=True,
+            task_id=task.task_id,
+            model_id=task.model_id,
+            task_input=task.task_input,
+            enqueue_time=task.enqueue_time,
+            submitted_at=task.submitted_at,
+        )
+    else:
+        return TaskFetchResponse(
+            exist=False,
+            task_id=""
+        )
 
 
 @app.get(

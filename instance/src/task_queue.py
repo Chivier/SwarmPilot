@@ -107,6 +107,59 @@ class TaskQueue:
         """Get task by ID"""
         return self.tasks.get(task_id)
 
+    async def fetch_task(self) -> Optional[Task]:
+        """
+        Fetch the first queued task (lowest enqueue_time) from the queue head.
+
+        The task is marked as FETCHED and removed from the execution queue.
+        Its callback will NOT be executed.
+
+        Returns:
+            Task object if a queued task was found, None otherwise.
+
+        Note:
+            - Only QUEUED tasks are considered
+            - RUNNING, COMPLETED, FAILED tasks are skipped
+            - The fetched task remains in self.tasks for queryability via /task/list
+        """
+        async with self._queue_lock:
+            if not self.queue:
+                return None
+
+            # Find the QUEUED task with lowest enqueue_time (oldest/first)
+            # We need to scan the queue since it's a min-heap ordered by enqueue_time
+            best_task: Optional[Task] = None
+            best_enqueue_time: float = float("inf")
+            best_index: int = -1
+
+            for i, (enqueue_time, task_id) in enumerate(self.queue):
+                task = self.tasks.get(task_id)
+                if task and task.status == TaskStatus.QUEUED:
+                    if enqueue_time < best_enqueue_time:
+                        best_enqueue_time = enqueue_time
+                        best_task = task
+                        best_index = i
+
+            if best_task is None:
+                return None
+
+            # Remove the task from the execution queue
+            # Since we're removing from middle, rebuild the heap
+            self.queue = [
+                (t, tid) for j, (t, tid) in enumerate(self.queue) if j != best_index
+            ]
+            heapq.heapify(self.queue)
+
+            # Mark task as FETCHED
+            best_task.status = TaskStatus.FETCHED
+
+            logger.info(
+                f"Task {best_task.task_id} fetched from queue head "
+                f"(enqueue_time={best_enqueue_time:.3f})"
+            )
+
+            return best_task
+
     async def list_tasks(
         self,
         status_filter: Optional[TaskStatus] = None,

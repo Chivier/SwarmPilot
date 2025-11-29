@@ -61,14 +61,22 @@ class DockerManager:
     async def start_model(
         self,
         model_id: str,
-        parameters: Optional[Dict[str, Any]] = None
+        parameters: Optional[Dict[str, Any]] = None,
+        standby_enabled: Optional[bool] = None,
+        standby_config: Optional[Dict[str, Any]] = None
     ) -> ModelInfo:
         """
         Start a model container.
 
+        Note: standby_enabled and standby_config parameters are accepted for API
+        compatibility with SubprocessManager but are ignored. Docker containers
+        do not support the hot-standby feature.
+
         Args:
             model_id: The model identifier from the registry
             parameters: Optional model-specific parameters
+            standby_enabled: Ignored (Docker does not support hot-standby)
+            standby_config: Ignored (Docker does not support hot-standby)
 
         Returns:
             ModelInfo object with container details
@@ -77,6 +85,13 @@ class DockerManager:
             ValueError: If model not found in registry
             RuntimeError: If container fails to start
         """
+        # Log if standby parameters were provided (for debugging)
+        if standby_enabled is not None or standby_config is not None:
+            logger.debug(
+                "DockerManager: standby_enabled and standby_config parameters are ignored. "
+                "Hot-standby is only supported in SubprocessManager mode."
+            )
+
         # Validate model exists in registry
         registry = get_registry()
         model_entry = registry.get_model(model_id)

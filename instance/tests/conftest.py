@@ -247,6 +247,7 @@ def mock_task_queue():
     queue.get_task = AsyncMock(return_value=None)
     queue.list_tasks = AsyncMock(return_value=[])
     queue.delete_task = AsyncMock(return_value=True)
+    queue.fetch_task = AsyncMock(return_value=None)
     queue.get_queue_stats = AsyncMock(return_value={
         "total": 0,
         "queued": 0,
