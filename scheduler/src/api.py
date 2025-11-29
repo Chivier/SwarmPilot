@@ -306,6 +306,225 @@ else:
     )
 
 # ============================================================================
+# Task Redistribution Helper
+# ============================================================================
+
+async def _redistribute_tasks_on_registration(
+    instance_id: str,
+    high_water_mark: int,
+) -> dict:
+    """
+    Redistribute tasks from other instances to a newly registered instance.
+
+    When a new instance registers, this function "steals" pending tasks from
+    other instances with the same model_id to load-balance across the cluster.
+    After redistribution completes, the instance status is set to ACTIVE.
+
+    This function is designed to run asynchronously via asyncio.create_task()
+    so that registration returns immediately while work stealing proceeds in
+    the background.
+
+    Flow:
+    1. Find instances with same model_id and pending_tasks > 0
+    2. Randomly select min(count, high_water_mark) instances
+    3. From each selected instance, call GET /task/fetch to get 1 task
+    4. Resubmit each fetched task to the new instance
+    5. Update instance status to ACTIVE when done
+
+    Args:
+        instance_id: ID of the newly registered instance
+        high_water_mark: Maximum number of instances to steal from
+
+    Returns:
+        Dictionary with redistribution statistics:
+        - donors_selected: Number of donor instances selected
+        - tasks_fetched: Number of tasks successfully fetched
+        - tasks_resubmitted: Number of tasks successfully resubmitted
+        - failed_donors: List of donor instance IDs that failed
+        - failed_resubmissions: List of task IDs that failed to resubmit
+    """
+    # Get the new instance from registry
+    new_instance = await instance_registry.get(instance_id)
+    if not new_instance:
+        logger.error(f"Instance {instance_id} not found in registry during redistribution")
+        return {
+            "donors_selected": 0,
+            "tasks_fetched": 0,
+            "tasks_resubmitted": 0,
+            "failed_donors": [],
+            "failed_resubmissions": [],
+        }
+
+    try:
+        # Step 1: Find donor candidates - instances with same model and pending tasks
+        all_instances = await instance_registry.list_active(model_id=new_instance.model_id)
+        donor_candidates = []
+
+        for inst in all_instances:
+            if inst.instance_id == new_instance.instance_id:
+                continue  # Skip the new instance itself
+            stats = await instance_registry.get_stats(inst.instance_id)
+            if stats and stats.pending_tasks > 0:
+                donor_candidates.append(inst)
+
+        if not donor_candidates:
+            logger.debug(f"No donor candidates found for model {new_instance.model_id}")
+            return {
+                "donors_selected": 0,
+                "tasks_fetched": 0,
+                "tasks_resubmitted": 0,
+                "failed_donors": [],
+                "failed_resubmissions": [],
+            }
+
+        # Step 2: Randomly select donors (capped by high_water_mark)
+        num_to_select = min(len(donor_candidates), high_water_mark)
+        selected_donors = random.sample(donor_candidates, num_to_select)
+
+        logger.info(
+            f"Selected {len(selected_donors)} donor instances for task redistribution "
+            f"to {new_instance.instance_id}"
+        )
+
+        # Step 3: Fetch tasks from donors
+        fetched_tasks = []
+        failed_donors = []
+
+        async with httpx.AsyncClient(timeout=10.0, verify=False) as client:
+            for donor in selected_donors:
+                try:
+                    response = await client.get(f"{donor.endpoint}/task/fetch")
+                    response.raise_for_status()
+                    data = response.json()
+
+                    if data.get("exist"):
+                        fetched_tasks.append({
+                            "task_id": data["task_id"],
+                            "model_id": data.get("model_id"),
+                            "task_input": data.get("task_input"),
+                            "enqueue_time": data.get("enqueue_time"),
+                            "submitted_at": data.get("submitted_at"),
+                            "donor_instance_id": donor.instance_id,
+                        })
+                        logger.debug(
+                            f"Fetched task {data['task_id']} from donor {donor.instance_id}"
+                        )
+                        # Decrement donor's pending count since task was fetched
+                        await instance_registry.decrement_pending(donor.instance_id)
+                    else:
+                        logger.debug(f"Donor {donor.instance_id} had no fetchable tasks")
+
+                except httpx.HTTPStatusError as e:
+                    log_http_error(
+                        e,
+                        request_url=f"{donor.endpoint}/task/fetch",
+                        request_method="GET",
+                        context="task redistribution fetch",
+                        extra={
+                            "donor_id": donor.instance_id,
+                            "new_instance_id": new_instance.instance_id
+                        },
+                    )
+                    failed_donors.append(donor.instance_id)
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to fetch task from donor {donor.instance_id}: "
+                        f"{type(e).__name__}: {e}"
+                    )
+                    failed_donors.append(donor.instance_id)
+
+        if not fetched_tasks:
+            return {
+                "donors_selected": len(selected_donors),
+                "tasks_fetched": 0,
+                "tasks_resubmitted": 0,
+                "failed_donors": failed_donors,
+                "failed_resubmissions": [],
+            }
+
+        # Step 4: Resubmit tasks to new instance
+        resubmitted_count = 0
+        failed_resubmissions = []
+        # Use scheduler's callback URL for the resubmitted tasks
+        redistribution_callback_url = f"{callback_base_url}/callback/task_result"
+
+        async with httpx.AsyncClient(timeout=60.0, verify=False) as client:
+            for task_data in fetched_tasks:
+                try:
+                    # Prepare submission payload with preserved metadata
+                    payload = {
+                        "task_id": task_data["task_id"],
+                        "model_id": task_data["model_id"] or new_instance.model_id,
+                        "task_input": task_data["task_input"] or {},
+                        "callback_url": redistribution_callback_url,  # Rewritten to scheduler's callback
+                    }
+
+                    # Preserve enqueue_time for priority ordering if available
+                    if task_data.get("enqueue_time") is not None:
+                        payload["enqueue_time"] = task_data["enqueue_time"]
+
+                    # Submit to new instance
+                    response = await client.post(
+                        f"{new_instance.endpoint}/task/submit",
+                        json=payload
+                    )
+                    response.raise_for_status()
+
+                    submit_result = response.json()
+                    if submit_result.get("success"):
+                        # Increment new instance's pending count
+                        await instance_registry.increment_pending(new_instance.instance_id)
+                        resubmitted_count += 1
+                        logger.debug(
+                            f"Resubmitted task {task_data['task_id']} "
+                            f"from {task_data['donor_instance_id']} to {new_instance.instance_id}"
+                        )
+                    else:
+                        logger.warning(
+                            f"New instance rejected task {task_data['task_id']}: "
+                            f"{submit_result.get('message', 'Unknown error')}"
+                        )
+                        failed_resubmissions.append(task_data["task_id"])
+
+                except httpx.HTTPStatusError as e:
+                    log_http_error(
+                        e,
+                        request_url=f"{new_instance.endpoint}/task/submit",
+                        request_method="POST",
+                        request_body=payload,
+                        context="task redistribution submit",
+                        extra={
+                            "task_id": task_data["task_id"],
+                            "new_instance_id": new_instance.instance_id
+                        },
+                    )
+                    failed_resubmissions.append(task_data["task_id"])
+                except Exception as e:
+                    logger.error(
+                        f"Failed to resubmit task {task_data['task_id']} "
+                        f"to {new_instance.instance_id}: {type(e).__name__}: {e}"
+                    )
+                    failed_resubmissions.append(task_data["task_id"])
+
+        return {
+            "donors_selected": len(selected_donors),
+            "tasks_fetched": len(fetched_tasks),
+            "tasks_resubmitted": resubmitted_count,
+            "failed_donors": failed_donors,
+            "failed_resubmissions": failed_resubmissions,
+        }
+
+    finally:
+        # Step 5: Always update instance status to ACTIVE when redistribution completes
+        # (whether successful or not - the instance should become active)
+        try:
+            await instance_registry.update_status(instance_id, InstanceStatus.ACTIVE)
+            logger.info(f"Instance {instance_id} status updated to ACTIVE after work stealing")
+        except KeyError:
+            logger.warning(f"Instance {instance_id} not found when updating status to ACTIVE")
+
+
+# ============================================================================
 # Instance Management Endpoints
 # ============================================================================
 
@@ -348,12 +567,15 @@ async def register_instance(request: InstanceRegisterRequest):
 
     # TODO: Optional - validate that the endpoint is reachable
 
-    # Create Instance object
+    # Create Instance object with INITIALIZING status
+    # The instance starts in INITIALIZING state and will be set to ACTIVE
+    # after work stealing completes
     instance = Instance(
         instance_id=request.instance_id,
         model_id=request.model_id,
         endpoint=request.endpoint,
         platform_info=request.platform_info,
+        status=InstanceStatus.INITIALIZING,
     )
 
     # Register instance (this also initializes queue info and stats)
@@ -361,12 +583,22 @@ async def register_instance(request: InstanceRegisterRequest):
         await instance_registry.register(instance)
         logger.info(
             f"Registered instance {request.instance_id} for model {request.model_id} "
-            f"on {request.platform_info['hardware_name']}"
+            f"on {request.platform_info['hardware_name']} (status=INITIALIZING)"
         )
 
         # Set model_id for planner reporter (only first registration takes effect)
         if planner_reporter:
             planner_reporter.set_model_id(request.model_id)
+
+        # Start async work stealing in the background
+        # The redistribution function will set the instance status to ACTIVE when done
+        asyncio.create_task(
+            _redistribute_tasks_on_registration(
+                instance_id=request.instance_id,
+                high_water_mark=config.queue.high_water_mark,
+            )
+        )
+        logger.debug(f"Started async work stealing for instance {request.instance_id}")
 
     except ValueError as e:
         error_msg = str(e)
@@ -377,7 +609,7 @@ async def register_instance(request: InstanceRegisterRequest):
 
     return InstanceRegisterResponse(
         success=True,
-        message="Instance registered successfully",
+        message="Instance registered successfully (work stealing in progress)",
         instance=instance,
     )
 

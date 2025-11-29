@@ -24,6 +24,7 @@ class Task(BaseModel):
 
 class InstanceStatus(str, Enum):
     """Enumeration of possible instance statuses."""
+    INITIALIZING = "initializing"  # Instance registered, work stealing in progress, no new tasks yet
     ACTIVE = "active"        # Normal operation, accepts new tasks
     DRAINING = "draining"    # No new tasks, waiting for existing tasks to complete
     REMOVING = "removing"    # All tasks complete, safe to remove
