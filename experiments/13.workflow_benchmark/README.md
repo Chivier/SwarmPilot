@@ -381,6 +381,73 @@ type1_text2video/configs/
 └── max_b_loops_two_peak.json    # Bimodal: peaks at 2 and 4
 ```
 
+## Workflow Submission Order
+
+The Text2Video workflow supports configurable submission order for workflows. This is useful when you want to control the order in which workflows with different `max_b_loops` values are submitted.
+
+### Supported Submission Orders
+
+| Order | Description | Requirements |
+|-------|-------------|--------------|
+| `sequential` | Workflows submitted in generation order (0, 1, 2, ...) | Default, works with any distribution |
+| `alternating-peaks` | Odd-indexed peaks forward, then even-indexed peaks backward | Requires `two_peak` or `four_peak` distribution |
+
+### Alternating Peaks Mode
+
+When using `alternating-peaks` submission order with a multi-peak distribution, workflows are reordered based on which peak their `max_b_loops` value was sampled from:
+
+1. **Odd-indexed peaks** (Peak 1, Peak 3, ...) are submitted first in forward order
+2. **Even-indexed peaks** (Peak N, Peak N-2, ...) are submitted in reverse order
+
+**Example for 4 peaks** (with means 30, 60, 120, 200):
+- Peak 1 (mean=30) → submitted first (forward)
+- Peak 3 (mean=120) → submitted second (forward)
+- Peak 4 (mean=200) → submitted third (backward)
+- Peak 2 (mean=60) → submitted last (backward)
+
+Result order: **Peak1 → Peak3 → Peak4 → Peak2**
+
+### CLI Arguments
+
+| Argument | Description | Default |
+|----------|-------------|---------|
+| `--submission-order` | Workflow submission order: `sequential` or `alternating-peaks` | `sequential` |
+
+### Example Usage
+
+```bash
+# Default sequential order (works with any distribution)
+python -m type1_text2video.simulation.test_workflow_sim \
+    --max-b-loops-config type1_text2video/configs/max_b_loops_two_peak.json \
+    --num-workflows 100
+
+# Alternating peaks order (requires multi-peak distribution)
+python -m type1_text2video.simulation.test_workflow_sim \
+    --max-b-loops-config type1_text2video/configs/max_b_loops_four_peak.json \
+    --num-workflows 100 \
+    --submission-order alternating-peaks
+```
+
+### Validation
+
+When `--submission-order alternating-peaks` is specified, the system validates that:
+- A `max_b_loops_config` is specified (not using static `--max-b-loops`)
+- The distribution type is `two_peak` or `four_peak`
+
+If validation fails, a clear error message is displayed:
+```
+ValueError: alternating-peaks submission order requires a multi-peak distribution
+(two_peak or four_peak), but got 'uniform'.
+Please use --max-b-loops-config with a two_peak or four_peak distribution.
+```
+
+### Use Case
+
+The alternating peaks submission order is useful for experiments where you want to:
+- Separate workflows with different computational costs
+- Test scheduler behavior under varying load patterns
+- Simulate burst patterns where similar workflows arrive together
+
 ## Implementation Guide
 
 ### Task 13: Text2Video Workflow

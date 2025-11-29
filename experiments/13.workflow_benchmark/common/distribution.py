@@ -18,7 +18,7 @@ import random
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 
 class Distribution(ABC):
@@ -251,6 +251,29 @@ class TwoPeakDistribution(Distribution):
         value = selected_peak.sample()
         return max(self.min_value, min(self.max_value, value))
 
+    def sample_with_peak(self) -> Tuple[float, int]:
+        """Sample from the two-peak distribution and return peak index.
+
+        Returns:
+            Tuple of (value, peak_index) where peak_index is 0-based (0 or 1)
+        """
+        # Select a peak based on weights
+        total_weight = sum(p.weight for p in self.peaks)
+        r = random.uniform(0, total_weight)
+
+        cumulative = 0
+        selected_peak_idx = 0
+        for idx, peak in enumerate(self.peaks):
+            cumulative += peak.weight
+            if r <= cumulative:
+                selected_peak_idx = idx
+                break
+
+        # Sample from the selected Gaussian and clamp to valid range
+        value = self.peaks[selected_peak_idx].sample()
+        value = max(self.min_value, min(self.max_value, value))
+        return value, selected_peak_idx
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "type": "two_peak",
@@ -325,6 +348,29 @@ class FourPeakDistribution(Distribution):
         # Sample from the selected Gaussian and clamp to valid range
         value = selected_peak.sample()
         return max(self.min_value, min(self.max_value, value))
+
+    def sample_with_peak(self) -> Tuple[float, int]:
+        """Sample from the four-peak distribution and return peak index.
+
+        Returns:
+            Tuple of (value, peak_index) where peak_index is 0-based (0, 1, 2, or 3)
+        """
+        # Select a peak based on weights
+        total_weight = sum(p.weight for p in self.peaks)
+        r = random.uniform(0, total_weight)
+
+        cumulative = 0
+        selected_peak_idx = 0
+        for idx, peak in enumerate(self.peaks):
+            cumulative += peak.weight
+            if r <= cumulative:
+                selected_peak_idx = idx
+                break
+
+        # Sample from the selected Gaussian and clamp to valid range
+        value = self.peaks[selected_peak_idx].sample()
+        value = max(self.min_value, min(self.max_value, value))
+        return value, selected_peak_idx
 
     def to_dict(self) -> Dict[str, Any]:
         return {

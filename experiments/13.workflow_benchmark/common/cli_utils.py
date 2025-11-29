@@ -196,6 +196,17 @@ def add_type1_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
              "The sleep_model supports 0-600 seconds."
     )
 
+    parser.add_argument(
+        "--submission-order",
+        type=str,
+        choices=["sequential", "alternating-peaks"],
+        default="sequential",
+        help="Workflow submission order. 'sequential': 0,1,2,... (default). "
+             "'alternating-peaks': odd peaks forward then even peaks backward "
+             "(e.g., for 4 peaks: Peak1→Peak3→Peak4→Peak2). "
+             "Requires multi-peak distribution (two_peak or four_peak) for max_b_loops."
+    )
+
     return parser
 
 

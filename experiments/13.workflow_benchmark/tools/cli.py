@@ -165,6 +165,16 @@ Examples:
         help="Maximum sleep time in seconds for simulation mode (default: 600.0). "
              "Sleep times from benchmark data will be scaled proportionally to fit within this limit."
     )
+    t2v_sim.add_argument(
+        "--submission-order",
+        type=str,
+        choices=["sequential", "alternating-peaks"],
+        default="sequential",
+        help="Workflow submission order. 'sequential': 0,1,2,... (default). "
+             "'alternating-peaks': odd peaks forward then even peaks backward "
+             "(e.g., for 4 peaks: Peak1→Peak3→Peak4→Peak2). "
+             "Requires multi-peak distribution (two_peak or four_peak) for max_b_loops."
+    )
 
     # ========================================================================
     # Text2Video Real
@@ -213,6 +223,16 @@ Examples:
         type=int,
         default=None,
         help="Random seed for frame_count distribution sampling."
+    )
+    t2v_real.add_argument(
+        "--submission-order",
+        type=str,
+        choices=["sequential", "alternating-peaks"],
+        default="sequential",
+        help="Workflow submission order. 'sequential': 0,1,2,... (default). "
+             "'alternating-peaks': odd peaks forward then even peaks backward "
+             "(e.g., for 4 peaks: Peak1→Peak3→Peak4→Peak2). "
+             "Requires multi-peak distribution (two_peak or four_peak) for max_b_loops."
     )
 
     # ========================================================================
@@ -523,6 +543,7 @@ Examples:
                 max_b_loops_seed=args.max_b_loops_seed,
                 portion_stats=args.portion_stats,
                 max_sleep_time=args.max_sleep_time,
+                submission_order=args.submission_order,
             )
 
         elif args.command == "run-text2video-real":
@@ -540,6 +561,7 @@ Examples:
                 max_b_loops_config=args.max_b_loops_config,
                 max_b_loops_seed=args.max_b_loops_seed,
                 portion_stats=args.portion_stats,
+                submission_order=args.submission_order,
             )
 
         elif args.command == "run-deep-research-sim":

@@ -1,0 +1,27 @@
+{
+    "type": "four_peak",
+    "peaks": [
+        {
+            "mean": 1,
+            "std": 0.1,
+            "weight": 5.0
+        },
+        {
+            "mean": 4,
+            "std": 0.4,
+            "weight": 2.0
+        },
+        {
+            "mean": 6,
+            "std": 0.6,
+            "weight": 2.0
+        },
+        {
+            "mean": 1,
+            "std": 1.0,
+            "weight": 1.0
+        }
+    ],
+    "min": 1,
+    "max": 11
+}

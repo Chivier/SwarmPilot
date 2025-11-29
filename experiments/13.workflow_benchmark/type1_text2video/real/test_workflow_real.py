@@ -138,7 +138,6 @@ def run_single_experiment(config, captions, logger, strategy_name=None, pre_gene
         duration=config.duration,
         rate_limiter=rate_limiter,
         metrics=metrics,
-        custom_logger=logger
     )
 
     a2_submitter = A2TaskSubmitter(
@@ -148,9 +147,8 @@ def run_single_experiment(config, captions, logger, strategy_name=None, pre_gene
         state_lock=state_lock,
         a1_result_queue=a1_result_queue,
         scheduler_url=config.scheduler_a_url,
-        rate_limiter=None,
+        rate_limiter=rate_limiter,
         metrics=metrics,
-        custom_logger=logger
     )
 
     b_submitter = BTaskSubmitter(
@@ -160,9 +158,8 @@ def run_single_experiment(config, captions, logger, strategy_name=None, pre_gene
         state_lock=state_lock,
         a2_result_queue=a2_result_queue,
         scheduler_url=config.scheduler_b_url,
-        rate_limiter=None,
+        rate_limiter=rate_limiter,
         metrics=metrics,
-        custom_logger=logger
     )
 
     # Create receivers
@@ -177,7 +174,6 @@ def run_single_experiment(config, captions, logger, strategy_name=None, pre_gene
         state_lock=state_lock,
         scheduler_url=config.scheduler_a_url,
         metrics=metrics,
-        custom_logger=logger
     )
 
     a2_receiver = A2TaskReceiver(
@@ -191,7 +187,6 @@ def run_single_experiment(config, captions, logger, strategy_name=None, pre_gene
         state_lock=state_lock,
         scheduler_url=config.scheduler_a_url,
         metrics=metrics,
-        custom_logger=logger
     )
 
     # Generate all B task IDs (including all loop iterations)
@@ -216,19 +211,26 @@ def run_single_experiment(config, captions, logger, strategy_name=None, pre_gene
         state_lock=state_lock,
         scheduler_url=config.scheduler_b_url,
         metrics=metrics,
-        custom_logger=logger
     )
 
     # Start all threads
-    logger.info("Starting experiment...")
+    logger.info("Starting all threads...")
     start_time = time.time()
 
-    a1_submitter.start()
+    # Start receivers first (so they're ready to receive)
     a1_receiver.start()
-    a2_submitter.start()
     a2_receiver.start()
-    b_submitter.start()
     b_receiver.start()
+
+    # Wait a moment for receivers to connect
+    time.sleep(1.0)
+
+    # Start submitters
+    a2_submitter.start()
+    b_submitter.start()
+    a1_submitter.start()  # Start A1 last (it drives the workflow)
+
+    logger.info("All threads started successfully")
 
     # Calculate target workflows for early stopping based on SUBMISSION ORDER
     # We need:
@@ -288,39 +290,75 @@ def run_single_experiment(config, captions, logger, strategy_name=None, pre_gene
     except KeyboardInterrupt:
         logger.info("Received interrupt signal")
 
-    # Stop all threads
+    # ========================================================================
+    # Stop All Threads
+    # ========================================================================
+
     logger.info("Stopping all threads...")
+
+    # Stop submitters first (no new tasks)
     a1_submitter.stop()
-    a1_receiver.stop()
     a2_submitter.stop()
-    a2_receiver.stop()
     b_submitter.stop()
+
+    # Wait for submitters to finish
+    a1_submitter.join(timeout=10)
+    a2_submitter.join(timeout=10)
+    b_submitter.join(timeout=10)
+
+    # Stop receivers
+    a1_receiver.stop()
+    a2_receiver.stop()
     b_receiver.stop()
 
-    # Wait for threads to finish
-    a1_submitter.join()
-    a1_receiver.join()
-    a2_submitter.join()
-    a2_receiver.join()
-    b_submitter.join()
-    b_receiver.join()
+    # Wait for receivers to finish
+    a1_receiver.join(timeout=10)
+    a2_receiver.join(timeout=10)
+    b_receiver.join(timeout=10)
 
-    # Calculate final statistics
-    elapsed_time = time.time() - start_time
-    with state_lock:
-        completed_workflows = b_receiver.completed_workflows
+    logger.info("All threads stopped")
 
-    logger.info("=" * 80)
+    # ========================================================================
+    # Final Statistics
+    # ========================================================================
+
+    end_time = time.time()
+    total_time = end_time - start_time
+
+    logger.info("="*70)
     logger.info("Experiment Complete")
-    logger.info("=" * 80)
-    logger.info(f"Duration: {elapsed_time:.2f}s")
+    logger.info("="*70)
+    logger.info(f"Total runtime: {total_time:.2f}s")
     if early_stop:
         logger.info(f"Stopped early: All {target_completion} workflows needed for metrics completed")
-    logger.info(f"Completed workflows: {completed_workflows}/{config.num_workflows}")
-    logger.info(f"Completion rate: {completed_workflows / config.num_workflows * 100:.1f}%")
 
-    # Export metrics (with portion_stats filtering)
-    output_dir = ensure_directory(config.output_dir)
+    with state_lock:
+        total_workflows = len(workflow_states)
+        completed_workflows = sum(1 for w in workflow_states.values() if w.is_complete())
+        total_b_iterations = sum(len(w.b_complete_times) for w in workflow_states.values())
+
+    logger.info(f"Total workflows: {total_workflows}")
+    logger.info(f"Completed workflows: {completed_workflows}")
+    logger.info(f"Completion rate: {100*completed_workflows/total_workflows if total_workflows > 0 else 0:.1f}%")
+    logger.info(f"Total B iterations: {total_b_iterations}")
+    logger.info(f"Avg B iterations/workflow: {total_b_iterations/total_workflows if total_workflows > 0 else 0:.2f}")
+
+    logger.info("\nSubmitter Statistics:")
+    logger.info(f"  A1: {a1_submitter.submitted_count} submitted, {a1_submitter.failed_count} failed")
+    logger.info(f"  A2: {a2_submitter.submitted_count} submitted, {a2_submitter.failed_count} failed")
+    logger.info(f"  B:  {b_submitter.submitted_count} submitted, {b_submitter.failed_count} failed")
+
+    logger.info("\nReceiver Statistics:")
+    logger.info(f"  A1: {a1_receiver.received_count} received")
+    logger.info(f"  A2: {a2_receiver.received_count} received")
+    logger.info(f"  B:  {b_receiver.received_count} received, {b_receiver.completed_workflows} workflows completed")
+
+    # ========================================================================
+    # Export Metrics
+    # ========================================================================
+
+    output_dir = Path(config.output_dir)
+    ensure_directory(str(output_dir))
 
     # Generate strategy-specific metrics filename to prevent overwriting
     base_metrics_file = config.metrics_file
@@ -334,15 +372,25 @@ def run_single_experiment(config, captions, logger, strategy_name=None, pre_gene
     else:
         metrics_filename = base_metrics_file
 
-    metrics_file = output_dir / metrics_filename
-    metrics.export_to_json(str(metrics_file), portion_stats=config.portion_stats)
-    logger.info(f"Metrics exported to: {metrics_file}")
+    metrics_path = output_dir / metrics_filename
+    logger.info(f"\nExporting metrics to: {metrics_path}")
 
-    # Print detailed metrics report with per-task-type metrics (Avg, P90, P99)
-    print("\n" + metrics.generate_detailed_text_report(
+    # Export to JSON (with portion_stats filtering)
+    metrics.export_to_json(str(metrics_path), portion_stats=config.portion_stats)
+
+    # Generate detailed text report with per-task-type metrics (Avg, P90, P99)
+    report = metrics.generate_detailed_text_report(
         task_types=["A1", "A2", "B"],
         portion_stats=config.portion_stats
-    ))
+    )
+    print("\n" + report)
+
+    logger.info("="*70)
+    if strategy_name:
+        logger.info(f"Experiment complete for strategy: {strategy_name}!")
+    else:
+        logger.info("Experiment complete!")
+    logger.info("="*70)
 
     # Collect and return strategy results for comparison table
     task_types = ["A1", "A2", "B"]
@@ -467,8 +515,18 @@ def main():
     # Frame counts are sampled from the benchmark dataset (captions_10k.jsonl).
 
     logger.info("Pre-generating workflow data from benchmark dataset...")
-    pre_generated_workflows = pre_generate_workflows(config, captions, seed=args.seed, run_prefix=run_prefix)
+    pre_generated_workflows = pre_generate_workflows(
+        config, captions, seed=args.seed, run_prefix=run_prefix,
+        submission_order=args.submission_order
+    )
     logger.info(f"Generated {len(pre_generated_workflows)} workflows")
+
+    # Log submission order info
+    if args.submission_order == "alternating-peaks":
+        from collections import Counter
+        peak_counts = Counter(w.peak_index for w in pre_generated_workflows if w.peak_index is not None)
+        logger.info(f"Using alternating-peaks submission order")
+        logger.info(f"  Peak distribution: {dict(sorted(peak_counts.items()))}")
     if pre_generated_workflows:
         logger.info(f"Sample workflow[0]: max_b_loops={pre_generated_workflows[0].max_b_loops}, "
                     f"frame_count={pre_generated_workflows[0].frame_count}")
@@ -483,7 +541,7 @@ def main():
     logger.info("=" * 70)
 
     # Set default quantiles if not specified
-    quantiles = config.quantiles if config.quantiles else [0.1, 0.25, 0.5, 0.75, 0.99]
+    quantiles = config.quantiles if config.quantiles else [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99]
 
     # Collect results from all strategies for comparison
     all_strategy_results = {}

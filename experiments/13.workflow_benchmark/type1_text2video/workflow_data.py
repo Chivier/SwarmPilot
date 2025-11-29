@@ -42,6 +42,7 @@ class Text2VideoWorkflowData:
     # Additional fields for tracking
     strategy: str = "probabilistic"  # Scheduling strategy name
     is_warmup: bool = False    # Whether this is a warmup workflow
+    peak_index: Optional[int] = None  # Which peak this workflow's max_b_loops was sampled from (0-based)
 
     def should_continue_b_loop(self) -> bool:
         """Check if we should submit another B task."""
@@ -62,7 +63,8 @@ def pre_generate_workflows(
     config,
     captions: List[str],
     seed: int = 42,
-    run_prefix: str = ""
+    run_prefix: str = "",
+    submission_order: str = "sequential"
 ) -> List["Text2VideoWorkflowData"]:
     """Pre-generate all workflow data before strategy testing.
 
@@ -77,6 +79,11 @@ def pre_generate_workflows(
         config: Text2VideoConfig instance
         captions: List of captions to use
         seed: Random seed for reproducibility
+        run_prefix: Optional prefix for workflow IDs
+        submission_order: "sequential" or "alternating-peaks".
+                         If "alternating-peaks", workflows are reordered so
+                         odd-indexed peaks are submitted forward and
+                         even-indexed peaks are submitted backward.
 
     Returns:
         List of pre-generated Text2VideoWorkflowData instances
@@ -91,10 +98,42 @@ def pre_generate_workflows(
     # - Otherwise, use data_loader.sample_frame_count() (from benchmark dataset)
     use_config_frame_count = config.frame_count_config is not None
 
+    # Validate submission_order and check distribution compatibility
+    if submission_order == "alternating-peaks":
+        # Ensure sampler is initialized
+        if config._max_b_loops_sampler is None:
+            config.sample_max_b_loops()  # This initializes the sampler
+
+        dist = config._max_b_loops_sampler.distribution
+        dist_type = dist.to_dict().get("type", "unknown")
+
+        # Only two_peak and four_peak distributions are supported
+        valid_types = ("two_peak", "four_peak")
+        if dist_type not in valid_types:
+            raise ValueError(
+                f"alternating-peaks submission order requires a multi-peak distribution "
+                f"(two_peak or four_peak), but got '{dist_type}'. "
+                f"Please use --max-b-loops-config with a two_peak or four_peak distribution."
+            )
+        is_multi_peak = True
+    else:
+        is_multi_peak = False
+        # Check if distribution supports peak tracking (for future use)
+        if config._max_b_loops_sampler is None:
+            config.sample_max_b_loops()  # This initializes the sampler
+        dist = config._max_b_loops_sampler.distribution
+        if hasattr(dist, 'sample_with_peak'):
+            is_multi_peak = True
+
     workflows = []
     for i in range(config.num_workflows):
-        # Sample max_b_loops from distribution sampler (config-based)
-        sampled_max_b_loops = config.sample_max_b_loops()
+        # Sample max_b_loops with or without peak tracking
+        if is_multi_peak and submission_order == "alternating-peaks":
+            sampled_value, peak_index = dist.sample_with_peak()
+            sampled_max_b_loops = int(sampled_value)
+        else:
+            sampled_max_b_loops = config.sample_max_b_loops()
+            peak_index = None
 
         # Sample frame_count based on configuration
         if use_config_frame_count:
@@ -114,7 +153,8 @@ def pre_generate_workflows(
             strategy="pending",  # Will be set per-strategy run
             frame_count=sampled_frame_count,
             max_tokens=getattr(config, 'max_tokens', 512),
-            is_warmup=(i < getattr(config, 'num_warmup', 0))
+            is_warmup=(i < getattr(config, 'num_warmup', 0)),
+            peak_index=peak_index  # Track which peak this workflow's max_b_loops came from
         )
 
         # Pre-generate sleep times for simulation mode only
@@ -130,7 +170,57 @@ def pre_generate_workflows(
 
         workflows.append(workflow)
 
+    # Reorder workflows if alternating-peaks mode is requested
+    if submission_order == "alternating-peaks" and is_multi_peak:
+        workflows = _reorder_alternating_peaks(workflows)
+
     return workflows
+
+
+def _reorder_alternating_peaks(workflows: List["Text2VideoWorkflowData"]) -> List["Text2VideoWorkflowData"]:
+    """Reorder workflows: odd peaks forward, even peaks backward.
+
+    For N peaks (0-indexed internally, 1-indexed for user-facing naming):
+    - Peak 0 ("Peak 1") and Peak 2 ("Peak 3") are "odd" peaks - submitted forward
+    - Peak 1 ("Peak 2") and Peak 3 ("Peak 4") are "even" peaks - submitted backward
+
+    Result order for 4 peaks: Peak1 → Peak3 → Peak4 → Peak2
+
+    Args:
+        workflows: List of workflows with peak_index set
+
+    Returns:
+        Reordered list of workflows
+    """
+    from collections import defaultdict
+
+    # Group workflows by peak index
+    by_peak = defaultdict(list)
+    for w in workflows:
+        if w.peak_index is not None:
+            by_peak[w.peak_index].append(w)
+
+    if not by_peak:
+        return workflows  # No peak info, return unchanged
+
+    num_peaks = max(by_peak.keys()) + 1
+
+    # peak_index=0 -> "Peak 1" (odd), peak_index=1 -> "Peak 2" (even)
+    # peak_index=2 -> "Peak 3" (odd), peak_index=3 -> "Peak 4" (even)
+    odd_peaks = [i for i in range(num_peaks) if (i + 1) % 2 == 1]   # 0, 2 -> Peak 1, 3
+    even_peaks = [i for i in range(num_peaks) if (i + 1) % 2 == 0]  # 1, 3 -> Peak 2, 4
+
+    reordered = []
+
+    # Odd peaks forward (Peak 1, Peak 3, ...)
+    for peak_idx in sorted(odd_peaks):
+        reordered.extend(by_peak.get(peak_idx, []))
+
+    # Even peaks backward (Peak 4, Peak 2, ...)
+    for peak_idx in sorted(even_peaks, reverse=True):
+        reordered.extend(by_peak.get(peak_idx, []))
+
+    return reordered
 
 
 def load_captions(filepath: str) -> List[str]:

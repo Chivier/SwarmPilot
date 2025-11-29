@@ -18,7 +18,7 @@ N1=${N1:-4}  # Default: 4 instances in group A
 N2=${N2:-2}  # Default: 2 instances in group B
 MODEL_ID_A=${MODEL_ID_A:-sleep_model_a}
 MODEL_ID_B=${MODEL_ID_B:-sleep_model_b}
-AUTO_OPTIMIZE_ENABLED=${AUTO_OPTIMIZE_ENABLED:-True}
+AUTO_OPTIMIZE_ENABLED=${AUTO_OPTIMIZE_ENABLED:-False}
 
 # Color output
 GREEN='\033[0;32m'
@@ -75,6 +75,26 @@ fi
 if ! [[ "$N2" =~ ^[0-9]+$ ]] || [ "$N2" -lt 1 ]; then
     echo -e "${RED}Error: N2 must be a positive integer${NC}"
     usage
+fi
+
+# When AUTO_OPTIMIZE_ENABLED is True, force 1:1 ratio
+if [[ "$AUTO_OPTIMIZE_ENABLED" == "True" ]] || [[ "$AUTO_OPTIMIZE_ENABLED" == "true" ]]; then
+    ORIGINAL_N1=$N1
+    ORIGINAL_N2=$N2
+    TOTAL=$((N1 + N2))
+    N1=$((TOTAL / 2))
+    N2=$((TOTAL - N1))  # Handle odd totals by giving extra to N2
+
+    if [ "$ORIGINAL_N1" != "$N1" ] || [ "$ORIGINAL_N2" != "$N2" ]; then
+        echo ""
+        echo -e "${YELLOW}╔════════════════════════════════════════════════════════════╗${NC}"
+        echo -e "${YELLOW}║  AUTO_OPTIMIZE_ENABLED=True: Forcing 1:1 instance ratio    ║${NC}"
+        echo -e "${YELLOW}╠════════════════════════════════════════════════════════════╣${NC}"
+        echo -e "${YELLOW}║  Original: N1=${ORIGINAL_N1}, N2=${ORIGINAL_N2} (total: ${TOTAL})                          ${NC}"
+        echo -e "${YELLOW}║  Adjusted: N1=${N1}, N2=${N2} (1:1 ratio)                            ${NC}"
+        echo -e "${YELLOW}╚════════════════════════════════════════════════════════════╝${NC}"
+        echo ""
+    fi
 fi
 
 # Log directory (in experiment directory)
@@ -298,6 +318,30 @@ echo "Step 7: Deploying models locally"
     --n2 "$N2" \
     --port-a-start "$INSTANCE_GROUP_A_START_PORT" \
     --port-b-start "$INSTANCE_GROUP_B_START_PORT"
+
+# Step 8: Register instances with planner for migration optimization
+if [ "$AUTO_OPTIMIZE_ENABLED" == "True" ] || [ "$AUTO_OPTIMIZE_ENABLED" == "true" ]; then
+    echo ""
+    echo "Step 8: Registering instances with planner"
+    cd "$EXPERIMENT_DIR" && uv run python "$SCRIPT_DIR/type1_redeploy_sim.py" \
+        --host "localhost" \
+        --n1 "$N1" \
+        --n2 "$N2" \
+        --scheduler-a-port "$SCHEDULER_A_PORT" \
+        --scheduler-b-port "$SCHEDULER_B_PORT" \
+        --planner-port "$PLANNER_PORT" \
+        --port-a-start "$INSTANCE_GROUP_A_START_PORT" \
+        --port-b-start "$INSTANCE_GROUP_B_START_PORT" \
+        --model-id-a "$MODEL_ID_A" \
+        --model-id-b "$MODEL_ID_B"
+
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}Instances registered with planner successfully${NC}"
+    else
+        echo -e "${YELLOW}Warning: Failed to register instances with planner${NC}"
+        echo -e "${YELLOW}You can manually run: python $SCRIPT_DIR/type1_redeploy_sim.py${NC}"
+    fi
+fi
 
 # Summary
 echo ""
