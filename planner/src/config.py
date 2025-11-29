@@ -25,7 +25,6 @@ class PlannerConfig:
         # Auto-optimization configuration
         self.auto_optimize_enabled: bool = os.getenv("AUTO_OPTIMIZE_ENABLED", "false").lower() in ("true", "1", "yes")
         self.auto_optimize_interval: float = float(os.getenv("AUTO_OPTIMIZE_INTERVAL", "60.0"))
-        self.auto_optimize_cooldown: float = float(os.getenv("AUTO_OPTIMIZE_COOLDOWN", "5.0"))
 
     def get_scheduler_url(self, override: Optional[str] = None) -> Optional[str]:
         """
@@ -68,11 +67,6 @@ class PlannerConfig:
 
         if self.auto_optimize_interval <= 0:
             error_msg = f"AUTO_OPTIMIZE_INTERVAL must be positive, got {self.auto_optimize_interval}"
-            logger.error(f"Configuration validation failed: {error_msg}")
-            raise ValueError(error_msg)
-
-        if self.auto_optimize_cooldown < 0:
-            error_msg = f"AUTO_OPTIMIZE_COOLDOWN must be non-negative, got {self.auto_optimize_cooldown}"
             logger.error(f"Configuration validation failed: {error_msg}")
             raise ValueError(error_msg)
 

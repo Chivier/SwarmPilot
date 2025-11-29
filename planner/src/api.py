@@ -1,7 +1,7 @@
 """FastAPI application for the Planner service."""
 
 from datetime import datetime, timezone
-from typing import Optional, Dict
+from typing import Optional, Dict, Tuple
 import numpy as np
 import random
 import asyncio
@@ -14,6 +14,7 @@ random.seed(42)
 from fastapi import FastAPI, HTTPException, status
 from fastapi.responses import JSONResponse
 from loguru import logger
+import httpx
 
 from .models import (
     PlannerInput,
@@ -48,22 +49,122 @@ _stored_reverse_mapping: Optional[Dict[int, str]] = None
 _current_target: Optional[List[float]] = None
 
 # Global state for auto-optimization
-_submitted_models: set = set()  # Track which models have submitted targets
-_last_target_update: float = 0.0  # Timestamp of last target update
+_submitted_models: set = set()  # Track which models have submitted targets in current round
 _auto_optimize_running: bool = False  # Flag to prevent concurrent optimizations
 _stored_deployment_input: Optional["DeploymentInput"] = None  # Stored for auto-optimization
 _auto_optimize_task: Optional[asyncio.Task] = None  # Background task handle
 
+# New state for event-driven optimization timing
+_first_data_received: bool = False  # True after first /submit_target in current cycle
+_first_migration_done: bool = False  # True after first /deploy/migration completed
+_optimization_timer_start: float = 0.0  # Timestamp when optimization timer starts (after all models submitted)
+
+
+async def _fetch_instance_model(client: httpx.AsyncClient, endpoint: str, timeout: float = 5.0) -> Tuple[str, Optional[str], Optional[str]]:
+    """
+    Fetch the current model running on an instance via /info endpoint.
+
+    Args:
+        client: httpx AsyncClient for making requests
+        endpoint: Instance endpoint URL (e.g., "http://localhost:8210")
+        timeout: Request timeout in seconds
+
+    Returns:
+        Tuple of (endpoint, actual_model_id, error_message)
+        - actual_model_id is None if request failed or no model running
+        - error_message is None if request succeeded
+    """
+    try:
+        response = await client.get(f"{endpoint}/info", timeout=timeout)
+        if response.status_code == 200:
+            data = response.json()
+            if data.get("success") and data.get("instance", {}).get("current_model"):
+                model_id = data["instance"]["current_model"].get("model_id")
+                return (endpoint, model_id, None)
+            else:
+                # No model running on this instance
+                return (endpoint, None, "No model running")
+        else:
+            return (endpoint, None, f"HTTP {response.status_code}")
+    except httpx.TimeoutException:
+        return (endpoint, None, "Timeout")
+    except Exception as e:
+        return (endpoint, None, str(e))
+
+
+async def _verify_instance_states(
+    endpoints: list,
+    expected_models: list,
+    timeout: float = 5.0
+) -> Tuple[bool, list, dict]:
+    """
+    Verify that all instances are running the expected models by querying /info endpoints in parallel.
+
+    Args:
+        endpoints: List of instance endpoint URLs
+        expected_models: List of expected model IDs (same order as endpoints)
+        timeout: Request timeout per instance
+
+    Returns:
+        Tuple of (all_match, mismatches, actual_states)
+        - all_match: True if all instances match expected state
+        - mismatches: List of dicts with endpoint, expected, actual for mismatched instances
+        - actual_states: Dict mapping endpoint -> actual_model_id
+    """
+    if len(endpoints) != len(expected_models):
+        raise ValueError(f"endpoints ({len(endpoints)}) and expected_models ({len(expected_models)}) must have same length")
+
+    async with httpx.AsyncClient() as client:
+        # Fetch all instance states in parallel
+        tasks = [_fetch_instance_model(client, endpoint, timeout) for endpoint in endpoints]
+        results = await asyncio.gather(*tasks)
+
+    actual_states = {}
+    mismatches = []
+
+    for (endpoint, actual_model, error), expected_model in zip(results, expected_models):
+        actual_states[endpoint] = actual_model
+
+        if error:
+            mismatches.append({
+                "endpoint": endpoint,
+                "expected": expected_model,
+                "actual": None,
+                "error": error
+            })
+        elif actual_model != expected_model:
+            mismatches.append({
+                "endpoint": endpoint,
+                "expected": expected_model,
+                "actual": actual_model,
+                "error": None
+            })
+
+    all_match = len(mismatches) == 0
+    return (all_match, mismatches, actual_states)
+
 
 async def _auto_optimize_loop():
-    """Background loop that checks conditions and triggers optimization."""
-    global _auto_optimize_running
+    """Background loop that checks conditions and triggers optimization.
 
-    logger.info(f"Auto-optimization loop started (interval={config.auto_optimize_interval}s, cooldown={config.auto_optimize_cooldown}s)")
+    New logic:
+    - Timer only starts after BOTH conditions are met:
+      1. First /submit_target received (first data arrival)
+      2. First /deploy/migration completed (first migration done)
+    - Before triggering optimization, check if all models have submitted data this round
+    - If not all models submitted, wait until all arrive
+    - After optimization completes, reset for next cycle
+    - Logs countdown every 10 seconds while waiting for redeployment
+    """
+    global _auto_optimize_running, _optimization_timer_start
+
+    logger.info(f"Auto-optimization loop started (interval={config.auto_optimize_interval}s)")
+
+    last_countdown_log = 0.0  # Track when we last logged countdown
 
     while True:
         try:
-            await asyncio.sleep(config.auto_optimize_interval)
+            await asyncio.sleep(1.0)  # Check every second for responsiveness
 
             # Skip if feature disabled (in case it's changed at runtime)
             if not config.auto_optimize_enabled:
@@ -79,19 +180,37 @@ async def _auto_optimize_loop():
                 logger.debug("Auto-optimization skipped: previous run still in progress")
                 continue
 
-            # Check if all models have submitted targets
-            if len(_submitted_models) < len(_stored_model_mapping):
-                logger.debug(f"Auto-optimization skipped: {len(_submitted_models)}/{len(_stored_model_mapping)} models submitted")
+            # Timer only starts after both first data received AND first migration done
+            if not _first_data_received or not _first_migration_done:
+                logger.debug(f"Auto-optimization skipped: waiting for initial conditions (data_received={_first_data_received}, migration_done={_first_migration_done})")
                 continue
 
-            # Check cooldown period
-            time_since_update = time.time() - _last_target_update
-            if _last_target_update == 0 or time_since_update < config.auto_optimize_cooldown:
-                logger.debug(f"Auto-optimization skipped: cooldown not met ({time_since_update:.1f}s < {config.auto_optimize_cooldown}s)")
+            # Check if all models have submitted targets this round
+            if len(_submitted_models) < len(_stored_model_mapping):
+                logger.debug(f"Auto-optimization skipped: waiting for all models ({len(_submitted_models)}/{len(_stored_model_mapping)} submitted)")
+                continue
+
+            # All models submitted - check if timer has started
+            if _optimization_timer_start == 0.0:
+                # Start the timer now that all models have submitted
+                _optimization_timer_start = time.time()
+                last_countdown_log = time.time()
+                logger.info(f"All {len(_submitted_models)} models submitted, optimization timer started (interval={config.auto_optimize_interval}s)")
+                continue
+
+            # Check if interval has elapsed since timer started
+            elapsed = time.time() - _optimization_timer_start
+            remaining = config.auto_optimize_interval - elapsed
+
+            if elapsed < config.auto_optimize_interval:
+                # Log countdown every 10 seconds
+                if time.time() - last_countdown_log >= 10.0:
+                    last_countdown_log = time.time()
+                    logger.info(f"Redeployment countdown: {remaining:.0f}s remaining ({elapsed:.0f}s / {config.auto_optimize_interval}s elapsed)")
                 continue
 
             # All conditions met, trigger optimization
-            logger.info(f"Auto-optimization triggered: all {len(_submitted_models)} models submitted")
+            logger.info(f"Auto-optimization triggered: all {len(_submitted_models)} models submitted, {elapsed:.1f}s elapsed")
             await _trigger_optimization()
 
         except asyncio.CancelledError:
@@ -103,13 +222,22 @@ async def _auto_optimize_loop():
 
 
 async def _trigger_optimization():
-    """Execute the optimization with current targets."""
+    """Execute the optimization with current targets.
+
+    Before computing optimization, verifies that all instances are running the expected
+    models by querying their /info endpoints in parallel. If any mismatch is detected,
+    updates the stored state to match actual state before proceeding.
+
+    After successful optimization, updates _stored_deployment_input with the new
+    deployment state so that the next auto-optimization uses the correct initial state.
+    """
     global _auto_optimize_running, _submitted_models, _stored_model_mapping, _stored_reverse_mapping, _current_target
+    global _optimization_timer_start, _first_data_received, _stored_deployment_input
 
     _auto_optimize_running = True
 
     try:
-        # Create a copy of the deployment input with current targets
+        # Use the stored deployment input (which reflects latest deployment state)
         deployment_input = _stored_deployment_input.model_copy(deep=True)
         deployment_input.planner_input.target = _current_target.copy()
 
@@ -118,9 +246,45 @@ async def _trigger_optimization():
         # Import here to avoid circular import
         from .deployment_service import ModelMapper, InstanceMigrator
 
-        # Run optimization similar to deploy_with_migration
-        current_models = [inst.current_model for inst in deployment_input.instances]
+        # Get expected state from stored deployment
+        expected_models = [inst.current_model for inst in deployment_input.instances]
         endpoints = [inst.endpoint for inst in deployment_input.instances]
+
+        # Step 0: Verify instance states before computing optimization
+        logger.info(f"Verifying instance states for {len(endpoints)} instances...")
+        all_match, mismatches, actual_states = await _verify_instance_states(
+            endpoints, expected_models, timeout=5.0
+        )
+
+        if not all_match:
+            logger.warning(f"Found {len(mismatches)} instance state mismatches:")
+            for m in mismatches:
+                if m["error"]:
+                    logger.warning(f"  {m['endpoint']}: expected={m['expected']}, error={m['error']}")
+                else:
+                    logger.warning(f"  {m['endpoint']}: expected={m['expected']}, actual={m['actual']}")
+
+            # Update stored state to match actual state
+            updated_count = 0
+            for idx, endpoint in enumerate(endpoints):
+                actual_model = actual_states.get(endpoint)
+                if actual_model and actual_model != expected_models[idx]:
+                    # Update stored deployment input with actual model
+                    _stored_deployment_input.instances[idx].current_model = actual_model
+                    deployment_input.instances[idx].current_model = actual_model
+                    updated_count += 1
+                    logger.info(f"Updated stored state for {endpoint}: {expected_models[idx]} -> {actual_model}")
+
+            if updated_count > 0:
+                logger.info(f"Corrected {updated_count} instance states based on actual /info responses")
+
+            # Refresh expected_models after correction
+            expected_models = [inst.current_model for inst in deployment_input.instances]
+        else:
+            logger.info(f"All {len(endpoints)} instances verified - states match expected")
+
+        # Now use verified current_models for optimization
+        current_models = expected_models
 
         # Use existing mapping
         mapper = ModelMapper()
@@ -230,11 +394,36 @@ async def _trigger_optimization():
                 f"Auto-optimization completed: score={score:.4f}, "
                 f"changes={changes_count}, failed={len(failed)}"
             )
+
+            # Update _stored_deployment_input with new deployment state
+            # Only update successfully migrated instances
+            if len(failed) == 0:
+                # All migrations successful, update all changed instances
+                for idx, (cur, target_model) in enumerate(zip(current_models, deployment_target_models)):
+                    if cur != target_model:
+                        _stored_deployment_input.instances[idx].current_model = target_model
+                logger.info(f"Updated stored deployment state with {changes_count} model changes")
+            else:
+                # Partial success - only update successful migrations
+                successful_indices = set()
+                for status in migration_status:
+                    if status.success:
+                        successful_indices.add(status.instance_index)
+                change_idx = 0
+                for idx, (cur, target_model) in enumerate(zip(current_models, deployment_target_models)):
+                    if cur != target_model:
+                        if change_idx in successful_indices:
+                            _stored_deployment_input.instances[idx].current_model = target_model
+                        change_idx += 1
+                logger.warning(f"Partial migration success: updated {len(successful_indices)} of {changes_count} changes")
         else:
             logger.info(f"Auto-optimization completed: score={score:.4f}, no changes needed")
 
-        # Reset submitted models for next cycle
+        # Reset state for next cycle
         _submitted_models.clear()
+        _optimization_timer_start = 0.0  # Reset timer, will restart when all models submit again
+        _first_data_received = False  # Reset to wait for new data round
+        logger.info("Auto-optimization cycle completed, state reset for next cycle")
 
     except Exception as e:
         logger.error(f"Auto-optimization failed: {e}", exc_info=True)
@@ -488,11 +677,15 @@ async def deploy_with_migration(input_data: DeploymentInput):
 
         # Store mapping for submit_target use
         global _stored_model_mapping, _stored_reverse_mapping, _current_target, _stored_deployment_input, _submitted_models
+        global _first_data_received, _first_migration_done, _optimization_timer_start
         _stored_model_mapping = model_mapping
         _stored_reverse_mapping = reverse_mapping
         _current_target = [0.0] * len(model_mapping)
         _stored_deployment_input = input_data.model_copy(deep=True)  # Store for auto-optimization
         _submitted_models.clear()  # Reset submitted models for new deployment
+        # Reset auto-optimization state for new deployment cycle
+        _first_data_received = False
+        _optimization_timer_start = 0.0
         logger.info(f"Stored model mapping for submit_target: {len(model_mapping)} models")
 
         # Update planner_input.initial with mapped IDs
@@ -653,6 +846,29 @@ async def deploy_with_migration(input_data: DeploymentInput):
         else:
             logger.info("Deployment completed successfully for all instances")
 
+        # Update _stored_deployment_input with the new deployment state
+        # This ensures next auto-optimization uses the correct initial state
+        if overall_success:
+            # All migrations successful, update all changed instances
+            for idx, target_model in enumerate(deployment_target_models):
+                _stored_deployment_input.instances[idx].current_model = target_model
+            logger.info(f"Updated stored deployment state with deployment result: {deployment_target_models}")
+        else:
+            # Partial success - only update instances that weren't in failed list
+            for idx, target_model in enumerate(deployment_target_models):
+                # Check if this instance's migration failed
+                instance_failed = any(
+                    status.instance_index == idx and not status.success
+                    for status in migration_status
+                )
+                if not instance_failed:
+                    _stored_deployment_input.instances[idx].current_model = target_model
+            logger.warning(f"Partial deployment: updated successful instances in stored state")
+
+        # Mark first migration done - enables auto-optimization timer to start
+        _first_migration_done = True
+        logger.info("First migration completed, auto-optimization enabled")
+
         result = MigrationOutput(
             deployment=deployment.tolist(),
             score=float(score),
@@ -731,11 +947,15 @@ async def deploy_with_optimization(input_data: DeploymentInput):
 
         # Store mapping for submit_target use
         global _stored_model_mapping, _stored_reverse_mapping, _current_target, _stored_deployment_input, _submitted_models
+        global _first_data_received, _first_migration_done, _optimization_timer_start
         _stored_model_mapping = model_mapping
         _stored_reverse_mapping = reverse_mapping
         _current_target = [0.0] * len(model_mapping)
         _stored_deployment_input = input_data.model_copy(deep=True)  # Store for auto-optimization
         _submitted_models.clear()  # Reset submitted models for new deployment
+        # Reset auto-optimization state for new deployment cycle
+        _first_data_received = False
+        _optimization_timer_start = 0.0
         logger.info(f"Stored model mapping for submit_target: {len(model_mapping)} models")
 
         # Update planner_input.initial with mapped IDs
@@ -971,7 +1191,7 @@ async def submit_target(request: SubmitTargetRequest):
     Returns:
         SubmitTargetResponse with update status and current target
     """
-    global _current_target, _stored_model_mapping, _submitted_models, _last_target_update
+    global _current_target, _stored_model_mapping, _submitted_models, _first_data_received
 
     # No error if mapping doesn't exist, just no effect
     if _stored_model_mapping is None:
@@ -995,9 +1215,13 @@ async def submit_target(request: SubmitTargetRequest):
     idx = _stored_model_mapping[request.model_id]
     _current_target[idx] = request.value
 
-    # Track submitted models and update timestamp
+    # Track submitted models and mark first data received
     _submitted_models.add(request.model_id)
-    _last_target_update = time.time()
+
+    # Mark that first data has been received in this cycle
+    if not _first_data_received:
+        _first_data_received = True
+        logger.info(f"First data received in this cycle from model {request.model_id}")
 
     logger.info(f"Updated target[{idx}] for model {request.model_id} to {request.value} ({len(_submitted_models)}/{len(_stored_model_mapping)} models submitted)")
 
