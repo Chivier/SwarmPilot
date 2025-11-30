@@ -854,16 +854,26 @@ async def deploy_with_migration(input_data: DeploymentInput):
                 _stored_deployment_input.instances[idx].current_model = target_model
             logger.info(f"Updated stored deployment state with deployment result: {deployment_target_models}")
         else:
-            # Partial success - only update instances that weren't in failed list
-            for idx, target_model in enumerate(deployment_target_models):
-                # Check if this instance's migration failed
-                instance_failed = any(
-                    status.instance_index == idx and not status.success
-                    for status in migration_status
-                )
-                if not instance_failed:
-                    _stored_deployment_input.instances[idx].current_model = target_model
-            logger.warning(f"Partial deployment: updated successful instances in stored state")
+            # Partial success - only update successfully migrated instances
+            # Note: migration_status[].instance_index is the index in pending_change list,
+            # NOT the global instances index. We need to track which changes succeeded.
+            successful_change_indices = set()
+            for status in migration_status:
+                if status.success:
+                    successful_change_indices.add(status.instance_index)
+
+            # Map change_idx (pending_change list index) to global idx
+            change_idx = 0
+            for idx, (cur, target_model) in enumerate(zip(current_models, deployment_target_models)):
+                if cur != target_model:
+                    # This instance was in the pending change list
+                    if change_idx in successful_change_indices:
+                        _stored_deployment_input.instances[idx].current_model = target_model
+                    change_idx += 1
+                else:
+                    # No change needed, keep current state (already correct in _stored_deployment_input)
+                    pass
+            logger.warning(f"Partial deployment: updated {len(successful_change_indices)} of {len(migration_status)} migrations in stored state")
 
         # Mark first migration done - enables auto-optimization timer to start
         _first_migration_done = True
