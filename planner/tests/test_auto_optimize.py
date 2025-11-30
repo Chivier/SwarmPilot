@@ -974,3 +974,160 @@ class TestInstanceStateVerification:
             assert api_module._stored_deployment_input.instances[0].current_model == "model_a"
             assert api_module._stored_deployment_input.instances[1].current_model == "model_b"  # Corrected!
             assert api_module._stored_deployment_input.instances[2].current_model == "model_a"
+
+
+class TestEndpointTracking:
+    """Tests for endpoint tracking after migrations."""
+
+    @pytest.mark.asyncio
+    async def test_trigger_optimization_updates_endpoints(self, setup_model_mapping):
+        """Test that auto-optimization updates stored endpoint after successful migration."""
+        from src.models import DeploymentInput, PlannerInput, InstanceInfo, DeploymentStatus
+
+        # Set up initial state: 3 instances all with model_a
+        mock_input = DeploymentInput(
+            instances=[
+                InstanceInfo(endpoint="http://inst1:8080", current_model="model_a"),
+                InstanceInfo(endpoint="http://inst2:8080", current_model="model_a"),
+                InstanceInfo(endpoint="http://inst3:8080", current_model="model_a"),
+            ],
+            planner_input=PlannerInput(
+                M=3, N=3,
+                B=[[10.0, 0.0, 0.0], [0.0, 10.0, 0.0], [0.0, 0.0, 10.0]],
+                a=0.5,
+                target=[100.0, 200.0, 300.0],
+                algorithm="simulated_annealing",
+                max_iterations=10,
+                verbose=False
+            ),
+            scheduler_mapping={"model_a": "http://scheduler:8100", "model_b": "http://scheduler:8100", "model_c": "http://scheduler:8100"}
+        )
+        api_module._stored_deployment_input = mock_input
+        api_module._current_target = [100.0, 200.0, 300.0]
+        api_module._submitted_models = {"model_a", "model_b", "model_c"}
+
+        # Optimization will change inst2 to model_b and inst3 to model_c
+        with patch("src.api.SimulatedAnnealingOptimizer") as mock_optimizer_class, \
+             patch("src.api.get_available_instance_store") as mock_store_getter, \
+             patch("src.deployment_service.InstanceMigrator.migration_instances") as mock_migration:
+
+            mock_optimizer = MagicMock()
+            # Deployment result: [0, 1, 2] = [model_a, model_b, model_c]
+            mock_optimizer.optimize.return_value = (np.array([0, 1, 2]), 0.05, {})
+            mock_optimizer.compute_changes.return_value = 2
+            mock_optimizer_class.return_value = mock_optimizer
+
+            # Mock instance store with different target endpoints
+            mock_store = MagicMock()
+
+            async def mock_fetch(model_id):
+                # Return different endpoints for each fetch
+                if model_id == "model_b":
+                    mock_inst = MagicMock()
+                    mock_inst.endpoint = "http://new_inst_b:8080"
+                    return mock_inst
+                elif model_id == "model_c":
+                    mock_inst = MagicMock()
+                    mock_inst.endpoint = "http://new_inst_c:8080"
+                    return mock_inst
+                return None
+
+            mock_store.fetch_one_available_instance = mock_fetch
+            mock_store.add_available_instance = AsyncMock()
+            mock_store_getter.return_value = mock_store
+
+            # Mock migration with successful migrations
+            mock_migration.return_value = [
+                DeploymentStatus(instance_index=0, endpoint="http://inst2:8080", target_model="model_b", previous_model="model_a", success=True, deployment_time=0.1),
+                DeploymentStatus(instance_index=1, endpoint="http://inst3:8080", target_model="model_c", previous_model="model_a", success=True, deployment_time=0.1),
+            ]
+
+            # Verify initial endpoints
+            assert api_module._stored_deployment_input.instances[0].endpoint == "http://inst1:8080"
+            assert api_module._stored_deployment_input.instances[1].endpoint == "http://inst2:8080"
+            assert api_module._stored_deployment_input.instances[2].endpoint == "http://inst3:8080"
+
+            # Run trigger optimization
+            await api_module._trigger_optimization()
+
+            # Verify endpoints were updated to target endpoints
+            assert api_module._stored_deployment_input.instances[0].endpoint == "http://inst1:8080"  # Unchanged
+            assert api_module._stored_deployment_input.instances[1].endpoint == "http://new_inst_b:8080"  # Changed!
+            assert api_module._stored_deployment_input.instances[2].endpoint == "http://new_inst_c:8080"  # Changed!
+
+            # Also verify models were updated correctly
+            assert api_module._stored_deployment_input.instances[0].current_model == "model_a"  # Unchanged
+            assert api_module._stored_deployment_input.instances[1].current_model == "model_b"  # Changed
+            assert api_module._stored_deployment_input.instances[2].current_model == "model_c"  # Changed
+
+    @pytest.mark.asyncio
+    async def test_trigger_optimization_partial_success_updates_endpoints(self, setup_model_mapping):
+        """Test that partial migration success only updates successful endpoints."""
+        from src.models import DeploymentInput, PlannerInput, InstanceInfo, DeploymentStatus
+
+        # Set up initial state
+        mock_input = DeploymentInput(
+            instances=[
+                InstanceInfo(endpoint="http://inst1:8080", current_model="model_a"),
+                InstanceInfo(endpoint="http://inst2:8080", current_model="model_a"),
+                InstanceInfo(endpoint="http://inst3:8080", current_model="model_a"),
+            ],
+            planner_input=PlannerInput(
+                M=3, N=3,
+                B=[[10.0, 0.0, 0.0], [0.0, 10.0, 0.0], [0.0, 0.0, 10.0]],
+                a=0.5,
+                target=[100.0, 200.0, 300.0],
+                algorithm="simulated_annealing",
+                max_iterations=10,
+                verbose=False
+            ),
+            scheduler_mapping={"model_a": "http://scheduler:8100", "model_b": "http://scheduler:8100", "model_c": "http://scheduler:8100"}
+        )
+        api_module._stored_deployment_input = mock_input
+        api_module._current_target = [100.0, 200.0, 300.0]
+        api_module._submitted_models = {"model_a", "model_b", "model_c"}
+
+        with patch("src.api.SimulatedAnnealingOptimizer") as mock_optimizer_class, \
+             patch("src.api.get_available_instance_store") as mock_store_getter, \
+             patch("src.deployment_service.InstanceMigrator.migration_instances") as mock_migration:
+
+            mock_optimizer = MagicMock()
+            mock_optimizer.optimize.return_value = (np.array([0, 1, 2]), 0.05, {})
+            mock_optimizer.compute_changes.return_value = 2
+            mock_optimizer_class.return_value = mock_optimizer
+
+            mock_store = MagicMock()
+
+            async def mock_fetch(model_id):
+                if model_id == "model_b":
+                    mock_inst = MagicMock()
+                    mock_inst.endpoint = "http://new_inst_b:8080"
+                    return mock_inst
+                elif model_id == "model_c":
+                    mock_inst = MagicMock()
+                    mock_inst.endpoint = "http://new_inst_c:8080"
+                    return mock_inst
+                return None
+
+            mock_store.fetch_one_available_instance = mock_fetch
+            mock_store.add_available_instance = AsyncMock()
+            mock_store_getter.return_value = mock_store
+
+            # Mock migration with partial success: inst2 succeeds, inst3 fails
+            mock_migration.return_value = [
+                DeploymentStatus(instance_index=0, endpoint="http://inst2:8080", target_model="model_b", previous_model="model_a", success=True, deployment_time=0.1),
+                DeploymentStatus(instance_index=1, endpoint="http://inst3:8080", target_model="model_c", previous_model="model_a", success=False, error_message="Migration failed", deployment_time=0.1),
+            ]
+
+            # Run trigger optimization
+            await api_module._trigger_optimization()
+
+            # Only successful migration should update endpoint
+            assert api_module._stored_deployment_input.instances[0].endpoint == "http://inst1:8080"  # Unchanged
+            assert api_module._stored_deployment_input.instances[1].endpoint == "http://new_inst_b:8080"  # Changed (successful)
+            assert api_module._stored_deployment_input.instances[2].endpoint == "http://inst3:8080"  # Unchanged (failed)
+
+            # Same for models
+            assert api_module._stored_deployment_input.instances[0].current_model == "model_a"
+            assert api_module._stored_deployment_input.instances[1].current_model == "model_b"  # Changed
+            assert api_module._stored_deployment_input.instances[2].current_model == "model_a"  # Unchanged (failed)

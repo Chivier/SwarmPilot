@@ -401,13 +401,22 @@ async def _trigger_optimization():
             )
 
             # Update _stored_deployment_input with new deployment state
+            # Build mapping from global index to target endpoint
+            global_idx_to_target_endpoint = {}
+            change_idx = 0
+            for idx, (cur, target_model) in enumerate(zip(current_models, deployment_target_models)):
+                if cur != target_model:
+                    global_idx_to_target_endpoint[idx] = pending_change_target[change_idx]
+                    change_idx += 1
+
             # Only update successfully migrated instances
             if len(failed) == 0:
                 # All migrations successful, update all changed instances
                 for idx, (cur, target_model) in enumerate(zip(current_models, deployment_target_models)):
                     if cur != target_model:
                         _stored_deployment_input.instances[idx].current_model = target_model
-                logger.info(f"Updated stored deployment state with {changes_count} model changes")
+                        _stored_deployment_input.instances[idx].endpoint = global_idx_to_target_endpoint[idx]
+                logger.info(f"Updated stored deployment state with {changes_count} model and endpoint changes")
             else:
                 # Partial success - only update successful migrations
                 successful_indices = set()
@@ -419,6 +428,7 @@ async def _trigger_optimization():
                     if cur != target_model:
                         if change_idx in successful_indices:
                             _stored_deployment_input.instances[idx].current_model = target_model
+                            _stored_deployment_input.instances[idx].endpoint = global_idx_to_target_endpoint[idx]
                         change_idx += 1
                 logger.warning(f"Partial migration success: updated {len(successful_indices)} of {changes_count} changes")
         else:
@@ -853,11 +863,24 @@ async def deploy_with_migration(input_data: DeploymentInput):
 
         # Update _stored_deployment_input with the new deployment state
         # This ensures next auto-optimization uses the correct initial state
+        # Build mapping from global index to target endpoint
+        global_idx_to_target_endpoint = {}
+        change_idx = 0
+        for idx, (cur, target_model) in enumerate(zip(current_models, deployment_target_models)):
+            if cur != target_model:
+                global_idx_to_target_endpoint[idx] = pending_change_target[change_idx]
+                change_idx += 1
+
         if overall_success:
             # All migrations successful, update all changed instances
             for idx, target_model in enumerate(deployment_target_models):
-                _stored_deployment_input.instances[idx].current_model = target_model
-            logger.info(f"Updated stored deployment state with deployment result: {deployment_target_models}")
+                if idx in global_idx_to_target_endpoint:
+                    _stored_deployment_input.instances[idx].current_model = target_model
+                    _stored_deployment_input.instances[idx].endpoint = global_idx_to_target_endpoint[idx]
+                else:
+                    # No change needed for this instance, just update model (should be same)
+                    _stored_deployment_input.instances[idx].current_model = target_model
+            logger.info(f"Updated stored deployment state with deployment result and endpoints: {deployment_target_models}")
         else:
             # Partial success - only update successfully migrated instances
             # Note: migration_status[].instance_index is the index in pending_change list,
@@ -874,6 +897,7 @@ async def deploy_with_migration(input_data: DeploymentInput):
                     # This instance was in the pending change list
                     if change_idx in successful_change_indices:
                         _stored_deployment_input.instances[idx].current_model = target_model
+                        _stored_deployment_input.instances[idx].endpoint = global_idx_to_target_endpoint[idx]
                     change_idx += 1
                 else:
                     # No change needed, keep current state (already correct in _stored_deployment_input)
