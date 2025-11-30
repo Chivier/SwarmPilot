@@ -1,8 +1,22 @@
 """Data models for the Planner service."""
 
 from typing import List, Optional, Dict, Any, Literal
+from enum import Enum
 from pydantic import BaseModel, Field, field_validator, model_validator
 from loguru import logger
+
+
+# ============================================================================
+# Instance Status Enum (compatible with Scheduler)
+# ============================================================================
+
+class InstanceStatus(str, Enum):
+    """Enumeration of possible instance statuses (compatible with Scheduler)."""
+    INITIALIZING = "initializing"
+    ACTIVE = "active"
+    DRAINING = "draining"
+    REMOVING = "removing"
+    REDEPLOYING = "redeploying"
 
 
 class PlannerInput(BaseModel):
@@ -225,3 +239,58 @@ class SubmitTargetResponse(BaseModel):
     success: bool = Field(..., description="Whether target was updated successfully")
     message: str = Field(..., description="Status message")
     current_target: Optional[List[float]] = Field(None, description="Current accumulated target distribution")
+
+
+# ============================================================================
+# Dummy Endpoint Models (compatible with Scheduler interface)
+# ============================================================================
+
+class InstanceDrainRequest(BaseModel):
+    """Request model for instance drain (compatible with Scheduler)."""
+    instance_id: str = Field(..., description="Instance ID to drain")
+
+
+class InstanceDrainResponse(BaseModel):
+    """Response model for instance drain (compatible with Scheduler)."""
+    success: bool = Field(..., description="Whether drain was initiated successfully")
+    message: str = Field(..., description="Status message")
+    instance_id: str = Field(..., description="Instance ID")
+    status: InstanceStatus = Field(..., description="Current instance status")
+    pending_tasks: int = Field(..., description="Number of pending tasks")
+    running_tasks: int = Field(..., description="Number of running tasks")
+    estimated_completion_time_ms: Optional[float] = Field(None, description="Estimated completion time")
+
+
+class InstanceDrainStatusResponse(BaseModel):
+    """Response model for instance drain status check (compatible with Scheduler)."""
+    success: bool = Field(..., description="Whether status check was successful")
+    instance_id: str = Field(..., description="Instance ID")
+    status: InstanceStatus = Field(..., description="Current instance status")
+    pending_tasks: int = Field(..., description="Number of pending tasks")
+    running_tasks: int = Field(..., description="Number of running tasks")
+    can_remove: bool = Field(..., description="Whether instance can be safely removed")
+    drain_initiated_at: Optional[str] = Field(None, description="ISO timestamp when drain started")
+
+
+class InstanceRemoveRequest(BaseModel):
+    """Request model for instance removal (compatible with Scheduler)."""
+    instance_id: str = Field(..., description="Instance ID to remove")
+
+
+class InstanceRemoveResponse(BaseModel):
+    """Response model for instance removal (compatible with Scheduler)."""
+    success: bool = Field(..., description="Whether removal was successful")
+    message: str = Field(..., description="Status message")
+    instance_id: str = Field(..., description="Instance ID that was removed")
+
+
+class TaskResubmitRequest(BaseModel):
+    """Request model for task resubmission (compatible with Scheduler)."""
+    task_id: str = Field(..., description="ID of the task to resubmit")
+    original_instance_id: str = Field(..., description="ID of the original instance")
+
+
+class TaskResubmitResponse(BaseModel):
+    """Response model for task resubmission (compatible with Scheduler)."""
+    success: bool = Field(..., description="Whether resubmission was successful")
+    message: str = Field(..., description="Status message")
