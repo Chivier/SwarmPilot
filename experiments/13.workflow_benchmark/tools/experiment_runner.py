@@ -126,7 +126,8 @@ class ExperimentRunner:
             max_b_loops_seed: Random seed for max_b_loops distribution (optional)
             portion_stats: Portion of non-warmup workflows for statistics (default: 1.0)
             max_sleep_time: Maximum sleep time in seconds for scaling (default: 600.0)
-            submission_order: Workflow submission order ('sequential' or 'alternating-peaks')
+            submission_order: Workflow submission order ('sequential', 'alternating-peaks',
+                              'interleaved-2', or 'interleaved-4')
 
         Returns:
             Dict with experiment results and metrics path
@@ -197,7 +198,8 @@ class ExperimentRunner:
             max_b_loops_config: Path to JSON config for max_b_loops distribution (optional)
             max_b_loops_seed: Random seed for max_b_loops distribution (optional)
             portion_stats: Portion of non-warmup workflows for statistics (default: 1.0)
-            submission_order: Workflow submission order ('sequential' or 'alternating-peaks')
+            submission_order: Workflow submission order ('sequential', 'alternating-peaks',
+                              'interleaved-2', or 'interleaved-4')
 
         Returns:
             Dict with experiment results and metrics path
