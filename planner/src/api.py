@@ -285,6 +285,7 @@ async def _trigger_optimization():
 
         # Now use verified current_models for optimization
         current_models = expected_models
+        logger.info(f"Using current_models for optimization: {current_models}")
 
         # Use existing mapping
         mapper = ModelMapper()
@@ -293,8 +294,12 @@ async def _trigger_optimization():
 
         # Map names to IDs
         initial_ids = mapper.map_names_to_ids(current_models, model_mapping)
+        logger.info(f"Computed initial_ids from current_models: {initial_ids}")
+
         planner_params = deployment_input.planner_input.model_copy(deep=True)
+        logger.info(f"planner_params.initial before override: {planner_params.initial}")
         planner_params.initial = initial_ids
+        logger.info(f"planner_params.initial after override: {planner_params.initial}")
 
         # Run optimization
         B = np.array(planner_params.B)
