@@ -868,7 +868,7 @@ class SubprocessManager:
                 response = await self.http_client.post(
                     url,
                     json=task_input,
-                    timeout=1200.0  # 20min timeout for inference
+                    timeout=2400.0  # 40min timeout for inference
                 )
 
                 if response.status_code == 200:
