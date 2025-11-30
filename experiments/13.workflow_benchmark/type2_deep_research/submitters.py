@@ -190,19 +190,20 @@ class ATaskSubmitter(BaseTaskSubmitter):
                 "exp_skewness": 0.0,  # LLM tasks are approximately symmetric
                 "task_type": "A"
             }
-        else:  # real mode
-            # Use pre-generated topic
-            sentence = A_TEMPLATE.format(topic=workflow_data.topic)
+        else:  # real mode (aligned with Exp07)
+            # Use boot_sentence from dataset.jsonl
+            sentence = workflow_data.boot_sentence
+            max_tokens = 4096  # Exp07: A task max_tokens = 4096
             task_input = {
                 "sentence": sentence,
-                "max_tokens": workflow_data.max_tokens
+                "max_tokens": max_tokens
             }
 
             # Real mode metadata (LLM prediction features only)
             metadata = {
                 "sentence": sentence,
                 "token_length": estimate_token_length(sentence),
-                "max_tokens": workflow_data.max_tokens
+                "max_tokens": max_tokens
             }
 
         return {
@@ -256,7 +257,7 @@ class ATaskSubmitter(BaseTaskSubmitter):
         # Log A task submission
         if isinstance(task_data, DeepResearchWorkflowData):
             workflow_num = task_data.workflow_id.split('-')[-1]
-            self.logger.info(
+            self.logger.debug(
                 f"[A_SUBMIT] workflow={task_data.workflow_id}, "
                 f"task_id=task-A-{task_data.strategy}-workflow-{workflow_num}, "
                 f"scheduler_endpoint={self.scheduler_url}, "
@@ -337,19 +338,20 @@ class B1TaskSubmitter(BaseTaskSubmitter):
                 "task_type": "B1",
                 "b_index": b1_index  # B index for pairing with B2
             }
-        else:  # real mode
-            subtopic = f"Subtopic {b1_index}: {a_result}"
-            sentence = B1_TEMPLATE.format(subtopic=subtopic)
+        else:  # real mode (aligned with Exp07)
+            # Use query_inputs from dataset.jsonl
+            sentence = workflow_data.query_inputs[b1_index]
+            max_tokens = 300  # Exp07: B1 task max_tokens = 300
             task_input = {
                 "sentence": sentence,
-                "max_tokens": workflow_data.max_tokens
+                "max_tokens": max_tokens
             }
 
             # Real mode metadata (LLM prediction features only)
             metadata = {
                 "sentence": sentence,
                 "token_length": estimate_token_length(sentence),
-                "max_tokens": workflow_data.max_tokens
+                "max_tokens": max_tokens
             }
 
         return {
@@ -400,7 +402,7 @@ class B1TaskSubmitter(BaseTaskSubmitter):
         # Log B1 task submission
         if isinstance(task_data, tuple):
             workflow_id, a_result, b1_index = task_data
-            self.logger.info(
+            self.logger.debug(
                 f"[B1_SUBMIT] workflow={workflow_id}, b1_index={b1_index}, "
                 f"scheduler_endpoint={self.scheduler_url}"
             )
@@ -479,19 +481,20 @@ class B2TaskSubmitter(BaseTaskSubmitter):
                 "task_type": "B2",
                 "b_index": b1_index  # B index for pairing with B1
             }
-        else:  # real mode
-            subtopic = f"Findings for subtopic {b1_index}: {b1_result}"
-            sentence = B2_TEMPLATE.format(subtopic=subtopic)
+        else:  # real mode (aligned with Exp07)
+            # Use query_inputs from dataset.jsonl (same as B1)
+            sentence = workflow_data.query_inputs[b1_index]
+            max_tokens = 1  # Exp07: B2 task max_tokens = 1
             task_input = {
                 "sentence": sentence,
-                "max_tokens": workflow_data.max_tokens
+                "max_tokens": max_tokens
             }
 
             # Real mode metadata (LLM prediction features only)
             metadata = {
                 "sentence": sentence,
                 "token_length": estimate_token_length(sentence),
-                "max_tokens": workflow_data.max_tokens
+                "max_tokens": max_tokens
             }
 
         return {
@@ -546,7 +549,7 @@ class B2TaskSubmitter(BaseTaskSubmitter):
                 workflow_data = self.workflow_states.get(workflow_id)
                 if workflow_data:
                     workflow_num = workflow_id.split('-')[-1]
-                    self.logger.info(
+                    self.logger.debug(
                         f"[B2_SUBMIT] workflow={workflow_id}, b2_index={b1_index}, "
                         f"task_id=task-B2-{workflow_data.strategy}-workflow-{workflow_num}-{b1_index}, "
                         f"scheduler_endpoint={self.scheduler_url}"
@@ -627,19 +630,20 @@ class MergeTaskSubmitter(BaseTaskSubmitter):
                 "exp_skewness": 0.0,  # LLM tasks are approximately symmetric
                 "task_type": "merge"  # Use lowercase "merge" to match experiment 07
             }
-        else:  # real mode
-            summary = f"All research findings for {workflow_id}"
-            sentence = MERGE_TEMPLATE.format(summary=summary)
+        else:  # real mode (aligned with Exp07)
+            # Use summary_sentence from dataset.jsonl
+            sentence = workflow_data.summary_sentence
+            max_tokens = 4096  # Exp07: Merge task max_tokens = 4096
             task_input = {
                 "sentence": sentence,
-                "max_tokens": workflow_data.max_tokens
+                "max_tokens": max_tokens
             }
 
             # Real mode metadata (LLM prediction features only)
             metadata = {
                 "sentence": sentence,
                 "token_length": estimate_token_length(sentence),
-                "max_tokens": workflow_data.max_tokens
+                "max_tokens": max_tokens
             }
 
         return {

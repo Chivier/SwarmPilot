@@ -522,11 +522,14 @@ def main():
     logger.info(f"Generated {len(pre_generated_workflows)} workflows")
 
     # Log submission order info
-    if args.submission_order == "alternating-peaks":
+    if args.submission_order in ("alternating-peaks", "interleaved-2", "interleaved-4"):
         from collections import Counter
         peak_counts = Counter(w.peak_index for w in pre_generated_workflows if w.peak_index is not None)
-        logger.info(f"Using alternating-peaks submission order")
+        logger.info(f"Using {args.submission_order} submission order")
         logger.info(f"  Peak distribution: {dict(sorted(peak_counts.items()))}")
+        if args.submission_order.startswith("interleaved-"):
+            num_splits = int(args.submission_order.split("-")[1])
+            logger.info(f"  Interleaving with {num_splits} splits per peak")
     if pre_generated_workflows:
         logger.info(f"Sample workflow[0]: max_b_loops={pre_generated_workflows[0].max_b_loops}, "
                     f"frame_count={pre_generated_workflows[0].frame_count}")

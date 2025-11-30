@@ -552,7 +552,7 @@ def clear_scheduler_tasks(scheduler_url: str, custom_logger: Optional[Any] = Non
 
     try:
         response = requests.post(
-            f"{scheduler_url}/task/clear", timeout=300 # clear tasks may take a while
+            f"{scheduler_url}/task/clear", timeout=3000 # clear tasks may take a while
         )
         response.raise_for_status()
         result = response.json()

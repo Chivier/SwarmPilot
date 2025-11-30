@@ -144,7 +144,7 @@ class ATaskReceiver(BaseTaskReceiver):
                         workflow_data.b1_submit_times.append(time.time())
 
             # Log A task completion with scheduler endpoint and task count
-            self.logger.info(
+            self.logger.debug(
                 f"[A_COMPLETE] workflow={workflow_id}, "
                 f"scheduler_endpoint={self.config.scheduler_a_url}, "
                 f"triggered_b1_count={fanout_count}"
@@ -210,7 +210,7 @@ class B1TaskReceiver(BaseTaskReceiver):
                 self.logger.warning("Received B1 result without task_id")
                 return
 
-            self.logger.info(f"[B1_RECEIVED] task_id={task_id}")
+            self.logger.debug(f"[B1_RECEIVED] task_id={task_id}")
 
             # Parse task_id to extract workflow_id and b_index
             # Format: task-B1-{strategy}-workflow-{prefix}-{num}-{b_index} (new) or task-B1-{strategy}-workflow-{num}-{b_index} (old)
@@ -291,7 +291,7 @@ class B1TaskReceiver(BaseTaskReceiver):
             with self.state_lock:
                 workflow_data = self.workflow_states.get(workflow_id)
                 if workflow_data and workflow_data.all_b1_complete():
-                    self.logger.info(
+                    self.logger.debug(
                         f"[ALL_B1_COMPLETE] workflow={workflow_id}, "
                         f"scheduler_endpoint={self.config.scheduler_b_url}, "
                         f"completed_b1_count={len(workflow_data.b1_complete_times)}, "
@@ -360,7 +360,7 @@ class B2TaskReceiver(BaseTaskReceiver):
                 return
 
             # Log B2 task received
-            self.logger.info(f"[B2_RECEIVED] task_id={task_id}")
+            self.logger.debug(f"[B2_RECEIVED] task_id={task_id}")
 
             # Parse task_id to extract workflow_id
             # Format: task-B2-{strategy}-workflow-{prefix}-{num}-{b_index} (new) or task-B2-{strategy}-workflow-{num}-{b_index} (old)
@@ -415,7 +415,7 @@ class B2TaskReceiver(BaseTaskReceiver):
                 with self.state_lock:
                     workflow_data = self.workflow_states.get(workflow_id)
                     if workflow_data:
-                        self.logger.info(
+                        self.logger.debug(
                             f"[ALL_B2_COMPLETE] workflow={workflow_id}, "
                             f"scheduler_endpoint={self.config.scheduler_b_url}, "
                             f"completed_b2_count={len(workflow_data.b2_complete_times)}, "

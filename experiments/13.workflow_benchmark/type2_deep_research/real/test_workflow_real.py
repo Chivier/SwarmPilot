@@ -51,6 +51,7 @@ from common import (
     generate_strategy_comparison_table,
 )
 from type2_deep_research.config import DeepResearchConfig
+from type2_deep_research.workflow_data import pre_generate_workflows
 from type2_deep_research.submitters import (
     ATaskSubmitter,
     B1TaskSubmitter,
@@ -65,8 +66,14 @@ from type2_deep_research.receivers import (
 )
 
 
-def run_single_experiment(config, logger, strategy_name=None):
+def run_single_experiment(config, logger, strategy_name=None, pre_generated_workflows=None):
     """Run a single experiment with the given configuration.
+
+    Args:
+        config: DeepResearchConfig instance
+        logger: Logger instance
+        strategy_name: Optional strategy name to use
+        pre_generated_workflows: Pre-generated workflow data for reproducibility (required for real mode)
 
     Returns:
         Dict with strategy results containing task_metrics and workflow_metrics
@@ -98,11 +105,13 @@ def run_single_experiment(config, logger, strategy_name=None):
     merge_trigger_queue = Queue()
 
     # Create A submitter first to populate workflow_states
+    # Pass pre_generated_workflows for reproducibility with Exp07
     a_submitter = ATaskSubmitter(
         name="ASubmitter",
         config=config,
         workflow_states=workflow_states,
         state_lock=state_lock,
+        pre_generated_workflows=pre_generated_workflows,
         scheduler_url=config.scheduler_a_url,
         qps=config.qps,
         duration=config.duration,
@@ -417,6 +426,20 @@ def main():
         logger.info(f"Fanout config details: {fanout_info}")
 
     # ========================================================================
+    # Pre-generate Workflows (aligned with Exp07, seed=42)
+    # ========================================================================
+    # Pre-generate all workflow data ONCE before testing any strategies.
+    # This ensures all strategies use IDENTICAL input data for fair comparison.
+    # Uses seed=42 to match Exp07's default random seed.
+    pre_generated = pre_generate_workflows(config, seed=42)
+    logger.info(f"Pre-generated {len(pre_generated)} workflows from dataset.jsonl (seed=42)")
+
+    # Log fanout distribution from pre-generated workflows
+    pre_gen_fanouts = [w.fanout_count for w in pre_generated]
+    logger.info(f"Fanout range: {min(pre_gen_fanouts)}-{max(pre_gen_fanouts)}, "
+                f"avg={sum(pre_gen_fanouts)/len(pre_gen_fanouts):.1f}")
+
+    # ========================================================================
     # Strategy Management
     # ========================================================================
 
@@ -468,7 +491,11 @@ def main():
         logger.info("\n" + "=" * 70)
         logger.info(f"Running experiment with strategy: {strategy_name}")
         logger.info("=" * 70)
-        experiment_results = run_single_experiment(config, logger, strategy_name=strategy_name)
+        experiment_results = run_single_experiment(
+            config, logger,
+            strategy_name=strategy_name,
+            pre_generated_workflows=pre_generated
+        )
 
         # Store results for comparison
         all_strategy_results[strategy_name] = experiment_results
