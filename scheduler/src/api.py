@@ -1161,6 +1161,9 @@ async def submit_task(request: TaskSubmitRequest):
     Task scheduling (predictions, instance selection, dispatching) happens
     in the background to prevent blocking API responses.
 
+    If no instance is currently available for the model_id, the task will
+    be queued and wait for instances to be registered/allocated by the planner.
+
     Args:
         request: Task submission details
 
@@ -1169,7 +1172,7 @@ async def submit_task(request: TaskSubmitRequest):
 
     Raises:
         HTTPException 400: If task with this ID already exists
-        HTTPException 404: If no available instance for the model_id
+        HTTPException 503: If task clear operation is in progress
     """
     # 0. Check if clear operation is in progress
     if _clearing_in_progress:
@@ -1189,18 +1192,13 @@ async def submit_task(request: TaskSubmitRequest):
             detail={"success": False, "error": error_msg},
         )
 
-    # 2. Quick check that at least one instance exists for this model
-    # (Detailed scheduling happens in background)
+    # 2. Log instance availability (but don't reject if no instances)
+    # Tasks will queue and wait for instances to be registered/available
     available_instances = await instance_registry.list_active(model_id=request.model_id)
     if not available_instances:
-        error_msg = f"No available instance for model_id: {request.model_id}"
-        logger.error(f"[submit_task] {error_msg} | task_id={request.task_id} | model_id={request.model_id}")
-        raise HTTPException(
-            status_code=404,
-            detail={
-                "success": False,
-                "error": error_msg,
-            },
+        logger.warning(
+            f"[submit_task] No available instance for model_id: {request.model_id}, "
+            f"task {request.task_id} will be queued and wait for instance allocation"
         )
 
     # 3. Create task record immediately with PENDING status
