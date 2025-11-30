@@ -62,24 +62,41 @@ class ATaskReceiver(BaseTaskReceiver):
                 return
 
             # Parse workflow_id from task_id (works for both simulation and real mode)
-            # Format: task-A-{strategy}-workflow-{num}
+            # Format: task-A-{strategy}-workflow-{prefix}-{num} (new) or task-A-{strategy}-workflow-{num} (old)
             parts = task_id.split('-')
             workflow_id = None
 
-            # Find "workflow" in parts and extract the number after it
-            for i, part in enumerate(parts):
-                if part == "workflow" and i + 1 < len(parts):
-                    workflow_num = parts[i + 1]
-                    workflow_id = f"workflow-{workflow_num}"
-                    break
+            # Find "workflow" in parts and extract the ID
+            if "workflow" in parts:
+                idx = parts.index("workflow")
+                # Check format: new (workflow-{prefix}-{num}) vs old (workflow-{num})
+                if idx + 2 < len(parts) and not parts[idx + 1].isdigit():
+                    # New format: parts[idx+1] is prefix (alphanumeric), parts[idx+2] is num
+                    workflow_id = f"workflow-{parts[idx + 1]}-{parts[idx + 2]}"
+                elif idx + 1 < len(parts):
+                    # Old format: parts[idx+1] is the num
+                    workflow_id = f"workflow-{parts[idx + 1]}"
 
             if not workflow_id:
                 self.logger.warning(f"Cannot parse workflow_id from task_id: {task_id}")
                 return
 
-            # Extract result
+            # Extract result - support multiple result formats from different model services:
+            # - Simulation mode: {"output": "..."}
+            # - Real mode LLM: {"result": {"output": "..."}} or {"output": "..."}
             result = data.get("result", {})
-            a_result = result.get("output", "")
+            if isinstance(result, dict):
+                # Try nested format first: result.result.output
+                if "result" in result and isinstance(result.get("result"), dict):
+                    a_result = result.get("result", {}).get("output", "")
+                # Then try direct format: result.output
+                elif "output" in result:
+                    a_result = result.get("output", "")
+                # Fallback: convert result to string
+                else:
+                    a_result = str(result) if result else ""
+            else:
+                a_result = str(result) if result else ""
 
             # Record completion time
             complete_time = time.time()
@@ -126,9 +143,11 @@ class ATaskReceiver(BaseTaskReceiver):
                     else:
                         workflow_data.b1_submit_times.append(time.time())
 
-            self.logger.debug(
-                f"A result processed for {workflow_id}, "
-                f"triggered {fanout_count} B1 tasks"
+            # Log A task completion with scheduler endpoint and task count
+            self.logger.info(
+                f"[A_COMPLETE] workflow={workflow_id}, "
+                f"scheduler_endpoint={self.config.scheduler_a_url}, "
+                f"triggered_b1_count={fanout_count}"
             )
 
         except Exception as e:
@@ -182,38 +201,64 @@ class B1TaskReceiver(BaseTaskReceiver):
             data: Result data from WebSocket message
         """
         try:
+            # Log incoming B1 result for debugging
+            self.logger.debug(f"[B1_RECEIVED_RAW] data_keys={list(data.keys())}")
+
             # Extract task ID for identification
             task_id = data.get("task_id")
             if not task_id:
                 self.logger.warning("Received B1 result without task_id")
                 return
 
+            self.logger.info(f"[B1_RECEIVED] task_id={task_id}")
+
             # Parse task_id to extract workflow_id and b_index
-            # Format: task-B1-{strategy}-workflow-{num}-{b_index}
+            # Format: task-B1-{strategy}-workflow-{prefix}-{num}-{b_index} (new) or task-B1-{strategy}-workflow-{num}-{b_index} (old)
             parts = task_id.split('-')
             workflow_id = None
             b_index = None
 
-            # Find "workflow" in parts and extract the number and index after it
-            for i, part in enumerate(parts):
-                if part == "workflow" and i + 2 < len(parts):
-                    workflow_num = parts[i + 1]
-                    workflow_id = f"workflow-{workflow_num}"
-                    # The b_index is the part after workflow_num
+            # Find "workflow" in parts and extract the ID
+            if "workflow" in parts:
+                idx = parts.index("workflow")
+                # Check format: new (workflow-{prefix}-{num}) vs old (workflow-{num})
+                if idx + 3 < len(parts) and not parts[idx + 1].isdigit():
+                    # New format: parts[idx+1] is prefix, parts[idx+2] is num, parts[idx+3] is b_index
+                    workflow_id = f"workflow-{parts[idx + 1]}-{parts[idx + 2]}"
                     try:
-                        b_index = int(parts[i + 2])
+                        b_index = int(parts[idx + 3])
                     except (ValueError, IndexError):
                         self.logger.warning(f"Cannot parse b_index from task_id: {task_id}")
                         return
-                    break
+                elif idx + 2 < len(parts):
+                    # Old format: parts[idx+1] is num, parts[idx+2] is b_index
+                    workflow_id = f"workflow-{parts[idx + 1]}"
+                    try:
+                        b_index = int(parts[idx + 2])
+                    except (ValueError, IndexError):
+                        self.logger.warning(f"Cannot parse b_index from task_id: {task_id}")
+                        return
 
             if not workflow_id:
                 self.logger.warning(f"Cannot parse workflow_id from task_id: {task_id}")
                 return
 
-            # Extract result
+            # Extract result - support multiple result formats from different model services:
+            # - Simulation mode: {"output": "..."}
+            # - Real mode LLM: {"result": {"output": "..."}} or {"output": "..."}
             result = data.get("result", {})
-            b1_result = result.get("output", "")
+            if isinstance(result, dict):
+                # Try nested format first: result.result.output
+                if "result" in result and isinstance(result.get("result"), dict):
+                    b1_result = result.get("result", {}).get("output", "")
+                # Then try direct format: result.output
+                elif "output" in result:
+                    b1_result = result.get("output", "")
+                # Fallback: convert result to string
+                else:
+                    b1_result = str(result) if result else ""
+            else:
+                b1_result = str(result) if result else ""
 
             complete_time = time.time()
 
@@ -241,6 +286,17 @@ class B1TaskReceiver(BaseTaskReceiver):
 
             # Trigger corresponding B2 task (1:1 mapping)
             self.b1_result_queue.put((workflow_id, b1_result, b_index))
+
+            # Check if all B1 tasks are complete and log
+            with self.state_lock:
+                workflow_data = self.workflow_states.get(workflow_id)
+                if workflow_data and workflow_data.all_b1_complete():
+                    self.logger.info(
+                        f"[ALL_B1_COMPLETE] workflow={workflow_id}, "
+                        f"scheduler_endpoint={self.config.scheduler_b_url}, "
+                        f"completed_b1_count={len(workflow_data.b1_complete_times)}, "
+                        f"fanout_count={workflow_data.fanout_count}"
+                    )
 
             self.logger.debug(
                 f"B1-{b_index} complete for {workflow_id}, triggered B2-{b_index}"
@@ -303,17 +359,24 @@ class B2TaskReceiver(BaseTaskReceiver):
                 self.logger.warning("Received B2 result without task_id")
                 return
 
+            # Log B2 task received
+            self.logger.info(f"[B2_RECEIVED] task_id={task_id}")
+
             # Parse task_id to extract workflow_id
-            # Format: task-B2-{strategy}-workflow-{num}-{b_index}
+            # Format: task-B2-{strategy}-workflow-{prefix}-{num}-{b_index} (new) or task-B2-{strategy}-workflow-{num}-{b_index} (old)
             parts = task_id.split('-')
             workflow_id = None
 
-            # Find "workflow" in parts and extract the number after it
-            for i, part in enumerate(parts):
-                if part == "workflow" and i + 1 < len(parts):
-                    workflow_num = parts[i + 1]
-                    workflow_id = f"workflow-{workflow_num}"
-                    break
+            # Find "workflow" in parts and extract the ID
+            if "workflow" in parts:
+                idx = parts.index("workflow")
+                # Check format: new (workflow-{prefix}-{num}) vs old (workflow-{num})
+                if idx + 2 < len(parts) and not parts[idx + 1].isdigit():
+                    # New format: parts[idx+1] is prefix (alphanumeric), parts[idx+2] is num
+                    workflow_id = f"workflow-{parts[idx + 1]}-{parts[idx + 2]}"
+                elif idx + 1 < len(parts):
+                    # Old format: parts[idx+1] is the num
+                    workflow_id = f"workflow-{parts[idx + 1]}"
 
             if not workflow_id:
                 self.logger.warning(f"Cannot parse workflow_id from task_id: {task_id}")
@@ -348,9 +411,17 @@ class B2TaskReceiver(BaseTaskReceiver):
             # Trigger Merge outside lock to avoid deadlock
             if should_trigger_merge:
                 self.merge_trigger_queue.put(workflow_id)
-                self.logger.debug(
-                    f"All B2 complete for {workflow_id}, triggered Merge"
-                )
+                # Log all B2 completion with scheduler endpoint
+                with self.state_lock:
+                    workflow_data = self.workflow_states.get(workflow_id)
+                    if workflow_data:
+                        self.logger.info(
+                            f"[ALL_B2_COMPLETE] workflow={workflow_id}, "
+                            f"scheduler_endpoint={self.config.scheduler_b_url}, "
+                            f"completed_b2_count={len(workflow_data.b2_complete_times)}, "
+                            f"fanout_count={workflow_data.fanout_count}, "
+                            f"merge_triggered=True"
+                        )
 
         except Exception as e:
             self.logger.error(f"Error processing B2 result: {e}", exc_info=True)
@@ -407,17 +478,24 @@ class MergeTaskReceiver(BaseTaskReceiver):
                 self.logger.warning("Received Merge result without task_id")
                 return
 
+            # Log Merge task received
+            self.logger.info(f"[MERGE_RECEIVED] task_id={task_id}")
+
             # Parse task_id to extract workflow_id
-            # Format: task-merge-{strategy}-workflow-{num}
+            # Format: task-merge-{strategy}-workflow-{prefix}-{num} (new) or task-merge-{strategy}-workflow-{num} (old)
             parts = task_id.split('-')
             workflow_id = None
 
-            # Find "workflow" in parts and extract the number after it
-            for i, part in enumerate(parts):
-                if part == "workflow" and i + 1 < len(parts):
-                    workflow_num = parts[i + 1]
-                    workflow_id = f"workflow-{workflow_num}"
-                    break
+            # Find "workflow" in parts and extract the ID
+            if "workflow" in parts:
+                idx = parts.index("workflow")
+                # Check format: new (workflow-{prefix}-{num}) vs old (workflow-{num})
+                if idx + 2 < len(parts) and not parts[idx + 1].isdigit():
+                    # New format: parts[idx+1] is prefix (alphanumeric), parts[idx+2] is num
+                    workflow_id = f"workflow-{parts[idx + 1]}-{parts[idx + 2]}"
+                elif idx + 1 < len(parts):
+                    # Old format: parts[idx+1] is the num
+                    workflow_id = f"workflow-{parts[idx + 1]}"
 
             if not workflow_id:
                 self.logger.warning(f"Cannot parse workflow_id from task_id: {task_id}")
@@ -450,10 +528,13 @@ class MergeTaskReceiver(BaseTaskReceiver):
                             failed_tasks=0
                         )
 
+                    # Log workflow completion with standard format
                     self.logger.info(
-                        f"Workflow {workflow_id} complete "
-                        f"({self.completed_workflows} total, "
-                        f"fanout={workflow_data.fanout_count})"
+                        f"[WORKFLOW_COMPLETE] workflow={workflow_id}, "
+                        f"scheduler_endpoint={self.config.scheduler_a_url}, "
+                        f"total_tasks={workflow_data.fanout_count * 2 + 2}, "
+                        f"fanout_count={workflow_data.fanout_count}, "
+                        f"completed_workflows={self.completed_workflows}"
                     )
                 else:
                     self.logger.warning(f"Workflow {workflow_id} not found in state")

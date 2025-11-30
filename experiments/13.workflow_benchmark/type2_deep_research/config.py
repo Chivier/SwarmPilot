@@ -5,11 +5,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Optional, Union
 
-from .fanout_distribution import (
-    FanoutDistribution,
-    FanoutSampler,
+from common.distribution import (
+    Distribution,
+    DistributionSampler,
     StaticDistribution,
-    load_fanout_config,
+    load_distribution_config,
     create_distribution,
 )
 
@@ -52,8 +52,9 @@ class DeepResearchConfig:
     planner_url: str = "http://127.0.0.1:8103"
 
     # Task parameters (simulation mode)
-    sleep_time_min: float = 5.0
-    sleep_time_max: float = 15.0
+    # Maximum sleep time in seconds for sleep_model (0-600 seconds supported)
+    # Sleep times will be uniformly distributed in [1, max_sleep_time_seconds]
+    max_sleep_time_seconds: float = 600.0
 
     # Task parameters (real mode)
     max_tokens: int = 512  # For LLM tasks
@@ -71,7 +72,7 @@ class DeepResearchConfig:
     portion_stats: float = 1.0  # Portion of non-warmup workflows to include in statistics (0.0-1.0)
 
     # Internal: cached fanout sampler (created lazily)
-    _fanout_sampler: Optional[FanoutSampler] = field(default=None, repr=False)
+    _fanout_sampler: Optional[DistributionSampler] = field(default=None, repr=False)
 
     def __post_init__(self):
         """Post-initialization to set model IDs and scheduler URLs based on mode."""
@@ -92,31 +93,31 @@ class DeepResearchConfig:
             self.scheduler_a_url = "http://29.209.114.51:8100"
             self.scheduler_b_url = "http://29.209.113.228:8100"
 
-    def create_fanout_sampler(self) -> FanoutSampler:
+    def create_fanout_sampler(self) -> DistributionSampler:
         """Create a fanout sampler based on configuration.
 
         Returns:
-            FanoutSampler instance configured with the appropriate distribution
+            DistributionSampler instance configured with the appropriate distribution
         """
         if self._fanout_sampler is not None:
             return self._fanout_sampler
 
         if self.fanout_config is None:
             # Use static distribution with fanout_count
-            self._fanout_sampler = FanoutSampler(
+            self._fanout_sampler = DistributionSampler(
                 distribution=StaticDistribution(value=self.fanout_count),
                 seed=self.fanout_seed
             )
         elif isinstance(self.fanout_config, (str, Path)):
             # Load from JSON file
-            self._fanout_sampler = FanoutSampler(
+            self._fanout_sampler = DistributionSampler(
                 config_path=self.fanout_config,
                 seed=self.fanout_seed
             )
         elif isinstance(self.fanout_config, dict):
             # Create from dict config
             distribution = create_distribution(self.fanout_config)
-            self._fanout_sampler = FanoutSampler(
+            self._fanout_sampler = DistributionSampler(
                 distribution=distribution,
                 seed=self.fanout_seed
             )
@@ -189,8 +190,7 @@ class DeepResearchConfig:
             scheduler_b_url=os.getenv("SCHEDULER_B_URL", "http://127.0.0.1:8200"),
             predictor_url=os.getenv("PREDICTOR_URL", "http://127.0.0.1:8102"),
             planner_url=os.getenv("PLANNER_URL", "http://127.0.0.1:8103"),
-            sleep_time_min=float(os.getenv("SLEEP_TIME_MIN", "5.0")),
-            sleep_time_max=float(os.getenv("SLEEP_TIME_MAX", "15.0")),
+            max_sleep_time_seconds=float(os.getenv("MAX_SLEEP_TIME_SECONDS", "600.0")),
             max_tokens=int(os.getenv("MAX_TOKENS", "512")),
             output_dir=os.getenv("OUTPUT_DIR", "output"),
             metrics_file=os.getenv("METRICS_FILE", "metrics.json"),

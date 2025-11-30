@@ -99,7 +99,7 @@ def pre_generate_workflows(
     use_config_frame_count = config.frame_count_config is not None
 
     # Validate submission_order and check distribution compatibility
-    if submission_order == "alternating-peaks":
+    if submission_order in ("alternating-peaks", "interleaved-2", "interleaved-4"):
         # Ensure sampler is initialized
         if config._max_b_loops_sampler is None:
             config.sample_max_b_loops()  # This initializes the sampler
@@ -107,14 +107,23 @@ def pre_generate_workflows(
         dist = config._max_b_loops_sampler.distribution
         dist_type = dist.to_dict().get("type", "unknown")
 
-        # Only two_peak and four_peak distributions are supported
-        valid_types = ("two_peak", "four_peak")
-        if dist_type not in valid_types:
-            raise ValueError(
-                f"alternating-peaks submission order requires a multi-peak distribution "
-                f"(two_peak or four_peak), but got '{dist_type}'. "
-                f"Please use --max-b-loops-config with a two_peak or four_peak distribution."
-            )
+        # interleaved-N requires four_peak distribution
+        if submission_order.startswith("interleaved-"):
+            if dist_type != "four_peak":
+                raise ValueError(
+                    f"{submission_order} submission order requires four_peak distribution, "
+                    f"but got '{dist_type}'. "
+                    f"Please use --max-b-loops-config with a four_peak distribution."
+                )
+        else:
+            # alternating-peaks supports two_peak and four_peak
+            valid_types = ("two_peak", "four_peak")
+            if dist_type not in valid_types:
+                raise ValueError(
+                    f"alternating-peaks submission order requires a multi-peak distribution "
+                    f"(two_peak or four_peak), but got '{dist_type}'. "
+                    f"Please use --max-b-loops-config with a two_peak or four_peak distribution."
+                )
         is_multi_peak = True
     else:
         is_multi_peak = False
@@ -128,7 +137,7 @@ def pre_generate_workflows(
     workflows = []
     for i in range(config.num_workflows):
         # Sample max_b_loops with or without peak tracking
-        if is_multi_peak and submission_order == "alternating-peaks":
+        if is_multi_peak and submission_order in ("alternating-peaks", "interleaved-2", "interleaved-4"):
             sampled_value, peak_index = dist.sample_with_peak()
             sampled_max_b_loops = int(sampled_value)
         else:
@@ -170,9 +179,13 @@ def pre_generate_workflows(
 
         workflows.append(workflow)
 
-    # Reorder workflows if alternating-peaks mode is requested
+    # Reorder workflows based on submission_order
     if submission_order == "alternating-peaks" and is_multi_peak:
         workflows = _reorder_alternating_peaks(workflows)
+    elif submission_order == "interleaved-2" and is_multi_peak:
+        workflows = _reorder_interleaved(workflows, num_splits=2)
+    elif submission_order == "interleaved-4" and is_multi_peak:
+        workflows = _reorder_interleaved(workflows, num_splits=4)
 
     return workflows
 
@@ -219,6 +232,68 @@ def _reorder_alternating_peaks(workflows: List["Text2VideoWorkflowData"]) -> Lis
     # Even peaks backward (Peak 4, Peak 2, ...)
     for peak_idx in sorted(even_peaks, reverse=True):
         reordered.extend(by_peak.get(peak_idx, []))
+
+    return reordered
+
+
+def _reorder_interleaved(
+    workflows: List["Text2VideoWorkflowData"],
+    num_splits: int
+) -> List["Text2VideoWorkflowData"]:
+    """Reorder workflows: split each peak into parts and interleave.
+
+    For 4 peaks (A, B, C, D) with num_splits=2:
+    - Peak A → A1, A2 (equal halves)
+    - Peak B → B1, B2
+    - Peak C → C1, C2
+    - Peak D → D1, D2
+
+    Result order: A1→B1→C1→D1→A2→B2→C2→D2
+
+    For num_splits=4: A1→B1→C1→D1→A2→B2→C2→D2→A3→B3→C3→D3→A4→B4→C4→D4
+
+    Args:
+        workflows: List of workflows with peak_index set
+        num_splits: Number of parts to split each peak into (2 or 4)
+
+    Returns:
+        Reordered list of workflows
+    """
+    from collections import defaultdict
+
+    # Group by peak_index
+    by_peak = defaultdict(list)
+    for w in workflows:
+        if w.peak_index is not None:
+            by_peak[w.peak_index].append(w)
+
+    if not by_peak:
+        return workflows
+
+    num_peaks = max(by_peak.keys()) + 1  # 4 for four_peak
+
+    # Split each peak into num_splits equal parts
+    peak_splits = {}  # peak_idx -> List[List[Workflow]]
+    for peak_idx in range(num_peaks):
+        peak_workflows = by_peak.get(peak_idx, [])
+        n = len(peak_workflows)
+        split_size = n // num_splits
+        remainder = n % num_splits
+
+        splits = []
+        start = 0
+        for i in range(num_splits):
+            # Distribute remainder across first splits
+            end = start + split_size + (1 if i < remainder else 0)
+            splits.append(peak_workflows[start:end])
+            start = end
+        peak_splits[peak_idx] = splits
+
+    # Interleave: for each split_index, add all peaks in order
+    reordered = []
+    for split_idx in range(num_splits):
+        for peak_idx in range(num_peaks):
+            reordered.extend(peak_splits[peak_idx][split_idx])
 
     return reordered
 

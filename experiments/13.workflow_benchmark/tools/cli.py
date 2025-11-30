@@ -263,6 +263,13 @@ Examples:
         default=None,
         help="Random seed for fanout distribution sampling."
     )
+    dr_sim.add_argument(
+        "--max-sleep-time",
+        type=float,
+        default=600.0,
+        help="Maximum sleep time in seconds for simulation mode (default: 600.0). "
+             "Sleep times will be uniformly distributed in [1, max_sleep_time] seconds."
+    )
 
     # ========================================================================
     # Deep Research Real
@@ -576,6 +583,7 @@ Examples:
                 fanout_config=args.fanout_config,
                 fanout_seed=args.fanout_seed,
                 portion_stats=args.portion_stats,
+                max_sleep_time=args.max_sleep_time,
             )
 
         elif args.command == "run-deep-research-real":

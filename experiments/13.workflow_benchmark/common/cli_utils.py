@@ -199,12 +199,15 @@ def add_type1_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     parser.add_argument(
         "--submission-order",
         type=str,
-        choices=["sequential", "alternating-peaks"],
+        choices=["sequential", "alternating-peaks", "interleaved-2", "interleaved-4"],
         default="sequential",
         help="Workflow submission order. 'sequential': 0,1,2,... (default). "
              "'alternating-peaks': odd peaks forward then even peaks backward "
              "(e.g., for 4 peaks: Peak1→Peak3→Peak4→Peak2). "
-             "Requires multi-peak distribution (two_peak or four_peak) for max_b_loops."
+             "'interleaved-2': split each peak into 2 parts, interleave as A1→B1→C1→D1→A2→B2→C2→D2. "
+             "'interleaved-4': split each peak into 4 parts, interleave similarly. "
+             "Requires multi-peak distribution (two_peak or four_peak) for max_b_loops. "
+             "interleaved-N requires four_peak distribution."
     )
 
     return parser
@@ -243,6 +246,15 @@ def add_type2_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         default=None,
         help="Random seed for fanout distribution sampling (default: None). "
              "Use for reproducible fanout values across runs."
+    )
+
+    parser.add_argument(
+        "--max-sleep-time",
+        type=float,
+        default=600.0,
+        help="Maximum sleep time in seconds for simulation mode (default: 600.0). "
+             "Sleep times will be uniformly distributed in [1, max_sleep_time] seconds. "
+             "The sleep_model supports 0-600 seconds."
     )
 
     return parser

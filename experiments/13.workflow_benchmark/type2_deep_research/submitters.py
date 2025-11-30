@@ -182,10 +182,12 @@ class ATaskSubmitter(BaseTaskSubmitter):
             else:
                 exp_runtime = workflow_data.a_sleep_time * 1000.0  # Convert to milliseconds
 
-            # Simulation mode metadata (minimal)
+            # Simulation mode metadata (with scheduling parameters)
             metadata = {
                 "workflow_id": workflow_data.workflow_id,
                 "exp_runtime": exp_runtime,
+                "exp_cv": 0.40,  # Match real LLM task CV (~39%)
+                "exp_skewness": 0.0,  # LLM tasks are approximately symmetric
                 "task_type": "A"
             }
         else:  # real mode
@@ -249,6 +251,16 @@ class ATaskSubmitter(BaseTaskSubmitter):
                 task_id=task_id,
                 workflow_id=task_data.workflow_id,
                 task_type="A"
+            )
+
+        # Log A task submission
+        if isinstance(task_data, DeepResearchWorkflowData):
+            workflow_num = task_data.workflow_id.split('-')[-1]
+            self.logger.info(
+                f"[A_SUBMIT] workflow={task_data.workflow_id}, "
+                f"task_id=task-A-{task_data.strategy}-workflow-{workflow_num}, "
+                f"scheduler_endpoint={self.scheduler_url}, "
+                f"model_id={self.config.model_a_id}"
             )
 
         # Call parent implementation to actually submit the task
@@ -316,10 +328,12 @@ class B1TaskSubmitter(BaseTaskSubmitter):
             else:
                 exp_runtime = sleep_time * 1000.0  # Convert to milliseconds
 
-            # Simulation mode metadata (minimal)
+            # Simulation mode metadata (with scheduling parameters)
             metadata = {
                 "workflow_id": workflow_id,
                 "exp_runtime": exp_runtime,
+                "exp_cv": 0.40,  # Match real LLM task CV (~39%)
+                "exp_skewness": 0.0,  # LLM tasks are approximately symmetric
                 "task_type": "B1",
                 "b_index": b1_index  # B index for pairing with B2
             }
@@ -382,6 +396,14 @@ class B1TaskSubmitter(BaseTaskSubmitter):
                         workflow_id=workflow_id,
                         task_type="B1"
                     )
+
+        # Log B1 task submission
+        if isinstance(task_data, tuple):
+            workflow_id, a_result, b1_index = task_data
+            self.logger.info(
+                f"[B1_SUBMIT] workflow={workflow_id}, b1_index={b1_index}, "
+                f"scheduler_endpoint={self.scheduler_url}"
+            )
 
         # Call parent implementation to actually submit the task
         return super()._submit_task(task_data)
@@ -448,10 +470,12 @@ class B2TaskSubmitter(BaseTaskSubmitter):
             else:
                 exp_runtime = sleep_time * 1000.0  # Convert to milliseconds
 
-            # Simulation mode metadata (minimal)
+            # Simulation mode metadata (with scheduling parameters)
             metadata = {
                 "workflow_id": workflow_id,
                 "exp_runtime": exp_runtime,
+                "exp_cv": 0.40,  # Match real LLM task CV (~39%)
+                "exp_skewness": 0.0,  # LLM tasks are approximately symmetric
                 "task_type": "B2",
                 "b_index": b1_index  # B index for pairing with B1
             }
@@ -513,6 +537,19 @@ class B2TaskSubmitter(BaseTaskSubmitter):
                         task_id=task_id,
                         workflow_id=workflow_id,
                         task_type="B2"
+                    )
+
+        # Log B2 task submission
+        if isinstance(task_data, tuple):
+            workflow_id, b1_result, b1_index = task_data
+            with self.state_lock:
+                workflow_data = self.workflow_states.get(workflow_id)
+                if workflow_data:
+                    workflow_num = workflow_id.split('-')[-1]
+                    self.logger.info(
+                        f"[B2_SUBMIT] workflow={workflow_id}, b2_index={b1_index}, "
+                        f"task_id=task-B2-{workflow_data.strategy}-workflow-{workflow_num}-{b1_index}, "
+                        f"scheduler_endpoint={self.scheduler_url}"
                     )
 
         # Call parent implementation to actually submit the task
@@ -582,10 +619,12 @@ class MergeTaskSubmitter(BaseTaskSubmitter):
             else:
                 exp_runtime = sleep_time * 1000.0  # Convert to milliseconds
 
-            # Simulation mode metadata (minimal)
+            # Simulation mode metadata (with scheduling parameters)
             metadata = {
                 "workflow_id": workflow_id,
                 "exp_runtime": exp_runtime,
+                "exp_cv": 0.40,  # Match real LLM task CV (~39%)
+                "exp_skewness": 0.0,  # LLM tasks are approximately symmetric
                 "task_type": "merge"  # Use lowercase "merge" to match experiment 07
             }
         else:  # real mode
@@ -646,6 +685,22 @@ class MergeTaskSubmitter(BaseTaskSubmitter):
                         task_id=task_id,
                         workflow_id=workflow_id,
                         task_type="merge"
+                    )
+
+        # Log merge task submission with scheduler endpoint
+        if isinstance(task_data, str):
+            workflow_id = task_data
+            with self.state_lock:
+                workflow_data = self.workflow_states.get(workflow_id)
+                if workflow_data:
+                    # Determine the scheduler endpoint for merge (uses scheduler_a for merge)
+                    merge_scheduler_url = getattr(self.config, 'scheduler_a_url', 'unknown')
+                    self.logger.info(
+                        f"[MERGE_SUBMIT] workflow={workflow_id}, "
+                        f"scheduler_endpoint={merge_scheduler_url}, "
+                        f"model_id={self.config.model_merge_id}, "
+                        f"fanout_count={workflow_data.fanout_count}, "
+                        f"b2_completed={len(workflow_data.b2_complete_times)}"
                     )
 
         # Call parent implementation to actually submit the task

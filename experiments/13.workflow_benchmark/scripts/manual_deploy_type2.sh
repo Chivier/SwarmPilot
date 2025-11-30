@@ -179,7 +179,9 @@ for host in "${GROUP_A_HOSTS[@]}"; do
                 --arg model_id "llm_service_small_model" \
                 --arg scheduler_url "http://$SCHEDULER_A_HOST:$SCHEDULER_PORT" \
                 --arg model_path "$MODEL_PATH_A" \
-                '{model_id: $model_id, scheduler_url: $scheduler_url, parameters: {MODEL_PATH: $model_path}}')
+                --arg software_name "sglang" \
+                --arg software_version "0.5.5.post2" \
+                '{model_id: $model_id, scheduler_url: $scheduler_url, parameters: {MODEL_PATH: $model_path, SOFTWARE_NAME: $software_name, SOFTWARE_VERSION: $software_version}, standby: false}')
 
             response=$(curl -s -X POST "http://$host:$instance_port/model/start" \
                 -H "Content-Type: application/json" \
@@ -205,7 +207,9 @@ for host in "${GROUP_A_HOSTS[@]}"; do
                 --arg model_id "llm_service_small_model" \
                 --arg scheduler_url "http://$PLANNER_HOST:$PLANNER_PORT" \
                 --arg model_path "$MODEL_PATH_A" \
-                '{model_id: $model_id, scheduler_url: $scheduler_url, parameters: {MODEL_PATH: $model_path}}')
+                --arg software_name "sglang" \
+                --arg software_version "0.5.5.post2" \
+                 '{model_id: $model_id, scheduler_url: $scheduler_url, parameters: {MODEL_PATH: $model_path, SOFTWARE_NAME: $software_name, SOFTWARE_VERSION: $software_version}, standby: false}')
 
             response=$(curl -s -X POST "http://$host:$instance_port/model/start" \
                 -H "Content-Type: application/json" \
@@ -236,7 +240,9 @@ for host in "${GROUP_B_HOSTS[@]}"; do
                 --arg model_id "llm_service_large_model" \
                 --arg scheduler_url "http://$SCHEDULER_B_HOST:$SCHEDULER_PORT" \
                 --arg model_path "$MODEL_PATH_B" \
-                '{model_id: $model_id, scheduler_url: $scheduler_url, parameters: {MODEL_PATH: $model_path}}')
+                --arg software_name "sglang" \
+                --arg software_version "0.5.5.post2" \
+                '{model_id: $model_id, scheduler_url: $scheduler_url, parameters: {MODEL_PATH: $model_path, SOFTWARE_NAME: $software_name, SOFTWARE_VERSION: $software_version}, standby: false}')
 
             response=$(curl -s -X POST "http://$host:$instance_port/model/start" \
                 -H "Content-Type: application/json" \
@@ -262,8 +268,10 @@ for host in "${GROUP_B_HOSTS[@]}"; do
                 --arg model_id "llm_service_large_model" \
                 --arg scheduler_url "http://$PLANNER_HOST:$PLANNER_PORT" \
                 --arg model_path "$MODEL_PATH_B" \
-                '{model_id: $model_id, scheduler_url: $scheduler_url, parameters: {MODEL_PATH: $model_path}}')
-
+                --arg software_name "sglang" \
+                --arg software_version "0.5.5.post2" \
+                '{model_id: $model_id, scheduler_url: $scheduler_url, parameters: {MODEL_PATH: $model_path, SOFTWARE_NAME: $software_name, SOFTWARE_VERSION: $software_version}, standby: false}')
+    
             response=$(curl -s -X POST "http://$host:$instance_port/model/start" \
                 -H "Content-Type: application/json" \
                 -d "$json_payload")

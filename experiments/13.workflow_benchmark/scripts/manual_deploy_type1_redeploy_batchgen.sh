@@ -180,7 +180,7 @@ for host in "${GROUP_A_HOSTS[@]}"; do
                 --arg model_path "$MODEL_PATH_A" \
                 --arg software_name "sglang" \
                 --arg software_version "0.5.5.post2" \
-                '{model_id: $model_id, scheduler_url: $scheduler_url, parameters: {MODEL_PATH: $model_path, software_name: $software_name, software_version: $software_version}}')
+                '{model_id: $model_id, scheduler_url: $scheduler_url, parameters: {MODEL_PATH: $model_path, software_name: $software_name, software_version: $software_version}, standby: false}')
 
             response=$(curl -s -X POST "http://$host:$instance_port/model/start" \
                 -H "Content-Type: application/json" \
@@ -208,7 +208,7 @@ for host in "${GROUP_A_HOSTS[@]}"; do
                 --arg model_path "$MODEL_PATH_A" \
                 --arg software_name "sglang" \
                 --arg software_version "0.5.5.post2" \
-                '{model_id: $model_id, scheduler_url: $scheduler_url, parameters: {MODEL_PATH: $model_path, software_name: $software_name, software_version: $software_version}}')
+                '{model_id: $model_id, scheduler_url: $scheduler_url, parameters: {MODEL_PATH: $model_path, software_name: $software_name, software_version: $software_version}, standby: false}')
 
             response=$(curl -s -X POST "http://$host:$instance_port/model/start" \
                 -H "Content-Type: application/json" \

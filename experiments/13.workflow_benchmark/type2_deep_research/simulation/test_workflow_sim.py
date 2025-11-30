@@ -67,248 +67,6 @@ from type2_deep_research.receivers import (
 )
 
 
-def calculate_task_metrics_from_collector(collector: MetricsCollector, task_type: str, workflow_states: Dict, portion_stats: float = 1.0) -> Dict:
-    """
-    Calculate metrics for a specific task type from the collector.
-
-    Args:
-        collector: MetricsCollector instance
-        task_type: Task type string ("A", "B1", "B2", "merge")
-        workflow_states: Dictionary of workflow states to check for warmup status
-        portion_stats: Portion of non-warmup workflows to include (0.0-1.0)
-
-    Returns:
-        Dictionary of metrics
-    """
-    # Filter tasks by type
-    # Note: MetricsCollector stores task_type as passed during record_task_submit
-    # The submitters use "A", "B1", "B2", "merge"
-
-    all_tasks = [t for t in collector.task_metrics if t.task_type == task_type]
-
-    # Get included workflow IDs based on portion_stats
-    # Use collector's _non_warmup_workflow_order for submission order
-    total_non_warmup = len(collector._non_warmup_workflow_order)
-    num_to_include = int(total_non_warmup * portion_stats)
-    included_workflow_ids = set(collector._non_warmup_workflow_order[:num_to_include])
-
-    # Separate warmup, included, and excluded tasks
-    actual_tasks = []
-    warmup_tasks = []
-
-    for t in all_tasks:
-        # Check if workflow is warmup
-        wf_state = workflow_states.get(t.workflow_id)
-        is_warmup = False
-        if wf_state:
-            # DeepResearchWorkflowData has is_warmup attribute
-            is_warmup = getattr(wf_state, 'is_warmup', False)
-
-        if is_warmup:
-            warmup_tasks.append(t)
-        elif t.workflow_id in included_workflow_ids:
-            # Only include tasks from workflows within portion_stats
-            actual_tasks.append(t)
-            
-    # Calculate stats for actual tasks
-    num_generated = len(actual_tasks)
-    num_submitted = len(actual_tasks) # In this collector, we only record submitted tasks
-    
-    completed_tasks = [t for t in actual_tasks if t.complete_time is not None]
-    num_completed = len(completed_tasks)
-    
-    failed_tasks = [t for t in actual_tasks if t.complete_time is not None and not t.success]
-    num_failed = len(failed_tasks)
-    
-    # Calculate completion times
-    completion_times = []
-    for t in completed_tasks:
-        if t.duration is not None:
-            completion_times.append(t.duration)
-            
-    if completion_times:
-        times_arr = np.array(completion_times)
-        avg_completion = float(np.mean(times_arr))
-        median_completion = float(np.median(times_arr))
-        p95_completion = float(np.percentile(times_arr, 95))
-        p99_completion = float(np.percentile(times_arr, 99))
-    else:
-        avg_completion = 0.0
-        median_completion = 0.0
-        p95_completion = 0.0
-        p99_completion = 0.0
-        
-    return {
-        "task_type": task_type,
-        "num_generated": num_generated,
-        "num_submitted": num_submitted,
-        "num_completed": num_completed,
-        "num_failed": num_failed,
-        "num_warmup": len(warmup_tasks),
-        "completion_times": completion_times,
-        "avg_completion_time": avg_completion,
-        "median_completion_time": median_completion,
-        "p95_completion_time": p95_completion,
-        "p99_completion_time": p99_completion
-    }
-
-
-def calculate_workflow_metrics_from_collector(collector: MetricsCollector, workflow_states: Dict, portion_stats: float = 1.0) -> Dict:
-    """
-    Calculate workflow-level metrics from the collector.
-
-    Args:
-        collector: MetricsCollector instance
-        workflow_states: Dictionary of workflow states
-        portion_stats: Portion of non-warmup workflows to include (0.0-1.0)
-
-    Returns:
-        Dictionary of workflow metrics
-    """
-    all_workflows = collector.workflow_metrics
-
-    # Get included workflow IDs based on portion_stats
-    total_non_warmup = len(collector._non_warmup_workflow_order)
-    num_to_include = int(total_non_warmup * portion_stats)
-    included_workflow_ids = set(collector._non_warmup_workflow_order[:num_to_include])
-
-    actual_workflows = []
-    warmup_workflows = []
-    excluded_by_portion = 0
-
-    for w in all_workflows:
-        # Check if workflow is warmup
-        wf_state = workflow_states.get(w.workflow_id)
-        is_warmup = False
-        if wf_state:
-            is_warmup = getattr(wf_state, 'is_warmup', False)
-
-        if is_warmup:
-            warmup_workflows.append(w)
-        elif w.workflow_id in included_workflow_ids:
-            actual_workflows.append(w)
-        else:
-            excluded_by_portion += 1
-            
-    completed_workflows = [w for w in actual_workflows if w.end_time is not None]
-    
-    # Calculate workflow times
-    workflow_times = []
-    for w in completed_workflows:
-        if w.total_duration is not None:
-            workflow_times.append(w.total_duration)
-            
-    if workflow_times:
-        times_arr = np.array(workflow_times)
-        avg_workflow = float(np.mean(times_arr))
-        median_workflow = float(np.median(times_arr))
-        p95_workflow = float(np.percentile(times_arr, 95))
-        p99_workflow = float(np.percentile(times_arr, 99))
-    else:
-        avg_workflow = 0.0
-        median_workflow = 0.0
-        p95_workflow = 0.0
-        p99_workflow = 0.0
-        
-    # Calculate fanout stats
-    fanout_values = []
-    for w in completed_workflows:
-        wf_state = workflow_states.get(w.workflow_id)
-        if wf_state:
-            fanout_values.append(getattr(wf_state, 'fanout_count', 0))
-            
-    fanout_distribution = {}
-    avg_fanout = 0.0
-    if fanout_values:
-        unique, counts = np.unique(fanout_values, return_counts=True)
-        fanout_distribution = {int(k): int(v) for k, v in zip(unique, counts)}
-        avg_fanout = float(np.mean(fanout_values))
-        
-    return {
-        "num_completed": len(completed_workflows),
-        "num_warmup": len(warmup_workflows),
-        "num_excluded": excluded_by_portion,  # Workflows excluded by portion_stats
-        "workflow_times": workflow_times,
-        "avg_workflow_time": avg_workflow,
-        "median_workflow_time": median_workflow,
-        "p50_workflow_time": median_workflow,
-        "p95_workflow_time": p95_workflow,
-        "p99_workflow_time": p99_workflow,
-        "fanout_distribution": fanout_distribution,
-        "avg_fanout": avg_fanout
-    }
-
-
-def print_metrics_summary(
-    strategy: str,
-    a_metrics: Dict,
-    b1_metrics: Dict,
-    b2_metrics: Dict,
-    merge_metrics: Dict,
-    wf_metrics: Dict
-):
-    """Print a summary of metrics."""
-    print("\n" + "=" * 80)
-    print(f"Results Summary: {strategy}")
-    print("=" * 80)
-
-    print("\nA Tasks:")
-    print(f"  Generated:  {a_metrics['num_generated']} (excl. {a_metrics['num_warmup']} warmup)")
-    print(f"  Submitted:  {a_metrics['num_submitted']}")
-    print(f"  Completed:  {a_metrics['num_completed']}")
-    print(f"  Failed:     {a_metrics['num_failed']}")
-    if a_metrics['avg_completion_time'] > 0:
-        print(f"  Avg time:   {a_metrics['avg_completion_time']:.2f}s")
-        print(f"  Median:     {a_metrics['median_completion_time']:.2f}s")
-        print(f"  P95:        {a_metrics['p95_completion_time']:.2f}s")
-
-    print("\nB1 Tasks:")
-    print(f"  Generated:  {b1_metrics['num_generated']} (excl. {b1_metrics['num_warmup']} warmup)")
-    print(f"  Submitted:  {b1_metrics['num_submitted']}")
-    print(f"  Completed:  {b1_metrics['num_completed']}")
-    print(f"  Failed:     {b1_metrics['num_failed']}")
-    if b1_metrics['avg_completion_time'] > 0:
-        print(f"  Avg time:   {b1_metrics['avg_completion_time']:.2f}s")
-        print(f"  Median:     {b1_metrics['median_completion_time']:.2f}s")
-        print(f"  P95:        {b1_metrics['p95_completion_time']:.2f}s")
-
-    print("\nB2 Tasks:")
-    print(f"  Generated:  {b2_metrics['num_generated']} (excl. {b2_metrics['num_warmup']} warmup)")
-    print(f"  Submitted:  {b2_metrics['num_submitted']}")
-    print(f"  Completed:  {b2_metrics['num_completed']}")
-    print(f"  Failed:     {b2_metrics['num_failed']}")
-    if b2_metrics['avg_completion_time'] > 0:
-        print(f"  Avg time:   {b2_metrics['avg_completion_time']:.2f}s")
-        print(f"  Median:     {b2_metrics['median_completion_time']:.2f}s")
-        print(f"  P95:        {b2_metrics['p95_completion_time']:.2f}s")
-
-    print("\nMerge Tasks:")
-    print(f"  Generated:  {merge_metrics['num_generated']} (excl. {merge_metrics['num_warmup']} warmup)")
-    print(f"  Submitted:  {merge_metrics['num_submitted']}")
-    print(f"  Completed:  {merge_metrics['num_completed']}")
-    print(f"  Failed:     {merge_metrics['num_failed']}")
-    if merge_metrics['avg_completion_time'] > 0:
-        print(f"  Avg time:   {merge_metrics['avg_completion_time']:.2f}s")
-        print(f"  Median:     {merge_metrics['median_completion_time']:.2f}s")
-        print(f"  P95:        {merge_metrics['p95_completion_time']:.2f}s")
-
-    print("\nWorkflows:")
-    print(f"  Completed:  {wf_metrics['num_completed']} (excl. {wf_metrics['num_warmup']} warmup)")
-    print(f"  Avg fanout: {wf_metrics['avg_fanout']:.1f} B tasks per A task")
-    if wf_metrics['avg_workflow_time'] > 0:
-        print(f"  Avg time:   {wf_metrics['avg_workflow_time']:.2f}s")
-        print(f"  Median:     {wf_metrics['median_workflow_time']:.2f}s")
-        print(f"  P95:        {wf_metrics['p95_workflow_time']:.2f}s")
-        print(f"  P99:        {wf_metrics['p99_workflow_time']:.2f}s")
-
-    print("\nFanout Distribution:")
-    for fanout, count in sorted(wf_metrics['fanout_distribution'].items()):
-        percentage = (count / wf_metrics['num_completed']) * 100 if wf_metrics['num_completed'] > 0 else 0
-        print(f"  {fanout} B tasks: {count} workflows ({percentage:.1f}%)")
-
-    print("=" * 80)
-
-
 def run_single_experiment(config, logger, strategy_name=None, pre_generated_workflows=None):
     """Run a single experiment with the given configuration.
 
@@ -322,6 +80,11 @@ def run_single_experiment(config, logger, strategy_name=None, pre_generated_work
     Returns:
         Dictionary of results
     """
+
+    # Update config.strategy if strategy_name is provided
+    # This is CRITICAL: ATaskSubmitter uses config.strategy to set workflow_data.strategy
+    if strategy_name:
+        config.strategy = strategy_name
 
     # Clear all tasks from schedulers before starting experiment
     # This is critical when running multiple experiments sequentially
@@ -428,34 +191,37 @@ def run_single_experiment(config, logger, strategy_name=None, pre_generated_work
     # Pre-generate Task IDs for Receivers
     # ========================================================================
 
-    # Get strategy name for task ID generation
-    # Use strategy_name parameter if provided (for multi-strategy testing),
-    # otherwise fall back to config.strategy
-    strategy = strategy_name if strategy_name else getattr(config, 'strategy', 'probabilistic')
-
     # A task IDs (one per workflow)
-    a_task_ids = [
-        f"task-A-{strategy}-workflow-{i:04d}"
-        for i in range(config.num_workflows)
-    ]
+    # Use workflow_data.strategy to ensure consistency with submitters
+    a_task_ids = []
+    with state_lock:
+        for workflow_id, workflow_data in workflow_states.items():
+            workflow_num = workflow_id.split('-')[-1]
+            wf_strategy = workflow_data.strategy
+            a_task_ids.append(f"task-A-{wf_strategy}-workflow-{workflow_num}")
 
     # B1/B2 task IDs - need to get from workflow states since each may have different fanout
     # Note: workflows are created during ATaskSubmitter.__init__ with distribution-based fanout
+    # IMPORTANT: Use workflow_data.strategy to match the strategy used in submitters
     b1_task_ids = []
     b2_task_ids = []
     with state_lock:
         for workflow_id, workflow_data in workflow_states.items():
             workflow_num = workflow_id.split('-')[-1]
             fanout = workflow_data.fanout_count
+            wf_strategy = workflow_data.strategy  # Use workflow's actual strategy
             for j in range(fanout):
-                b1_task_ids.append(f"task-B1-{strategy}-workflow-{workflow_num}-{j}")
-                b2_task_ids.append(f"task-B2-{strategy}-workflow-{workflow_num}-{j}")
+                b1_task_ids.append(f"task-B1-{wf_strategy}-workflow-{workflow_num}-{j}")
+                b2_task_ids.append(f"task-B2-{wf_strategy}-workflow-{workflow_num}-{j}")
 
     # Merge task IDs (one per workflow)
-    merge_task_ids = [
-        f"task-merge-{strategy}-workflow-{i:04d}"
-        for i in range(config.num_workflows)
-    ]
+    # Use workflow_data.strategy to ensure consistency with submitters
+    merge_task_ids = []
+    with state_lock:
+        for workflow_id, workflow_data in workflow_states.items():
+            workflow_num = workflow_id.split('-')[-1]
+            wf_strategy = workflow_data.strategy
+            merge_task_ids.append(f"task-merge-{wf_strategy}-workflow-{workflow_num}")
 
     logger.info(f"Pre-generated {len(a_task_ids)} A, {len(b1_task_ids)} B1, "
                 f"{len(b2_task_ids)} B2, {len(merge_task_ids)} Merge task IDs")
@@ -543,31 +309,64 @@ def run_single_experiment(config, logger, strategy_name=None, pre_generated_work
     logger.info("All threads started successfully")
 
     # ========================================================================
-    # Wait for Duration
+    # Wait for Duration or Early Completion
     # ========================================================================
 
-    logger.info(f"Running experiment for {config.duration} seconds...")
+    logger.info(f"Running experiment for up to {config.duration} seconds...")
+
+    # Calculate target workflows for early stopping based on SUBMISSION ORDER
+    # We need:
+    # 1. All warmup workflows (first num_warmup) to complete
+    # 2. The first portion_stats fraction of non-warmup workflows to complete
+    # This matches how MetricsCollector filters workflows for statistics
+    import math
+    num_warmup = config.num_warmup
+    num_non_warmup = config.num_workflows - num_warmup
+    target_non_warmup = math.ceil(num_non_warmup * config.portion_stats)
+
+    # Generate the list of workflow IDs that must complete for metrics
+    # Warmup workflows: workflow-0000 to workflow-(num_warmup-1)
+    # Target non-warmup: workflow-num_warmup to workflow-(num_warmup + target_non_warmup - 1)
+    target_workflow_ids = set()
+    for i in range(num_warmup):
+        target_workflow_ids.add(f"workflow-{i:04d}")
+    for i in range(num_warmup, num_warmup + target_non_warmup):
+        target_workflow_ids.add(f"workflow-{i:04d}")
+
+    target_completion = len(target_workflow_ids)
+    logger.info(f"Early stopping target: {target_completion} specific workflows by submission order "
+                f"(warmup={num_warmup}, non-warmup needed for stats={target_non_warmup})")
 
     # Print progress every 10 seconds
     elapsed = 0
+    early_stop = False
     while elapsed < config.duration:
         time.sleep(10)
         elapsed = time.time() - start_time
 
-        # Calculate progress
-        with metrics._workflow_lock:
-            completed_workflows = len([w for w in metrics.workflow_metrics if w.end_time is not None])
+        with state_lock:
             total_workflows = len(workflow_states)
-            
+            completed = sum(1 for w in workflow_states.values() if w.is_complete())
+            # Count how many of the TARGET workflows have completed
+            target_completed = sum(
+                1 for wid, w in workflow_states.items()
+                if wid in target_workflow_ids and w.is_complete()
+            )
+
+        target_pct = 100 * target_completed / target_completion if target_completion > 0 else 0
+        total_pct = 100 * completed / total_workflows if total_workflows > 0 else 0
+
         logger.info(
-            f"Progress: {elapsed:.1f}s elapsed, "
-            f"{completed_workflows}/{total_workflows} workflows complete "
-            f"({100*completed_workflows/total_workflows if total_workflows > 0 else 0:.1f}%)"
+            f"Progress [{elapsed:.1f}s]: "
+            f"target={target_completed}/{target_completion} ({target_pct:.1f}%), "
+            f"total={completed}/{total_workflows} ({total_pct:.1f}%)"
         )
-        
-        # Stop if all workflows are complete
-        if completed_workflows >= total_workflows and total_workflows > 0:
-            logger.info("All workflows completed early")
+
+        # Early stopping: check if all TARGET workflows (by submission order) have completed
+        if target_completed >= target_completion:
+            logger.info(f"Early stopping: {target_completed} target workflows completed")
+            logger.info("All workflows needed for metrics calculation are complete!")
+            early_stop = True
             break
 
     # ========================================================================
@@ -613,6 +412,8 @@ def run_single_experiment(config, logger, strategy_name=None, pre_generated_work
     logger.info("Experiment Complete")
     logger.info("="*70)
     logger.info(f"Total runtime: {total_time:.2f}s")
+    if early_stop:
+        logger.info(f"Stopped early: All {target_completion} workflows needed for metrics completed")
 
     # Print detailed metrics report with per-task-type metrics (Avg, P90, P99)
     report = metrics.generate_detailed_text_report(
@@ -621,30 +422,50 @@ def run_single_experiment(config, logger, strategy_name=None, pre_generated_work
     )
     print("\n" + report)
 
-    # Also calculate metrics for return value (backward compatibility)
-    a_metrics = calculate_task_metrics_from_collector(metrics, "A", workflow_states, config.portion_stats)
-    b1_metrics = calculate_task_metrics_from_collector(metrics, "B1", workflow_states, config.portion_stats)
-    b2_metrics = calculate_task_metrics_from_collector(metrics, "B2", workflow_states, config.portion_stats)
-    merge_metrics = calculate_task_metrics_from_collector(metrics, "merge", workflow_states, config.portion_stats)
-    wf_metrics = calculate_workflow_metrics_from_collector(metrics, workflow_states, config.portion_stats)
-    
-    # Calculate actual QPS
-    actual_qps = 0.0
-    # We can estimate actual QPS from A metrics
-    if a_metrics['num_submitted'] > 0 and total_time > 0:
-        actual_qps = a_metrics['num_submitted'] / total_time
+    logger.info("="*70)
+    if strategy_name:
+        logger.info(f"Simulation complete for strategy: {strategy_name}!")
+    else:
+        logger.info("Simulation complete!")
+    logger.info("="*70)
+
+    # Collect and return strategy results for comparison table
+    task_types = ["A", "B1", "B2", "merge"]
+    task_metrics_result = {}
+    for task_type in task_types:
+        task_metrics_result[task_type] = metrics.get_task_metrics_by_type(
+            task_type, exclude_warmup=True, portion_stats=config.portion_stats
+        )
+
+    # Get workflow metrics
+    summary = metrics.get_summary(exclude_warmup=True, portion_stats=config.portion_stats)
+    workflow_durations = []
+    with metrics._workflow_lock:
+        # Get included workflow IDs based on portion_stats
+        total_non_warmup = len(metrics._non_warmup_workflow_order)
+        num_to_include = int(total_non_warmup * config.portion_stats)
+        included_workflow_ids = set(metrics._non_warmup_workflow_order[:num_to_include])
+
+        completed_workflows = [
+            w for w in metrics.workflow_metrics
+            if w.workflow_id in included_workflow_ids and w.end_time
+        ]
+        workflow_durations = [w.total_duration for w in completed_workflows if w.total_duration]
+
+    if workflow_durations:
+        wf_avg = float(np.mean(workflow_durations))
+        wf_p90 = float(np.percentile(workflow_durations, 90))
+        wf_p99 = float(np.percentile(workflow_durations, 99))
+    else:
+        wf_avg = wf_p90 = wf_p99 = 0.0
 
     return {
-        "strategy": strategy,
-        "num_workflows": config.num_workflows,
-        "target_qps": config.qps,
-        "actual_qps": actual_qps,
-        "a_tasks": a_metrics,
-        "b1_tasks": b1_metrics,
-        "b2_tasks": b2_metrics,
-        "merge_tasks": merge_metrics,
-        "workflows": wf_metrics,
-        "submission_time": total_time
+        'task_metrics': task_metrics_result,
+        'workflow_metrics': {
+            'avg': wf_avg,
+            'p90': wf_p90,
+            'p99': wf_p99,
+        }
     }
 
 
@@ -692,6 +513,7 @@ def main():
         num_warmup=warmup_count,
         strategies=strategies,
         portion_stats=args.portion_stats,
+        max_sleep_time_seconds=args.max_sleep_time,
     )
 
     logger = configure_logging(level="INFO")
@@ -702,6 +524,7 @@ def main():
     logger.info(f"Model Merge: {config.model_merge_id}")
     logger.info(f"Scheduler A: {config.scheduler_a_url}")
     logger.info(f"Scheduler B: {config.scheduler_b_url}")
+    logger.info(f"Max sleep time: {config.max_sleep_time_seconds:.1f}s")
 
     # Log fanout distribution info
     fanout_info = config.get_fanout_config_info()
@@ -742,7 +565,7 @@ def main():
     # Set default quantiles if not specified
     quantiles = config.quantiles if config.quantiles else [0.1, 0.25, 0.5, 0.75, 0.99]
 
-    all_results = []
+    all_strategy_results = {}
 
     # Run experiment for each strategy
     for strategy_name in strategies:
@@ -785,94 +608,32 @@ def main():
         logger.info(f"Running experiment with strategy: {strategy_name}")
         logger.info("="*70)
 
-        result = run_single_experiment(
+        experiment_results = run_single_experiment(
             config, logger,
             strategy_name=strategy_name,
             pre_generated_workflows=pre_generated_workflows
         )
-        all_results.append(result)
+
+        # Store results for comparison
+        all_strategy_results[strategy_name] = experiment_results
 
         logger.info(f"\nCompleted experiment for strategy: {strategy_name}")
 
         # Brief pause between strategies
         time.sleep(2.0)
 
-    logger.info("\n" + "="*70)
-    logger.info("All strategy experiments completed!")
-    logger.info("="*70)
-
-    # ========================================================================
-    # Save Results
-    # ========================================================================
-
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    results_file = f"results/results_workflow_b1b2_{timestamp}.json"
-
-    output_data = {
-        "experiment": "type2_deep_research_simulation",
-        "timestamp": datetime.now().isoformat(),
-        "config": {
-            "num_workflows": config.num_workflows,
-            "qps": config.qps,
-            "fanout_count": config.fanout_count,
-            "warmup": args.warmup,
-            "seed": args.seed
-        },
-        "results": all_results
-    }
-
-    ensure_directory("results")
-
-    with open(results_file, 'w') as f:
-        json.dump(output_data, f, indent=2)
-
-    logger.info(f"\nResults saved to: {results_file}")
-
-    # ========================================================================
-    # Print Comparison Table (using standard format)
-    # ========================================================================
-
-    if len(all_results) > 1:
-        # Convert results to standard format for comparison table
-        all_strategy_results = {}
-        for result in all_results:
-            strategy = result['strategy']
-            all_strategy_results[strategy] = {
-                'task_metrics': {
-                    'A': {
-                        'avg': result['a_tasks']['avg_completion_time'],
-                        'p90': float(np.percentile(result['a_tasks']['completion_times'], 90)) if result['a_tasks']['completion_times'] else 0.0,
-                        'p99': result['a_tasks']['p99_completion_time'],
-                    },
-                    'B1': {
-                        'avg': result['b1_tasks']['avg_completion_time'],
-                        'p90': float(np.percentile(result['b1_tasks']['completion_times'], 90)) if result['b1_tasks']['completion_times'] else 0.0,
-                        'p99': result['b1_tasks']['p99_completion_time'],
-                    },
-                    'B2': {
-                        'avg': result['b2_tasks']['avg_completion_time'],
-                        'p90': float(np.percentile(result['b2_tasks']['completion_times'], 90)) if result['b2_tasks']['completion_times'] else 0.0,
-                        'p99': result['b2_tasks']['p99_completion_time'],
-                    },
-                    'merge': {
-                        'avg': result['merge_tasks']['avg_completion_time'],
-                        'p90': float(np.percentile(result['merge_tasks']['completion_times'], 90)) if result['merge_tasks']['completion_times'] else 0.0,
-                        'p99': result['merge_tasks']['p99_completion_time'],
-                    },
-                },
-                'workflow_metrics': {
-                    'avg': result['workflows']['avg_workflow_time'],
-                    'p90': float(np.percentile(result['workflows']['workflow_times'], 90)) if result['workflows']['workflow_times'] else 0.0,
-                    'p99': result['workflows']['p99_workflow_time'],
-                }
-            }
-
+    # Generate strategy comparison table
+    if len(all_strategy_results) > 1:
         comparison_table = generate_strategy_comparison_table(
             all_strategy_results,
             task_types=["A", "B1", "B2", "merge"]
         )
         print(comparison_table)
         logger.info("Strategy comparison table generated")
+
+    logger.info("\n" + "="*70)
+    logger.info("All strategy experiments completed!")
+    logger.info("="*70)
 
 
 if __name__ == "__main__":

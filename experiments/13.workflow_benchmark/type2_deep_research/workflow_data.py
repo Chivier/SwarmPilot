@@ -110,7 +110,8 @@ def pre_generate_workflows(
     workflows = []
     for i in range(config.num_workflows):
         # Sample fanout from distribution (or use static value)
-        fanout_count = fanout_sampler.sample()
+        # Convert to int since fanout must be an integer
+        fanout_count = int(fanout_sampler.sample())
 
         workflow = DeepResearchWorkflowData(
             workflow_id=f"workflow-{i:04d}",
@@ -120,17 +121,20 @@ def pre_generate_workflows(
         )
 
         # Pre-generate sleep times for simulation mode
+        # Use uniform distribution [1, max_sleep_time_seconds] consistent with type1
         if config.mode == "simulation":
-            workflow.a_sleep_time = random.uniform(config.sleep_time_min, config.sleep_time_max)
+            min_sleep = 1.0  # Minimum 1 second (consistent with type1's MIN_SLEEP_TIME_MS)
+            max_sleep = config.max_sleep_time_seconds
+            workflow.a_sleep_time = random.uniform(min_sleep, max_sleep)
             workflow.b1_sleep_times = [
-                random.uniform(config.sleep_time_min, config.sleep_time_max)
+                random.uniform(min_sleep, max_sleep)
                 for _ in range(fanout_count)
             ]
             workflow.b2_sleep_times = [
-                random.uniform(config.sleep_time_min, config.sleep_time_max)
+                random.uniform(min_sleep, max_sleep)
                 for _ in range(fanout_count)
             ]
-            workflow.merge_sleep_time = random.uniform(config.sleep_time_min, config.sleep_time_max)
+            workflow.merge_sleep_time = random.uniform(min_sleep, max_sleep)
 
         # Pre-generate topic for real mode
         if config.mode == "real":

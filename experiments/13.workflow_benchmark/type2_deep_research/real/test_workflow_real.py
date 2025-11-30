@@ -97,39 +97,7 @@ def run_single_experiment(config, logger, strategy_name=None):
     b1_result_queue = Queue()
     merge_trigger_queue = Queue()
 
-    # Pre-generate task IDs for receivers
-    strategy = getattr(config, 'strategy', 'probabilistic')
-
-    # A task IDs (one per workflow)
-    a_task_ids = [
-        f"task-A-{strategy}-workflow-{i:04d}"
-        for i in range(config.num_workflows)
-    ]
-
-    # B1 task IDs (fanout_count per workflow)
-    b1_task_ids = [
-        f"task-B1-{strategy}-workflow-{i:04d}-{j}"
-        for i in range(config.num_workflows)
-        for j in range(config.fanout_count)
-    ]
-
-    # B2 task IDs (fanout_count per workflow)
-    b2_task_ids = [
-        f"task-B2-{strategy}-workflow-{i:04d}-{j}"
-        for i in range(config.num_workflows)
-        for j in range(config.fanout_count)
-    ]
-
-    # Merge task IDs (one per workflow)
-    merge_task_ids = [
-        f"task-merge-{strategy}-workflow-{i:04d}"
-        for i in range(config.num_workflows)
-    ]
-
-    logger.info(f"Pre-generated {len(a_task_ids)} A, {len(b1_task_ids)} B1, "
-                f"{len(b2_task_ids)} B2, {len(merge_task_ids)} Merge task IDs")
-
-    # Create submitters
+    # Create A submitter first to populate workflow_states
     a_submitter = ATaskSubmitter(
         name="ASubmitter",
         config=config,
@@ -178,6 +146,27 @@ def run_single_experiment(config, logger, strategy_name=None):
         metrics=metrics,
         custom_logger=logger
     )
+
+    # Pre-generate task IDs for receivers
+    # IMPORTANT: Must be done after ATaskSubmitter init to have workflow_states populated
+    # Use workflow_data.strategy to ensure consistency with submitters
+    a_task_ids = []
+    b1_task_ids = []
+    b2_task_ids = []
+    merge_task_ids = []
+    with state_lock:
+        for workflow_id, workflow_data in workflow_states.items():
+            workflow_num = workflow_id.split('-')[-1]
+            wf_strategy = workflow_data.strategy
+            fanout = workflow_data.fanout_count
+            a_task_ids.append(f"task-A-{wf_strategy}-workflow-{workflow_num}")
+            for j in range(fanout):
+                b1_task_ids.append(f"task-B1-{wf_strategy}-workflow-{workflow_num}-{j}")
+                b2_task_ids.append(f"task-B2-{wf_strategy}-workflow-{workflow_num}-{j}")
+            merge_task_ids.append(f"task-merge-{wf_strategy}-workflow-{workflow_num}")
+
+    logger.info(f"Pre-generated {len(a_task_ids)} A, {len(b1_task_ids)} B1, "
+                f"{len(b2_task_ids)} B2, {len(merge_task_ids)} Merge task IDs")
 
     # Create receivers
     a_receiver = ATaskReceiver(

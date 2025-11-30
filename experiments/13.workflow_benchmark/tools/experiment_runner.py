@@ -245,7 +245,8 @@ class ExperimentRunner:
                                       fanout: int = 4,
                                       fanout_config: Optional[str] = None,
                                       fanout_seed: Optional[int] = None,
-                                      portion_stats: float = 1.0) -> Dict:
+                                      portion_stats: float = 1.0,
+                                      max_sleep_time: float = 600.0) -> Dict:
         """
         Run Deep Research workflow in simulation mode.
 
@@ -260,6 +261,7 @@ class ExperimentRunner:
             fanout_config: Path to JSON config file for fanout distribution (optional)
             fanout_seed: Random seed for fanout distribution sampling (optional)
             portion_stats: Portion of non-warmup workflows for statistics (default: 1.0)
+            max_sleep_time: Maximum sleep time in seconds for simulation mode (default: 600.0)
 
         Returns:
             Dict with experiment results and metrics path
@@ -273,7 +275,8 @@ class ExperimentRunner:
         self.logger.info("=" * 80)
         self.logger.info(f"Config: num_workflows={num_workflows}, qps={qps}, "
                         f"duration={duration}s, {fanout_info}, "
-                        f"strategies={strategies}, portion_stats={portion_stats}")
+                        f"strategies={strategies}, portion_stats={portion_stats}, "
+                        f"max_sleep_time={max_sleep_time}s")
 
         script_path = self.workspace_dir / "type2_deep_research" / "simulation" / "test_workflow_sim.py"
         args = self._build_common_args(num_workflows, qps, seed, strategies, warmup, duration, portion_stats)
@@ -283,6 +286,7 @@ class ExperimentRunner:
             args.extend(["--fanout-config", fanout_config])
         if fanout_seed is not None:
             args.extend(["--fanout-seed", str(fanout_seed)])
+        args.extend(["--max-sleep-time", str(max_sleep_time)])
 
         return self._run_script(script_path, args, "Deep Research Simulation")
 

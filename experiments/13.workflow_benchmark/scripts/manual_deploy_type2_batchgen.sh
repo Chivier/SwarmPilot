@@ -3,18 +3,20 @@
 set -e
 
 # ============================================
-# Manual Model Deployment for Type1 (Text2Video) Workflow
+# Manual Model Deployment for Type2 (Deep Research) Workflow - Batchgen Version
 # ============================================
-# Type1 Workflow: A1 -> A2 -> B -> B -> ...
-#   - Model A (llm_service_small_model) -> Scheduler A / Planner
-#   - Model B (t2vid) -> Scheduler B / Planner
+# Type2 Workflow: A -> n*B1 -> n*B2 -> Merge
+#   - Model A (llm_service_small_model) -> Scheduler A / Planner (for A and Merge tasks)
+#   - Model B (llm_service_large_model) -> Scheduler B / Planner (for B1/B2 tasks)
+#
+# This version is for batch generation experiments with different host distribution.
 #
 # Registration Strategy (Planner Style):
 #   - Ports 8200-8203: Register to Scheduler
 #   - Ports 8204-8207: Register to Planner
 #
 # Usage:
-#   bash manual_deploy_type1.sh --model-path-a /path/to/llm --model-path-b /path/to/t2vid
+#   bash manual_deploy_type2_batchgen.sh --model-path-a /path/to/small_llm --model-path-b /path/to/large_llm
 
 # Color codes for output
 RED='\033[0;31m'
@@ -44,9 +46,9 @@ while [[ $# -gt 0 ]]; do
         -h|--help)
             echo "Usage: $0 [OPTIONS]"
             echo ""
-            echo "Type1 (Text2Video) Model Deployment with Planner Registration:"
-            echo "  Model A: llm_service_small_model"
-            echo "  Model B: t2vid"
+            echo "Type2 (Deep Research) Model Deployment with Planner Registration (Batchgen Version):"
+            echo "  Model A: llm_service_small_model (for A and Merge tasks)"
+            echo "  Model B: llm_service_large_model (for B1/B2 tasks)"
             echo ""
             echo "Registration Strategy:"
             echo "  Ports 8200-8203 -> Scheduler (A to Scheduler A, B to Scheduler B)"
@@ -54,12 +56,12 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Options:"
             echo "  --model-path PATH         Set model path for both Group A and B"
-            echo "  --model-path-a PATH       Set model path for Group A (LLM)"
-            echo "  --model-path-b PATH       Set model path for Group B (T2Vid)"
+            echo "  --model-path-a PATH       Set model path for Group A (Small LLM)"
+            echo "  --model-path-b PATH       Set model path for Group B (Large LLM)"
             echo "  -h, --help                Show this help message"
             echo ""
             echo "Example:"
-            echo "  $0 --model-path-a /path/to/llm --model-path-b /path/to/t2vid"
+            echo "  $0 --model-path-a /path/to/small_llm --model-path-b /path/to/large_llm"
             exit 0
             ;;
         *)
@@ -81,9 +83,9 @@ if [[ -z "$MODEL_PATH_B" ]]; then
 fi
 
 # Display configuration
-echo -e "${GREEN}Type1 (Text2Video) Deployment Configuration:${NC}"
-echo "  Group A (LLM) model path: $MODEL_PATH_A"
-echo "  Group B (T2Vid) model path: $MODEL_PATH_B"
+echo -e "${GREEN}Type2 (Deep Research) Deployment Configuration (Batchgen):${NC}"
+echo "  Group A (Small LLM) model path: $MODEL_PATH_A"
+echo "  Group B (Large LLM) model path: $MODEL_PATH_B"
 echo ""
 echo "Registration Strategy:"
 echo "  Ports 8200-8203 -> Scheduler"
@@ -114,12 +116,14 @@ PLANNER_PORT_LIST=(8204 8205 8206 8207)
 # All instance ports (for health check)
 INSTANCE_PORT_LIST=(8200 8201 8202 8203 8204 8205 8206 8207)
 
-# Group A Hosts (llm_service_small_model for A1/A2 tasks)
+# Group A Hosts (llm_service_small_model for A and Merge tasks)
+# Batchgen configuration - only 1 host for Group A (same as type1_batchgen)
 GROUP_A_HOSTS=(
   29.209.114.51
 )
 
-# Group B Hosts (t2vid for B tasks)
+# Group B Hosts (llm_service_large_model for B1/B2 tasks)
+# Batchgen configuration - 11 hosts for Group B (same pattern as type1_batchgen)
 GROUP_B_HOSTS=(
   29.209.114.166
   29.209.113.113
@@ -227,9 +231,9 @@ for host in "${GROUP_A_HOSTS[@]}"; do
 done
 
 # ============================================
-# Group B: Deploy t2vid
+# Group B: Deploy llm_service_large_model
 # ============================================
-echo -e "${YELLOW}Deploying t2vid on Group B hosts...${NC}"
+echo -e "${YELLOW}Deploying llm_service_large_model on Group B hosts...${NC}"
 
 # First half: register to Scheduler B
 for host in "${GROUP_B_HOSTS[@]}"; do
@@ -237,21 +241,21 @@ for host in "${GROUP_B_HOSTS[@]}"; do
         (
             instance_id="${host}:${instance_port}"
             json_payload=$(jq -n \
-                --arg model_id "t2vid" \
+                --arg model_id "llm_service_large_model" \
                 --arg scheduler_url "http://$SCHEDULER_B_HOST:$SCHEDULER_PORT" \
                 --arg model_path "$MODEL_PATH_B" \
-                --arg software_name "diffuser" \
-                --arg software_version "latest" \
-                '{model_id: $model_id, scheduler_url: $scheduler_url, parameters: {MODEL_PATH: $model_path, software_name: $software_name, software_version: $software_version}}')
+                --arg software_name "sglang" \
+                --arg software_version "0.5.5.post2" \
+                '{model_id: $model_id, scheduler_url: $scheduler_url, parameters: {MODEL_PATH: $model_path, software_name: $software_name, software_version: $software_version}, standby: false}')
 
             response=$(curl -s -X POST "http://$host:$instance_port/model/start" \
                 -H "Content-Type: application/json" \
                 -d "$json_payload")
 
             if echo "$response" | grep -q "success\|started"; then
-                echo -e "$instance_id (t2vid -> scheduler): ${GREEN}OK${NC}"
+                echo -e "$instance_id (llm_service_large_model -> scheduler): ${GREEN}OK${NC}"
             else
-                echo -e "$instance_id (t2vid -> scheduler): ${RED}FAILED${NC}"
+                echo -e "$instance_id (llm_service_large_model -> scheduler): ${RED}FAILED${NC}"
                 echo "Response: $response"
             fi
         ) &
@@ -265,19 +269,21 @@ for host in "${GROUP_B_HOSTS[@]}"; do
         (
             instance_id="${host}:${instance_port}"
             json_payload=$(jq -n \
-                --arg model_id "t2vid" \
+                --arg model_id "llm_service_large_model" \
                 --arg scheduler_url "http://$PLANNER_HOST:$PLANNER_PORT" \
                 --arg model_path "$MODEL_PATH_B" \
-                '{model_id: $model_id, scheduler_url: $scheduler_url, parameters: {MODEL_PATH: $model_path}}')
+                --arg software_name "sglang" \
+                --arg software_version "0.5.5.post2" \
+                '{model_id: $model_id, scheduler_url: $scheduler_url, parameters: {MODEL_PATH: $model_path, software_name: $software_name, software_version: $software_version}, standby: false}')
 
             response=$(curl -s -X POST "http://$host:$instance_port/model/start" \
                 -H "Content-Type: application/json" \
                 -d "$json_payload")
 
             if echo "$response" | grep -q "success\|started"; then
-                echo -e "$instance_id (t2vid -> planner): ${GREEN}OK${NC}"
+                echo -e "$instance_id (llm_service_large_model -> planner): ${GREEN}OK${NC}"
             else
-                echo -e "$instance_id (t2vid -> planner): ${RED}FAILED${NC}"
+                echo -e "$instance_id (llm_service_large_model -> planner): ${RED}FAILED${NC}"
                 echo "Response: $response"
             fi
         ) &
@@ -290,12 +296,12 @@ for pid in "${pids[@]}"; do
     wait $pid
 done
 
-echo -e "${GREEN}Type1 (Text2Video) model deployment completed${NC}"
+echo -e "${GREEN}Type2 (Deep Research) model deployment completed (Batchgen)${NC}"
 echo ""
 echo "Summary:"
-echo "  Group A (llm_service_small_model):"
+echo "  Group A (llm_service_small_model - for A and Merge tasks):"
 echo "    - Ports 8200-8203 -> Scheduler A ($SCHEDULER_A_HOST:$SCHEDULER_PORT)"
 echo "    - Ports 8204-8207 -> Planner ($PLANNER_HOST:$PLANNER_PORT)"
-echo "  Group B (t2vid):"
+echo "  Group B (llm_service_large_model - for B1/B2 tasks):"
 echo "    - Ports 8200-8203 -> Scheduler B ($SCHEDULER_B_HOST:$SCHEDULER_PORT)"
 echo "    - Ports 8204-8207 -> Planner ($PLANNER_HOST:$PLANNER_PORT)"
