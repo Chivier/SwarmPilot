@@ -472,8 +472,8 @@ class TestTriggerOptimization:
             assert len(api_module._submitted_models) == 0
 
     @pytest.mark.asyncio
-    async def test_trigger_optimization_keeps_submitted_on_failure(self, setup_model_mapping):
-        """Test that failed optimization keeps submitted models for retry."""
+    async def test_trigger_optimization_resets_state_on_failure(self, setup_model_mapping):
+        """Test that failed optimization resets state to ensure countdown restarts after completion."""
         from src.models import DeploymentInput, PlannerInput, InstanceInfo
 
         mock_input = DeploymentInput(
@@ -501,9 +501,12 @@ class TestTriggerOptimization:
 
             await api_module._trigger_optimization()
 
-            # Should keep submitted models for retry
-            assert len(api_module._submitted_models) == 3
-            # But running flag should be cleared
+            # State should be reset even on failure to ensure countdown restarts
+            # only after optimization attempt completes (success or failure)
+            assert len(api_module._submitted_models) == 0
+            assert api_module._first_data_received is False
+            assert api_module._optimization_timer_start == 0.0
+            # Running flag should be cleared
             assert api_module._auto_optimize_running is False
 
 

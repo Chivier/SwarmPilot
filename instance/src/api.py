@@ -325,6 +325,17 @@ class DeregisterStatusResponse(BaseModel):
     )
     error: Optional[str] = None
 
+
+class ModelDeregisterResponse(BaseModel):
+    """Response schema for synchronous model deregister endpoint"""
+    success: bool
+    message: str
+    model_id: Optional[str] = Field(None, description="The model ID that was deregistered")
+    redistributed_tasks_count: int = Field(
+        default=0,
+        description="Number of pending tasks redistributed to scheduler"
+    )
+
 # =============================================================================
 # FastAPI Application
 # =============================================================================
@@ -593,29 +604,30 @@ async def stop_model():
 
 @app.post(
     "/model/deregister",
-    response_model=ModelRestartResponse,
+    response_model=ModelDeregisterResponse,
     status_code=status.HTTP_200_OK,
     responses={
         400: {"model": ErrorResponse},
         409: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
     },
 )
 async def deregister_model():
     """
-    Restart the model with a new model and scheduler.
+    Deregister the current model from the scheduler synchronously.
 
-    This is a non-blocking operation that:
+    This is a **blocking** operation that:
     1. Drains from the current scheduler (stops accepting new tasks)
-    2. Waits for all pending tasks to complete
-    3. Stops the current model
+    2. Extracts pending queued tasks and redistributes them to scheduler
+    3. Waits for all currently running tasks to complete
     4. Deregisters from the current scheduler
 
-    The scheduler_url must be provided and cannot be empty.
-    The operation runs in the background. Use GET /model/restart/status to monitor progress.
+    The endpoint will block until all running tasks are completed and the
+    deregister operation is finished. Use this when you need to ensure
+    the instance is fully drained before proceeding.
     """
 
     docker_manager = get_docker_manager()
-    registry = get_registry()
 
     # Check if a model is running
     if not await docker_manager.is_model_running():
@@ -624,11 +636,11 @@ async def deregister_model():
             detail="No model is currently running"
         )
 
-
     # Get current model info
     current_model = await docker_manager.get_current_model()
+    model_id = current_model.model_id if current_model else None
 
-    # Check if there's already a restart operation in progress and create new operation atomically
+    # Check if there's already a deregister operation in progress
     async with _deregister_operation_lock:
         for op in _deregister_operations.values():
             if op.status not in (DeregisterStatus.COMPLETED, DeregisterStatus.FAILED):
@@ -637,69 +649,28 @@ async def deregister_model():
                     detail=f"A deregister operation is already in progress (operation_id: {op.operation_id})"
                 )
 
-        # Create deregister operation
+        # Create deregister operation for tracking
         operation_id = str(uuid.uuid4())
         operation = DeregisterOperation(
             operation_id=operation_id,
-            old_model_id=current_model.model_id if current_model else None,
+            old_model_id=model_id,
         )
-
-        # Mark operation as in progress immediately to prevent concurrent deregisters
         operation.update_status(DeregisterStatus.DRAINING)
-
-        # Store operation (in same lock block to ensure atomicity)
         _deregister_operations[operation_id] = operation
 
-    # Start background task
-    asyncio.create_task(_perform_deregister_operation(operation_id))
-
-    logger.info(
-        f"Deregister operation {operation_id} initiated: "
-        f"{operation.old_model_id}"
-    )
-
-    return ModelRestartResponse(
-        success=True,
-        message="Model deregister operation initiated",
-        operation_id=operation_id,
-        status=operation.status.value,
-    )
-
-
-async def _perform_deregister_operation(operation_id: str):
-    """
-    Background task to perform the model deregister operation.
-
-    This function executes the following steps:
-    1. Drain from scheduler (if enabled)
-    2. Extract pending queued tasks and redistribute to scheduler
-    3. Wait for currently running task to complete
-    4. Stop current model
-    5. Deregister from current scheduler
-
-    Args:
-        operation_id: Unique identifier for this deregister operation
-    """
-    async with _deregister_operation_lock:
-        operation = _deregister_operations.get(operation_id)
-        if not operation:
-            logger.error(f"Deregister operation {operation_id} not found")
-            return
+    logger.info(f"Starting synchronous deregister operation {operation_id} for model: {model_id}")
 
     try:
-        logger.info(f"Starting deregister operation {operation_id}")
-        docker_manager = get_docker_manager()
         scheduler_client = get_scheduler_client()
         task_queue = get_task_queue()
+        redistributed_tasks_count = 0
 
         # Step 1: Drain from scheduler (if enabled)
-        operation.update_status(DeregisterStatus.DRAINING)
         if scheduler_client.is_enabled:
             try:
                 await scheduler_client.drain_instance()
-                logger.info(f"Instance draining from scheduler")
+                logger.info("Instance draining from scheduler")
             except Exception as e:
-                # Log warning but continue - instance might already be draining or not registered
                 logger.warning(f"Failed to drain from scheduler: {str(e)}")
         else:
             logger.info("Scheduler integration disabled, skipping drain step")
@@ -709,11 +680,9 @@ async def _perform_deregister_operation(operation_id: str):
 
         if scheduler_client.is_enabled:
             try:
-                # Extract all pending QUEUED tasks (preserves running task)
                 pending_tasks = await task_queue.extract_pending_tasks()
                 logger.info(f"Extracted {len(pending_tasks)} pending tasks from queue")
 
-                # Redistribute tasks back to scheduler
                 successful_redistributions = 0
                 failed_redistributions = 0
 
@@ -735,6 +704,7 @@ async def _perform_deregister_operation(operation_id: str):
                         failed_redistributions += 1
                         logger.error(f"Error redistributing task {task_data['task_id']}: {str(e)}")
 
+                redistributed_tasks_count = successful_redistributions
                 operation.redistributed_tasks_count = successful_redistributions
 
                 if failed_redistributions > 0:
@@ -747,7 +717,6 @@ async def _perform_deregister_operation(operation_id: str):
 
             except Exception as e:
                 logger.error(f"Failed to extract and redistribute tasks: {str(e)}")
-                # Continue with deregister even if redistribution fails
         else:
             logger.info("Scheduler integration disabled, skipping task extraction")
 
@@ -755,49 +724,43 @@ async def _perform_deregister_operation(operation_id: str):
         operation.update_status(DeregisterStatus.WAITING_RUNNING_TASK)
         stats = await task_queue.get_queue_stats()
 
-        # Only count running task (queued tasks have been extracted)
         if stats["running"] > 0:
-            logger.info(f"Waiting for {stats['running']} running task to complete")
-
-            # Poll task queue until running task completes
-            max_wait_time = 300  # 5 minutes timeout
-            start_wait_time = time.time()
+            logger.info(f"Waiting for {stats['running']} running task(s) to complete (no timeout)")
 
             while True:
                 stats = await task_queue.get_queue_stats()
                 running = stats["running"]
 
                 if running == 0:
-                    logger.info("Running task completed")
+                    logger.info("All running tasks completed")
                     break
 
-                # Check timeout
-                if time.time() - start_wait_time > max_wait_time:
-                    raise TimeoutError(
-                        f"Timeout waiting for running task to complete. "
-                        f"Task still running after {max_wait_time}s"
-                    )
-
-                # Wait a bit before checking again
                 await asyncio.sleep(1)
         else:
             logger.info("No running tasks to wait for")
 
-        # Step 5: Deregister from current scheduler
+        # Step 4: Deregister from scheduler
         operation.update_status(DeregisterStatus.DEREGISTERING)
         if scheduler_client.is_enabled:
             try:
                 await scheduler_client.deregister_instance()
-                logger.info("Deregistered from scheduler")
+                logger.info("Successfully deregistered from scheduler")
             except Exception as e:
-                # Log warning but continue
-                logger.warning(f"Failed to deregister: {str(e)}")
+                logger.warning(f"Failed to deregister from scheduler: {str(e)}")
 
-        
         # Mark operation as completed
         operation.update_status(DeregisterStatus.COMPLETED)
-        logger.info(f"Deregister operation {operation_id} completed successfully")
+        logger.info(f"Synchronous deregister operation {operation_id} completed successfully")
 
+        return ModelDeregisterResponse(
+            success=True,
+            message="Model deregistered successfully",
+            model_id=model_id,
+            redistributed_tasks_count=redistributed_tasks_count,
+        )
+
+    except HTTPException:
+        raise
     except Exception as e:
         error_msg = str(e)
         tb_str = traceback.format_exc()
@@ -807,9 +770,14 @@ async def _perform_deregister_operation(operation_id: str):
             f"  Traceback:\n{tb_str}"
         )
         async with _deregister_operation_lock:
-            operation = _deregister_operations.get(operation_id)
-            if operation:
-                operation.update_status(DeregisterStatus.FAILED, error=error_msg)
+            op = _deregister_operations.get(operation_id)
+            if op:
+                op.update_status(DeregisterStatus.FAILED, error=error_msg)
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Deregister operation failed: {error_msg}"
+        )
 
 
 @app.get(

@@ -434,18 +434,19 @@ async def _trigger_optimization():
         else:
             logger.info(f"Auto-optimization completed: score={score:.4f}, no changes needed")
 
-        # Reset state for next cycle
-        _submitted_models.clear()
-        _optimization_timer_start = 0.0  # Reset timer, will restart when all models submit again
-        _first_data_received = False  # Reset to wait for new data round
-        logger.info("Auto-optimization cycle completed, state reset for next cycle")
+        logger.info("Auto-optimization cycle completed successfully")
 
     except Exception as e:
         logger.error(f"Auto-optimization failed: {e}", exc_info=True)
-        # Don't clear submitted_models on failure - allow retry next cycle
 
     finally:
+        # Always reset state for next cycle after optimization attempt completes
+        # This ensures the countdown only restarts after all migration work is done
+        _submitted_models.clear()
+        _optimization_timer_start = 0.0  # Reset timer, will restart when all models submit again
+        _first_data_received = False  # Reset to wait for new data round
         _auto_optimize_running = False
+        logger.info("Auto-optimization state reset for next cycle, countdown will restart after new data arrives")
 
 
 # Validate configuration on startup

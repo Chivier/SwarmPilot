@@ -611,25 +611,42 @@ class InstanceMigrator:
                     )
 
                 scheduler_url = self.scheduler_mapping[target_model_id]
-                logger.info(f"Registering {target_endpoint} with model {target_model_id} to scheduler {scheduler_url}")
+                logger.info(f"Migrating from {original_endpoint} to {target_endpoint} with model {target_model_id}")
 
                 payload = {
                     "scheduler_url": scheduler_url
                 }
 
-                # Step 4: Deregister original and register new instance in parallel
+                # Step 4: Deregister original endpoint (no timeout)
                 try:
-                    register_task = asyncio.create_task(
-                        client.post(f"{target_endpoint}/model/register", json=payload)
+                    logger.info(f"Deregistering {original_endpoint}")
+                    deregister_response = await self.deregister_model(original_endpoint)
+                    logger.info(f"Deregister completed for {original_endpoint}")
+                except Exception as e:
+                    error_msg = f"Failed to deregister {original_endpoint}: {str(e)}"
+                    logger.error(f"Migration failed during deregister: {error_msg}", exc_info=True)
+                    return MigrationStatus(
+                        instance_index=instance_index,
+                        original_endpoint=original_endpoint,
+                        target_endpoint=target_endpoint,
+                        target_model=target_model_id,
+                        previous_model=current_model_id,
+                        success=False,
+                        error_message=error_msg,
+                        deployment_time=time.time() - start_time
                     )
-                    deregister_task = asyncio.create_task(self.deregister_model(original_endpoint))
-                    # Get the register and deregister result
-                    deregister_response = await deregister_task
-                    register_response = await register_task
+
+                # Step 5: Register new instance immediately after deregister completes
+                try:
+                    logger.info(f"Registering {target_endpoint} after deregister")
+                    register_response = await client.post(
+                        f"{target_endpoint}/model/register", json=payload
+                    )
                     register_response.raise_for_status()
+                    logger.info(f"Register completed for {target_endpoint}")
                 except httpx.HTTPStatusError as e:
-                    error_msg = f"Failed to register/deregister: HTTP {e.response.status_code} - {e.response.text}"
-                    logger.error(f"Migration failed during register/deregister: {error_msg}", exc_info=True)
+                    error_msg = f"Failed to register {target_endpoint}: HTTP {e.response.status_code} - {e.response.text}"
+                    logger.error(f"Migration failed during register: {error_msg}", exc_info=True)
                     return MigrationStatus(
                         instance_index=instance_index,
                         original_endpoint=original_endpoint,
@@ -641,8 +658,8 @@ class InstanceMigrator:
                         deployment_time=time.time() - start_time
                     )
                 except httpx.RequestError as e:
-                    error_msg = f"Request error during register/deregister: {str(e)}"
-                    logger.error(f"Migration failed during register/deregister: {error_msg}", exc_info=True)
+                    error_msg = f"Request error during register {target_endpoint}: {str(e)}"
+                    logger.error(f"Migration failed during register: {error_msg}", exc_info=True)
                     return MigrationStatus(
                         instance_index=instance_index,
                         original_endpoint=original_endpoint,
@@ -693,7 +710,9 @@ class InstanceMigrator:
         Initiate a model deregister operation on an instance.
 
         This calls the /model/deregister endpoint which performs a graceful deregister from scheduler:
-        1. Just call the deregiter method on the instance, then it will do everything itself.
+        1. Just call the deregister method on the instance, then it will do everything itself.
+
+        Note: No timeout is set for deregister operations to allow graceful completion.
 
         Args:
             endpoint: Instance endpoint URL
@@ -702,11 +721,12 @@ class InstanceMigrator:
             Dict containing operation_id and initial status
 
         Raises:
-            Exception: If restart initiation fails
+            Exception: If deregister initiation fails
         """
 
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
+            # No timeout for deregister - allow graceful completion
+            async with httpx.AsyncClient() as client:
                 response = await client.post(
                     f"{endpoint}/model/deregister",
                 )
