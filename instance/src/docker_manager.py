@@ -218,11 +218,17 @@ class DockerManager:
         self.current_model = None
         return model_id
 
-    async def restart_model(self) -> Optional[str]:
+    async def restart_model(self, force: bool = True) -> Optional[str]:
         """
         Restart the currently running model container.
 
         This will stop and restart the same model with the same parameters.
+
+        Args:
+            force: If True (default), force stop the container immediately.
+                   This parameter is accepted for API compatibility with
+                   SubprocessManager but has no effect on Docker containers
+                   (Docker stop is always forceful after timeout).
 
         Returns:
             The model_id that was restarted, or None if no model was running

@@ -614,14 +614,22 @@ class SubprocessManager:
         self.current_model = None
         return model_id
 
-    async def restart_model(self) -> Optional[str]:
+    async def restart_model(self, force: bool = True) -> Optional[str]:
         """
-        Restart the currently running model subprocess with hot-switch support.
+        Restart the currently running model subprocess.
 
-        If hot-standby is available (standby is HEALTHY), performs a near-instant
-        hot-switch to the standby port, then restarts the old primary in background.
+        Args:
+            force: If True (default), force kill the primary process immediately
+                   and switch to standby (if available), or perform traditional
+                   restart without waiting for graceful shutdown.
+                   If False, use graceful hot-switch that waits for in-flight
+                   inference to complete.
 
-        If hot-standby is not available, falls back to traditional restart (blocking).
+        If hot-standby is available (standby is HEALTHY):
+        - force=True: Kill primary immediately, switch to standby
+        - force=False: Wait for inference lock, then switch to standby
+
+        If hot-standby is not available, falls back to traditional restart.
 
         Returns:
             The model_id that was restarted, or None if no model was running
@@ -636,23 +644,39 @@ class SubprocessManager:
         model_id = self.current_model.model_id
         container_name = self.current_model.container_name
 
-        logger.info(f"Restarting model subprocess: {container_name}")
+        logger.info(f"Restarting model subprocess: {container_name} (force={force})")
 
         # Check if we can do hot-switch
         if self._dual_port_state is not None and self.is_standby_ready():
-            logger.info("[hot-switch] Standby is ready, performing hot-switch...")
-            try:
-                await self._perform_hot_switch()
-                logger.info(f"[hot-switch] Model restarted via hot-switch: {container_name}")
-                return model_id
-            except Exception as e:
-                tb_str = traceback.format_exc()
-                logger.error(
-                    f"[hot-switch] Hot-switch failed, falling back to traditional restart:\n"
-                    f"  Error: {type(e).__name__}: {e}\n"
-                    f"  Traceback:\n{tb_str}"
-                )
-                # Fall through to traditional restart
+            if force:
+                # Default: force hot-switch (kill primary immediately)
+                logger.info("[hot-switch] Killing primary and switching to standby...")
+                try:
+                    await self._perform_hot_switch()
+                    logger.info(f"[hot-switch] Model restarted via hot-switch: {container_name}")
+                    return model_id
+                except Exception as e:
+                    tb_str = traceback.format_exc()
+                    logger.error(
+                        f"[hot-switch] Hot-switch failed, falling back to traditional restart:\n"
+                        f"  Error: {type(e).__name__}: {e}\n"
+                        f"  Traceback:\n{tb_str}"
+                    )
+                    # Fall through to traditional restart
+            else:
+                logger.info("[hot-switch] Standby is ready, performing graceful hot-switch...")
+                try:
+                    await self._perform_graceful_hot_switch()
+                    logger.info(f"[hot-switch] Model restarted via graceful hot-switch: {container_name}")
+                    return model_id
+                except Exception as e:
+                    tb_str = traceback.format_exc()
+                    logger.error(
+                        f"[hot-switch] Graceful hot-switch failed, falling back to traditional restart:\n"
+                        f"  Error: {type(e).__name__}: {e}\n"
+                        f"  Traceback:\n{tb_str}"
+                    )
+                    # Fall through to traditional restart
 
         # Traditional restart (blocking)
         # Use runtime config delay when standby is disabled (default 30s for /task/clear)
@@ -693,11 +717,11 @@ class SubprocessManager:
 
     async def _perform_hot_switch(self) -> None:
         """
-        Perform atomic hot-switch from primary to standby port.
+        Perform hot-switch: kill primary immediately and switch to standby.
 
-        This is the core zero-downtime operation:
+        This is the default hot-switch behavior:
         1. Acquires state lock to prevent concurrent modifications
-        2. Waits for any in-flight inference to complete
+        2. Forcefully kills the primary process (does NOT wait for inference)
         3. Atomically swaps port roles
         4. Schedules background restart of old primary (now standby)
 
@@ -720,19 +744,71 @@ class SubprocessManager:
                 f"[hot-switch] Switching from port {old_primary.port} to port {new_primary.port}"
             )
 
+            # Force kill the old primary process immediately (don't wait for inference)
+            logger.info(f"[hot-switch] Killing primary process on port {old_primary.port}...")
+            try:
+                await self._stop_port_process(old_primary)
+                logger.info(f"[hot-switch] Primary process killed")
+            except Exception as e:
+                logger.warning(f"[hot-switch] Error killing primary process: {e}")
+                # Continue anyway - process might already be dead
+
+            # Atomic role swap
+            self._dual_port_state.swap_roles()
+            logger.info(
+                f"[hot-switch] Roles swapped. New primary: {self._dual_port_state.primary.port}, "
+                f"New standby: {self._dual_port_state.standby.port}"
+            )
+
+        # Schedule background restart of old primary (now standby)
+        logger.info("[hot-switch] Scheduling background restart of old primary...")
+        self._standby_restart_task = asyncio.create_task(
+            self._restart_standby_background()
+        )
+
+    async def _perform_graceful_hot_switch(self) -> None:
+        """
+        Perform graceful hot-switch: wait for inference to complete before switching.
+
+        Unlike the default _perform_hot_switch, this method:
+        1. Waits for any in-flight inference to complete
+        2. Then atomically swaps port roles
+        3. Schedules background restart of old primary (now standby)
+
+        Use this when you want zero-downtime switching without killing
+        in-flight requests.
+
+        Precondition: standby must be HEALTHY before calling.
+
+        Raises:
+            RuntimeError: If graceful hot-switch fails or standby not ready
+        """
+        if self._dual_port_state is None:
+            raise RuntimeError("Graceful hot-switch not available: dual port state not initialized")
+
+        if not self.is_standby_ready():
+            raise RuntimeError("Graceful hot-switch not available: standby is not healthy")
+
+        async with self._state_lock:
+            old_primary = self._dual_port_state.primary
+            new_primary = self._dual_port_state.standby
+
+            logger.info(
+                f"[graceful-hot-switch] Switching from port {old_primary.port} to port {new_primary.port}"
+            )
+
             # Wait for any in-flight inference to complete
-            logger.debug("[hot-switch] Waiting for inference lock...")
+            logger.debug("[graceful-hot-switch] Waiting for inference lock...")
             async with self._inference_lock:
                 # Atomic role swap
                 self._dual_port_state.swap_roles()
                 logger.info(
-                    f"[hot-switch] Roles swapped. New primary: {self._dual_port_state.primary.port}, "
+                    f"[graceful-hot-switch] Roles swapped. New primary: {self._dual_port_state.primary.port}, "
                     f"New standby: {self._dual_port_state.standby.port}"
                 )
 
         # Schedule background restart of old primary (now standby)
-        # This runs after returning from the hot-switch
-        logger.info("[hot-switch] Scheduling background restart of old primary...")
+        logger.info("[graceful-hot-switch] Scheduling background restart of old primary...")
         self._standby_restart_task = asyncio.create_task(
             self._restart_standby_background()
         )
