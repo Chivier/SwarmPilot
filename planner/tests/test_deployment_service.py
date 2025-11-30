@@ -454,7 +454,8 @@ class TestInstanceMigrator:
             from src.models import MigrationStatus
             mock_migration.return_value = MigrationStatus(
                 instance_index=0,
-                endpoint="http://original:8080",
+                original_endpoint="http://original:8080",
+                target_endpoint="http://target:8080",
                 target_model="model_1",
                 previous_model="model_0",
                 success=True,

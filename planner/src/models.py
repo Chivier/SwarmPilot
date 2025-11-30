@@ -165,13 +165,20 @@ class DeploymentStatus(BaseModel):
 
 class MigrationStatus(BaseModel):
     """Status of deployment to a single instance."""
-    instance_index: int = Field(..., description="Instance index")
-    endpoint: str = Field(..., description="Instance endpoint")
+    instance_index: int = Field(..., description="Instance index in pending change list")
+    original_endpoint: str = Field(..., description="Original instance endpoint before migration")
+    target_endpoint: str = Field(..., description="Target instance endpoint after migration")
     target_model: str = Field(..., description="Target model name")
     previous_model: Optional[str] = Field(None, description="Previous model name")
     success: bool = Field(..., description="Success flag")
     error_message: Optional[str] = Field(None, description="Error details")
     deployment_time: float = Field(..., description="Deployment duration (sec)")
+
+    # Deprecated field for backward compatibility
+    @property
+    def endpoint(self) -> str:
+        """Deprecated: use original_endpoint instead."""
+        return self.original_endpoint
 
 
 

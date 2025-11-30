@@ -518,7 +518,8 @@ class InstanceMigrator:
                     logger.error(f"Migration failed: {error_msg}", exc_info=True)
                     return MigrationStatus(
                         instance_index=instance_index,
-                        endpoint=original_endpoint,
+                        original_endpoint=original_endpoint,
+                        target_endpoint=target_endpoint,
                         target_model=target_model_id,
                         previous_model=current_model_id,
                         success=False,
@@ -530,7 +531,8 @@ class InstanceMigrator:
                     logger.error(f"Migration failed: {error_msg}", exc_info=True)
                     return MigrationStatus(
                         instance_index=instance_index,
-                        endpoint=original_endpoint,
+                        original_endpoint=original_endpoint,
+                        target_endpoint=target_endpoint,
                         target_model=target_model_id,
                         previous_model=current_model_id,
                         success=False,
@@ -552,7 +554,8 @@ class InstanceMigrator:
                     logger.error(f"Migration failed: {error_msg}", exc_info=True)
                     return MigrationStatus(
                         instance_index=instance_index,
-                        endpoint=original_endpoint,
+                        original_endpoint=original_endpoint,
+                        target_endpoint=target_endpoint,
                         target_model=target_model_id,
                         previous_model=current_model_id,
                         success=False,
@@ -564,7 +567,8 @@ class InstanceMigrator:
                     logger.error(f"Migration failed: {error_msg}", exc_info=True)
                     return MigrationStatus(
                         instance_index=instance_index,
-                        endpoint=original_endpoint,
+                        original_endpoint=original_endpoint,
+                        target_endpoint=target_endpoint,
                         target_model=target_model_id,
                         previous_model=current_model_id,
                         success=False,
@@ -581,7 +585,8 @@ class InstanceMigrator:
                     migration_time = time.time() - start_time
                     return MigrationStatus(
                         instance_index=instance_index,
-                        endpoint=original_endpoint,
+                        original_endpoint=original_endpoint,
+                        target_endpoint=target_endpoint,
                         target_model=target_model_id,
                         previous_model=current_model_id,
                         success=True,
@@ -596,7 +601,8 @@ class InstanceMigrator:
                     migration_time = time.time() - start_time
                     return MigrationStatus(
                         instance_index=instance_index,
-                        endpoint=original_endpoint,
+                        original_endpoint=original_endpoint,
+                        target_endpoint=target_endpoint,
                         target_model=target_model_id,
                         previous_model=current_model_id,
                         success=False,
@@ -626,7 +632,8 @@ class InstanceMigrator:
                     logger.error(f"Migration failed during register/deregister: {error_msg}", exc_info=True)
                     return MigrationStatus(
                         instance_index=instance_index,
-                        endpoint=original_endpoint,
+                        original_endpoint=original_endpoint,
+                        target_endpoint=target_endpoint,
                         target_model=target_model_id,
                         previous_model=current_model_id,
                         success=False,
@@ -638,7 +645,8 @@ class InstanceMigrator:
                     logger.error(f"Migration failed during register/deregister: {error_msg}", exc_info=True)
                     return MigrationStatus(
                         instance_index=instance_index,
-                        endpoint=original_endpoint,
+                        original_endpoint=original_endpoint,
+                        target_endpoint=target_endpoint,
                         target_model=target_model_id,
                         previous_model=current_model_id,
                         success=False,
@@ -654,7 +662,8 @@ class InstanceMigrator:
             )
             return MigrationStatus(
                 instance_index=instance_index,
-                endpoint=original_endpoint,
+                original_endpoint=original_endpoint,
+                target_endpoint=target_endpoint,
                 target_model=target_model_id,
                 previous_model=current_model_id,
                 success=True,
@@ -666,7 +675,8 @@ class InstanceMigrator:
             logger.error(f"Migration from {original_endpoint} to {target_endpoint} failed: {error_msg}", exc_info=True)
             return MigrationStatus(
                 instance_index=instance_index,
-                endpoint=original_endpoint,
+                original_endpoint=original_endpoint,
+                target_endpoint=target_endpoint,
                 target_model=target_model_id,
                 previous_model=current_model_id,
                 success=False,
