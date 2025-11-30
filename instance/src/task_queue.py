@@ -421,25 +421,28 @@ class TaskQueue:
                 additional_info=f"Status: {status}",
             )
 
-    async def clear_all_tasks(self) -> Dict[str, int]:
+    async def clear_all_tasks(self, force: bool = True) -> Dict[str, int]:
         """
         Clear all tasks from the queue and task storage.
 
         This will remove all tasks regardless of their status (queued, running,
-        completed, or failed). Running tasks will be cleared after they are marked
-        as failed.
+        completed, or failed).
+
+        Args:
+            force: If True (default), clear all tasks including running ones.
+                   If False, raise RuntimeError when there are running tasks.
 
         Returns:
             Dictionary with counts of cleared tasks by status
 
         Raises:
-            RuntimeError: If there are currently running tasks
+            RuntimeError: If there are currently running tasks and force=False
         """
         # Get stats before clearing
         stats = await self.get_queue_stats()
 
-        # Check if there are running tasks
-        if stats["running"] > 0:
+        # Check if there are running tasks (unless force mode)
+        if not force and stats["running"] > 0:
             raise RuntimeError(
                 f"Cannot clear tasks while {stats['running']} task(s) are running. "
                 "Wait for running tasks to complete or stop processing first."

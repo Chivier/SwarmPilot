@@ -1454,26 +1454,26 @@ async def delete_task(task_id: str):
     response_model=TaskClearResponse,
     status_code=status.HTTP_200_OK,
     responses={
-        400: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
     },
 )
 async def clear_tasks():
     """
-    Clear all tasks from the instance.
+    Force clear all tasks and restart the backend subprocess.
 
     This will:
-    1. Restart the Docker container (if a model is running)
+    1. Force kill and restart the backend subprocess (if a model is running)
     2. Remove all tasks from the queue and task storage, regardless
-       of their status (queued, completed, failed)
+       of their status (queued, running, completed, failed)
 
-    Running tasks cannot be cleared - the endpoint will return an error
-    if there are running tasks.
+    This endpoint will forcefully terminate the subprocess even if there are
+    running tasks. The subprocess will be restarted after termination.
 
     This is useful for:
-    - Resetting the model state by restarting the container
-    - Cleaning up completed/failed task history
+    - Forcefully resetting the model state when it becomes unresponsive
+    - Cleaning up stuck or hanging tasks
     - Resetting the instance state before starting new work
-    - Removing queued tasks that are no longer needed
+    - Emergency recovery from unexpected states
 
     Returns the count of tasks that were cleared by status.
     """
@@ -1481,21 +1481,18 @@ async def clear_tasks():
     docker_manager = get_docker_manager()
 
     try:
-        # Step 1: Clear all tasks
-        cleared_count = await task_queue.clear_all_tasks()
-        
-        # Step 2: Restart Docker container if a model is running
+        # Step 1: Force kill and restart subprocess if a model is running
         if await docker_manager.is_model_running():
-            logger.info("Restarting Docker container before clearing tasks")
+            logger.info("Force killing and restarting subprocess for /task/clear")
             try:
                 model_id = await docker_manager.restart_model()
                 if model_id:
-                    logger.info(f"Successfully restarted Docker container for model: {model_id}")
+                    logger.info(f"Successfully restarted subprocess for model: {model_id}")
             except Exception as e:
-                client_message = f"Failed to restart Docker container: {str(e)}"
+                client_message = f"Failed to restart subprocess: {str(e)}"
                 log_error_with_traceback(
                     error=e,
-                    context="clear_tasks/restart_container",
+                    context="clear_tasks/restart_subprocess",
                     client_message=client_message,
                 )
                 raise HTTPException(
@@ -1503,20 +1500,26 @@ async def clear_tasks():
                     detail=client_message
                 )
 
+        # Step 2: Clear all tasks (including any that were "running")
+        # After subprocess restart, running tasks are effectively dead
+        cleared_count = await task_queue.clear_all_tasks()
+
         return TaskClearResponse(
             success=True,
-            message=f"Successfully cleared {cleared_count['total']} task(s)",
+            message=f"Successfully cleared {cleared_count['total']} task(s) and restarted subprocess",
             cleared_count=cleared_count
         )
-    except RuntimeError as e:
-        client_message = str(e)
+    except HTTPException:
+        raise
+    except Exception as e:
+        client_message = f"Failed to clear tasks: {str(e)}"
         log_error_with_traceback(
             error=e,
             context="clear_tasks",
             client_message=client_message,
         )
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=client_message
         )
 
