@@ -182,6 +182,10 @@ class QuantilePredictor(BasePredictor):
         self.target_std = None
         self.delta_scale = None  # Scale factor for deltas
 
+        # Log transform for runtime_ms (applied before normalization)
+        # When enabled, training uses log(runtime_ms), prediction applies exp()
+        self.log_transform_enabled = False
+
         # Residual calibration parameters (learned from training data)
         self.residual_calibration_enabled = False
         self.residual_mu = None      # Log-space mean of residuals
@@ -221,6 +225,13 @@ class QuantilePredictor(BasePredictor):
                 - residual_calibration (dict): Calibrate quantiles using residual analysis
                     - enabled (bool): Enable residual calibration (default: False)
                     - min_sigma (float): Minimum residual sigma (default: 0.1)
+
+                Log Transform (for right-skewed runtime distributions):
+                - log_transform (dict): Apply log transform to runtime_ms
+                    - enabled (bool): Enable log transform (default: False)
+                      When enabled, training uses log(runtime_ms) and prediction
+                      applies exp() to restore original scale. This helps when
+                      runtime distributions are right-skewed (common for latency data).
 
         Returns:
             Training metadata dictionary
@@ -299,9 +310,25 @@ class QuantilePredictor(BasePredictor):
 
         self.feature_names = feature_names
 
+        # Log selected features for training
+        print(f"Training with {len(feature_names)} features: {feature_names}")
+
         # Convert to numpy arrays
         X = np.array(X, dtype=np.float32)
         y = np.array(y, dtype=np.float32)
+
+        # ============================================================
+        # Log Transform: Apply log to runtime_ms before normalization
+        # This helps with right-skewed distributions (common for latency)
+        # ============================================================
+        log_transform_config = config.get('log_transform', {})
+        self.log_transform_enabled = log_transform_config.get('enabled', False)
+
+        if self.log_transform_enabled:
+            # Clip to avoid log(0) or log(negative)
+            y = np.maximum(y, 1e-6)
+            y = np.log(y)
+            print(f"Log transform enabled: applied log() to {len(y)} runtime values")
 
         # Normalize features (z-score normalization)
         self.feature_mean = X.mean(axis=0)
@@ -309,6 +336,7 @@ class QuantilePredictor(BasePredictor):
         X_normalized = (X - self.feature_mean) / self.feature_std
 
         # Normalize targets (z-score normalization)
+        # Note: when log_transform is enabled, this normalizes log(runtime_ms)
         self.target_mean = y.mean()
         self.target_std = y.std() + 1e-8
         y_normalized = (y - self.target_mean) / self.target_std
@@ -398,7 +426,8 @@ class QuantilePredictor(BasePredictor):
             'quantiles': self.quantiles,
             'final_loss': float(loss.item()),
             'data_augmentation': augmentation_config if augmentation_enabled else None,
-            'residual_calibration': calibration_stats if self.residual_calibration_enabled else None
+            'residual_calibration': calibration_stats if self.residual_calibration_enabled else None,
+            'log_transform_enabled': self.log_transform_enabled
         }
 
     def _estimate_cv_from_data(self, features_list: List[Dict[str, Any]]) -> float:
@@ -671,7 +700,13 @@ class QuantilePredictor(BasePredictor):
             predictions_normalized = self.transform(raw_output).numpy().flatten()
 
         # Denormalize predictions back to original scale
+        # Note: when log_transform is enabled, this gives log(runtime_ms)
         predictions = predictions_normalized * self.target_std + self.target_mean
+
+        # Apply inverse log transform if enabled during training
+        # This converts log(runtime_ms) back to runtime_ms using exponential
+        if self.log_transform_enabled:
+            predictions = np.power(np.e, predictions)
 
         # Apply additional monotonicity enforcement if requested
         # Note: base+delta architecture guarantees monotonicity, but this
@@ -712,6 +747,8 @@ class QuantilePredictor(BasePredictor):
             'target_mean': float(self.target_mean),
             'target_std': float(self.target_std),
             'delta_scale': float(self.delta_scale) if self.delta_scale else 1.0,
+            # Log transform parameter
+            'log_transform_enabled': self.log_transform_enabled,
             # Residual calibration parameters
             'residual_calibration_enabled': self.residual_calibration_enabled,
             'residual_mu': self.residual_mu,
@@ -749,6 +786,9 @@ class QuantilePredictor(BasePredictor):
             num_quantiles=len(self.quantiles),
             delta_scale=self.delta_scale
         )
+
+        # Restore log transform setting (backward compatible with old models)
+        self.log_transform_enabled = state.get('log_transform_enabled', False)
 
         # Restore residual calibration parameters (backward compatible)
         self.residual_calibration_enabled = state.get('residual_calibration_enabled', False)

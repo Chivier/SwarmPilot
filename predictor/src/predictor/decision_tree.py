@@ -61,6 +61,9 @@ class DecisionTreePredictor(BasePredictor):
         X, y, feature_names = self.extract_features_and_labels(features_list)
         self.feature_names = feature_names
 
+        # Log selected features for training
+        print(f"Training with {len(feature_names)} features: {feature_names}")
+
         # Convert to numpy arrays
         X = np.array(X, dtype=np.float32)
         y = np.array(y, dtype=np.float32)

@@ -458,3 +458,114 @@ class TestQuantilePrediction:
         # With prediction_type as part of the model key, this is now a 404 (model not found)
         # rather than 400 (type mismatch) since different types are stored separately
         assert response.status_code == 404
+
+
+class TestLogTransformAPI:
+    """Test log_transform configuration through API."""
+
+    def generate_skewed_data(self, n_samples=30):
+        """Generate right-skewed runtime data."""
+        import numpy as np
+        np.random.seed(42)
+        data = []
+        for i in range(n_samples):
+            batch_size = 16 + i
+            base_runtime = 50 + batch_size * 2
+            skewed_runtime = base_runtime * np.random.lognormal(0, 0.3)
+            data.append({
+                'batch_size': batch_size,
+                'sequence_length': 128,
+                'runtime_ms': max(10.0, float(skewed_runtime))
+            })
+        return data
+
+    def test_train_with_log_transform_enabled(self, client):
+        """Should successfully train quantile model with log_transform enabled."""
+        request = {
+            'model_id': 'log-transform-model',
+            'platform_info': {
+                'software_name': 'pytorch',
+                'software_version': '2.0',
+                'hardware_name': 'cpu'
+            },
+            'prediction_type': 'quantile',
+            'features_list': self.generate_skewed_data(30),
+            'training_config': {
+                'epochs': 100,
+                'log_transform': {'enabled': True}
+            }
+        }
+
+        response = client.post("/train", json=request)
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data['status'] == 'success'
+        assert data['samples_trained'] == 30
+
+    def test_predict_with_log_transform_model(self, client):
+        """Should make predictions with log_transform model."""
+        # Train with log_transform
+        train_request = {
+            'model_id': 'log-transform-pred-model',
+            'platform_info': {
+                'software_name': 'pytorch',
+                'software_version': '2.0',
+                'hardware_name': 'cpu'
+            },
+            'prediction_type': 'quantile',
+            'features_list': self.generate_skewed_data(30),
+            'training_config': {
+                'epochs': 200,
+                'log_transform': {'enabled': True}
+            }
+        }
+
+        train_response = client.post("/train", json=train_request)
+        assert train_response.status_code == 200
+
+        # Make prediction
+        predict_request = {
+            'model_id': 'log-transform-pred-model',
+            'platform_info': {
+                'software_name': 'pytorch',
+                'software_version': '2.0',
+                'hardware_name': 'cpu'
+            },
+            'prediction_type': 'quantile',
+            'features': {
+                'batch_size': 25,
+                'sequence_length': 128
+            }
+        }
+
+        predict_response = client.post("/predict", json=predict_request)
+        assert predict_response.status_code == 200
+
+        data = predict_response.json()
+        result = data['result']
+        assert 'quantiles' in result
+
+        # Verify predictions are positive (after applying exponential)
+        for q, value in result['quantiles'].items():
+            assert value > 0, f"Quantile {q} should be positive, got {value}"
+
+    def test_log_transform_disabled_by_default(self, client):
+        """Should train without log_transform when not specified."""
+        request = {
+            'model_id': 'no-log-transform-model',
+            'platform_info': {
+                'software_name': 'pytorch',
+                'software_version': '2.0',
+                'hardware_name': 'cpu'
+            },
+            'prediction_type': 'quantile',
+            'features_list': self.generate_skewed_data(30),
+            'training_config': {'epochs': 100}  # No log_transform specified
+        }
+
+        response = client.post("/train", json=request)
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data['status'] == 'success'

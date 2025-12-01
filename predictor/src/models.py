@@ -95,7 +95,17 @@ class TrainingRequest(BaseModel):
     platform_info: PlatformInfo = Field(..., description="Platform information")
     prediction_type: str = Field(..., description="Type of prediction: 'expect_error' or 'quantile'")
     features_list: List[Dict[str, Any]] = Field(..., description="List of training samples with features")
-    training_config: Optional[Dict[str, Any]] = Field(None, description="Optional training configuration")
+    training_config: Optional[Dict[str, Any]] = Field(
+        None,
+        description="""Optional training configuration. Supported options:
+        - epochs (int): Number of training epochs (default: 500)
+        - learning_rate (float): Adam optimizer learning rate (default: 0.01)
+        - hidden_layers (list): Hidden layer sizes (default: [64, 32])
+        - quantiles (list): Quantile levels for 'quantile' type (default: [0.5, 0.9, 0.95, 0.99])
+        - data_augmentation (dict): {enabled: bool, cv: float, samples_per_point: int, distribution: str}
+        - log_transform (dict): {enabled: bool} - Apply log transform to runtime_ms for right-skewed distributions
+        - residual_calibration (dict): {enabled: bool, min_sigma: float}"""
+    )
     enable_preprocessors: Optional[List[str]] = Field(None, description="List of preprocessors to enable")
     preprocessor_mappings: Optional[Dict[str, List[str]]] = Field(None, description="Specific which feature need to be preprocessed by which preprocessor")
 

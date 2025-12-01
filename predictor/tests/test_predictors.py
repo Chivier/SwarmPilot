@@ -419,3 +419,162 @@ class TestFeatureValidation:
 
         with pytest.raises(ValueError):
             predictor.train([])
+
+
+class TestLogTransform:
+    """Test log transform functionality for QuantilePredictor."""
+
+    def generate_skewed_training_data(self, n_samples=30):
+        """Generate right-skewed runtime data (typical for latency)."""
+        import numpy as np
+        np.random.seed(42)
+        data = []
+        for i in range(n_samples):
+            batch_size = 16 + i
+            # Simulate right-skewed latency: base + exponential noise
+            base_runtime = 50 + batch_size * 2
+            skewed_runtime = base_runtime * np.random.lognormal(0, 0.3)
+            data.append({
+                'batch_size': batch_size,
+                'sequence_length': 128,
+                'runtime_ms': max(10.0, skewed_runtime)
+            })
+        return data
+
+    def test_log_transform_enabled_in_training(self):
+        """Should enable log transform when configured."""
+        predictor = QuantilePredictor()
+        training_data = self.generate_skewed_training_data(30)
+
+        config = {
+            'epochs': 100,
+            'log_transform': {'enabled': True}
+        }
+        metadata = predictor.train(training_data, config=config)
+
+        assert metadata['log_transform_enabled'] is True
+        assert predictor.log_transform_enabled is True
+
+    def test_log_transform_disabled_by_default(self):
+        """Log transform should be disabled by default."""
+        predictor = QuantilePredictor()
+        training_data = self.generate_skewed_training_data(30)
+
+        metadata = predictor.train(training_data, config={'epochs': 100})
+
+        assert metadata['log_transform_enabled'] is False
+        assert predictor.log_transform_enabled is False
+
+    def test_log_transform_predictions_are_positive(self):
+        """Predictions with log transform should be positive (after exp)."""
+        predictor = QuantilePredictor()
+        training_data = self.generate_skewed_training_data(30)
+
+        predictor.train(training_data, config={
+            'epochs': 200,
+            'log_transform': {'enabled': True}
+        })
+
+        result = predictor.predict({'batch_size': 25, 'sequence_length': 128})
+
+        for q, value in result['quantiles'].items():
+            assert value > 0, f"Quantile {q} should be positive, got {value}"
+
+    def test_log_transform_predictions_in_reasonable_range(self):
+        """Predictions with log transform should be in reasonable range."""
+        predictor = QuantilePredictor()
+        training_data = self.generate_skewed_training_data(30)
+
+        # Get min/max runtime from training data
+        runtimes = [d['runtime_ms'] for d in training_data]
+        min_runtime = min(runtimes)
+        max_runtime = max(runtimes)
+
+        predictor.train(training_data, config={
+            'epochs': 300,
+            'log_transform': {'enabled': True}
+        })
+
+        result = predictor.predict({'batch_size': 25, 'sequence_length': 128})
+
+        # Predictions should be within reasonable bounds
+        for q, value in result['quantiles'].items():
+            # Allow some margin for extrapolation
+            assert value > min_runtime * 0.1, \
+                f"Quantile {q}={value} too small (min training: {min_runtime})"
+            assert value < max_runtime * 10, \
+                f"Quantile {q}={value} too large (max training: {max_runtime})"
+
+    def test_log_transform_serialization(self):
+        """Log transform setting should be preserved through serialization."""
+        predictor1 = QuantilePredictor()
+        training_data = self.generate_skewed_training_data(30)
+
+        predictor1.train(training_data, config={
+            'epochs': 100,
+            'log_transform': {'enabled': True}
+        })
+
+        # Get predictions before serialization
+        test_features = {'batch_size': 25, 'sequence_length': 128}
+        result1 = predictor1.predict(test_features)
+
+        # Serialize and deserialize
+        state = predictor1.get_model_state()
+        predictor2 = QuantilePredictor()
+        predictor2.load_model_state(state)
+
+        # Verify log_transform_enabled is preserved
+        assert predictor2.log_transform_enabled is True
+
+        # Predictions should be identical
+        result2 = predictor2.predict(test_features)
+        for q in result1['quantiles']:
+            assert abs(result1['quantiles'][q] - result2['quantiles'][q]) < 1e-5
+
+    def test_log_transform_backward_compatible(self):
+        """Old models without log_transform should load with it disabled."""
+        predictor1 = QuantilePredictor()
+        training_data = self.generate_skewed_training_data(30)
+
+        # Train without log_transform
+        predictor1.train(training_data, config={'epochs': 100})
+
+        # Serialize
+        state = predictor1.get_model_state()
+
+        # Simulate old model by removing log_transform_enabled key
+        if 'log_transform_enabled' in state:
+            del state['log_transform_enabled']
+
+        # Load should still work with log_transform disabled
+        predictor2 = QuantilePredictor()
+        predictor2.load_model_state(state)
+
+        assert predictor2.log_transform_enabled is False
+
+    def test_log_transform_quantiles_monotonic(self):
+        """Quantiles with log transform should remain monotonic."""
+        predictor = QuantilePredictor()
+        training_data = self.generate_skewed_training_data(50)
+
+        predictor.train(training_data, config={
+            'epochs': 300,
+            'log_transform': {'enabled': True}
+        })
+
+        result = predictor.predict(
+            {'batch_size': 25, 'sequence_length': 128},
+            enforce_monotonicity=True
+        )
+
+        values = [
+            result['quantiles']['0.5'],
+            result['quantiles']['0.9'],
+            result['quantiles']['0.95'],
+            result['quantiles']['0.99']
+        ]
+
+        for i in range(len(values) - 1):
+            assert values[i] <= values[i + 1], \
+                f"Quantiles not monotonic with log transform: {values}"
