@@ -117,19 +117,19 @@ PLANNER_PORT_LIST=(8204 8205 8206 8207)
 INSTANCE_PORT_LIST=(8200 8201 8202 8203 8204 8205 8206 8207)
 
 # Group A Hosts (llm_service_small_model for A and Merge tasks)
-# Batchgen configuration - only 1 host for Group A (same as type1_batchgen)
+# Batchgen configuration - 6 hosts for Group A (1:1 ratio with Group B)
 GROUP_A_HOSTS=(
   29.209.114.51
-)
-
-# Group B Hosts (llm_service_large_model for B1/B2 tasks)
-# Batchgen configuration - 11 hosts for Group B (same pattern as type1_batchgen)
-GROUP_B_HOSTS=(
   29.209.114.166
   29.209.113.113
   29.209.106.237
   29.209.114.56
   29.209.114.241
+)
+
+# Group B Hosts (llm_service_large_model for B1/B2 tasks)
+# Batchgen configuration - 6 hosts for Group B (1:1 ratio with Group A)
+GROUP_B_HOSTS=(
   29.209.112.177
   29.209.113.235
   29.209.113.228
