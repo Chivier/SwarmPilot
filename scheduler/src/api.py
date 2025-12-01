@@ -309,6 +309,186 @@ else:
 # Task Redistribution Helper
 # ============================================================================
 
+async def _subtract_task_from_queue_info(
+    instance_id: str,
+    predicted_time_ms: float,
+    predicted_error_margin_ms: Optional[float] = None,
+    predicted_quantiles: Optional[dict] = None,
+) -> None:
+    """
+    Subtract a task's predicted execution time from an instance's queue info.
+
+    This should be called when a task is removed from an instance's queue
+    (e.g., during work stealing when a task is fetched from a donor).
+
+    Args:
+        instance_id: ID of the instance to update
+        predicted_time_ms: Predicted execution time of the task
+        predicted_error_margin_ms: Predicted error margin (for expect_error strategy)
+        predicted_quantiles: Predicted quantiles (for probabilistic strategy)
+    """
+    import math
+
+    current_queue = await instance_registry.get_queue_info(instance_id)
+    if not current_queue:
+        logger.warning(f"No queue info found for instance {instance_id} during task subtraction")
+        return
+
+    if isinstance(current_queue, InstanceQueueExpectError):
+        # Subtract expected time, keep error margin unchanged
+        new_expected = max(0.0, current_queue.expected_time_ms - predicted_time_ms)
+        updated_queue = InstanceQueueExpectError(
+            instance_id=instance_id,
+            expected_time_ms=new_expected,
+            error_margin_ms=current_queue.error_margin_ms,
+        )
+        await instance_registry.update_queue_info(instance_id, updated_queue)
+        logger.debug(
+            f"Subtracted task time from queue (expect_error) for {instance_id}: "
+            f"expected_time_ms={new_expected:.2f}"
+        )
+
+    elif isinstance(current_queue, InstanceQueueProbabilistic):
+        if predicted_quantiles:
+            # Monte Carlo subtraction
+            num_samples = 1000
+            random_percentiles = np.random.random(num_samples)
+
+            # Sample from current queue distribution
+            queue_samples = np.interp(
+                random_percentiles,
+                current_queue.quantiles,
+                current_queue.values
+            )
+
+            # Sample from predicted task distribution
+            task_quantiles = sorted(predicted_quantiles.keys())
+            task_values = [predicted_quantiles[q] for q in task_quantiles]
+            task_samples = np.interp(
+                random_percentiles,
+                task_quantiles,
+                task_values
+            )
+
+            # Subtract task time from queue
+            updated_samples = np.maximum(queue_samples - task_samples, 0.0)
+
+            # Compute new quantiles from updated samples
+            updated_values = [
+                float(np.percentile(updated_samples, q * 100))
+                for q in current_queue.quantiles
+            ]
+        else:
+            # Fallback: simple subtraction for all quantiles
+            updated_values = [
+                max(0.0, v - predicted_time_ms)
+                for v in current_queue.values
+            ]
+
+        updated_queue = InstanceQueueProbabilistic(
+            instance_id=instance_id,
+            quantiles=current_queue.quantiles,
+            values=updated_values,
+        )
+        await instance_registry.update_queue_info(instance_id, updated_queue)
+        logger.debug(
+            f"Subtracted task time from queue (probabilistic) for {instance_id}: "
+            f"values={[f'{v:.2f}' for v in updated_values]}"
+        )
+
+
+async def _add_task_to_queue_info(
+    instance_id: str,
+    predicted_time_ms: float,
+    predicted_error_margin_ms: Optional[float] = None,
+    predicted_quantiles: Optional[dict] = None,
+) -> None:
+    """
+    Add a task's predicted execution time to an instance's queue info.
+
+    This should be called when a task is added to an instance's queue
+    (e.g., during work stealing when a task is submitted to a new instance).
+
+    Args:
+        instance_id: ID of the instance to update
+        predicted_time_ms: Predicted execution time of the task
+        predicted_error_margin_ms: Predicted error margin (for expect_error strategy)
+        predicted_quantiles: Predicted quantiles (for probabilistic strategy)
+    """
+    import math
+
+    current_queue = await instance_registry.get_queue_info(instance_id)
+    if not current_queue:
+        logger.warning(f"No queue info found for instance {instance_id} during task addition")
+        return
+
+    if isinstance(current_queue, InstanceQueueExpectError):
+        # Add expected time
+        new_expected = current_queue.expected_time_ms + predicted_time_ms
+        # Add error margin using error accumulation formula
+        task_error = predicted_error_margin_ms or 0.0
+        new_error = math.sqrt(current_queue.error_margin_ms ** 2 + task_error ** 2)
+
+        updated_queue = InstanceQueueExpectError(
+            instance_id=instance_id,
+            expected_time_ms=new_expected,
+            error_margin_ms=new_error,
+        )
+        await instance_registry.update_queue_info(instance_id, updated_queue)
+        logger.debug(
+            f"Added task time to queue (expect_error) for {instance_id}: "
+            f"expected_time_ms={new_expected:.2f}, error_margin_ms={new_error:.2f}"
+        )
+
+    elif isinstance(current_queue, InstanceQueueProbabilistic):
+        if predicted_quantiles:
+            # Monte Carlo addition
+            num_samples = 1000
+            random_percentiles = np.random.random(num_samples)
+
+            # Sample from current queue distribution
+            queue_samples = np.interp(
+                random_percentiles,
+                current_queue.quantiles,
+                current_queue.values
+            )
+
+            # Sample from predicted task distribution
+            task_quantiles = sorted(predicted_quantiles.keys())
+            task_values = [predicted_quantiles[q] for q in task_quantiles]
+            task_samples = np.interp(
+                random_percentiles,
+                task_quantiles,
+                task_values
+            )
+
+            # Add task time to queue
+            updated_samples = queue_samples + task_samples
+
+            # Compute new quantiles from updated samples
+            updated_values = [
+                float(np.percentile(updated_samples, q * 100))
+                for q in current_queue.quantiles
+            ]
+        else:
+            # Fallback: simple addition for all quantiles
+            updated_values = [
+                v + predicted_time_ms
+                for v in current_queue.values
+            ]
+
+        updated_queue = InstanceQueueProbabilistic(
+            instance_id=instance_id,
+            quantiles=current_queue.quantiles,
+            values=updated_values,
+        )
+        await instance_registry.update_queue_info(instance_id, updated_queue)
+        logger.debug(
+            f"Added task time to queue (probabilistic) for {instance_id}: "
+            f"values={[f'{v:.2f}' for v in updated_values]}"
+        )
+
+
 async def _redistribute_tasks_on_registration(
     instance_id: str,
     high_water_mark: int,
@@ -398,19 +578,48 @@ async def _redistribute_tasks_on_registration(
                     data = response.json()
 
                     if data.get("exist"):
+                        task_id = data["task_id"]
+
+                        # Get prediction info from task_registry for queue update
+                        task_record = await task_registry.get(task_id)
+                        predicted_time_ms = None
+                        predicted_error_margin_ms = None
+                        predicted_quantiles = None
+                        if task_record:
+                            predicted_time_ms = task_record.predicted_time_ms
+                            predicted_error_margin_ms = task_record.predicted_error_margin_ms
+                            predicted_quantiles = task_record.predicted_quantiles
+
                         fetched_tasks.append({
-                            "task_id": data["task_id"],
+                            "task_id": task_id,
                             "model_id": data.get("model_id"),
                             "task_input": data.get("task_input"),
                             "enqueue_time": data.get("enqueue_time"),
                             "submitted_at": data.get("submitted_at"),
                             "donor_instance_id": donor.instance_id,
+                            # Include prediction info for queue updates
+                            "predicted_time_ms": predicted_time_ms,
+                            "predicted_error_margin_ms": predicted_error_margin_ms,
+                            "predicted_quantiles": predicted_quantiles,
                         })
                         logger.debug(
-                            f"Fetched task {data['task_id']} from donor {donor.instance_id}"
+                            f"Fetched task {task_id} from donor {donor.instance_id}"
                         )
                         # Decrement donor's pending count since task was fetched
                         await instance_registry.decrement_pending(donor.instance_id)
+
+                        # Update donor's queue info by subtracting the stolen task's time
+                        if predicted_time_ms is not None:
+                            await _subtract_task_from_queue_info(
+                                instance_id=donor.instance_id,
+                                predicted_time_ms=predicted_time_ms,
+                                predicted_error_margin_ms=predicted_error_margin_ms,
+                                predicted_quantiles=predicted_quantiles,
+                            )
+                            logger.debug(
+                                f"Updated donor {donor.instance_id} queue_info after task steal "
+                                f"(subtracted {predicted_time_ms:.2f}ms)"
+                            )
                     else:
                         logger.debug(f"Donor {donor.instance_id} had no fetchable tasks")
 
@@ -475,6 +684,27 @@ async def _redistribute_tasks_on_registration(
                         # Increment new instance's pending count
                         await instance_registry.increment_pending(new_instance.instance_id)
                         resubmitted_count += 1
+
+                        # Update new instance's queue info by adding the stolen task's time
+                        predicted_time_ms = task_data.get("predicted_time_ms")
+                        if predicted_time_ms is not None:
+                            await _add_task_to_queue_info(
+                                instance_id=new_instance.instance_id,
+                                predicted_time_ms=predicted_time_ms,
+                                predicted_error_margin_ms=task_data.get("predicted_error_margin_ms"),
+                                predicted_quantiles=task_data.get("predicted_quantiles"),
+                            )
+                            logger.debug(
+                                f"Updated new instance {new_instance.instance_id} queue_info "
+                                f"after task steal (added {predicted_time_ms:.2f}ms)"
+                            )
+
+                        # Update task_registry to reflect new assigned instance
+                        await task_registry.update_assigned_instance(
+                            task_data["task_id"],
+                            new_instance.instance_id
+                        )
+
                         logger.debug(
                             f"Resubmitted task {task_data['task_id']} "
                             f"from {task_data['donor_instance_id']} to {new_instance.instance_id}"

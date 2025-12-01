@@ -80,7 +80,7 @@ class TestInstanceRegistration:
         data = response.json()
         assert data["success"] is True
         assert data["instance"]["instance_id"] == "inst-1"
-        assert data["message"] == "Instance registered successfully"
+        assert data["message"] == "Instance registered successfully (work stealing in progress)"
 
     def test_register_duplicate_instance(self, client):
         """Test registering duplicate instance returns 400."""

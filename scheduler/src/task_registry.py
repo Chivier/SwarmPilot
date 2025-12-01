@@ -256,6 +256,26 @@ class TaskRegistry:
 
             self._tasks[task_id].error = error
 
+    async def update_assigned_instance(self, task_id: str, new_instance_id: str) -> None:
+        """
+        Update the assigned instance for a task.
+
+        This is used during work stealing when a task is moved from one
+        instance to another.
+
+        Args:
+            task_id: ID of task to update
+            new_instance_id: ID of the new assigned instance
+
+        Raises:
+            KeyError: If task not found
+        """
+        async with self._lock:
+            if task_id not in self._tasks:
+                raise KeyError(f"Task {task_id} not found")
+
+            self._tasks[task_id].assigned_instance = new_instance_id
+
     async def get_count_by_status(self, status: TaskStatus) -> int:
         """
         Get count of tasks with specific status.
