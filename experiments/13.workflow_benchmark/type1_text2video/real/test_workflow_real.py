@@ -147,7 +147,7 @@ def run_single_experiment(config, captions, logger, strategy_name=None, pre_gene
         state_lock=state_lock,
         a1_result_queue=a1_result_queue,
         scheduler_url=config.scheduler_a_url,
-        rate_limiter=rate_limiter,
+        rate_limiter=None,  # A2 not rate limited - only A1 controls workflow arrival rate
         metrics=metrics,
     )
 
@@ -158,7 +158,7 @@ def run_single_experiment(config, captions, logger, strategy_name=None, pre_gene
         state_lock=state_lock,
         a2_result_queue=a2_result_queue,
         scheduler_url=config.scheduler_b_url,
-        rate_limiter=rate_limiter,
+        rate_limiter=None,  # B not rate limited - only A1 controls workflow arrival rate
         metrics=metrics,
     )
 
