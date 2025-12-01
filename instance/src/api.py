@@ -720,22 +720,20 @@ async def deregister_model():
         else:
             logger.info("Scheduler integration disabled, skipping task extraction")
 
-        # Step 3: Wait for currently running task to complete
+        # Step 3: Wait for currently running task to complete (including callback)
         operation.update_status(DeregisterStatus.WAITING_RUNNING_TASK)
-        stats = await task_queue.get_queue_stats()
 
-        if stats["running"] > 0:
-            logger.info(f"Waiting for {stats['running']} running task(s) to complete (no timeout)")
+        # Check current_task_id instead of stats["running"] to ensure callback completion.
+        # current_task_id is only cleared AFTER _execute_task() fully completes,
+        # which includes the callback. This prevents race conditions where the task
+        # status changes to COMPLETED before the callback finishes.
+        if task_queue.current_task_id is not None:
+            logger.info(f"Waiting for running task {task_queue.current_task_id} to complete including callback (no timeout)")
 
-            while True:
-                stats = await task_queue.get_queue_stats()
-                running = stats["running"]
-
-                if running == 0:
-                    logger.info("All running tasks completed")
-                    break
-
+            while task_queue.current_task_id is not None:
                 await asyncio.sleep(1)
+
+            logger.info("Running task and callback completed")
         else:
             logger.info("No running tasks to wait for")
 
@@ -1081,26 +1079,21 @@ async def _perform_restart_operation(operation_id: str):
         else:
             logger.info("Scheduler integration disabled, skipping task extraction")
 
-        # Step 3: Wait for currently running task to complete
+        # Step 3: Wait for currently running task to complete (including callback)
         operation.update_status(RestartStatus.WAITING_RUNNING_TASK)
-        stats = await task_queue.get_queue_stats()
 
-        # Only count running task (queued tasks have been extracted)
-        if stats["running"] > 0:
-            logger.info(f"Waiting for {stats['running']} running task to complete")
+        # Check current_task_id instead of stats["running"] to ensure callback completion.
+        # current_task_id is only cleared AFTER _execute_task() fully completes,
+        # which includes the callback. This prevents race conditions where the task
+        # status changes to COMPLETED before the callback finishes.
+        if task_queue.current_task_id is not None:
+            logger.info(f"Waiting for running task {task_queue.current_task_id} to complete including callback")
 
-            # Poll task queue until running task completes
+            # Poll task queue until running task completes (including callback)
             max_wait_time = 300  # 5 minutes timeout
             start_wait_time = time.time()
 
-            while True:
-                stats = await task_queue.get_queue_stats()
-                running = stats["running"]
-
-                if running == 0:
-                    logger.info("Running task completed")
-                    break
-
+            while task_queue.current_task_id is not None:
                 # Check timeout
                 if time.time() - start_wait_time > max_wait_time:
                     raise TimeoutError(
@@ -1110,6 +1103,8 @@ async def _perform_restart_operation(operation_id: str):
 
                 # Wait a bit before checking again
                 await asyncio.sleep(1)
+
+            logger.info("Running task and callback completed")
         else:
             logger.info("No running tasks to wait for")
 
