@@ -155,20 +155,7 @@
           "hardware_name": "NVIDIA H20",
           "software_name": "sglang",
           "software_version": "0.5.5.post2"
-        }
-      ]
-    },
-    {
-      "model_id": "llm_service_small_model",
-      "prediction_types": [
-        "expect_error",
-        "quantile"
-      ],
-      "task_types": [
-        "query",
-        "criteria"
-      ],
-      "instances": [
+        },
         {
           "url": "http://29.209.112.177:9200",
           "hardware_name": "NVIDIA H20",
@@ -264,7 +251,20 @@
           "hardware_name": "NVIDIA H20",
           "software_name": "sglang",
           "software_version": "0.5.5.post2"
-        },
+        }
+      ]
+    },
+    {
+      "model_id": "llm_service_small_model",
+      "prediction_types": [
+        "expect_error",
+        "quantile"
+      ],
+      "task_types": [
+        "query",
+        "criteria"
+      ],
+      "instances": [
         {
           "url": "http://29.209.113.166:9200",
           "hardware_name": "NVIDIA H20",
