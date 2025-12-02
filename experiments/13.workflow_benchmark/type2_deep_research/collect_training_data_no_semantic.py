@@ -446,12 +446,13 @@ def extract_tasks_from_dataset(
 
     For Type2 Deep Research workflow:
     - boot: A task (llm_service_small_model, max_tokens=4096)
-    - queries: B1/B2 tasks (llm_service_large_model, B1=300, B2=1)
+    - query: B1 tasks (llm_service_large_model, max_tokens=300)
+    - criteria: B2 tasks (llm_service_large_model, max_tokens=1, receives B1 output)
     - summary: Merge task (llm_service_small_model, max_tokens=4096)
 
     Args:
         dataset: List of dataset entries
-        task_types: Optional list of task types to extract ('boot', 'query', 'summary')
+        task_types: Optional list of task types to extract ('boot', 'query', 'criteria', 'summary')
 
     Returns:
         List of tasks with sentence, max_tokens, and task_type
@@ -463,6 +464,7 @@ def extract_tasks_from_dataset(
     boot_count = 0
     summary_count = 0
     query_count = 0
+    criteria_count = 0
 
     for idx, entry in enumerate(dataset):
         entry_id = entry.get("id", f"entry-{idx:03d}")
@@ -507,14 +509,12 @@ def extract_tasks_from_dataset(
             })
             summary_count += 1
 
-        # Extract query tasks (B1/B2 tasks)
+        # Extract query tasks (B1 tasks)
         if 'query' in task_types and "queries" in entry and isinstance(entry["queries"], list):
             for query_idx, query_data in enumerate(entry["queries"]):
                 if "input" in query_data:
                     sentence = query_data["input"]
-
-                    # B1 tasks use max_tokens=300, B2 tasks use max_tokens=1
-                    # For training, we'll use B1's max_tokens=300 as the primary
+                    # B1 tasks use max_tokens=300 (full inference)
                     max_tokens = query_data.get("max_tokens", 300)
 
                     tasks.append({
@@ -526,10 +526,31 @@ def extract_tasks_from_dataset(
                     })
                     query_count += 1
 
+        # Extract criteria tasks (B2 tasks)
+        # B2 receives B1's output as input in real workflow, but for training data
+        # collection we use the query inputs with max_tokens=1 to capture the
+        # runtime characteristics of criteria tasks
+        if 'criteria' in task_types and "queries" in entry and isinstance(entry["queries"], list):
+            for query_idx, query_data in enumerate(entry["queries"]):
+                if "input" in query_data:
+                    sentence = query_data["input"]
+                    # B2 tasks use max_tokens=1 (criteria/classification)
+                    max_tokens = 1
+
+                    tasks.append({
+                        "sentence": sentence,
+                        "max_tokens": max_tokens,
+                        "task_type": "criteria",
+                        "model_group": "B",  # Uses llm_service_large_model
+                        "entry_id": f"{entry_id}-c{query_idx}"
+                    })
+                    criteria_count += 1
+
     logger.info(f"Extracted {len(tasks)} LLM tasks from {len(dataset)} dataset entries")
     logger.info(f"  - Boot tasks (Model A): {boot_count}")
     logger.info(f"  - Summary tasks (Model A): {summary_count}")
-    logger.info(f"  - Query tasks (Model B): {query_count}")
+    logger.info(f"  - Query tasks (Model B, B1): {query_count}")
+    logger.info(f"  - Criteria tasks (Model B, B2): {criteria_count}")
 
     # Log max_tokens distribution
     max_tokens_dist = {}
@@ -1031,7 +1052,7 @@ Example multi-model config.json (trains both Model A and Model B):
     },
     {
       "model_id": "llm_service_large_model",
-      "task_types": ["query"],
+      "task_types": ["query", "criteria"],
       "instances": [
         {"url": "http://29.209.113.166:8200", "hardware_name": "NVIDIA H20", "software_name": "sglang", "software_version": "0.5.5.post2"},
         ...
