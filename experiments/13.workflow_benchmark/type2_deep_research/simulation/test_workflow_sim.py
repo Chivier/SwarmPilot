@@ -105,6 +105,7 @@ def run_single_experiment(config, logger, strategy_name=None, pre_generated_work
     logger.info(f"Duration: {config.duration}s")
     logger.info(f"Workflows: {config.num_workflows}")
     logger.info(f"Fanout count: {config.fanout_count}")
+    logger.info(f"Max loops: {config.max_loops_count}")
     logger.info(f"Scheduler A: {config.scheduler_a_url}")
     logger.info(f"Scheduler B: {config.scheduler_b_url}")
     if strategy_name:
@@ -191,40 +192,50 @@ def run_single_experiment(config, logger, strategy_name=None, pre_generated_work
     # Pre-generate Task IDs for Receivers
     # ========================================================================
 
-    # A task IDs (one per workflow)
-    # Use workflow_data.strategy to ensure consistency with submitters
+    # Task IDs now include loop iteration: task-{type}-loop{N}-{strategy}-workflow-{num}
+    # Generate IDs for ALL loop iterations per workflow
+
+    # A task IDs (one per loop iteration per workflow)
     a_task_ids = []
     with state_lock:
         for workflow_id, workflow_data in workflow_states.items():
             workflow_num = workflow_id.split('-')[-1]
             wf_strategy = workflow_data.strategy
-            a_task_ids.append(f"task-A-{wf_strategy}-workflow-{workflow_num}")
+            max_loops = workflow_data.max_loops
+            for loop_iter in range(1, max_loops + 1):
+                a_task_ids.append(f"task-A-loop{loop_iter}-{wf_strategy}-workflow-{workflow_num}")
 
-    # B1/B2 task IDs - need to get from workflow states since each may have different fanout
-    # Note: workflows are created during ATaskSubmitter.__init__ with distribution-based fanout
-    # IMPORTANT: Use workflow_data.strategy to match the strategy used in submitters
+    # B1/B2 task IDs - need to get from workflow states since each loop may have different fanout
+    # Generate for all loop iterations with their respective fanouts
     b1_task_ids = []
     b2_task_ids = []
     with state_lock:
         for workflow_id, workflow_data in workflow_states.items():
             workflow_num = workflow_id.split('-')[-1]
-            fanout = workflow_data.fanout_count
-            wf_strategy = workflow_data.strategy  # Use workflow's actual strategy
-            for j in range(fanout):
-                b1_task_ids.append(f"task-B1-{wf_strategy}-workflow-{workflow_num}-{j}")
-                b2_task_ids.append(f"task-B2-{wf_strategy}-workflow-{workflow_num}-{j}")
+            wf_strategy = workflow_data.strategy
+            max_loops = workflow_data.max_loops
 
-    # Merge task IDs (one per workflow)
-    # Use workflow_data.strategy to ensure consistency with submitters
+            for loop_iter in range(1, max_loops + 1):
+                # Get fanout for this loop iteration
+                loop_idx = loop_iter - 1
+                fanout = workflow_data.loop_fanouts[loop_idx] if loop_idx < len(workflow_data.loop_fanouts) else workflow_data.fanout_count
+
+                for j in range(fanout):
+                    b1_task_ids.append(f"task-B1-loop{loop_iter}-{wf_strategy}-workflow-{workflow_num}-{j}")
+                    b2_task_ids.append(f"task-B2-loop{loop_iter}-{wf_strategy}-workflow-{workflow_num}-{j}")
+
+    # Merge task IDs (one per loop iteration per workflow)
     merge_task_ids = []
     with state_lock:
         for workflow_id, workflow_data in workflow_states.items():
             workflow_num = workflow_id.split('-')[-1]
             wf_strategy = workflow_data.strategy
-            merge_task_ids.append(f"task-merge-{wf_strategy}-workflow-{workflow_num}")
+            max_loops = workflow_data.max_loops
+            for loop_iter in range(1, max_loops + 1):
+                merge_task_ids.append(f"task-merge-loop{loop_iter}-{wf_strategy}-workflow-{workflow_num}")
 
     logger.info(f"Pre-generated {len(a_task_ids)} A, {len(b1_task_ids)} B1, "
-                f"{len(b2_task_ids)} B2, {len(merge_task_ids)} Merge task IDs")
+                f"{len(b2_task_ids)} B2, {len(merge_task_ids)} Merge task IDs (loop-aware)")
 
     # ========================================================================
     # Create Receivers
@@ -273,11 +284,14 @@ def run_single_experiment(config, logger, strategy_name=None, pre_generated_work
     )
 
     # Merge Receiver (Thread 8)
+    # Pass a_submitter for loop triggering - when merge completes and more loops needed,
+    # MergeReceiver will call a_submitter.add_task() to start the next loop iteration
     merge_receiver = MergeTaskReceiver(
         name="MergeReceiver",
         config=config,
         workflow_states=workflow_states,
         state_lock=state_lock,
+        a_submitter=a_submitter,  # For loop triggering
         task_ids=merge_task_ids,
         scheduler_url=config.scheduler_a_url,
         model_id=config.model_merge_id,
@@ -484,6 +498,17 @@ def main():
 
     parser = create_base_parser(description="Deep Research Workflow - Simulation Mode")
     parser = add_type2_args(parser)
+
+    # Add loop configuration argument
+    parser.add_argument(
+        "--max-loops-count",
+        type=int,
+        default=1,
+        help="Maximum loop iterations per workflow (1 = no loop, default: 1). "
+             "When > 1, each workflow loops A→B1→B2→Merge up to max_loops times. "
+             "Actual loop count is sampled from [5-15], capped by this value."
+    )
+
     args = parser.parse_args()
 
     # Parse and validate strategies
@@ -511,6 +536,7 @@ def main():
         fanout_config=args.fanout_config,
         fanout_seed=args.fanout_seed,
         num_warmup=warmup_count,
+        max_loops_count=args.max_loops_count,
         strategies=strategies,
         portion_stats=args.portion_stats,
         max_sleep_time_seconds=args.max_sleep_time,
@@ -525,6 +551,7 @@ def main():
     logger.info(f"Scheduler A: {config.scheduler_a_url}")
     logger.info(f"Scheduler B: {config.scheduler_b_url}")
     logger.info(f"Max sleep time: {config.max_sleep_time_seconds:.1f}s")
+    logger.info(f"Max loops count: {config.max_loops_count}")
 
     # Log fanout distribution info
     fanout_info = config.get_fanout_config_info()
@@ -546,11 +573,13 @@ def main():
 
     logger.info(f"Pre-generated {len(pre_generated_workflows)} workflows")
     if pre_generated_workflows and pre_generated_workflows[0].a_sleep_time is not None:
-        logger.info(f"  Sample workflow[0]: sleep_times A={pre_generated_workflows[0].a_sleep_time:.3f}s, "
-                    f"B1[0]={pre_generated_workflows[0].b1_sleep_times[0]:.3f}s, "
-                    f"B2[0]={pre_generated_workflows[0].b2_sleep_times[0]:.3f}s, "
-                    f"merge={pre_generated_workflows[0].merge_sleep_time:.3f}s, "
-                    f"fanout={pre_generated_workflows[0].fanout_count}")
+        wf0 = pre_generated_workflows[0]
+        logger.info(f"  Sample workflow[0]: max_loops={wf0.max_loops}, "
+                    f"loop_fanouts={wf0.loop_fanouts}, "
+                    f"sleep_times A={wf0.a_sleep_time:.3f}s, "
+                    f"B1[0]={wf0.b1_sleep_times[0]:.3f}s, "
+                    f"B2[0]={wf0.b2_sleep_times[0]:.3f}s, "
+                    f"merge={wf0.merge_sleep_time:.3f}s")
 
     # ========================================================================
     # Strategy Management

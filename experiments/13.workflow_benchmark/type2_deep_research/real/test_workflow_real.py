@@ -91,6 +91,7 @@ def run_single_experiment(config, logger, strategy_name=None, pre_generated_work
     logger.info(f"Duration: {config.duration}s")
     logger.info(f"Workflows: {config.num_workflows}")
     logger.info(f"Fanout count: {config.fanout_count}")
+    logger.info(f"Max loops: {config.max_loops_count}")
     logger.info(f"Scheduler A: {config.scheduler_a_url}")
     logger.info(f"Scheduler B: {config.scheduler_b_url}")
 
@@ -160,6 +161,8 @@ def run_single_experiment(config, logger, strategy_name=None, pre_generated_work
     # Pre-generate task IDs for receivers
     # IMPORTANT: Must be done after ATaskSubmitter init to have workflow_states populated
     # Use workflow_data.strategy to ensure consistency with submitters
+    # Task IDs now include loop iteration: task-{type}-loop{N}-{strategy}-workflow-{num}
+    # Generate IDs for ALL loop iterations per workflow
     a_task_ids = []
     b1_task_ids = []
     b2_task_ids = []
@@ -168,15 +171,26 @@ def run_single_experiment(config, logger, strategy_name=None, pre_generated_work
         for workflow_id, workflow_data in workflow_states.items():
             workflow_num = workflow_id.split('-')[-1]
             wf_strategy = workflow_data.strategy
-            fanout = workflow_data.fanout_count
-            a_task_ids.append(f"task-A-{wf_strategy}-workflow-{workflow_num}")
-            for j in range(fanout):
-                b1_task_ids.append(f"task-B1-{wf_strategy}-workflow-{workflow_num}-{j}")
-                b2_task_ids.append(f"task-B2-{wf_strategy}-workflow-{workflow_num}-{j}")
-            merge_task_ids.append(f"task-merge-{wf_strategy}-workflow-{workflow_num}")
+            max_loops = workflow_data.max_loops
+
+            # Generate A task IDs (one per loop iteration per workflow)
+            for loop_iter in range(1, max_loops + 1):
+                a_task_ids.append(f"task-A-loop{loop_iter}-{wf_strategy}-workflow-{workflow_num}")
+
+            # Generate B1/B2 task IDs for all loop iterations with their respective fanouts
+            for loop_iter in range(1, max_loops + 1):
+                loop_idx = loop_iter - 1
+                fanout = workflow_data.loop_fanouts[loop_idx] if loop_idx < len(workflow_data.loop_fanouts) else workflow_data.fanout_count
+                for j in range(fanout):
+                    b1_task_ids.append(f"task-B1-loop{loop_iter}-{wf_strategy}-workflow-{workflow_num}-{j}")
+                    b2_task_ids.append(f"task-B2-loop{loop_iter}-{wf_strategy}-workflow-{workflow_num}-{j}")
+
+            # Generate Merge task IDs (one per loop iteration per workflow)
+            for loop_iter in range(1, max_loops + 1):
+                merge_task_ids.append(f"task-merge-loop{loop_iter}-{wf_strategy}-workflow-{workflow_num}")
 
     logger.info(f"Pre-generated {len(a_task_ids)} A, {len(b1_task_ids)} B1, "
-                f"{len(b2_task_ids)} B2, {len(merge_task_ids)} Merge task IDs")
+                f"{len(b2_task_ids)} B2, {len(merge_task_ids)} Merge task IDs (loop-aware)")
 
     # Create receivers
     a_receiver = ATaskReceiver(
@@ -221,11 +235,15 @@ def run_single_experiment(config, logger, strategy_name=None, pre_generated_work
         custom_logger=logger
     )
 
+    # Merge Receiver - Pass a_submitter for loop triggering
+    # When merge completes and more loops needed, MergeReceiver will call
+    # a_submitter.add_task() to start the next loop iteration
     merge_receiver = MergeTaskReceiver(
         name="MergeReceiver",
         config=config,
         workflow_states=workflow_states,
         state_lock=state_lock,
+        a_submitter=a_submitter,  # For loop triggering
         task_ids=merge_task_ids,
         scheduler_url=config.scheduler_a_url,
         model_id=config.model_merge_id,
@@ -416,6 +434,17 @@ def main():
 
     parser = create_base_parser(description="Deep Research Workflow - Real Cluster Mode")
     parser = add_type2_args(parser)
+
+    # Add loop configuration argument
+    parser.add_argument(
+        "--max-loops-count",
+        type=int,
+        default=1,
+        help="Maximum loop iterations per workflow (1 = no loop, default: 1). "
+             "When > 1, each workflow loops A→B1→B2→Merge up to max_loops times. "
+             "Actual loop count is sampled from [5-15], capped by this value."
+    )
+
     args = parser.parse_args()
 
     # Parse and validate strategies
@@ -443,6 +472,7 @@ def main():
         fanout_config=args.fanout_config,
         fanout_seed=args.fanout_seed,
         num_warmup=warmup_count,
+        max_loops_count=args.max_loops_count,
         strategies=strategies,
         portion_stats=args.portion_stats,
     )
@@ -455,6 +485,7 @@ def main():
     logger.info(f"Model Merge: {config.model_merge_id}")
     logger.info(f"Scheduler A: {config.scheduler_a_url}")
     logger.info(f"Scheduler B: {config.scheduler_b_url}")
+    logger.info(f"Max loops count: {config.max_loops_count}")
 
     # Log fanout distribution info
     fanout_info = config.get_fanout_config_info()
@@ -470,6 +501,10 @@ def main():
     # Uses seed=42 to match Exp07's default random seed.
     pre_generated = pre_generate_workflows(config, seed=42)
     logger.info(f"Pre-generated {len(pre_generated)} workflows from dataset.jsonl (seed=42)")
+    if pre_generated:
+        wf0 = pre_generated[0]
+        logger.info(f"  Sample workflow[0]: max_loops={wf0.max_loops}, "
+                    f"loop_fanouts={wf0.loop_fanouts}")
 
     # Log fanout distribution from pre-generated workflows
     pre_gen_fanouts = [w.fanout_count for w in pre_generated]

@@ -38,6 +38,9 @@ class DeepResearchConfig:
     # Warmup workflows
     num_warmup: int = 10
 
+    # Loop configuration (workflow-level loops: A→B1→B2→Merge repeated max_loops times)
+    max_loops_count: int = 1  # Maximum loop iterations (1 = no loop, backward compatible)
+
     # Model IDs (will be auto-set in __post_init__ based on mode)
     model_a_id: str = "llm_service_small_model"
     model_b_id: str = "llm_service_small_model"
@@ -183,6 +186,7 @@ class DeepResearchConfig:
             fanout_seed=fanout_seed,
             strategy=os.getenv("STRATEGY", "probabilistic"),
             num_warmup=int(os.getenv("NUM_WARMUP", "10")),
+            max_loops_count=int(os.getenv("MAX_LOOPS_COUNT", "1")),
             model_a_id=os.getenv("MODEL_A_ID", "llm_service_small_model"),
             model_b_id=os.getenv("MODEL_B_ID", "llm_service_small_model"),
             model_merge_id=os.getenv("MODEL_MERGE_ID", "llm_service_small_model"),

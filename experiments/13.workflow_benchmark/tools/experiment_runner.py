@@ -248,7 +248,8 @@ class ExperimentRunner:
                                       fanout_config: Optional[str] = None,
                                       fanout_seed: Optional[int] = None,
                                       portion_stats: float = 1.0,
-                                      max_sleep_time: float = 600.0) -> Dict:
+                                      max_sleep_time: float = 600.0,
+                                      max_loops_count: int = 1) -> Dict:
         """
         Run Deep Research workflow in simulation mode.
 
@@ -264,6 +265,7 @@ class ExperimentRunner:
             fanout_seed: Random seed for fanout distribution sampling (optional)
             portion_stats: Portion of non-warmup workflows for statistics (default: 1.0)
             max_sleep_time: Maximum sleep time in seconds for simulation mode (default: 600.0)
+            max_loops_count: Maximum loop iterations per workflow (default: 1, no loop)
 
         Returns:
             Dict with experiment results and metrics path
@@ -272,13 +274,16 @@ class ExperimentRunner:
         if fanout_config:
             fanout_info = f"fanout_config={fanout_config}"
 
+        loop_info = f"max_loops_count={max_loops_count}" if max_loops_count > 1 else ""
+
         self.logger.info("=" * 80)
         self.logger.info("Running Deep Research Simulation")
         self.logger.info("=" * 80)
         self.logger.info(f"Config: num_workflows={num_workflows}, qps={qps}, "
                         f"duration={duration}s, {fanout_info}, "
                         f"strategies={strategies}, portion_stats={portion_stats}, "
-                        f"max_sleep_time={max_sleep_time}s")
+                        f"max_sleep_time={max_sleep_time}s" +
+                        (f", {loop_info}" if loop_info else ""))
 
         script_path = self.workspace_dir / "type2_deep_research" / "simulation" / "test_workflow_sim.py"
         args = self._build_common_args(num_workflows, qps, seed, strategies, warmup, duration, portion_stats)
@@ -289,6 +294,8 @@ class ExperimentRunner:
         if fanout_seed is not None:
             args.extend(["--fanout-seed", str(fanout_seed)])
         args.extend(["--max-sleep-time", str(max_sleep_time)])
+        if max_loops_count > 1:
+            args.extend(["--max-loops-count", str(max_loops_count)])
 
         return self._run_script(script_path, args, "Deep Research Simulation")
 
@@ -302,7 +309,8 @@ class ExperimentRunner:
                                 fanout: int = 4,
                                 fanout_config: Optional[str] = None,
                                 fanout_seed: Optional[int] = None,
-                                portion_stats: float = 1.0) -> Dict:
+                                portion_stats: float = 1.0,
+                                max_loops_count: int = 1) -> Dict:
         """
         Run Deep Research workflow in real cluster mode.
 
@@ -317,6 +325,7 @@ class ExperimentRunner:
             fanout_config: Path to JSON config file for fanout distribution (optional)
             fanout_seed: Random seed for fanout distribution sampling (optional)
             portion_stats: Portion of non-warmup workflows for statistics (default: 1.0)
+            max_loops_count: Maximum loop iterations per workflow (default: 1, no loop)
 
         Returns:
             Dict with experiment results and metrics path
@@ -325,12 +334,15 @@ class ExperimentRunner:
         if fanout_config:
             fanout_info = f"fanout_config={fanout_config}"
 
+        loop_info = f"max_loops_count={max_loops_count}" if max_loops_count > 1 else ""
+
         self.logger.info("=" * 80)
         self.logger.info("Running Deep Research Real Cluster Mode")
         self.logger.info("=" * 80)
         self.logger.info(f"Config: num_workflows={num_workflows}, qps={qps}, "
                         f"duration={duration}s, {fanout_info}, "
-                        f"strategies={strategies}, portion_stats={portion_stats}")
+                        f"strategies={strategies}, portion_stats={portion_stats}" +
+                        (f", {loop_info}" if loop_info else ""))
 
         script_path = self.workspace_dir / "type2_deep_research" / "real" / "test_workflow_real.py"
         args = self._build_common_args(num_workflows, qps, seed, strategies, warmup, duration, portion_stats)
@@ -340,6 +352,8 @@ class ExperimentRunner:
             args.extend(["--fanout-config", fanout_config])
         if fanout_seed is not None:
             args.extend(["--fanout-seed", str(fanout_seed)])
+        if max_loops_count > 1:
+            args.extend(["--max-loops-count", str(max_loops_count)])
 
         return self._run_script(script_path, args, "Deep Research Real")
 

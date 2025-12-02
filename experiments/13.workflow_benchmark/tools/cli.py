@@ -276,6 +276,14 @@ Examples:
         help="Maximum sleep time in seconds for simulation mode (default: 600.0). "
              "Sleep times will be uniformly distributed in [1, max_sleep_time] seconds."
     )
+    dr_sim.add_argument(
+        "--max-loops-count",
+        type=int,
+        default=1,
+        help="Maximum loop iterations per workflow (default: 1, no loop). "
+             "When > 1, each workflow loops A→B1→B2→Merge up to max_loops times. "
+             "Actual loop count is sampled from [5-15], capped by this value."
+    )
 
     # ========================================================================
     # Deep Research Real
@@ -304,6 +312,14 @@ Examples:
         type=int,
         default=None,
         help="Random seed for fanout distribution sampling."
+    )
+    dr_real.add_argument(
+        "--max-loops-count",
+        type=int,
+        default=1,
+        help="Maximum loop iterations per workflow (default: 1, no loop). "
+             "When > 1, each workflow loops A→B1→B2→Merge up to max_loops times. "
+             "Actual loop count is sampled from [5-15], capped by this value."
     )
 
     # ========================================================================
@@ -590,6 +606,7 @@ Examples:
                 fanout_seed=args.fanout_seed,
                 portion_stats=args.portion_stats,
                 max_sleep_time=args.max_sleep_time,
+                max_loops_count=args.max_loops_count,
             )
 
         elif args.command == "run-deep-research-real":
@@ -604,6 +621,7 @@ Examples:
                 fanout_config=args.fanout_config,
                 fanout_seed=args.fanout_seed,
                 portion_stats=args.portion_stats,
+                max_loops_count=args.max_loops_count,
             )
 
         elif args.command == "run-ocr-llm-sim":

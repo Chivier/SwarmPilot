@@ -72,6 +72,11 @@ class ATaskSubmitter(BaseTaskSubmitter):
                 workflow_copy.b2_task_ids = []
                 workflow_copy.merge_task_id = None
                 workflow_copy.a_result = None
+                # Reset loop tracking fields
+                workflow_copy.loop_count = 0
+                workflow_copy.loop_a_submit_times = []
+                workflow_copy.loop_a_complete_times = []
+                workflow_copy.loop_merge_complete_times = []
                 self.workflows.append(workflow_copy)
             self.logger.info(f"Using {len(self.workflows)} pre-generated workflows")
             fanout_values = [w.fanout_count for w in self.workflows]
@@ -155,19 +160,25 @@ class ATaskSubmitter(BaseTaskSubmitter):
                 f"avg={avg_fanout:.2f}, min={min_fanout}, max={max_fanout}"
             )
 
-    def _prepare_task_payload(self, workflow_data: DeepResearchWorkflowData) -> Dict[str, Any]:
+    def _prepare_task_payload(self, workflow_data: DeepResearchWorkflowData, loop_iteration: Optional[int] = None) -> Dict[str, Any]:
         """
         Prepare task submission payload for A.
 
         Args:
             workflow_data: Workflow data
+            loop_iteration: Current loop iteration (1-indexed). If None, reads from workflow_data.loop_count.
 
         Returns:
             JSON payload for /task/submit
         """
+        # Get loop iteration from workflow_data if not explicitly provided
+        if loop_iteration is None:
+            loop_iteration = max(1, workflow_data.loop_count)
+
         # Extract workflow number for task ID
         workflow_num = workflow_data.workflow_id.split('-')[-1]
-        task_id = f"task-A-{workflow_data.strategy}-workflow-{workflow_num}"
+        # Include loop iteration in task ID for traceability
+        task_id = f"task-A-loop{loop_iteration}-{workflow_data.strategy}-workflow-{workflow_num}"
 
         # Build task_input and metadata based on mode
         if self.config.mode == "simulation":
@@ -236,18 +247,32 @@ class ATaskSubmitter(BaseTaskSubmitter):
         Returns:
             True if submission succeeded, False otherwise
         """
-        # Record workflow start in metrics before submission
+        # Get loop iteration (first loop = 1)
+        loop_iteration = 1
+        if isinstance(task_data, DeepResearchWorkflowData):
+            # For initial submission, loop_count is 0 - set it to 1 to indicate loop 1 has started
+            if task_data.loop_count == 0:
+                with self.state_lock:
+                    task_data.loop_count = 1
+            loop_iteration = task_data.loop_count
+
+        # Record workflow start in metrics before submission (only for first loop)
         if self.metrics and isinstance(task_data, DeepResearchWorkflowData):
-            self.metrics.record_workflow_start(
-                workflow_id=task_data.workflow_id,
-                workflow_type="deep_research",
-                metadata={"fanout_count": task_data.fanout_count, "strategy": task_data.strategy},
-                is_warmup=task_data.is_warmup
-            )
+            if loop_iteration == 1:
+                self.metrics.record_workflow_start(
+                    workflow_id=task_data.workflow_id,
+                    workflow_type="deep_research",
+                    metadata={
+                        "fanout_count": task_data.fanout_count,
+                        "strategy": task_data.strategy,
+                        "max_loops": task_data.max_loops
+                    },
+                    is_warmup=task_data.is_warmup
+                )
 
             # Record task submission in metrics
             workflow_num = task_data.workflow_id.split('-')[-1]
-            task_id = f"task-A-{task_data.strategy}-workflow-{workflow_num}"
+            task_id = f"task-A-loop{loop_iteration}-{task_data.strategy}-workflow-{workflow_num}"
             self.metrics.record_task_submit(
                 task_id=task_id,
                 workflow_id=task_data.workflow_id,
@@ -259,13 +284,78 @@ class ATaskSubmitter(BaseTaskSubmitter):
             workflow_num = task_data.workflow_id.split('-')[-1]
             self.logger.debug(
                 f"[A_SUBMIT] workflow={task_data.workflow_id}, "
-                f"task_id=task-A-{task_data.strategy}-workflow-{workflow_num}, "
+                f"loop={loop_iteration}/{task_data.max_loops}, "
+                f"task_id=task-A-loop{loop_iteration}-{task_data.strategy}-workflow-{workflow_num}, "
                 f"scheduler_endpoint={self.scheduler_url}, "
                 f"model_id={self.config.model_a_id}"
             )
 
         # Call parent implementation to actually submit the task
         return super()._submit_task(task_data)
+
+    def add_task(self, workflow_id: str, loop_iteration: int) -> bool:
+        """
+        Add a new A task for the next loop iteration.
+
+        Called by MergeTaskReceiver when more loop iterations are needed.
+        This method directly submits the task without using the rate limiter.
+
+        Args:
+            workflow_id: Workflow identifier
+            loop_iteration: Current loop iteration (1-indexed)
+
+        Returns:
+            True if submission succeeded, False otherwise
+        """
+        import time
+        import requests
+
+        # Get workflow data
+        with self.state_lock:
+            workflow_data = self.workflow_states.get(workflow_id)
+            if not workflow_data:
+                self.logger.error(f"Workflow {workflow_id} not found for loop iteration {loop_iteration}")
+                return False
+
+        # Prepare task payload with loop iteration
+        payload = self._prepare_task_payload(workflow_data, loop_iteration)
+
+        # Record A submit time for this loop
+        submit_time = time.time()
+        with self.state_lock:
+            workflow_data.a_submit_time = submit_time
+            workflow_data.loop_a_submit_times.append(submit_time)
+
+        # Record task submission in metrics
+        if self.metrics:
+            self.metrics.record_task_submit(
+                task_id=payload["task_id"],
+                workflow_id=workflow_id,
+                task_type="A"
+            )
+
+        # Log the submission
+        self.logger.debug(
+            f"[A_LOOP_SUBMIT] workflow={workflow_id}, "
+            f"loop={loop_iteration}/{workflow_data.max_loops}, "
+            f"task_id={payload['task_id']}, "
+            f"fanout_count={workflow_data.fanout_count}, "
+            f"scheduler_endpoint={self.scheduler_url}"
+        )
+
+        # Submit task directly via HTTP
+        try:
+            response = requests.post(
+                f"{self.scheduler_url}/task/submit",
+                json=payload,
+                timeout=30
+            )
+            response.raise_for_status()
+            self.submitted_count += 1
+            return True
+        except Exception as e:
+            self.logger.error(f"Failed to submit A task for loop {loop_iteration}: {e}")
+            return False
 
 
 class B1TaskSubmitter(BaseTaskSubmitter):
@@ -310,10 +400,11 @@ class B1TaskSubmitter(BaseTaskSubmitter):
             workflow_data = self.workflow_states.get(workflow_id)
             if not workflow_data:
                 raise ValueError(f"Workflow {workflow_id} not found in states")
+            loop_iteration = max(1, workflow_data.loop_count)
 
-        # Extract workflow number for task ID
+        # Extract workflow number for task ID (include loop iteration)
         workflow_num = workflow_id.split('-')[-1]
-        task_id = f"task-B1-{workflow_data.strategy}-workflow-{workflow_num}-{b1_index}"
+        task_id = f"task-B1-loop{loop_iteration}-{workflow_data.strategy}-workflow-{workflow_num}-{b1_index}"
 
         # Build task_input and metadata based on mode
         if self.config.mode == "simulation":
@@ -392,7 +483,8 @@ class B1TaskSubmitter(BaseTaskSubmitter):
                 workflow_data = self.workflow_states.get(workflow_id)
                 if workflow_data:
                     workflow_num = workflow_id.split('-')[-1]
-                    task_id = f"task-B1-{workflow_data.strategy}-workflow-{workflow_num}-{b1_index}"
+                    loop_iteration = max(1, workflow_data.loop_count)
+                    task_id = f"task-B1-loop{loop_iteration}-{workflow_data.strategy}-workflow-{workflow_num}-{b1_index}"
                     self.metrics.record_task_submit(
                         task_id=task_id,
                         workflow_id=workflow_id,
@@ -402,8 +494,11 @@ class B1TaskSubmitter(BaseTaskSubmitter):
         # Log B1 task submission
         if isinstance(task_data, tuple):
             workflow_id, a_result, b1_index = task_data
+            with self.state_lock:
+                workflow_data = self.workflow_states.get(workflow_id)
+                loop_iteration = max(1, workflow_data.loop_count) if workflow_data else 1
             self.logger.debug(
-                f"[B1_SUBMIT] workflow={workflow_id}, b1_index={b1_index}, "
+                f"[B1_SUBMIT] workflow={workflow_id}, loop={loop_iteration}, b1_index={b1_index}, "
                 f"scheduler_endpoint={self.scheduler_url}"
             )
 
@@ -453,10 +548,11 @@ class B2TaskSubmitter(BaseTaskSubmitter):
             workflow_data = self.workflow_states.get(workflow_id)
             if not workflow_data:
                 raise ValueError(f"Workflow {workflow_id} not found in states")
+            loop_iteration = max(1, workflow_data.loop_count)
 
-        # Extract workflow number for task ID
+        # Extract workflow number for task ID (include loop iteration)
         workflow_num = workflow_id.split('-')[-1]
-        task_id = f"task-B2-{workflow_data.strategy}-workflow-{workflow_num}-{b1_index}"
+        task_id = f"task-B2-loop{loop_iteration}-{workflow_data.strategy}-workflow-{workflow_num}-{b1_index}"
 
         # Build task_input and metadata based on mode
         if self.config.mode == "simulation":
@@ -482,9 +578,10 @@ class B2TaskSubmitter(BaseTaskSubmitter):
                 "b_index": b1_index  # B index for pairing with B1
             }
         else:  # real mode (aligned with Exp07)
-            # Use query_inputs from dataset.jsonl (same as B1)
-            sentence = workflow_data.query_inputs[b1_index]
-            max_tokens = 1  # Exp07: B2 task max_tokens = 1
+            # B2 (criteria) receives B1's output as input, with max_tokens=1
+            # b1_result is the output from the corresponding B1 task
+            sentence = b1_result if b1_result else ""
+            max_tokens = 1  # Exp07: B2 task (criteria) max_tokens = 1
             task_input = {
                 "sentence": sentence,
                 "max_tokens": max_tokens
@@ -535,7 +632,8 @@ class B2TaskSubmitter(BaseTaskSubmitter):
                 workflow_data = self.workflow_states.get(workflow_id)
                 if workflow_data:
                     workflow_num = workflow_id.split('-')[-1]
-                    task_id = f"task-B2-{workflow_data.strategy}-workflow-{workflow_num}-{b1_index}"
+                    loop_iteration = max(1, workflow_data.loop_count)
+                    task_id = f"task-B2-loop{loop_iteration}-{workflow_data.strategy}-workflow-{workflow_num}-{b1_index}"
                     self.metrics.record_task_submit(
                         task_id=task_id,
                         workflow_id=workflow_id,
@@ -549,9 +647,10 @@ class B2TaskSubmitter(BaseTaskSubmitter):
                 workflow_data = self.workflow_states.get(workflow_id)
                 if workflow_data:
                     workflow_num = workflow_id.split('-')[-1]
+                    loop_iteration = max(1, workflow_data.loop_count)
                     self.logger.debug(
-                        f"[B2_SUBMIT] workflow={workflow_id}, b2_index={b1_index}, "
-                        f"task_id=task-B2-{workflow_data.strategy}-workflow-{workflow_num}-{b1_index}, "
+                        f"[B2_SUBMIT] workflow={workflow_id}, loop={loop_iteration}, b2_index={b1_index}, "
+                        f"task_id=task-B2-loop{loop_iteration}-{workflow_data.strategy}-workflow-{workflow_num}-{b1_index}, "
                         f"scheduler_endpoint={self.scheduler_url}"
                     )
 
@@ -603,10 +702,11 @@ class MergeTaskSubmitter(BaseTaskSubmitter):
             if self.config.mode == "real":
                 # Collect B2 results for real mode
                 b2_results = [f"b2_result_{i}" for i in range(workflow_data.fanout_count)]
+            loop_iteration = max(1, workflow_data.loop_count)
 
-        # Extract workflow number for task ID
+        # Extract workflow number for task ID (include loop iteration)
         workflow_num = workflow_id.split('-')[-1]
-        task_id = f"task-merge-{workflow_data.strategy}-workflow-{workflow_num}"
+        task_id = f"task-merge-loop{loop_iteration}-{workflow_data.strategy}-workflow-{workflow_num}"
 
         # Build task_input and metadata based on mode
         if self.config.mode == "simulation":
@@ -684,7 +784,8 @@ class MergeTaskSubmitter(BaseTaskSubmitter):
                 workflow_data = self.workflow_states.get(workflow_id)
                 if workflow_data:
                     workflow_num = workflow_id.split('-')[-1]
-                    task_id = f"task-merge-{workflow_data.strategy}-workflow-{workflow_num}"
+                    loop_iteration = max(1, workflow_data.loop_count)
+                    task_id = f"task-merge-loop{loop_iteration}-{workflow_data.strategy}-workflow-{workflow_num}"
                     self.metrics.record_task_submit(
                         task_id=task_id,
                         workflow_id=workflow_id,
@@ -699,8 +800,9 @@ class MergeTaskSubmitter(BaseTaskSubmitter):
                 if workflow_data:
                     # Determine the scheduler endpoint for merge (uses scheduler_a for merge)
                     merge_scheduler_url = getattr(self.config, 'scheduler_a_url', 'unknown')
-                    self.logger.info(
-                        f"[MERGE_SUBMIT] workflow={workflow_id}, "
+                    loop_iteration = max(1, workflow_data.loop_count)
+                    self.logger.debug(
+                        f"[MERGE_SUBMIT] workflow={workflow_id}, loop={loop_iteration}/{workflow_data.max_loops}, "
                         f"scheduler_endpoint={merge_scheduler_url}, "
                         f"model_id={self.config.model_merge_id}, "
                         f"fanout_count={workflow_data.fanout_count}, "

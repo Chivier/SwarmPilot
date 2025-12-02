@@ -62,7 +62,8 @@ class ATaskReceiver(BaseTaskReceiver):
                 return
 
             # Parse workflow_id from task_id (works for both simulation and real mode)
-            # Format: task-A-{strategy}-workflow-{prefix}-{num} (new) or task-A-{strategy}-workflow-{num} (old)
+            # Format: task-A-loop{N}-{strategy}-workflow-{num} (loop-aware)
+            #      or task-A-{strategy}-workflow-{num} (legacy)
             parts = task_id.split('-')
             workflow_id = None
 
@@ -108,22 +109,28 @@ class ATaskReceiver(BaseTaskReceiver):
                     workflow_data.a_result = a_result
                     workflow_data.a_complete_time = complete_time
 
-                    # Pre-allocate B1 task IDs with correct format
+                    # Record A complete time for this loop
+                    workflow_data.loop_a_complete_times.append(complete_time)
+
+                    # Get current loop iteration for task ID generation
+                    loop_iteration = max(1, workflow_data.loop_count)
+
+                    # Pre-allocate B1 task IDs with loop-aware format
                     workflow_num = workflow_id.split('-')[-1]
                     workflow_data.b1_task_ids = [
-                        f"task-B1-{workflow_data.strategy}-workflow-{workflow_num}-{i}"
+                        f"task-B1-loop{loop_iteration}-{workflow_data.strategy}-workflow-{workflow_num}-{i}"
                         for i in range(workflow_data.fanout_count)
                     ]
                     workflow_data.b2_task_ids = [
-                        f"task-B2-{workflow_data.strategy}-workflow-{workflow_num}-{i}"
+                        f"task-B2-loop{loop_iteration}-{workflow_data.strategy}-workflow-{workflow_num}-{i}"
                         for i in range(workflow_data.fanout_count)
                     ]
 
                     fanout_count = workflow_data.fanout_count
 
-                    # Record task completion in metrics
+                    # Record task completion in metrics (use loop-aware task ID)
                     if self.metrics:
-                        a_task_id = f"task-A-{workflow_data.strategy}-workflow-{workflow_num}"
+                        a_task_id = f"task-A-loop{loop_iteration}-{workflow_data.strategy}-workflow-{workflow_num}"
                         self.metrics.record_task_complete(
                             task_id=a_task_id,
                             success=True
@@ -144,8 +151,12 @@ class ATaskReceiver(BaseTaskReceiver):
                         workflow_data.b1_submit_times.append(time.time())
 
             # Log A task completion with scheduler endpoint and task count
+            with self.state_lock:
+                workflow_data = self.workflow_states.get(workflow_id)
+                loop_iteration = max(1, workflow_data.loop_count) if workflow_data else 1
+                max_loops = workflow_data.max_loops if workflow_data else 1
             self.logger.debug(
-                f"[A_COMPLETE] workflow={workflow_id}, "
+                f"[A_COMPLETE] workflow={workflow_id}, loop={loop_iteration}/{max_loops}, "
                 f"scheduler_endpoint={self.config.scheduler_a_url}, "
                 f"triggered_b1_count={fanout_count}"
             )
@@ -429,13 +440,14 @@ class B2TaskReceiver(BaseTaskReceiver):
 
 class MergeTaskReceiver(BaseTaskReceiver):
     """
-    Receives Merge task results and marks workflow complete.
+    Receives Merge task results and either triggers next loop or marks workflow complete.
 
-    Listens to Scheduler A WebSocket, updates workflow completion time.
+    Listens to Scheduler A WebSocket, checks for loop continuation,
+    and either triggers next A task or marks workflow complete.
     """
 
     def __init__(self, config, workflow_states: Dict, state_lock: threading.Lock,
-                 task_ids: list = None, **kwargs):
+                 a_submitter=None, task_ids: list = None, **kwargs):
         """
         Initialize Merge task receiver.
 
@@ -443,6 +455,7 @@ class MergeTaskReceiver(BaseTaskReceiver):
             config: DeepResearchConfig instance
             workflow_states: Shared workflow state dictionary
             state_lock: Lock for workflow_states access
+            a_submitter: ATaskSubmitter instance for triggering loop iterations
             task_ids: List of task IDs to subscribe to
             **kwargs: Passed to BaseTaskReceiver
         """
@@ -450,6 +463,7 @@ class MergeTaskReceiver(BaseTaskReceiver):
         self.config = config
         self.workflow_states = workflow_states
         self.state_lock = state_lock
+        self.a_submitter = a_submitter
         self.task_ids = task_ids or []
 
         # Track workflow completions
@@ -466,7 +480,9 @@ class MergeTaskReceiver(BaseTaskReceiver):
         """
         Process Merge task completion result.
 
-        Marks workflow as complete.
+        Checks if more loop iterations are needed:
+        - If yes: triggers next A task via a_submitter.add_task()
+        - If no: marks workflow as complete
 
         Args:
             data: Result data from WebSocket message
@@ -482,7 +498,8 @@ class MergeTaskReceiver(BaseTaskReceiver):
             self.logger.info(f"[MERGE_RECEIVED] task_id={task_id}")
 
             # Parse task_id to extract workflow_id
-            # Format: task-merge-{strategy}-workflow-{prefix}-{num} (new) or task-merge-{strategy}-workflow-{num} (old)
+            # Format: task-merge-loop{N}-{strategy}-workflow-{num} (loop-aware)
+            #      or task-merge-{strategy}-workflow-{num} (legacy)
             parts = task_id.split('-')
             workflow_id = None
 
@@ -502,42 +519,92 @@ class MergeTaskReceiver(BaseTaskReceiver):
                 return
 
             complete_time = time.time()
+            should_continue_loop = False
+            should_complete_workflow = False
 
-            # Update workflow state
+            # Update workflow state and check for loop continuation
             with self.state_lock:
                 workflow_data = self.workflow_states.get(workflow_id)
-                if workflow_data:
-                    workflow_data.merge_complete_time = complete_time
+                if not workflow_data:
+                    self.logger.warning(f"Workflow {workflow_id} not found in state")
+                    return
+
+                # Record merge completion time for this loop
+                workflow_data.merge_complete_time = complete_time
+                workflow_data.loop_merge_complete_times.append(complete_time)
+
+                # Get current loop info for metrics/logging
+                loop_iteration = max(1, workflow_data.loop_count)
+                workflow_num = workflow_id.split('-')[-1]
+
+                # Record merge task completion in metrics (use loop-aware task ID)
+                merge_task_id = f"task-merge-loop{loop_iteration}-{workflow_data.strategy}-workflow-{workflow_num}"
+                if self.metrics:
+                    self.metrics.record_task_complete(
+                        task_id=merge_task_id,
+                        success=True
+                    )
+
+                # Log merge completion with loop info
+                self.logger.info(
+                    f"[MERGE_COMPLETE] workflow={workflow_id}, "
+                    f"loop={loop_iteration}/{workflow_data.max_loops}, "
+                    f"scheduler_endpoint={self.config.scheduler_a_url}"
+                )
+
+                # Check if more loops are needed
+                if workflow_data.should_continue_loop():
+                    should_continue_loop = True
+                else:
+                    should_complete_workflow = True
                     workflow_data.workflow_complete_time = complete_time
                     self.completed_workflows += 1
 
-                    # Record merge task completion in metrics
-                    workflow_num = workflow_id.split('-')[-1]
-                    merge_task_id = f"task-merge-{workflow_data.strategy}-workflow-{workflow_num}"
-                    if self.metrics:
-                        self.metrics.record_task_complete(
-                            task_id=merge_task_id,
-                            success=True
+            # Handle loop continuation or workflow completion outside lock
+            if should_continue_loop and self.a_submitter:
+                # Prepare for next loop iteration
+                with self.state_lock:
+                    workflow_data = self.workflow_states.get(workflow_id)
+                    if workflow_data:
+                        # Prepare for next loop (updates fanout_count, sleep_times, etc.)
+                        workflow_data.prepare_for_next_loop()
+                        next_iteration = workflow_data.loop_count
+
+                        self.logger.info(
+                            f"[LOOP_CONTINUE] workflow={workflow_id}, "
+                            f"starting_loop={next_iteration}/{workflow_data.max_loops}, "
+                            f"fanout_count={workflow_data.fanout_count}"
                         )
 
-                    # Record workflow completion in metrics
-                    if self.metrics:
-                        self.metrics.record_workflow_complete(
-                            workflow_id=workflow_id,
-                            successful_tasks=workflow_data.fanout_count * 2 + 2,  # A + B1*n + B2*n + Merge
-                            failed_tasks=0
+                # Submit next A task for the loop
+                self.a_submitter.add_task(workflow_id, next_iteration)
+
+            elif should_complete_workflow:
+                # Workflow is complete - record metrics
+                with self.state_lock:
+                    workflow_data = self.workflow_states.get(workflow_id)
+                    if workflow_data:
+                        # Calculate total tasks across all loops
+                        total_tasks = sum(
+                            1 + fanout * 2 + 1  # A + B1*fanout + B2*fanout + Merge
+                            for fanout in workflow_data.loop_fanouts[:workflow_data.max_loops]
                         )
 
-                    # Log workflow completion with standard format
-                    self.logger.info(
-                        f"[WORKFLOW_COMPLETE] workflow={workflow_id}, "
-                        f"scheduler_endpoint={self.config.scheduler_a_url}, "
-                        f"total_tasks={workflow_data.fanout_count * 2 + 2}, "
-                        f"fanout_count={workflow_data.fanout_count}, "
-                        f"completed_workflows={self.completed_workflows}"
-                    )
-                else:
-                    self.logger.warning(f"Workflow {workflow_id} not found in state")
+                        if self.metrics:
+                            self.metrics.record_workflow_complete(
+                                workflow_id=workflow_id,
+                                successful_tasks=total_tasks,
+                                failed_tasks=0
+                            )
+
+                        # Log workflow completion with standard format
+                        self.logger.info(
+                            f"[WORKFLOW_COMPLETE] workflow={workflow_id}, "
+                            f"scheduler_endpoint={self.config.scheduler_a_url}, "
+                            f"total_loops={workflow_data.max_loops}, "
+                            f"total_tasks={total_tasks}, "
+                            f"completed_workflows={self.completed_workflows}"
+                        )
 
         except Exception as e:
             self.logger.error(f"Error processing Merge result: {e}", exc_info=True)
