@@ -9,8 +9,8 @@ This script:
 4. Submits training data to the predictor service
 
 Type2 Workflow: A -> n*B1 -> n*B2 -> Merge
-  - Model A (llm_service_small_model): for A and Merge tasks
-  - Model B (llm_service_large_model): for B1/B2 tasks
+  - Model A (llm_service_large_model): for A and Merge tasks (boot/summary)
+  - Model B (llm_service_small_model): for B1/B2 tasks (query)
 
 Supports multi-model configuration to train both Model A and Model B predictors
 in a single execution.

@@ -6,8 +6,8 @@ set -e
 # Manual Model Deployment for Type2 (Deep Research) Workflow - Batchgen Version
 # ============================================
 # Type2 Workflow: A -> n*B1 -> n*B2 -> Merge
-#   - Model A (llm_service_small_model) -> Scheduler A / Planner (for A and Merge tasks)
-#   - Model B (llm_service_large_model) -> Scheduler B / Planner (for B1/B2 tasks)
+#   - Model A (llm_service_large_model) -> Scheduler A / Planner (for A and Merge tasks)
+#   - Model B (llm_service_small_model) -> Scheduler B / Planner (for B1/B2 tasks)
 #
 # This version is for batch generation experiments with different host distribution.
 #
@@ -47,8 +47,8 @@ while [[ $# -gt 0 ]]; do
             echo "Usage: $0 [OPTIONS]"
             echo ""
             echo "Type2 (Deep Research) Model Deployment with Planner Registration (Batchgen Version):"
-            echo "  Model A: llm_service_small_model (for A and Merge tasks)"
-            echo "  Model B: llm_service_large_model (for B1/B2 tasks)"
+            echo "  Model A: llm_service_large_model (for A and Merge tasks)"
+            echo "  Model B: llm_service_small_model (for B1/B2 tasks)"
             echo ""
             echo "Registration Strategy:"
             echo "  Ports 8200-8203 -> Scheduler (A to Scheduler A, B to Scheduler B)"
@@ -56,8 +56,8 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Options:"
             echo "  --model-path PATH         Set model path for both Group A and B"
-            echo "  --model-path-a PATH       Set model path for Group A (Small LLM)"
-            echo "  --model-path-b PATH       Set model path for Group B (Large LLM)"
+            echo "  --model-path-a PATH       Set model path for Group A (Large LLM)"
+            echo "  --model-path-b PATH       Set model path for Group B (Small LLM)"
             echo "  -h, --help                Show this help message"
             echo ""
             echo "Example:"
@@ -84,8 +84,8 @@ fi
 
 # Display configuration
 echo -e "${GREEN}Type2 (Deep Research) Deployment Configuration (Batchgen):${NC}"
-echo "  Group A (Small LLM) model path: $MODEL_PATH_A"
-echo "  Group B (Large LLM) model path: $MODEL_PATH_B"
+echo "  Group A (Large LLM) model path: $MODEL_PATH_A"
+echo "  Group B (Small LLM) model path: $MODEL_PATH_B"
 echo ""
 echo "Registration Strategy:"
 echo "  Ports 8200-8203 -> Scheduler"
@@ -116,7 +116,7 @@ PLANNER_PORT_LIST=(8204 8205 8206 8207)
 # All instance ports (for health check)
 INSTANCE_PORT_LIST=(8200 8201 8202 8203 8204 8205 8206 8207)
 
-# Group A Hosts (llm_service_small_model for A and Merge tasks)
+# Group A Hosts (llm_service_large_model for A and Merge tasks)
 # Batchgen configuration - 6 hosts for Group A (1:1 ratio with Group B)
 GROUP_A_HOSTS=(
   29.209.114.51
@@ -127,7 +127,7 @@ GROUP_A_HOSTS=(
   29.209.114.241
 )
 
-# Group B Hosts (llm_service_large_model for B1/B2 tasks)
+# Group B Hosts (llm_service_small_model for B1/B2 tasks)
 # Batchgen configuration - 6 hosts for Group B (1:1 ratio with Group A)
 GROUP_B_HOSTS=(
   29.209.112.177
@@ -170,9 +170,9 @@ echo -e "${GREEN}Health checks completed${NC}"
 pids=()
 
 # ============================================
-# Group A: Deploy llm_service_small_model
+# Group A: Deploy llm_service_large_model
 # ============================================
-echo -e "${YELLOW}Deploying llm_service_small_model on Group A hosts...${NC}"
+echo -e "${YELLOW}Deploying llm_service_large_model on Group A hosts...${NC}"
 
 # First half: register to Scheduler A
 for host in "${GROUP_A_HOSTS[@]}"; do
@@ -180,70 +180,9 @@ for host in "${GROUP_A_HOSTS[@]}"; do
         (
             instance_id="${host}:${instance_port}"
             json_payload=$(jq -n \
-                --arg model_id "llm_service_small_model" \
+                --arg model_id "llm_service_large_model" \
                 --arg scheduler_url "http://$SCHEDULER_A_HOST:$SCHEDULER_PORT" \
                 --arg model_path "$MODEL_PATH_A" \
-                --arg software_name "sglang" \
-                --arg software_version "0.5.5.post2" \
-                '{model_id: $model_id, scheduler_url: $scheduler_url, parameters: {MODEL_PATH: $model_path, software_name: $software_name, software_version: $software_version}, standby: false}')
-
-            response=$(curl -s -X POST "http://$host:$instance_port/model/start" \
-                -H "Content-Type: application/json" \
-                -d "$json_payload")
-
-            if echo "$response" | grep -q "success\|started"; then
-                echo -e "$instance_id (llm_service_small_model -> scheduler): ${GREEN}OK${NC}"
-            else
-                echo -e "$instance_id (llm_service_small_model -> scheduler): ${RED}FAILED${NC}"
-                echo "Response: $response"
-            fi
-        ) &
-        pids+=($!)
-    done
-done
-
-# Second half: register to Planner
-for host in "${GROUP_A_HOSTS[@]}"; do
-    for instance_port in "${PLANNER_PORT_LIST[@]}"; do
-        (
-            instance_id="${host}:${instance_port}"
-            json_payload=$(jq -n \
-                --arg model_id "llm_service_small_model" \
-                --arg scheduler_url "http://$PLANNER_HOST:$PLANNER_PORT" \
-                --arg model_path "$MODEL_PATH_A" \
-                --arg software_name "sglang" \
-                --arg software_version "0.5.5.post2" \
-                '{model_id: $model_id, scheduler_url: $scheduler_url, parameters: {MODEL_PATH: $model_path, software_name: $software_name, software_version: $software_version}, standby: false}')
-
-            response=$(curl -s -X POST "http://$host:$instance_port/model/start" \
-                -H "Content-Type: application/json" \
-                -d "$json_payload")
-
-            if echo "$response" | grep -q "success\|started"; then
-                echo -e "$instance_id (llm_service_small_model -> planner): ${GREEN}OK${NC}"
-            else
-                echo -e "$instance_id (llm_service_small_model -> planner): ${RED}FAILED${NC}"
-                echo "Response: $response"
-            fi
-        ) &
-        pids+=($!)
-    done
-done
-
-# ============================================
-# Group B: Deploy llm_service_large_model
-# ============================================
-echo -e "${YELLOW}Deploying llm_service_large_model on Group B hosts...${NC}"
-
-# First half: register to Scheduler B
-for host in "${GROUP_B_HOSTS[@]}"; do
-    for instance_port in "${SCHEDULER_PORT_LIST[@]}"; do
-        (
-            instance_id="${host}:${instance_port}"
-            json_payload=$(jq -n \
-                --arg model_id "llm_service_large_model" \
-                --arg scheduler_url "http://$SCHEDULER_B_HOST:$SCHEDULER_PORT" \
-                --arg model_path "$MODEL_PATH_B" \
                 --arg software_name "sglang" \
                 --arg software_version "0.5.5.post2" \
                 '{model_id: $model_id, scheduler_url: $scheduler_url, parameters: {MODEL_PATH: $model_path, software_name: $software_name, software_version: $software_version}, standby: false}')
@@ -264,14 +203,14 @@ for host in "${GROUP_B_HOSTS[@]}"; do
 done
 
 # Second half: register to Planner
-for host in "${GROUP_B_HOSTS[@]}"; do
+for host in "${GROUP_A_HOSTS[@]}"; do
     for instance_port in "${PLANNER_PORT_LIST[@]}"; do
         (
             instance_id="${host}:${instance_port}"
             json_payload=$(jq -n \
                 --arg model_id "llm_service_large_model" \
                 --arg scheduler_url "http://$PLANNER_HOST:$PLANNER_PORT" \
-                --arg model_path "$MODEL_PATH_B" \
+                --arg model_path "$MODEL_PATH_A" \
                 --arg software_name "sglang" \
                 --arg software_version "0.5.5.post2" \
                 '{model_id: $model_id, scheduler_url: $scheduler_url, parameters: {MODEL_PATH: $model_path, software_name: $software_name, software_version: $software_version}, standby: false}')
@@ -291,6 +230,67 @@ for host in "${GROUP_B_HOSTS[@]}"; do
     done
 done
 
+# ============================================
+# Group B: Deploy llm_service_small_model
+# ============================================
+echo -e "${YELLOW}Deploying llm_service_small_model on Group B hosts...${NC}"
+
+# First half: register to Scheduler B
+for host in "${GROUP_B_HOSTS[@]}"; do
+    for instance_port in "${SCHEDULER_PORT_LIST[@]}"; do
+        (
+            instance_id="${host}:${instance_port}"
+            json_payload=$(jq -n \
+                --arg model_id "llm_service_small_model" \
+                --arg scheduler_url "http://$SCHEDULER_B_HOST:$SCHEDULER_PORT" \
+                --arg model_path "$MODEL_PATH_B" \
+                --arg software_name "sglang" \
+                --arg software_version "0.5.5.post2" \
+                '{model_id: $model_id, scheduler_url: $scheduler_url, parameters: {MODEL_PATH: $model_path, software_name: $software_name, software_version: $software_version}, standby: false}')
+
+            response=$(curl -s -X POST "http://$host:$instance_port/model/start" \
+                -H "Content-Type: application/json" \
+                -d "$json_payload")
+
+            if echo "$response" | grep -q "success\|started"; then
+                echo -e "$instance_id (llm_service_small_model -> scheduler): ${GREEN}OK${NC}"
+            else
+                echo -e "$instance_id (llm_service_small_model -> scheduler): ${RED}FAILED${NC}"
+                echo "Response: $response"
+            fi
+        ) &
+        pids+=($!)
+    done
+done
+
+# Second half: register to Planner
+for host in "${GROUP_B_HOSTS[@]}"; do
+    for instance_port in "${PLANNER_PORT_LIST[@]}"; do
+        (
+            instance_id="${host}:${instance_port}"
+            json_payload=$(jq -n \
+                --arg model_id "llm_service_small_model" \
+                --arg scheduler_url "http://$PLANNER_HOST:$PLANNER_PORT" \
+                --arg model_path "$MODEL_PATH_B" \
+                --arg software_name "sglang" \
+                --arg software_version "0.5.5.post2" \
+                '{model_id: $model_id, scheduler_url: $scheduler_url, parameters: {MODEL_PATH: $model_path, software_name: $software_name, software_version: $software_version}, standby: false}')
+
+            response=$(curl -s -X POST "http://$host:$instance_port/model/start" \
+                -H "Content-Type: application/json" \
+                -d "$json_payload")
+
+            if echo "$response" | grep -q "success\|started"; then
+                echo -e "$instance_id (llm_service_small_model -> planner): ${GREEN}OK${NC}"
+            else
+                echo -e "$instance_id (llm_service_small_model -> planner): ${RED}FAILED${NC}"
+                echo "Response: $response"
+            fi
+        ) &
+        pids+=($!)
+    done
+done
+
 # Wait for all deployments
 for pid in "${pids[@]}"; do
     wait $pid
@@ -299,9 +299,9 @@ done
 echo -e "${GREEN}Type2 (Deep Research) model deployment completed (Batchgen)${NC}"
 echo ""
 echo "Summary:"
-echo "  Group A (llm_service_small_model - for A and Merge tasks):"
+echo "  Group A (llm_service_large_model - for A and Merge tasks):"
 echo "    - Ports 8200-8203 -> Scheduler A ($SCHEDULER_A_HOST:$SCHEDULER_PORT)"
 echo "    - Ports 8204-8207 -> Planner ($PLANNER_HOST:$PLANNER_PORT)"
-echo "  Group B (llm_service_large_model - for B1/B2 tasks):"
+echo "  Group B (llm_service_small_model - for B1/B2 tasks):"
 echo "    - Ports 8200-8203 -> Scheduler B ($SCHEDULER_B_HOST:$SCHEDULER_PORT)"
 echo "    - Ports 8204-8207 -> Planner ($PLANNER_HOST:$PLANNER_PORT)"

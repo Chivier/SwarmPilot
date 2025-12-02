@@ -2,7 +2,7 @@
   "dataset": "data/dataset.jsonl",
   "models": [
     {
-      "model_id": "llm_service_small_model",
+      "model_id": "llm_service_large_model",
       "prediction_types": ["expect_error", "quantile"],
       "task_types": ["boot", "summary"],
       "instances": [
@@ -153,7 +153,7 @@
       ]
     },
     {
-      "model_id": "llm_service_large_model",
+      "model_id": "llm_service_small_model",
       "prediction_types": ["expect_error", "quantile"],
       "task_types": ["query"],
       "instances": [
@@ -308,7 +308,21 @@
     "url": "http://localhost:9000"
   },
   "training_config": {
-    "quantiles": [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.99]
+    "quantiles": [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.99],
+    "log_transform": {
+      "enabled": true
+    },
+    "enable_preprocessors": [
+      "semantic"
+    ],
+    "preprocessor_mappings": {
+      "semantic": [
+        "sentence"
+      ]
+    },
+    "data_augmentation": {
+      "cv": 0.2
+    }
   },
   "execution": {
     "timeout": 300.0,

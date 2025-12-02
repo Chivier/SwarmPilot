@@ -86,9 +86,9 @@ class DeepResearchConfig:
             self.scheduler_b_url = "http://127.0.0.1:8200"
         else:  # real mode
             # Use LLM models for real workload
-            self.model_a_id = "llm_service_small_model"
-            self.model_b_id = "llm_service_large_model"  # B tasks use large model
-            self.model_merge_id = "llm_service_small_model"  # Merge uses small model
+            self.model_a_id = "llm_service_large_model"  # A task uses large model
+            self.model_b_id = "llm_service_small_model"  # B tasks use small model
+            self.model_merge_id = "llm_service_large_model"  # Merge uses large model
             # Use remote schedulers for real mode
             self.scheduler_a_url = "http://29.209.114.51:8100"
             self.scheduler_b_url = "http://29.209.113.228:8100"

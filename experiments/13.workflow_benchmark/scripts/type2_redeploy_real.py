@@ -4,8 +4,8 @@ Initial redeploy helper for Type2 Deep Research Workflow (Real Mode).
 Builds a basic planner migration payload and posts to /deploy/migration.
 
 Type2 Workflow: A -> n*B1 -> n*B2 -> Merge
-  - Model A (llm_service_small_model) -> Scheduler A (for A and Merge tasks)
-  - Model B (llm_service_large_model) -> Scheduler B (for B1/B2 tasks)
+  - Model A (llm_service_large_model) -> Scheduler A (for A and Merge tasks)
+  - Model B (llm_service_small_model) -> Scheduler B (for B1/B2 tasks)
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from typing import Dict, List
 import requests
 
 
-# Group A Hosts (llm_service_small_model for A and Merge tasks)
+# Group A Hosts (llm_service_large_model for A and Merge tasks)
 GROUP_A_HOSTS = [
     "29.209.106.237",
     "29.209.114.56",
@@ -29,7 +29,7 @@ GROUP_A_HOSTS = [
     "29.209.105.60"
 ]
 
-# Group B Hosts (llm_service_large_model for B1/B2 tasks)
+# Group B Hosts (llm_service_small_model for B1/B2 tasks)
 GROUP_B_HOSTS = [
     "29.209.113.166",
     "29.209.113.176",
@@ -60,8 +60,8 @@ def build_instances(
     """
     Build instance list for Type2 Deep Research workflow.
 
-    Group A: llm_service_small_model (for A and Merge tasks) -> Scheduler A
-    Group B: llm_service_large_model (for B1/B2 tasks) -> Scheduler B
+    Group A: llm_service_large_model (for A and Merge tasks) -> Scheduler A
+    Group B: llm_service_small_model (for B1/B2 tasks) -> Scheduler B
     """
     instances: List[InstanceInfo] = []
     instance_scheduler_map: Dict[str, str] = {}
@@ -69,13 +69,13 @@ def build_instances(
     for host in GROUP_A_HOSTS:
         for port in INSTANCE_PORT_LIST:
             endpoint = f"http://{host}:{port}"
-            instances.append(InstanceInfo(endpoint=endpoint, current_model="llm_service_small_model"))
+            instances.append(InstanceInfo(endpoint=endpoint, current_model="llm_service_large_model"))
             instance_scheduler_map[endpoint] = DEFAULT_SCHEDULER_A_URL
 
     for host in GROUP_B_HOSTS:
         for port in INSTANCE_PORT_LIST:
             endpoint = f"http://{host}:{port}"
-            instances.append(InstanceInfo(endpoint=endpoint, current_model="llm_service_large_model"))
+            instances.append(InstanceInfo(endpoint=endpoint, current_model="llm_service_small_model"))
             instance_scheduler_map[endpoint] = DEFAULT_SCHEDULER_B_URL
 
     return instances, instance_scheduler_map
@@ -108,8 +108,8 @@ def build_payload(
     }
 
     scheduler_mapping = {
-        "llm_service_small_model": scheduler_a_url,
-        "llm_service_large_model": scheduler_b_url,
+        "llm_service_large_model": scheduler_a_url,
+        "llm_service_small_model": scheduler_b_url,
     }
 
     return {
@@ -126,8 +126,8 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Type2 Workflow: A -> n*B1 -> n*B2 -> Merge
-  - Model A (llm_service_small_model) -> Scheduler A (for A and Merge tasks)
-  - Model B (llm_service_large_model) -> Scheduler B (for B1/B2 tasks)
+  - Model A (llm_service_large_model) -> Scheduler A (for A and Merge tasks)
+  - Model B (llm_service_small_model) -> Scheduler B (for B1/B2 tasks)
 
 Examples:
   # Use defaults
@@ -173,10 +173,10 @@ Examples:
     print("Redeploy Configuration (Type2 Deep Research - Real Mode)")
     print("=" * 60)
     print(f"  Group A hosts: {len(GROUP_A_HOSTS)} hosts x {len(INSTANCE_PORT_LIST)} ports = {len(GROUP_A_HOSTS) * len(INSTANCE_PORT_LIST)} instances")
-    print(f"    Model: llm_service_small_model (for A and Merge tasks)")
+    print(f"    Model: llm_service_large_model (for A and Merge tasks)")
     print(f"    Scheduler: {args.scheduler_a_url}")
     print(f"  Group B hosts: {len(GROUP_B_HOSTS)} hosts x {len(INSTANCE_PORT_LIST)} ports = {len(GROUP_B_HOSTS) * len(INSTANCE_PORT_LIST)} instances")
-    print(f"    Model: llm_service_large_model (for B1/B2 tasks)")
+    print(f"    Model: llm_service_small_model (for B1/B2 tasks)")
     print(f"    Scheduler: {args.scheduler_b_url}")
     print(f"  Planner: {args.planner_url}")
     print("=" * 60)
