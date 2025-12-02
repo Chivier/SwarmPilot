@@ -16,7 +16,13 @@ import numpy as np
 DATA_DIR = Path(__file__).parent / "data"
 DATASET_FILE = DATA_DIR / "dataset.jsonl"
 
-# Timing data files for simulation mode (real execution times from Exp07)
+# Training data files for simulation mode (collected execution times)
+# Small model: B tasks (query)
+# Large model: A tasks (boot, summary)
+TRAINING_DATA_SMALL_MODEL = DATA_DIR / "training_data_llm_service_small_model.json"
+TRAINING_DATA_LARGE_MODEL = DATA_DIR / "training_data_llm_service_large_model.json"
+
+# Legacy timing data files (fallback if training data not available)
 TIMING_BOOT_FILE = DATA_DIR / "dr_boot.json"      # A task times
 TIMING_QUERY_FILE = DATA_DIR / "dr_query.json"    # B1 task times (query, full inference)
 TIMING_CRITERIA_FILE = DATA_DIR / "dr_criteria.json"  # B2 task times (criteria, max_tokens=1)
@@ -77,62 +83,95 @@ _TIMING_DATA_CACHE: Dict[str, any] = {}
 
 def load_timing_data() -> Dict[str, any]:
     """
-    Load real execution timing data from Exp07 for simulation mode.
+    Load execution timing data from training data files for simulation mode.
+
+    Uses collected training data from:
+    - training_data_llm_service_small_model.json: B tasks (query)
+    - training_data_llm_service_large_model.json: A tasks (boot, summary)
 
     Returns:
         Dict with keys:
         - 'boot_times': List[float] - A task execution times (seconds)
         - 'query_times': List[float] - B1 task execution times (seconds, full inference)
         - 'criteria_times': List[float] - B2 task execution times (seconds, max_tokens=1)
-        - 'summary_times': Dict[str, List[float]] - Merge task times by fanout count
+        - 'summary_times': List[float] - Merge task times (flat list, no fanout grouping)
     """
     global _TIMING_DATA_CACHE
 
     if _TIMING_DATA_CACHE:
         return _TIMING_DATA_CACHE
 
-    # Load A task (boot) times
-    if not TIMING_BOOT_FILE.exists():
-        raise FileNotFoundError(
-            f"Timing data file not found: {TIMING_BOOT_FILE}\n"
-            f"Please copy from experiments/07.Exp2.Deep_Research_Real/data/dr_boot.json"
-        )
-    with open(TIMING_BOOT_FILE, 'r') as f:
-        boot_times = json.load(f)
+    # Load from training data files (primary source)
+    if TRAINING_DATA_SMALL_MODEL.exists() and TRAINING_DATA_LARGE_MODEL.exists():
+        # Load small model data (B tasks: query)
+        with open(TRAINING_DATA_SMALL_MODEL, 'r') as f:
+            small_model_data = json.load(f)
 
-    # Load B1 task (query) times - full inference
-    if not TIMING_QUERY_FILE.exists():
-        raise FileNotFoundError(
-            f"Timing data file not found: {TIMING_QUERY_FILE}\n"
-            f"Please copy from experiments/07.Exp2.Deep_Research_Real/data/dr_query.json"
-        )
-    with open(TIMING_QUERY_FILE, 'r') as f:
-        query_times = json.load(f)
+        # Load large model data (A tasks: boot, summary)
+        with open(TRAINING_DATA_LARGE_MODEL, 'r') as f:
+            large_model_data = json.load(f)
 
-    # Load B2 task (criteria) times - max_tokens=1, receives B1 output
-    if not TIMING_CRITERIA_FILE.exists():
-        raise FileNotFoundError(
-            f"Timing data file not found: {TIMING_CRITERIA_FILE}\n"
-            f"Please copy from experiments/07.Exp2.Deep_Research_Real/data/dr_criteria.json"
-        )
-    with open(TIMING_CRITERIA_FILE, 'r') as f:
-        criteria_times = json.load(f)
+        # Extract times by task_type (convert ms to seconds)
+        boot_times = []
+        summary_times = []
+        for sample in large_model_data.get('samples', []):
+            runtime_s = sample.get('runtime_ms', 0) / 1000.0  # Convert ms to seconds
+            task_type = sample.get('task_type', '')
+            if task_type == 'boot':
+                boot_times.append(runtime_s)
+            elif task_type == 'summary':
+                summary_times.append(runtime_s)
 
-    # Load Merge task (summary) times - keyed by fanout count
-    if not TIMING_SUMMARY_FILE.exists():
-        raise FileNotFoundError(
-            f"Timing data file not found: {TIMING_SUMMARY_FILE}\n"
-            f"Please copy from experiments/07.Exp2.Deep_Research_Real/data/dr_summary_dict.json"
-        )
-    with open(TIMING_SUMMARY_FILE, 'r') as f:
-        summary_times = json.load(f)
+        # Extract query times from small model (B1 tasks)
+        query_times = []
+        for sample in small_model_data.get('samples', []):
+            runtime_s = sample.get('runtime_ms', 0) / 1000.0  # Convert ms to seconds
+            query_times.append(runtime_s)
 
-    _TIMING_DATA_CACHE = {
-        'boot_times': boot_times,
-        'query_times': query_times,
-        'criteria_times': criteria_times,
-        'summary_times': summary_times,
-    }
+        # For B2 (criteria) times: scale query times by 0.1
+        # B2 has max_tokens=1, so it's ~10x faster than B1
+        criteria_times = [t * 0.1 for t in query_times]
+
+        _TIMING_DATA_CACHE = {
+            'boot_times': boot_times,
+            'query_times': query_times,
+            'criteria_times': criteria_times,
+            'summary_times': summary_times,  # Flat list, no fanout grouping
+        }
+
+    else:
+        # Fallback to legacy timing data files
+        if not TIMING_BOOT_FILE.exists():
+            raise FileNotFoundError(
+                f"Timing data file not found: {TIMING_BOOT_FILE}\n"
+                f"Please ensure training data files or legacy timing files exist."
+            )
+        with open(TIMING_BOOT_FILE, 'r') as f:
+            boot_times = json.load(f)
+
+        if not TIMING_QUERY_FILE.exists():
+            raise FileNotFoundError(f"Timing data file not found: {TIMING_QUERY_FILE}")
+        with open(TIMING_QUERY_FILE, 'r') as f:
+            query_times = json.load(f)
+
+        # B2 (criteria) times: scale query times by 0.1
+        criteria_times = [t * 0.1 for t in query_times]
+
+        if not TIMING_SUMMARY_FILE.exists():
+            raise FileNotFoundError(f"Timing data file not found: {TIMING_SUMMARY_FILE}")
+        with open(TIMING_SUMMARY_FILE, 'r') as f:
+            summary_times_dict = json.load(f)
+        # Flatten the dict to a list
+        summary_times = []
+        for times_list in summary_times_dict.values():
+            summary_times.extend(times_list)
+
+        _TIMING_DATA_CACHE = {
+            'boot_times': boot_times,
+            'query_times': query_times,
+            'criteria_times': criteria_times,
+            'summary_times': summary_times,
+        }
 
     return _TIMING_DATA_CACHE
 
@@ -149,15 +188,17 @@ def sample_timing_from_real_data(
     Args:
         task_type: One of 'A', 'B1', 'B2', 'merge'
         count: Number of samples to draw
-        fanout: Fanout count (required for 'merge' task type)
+        fanout: Fanout count (optional, not used with training data)
         rng: NumPy random generator for reproducibility
 
     Returns:
         List of sampled execution times (seconds)
 
     Notes:
-        - B1 (query): Full LLM inference, avg ~2.7s
-        - B2 (criteria): Receives B1 output with max_tokens=1, avg ~0.048s
+        - A (boot): avg ~42s from training data
+        - B1 (query): avg ~2.2s from training data
+        - B2 (criteria): avg ~0.048s (max_tokens=1)
+        - merge (summary): avg ~95s from training data
     """
     timing_data = load_timing_data()
 
@@ -173,17 +214,8 @@ def sample_timing_from_real_data(
         # B2 uses criteria times (max_tokens=1, much shorter)
         pool = timing_data['criteria_times']
     elif task_type == 'merge':
-        if fanout is None:
-            raise ValueError("fanout is required for merge task type")
-        # summary_times is keyed by fanout count as string
-        fanout_key = str(fanout)
-        if fanout_key in timing_data['summary_times']:
-            pool = timing_data['summary_times'][fanout_key]
-        else:
-            # Fallback: use closest available fanout
-            available_fanouts = [int(k) for k in timing_data['summary_times'].keys()]
-            closest = min(available_fanouts, key=lambda x: abs(x - fanout))
-            pool = timing_data['summary_times'][str(closest)]
+        # summary_times is now a flat list (no fanout grouping)
+        pool = timing_data['summary_times']
     else:
         raise ValueError(f"Unknown task type: {task_type}")
 

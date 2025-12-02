@@ -265,26 +265,25 @@ def run_single_experiment(config, logger, strategy_name=None, pre_generated_work
     merge_receiver.start()
 
     # Calculate target workflows for early stopping based on SUBMISSION ORDER
-    # We need:
-    # 1. All warmup workflows (first num_warmup) to complete
-    # 2. The first portion_stats fraction of non-warmup workflows to complete
-    # This matches how MetricsCollector filters workflows for statistics
+    # Warmup workflows are EXTRA (first num_warmup workflows)
+    # Statistics calculated from stats_num_workflows * portion_stats
     num_warmup = config.num_warmup
-    num_non_warmup = config.num_workflows - num_warmup
-    target_non_warmup = math.ceil(num_non_warmup * config.portion_stats)
+    # Use stats_num_workflows if set, otherwise fall back to num_workflows - num_warmup
+    stats_base = config.stats_num_workflows if config.stats_num_workflows else (config.num_workflows - num_warmup)
+    target_stats_count = math.ceil(stats_base * config.portion_stats)
 
     # Generate the list of workflow IDs that must complete for metrics
     # Warmup workflows: workflow-0000 to workflow-(num_warmup-1)
-    # Target non-warmup: workflow-num_warmup to workflow-(num_warmup + target_non_warmup - 1)
+    # Stats workflows: workflow-num_warmup to workflow-(num_warmup + target_stats_count - 1)
     target_workflow_ids = set()
     for i in range(num_warmup):
         target_workflow_ids.add(f"workflow-{i:04d}")
-    for i in range(num_warmup, num_warmup + target_non_warmup):
+    for i in range(num_warmup, num_warmup + target_stats_count):
         target_workflow_ids.add(f"workflow-{i:04d}")
 
     target_completion = len(target_workflow_ids)
     logger.info(f"Early stopping target: {target_completion} specific workflows by submission order "
-                f"(warmup={num_warmup}, non-warmup needed for stats={target_non_warmup})")
+                f"(warmup={num_warmup}, stats workflows={target_stats_count})")
 
     # Monitor progress
     early_stop = False
@@ -459,15 +458,19 @@ def main():
     # ========================================================================
 
     # Compute warmup count from ratio
-    # warmup_count = num_workflows * warmup_ratio
+    # Warmup workflows are EXTRA (additional to num_workflows)
+    # Total submitted = num_workflows + warmup_count
     warmup_count = int(args.num_workflows * args.warmup)
+    total_workflows_to_submit = args.num_workflows + warmup_count
 
     # Create config with hardcoded real mode
+    # Note: num_workflows in config is the TOTAL to submit (including warmup)
+    # Statistics will be calculated from args.num_workflows * portion_stats
     config = DeepResearchConfig(
         mode="real",  # Hardcoded for real cluster
         qps=args.qps,
         duration=args.duration,
-        num_workflows=args.num_workflows,
+        num_workflows=total_workflows_to_submit,  # Total including warmup
         fanout_count=args.fanout,
         fanout_config=args.fanout_config,
         fanout_seed=args.fanout_seed,
@@ -475,6 +478,7 @@ def main():
         max_loops_count=args.max_loops_count,
         strategies=strategies,
         portion_stats=args.portion_stats,
+        stats_num_workflows=args.num_workflows,  # Original num_workflows for stats
     )
 
     logger = configure_logging(level="INFO")
@@ -518,6 +522,9 @@ def main():
     logger.info("=" * 70)
     logger.info("Strategy-based Testing Mode")
     logger.info(f"Will test {len(strategies)} strategies: {', '.join(strategies)}")
+    logger.info(f"Total workflows: {config.num_workflows} (warmup={config.num_warmup} + stats={config.stats_num_workflows})")
+    logger.info(f"Stats portion: {config.portion_stats} ({int(config.stats_num_workflows * config.portion_stats)} workflows for stats)")
+    logger.info(f"QPS={config.qps}, Fanout={config.fanout_count}")
     logger.info("=" * 70)
 
     # Set default quantiles if not specified

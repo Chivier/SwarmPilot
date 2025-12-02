@@ -165,7 +165,8 @@
         "quantile"
       ],
       "task_types": [
-        "query"
+        "query",
+        "criteria"
       ],
       "instances": [
         {

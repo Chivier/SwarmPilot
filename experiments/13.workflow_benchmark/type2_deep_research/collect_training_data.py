@@ -464,7 +464,7 @@ def extract_tasks_from_dataset(
         List of tasks with sentence, max_tokens, and task_type
     """
     if task_types is None:
-        task_types = ['boot', 'query', 'summary']
+        task_types = ['boot', 'query', 'summary', 'criteria']
 
     tasks = []
     boot_count = 0

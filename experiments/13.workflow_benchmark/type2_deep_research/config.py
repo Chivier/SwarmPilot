@@ -72,7 +72,8 @@ class DeepResearchConfig:
     quantiles: Optional[list] = None  # Custom quantiles for probabilistic strategy
 
     # Statistics filtering
-    portion_stats: float = 1.0  # Portion of non-warmup workflows to include in statistics (0.0-1.0)
+    portion_stats: float = 1.0  # Portion of workflows to include in statistics (0.0-1.0)
+    stats_num_workflows: Optional[int] = None  # Number of workflows for stats (if None, uses num_workflows - num_warmup)
 
     # Internal: cached fanout sampler (created lazily)
     _fanout_sampler: Optional[DistributionSampler] = field(default=None, repr=False)
