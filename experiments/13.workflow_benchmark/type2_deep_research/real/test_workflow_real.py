@@ -26,6 +26,7 @@ Usage:
         --num-workflows 50 --qps 2.0 --fanout 4 --strategies min_time,probabilistic --duration 300
 """
 
+import math
 import random
 import sys
 import threading
@@ -245,7 +246,30 @@ def run_single_experiment(config, logger, strategy_name=None, pre_generated_work
     merge_submitter.start()
     merge_receiver.start()
 
+    # Calculate target workflows for early stopping based on SUBMISSION ORDER
+    # We need:
+    # 1. All warmup workflows (first num_warmup) to complete
+    # 2. The first portion_stats fraction of non-warmup workflows to complete
+    # This matches how MetricsCollector filters workflows for statistics
+    num_warmup = config.num_warmup
+    num_non_warmup = config.num_workflows - num_warmup
+    target_non_warmup = math.ceil(num_non_warmup * config.portion_stats)
+
+    # Generate the list of workflow IDs that must complete for metrics
+    # Warmup workflows: workflow-0000 to workflow-(num_warmup-1)
+    # Target non-warmup: workflow-num_warmup to workflow-(num_warmup + target_non_warmup - 1)
+    target_workflow_ids = set()
+    for i in range(num_warmup):
+        target_workflow_ids.add(f"workflow-{i:04d}")
+    for i in range(num_warmup, num_warmup + target_non_warmup):
+        target_workflow_ids.add(f"workflow-{i:04d}")
+
+    target_completion = len(target_workflow_ids)
+    logger.info(f"Early stopping target: {target_completion} specific workflows by submission order "
+                f"(warmup={num_warmup}, non-warmup needed for stats={target_non_warmup})")
+
     # Monitor progress
+    early_stop = False
     try:
         while time.time() - start_time < config.duration:
             time.sleep(10)
@@ -255,14 +279,25 @@ def run_single_experiment(config, logger, strategy_name=None, pre_generated_work
                 total = config.num_workflows
                 progress_pct = (completed / total * 100) if total > 0 else 0
 
-                logger.info(
-                    f"Progress: {completed}/{total} workflows "
-                    f"({progress_pct:.1f}%) - "
-                    f"Elapsed: {time.time() - start_time:.1f}s"
+                # Count how many of the TARGET workflows have completed
+                target_completed = sum(
+                    1 for wid, w in workflow_states.items()
+                    if wid in target_workflow_ids and w.is_complete()
                 )
 
-                if completed >= total:
-                    logger.info("All workflows completed! Stopping early.")
+                target_pct = 100 * target_completed / target_completion if target_completion > 0 else 0
+                elapsed = time.time() - start_time
+                logger.info(
+                    f"Progress [{elapsed:.1f}s]: "
+                    f"target={target_completed}/{target_completion} ({target_pct:.1f}%), "
+                    f"total={completed}/{total} ({progress_pct:.1f}%)"
+                )
+
+                # Early stopping: check if all TARGET workflows (by submission order) have completed
+                if target_completed >= target_completion:
+                    logger.info(f"Early stopping: {target_completed} target workflows completed")
+                    logger.info("All workflows needed for metrics calculation are complete!")
+                    early_stop = True
                     break
 
     except KeyboardInterrupt:
@@ -298,6 +333,8 @@ def run_single_experiment(config, logger, strategy_name=None, pre_generated_work
     logger.info("Experiment Complete")
     logger.info("=" * 80)
     logger.info(f"Duration: {elapsed_time:.2f}s")
+    if early_stop:
+        logger.info(f"Stopped early: All {target_completion} workflows needed for metrics completed")
     logger.info(f"Completed workflows: {completed_workflows}/{config.num_workflows}")
     logger.info(f"Completion rate: {completed_workflows / config.num_workflows * 100:.1f}%")
 
