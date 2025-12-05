@@ -323,7 +323,7 @@ echo "Step 7: Deploying models locally"
 if [ "$AUTO_OPTIMIZE_ENABLED" == "True" ] || [ "$AUTO_OPTIMIZE_ENABLED" == "true" ]; then
     echo ""
     echo "Step 8: Registering instances with planner"
-    cd "$EXPERIMENT_DIR" && uv run python "$SCRIPT_DIR/type1_redeploy_sim.py" \
+    cd "$EXPERIMENT_DIR" && uv run python "$SCRIPT_DIR/type2_redeploy_sim.py" \
         --host "localhost" \
         --n1 "$N1" \
         --n2 "$N2" \
@@ -339,7 +339,7 @@ if [ "$AUTO_OPTIMIZE_ENABLED" == "True" ] || [ "$AUTO_OPTIMIZE_ENABLED" == "true
         echo -e "${GREEN}Instances registered with planner successfully${NC}"
     else
         echo -e "${YELLOW}Warning: Failed to register instances with planner${NC}"
-        echo -e "${YELLOW}You can manually run: python $SCRIPT_DIR/type1_redeploy_sim.py${NC}"
+        echo -e "${YELLOW}You can manually run: python $SCRIPT_DIR/type2_redeploy_sim.py${NC}"
     fi
 fi
 

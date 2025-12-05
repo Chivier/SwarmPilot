@@ -115,7 +115,7 @@ def build_payload(
 
     # Capacity matrix: each instance can host either model
     # [capacity_for_model_a, capacity_for_model_b]
-    B = [[5.0, 1.0] for _ in range(total_inst)]
+    B = [[1.0, 10] for _ in range(total_inst)]
 
     # Initial assignment: first n1 instances run model_a, rest run model_b
     initial = [0] * n1 + [1] * n2
@@ -126,7 +126,7 @@ def build_payload(
         "B": B,
         "initial": initial,
         "a": 1.0,
-        "target": [1.0, 1.0],
+        "target": [1.0, 10],
         "algorithm": "simulated_annealing",
         "objective_method": "ratio_difference",
     }

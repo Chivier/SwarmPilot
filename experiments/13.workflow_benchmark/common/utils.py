@@ -536,33 +536,79 @@ def safe_divide(numerator: float, denominator: float, default: float = 0.0) -> f
 # Scheduler Strategy Management
 # ============================================================================
 
-def clear_scheduler_tasks(scheduler_url: str, custom_logger: Optional[Any] = None) -> bool:
+def clear_scheduler_tasks(
+    scheduler_url: str,
+    custom_logger: Optional[Any] = None,
+    max_retries: int = 5,
+    retry_delay: float = 2.0
+) -> bool:
     """
-    Clear all tasks from a scheduler.
+    Clear all tasks from a scheduler with retry support for 409 conflicts.
 
     Args:
         scheduler_url: Scheduler endpoint URL
         custom_logger: Optional custom logger (defaults to loguru logger)
+        max_retries: Maximum number of retries for 409 Conflict errors (default: 5)
+        retry_delay: Delay between retries in seconds (default: 2.0)
 
     Returns:
         True if successful, False otherwise
     """
+    import time
+
     log = custom_logger or logger
     log.info(f"Clearing tasks from scheduler: {scheduler_url}")
 
-    try:
-        response = requests.post(
-            f"{scheduler_url}/task/clear", timeout=3000 # clear tasks may take a while
-        )
-        response.raise_for_status()
-        result = response.json()
+    for attempt in range(max_retries + 1):
+        try:
+            response = requests.post(
+                f"{scheduler_url}/task/clear", timeout=3000  # clear tasks may take a while
+            )
 
-        log.info(f"Cleared {result.get('cleared_count', 0)} tasks from scheduler")
+            # Handle 409 Conflict (tasks in progress)
+            if response.status_code == 409:
+                if attempt < max_retries:
+                    log.warning(
+                        f"Scheduler has tasks in progress (409 Conflict). "
+                        f"Retrying in {retry_delay}s... (attempt {attempt + 1}/{max_retries})"
+                    )
+                    time.sleep(retry_delay)
+                    continue
+                else:
+                    log.warning(
+                        f"Scheduler still has tasks in progress after {max_retries} retries. "
+                        f"Proceeding anyway - some tasks may still be pending."
+                    )
+                    return True  # Return True to allow experiment to continue
 
-        return True
-    except Exception as e:
-        log.error(f"Failed to clear tasks from scheduler {scheduler_url}: {e}")
-        return False
+            response.raise_for_status()
+            result = response.json()
+
+            log.info(f"Cleared {result.get('cleared_count', 0)} tasks from scheduler")
+            return True
+
+        except requests.exceptions.HTTPError as e:
+            if e.response is not None and e.response.status_code == 409:
+                if attempt < max_retries:
+                    log.warning(
+                        f"Scheduler has tasks in progress (409 Conflict). "
+                        f"Retrying in {retry_delay}s... (attempt {attempt + 1}/{max_retries})"
+                    )
+                    time.sleep(retry_delay)
+                    continue
+                else:
+                    log.warning(
+                        f"Scheduler still has tasks in progress after {max_retries} retries. "
+                        f"Proceeding anyway."
+                    )
+                    return True
+            log.error(f"Failed to clear tasks from scheduler {scheduler_url}: {e}")
+            return False
+        except Exception as e:
+            log.error(f"Failed to clear tasks from scheduler {scheduler_url}: {e}")
+            return False
+
+    return False
 
 
 def set_scheduler_strategy(

@@ -435,6 +435,25 @@ def run_single_experiment(config, logger, strategy_name=None, pre_generated_work
     )
     print("\n" + report)
 
+    # Export metrics to JSON file (same format as real mode)
+    output_dir = ensure_directory(config.output_dir)
+
+    # Generate strategy-specific metrics filename to prevent overwriting
+    base_metrics_file = config.metrics_file
+    if strategy_name:
+        # Insert strategy name before extension: metrics.json -> metrics_probabilistic.json
+        if '.' in base_metrics_file:
+            name, ext = base_metrics_file.rsplit('.', 1)
+            metrics_filename = f"{name}_{strategy_name}.{ext}"
+        else:
+            metrics_filename = f"{base_metrics_file}_{strategy_name}"
+    else:
+        metrics_filename = base_metrics_file
+
+    metrics_file = output_dir / metrics_filename
+    metrics.export_to_json(str(metrics_file), portion_stats=config.portion_stats)
+    logger.info(f"Metrics exported to: {metrics_file}")
+
     logger.info("="*70)
     if strategy_name:
         logger.info(f"Simulation complete for strategy: {strategy_name}!")

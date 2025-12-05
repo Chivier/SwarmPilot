@@ -120,6 +120,24 @@ class RateLimiter:
             self.last_update = time.time()
             self.logger.info("Rate limiter reset")
 
+    def set_rate(self, new_rate: float, adjust_burst: bool = True):
+        """
+        Dynamically update the rate limit.
+
+        Args:
+            new_rate: New target rate in requests per second
+            adjust_burst: If True, also adjust max_tokens proportionally
+        """
+        with self.lock:
+            old_rate = self.rate
+            self.rate = new_rate
+            if adjust_burst:
+                self.max_tokens = new_rate * 2
+            self.logger.info(
+                f"Rate updated: {old_rate:.2f} -> {new_rate:.2f} QPS "
+                f"(max_tokens: {self.max_tokens:.2f})"
+            )
+
     def get_stats(self) -> dict:
         """
         Get current rate limiter statistics.

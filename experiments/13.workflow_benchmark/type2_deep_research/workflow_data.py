@@ -77,6 +77,12 @@ def get_query_inputs(queries: List[dict]) -> List[str]:
 # Timing Data Loading for Simulation Mode (real execution times from Exp07)
 # =============================================================================
 
+# Scaling factor for simulation sleep times (1.0 = no scaling, 0.2 = 20% of original)
+SIMULATION_TIME_SCALE = 0.5
+
+# Additional scaling factor for B2 (criteria) tasks in simulation mode
+B2_ADDITIONAL_FACTOR = 1.0
+
 # Cached timing data (loaded once)
 _TIMING_DATA_CACHE: Dict[str, any] = {}
 
@@ -122,21 +128,27 @@ def load_timing_data() -> Dict[str, any]:
             elif task_type == 'summary':
                 summary_times.append(runtime_s)
 
-        # Extract query times from small model (B1 tasks)
+        # Extract query and criteria times from small model by task_type
         query_times = []
+        criteria_times = []
         for sample in small_model_data.get('samples', []):
             runtime_s = sample.get('runtime_ms', 0) / 1000.0  # Convert ms to seconds
-            query_times.append(runtime_s)
+            task_type = sample.get('task_type', '')
+            if task_type == 'query':
+                query_times.append(runtime_s)
+            elif task_type == 'criteria':
+                criteria_times.append(runtime_s)
 
-        # For B2 (criteria) times: scale query times by 0.1
-        # B2 has max_tokens=1, so it's ~10x faster than B1
-        criteria_times = [t * 0.1 for t in query_times]
+        # Fallback: if no criteria data, scale query times by 0.1
+        if not criteria_times and query_times:
+            criteria_times = [t * 0.1 for t in query_times]
 
+        # Apply simulation time scaling to all times
         _TIMING_DATA_CACHE = {
-            'boot_times': boot_times,
-            'query_times': query_times,
-            'criteria_times': criteria_times,
-            'summary_times': summary_times,  # Flat list, no fanout grouping
+            'boot_times': [t * SIMULATION_TIME_SCALE for t in boot_times],
+            'query_times': [t * SIMULATION_TIME_SCALE for t in query_times],
+            'criteria_times': [t * SIMULATION_TIME_SCALE * B2_ADDITIONAL_FACTOR for t in criteria_times],
+            'summary_times': [t * SIMULATION_TIME_SCALE for t in summary_times],
         }
 
     else:
@@ -166,11 +178,12 @@ def load_timing_data() -> Dict[str, any]:
         for times_list in summary_times_dict.values():
             summary_times.extend(times_list)
 
+        # Apply simulation time scaling to all times
         _TIMING_DATA_CACHE = {
-            'boot_times': boot_times,
-            'query_times': query_times,
-            'criteria_times': criteria_times,
-            'summary_times': summary_times,
+            'boot_times': [t * SIMULATION_TIME_SCALE for t in boot_times],
+            'query_times': [t * SIMULATION_TIME_SCALE for t in query_times],
+            'criteria_times': [t * SIMULATION_TIME_SCALE * B2_ADDITIONAL_FACTOR for t in criteria_times],
+            'summary_times': [t * SIMULATION_TIME_SCALE for t in summary_times],
         }
 
     return _TIMING_DATA_CACHE
