@@ -5,6 +5,7 @@ import time
 from typing import Any, List, Dict, Optional
 import httpx
 from loguru import logger
+import traceback
 
 from .models import DeploymentStatus, MigrationStatus
 from .available_instance_store import AvailableInstance, AvailableInstanceStore
@@ -625,6 +626,7 @@ class InstanceMigrator:
                 except Exception as e:
                     error_msg = f"Failed to deregister {original_endpoint}: {str(e)}"
                     logger.error(f"Migration failed during deregister: {error_msg}", exc_info=True)
+                    logger.error(f"Traceback: {traceback.format_exc()}")
                     return MigrationStatus(
                         instance_index=instance_index,
                         original_endpoint=original_endpoint,
@@ -729,6 +731,7 @@ class InstanceMigrator:
             async with httpx.AsyncClient() as client:
                 response = await client.post(
                     f"{endpoint}/model/deregister",
+                    timeout=None
                 )
                 response.raise_for_status()
                 return response.json()

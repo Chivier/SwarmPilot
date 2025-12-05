@@ -383,3 +383,36 @@ def reset_round_robin_counter():
     # Clean up after test
     if hasattr(RoundRobinStrategy, '_counter'):
         RoundRobinStrategy._counter = 0
+
+
+@pytest.fixture(autouse=True)
+def reset_global_registries():
+    """Reset global registries before each test to ensure test isolation."""
+    from src.api import task_registry, instance_registry
+    import asyncio
+
+    # Clear registries before test
+    async def clear_registries():
+        await task_registry.clear_all()
+        await instance_registry.clear_all()
+
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            # If loop is already running, create a new task
+            pass  # Can't easily clear in this case
+        else:
+            loop.run_until_complete(clear_registries())
+    except RuntimeError:
+        # No event loop, create one
+        asyncio.run(clear_registries())
+
+    yield
+
+    # Clear after test as well
+    try:
+        loop = asyncio.get_event_loop()
+        if not loop.is_running():
+            loop.run_until_complete(clear_registries())
+    except RuntimeError:
+        asyncio.run(clear_registries())

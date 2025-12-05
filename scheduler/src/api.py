@@ -48,6 +48,12 @@ from .model import (
     TaskClearResponse,
     TaskResubmitRequest,
     TaskResubmitResponse,
+    TaskUpdateMetadataRequest,
+    TaskUpdateMetadataResponse,
+    TaskUpdateMetadataResult,
+    TaskRepredictResponse,
+    TaskScheduleInfo,
+    TaskScheduleInfoResponse,
     TaskStatus,
     TaskInfo,
     TaskSummary,
@@ -1801,6 +1807,522 @@ async def resubmit_task(request: TaskResubmitRequest):
     return TaskResubmitResponse(
         success=True,
         message=f"Task {request.task_id} resubmitted successfully for rescheduling",
+    )
+
+
+@app.post("/task/update_metadata", response_model=TaskUpdateMetadataResponse)
+async def update_task_metadata(request: TaskUpdateMetadataRequest):
+    """
+    Update metadata for multiple tasks and re-predict if tasks are in queue.
+
+    For tasks that are currently assigned to an instance (status PENDING or RUNNING):
+    1. Save old metadata and prediction
+    2. Remove old predicted value from instance queue
+    3. Update metadata in registry
+    4. Re-predict with new metadata
+    5. If prediction fails: rollback metadata, restore queue
+    6. If prediction succeeds: add new prediction to queue, update task prediction fields
+
+    COMPLETED and FAILED tasks are silently skipped (no error).
+
+    Args:
+        request: Batch of task metadata updates
+
+    Returns:
+        TaskUpdateMetadataResponse with results for each task
+    """
+    results = []
+    succeeded = 0
+    failed = 0
+    skipped = 0
+
+    for update in request.updates:
+        try:
+            result = await _update_single_task_metadata(
+                task_id=update.task_id,
+                new_metadata=update.metadata,
+            )
+            results.append(result)
+
+            if result.success:
+                if result.message.startswith("Skipped"):
+                    skipped += 1
+                else:
+                    succeeded += 1
+            else:
+                failed += 1
+
+        except Exception as e:
+            logger.error(f"Error updating metadata for task {update.task_id}: {e}")
+            results.append(TaskUpdateMetadataResult(
+                task_id=update.task_id,
+                success=False,
+                message=f"Internal error: {str(e)}",
+                queue_updated=False,
+            ))
+            failed += 1
+
+    return TaskUpdateMetadataResponse(
+        success=failed == 0,
+        message=f"Updated {succeeded}/{len(request.updates)} tasks ({skipped} skipped, {failed} failed)",
+        total=len(request.updates),
+        succeeded=succeeded,
+        failed=failed,
+        skipped=skipped,
+        results=results,
+    )
+
+
+async def _update_single_task_metadata(
+    task_id: str,
+    new_metadata: dict,
+) -> TaskUpdateMetadataResult:
+    """
+    Update metadata for a single task and handle queue updates if needed.
+
+    Implements rollback on prediction failure.
+
+    Args:
+        task_id: Task ID to update
+        new_metadata: New metadata dictionary
+
+    Returns:
+        TaskUpdateMetadataResult with operation status
+    """
+    # 1. Get the task
+    task = await task_registry.get(task_id)
+    if not task:
+        return TaskUpdateMetadataResult(
+            task_id=task_id,
+            success=False,
+            message="Task not found",
+            queue_updated=False,
+        )
+
+    # 2. Skip COMPLETED and FAILED tasks (silently)
+    if task.status in (TaskStatus.COMPLETED, TaskStatus.FAILED):
+        return TaskUpdateMetadataResult(
+            task_id=task_id,
+            success=True,
+            message=f"Skipped: task is in {task.status.value} state",
+            queue_updated=False,
+        )
+
+    # Store old values for potential rollback
+    old_metadata = task.metadata.copy() if task.metadata else {}
+    old_prediction_ms = task.predicted_time_ms
+    old_error_margin_ms = task.predicted_error_margin_ms
+    old_quantiles = task.predicted_quantiles.copy() if task.predicted_quantiles else None
+
+    # 3. Check if task is in a queue (needs queue update)
+    needs_queue_update = (
+        task.assigned_instance != "" and
+        task.status in (TaskStatus.PENDING, TaskStatus.RUNNING)
+    )
+
+    # 4. If no queue update needed, just update metadata
+    if not needs_queue_update:
+        try:
+            await task_registry.update_metadata(task_id, new_metadata)
+            return TaskUpdateMetadataResult(
+                task_id=task_id,
+                success=True,
+                message="Metadata updated (task not in queue)",
+                queue_updated=False,
+                old_prediction_ms=old_prediction_ms,
+            )
+        except KeyError:
+            return TaskUpdateMetadataResult(
+                task_id=task_id,
+                success=False,
+                message="Task not found during update",
+                queue_updated=False,
+            )
+
+    # 5. Handle queue update with rollback support
+    try:
+        # 5a. Get the instance for prediction
+        instance = await instance_registry.get(task.assigned_instance)
+        if not instance:
+            logger.warning(
+                f"Instance {task.assigned_instance} not found for task {task_id}, "
+                "skipping queue update"
+            )
+            # Just update metadata without queue update
+            await task_registry.update_metadata(task_id, new_metadata)
+            return TaskUpdateMetadataResult(
+                task_id=task_id,
+                success=True,
+                message="Metadata updated (instance not found, queue update skipped)",
+                queue_updated=False,
+                old_prediction_ms=old_prediction_ms,
+            )
+
+        # 5b. Subtract old prediction from queue
+        if old_prediction_ms is not None:
+            await _subtract_task_from_queue_info(
+                instance_id=task.assigned_instance,
+                predicted_time_ms=old_prediction_ms,
+                predicted_error_margin_ms=old_error_margin_ms,
+                predicted_quantiles=old_quantiles,
+            )
+
+        # 5c. Update metadata in registry
+        await task_registry.update_metadata(task_id, new_metadata)
+
+        # 5d. Get new prediction with updated metadata
+        try:
+            # Determine prediction type based on current strategy
+            strategy_name = scheduling_strategy.__class__.__name__
+            if strategy_name == "MinimumExpectedTimeStrategy":
+                prediction_type = "expect_error"
+                quantiles = None
+            else:
+                prediction_type = "quantile"
+                quantiles = getattr(scheduling_strategy, 'quantiles', [0.5, 0.9, 0.95, 0.99])
+
+            predictions = await predictor_client.predict(
+                model_id=task.model_id,
+                metadata=new_metadata,
+                instances=[instance],
+                prediction_type=prediction_type,
+                quantiles=quantiles,
+            )
+
+            if not predictions:
+                raise ValueError("No predictions returned from predictor")
+
+            new_pred = predictions[0]
+            new_prediction_ms = new_pred.predicted_time_ms
+
+        except Exception as pred_error:
+            # Prediction failed - rollback
+            logger.error(f"Prediction failed for task {task_id}, rolling back: {pred_error}")
+
+            # Rollback metadata
+            await task_registry.update_metadata(task_id, old_metadata)
+
+            # Rollback queue (re-add old prediction)
+            if old_prediction_ms is not None:
+                await _add_task_to_queue_info(
+                    instance_id=task.assigned_instance,
+                    predicted_time_ms=old_prediction_ms,
+                    predicted_error_margin_ms=old_error_margin_ms,
+                    predicted_quantiles=old_quantiles,
+                )
+
+            return TaskUpdateMetadataResult(
+                task_id=task_id,
+                success=False,
+                message=f"Prediction failed, rolled back: {str(pred_error)}",
+                queue_updated=False,
+                old_prediction_ms=old_prediction_ms,
+            )
+
+        # 5e. Add new prediction to queue
+        await _add_task_to_queue_info(
+            instance_id=task.assigned_instance,
+            predicted_time_ms=new_pred.predicted_time_ms,
+            predicted_error_margin_ms=new_pred.error_margin_ms,
+            predicted_quantiles=new_pred.quantiles,
+        )
+
+        # 5f. Update task's prediction fields
+        await task_registry.update_prediction(
+            task_id=task_id,
+            predicted_time_ms=new_pred.predicted_time_ms,
+            predicted_error_margin_ms=new_pred.error_margin_ms,
+            predicted_quantiles=new_pred.quantiles,
+        )
+
+        logger.info(
+            f"Updated metadata and re-predicted task {task_id}: "
+            f"{old_prediction_ms:.2f}ms -> {new_prediction_ms:.2f}ms"
+            if old_prediction_ms else f"New prediction: {new_prediction_ms:.2f}ms"
+        )
+
+        return TaskUpdateMetadataResult(
+            task_id=task_id,
+            success=True,
+            message="Metadata updated with queue recalculation",
+            queue_updated=True,
+            old_prediction_ms=old_prediction_ms,
+            new_prediction_ms=new_prediction_ms,
+        )
+
+    except Exception as e:
+        # General error - attempt rollback
+        logger.error(f"Error updating task {task_id}: {e}")
+
+        try:
+            # Attempt to rollback metadata
+            await task_registry.update_metadata(task_id, old_metadata)
+        except Exception:
+            pass  # Best effort rollback
+
+        return TaskUpdateMetadataResult(
+            task_id=task_id,
+            success=False,
+            message=f"Update failed: {str(e)}",
+            queue_updated=False,
+            old_prediction_ms=old_prediction_ms,
+        )
+
+
+@app.post("/task/repredict", response_model=TaskRepredictResponse)
+async def repredict_all_tasks():
+    """
+    Re-predict all pending/running tasks and update queue information.
+
+    This endpoint triggers re-prediction for all tasks that are currently
+    assigned to an instance (status PENDING or RUNNING) WITHOUT modifying
+    their metadata.
+
+    Use case: When the predictor model has been updated or retrained,
+    use this endpoint to refresh all queue predictions.
+
+    Flow for each eligible task:
+    1. Subtract old prediction from instance queue
+    2. Re-predict with existing metadata
+    3. Add new prediction to instance queue
+    4. Update task's prediction fields
+
+    On prediction failure for a task:
+    - Queue values are restored
+    - Task is counted as failed
+    - Processing continues with other tasks
+
+    COMPLETED and FAILED tasks are skipped.
+    Tasks not assigned to an instance are skipped.
+
+    Returns:
+        TaskRepredictResponse with summary counts
+    """
+    # Get all tasks from registry
+    all_tasks, total_count = await task_registry.list_all()
+
+    repredicted = 0
+    failed = 0
+    skipped = 0
+    eligible_count = 0
+
+    for task in all_tasks:
+        try:
+            # Skip COMPLETED and FAILED tasks
+            if task.status in (TaskStatus.COMPLETED, TaskStatus.FAILED):
+                skipped += 1
+                continue
+
+            # Skip tasks not in a queue (no assigned instance)
+            if not task.assigned_instance:
+                skipped += 1
+                continue
+
+            # This task is eligible for re-prediction
+            eligible_count += 1
+
+            # Re-predict this task (without changing metadata)
+            success = await _repredict_single_task(task)
+
+            if success:
+                repredicted += 1
+            else:
+                failed += 1
+
+        except Exception as e:
+            logger.error(f"Error re-predicting task {task.task_id}: {e}")
+            failed += 1
+
+    return TaskRepredictResponse(
+        success=failed == 0,
+        message=f"Re-predicted {repredicted}/{eligible_count} eligible tasks ({skipped} skipped, {failed} failed)",
+        total_tasks=total_count,
+        eligible_tasks=eligible_count,
+        repredicted=repredicted,
+        failed=failed,
+        skipped=skipped,
+    )
+
+
+async def _repredict_single_task(task) -> bool:
+    """
+    Re-predict a single task without changing metadata.
+
+    Args:
+        task: TaskRecord to re-predict
+
+    Returns:
+        True if re-prediction succeeded, False otherwise
+    """
+    task_id = task.task_id
+
+    # Store old prediction values for potential rollback
+    old_prediction_ms = task.predicted_time_ms
+    old_error_margin_ms = task.predicted_error_margin_ms
+    old_quantiles = task.predicted_quantiles.copy() if task.predicted_quantiles else None
+
+    try:
+        # 1. Get the instance
+        instance = await instance_registry.get(task.assigned_instance)
+        if not instance:
+            logger.warning(
+                f"Instance {task.assigned_instance} not found for task {task_id}, "
+                "skipping re-prediction"
+            )
+            return False
+
+        # 2. Subtract old prediction from queue
+        if old_prediction_ms is not None:
+            await _subtract_task_from_queue_info(
+                instance_id=task.assigned_instance,
+                predicted_time_ms=old_prediction_ms,
+                predicted_error_margin_ms=old_error_margin_ms,
+                predicted_quantiles=old_quantiles,
+            )
+
+        # 3. Get new prediction with existing metadata (no change)
+        try:
+            # Determine prediction type based on current strategy
+            strategy_name = scheduling_strategy.__class__.__name__
+            if strategy_name == "MinimumExpectedTimeStrategy":
+                prediction_type = "expect_error"
+                quantiles = None
+            else:
+                prediction_type = "quantile"
+                quantiles = getattr(scheduling_strategy, 'quantiles', [0.5, 0.9, 0.95, 0.99])
+
+            predictions = await predictor_client.predict(
+                model_id=task.model_id,
+                metadata=task.metadata,  # Use existing metadata (no change)
+                instances=[instance],
+                prediction_type=prediction_type,
+                quantiles=quantiles,
+            )
+
+            if not predictions:
+                raise ValueError("No predictions returned from predictor")
+
+            new_pred = predictions[0]
+
+        except Exception as pred_error:
+            # Prediction failed - rollback queue
+            logger.error(f"Re-prediction failed for task {task_id}: {pred_error}")
+
+            # Rollback queue (re-add old prediction)
+            if old_prediction_ms is not None:
+                await _add_task_to_queue_info(
+                    instance_id=task.assigned_instance,
+                    predicted_time_ms=old_prediction_ms,
+                    predicted_error_margin_ms=old_error_margin_ms,
+                    predicted_quantiles=old_quantiles,
+                )
+
+            return False
+
+        # 4. Add new prediction to queue
+        await _add_task_to_queue_info(
+            instance_id=task.assigned_instance,
+            predicted_time_ms=new_pred.predicted_time_ms,
+            predicted_error_margin_ms=new_pred.error_margin_ms,
+            predicted_quantiles=new_pred.quantiles,
+        )
+
+        # 5. Update task's prediction fields
+        await task_registry.update_prediction(
+            task_id=task_id,
+            predicted_time_ms=new_pred.predicted_time_ms,
+            predicted_error_margin_ms=new_pred.error_margin_ms,
+            predicted_quantiles=new_pred.quantiles,
+        )
+
+        logger.debug(
+            f"Re-predicted task {task_id}: "
+            f"{old_prediction_ms:.2f}ms -> {new_pred.predicted_time_ms:.2f}ms"
+            if old_prediction_ms else f"New prediction: {new_pred.predicted_time_ms:.2f}ms"
+        )
+
+        return True
+
+    except Exception as e:
+        # General error - attempt to restore queue
+        logger.error(f"Error re-predicting task {task_id}: {e}")
+
+        try:
+            # Attempt to restore queue
+            if old_prediction_ms is not None:
+                await _add_task_to_queue_info(
+                    instance_id=task.assigned_instance,
+                    predicted_time_ms=old_prediction_ms,
+                    predicted_error_margin_ms=old_error_margin_ms,
+                    predicted_quantiles=old_quantiles,
+                )
+        except Exception:
+            pass  # Best effort rollback
+
+        return False
+
+
+@app.get("/task/schedule_info", response_model=TaskScheduleInfoResponse)
+async def get_task_schedule_info(
+    model_id: Optional[str] = Query(None, description="Filter by model ID"),
+    instance_id: Optional[str] = Query(None, description="Filter by instance ID"),
+    status: Optional[str] = Query(None, description="Filter by task status (pending, running, completed, failed)"),
+    limit: int = Query(100, ge=1, le=1000, description="Maximum number of tasks to return"),
+    offset: int = Query(0, ge=0, description="Pagination offset"),
+):
+    """
+    Get scheduling information for all tasks.
+
+    Returns which instance each task was scheduled to, along with task status
+    and submission time. Supports filtering by model_id, instance_id, and status.
+
+    Args:
+        model_id: Optional filter by model ID
+        instance_id: Optional filter by instance ID
+        status: Optional filter by task status
+        limit: Maximum number of tasks to return (default 100, max 1000)
+        offset: Pagination offset (default 0)
+
+    Returns:
+        TaskScheduleInfoResponse with list of task scheduling information
+    """
+    # Parse status filter if provided
+    status_filter = None
+    if status:
+        try:
+            status_filter = TaskStatus(status)
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail={"success": False, "error": f"Invalid status: {status}"}
+            )
+
+    # Get tasks from registry with filters
+    tasks, total = await task_registry.list_all(
+        status=status_filter,
+        model_id=model_id,
+        instance_id=instance_id,
+        limit=limit,
+        offset=offset,
+    )
+
+    # Convert to schedule info format
+    task_infos = [
+        TaskScheduleInfo(
+            task_id=task.task_id,
+            model_id=task.model_id,
+            status=task.status,
+            assigned_instance=task.assigned_instance,
+            submitted_at=task.submitted_at,
+        )
+        for task in tasks
+    ]
+
+    return TaskScheduleInfoResponse(
+        success=True,
+        count=len(task_infos),
+        total=total,
+        tasks=task_infos,
     )
 
 

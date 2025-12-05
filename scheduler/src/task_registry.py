@@ -276,6 +276,56 @@ class TaskRegistry:
 
             self._tasks[task_id].assigned_instance = new_instance_id
 
+    async def update_metadata(self, task_id: str, metadata: Dict[str, Any]) -> TaskRecord:
+        """
+        Update metadata for a task (replaces existing metadata).
+
+        Args:
+            task_id: ID of task to update
+            metadata: New metadata dictionary (replaces existing)
+
+        Returns:
+            Updated TaskRecord
+
+        Raises:
+            KeyError: If task not found
+        """
+        async with self._lock:
+            if task_id not in self._tasks:
+                raise KeyError(f"Task {task_id} not found")
+
+            task = self._tasks[task_id]
+            task.metadata = metadata
+            return task
+
+    async def update_prediction(
+        self,
+        task_id: str,
+        predicted_time_ms: Optional[float],
+        predicted_error_margin_ms: Optional[float] = None,
+        predicted_quantiles: Optional[Dict[float, float]] = None,
+    ) -> None:
+        """
+        Update prediction fields for a task.
+
+        Args:
+            task_id: ID of task to update
+            predicted_time_ms: New predicted execution time in milliseconds
+            predicted_error_margin_ms: New error margin (for expect_error strategy)
+            predicted_quantiles: New quantile predictions (for probabilistic strategy)
+
+        Raises:
+            KeyError: If task not found
+        """
+        async with self._lock:
+            if task_id not in self._tasks:
+                raise KeyError(f"Task {task_id} not found")
+
+            task = self._tasks[task_id]
+            task.predicted_time_ms = predicted_time_ms
+            task.predicted_error_margin_ms = predicted_error_margin_ms
+            task.predicted_quantiles = predicted_quantiles
+
     async def get_count_by_status(self, status: TaskStatus) -> int:
         """
         Get count of tasks with specific status.

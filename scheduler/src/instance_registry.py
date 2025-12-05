@@ -446,3 +446,17 @@ class InstanceRegistry:
         async with self._lock:
             stats = self._stats.get(instance_id)
             return stats.pending_tasks if stats else 0
+
+    async def clear_all(self) -> int:
+        """
+        Clear all instances from the registry.
+
+        Returns:
+            Count of instances that were cleared
+        """
+        async with self._lock:
+            count = len(self._instances)
+            self._instances.clear()
+            self._queue_info.clear()
+            self._stats.clear()
+            return count

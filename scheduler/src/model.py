@@ -256,6 +256,79 @@ class TaskResubmitResponse(BaseModel):
 
 
 # ============================================================================
+# Task Metadata Update Models
+# ============================================================================
+
+class TaskMetadataUpdate(BaseModel):
+    """Single task metadata update."""
+    task_id: str = Field(..., description="ID of the task to update")
+    metadata: Dict[str, Any] = Field(..., description="New metadata for the task (replaces existing)")
+
+
+class TaskUpdateMetadataRequest(BaseModel):
+    """Request model for batch task metadata update."""
+    updates: List[TaskMetadataUpdate] = Field(
+        ...,
+        description="List of task metadata updates"
+    )
+
+
+class TaskUpdateMetadataResult(BaseModel):
+    """Result for a single task metadata update."""
+    task_id: str = Field(..., description="ID of the task")
+    success: bool = Field(..., description="Whether the update was successful")
+    message: str = Field(..., description="Status message")
+    queue_updated: bool = Field(default=False, description="Whether queue info was updated")
+    old_prediction_ms: Optional[float] = Field(None, description="Previous predicted time in ms")
+    new_prediction_ms: Optional[float] = Field(None, description="New predicted time in ms")
+
+
+class TaskUpdateMetadataResponse(BaseModel):
+    """Response model for batch task metadata update."""
+    success: bool = Field(..., description="Overall success (true if no failures)")
+    message: str = Field(..., description="Summary message")
+    total: int = Field(..., description="Total number of updates requested")
+    succeeded: int = Field(..., description="Number of successful updates")
+    failed: int = Field(..., description="Number of failed updates")
+    skipped: int = Field(default=0, description="Number of skipped updates (COMPLETED/FAILED tasks)")
+    results: List[TaskUpdateMetadataResult] = Field(
+        default_factory=list,
+        description="Results for each task update"
+    )
+
+
+class TaskRepredictResponse(BaseModel):
+    """Response model for batch task re-prediction (summary only, no per-task details)."""
+    success: bool = Field(..., description="Overall success (true if no failures)")
+    message: str = Field(..., description="Summary message")
+    total_tasks: int = Field(..., description="Total tasks in registry")
+    eligible_tasks: int = Field(..., description="Tasks eligible for re-prediction (PENDING/RUNNING in queue)")
+    repredicted: int = Field(..., description="Number of successfully re-predicted tasks")
+    failed: int = Field(..., description="Number of tasks that failed re-prediction")
+    skipped: int = Field(..., description="Number of skipped tasks (COMPLETED/FAILED/not in queue)")
+
+
+class TaskScheduleInfo(BaseModel):
+    """Schedule information for a single task."""
+    task_id: str = Field(..., description="Unique task identifier")
+    model_id: str = Field(..., description="Model ID the task is associated with")
+    status: TaskStatus = Field(..., description="Current task status")
+    assigned_instance: str = Field(..., description="Instance ID the task was scheduled to")
+    submitted_at: str = Field(..., description="ISO timestamp when task was submitted")
+
+
+class TaskScheduleInfoResponse(BaseModel):
+    """Response model for task scheduling information."""
+    success: bool = Field(default=True, description="Whether the request was successful")
+    count: int = Field(..., description="Number of tasks in this response")
+    total: int = Field(..., description="Total number of tasks matching the filter")
+    tasks: List[TaskScheduleInfo] = Field(
+        default_factory=list,
+        description="List of task scheduling information"
+    )
+
+
+# ============================================================================
 # Instance Redeploy Models
 # ============================================================================
 
