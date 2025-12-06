@@ -443,6 +443,22 @@ async def _trigger_optimization():
         else:
             logger.info(f"Auto-optimization completed: score={score:.4f}, no changes needed")
 
+        # Record instance counts to timeline after auto-optimization
+        try:
+            from .instance_timeline_tracker import get_timeline_tracker, compute_instance_counts
+            tracker = get_timeline_tracker()
+            counts = compute_instance_counts(_stored_deployment_input.instances)
+            tracker.record_migration(
+                event_type="auto_optimize",
+                instance_counts=counts,
+                changes_count=changes_count,
+                success=(len(failed) == 0) if pending_change_original else True,
+                target_distribution=list(_current_target) if _current_target else None,
+                score=float(score)
+            )
+        except Exception as e:
+            logger.warning(f"Failed to record timeline entry: {e}")
+
         logger.info("Auto-optimization cycle completed successfully")
 
     except Exception as e:
@@ -917,6 +933,22 @@ async def deploy_with_migration(input_data: DeploymentInput):
         # Mark first migration done - enables auto-optimization timer to start
         _first_migration_done = True
         logger.info("First migration completed, auto-optimization enabled")
+
+        # Record instance counts to timeline
+        try:
+            from .instance_timeline_tracker import get_timeline_tracker, compute_instance_counts
+            tracker = get_timeline_tracker()
+            counts = compute_instance_counts(_stored_deployment_input.instances)
+            tracker.record_migration(
+                event_type="deploy_migration",
+                instance_counts=counts,
+                changes_count=int(changes_count),
+                success=overall_success,
+                target_distribution=list(target) if target is not None else None,
+                score=float(score)
+            )
+        except Exception as e:
+            logger.warning(f"Failed to record timeline entry: {e}")
 
         result = MigrationOutput(
             deployment=deployment.tolist(),
@@ -1401,6 +1433,55 @@ async def dummy_resubmit_task(request: TaskResubmitRequest):
         success=True,
         message=f"Task {request.task_id} resubmit acknowledged (Planner dummy)"
     )
+
+
+# ============================================================================
+# Timeline Tracking Endpoints
+# These endpoints provide access to instance count timeline data
+# ============================================================================
+
+
+@app.get("/timeline")
+async def get_instance_timeline():
+    """
+    Get the instance count timeline.
+
+    Returns all recorded migration events with instance counts per model.
+    Each entry includes timestamp, event type, instance counts, and metrics.
+
+    Returns:
+        Dictionary with success status and list of timeline entries
+    """
+    from .instance_timeline_tracker import get_timeline_tracker
+    tracker = get_timeline_tracker()
+    entries = tracker.get_entries()
+    logger.info(f"Timeline requested: {len(entries)} entries")
+    return {
+        "success": True,
+        "entry_count": len(entries),
+        "entries": entries
+    }
+
+
+@app.post("/timeline/clear")
+async def clear_instance_timeline():
+    """
+    Clear the instance count timeline.
+
+    Should be called at the start of a new experiment to ensure
+    clean timeline data.
+
+    Returns:
+        Dictionary with success status and confirmation message
+    """
+    from .instance_timeline_tracker import get_timeline_tracker
+    tracker = get_timeline_tracker()
+    tracker.clear()
+    logger.info("Timeline cleared via API")
+    return {
+        "success": True,
+        "message": "Timeline cleared successfully"
+    }
 
 
 if __name__ == "__main__":
