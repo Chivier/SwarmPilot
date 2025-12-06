@@ -274,8 +274,6 @@ logger.info("Background scheduler initialized with max_concurrent=50")
 central_queue = CentralTaskQueue(
     task_registry=task_registry,
     instance_registry=instance_registry,
-    high_water_mark=config.queue.high_water_mark,
-    low_water_mark=config.queue.low_water_mark,
     max_concurrent_dispatch=config.queue.max_concurrent_dispatch,
 )
 
@@ -283,11 +281,6 @@ central_queue = CentralTaskQueue(
 central_queue.set_scheduling_strategy(scheduling_strategy)
 central_queue.set_task_dispatcher(task_dispatcher)
 task_dispatcher.set_central_queue(central_queue)
-
-logger.info(
-    f"Central queue initialized with high_water_mark={config.queue.high_water_mark}, "
-    f"low_water_mark={config.queue.low_water_mark}"
-)
 
 # Task clearing state - prevents new task submissions during clear operation
 _clearing_in_progress = False
@@ -497,7 +490,6 @@ async def _add_task_to_queue_info(
 
 async def _redistribute_tasks_on_registration(
     instance_id: str,
-    high_water_mark: int,
 ) -> dict:
     """
     Redistribute tasks from other instances to a newly registered instance.
@@ -512,14 +504,13 @@ async def _redistribute_tasks_on_registration(
 
     Flow:
     1. Find instances with same model_id and pending_tasks > 0
-    2. Randomly select min(count, high_water_mark) instances
+    2. Randomly select up to half of the donor candidates
     3. From each selected instance, call GET /task/fetch to get 1 task
     4. Resubmit each fetched task to the new instance
     5. Update instance status to ACTIVE when done
 
     Args:
         instance_id: ID of the newly registered instance
-        high_water_mark: Maximum number of instances to steal from
 
     Returns:
         Dictionary with redistribution statistics:
@@ -563,8 +554,8 @@ async def _redistribute_tasks_on_registration(
                 "failed_resubmissions": [],
             }
 
-        # Step 2: Randomly select donors (capped by high_water_mark)
-        num_to_select = min(len(donor_candidates), high_water_mark)
+        # Step 2: Randomly select donors (capped at half of donor candidates)
+        num_to_select = max(1, len(donor_candidates) // 2)
         selected_donors = random.sample(donor_candidates, num_to_select)
 
         logger.info(
@@ -831,7 +822,6 @@ async def register_instance(request: InstanceRegisterRequest):
         asyncio.create_task(
             _redistribute_tasks_on_registration(
                 instance_id=request.instance_id,
-                high_water_mark=config.queue.high_water_mark,
             )
         )
         logger.debug(f"Started async work stealing for instance {request.instance_id}")
@@ -2718,6 +2708,8 @@ async def set_strategy_endpoint(request: StrategySetRequest):
         HTTPException 500: If strategy initialization fails
     """
     global scheduling_strategy
+
+    random.seed(42)
 
     # Check if there are any running tasks
     running_count = await task_registry.get_count_by_status(TaskStatus.RUNNING)

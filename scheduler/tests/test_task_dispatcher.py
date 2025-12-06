@@ -696,8 +696,8 @@ class TestHandleTaskResult:
 
         # Verify queue was updated
         queue = await task_dispatcher.instance_registry.get_queue_info(sample_instance.instance_id)
-        # Expected: 200 - 100 + 120 = 220
-        assert queue.expected_time_ms == 220.0
+        # Expected: 200 - 120 = 80 (new formula: old - actual)
+        assert queue.expected_time_ms == 80.0
 
 
 # ============================================================================
@@ -735,9 +735,9 @@ class TestQueueUpdateOnCompletion:
             predicted_error_margin_ms=30.0
         )
 
-        # Verify: 300 - 150 + 180 = 330
+        # Verify: 300 - 180 = 120 (new formula: old - actual)
         queue = await task_dispatcher.instance_registry.get_queue_info(sample_instance.instance_id)
-        assert queue.expected_time_ms == 330.0
+        assert queue.expected_time_ms == 120.0
         assert queue.error_margin_ms == 50.0  # Error unchanged
 
     @pytest.mark.asyncio
@@ -759,14 +759,14 @@ class TestQueueUpdateOnCompletion:
             )
         )
 
-        # Predicted > actual, would result in negative
+        # actual_time > expected would result in negative
         await task_dispatcher._update_queue_on_completion(
             instance_id=sample_instance.instance_id,
             predicted_time_ms=100.0,
-            actual_time_ms=30.0
+            actual_time_ms=60.0
         )
 
-        # Should be clamped to 0
+        # Verify: 50 - 60 = -10, clamped to 0
         queue = await task_dispatcher.instance_registry.get_queue_info(sample_instance.instance_id)
         assert queue.expected_time_ms == 0.0
 
@@ -880,9 +880,9 @@ class TestQueueUpdateOnCompletion:
             actual_time_ms=110.0
         )
 
-        # Should still update
+        # Should still update: 200 - 110 = 90 (new formula: old - actual)
         queue = await task_dispatcher.instance_registry.get_queue_info(sample_instance.instance_id)
-        assert queue.expected_time_ms == 210.0
+        assert queue.expected_time_ms == 90.0
 
 
 # ============================================================================

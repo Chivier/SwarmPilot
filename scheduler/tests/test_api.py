@@ -369,7 +369,7 @@ class TestTaskSubmission:
         assert data["task"]["task_id"] == "task-1"
 
     def test_submit_task_no_instances(self, client):
-        """Test submitting task when no instances available."""
+        """Test submitting task when no instances available - task is queued."""
         response = client.post(
             "/task/submit",
             json={
@@ -380,8 +380,13 @@ class TestTaskSubmission:
             }
         )
 
-        # API returns 404 when no instances match the model_id
-        assert response.status_code == 404
+        # Task is queued even when no instances are available
+        # It will wait for an instance to be registered
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["task"]["task_id"] == "task-1"
+        assert data["task"]["status"] == "pending"
 
     def test_submit_duplicate_task(self, client):
         """Test submitting duplicate task."""

@@ -447,6 +447,38 @@ class InstanceRegistry:
             stats = self._stats.get(instance_id)
             return stats.pending_tasks if stats else 0
 
+    async def has_active_instance(self, model_id: str) -> bool:
+        """
+        Check if any ACTIVE instance exists for the model.
+
+        Args:
+            model_id: Model ID filter
+
+        Returns:
+            True if at least one ACTIVE instance exists
+        """
+        async with self._lock:
+            for instance in self._instances.values():
+                if instance.model_id == model_id and instance.status == InstanceStatus.ACTIVE:
+                    return True
+            return False
+
+    async def get_active_instances(self, model_id: str) -> List[Instance]:
+        """
+        Get all ACTIVE instances for the model.
+
+        Args:
+            model_id: Model ID filter
+
+        Returns:
+            List of all ACTIVE instances for the model
+        """
+        async with self._lock:
+            return [
+                inst for inst in self._instances.values()
+                if inst.model_id == model_id and inst.status == InstanceStatus.ACTIVE
+            ]
+
     async def clear_all(self) -> int:
         """
         Clear all instances from the registry.

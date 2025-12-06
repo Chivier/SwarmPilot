@@ -82,8 +82,6 @@ export SCHEDULING_STRATEGY=probabilistic
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
-| `QUEUE_HIGH_WATER_MARK` | `int` | `6` | Max pending tasks per instance before stopping dispatch |
-| `QUEUE_LOW_WATER_MARK` | `int` | `3` | Resume dispatching when pending tasks drop below this |
 | `QUEUE_MAX_CONCURRENT_DISPATCH` | `int` | `50` | Maximum concurrent dispatch operations |
 
 #### Training Configuration

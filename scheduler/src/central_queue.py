@@ -1,8 +1,7 @@
 """
-Central task queue with backpressure control for the scheduler service.
+Central task queue for the scheduler service.
 
-This module provides a FIFO task queue that manages task dispatch to instances
-with configurable high/low water marks to prevent instance overload.
+This module provides a FIFO task queue that manages task dispatch to instances.
 """
 
 from typing import Any, Dict, List, Optional, Tuple
@@ -40,12 +39,11 @@ class QueuedTask:
 
 class CentralTaskQueue:
     """
-    Central task queue with backpressure control.
+    Central task queue for task dispatch.
 
     Features:
     - FIFO ordering by enqueue time
     - Event-driven dispatch: tasks dispatched when enqueued or when capacity becomes available
-    - Backpressure: tasks wait in queue when all instances are at/above high water mark
     - Parallel dispatch with configurable concurrency
     """
 
@@ -53,8 +51,6 @@ class CentralTaskQueue:
         self,
         task_registry: TaskRegistry,
         instance_registry: InstanceRegistry,
-        high_water_mark: int = 10,
-        low_water_mark: int = 5,
         max_concurrent_dispatch: int = 50,
     ):
         """
@@ -63,14 +59,10 @@ class CentralTaskQueue:
         Args:
             task_registry: Registry for task state management
             instance_registry: Registry for instance management
-            high_water_mark: Maximum pending tasks per instance before stopping dispatch
-            low_water_mark: Resume dispatching when pending tasks drop below this
             max_concurrent_dispatch: Maximum concurrent dispatch operations
         """
         self._task_registry = task_registry
         self._instance_registry = instance_registry
-        self._high_water_mark = high_water_mark
-        self._low_water_mark = low_water_mark
         self._max_concurrent_dispatch = max_concurrent_dispatch
 
         # FIFO queue for pending tasks
@@ -100,10 +92,7 @@ class CentralTaskQueue:
         # where tasks popped before clear get re-added after clear
         self._generation = 0
 
-        logger.info(
-            f"CentralTaskQueue initialized with high_water_mark={high_water_mark}, "
-            f"low_water_mark={low_water_mark}, max_concurrent={max_concurrent_dispatch}"
-        )
+        logger.info(f"CentralTaskQueue initialized with max_concurrent={max_concurrent_dispatch}")
 
     def set_scheduling_strategy(self, strategy) -> None:
         """Set the scheduling strategy to use for task assignment."""
@@ -211,8 +200,6 @@ class CentralTaskQueue:
             return {
                 "total_size": len(self._queue),
                 "by_model": model_counts,
-                "high_water_mark": self._high_water_mark,
-                "low_water_mark": self._low_water_mark,
             }
 
     async def clear(self) -> int:
@@ -305,12 +292,10 @@ class CentralTaskQueue:
                     break
                 task = self._queue.popleft()
 
-            # Check if any instance is available for this model
-            has_capacity = await self._instance_registry.is_any_instance_available(
-                task.model_id, self._high_water_mark
-            )
+            # Check if any ACTIVE instance exists for this model
+            has_instance = await self._instance_registry.has_active_instance(task.model_id)
 
-            if not has_capacity:
+            if not has_instance:
                 # No available instance, put task back
                 skipped_tasks.append(task)
                 continue
@@ -373,9 +358,9 @@ class CentralTaskQueue:
                         )
                         return True  # Return True to not re-queue this stale task
 
-                # Get available instances below high water mark
-                available_instances = await self._instance_registry.get_instances_below_water_mark(
-                    task.model_id, self._high_water_mark
+                # Get all ACTIVE instances for this model
+                available_instances = await self._instance_registry.get_active_instances(
+                    task.model_id
                 )
 
                 if not available_instances:

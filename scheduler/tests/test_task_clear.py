@@ -30,8 +30,6 @@ class TestCentralQueueClear:
         return CentralTaskQueue(
             task_registry=task_registry,
             instance_registry=instance_registry,
-            high_water_mark=10,
-            low_water_mark=5,
         )
 
     @pytest.mark.asyncio

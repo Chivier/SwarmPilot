@@ -355,7 +355,7 @@ class TestTaskAssignmentWithDraining:
         client.post("/instance/drain", json={"instance_id": "inst-1"})
         client.post("/instance/drain", json={"instance_id": "inst-2"})
 
-        # Try to submit task - should fail
+        # Try to submit task - task is queued even when all instances are draining
         response = client.post("/task/submit", json={
             "task_id": "test-task-1",
             "model_id": "test_model",
@@ -363,9 +363,11 @@ class TestTaskAssignmentWithDraining:
             "metadata": {"test": True}
         })
 
-        assert response.status_code == 404
+        # Task is queued (200) and waits for an available instance
+        assert response.status_code == 200
         data = response.json()
-        assert "No available instance" in data["detail"]["error"]
+        assert data["success"] is True
+        assert data["task"]["status"] == "pending"
 
     async def test_instance_becomes_available_after_drain_completes(
         self, client, register_test_instance, mock_task_dispatcher
