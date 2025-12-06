@@ -227,18 +227,17 @@ class SchedulingStrategy(ABC):
         """
         Collect queue information for all instances.
 
+        Uses a single lock acquisition via get_all_queue_info for efficiency.
+
         Args:
             available_instances: List of instances to collect info for
 
         Returns:
             Dictionary mapping instance_id to queue info
         """
-        queue_info = {}
-        for instance in available_instances:
-            queue = await self.instance_registry.get_queue_info(instance.instance_id)
-            if queue:
-                queue_info[instance.instance_id] = queue
-        return queue_info
+        instance_ids = [inst.instance_id for inst in available_instances]
+        return await self.instance_registry.get_all_queue_info(instance_ids)
+
 
     @abstractmethod
     def select_instance(

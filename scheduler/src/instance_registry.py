@@ -166,7 +166,36 @@ class InstanceRegistry:
         async with self._lock:
             return self._queue_info.get(instance_id)
 
+    async def get_all_queue_info(
+        self, instance_ids: Optional[List[str]] = None
+    ) -> Dict[str, InstanceQueueBase]:
+        """
+        Get queue information for all instances in a single lock acquisition.
+
+        This method is optimized for collecting queue info for multiple instances
+        at once, reducing lock contention from O(N) to O(1) per call.
+
+        Args:
+            instance_ids: Optional list of instance IDs to filter.
+                         If None, returns queue info for all registered instances.
+
+        Returns:
+            Dictionary mapping instance_id to queue information.
+        """
+        async with self._lock:
+            if instance_ids is None:
+                # Return all queue info (shallow copy to prevent external mutation)
+                return dict(self._queue_info)
+            else:
+                # Return filtered queue info
+                return {
+                    iid: self._queue_info[iid]
+                    for iid in instance_ids
+                    if iid in self._queue_info
+                }
+
     async def update_queue_info(self, instance_id: str, queue_info: InstanceQueueBase) -> None:
+
         """
         Update queue information for an instance.
 
