@@ -9,6 +9,7 @@ from typing import Optional, Callable, List
 from datetime import datetime
 from contextlib import asynccontextmanager
 import asyncio
+import math
 import random
 import numpy as np
 import json
@@ -94,6 +95,7 @@ from .task_dispatcher import TaskDispatcher
 from .background_scheduler import BackgroundScheduler
 from .central_queue import CentralTaskQueue
 from .planner_reporter import PlannerReporter
+from .throughput_tracker import ThroughputTracker
 
 # Import logger configuration to initialize loguru
 from . import logger as logger_module  # noqa: F401
@@ -286,14 +288,28 @@ task_dispatcher.set_central_queue(central_queue)
 _clearing_in_progress = False
 _clearing_lock = asyncio.Lock()
 
-# Initialize planner reporter (if configured)
+# Initialize throughput tracker and planner reporter (if configured)
+throughput_tracker = None
 planner_reporter = None
 if config.planner_report.url and config.planner_report.interval > 0:
+    # Create throughput tracker for planner reporting
+    throughput_tracker = ThroughputTracker(
+        window_size=config.planner_report.throughput_window_size
+    )
+    logger.info(
+        f"Throughput tracker initialized with window_size={config.planner_report.throughput_window_size}"
+    )
+
+    # Wire throughput tracker to task dispatcher
+    task_dispatcher.throughput_tracker = throughput_tracker
+
+    # Create planner reporter with throughput tracker
     planner_reporter = PlannerReporter(
         task_registry=task_registry,
         planner_url=config.planner_report.url,
         interval=config.planner_report.interval,
         timeout=config.planner_report.timeout,
+        throughput_tracker=throughput_tracker,
     )
     logger.info(
         f"Planner reporter initialized: URL={config.planner_report.url}, "
@@ -523,7 +539,7 @@ async def _redistribute_tasks_on_registration(
     # Get the new instance from registry
     new_instance = await instance_registry.get(instance_id)
     if not new_instance:
-        logger.error(f"Instance {instance_id} not found in registry during redistribution")
+        logger.error(f"[WorkStealing] Instance {instance_id} not found in registry")
         return {
             "donors_selected": 0,
             "tasks_fetched": 0,
@@ -532,20 +548,24 @@ async def _redistribute_tasks_on_registration(
             "failed_resubmissions": [],
         }
 
-    try:
-        # Step 1: Find donor candidates - instances with same model and pending tasks
-        all_instances = await instance_registry.list_active(model_id=new_instance.model_id)
-        donor_candidates = []
+    logger.info(
+        f"[WorkStealing] Started for new instance {instance_id} (model={new_instance.model_id})"
+    )
 
-        for inst in all_instances:
-            if inst.instance_id == new_instance.instance_id:
-                continue  # Skip the new instance itself
-            stats = await instance_registry.get_stats(inst.instance_id)
-            if stats and stats.pending_tasks > 0:
-                donor_candidates.append(inst)
+    try:
+        # Step 1: Find donor candidates - all active instances with same model
+        # We query instance directly via /task/fetch, not relying on scheduler's pending_tasks counter
+        all_instances = await instance_registry.list_active(model_id=new_instance.model_id)
+        donor_candidates = [
+            inst for inst in all_instances
+            if inst.instance_id != new_instance.instance_id
+        ]
 
         if not donor_candidates:
-            logger.debug(f"No donor candidates found for model {new_instance.model_id}")
+            logger.info(
+                f"[WorkStealing] No donor candidates for instance {instance_id} "
+                f"(model={new_instance.model_id}) - no other active instances"
+            )
             return {
                 "donors_selected": 0,
                 "tasks_fetched": 0,
@@ -554,92 +574,163 @@ async def _redistribute_tasks_on_registration(
                 "failed_resubmissions": [],
             }
 
-        # Step 2: Randomly select donors (capped at half of donor candidates)
-        num_to_select = max(1, len(donor_candidates) // 2)
-        selected_donors = random.sample(donor_candidates, num_to_select)
-
         logger.info(
-            f"Selected {len(selected_donors)} donor instances for task redistribution "
-            f"to {new_instance.instance_id}"
+            f"[WorkStealing] Found {len(donor_candidates)} potential donors for "
+            f"instance {instance_id}: [{', '.join(d.instance_id for d in donor_candidates)}]"
         )
 
-        # Step 3: Fetch tasks from donors
+        # Step 2: Calculate how many donors to select based on total active tasks in scheduler
+        # Active tasks = PENDING + RUNNING (not COMPLETED or FAILED)
+        pending_count = await task_registry.get_count_by_status(TaskStatus.PENDING)
+        running_count = await task_registry.get_count_by_status(TaskStatus.RUNNING)
+        completed_count = await task_registry.get_count_by_status(TaskStatus.COMPLETED)
+        failed_count = await task_registry.get_count_by_status(TaskStatus.FAILED)
+        total_tasks = await task_registry.get_total_count()
+        total_active_tasks = pending_count + running_count
+
+        logger.debug(
+            f"[WorkStealing] Task counts for {instance_id}: "
+            f"total={total_tasks}, pending={pending_count}, running={running_count}, "
+            f"completed={completed_count}, failed={failed_count}, active={total_active_tasks}"
+        )
+
+        # Skip work-stealing if there are no active tasks
+        if total_active_tasks == 0:
+            logger.debug(
+                f"[WorkStealing] Skipping for instance {instance_id} - no active tasks in scheduler"
+            )
+            return {
+                "donors_selected": 0,
+                "tasks_fetched": 0,
+                "tasks_resubmitted": 0,
+                "failed_donors": [],
+                "failed_resubmissions": [],
+            }
+
+        # Include the new instance in the count (it has 0 tasks initially)
+        total_instances = len(donor_candidates) + 1
+        avg_tasks_per_instance = total_active_tasks / total_instances
+
+        # Number of donors to select: min(ceil(avg), num_donors)
+        num_donors_to_select = min(
+            math.ceil(avg_tasks_per_instance),
+            len(donor_candidates)
+        )
+
+        # Randomly select donors
+        selected_donors = random.sample(donor_candidates, num_donors_to_select)
+
+        logger.info(
+            f"[WorkStealing] Selecting {num_donors_to_select} donors "
+            f"(avg_tasks={avg_tasks_per_instance:.1f}, active_tasks={total_active_tasks}, "
+            f"pending={pending_count}, running={running_count}): "
+            f"[{', '.join(d.instance_id for d in selected_donors)}]"
+        )
+
+        # Step 3: Fetch tasks from donors in PARALLEL
         fetched_tasks = []
         failed_donors = []
 
-        async with httpx.AsyncClient(timeout=10.0, verify=False) as client:
-            for donor in selected_donors:
-                try:
-                    response = await client.get(f"{donor.endpoint}/task/fetch")
-                    response.raise_for_status()
-                    data = response.json()
+        async def fetch_from_donor(donor, client):
+            """Fetch a task from a single donor instance."""
+            try:
+                response = await client.get(f"{donor.endpoint}/task/fetch")
+                response.raise_for_status()
+                data = response.json()
 
-                    if data.get("exist"):
-                        task_id = data["task_id"]
+                if data.get("exist"):
+                    task_id = data["task_id"]
 
-                        # Get prediction info from task_registry for queue update
-                        task_record = await task_registry.get(task_id)
-                        predicted_time_ms = None
-                        predicted_error_margin_ms = None
-                        predicted_quantiles = None
-                        if task_record:
-                            predicted_time_ms = task_record.predicted_time_ms
-                            predicted_error_margin_ms = task_record.predicted_error_margin_ms
-                            predicted_quantiles = task_record.predicted_quantiles
+                    # Get prediction info from task_registry for queue update
+                    task_record = await task_registry.get(task_id)
+                    predicted_time_ms = None
+                    predicted_error_margin_ms = None
+                    predicted_quantiles = None
+                    if task_record:
+                        predicted_time_ms = task_record.predicted_time_ms
+                        predicted_error_margin_ms = task_record.predicted_error_margin_ms
+                        predicted_quantiles = task_record.predicted_quantiles
 
-                        fetched_tasks.append({
+                    return {
+                        "success": True,
+                        "task_data": {
                             "task_id": task_id,
                             "model_id": data.get("model_id"),
                             "task_input": data.get("task_input"),
                             "enqueue_time": data.get("enqueue_time"),
                             "submitted_at": data.get("submitted_at"),
                             "donor_instance_id": donor.instance_id,
-                            # Include prediction info for queue updates
                             "predicted_time_ms": predicted_time_ms,
                             "predicted_error_margin_ms": predicted_error_margin_ms,
                             "predicted_quantiles": predicted_quantiles,
-                        })
-                        logger.debug(
-                            f"Fetched task {task_id} from donor {donor.instance_id}"
-                        )
-                        # Decrement donor's pending count since task was fetched
-                        await instance_registry.decrement_pending(donor.instance_id)
-
-                        # Update donor's queue info by subtracting the stolen task's time
-                        if predicted_time_ms is not None:
-                            await _subtract_task_from_queue_info(
-                                instance_id=donor.instance_id,
-                                predicted_time_ms=predicted_time_ms,
-                                predicted_error_margin_ms=predicted_error_margin_ms,
-                                predicted_quantiles=predicted_quantiles,
-                            )
-                            logger.debug(
-                                f"Updated donor {donor.instance_id} queue_info after task steal "
-                                f"(subtracted {predicted_time_ms:.2f}ms)"
-                            )
-                    else:
-                        logger.debug(f"Donor {donor.instance_id} had no fetchable tasks")
-
-                except httpx.HTTPStatusError as e:
-                    log_http_error(
-                        e,
-                        request_url=f"{donor.endpoint}/task/fetch",
-                        request_method="GET",
-                        context="task redistribution fetch",
-                        extra={
-                            "donor_id": donor.instance_id,
-                            "new_instance_id": new_instance.instance_id
                         },
+                        "donor": donor,
+                    }
+                else:
+                    logger.debug(f"Donor {donor.instance_id} had no fetchable tasks")
+                    return {"success": False, "has_task": False, "donor": donor}
+
+            except httpx.HTTPStatusError as e:
+                log_http_error(
+                    e,
+                    request_url=f"{donor.endpoint}/task/fetch",
+                    request_method="GET",
+                    context="task redistribution fetch",
+                    extra={
+                        "donor_id": donor.instance_id,
+                        "new_instance_id": new_instance.instance_id
+                    },
+                )
+                return {"success": False, "error": True, "donor": donor}
+            except Exception as e:
+                logger.warning(
+                    f"Failed to fetch task from donor {donor.instance_id}: "
+                    f"{type(e).__name__}: {e}"
+                )
+                return {"success": False, "error": True, "donor": donor}
+
+        async with httpx.AsyncClient(timeout=10.0, verify=False) as client:
+            # Execute all fetch operations in parallel
+            results = await asyncio.gather(
+                *[fetch_from_donor(donor, client) for donor in selected_donors],
+                return_exceptions=True
+            )
+
+            # Process results
+            for result in results:
+                if isinstance(result, Exception):
+                    logger.warning(f"Unexpected exception during work stealing: {result}")
+                    continue
+
+                if result.get("success"):
+                    task_data = result["task_data"]
+                    donor = result["donor"]
+                    fetched_tasks.append(task_data)
+                    logger.info(
+                        f"[WorkStealing] Stolen task {task_data['task_id']} from {donor.instance_id} → {instance_id}"
                     )
-                    failed_donors.append(donor.instance_id)
-                except Exception as e:
-                    logger.warning(
-                        f"Failed to fetch task from donor {donor.instance_id}: "
-                        f"{type(e).__name__}: {e}"
-                    )
-                    failed_donors.append(donor.instance_id)
+
+                    # Update donor's queue info by subtracting the stolen task's time
+                    predicted_time_ms = task_data.get("predicted_time_ms")
+                    if predicted_time_ms is not None:
+                        await _subtract_task_from_queue_info(
+                            instance_id=donor.instance_id,
+                            predicted_time_ms=predicted_time_ms,
+                            predicted_error_margin_ms=task_data.get("predicted_error_margin_ms"),
+                            predicted_quantiles=task_data.get("predicted_quantiles"),
+                        )
+                        logger.debug(
+                            f"Updated donor {donor.instance_id} queue_info after task steal "
+                            f"(subtracted {predicted_time_ms:.2f}ms)"
+                        )
+                elif result.get("error"):
+                    failed_donors.append(result["donor"].instance_id)
 
         if not fetched_tasks:
+            logger.info(
+                f"[WorkStealing] No tasks fetched from {len(selected_donors)} donors "
+                f"for instance {instance_id}"
+            )
             return {
                 "donors_selected": len(selected_donors),
                 "tasks_fetched": 0,
@@ -733,6 +824,20 @@ async def _redistribute_tasks_on_registration(
                     )
                     failed_resubmissions.append(task_data["task_id"])
 
+        # Log work stealing summary
+        stolen_from = {}
+        for task_data in fetched_tasks:
+            donor_id = task_data["donor_instance_id"]
+            stolen_from[donor_id] = stolen_from.get(donor_id, 0) + 1
+
+        summary_parts = [f"{donor}({count})" for donor, count in stolen_from.items()]
+        logger.info(
+            f"[WorkStealing] Summary for {instance_id}: "
+            f"fetched={len(fetched_tasks)}, resubmitted={resubmitted_count}, "
+            f"failed={len(failed_resubmissions)}, "
+            f"from donors: [{', '.join(summary_parts)}]"
+        )
+
         return {
             "donors_selected": len(selected_donors),
             "tasks_fetched": len(fetched_tasks),
@@ -746,9 +851,9 @@ async def _redistribute_tasks_on_registration(
         # (whether successful or not - the instance should become active)
         try:
             await instance_registry.update_status(instance_id, InstanceStatus.ACTIVE)
-            logger.info(f"Instance {instance_id} status updated to ACTIVE after work stealing")
+            logger.info(f"[WorkStealing] Instance {instance_id} status → ACTIVE (work stealing complete)")
         except KeyError:
-            logger.warning(f"Instance {instance_id} not found when updating status to ACTIVE")
+            logger.warning(f"[WorkStealing] Instance {instance_id} not found when updating status to ACTIVE")
 
 
 # ============================================================================
