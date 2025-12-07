@@ -36,6 +36,7 @@ import threading
 from queue import Queue, Empty
 from dataclasses import dataclass, field, asdict
 from typing import List, Dict, Optional, Set, Any
+import random
 from datetime import datetime
 import logging
 import traceback
@@ -70,7 +71,49 @@ SCHEDULER_B_URL = "http://localhost:8200"
 SCHEDULER_A_WS = "ws://localhost:8100/task/get_result"
 SCHEDULER_B_WS = "ws://localhost:8200/task/get_result"
 
+# Planner endpoint
+PLANNER_URL = "http://localhost:8202"
 
+# MAPE (Mean Absolute Percentage Error) for prediction error simulation
+MAPE_PERCENTAGE = 50.0  # 50% MAPE for min_time strategy
+
+
+# ============================================================================
+# Helper Functions
+# ============================================================================
+
+def apply_mape_error(exp_runtime: float, mape_percentage: float = MAPE_PERCENTAGE) -> float:
+    """
+    Apply MAPE (Mean Absolute Percentage Error) to exp_runtime.
+
+    For example, with 50% MAPE:
+    - Error range: [-50%, +50%]
+    - Predicted value = actual value * (1 + uniform(-0.5, 0.5))
+
+    This simulates prediction error in runtime estimation.
+
+    Args:
+        exp_runtime: Original expected runtime in milliseconds
+        mape_percentage: MAPE percentage (default: 50%)
+
+    Returns:
+        Modified exp_runtime with applied error
+    """
+    # Convert MAPE percentage to multiplier
+    # e.g., 50% -> 0.5
+    mape_multiplier = mape_percentage / 100.0
+
+    # Generate random error in range [-mape_multiplier, +mape_multiplier]
+    # For 50% MAPE: [-0.5, +0.5]
+    error = np.random.uniform(-mape_multiplier, mape_multiplier)
+
+    # Apply error: new_value = original * (1 + error)
+    modified_runtime = exp_runtime * (1.0 + error)
+
+    # Ensure non-negative result (though with 50% MAPE, this should never be needed)
+    return max(0.0, modified_runtime)
+
+random.seed(42)
 # ============================================================================
 # Rate Limiter
 # ============================================================================
@@ -292,6 +335,7 @@ class PoissonTaskSubmitter:
                  qps: float,
                  workflow_states: Dict[str, WorkflowState],
                  model_id: str = "sleep_model_a",
+                 strategy: str = "default",
                  rate_limiter: Optional[RateLimiter] = None):
         """
         Initialize Poisson task submitter.
@@ -302,6 +346,7 @@ class PoissonTaskSubmitter:
             qps: Target queries per second (e.g., 8.0) - ignored if rate_limiter is provided
             workflow_states: Shared workflow state dictionary
             model_id: Model ID to use for tasks
+            strategy: Scheduling strategy name (for MAPE error simulation)
             rate_limiter: Optional shared rate limiter for global QPS control
         """
         self.scheduler_url = scheduler_url
@@ -309,6 +354,7 @@ class PoissonTaskSubmitter:
         self.qps = qps
         self.workflow_states = workflow_states
         self.model_id = model_id
+        self.strategy = strategy
         self.rate_limiter = rate_limiter
         self.logger = logging.getLogger("Thread1.ATaskSubmitter")
 
@@ -332,6 +378,11 @@ class PoissonTaskSubmitter:
         Returns:
             TaskRecord with submission info
         """
+        # Apply MAPE error to exp_runtime for min_time strategy
+        exp_runtime_to_send = task_data.exp_runtime
+        if self.strategy == "min_time":
+            exp_runtime_to_send = apply_mape_error(task_data.exp_runtime)
+
         payload = {
             "task_id": task_data.task_id,
             "model_id": self.model_id,
@@ -339,7 +390,7 @@ class PoissonTaskSubmitter:
                 "sleep_time": task_data.sleep_time
             },
             "metadata": {
-                "exp_runtime": task_data.exp_runtime,
+                "exp_runtime": exp_runtime_to_send,
                 "workflow_id": task_data.workflow_id,
                 "task_type": "A",
                 "is_warmup": task_data.is_warmup
@@ -648,6 +699,11 @@ class ATaskReceiver:
         Returns:
             TaskRecord with submission info
         """
+        # Apply MAPE error to exp_runtime for min_time strategy
+        exp_runtime_to_send = task_data.exp_runtime
+        if self.strategy_name == "min_time":
+            exp_runtime_to_send = apply_mape_error(task_data.exp_runtime)
+
         payload = {
             "task_id": task_data.task_id,
             "model_id": self.model_id,
@@ -655,7 +711,7 @@ class ATaskReceiver:
                 "sleep_time": task_data.sleep_time
             },
             "metadata": {
-                "exp_runtime": task_data.exp_runtime,
+                "exp_runtime": exp_runtime_to_send,
                 "workflow_id": task_data.workflow_id,
                 "task_type": "B1",
                 "b_index": task_data.b_index,
@@ -862,16 +918,21 @@ class ATaskReceiver:
             self.logger.error(f"Could not extract workflow_id from task_id: {task_id}")
             return
 
+        # Extract sleep_time and execution_time from result
+        result = data.get("result", {})
+        sleep_time = result.get("sleep_time", 0.0)
+        execution_time = data.get("execution_time", 0.0)
+
         # Create A task record
         a_record = TaskRecord(
             task_id=task_id,
             workflow_id=workflow_id,
             task_type="A",
-            sleep_time=0.0,  # Will be filled from original data if needed
-            exp_runtime=0.0,
+            sleep_time=sleep_time,
+            exp_runtime=execution_time * 1000,  # Convert seconds to milliseconds
             complete_time=time.time(),
             status=status,
-            execution_time_ms=data.get("execution_time_ms"),
+            execution_time_ms=data.get("execution_time_ms", execution_time * 1000),
             result=data.get("result"),
             error=data.get("error")
         )
@@ -1041,6 +1102,11 @@ class B1TaskReceiver:
         Returns:
             TaskRecord with submission info
         """
+        # Apply MAPE error to exp_runtime for min_time strategy
+        exp_runtime_to_send = task_data.exp_runtime
+        if self.strategy_name == "min_time":
+            exp_runtime_to_send = apply_mape_error(task_data.exp_runtime)
+
         payload = {
             "task_id": task_data.task_id,
             "model_id": self.model_id,
@@ -1048,7 +1114,7 @@ class B1TaskReceiver:
                 "sleep_time": task_data.sleep_time
             },
             "metadata": {
-                "exp_runtime": task_data.exp_runtime,
+                "exp_runtime": exp_runtime_to_send,
                 "workflow_id": task_data.workflow_id,
                 "task_type": "B2",
                 "b_index": task_data.b_index,
@@ -1227,16 +1293,21 @@ class B1TaskReceiver:
             self.logger.error(f"Could not extract workflow_id from task_id: {task_id}")
             return
 
+        # Extract sleep_time and execution_time from result
+        result = data.get("result", {})
+        sleep_time = result.get("sleep_time", 0.0)
+        execution_time = data.get("execution_time", 0.0)
+
         # Create B1 task record
         b1_record = TaskRecord(
             task_id=task_id,
             workflow_id=workflow_id,
             task_type="B1",
-            sleep_time=0.0,
-            exp_runtime=0.0,
+            sleep_time=sleep_time,
+            exp_runtime=execution_time * 1000,  # Convert seconds to milliseconds
             complete_time=complete_time,
             status=status,
-            execution_time_ms=data.get("execution_time_ms"),
+            execution_time_ms=data.get("execution_time_ms", execution_time * 1000),
             result=data.get("result"),
             error=data.get("error")
         )
@@ -1433,16 +1504,21 @@ class B2TaskReceiver:
             self.logger.error(f"Could not extract workflow_id from task_id: {task_id}")
             return
 
+        # Extract sleep_time and execution_time from result
+        result = data.get("result", {})
+        sleep_time = result.get("sleep_time", 0.0)
+        execution_time = data.get("execution_time", 0.0)
+
         # Create B2 task record
         b2_record = TaskRecord(
             task_id=task_id,
             workflow_id=workflow_id,
             task_type="B2",
-            sleep_time=0.0,
-            exp_runtime=0.0,
+            sleep_time=sleep_time,
+            exp_runtime=execution_time * 1000,  # Convert seconds to milliseconds
             complete_time=complete_time,
             status=status,
-            execution_time_ms=data.get("execution_time_ms"),
+            execution_time_ms=data.get("execution_time_ms", execution_time * 1000),
             result=data.get("result"),
             error=data.get("error")
         )
@@ -1550,6 +1626,7 @@ class MergeTaskSubmitter:
                  merge_tasks: List[WorkflowTaskData],
                  workflow_states: Dict[str, WorkflowState],
                  merge_ready_queue: Queue,
+                 strategy: str = "default",
                  rate_limiter: Optional[RateLimiter] = None):
         """
         Initialize merge task submitter.
@@ -1559,12 +1636,14 @@ class MergeTaskSubmitter:
             merge_tasks: List of all merge task data (indexed by workflow)
             workflow_states: Shared workflow state dictionary
             merge_ready_queue: Queue to receive merge-ready events
+            strategy: Scheduling strategy name (for MAPE error simulation)
             rate_limiter: Optional shared rate limiter for global QPS control
         """
         self.scheduler_a_url = scheduler_a_url
         self.merge_tasks = merge_tasks
         self.workflow_states = workflow_states
         self.merge_ready_queue = merge_ready_queue
+        self.strategy = strategy
         self.rate_limiter = rate_limiter
         self.logger = logging.getLogger("Thread5.MergeTaskSubmitter")
         self.model_id = "sleep_model_a"
@@ -1602,6 +1681,11 @@ class MergeTaskSubmitter:
 
         # Submit merge task to Scheduler A
         try:
+            # Apply MAPE error to exp_runtime for min_time strategy
+            exp_runtime_to_send = merge_task.exp_runtime
+            if self.strategy == "min_time":
+                exp_runtime_to_send = apply_mape_error(merge_task.exp_runtime)
+
             payload = {
                 "task_id": merge_task.task_id,
                 "model_id": self.model_id,
@@ -1609,7 +1693,7 @@ class MergeTaskSubmitter:
                     "sleep_time": merge_task.sleep_time
                 },
                 "metadata": {
-                    "exp_runtime": merge_task.exp_runtime,
+                    "exp_runtime": exp_runtime_to_send,
                     "workflow_id": merge_task.workflow_id,
                     "task_type": "B",
                     "is_warmup": merge_task.is_warmup
@@ -1798,16 +1882,21 @@ class MergeTaskReceiver:
             self.logger.error(f"Could not extract workflow_id from merge task_id: {task_id}")
             return
 
+        # Extract sleep_time and execution_time from result
+        result = data.get("result", {})
+        sleep_time = result.get("sleep_time", 0.0)
+        execution_time = data.get("execution_time", 0.0)
+
         # Create merge task record
         merge_record = TaskRecord(
             task_id=task_id,
             workflow_id=workflow_id,
             task_type="merge",
-            sleep_time=0.0,
-            exp_runtime=0.0,
+            sleep_time=sleep_time,
+            exp_runtime=execution_time * 1000,  # Convert seconds to milliseconds
             complete_time=complete_time,
             status=status,
-            execution_time_ms=data.get("execution_time_ms"),
+            execution_time_ms=data.get("execution_time_ms", execution_time * 1000),
             result=data.get("result"),
             error=data.get("error")
         )
@@ -2082,6 +2171,85 @@ def set_scheduling_strategy(scheduler_url: str, strategy: str):
         logger.debug(f"Set strategy to '{strategy}' on {scheduler_url}")
     except Exception as e:
         logger.error(f"Failed to set strategy on {scheduler_url}: {e}")
+
+
+def clear_planner_timeline(planner_url: str = PLANNER_URL):
+    """
+    Clear the instance count timeline in the Planner service.
+
+    This should be called at the start of each experiment to ensure
+    clean timeline data for the current run.
+
+    Args:
+        planner_url: Planner service URL (default: PLANNER_URL constant)
+
+    Returns:
+        True if successful, False otherwise
+    """
+    logger = logging.getLogger("Utils")
+    try:
+        response = requests.post(f"{planner_url}/timeline/clear", timeout=10.0)
+        response.raise_for_status()
+        data = response.json()
+        if data.get("success"):
+            logger.info(f"Cleared timeline in Planner: {data.get('message', 'OK')}")
+            return True
+        else:
+            logger.warning(f"Timeline clear returned success=False: {data}")
+            return False
+    except requests.exceptions.ConnectionError as e:
+        logger.warning(f"Could not connect to Planner at {planner_url}: {e}")
+        return False
+    except Exception as e:
+        logger.error(f"Failed to clear timeline from Planner: {e}")
+        return False
+
+
+def get_planner_timeline(planner_url: str = PLANNER_URL) -> Optional[Dict]:
+    """
+    Retrieve the instance count timeline from the Planner service.
+
+    This should be called at the end of each experiment to collect
+    the deployment history data.
+
+    Args:
+        planner_url: Planner service URL (default: PLANNER_URL constant)
+
+    Returns:
+        Dictionary with timeline data, or None if request failed
+        Format: {
+            "success": bool,
+            "entry_count": int,
+            "entries": List[Dict] - each entry has:
+                - timestamp: float
+                - timestamp_iso: str
+                - event_type: str ("deploy_migration" or "auto_optimize")
+                - instance_counts: Dict[model_id -> count]
+                - total_instances: int
+                - changes_count: int
+                - success: bool
+                - target_distribution: Optional[List[float]]
+                - score: Optional[float]
+        }
+    """
+    logger = logging.getLogger("Utils")
+    try:
+        response = requests.get(f"{planner_url}/timeline", timeout=10.0)
+        response.raise_for_status()
+        data = response.json()
+        if data.get("success"):
+            entry_count = data.get("entry_count", 0)
+            logger.info(f"Retrieved timeline from Planner: {entry_count} entries")
+            return data
+        else:
+            logger.warning(f"Timeline retrieval returned success=False: {data}")
+            return None
+    except requests.exceptions.ConnectionError as e:
+        logger.warning(f"Could not connect to Planner at {planner_url}: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"Failed to retrieve timeline from Planner: {e}")
+        return None
 
 
 def generate_task_ids(num_workflows: int, fanout_values: List[int], strategy: str) -> tuple[
@@ -2537,10 +2705,11 @@ def test_strategy_workflow(
     logger = logging.getLogger(f"Test.{strategy}")
     logger.debug(f"Starting test for strategy: {strategy}")
 
-    # Step 1: Clear tasks from both schedulers
-    logger.info("Step 1: Clearing tasks from schedulers")
+    # Step 1: Clear tasks from both schedulers and Planner timeline
+    logger.info("Step 1: Clearing tasks from schedulers and Planner timeline")
     clear_scheduler_tasks(SCHEDULER_A_URL)
     clear_scheduler_tasks(SCHEDULER_B_URL)
+    clear_planner_timeline(PLANNER_URL)
     time.sleep(1.0)
 
     # Step 2: Set scheduling strategy
@@ -2790,6 +2959,7 @@ def test_strategy_workflow(
         merge_tasks=merge_tasks,
         workflow_states=workflow_states,
         merge_ready_queue=merge_ready_queue,
+        strategy=strategy,
         rate_limiter=rate_limiter
     )
     merge_submitter.start()
@@ -2855,6 +3025,7 @@ def test_strategy_workflow(
         tasks=a_tasks,
         qps=qps_a,
         workflow_states=workflow_states,
+        strategy=strategy,
         rate_limiter=rate_limiter
     )
     a_submitter.start()
@@ -3001,6 +3172,14 @@ def test_strategy_workflow(
         duration = a_submitter.submission_end_time - a_submitter.submission_start_time
         actual_qps = len(a_tasks) / duration if duration > 0 else 0.0
 
+    # Step 17: Retrieve instance deployment timeline from Planner
+    logger.info("Step 17: Retrieving instance deployment timeline from Planner")
+    timeline_data = get_planner_timeline(PLANNER_URL)
+    if timeline_data:
+        logger.info(f"Retrieved {timeline_data.get('entry_count', 0)} timeline entries from Planner")
+    else:
+        logger.warning("Failed to retrieve timeline data from Planner")
+
     return {
         "strategy": strategy,
         "num_workflows": num_workflows,
@@ -3012,7 +3191,8 @@ def test_strategy_workflow(
         "merge_tasks": merge_metrics,
         "workflows": wf_metrics,
         "submission_time": a_submitter.submission_end_time - a_submitter.submission_start_time
-                          if a_submitter.submission_end_time and a_submitter.submission_start_time else 0.0
+                          if a_submitter.submission_end_time and a_submitter.submission_start_time else 0.0,
+        "planner_timeline": timeline_data  # Include timeline data in results
     }
 
 
@@ -3022,7 +3202,7 @@ def test_strategy_workflow(
 
 def main(num_workflows: int = 100, qps_a: float = 8.0, seed: int = 42,
          strategies: List[str] = None, gqps: Optional[float] = None, warmup_ratio: float = 0.0,
-         continuous_mode: bool = False, metric_portion: float = 0.5):
+         continuous_mode: bool = False, metric_portion: float = 0.5, timeout_minutes: int = 20):
     """
     Main entry point for experiment 07.
 
@@ -3035,6 +3215,7 @@ def main(num_workflows: int = 100, qps_a: float = 8.0, seed: int = 42,
         warmup_ratio: Warmup task ratio (0.0-1.0)
         continuous_mode: Enable continuous request mode (2x workflows, track first num_workflows)
         metric_portion: Portion of non-warmup workflows to use for statistics (0.0-1.0, default: 0.5)
+        timeout_minutes: Maximum time in minutes to wait for workflows to complete (default: 20)
     """
     if strategies is None:
         strategies = ["min_time", "round_robin", "probabilistic"]
@@ -3136,7 +3317,7 @@ def main(num_workflows: int = 100, qps_a: float = 8.0, seed: int = 42,
             task_times_b2=task_times_b2,
             fanout_values=fanout_values,
             qps_a=QPS_A,
-            timeout_minutes=20,
+            timeout_minutes=timeout_minutes,
             gqps=gqps,
             warmup_ratio=warmup_ratio,
             warmup_task_times_a=warmup_task_times_a,
@@ -3234,8 +3415,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--strategies",
         nargs="+",
-        default=["probabilistic", "random", "round_robin", "min_time"],
-        choices=["min_time", "round_robin", "probabilistic", "random"],
+        default=["probabilistic", "random", "round_robin", "min_time", "po2"],
+        choices=["min_time", "round_robin", "probabilistic", "random", "po2"],
         help="Scheduling strategies to test"
     )
 
@@ -3266,6 +3447,13 @@ if __name__ == "__main__":
         help="Portion of non-warmup workflows to include in final statistics (0.0-1.0, default: 0.5). For example, 0.5 means only the first 50%% of workflows are used for metrics calculation."
     )
 
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=20,
+        help="Maximum time in minutes to wait for workflows to complete (default: 20)"
+    )
+
     args = parser.parse_args()
 
     main(
@@ -3276,5 +3464,6 @@ if __name__ == "__main__":
         gqps=args.gqps,
         warmup_ratio=args.warmup,
         continuous_mode=args.continuous,
-        metric_portion=args.metric_portion
+        metric_portion=args.metric_portion,
+        timeout_minutes=args.timeout
     )
