@@ -15,6 +15,7 @@ from .http_error_logger import log_http_error
 
 if TYPE_CHECKING:
     from .task_registry import TaskRegistry
+    from .throughput_tracker import ThroughputTracker
 
 from .model import TaskStatus
 
@@ -28,6 +29,7 @@ class PlannerReporter:
         planner_url: str,
         interval: float,
         timeout: float = 5.0,
+        throughput_tracker: Optional["ThroughputTracker"] = None,
     ):
         """
         Initialize the planner reporter.
@@ -37,11 +39,13 @@ class PlannerReporter:
             planner_url: Base URL of the planner service
             interval: Reporting interval in seconds
             timeout: HTTP request timeout in seconds
+            throughput_tracker: Optional throughput tracker for reporting execution times
         """
         self._task_registry = task_registry
         self._planner_url = planner_url
         self._interval = interval
         self._timeout = timeout
+        self._throughput_tracker = throughput_tracker
 
         self._model_id: Optional[str] = None
         self._reporter_task: Optional[asyncio.Task] = None
@@ -140,9 +144,12 @@ class PlannerReporter:
             response.raise_for_status()
 
             logger.debug(
-                f"Reported to planner: model_id={self._model_id}, "
+                f"[PlannerReporter] Reported to planner: model_id={self._model_id}, "
                 f"uncompleted={total_uncompleted} (pending={pending}, running={running})"
             )
+
+            # Report throughput data if tracker is available
+            await self._report_throughput()
 
         except httpx.HTTPStatusError as e:
             log_http_error(
@@ -171,3 +178,44 @@ class PlannerReporter:
             logger.warning(f"Planner report HTTP error: {e}")
         except Exception as e:
             logger.error(f"[planner_reporter] Planner report error: {e}", exc_info=True)
+
+    async def _report_throughput(self) -> None:
+        """Report throughput data for instances with recent data to planner.
+
+        Only reports throughput for instances that have completed tasks since the
+        last reporting interval. This prevents stale data from being reported.
+        """
+        if self._throughput_tracker is None:
+            return
+
+        try:
+            # Only get averages for instances with new data since last report
+            averages = await self._throughput_tracker.get_averages_for_recent_instances_seconds()
+
+            if not averages:
+                logger.debug("[PlannerReporter] No instances with new throughput data to report")
+                return
+
+            for instance_endpoint, avg_execution_time_seconds in averages.items():
+                try:
+                    await self._http_client.post(
+                        f"{self._planner_url}/submit_throughput",
+                        json={
+                            "instance_url": instance_endpoint,
+                            "avg_execution_time": avg_execution_time_seconds,
+                        }
+                    )
+                    logger.debug(
+                        f"Reported throughput to planner: instance={instance_endpoint}, "
+                        f"avg_execution_time={avg_execution_time_seconds:.3f}s"
+                    )
+                except httpx.HTTPError as e:
+                    logger.warning(
+                        f"Failed to report throughput for {instance_endpoint}: {e}"
+                    )
+
+            logger.debug(
+                f"[PlannerReporter] Reported throughput for {len(averages)} instance(s) with recent data"
+            )
+        except Exception as e:
+            logger.error(f"[planner_reporter] Throughput report error: {e}", exc_info=True)
