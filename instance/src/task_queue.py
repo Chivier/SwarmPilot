@@ -6,6 +6,7 @@ import asyncio
 import heapq
 import time
 import traceback
+from collections import deque
 from typing import Dict, List, Optional, Tuple, Any
 
 from loguru import logger
@@ -55,6 +56,7 @@ class TaskQueue:
     def __init__(self):
         self.tasks: Dict[str, Task] = {}  # All tasks by task_id
         self.queue: List[Tuple[float, str]] = []  # Priority queue: (enqueue_time, task_id)
+        self._insertion_order: deque = deque()  # Track insertion order for O(1) LIFO fetch
         self._queue_lock: asyncio.Lock = asyncio.Lock()  # Ensure thread-safe queue operations
         self.current_task_id: Optional[str] = None
         self.is_processing = False
@@ -89,6 +91,7 @@ class TaskQueue:
 
         async with self._queue_lock:
             heapq.heappush(self.queue, (task.enqueue_time, task.task_id))
+            self._insertion_order.append(task.task_id)  # Track for LIFO fetch
             queue_size = len(self.queue)
 
         logger.info(
@@ -109,7 +112,7 @@ class TaskQueue:
 
     async def fetch_task(self) -> Optional[Task]:
         """
-        Fetch the first queued task (lowest enqueue_time) from the queue head.
+        Fetch the oldest queued task (lowest enqueue_time) from the queue front.
 
         The task is marked as FETCHED and removed from the execution queue.
         Its callback will NOT be executed.
@@ -118,47 +121,71 @@ class TaskQueue:
             Task object if a queued task was found, None otherwise.
 
         Note:
-            - Only QUEUED tasks are considered
+            - Only QUEUED tasks are considered for fetching
             - RUNNING, COMPLETED, FAILED tasks are skipped
             - The fetched task remains in self.tasks for queryability via /task/list
+            - Fetching from front (oldest) - FIFO order for work stealing
+            - Uses insertion order tracking for O(1) best-case FIFO access
+            - Always keeps at least one task (RUNNING or QUEUED) in the instance
         """
         async with self._queue_lock:
-            if not self.queue:
+            if not self._insertion_order:
                 return None
 
-            # Find the QUEUED task with lowest enqueue_time (oldest/first)
-            # We need to scan the queue since it's a min-heap ordered by enqueue_time
-            best_task: Optional[Task] = None
-            best_enqueue_time: float = float("inf")
-            best_index: int = -1
+            # Count active tasks (RUNNING + QUEUED) to ensure at least one remains
+            running_count = sum(
+                1 for t in self.tasks.values() if t.status == TaskStatus.RUNNING
+            )
+            queued_count = sum(
+                1 for t in self.tasks.values() if t.status == TaskStatus.QUEUED
+            )
+            active_count = running_count + queued_count
 
-            for i, (enqueue_time, task_id) in enumerate(self.queue):
+            # Must keep at least one active task in the instance
+            if active_count <= 1:
+                logger.debug(
+                    f"Cannot fetch: must keep at least 1 active task "
+                    f"(running={running_count}, queued={queued_count})"
+                )
+                return None
+
+            # Iterate from the front (oldest) to find a QUEUED task - O(1) best case
+            found_task: Optional[Task] = None
+            skipped_task_ids: list = []
+
+            while self._insertion_order:
+                task_id = self._insertion_order.popleft()  # Pop from left (oldest)
                 task = self.tasks.get(task_id)
-                if task and task.status == TaskStatus.QUEUED:
-                    if enqueue_time < best_enqueue_time:
-                        best_enqueue_time = enqueue_time
-                        best_task = task
-                        best_index = i
 
-            if best_task is None:
+                if task and task.status == TaskStatus.QUEUED:
+                    found_task = task
+                    break
+                # Track skipped task_ids to restore them if needed
+                skipped_task_ids.append(task_id)
+
+            # Restore skipped task_ids back to insertion order (prepend in original order)
+            for tid in reversed(skipped_task_ids):
+                self._insertion_order.appendleft(tid)
+
+            if found_task is None:
                 return None
 
-            # Remove the task from the execution queue
-            # Since we're removing from middle, rebuild the heap
+            # Remove from the min-heap (need to rebuild)
             self.queue = [
-                (t, tid) for j, (t, tid) in enumerate(self.queue) if j != best_index
+                (t, tid) for t, tid in self.queue if tid != found_task.task_id
             ]
             heapq.heapify(self.queue)
 
             # Mark task as FETCHED
-            best_task.status = TaskStatus.FETCHED
+            found_task.status = TaskStatus.FETCHED
 
             logger.info(
-                f"Task {best_task.task_id} fetched from queue head "
-                f"(enqueue_time={best_enqueue_time:.3f})"
+                f"Task {found_task.task_id} fetched from queue front "
+                f"(enqueue_time={found_task.enqueue_time:.3f}, "
+                f"remaining: running={running_count}, queued={queued_count - 1})"
             )
 
-            return best_task
+            return found_task
 
     async def list_tasks(
         self,
@@ -233,8 +260,32 @@ class TaskQueue:
             "running": sum(1 for t in self.tasks.values() if t.status == TaskStatus.RUNNING),
             "completed": sum(1 for t in self.tasks.values() if t.status == TaskStatus.COMPLETED),
             "failed": sum(1 for t in self.tasks.values() if t.status == TaskStatus.FAILED),
+            "fetched": sum(1 for t in self.tasks.values() if t.status == TaskStatus.FETCHED),
         }
         return stats
+
+    async def cleanup_fetched_tasks(self) -> int:
+        """
+        Remove all FETCHED tasks from storage to free memory.
+
+        FETCHED tasks are tasks that were stolen by work-stealing mechanism
+        and are no longer needed in this instance.
+
+        Returns:
+            Number of tasks cleaned up
+        """
+        fetched_task_ids = [
+            task_id for task_id, task in self.tasks.items()
+            if task.status == TaskStatus.FETCHED
+        ]
+
+        for task_id in fetched_task_ids:
+            del self.tasks[task_id]
+
+        if fetched_task_ids:
+            logger.info(f"Cleaned up {len(fetched_task_ids)} fetched tasks from storage")
+
+        return len(fetched_task_ids)
 
     async def _process_queue(self):
         """
@@ -448,15 +499,17 @@ class TaskQueue:
                 "Wait for running tasks to complete or stop processing first."
             )
 
-        # Clear the queue
+        # Clear the queue and insertion order tracking
         async with self._queue_lock:
             self.queue.clear()
+            self._insertion_order.clear()
 
         # Clear all tasks
         cleared_count = {
             "queued": stats["queued"],
             "completed": stats["completed"],
             "failed": stats["failed"],
+            "fetched": stats["fetched"],
             "total": stats["total"]
         }
 
@@ -466,7 +519,8 @@ class TaskQueue:
             f"Cleared all tasks: {cleared_count['total']} total "
             f"(queued: {cleared_count['queued']}, "
             f"completed: {cleared_count['completed']}, "
-            f"failed: {cleared_count['failed']})"
+            f"failed: {cleared_count['failed']}, "
+            f"fetched: {cleared_count['fetched']})"
         )
 
         return cleared_count
@@ -490,6 +544,7 @@ class TaskQueue:
             - This operation is thread-safe (uses queue lock)
         """
         extracted_tasks = []
+        extracted_task_ids = set()
 
         async with self._queue_lock:
             # Extract all queued tasks from priority queue
@@ -510,6 +565,7 @@ class TaskQueue:
                         "metadata": getattr(task, "metadata", None),
                     }
                     extracted_tasks.append(task_info)
+                    extracted_task_ids.add(task_id)
 
                     # Remove from task storage
                     del self.tasks[task_id]
@@ -521,6 +577,11 @@ class TaskQueue:
             # Restore non-extracted tasks back to queue
             for item in queued_items:
                 heapq.heappush(self.queue, item)
+
+            # Remove extracted tasks from insertion order tracking
+            self._insertion_order = deque(
+                tid for tid in self._insertion_order if tid not in extracted_task_ids
+            )
 
         logger.info(
             f"Extracted {len(extracted_tasks)} pending tasks from queue. "

@@ -846,7 +846,7 @@ class TestGetTaskQueue:
 class TestTaskQueueFetch:
     """Test suite for TaskQueue.fetch_task() method"""
 
-    async def test_fetch_task_from_queue_head(self):
+    async def test_fetch_task_from_queue_front(self):
         """Test fetch returns task with lowest enqueue_time (oldest task)"""
         queue = TaskQueue()
 
@@ -859,9 +859,9 @@ class TestTaskQueueFetch:
 
             await queue.submit_task(task1, enqueue_time=100.0)  # Oldest
             await queue.submit_task(task2, enqueue_time=200.0)
-            await queue.submit_task(task3, enqueue_time=300.0)
+            await queue.submit_task(task3, enqueue_time=300.0)  # Newest
 
-            # Fetch should return the task with lowest enqueue_time
+            # Fetch should return the task with lowest enqueue_time (oldest)
             fetched = await queue.fetch_task()
 
             assert fetched is not None
@@ -872,30 +872,37 @@ class TestTaskQueueFetch:
         queue = TaskQueue()
 
         with patch.object(queue, '_process_queue', new=AsyncMock()):
-            task = Task(task_id="task-1", model_id="model", task_input={})
-            await queue.submit_task(task)
+            # Need at least 2 tasks because fetch keeps at least 1 active task
+            task1 = Task(task_id="task-1", model_id="model", task_input={})
+            task2 = Task(task_id="task-2", model_id="model", task_input={})
+            await queue.submit_task(task1, enqueue_time=100.0)
+            await queue.submit_task(task2, enqueue_time=200.0)
 
             fetched = await queue.fetch_task()
 
             assert fetched is not None
             assert fetched.status == TaskStatus.FETCHED
+            assert fetched.task_id == "task-1"  # Oldest fetched first (FIFO)
 
     async def test_fetch_task_removes_from_execution_queue(self):
         """Test fetched task won't be in execution queue"""
         queue = TaskQueue()
 
         with patch.object(queue, '_process_queue', new=AsyncMock()):
-            task = Task(task_id="task-1", model_id="model", task_input={})
-            await queue.submit_task(task)
+            # Need at least 2 tasks because fetch keeps at least 1 active task
+            task1 = Task(task_id="task-1", model_id="model", task_input={})
+            task2 = Task(task_id="task-2", model_id="model", task_input={})
+            await queue.submit_task(task1, enqueue_time=100.0)
+            await queue.submit_task(task2, enqueue_time=200.0)
 
-            # Verify task is in queue before fetch
-            assert len(queue.queue) == 1
+            # Verify tasks are in queue before fetch
+            assert len(queue.queue) == 2
 
             fetched = await queue.fetch_task()
 
-            # Task should be removed from execution queue
-            assert len(queue.queue) == 0
-            assert fetched.task_id == "task-1"
+            # Only fetched task should be removed, one remains
+            assert len(queue.queue) == 1
+            assert fetched.task_id == "task-1"  # Oldest fetched first (FIFO)
 
     async def test_fetch_task_empty_queue_returns_none(self):
         """Test fetch on empty queue returns None"""
@@ -912,14 +919,17 @@ class TestTaskQueueFetch:
         with patch.object(queue, '_process_queue', new=AsyncMock()):
             task1 = Task(task_id="task-1", model_id="model", task_input={})
             task2 = Task(task_id="task-2", model_id="model", task_input={})
+            task3 = Task(task_id="task-3", model_id="model", task_input={})
 
             await queue.submit_task(task1, enqueue_time=100.0)
             await queue.submit_task(task2, enqueue_time=200.0)
+            await queue.submit_task(task3, enqueue_time=300.0)
 
-            # Mark task1 (oldest) as running
+            # Mark task1 (oldest) as running - counts as 1 active
             task1.mark_started()
 
-            # Fetch should return task2 (the only QUEUED task)
+            # Now: 1 running + 2 queued = 3 active, can fetch 2
+            # Fetch should return task2 (oldest QUEUED task - FIFO)
             fetched = await queue.fetch_task()
 
             assert fetched is not None
@@ -930,12 +940,15 @@ class TestTaskQueueFetch:
         queue = TaskQueue()
 
         with patch.object(queue, '_process_queue', new=AsyncMock()):
-            task = Task(task_id="task-1", model_id="model", task_input={})
-            await queue.submit_task(task)
+            # Need at least 2 tasks because fetch keeps at least 1 active task
+            task1 = Task(task_id="task-1", model_id="model", task_input={})
+            task2 = Task(task_id="task-2", model_id="model", task_input={})
+            await queue.submit_task(task1, enqueue_time=100.0)
+            await queue.submit_task(task2, enqueue_time=200.0)
 
             fetched = await queue.fetch_task()
 
-            # Task should still be in storage
+            # Fetched task should still be in storage (oldest - task-1)
             assert fetched.task_id in queue.tasks
             stored_task = await queue.get_task("task-1")
             assert stored_task is not None
@@ -976,7 +989,7 @@ class TestTaskQueueFetch:
             assert fetched is None
 
     async def test_fetch_task_multiple_fetches(self):
-        """Test multiple sequential fetches return tasks in ascending enqueue_time order"""
+        """Test multiple sequential fetches return tasks in ascending enqueue_time order (FIFO)"""
         queue = TaskQueue()
 
         with patch.object(queue, '_process_queue', new=AsyncMock()):
@@ -988,7 +1001,7 @@ class TestTaskQueueFetch:
             await queue.submit_task(task2, enqueue_time=200.0)
             await queue.submit_task(task3, enqueue_time=300.0)
 
-            # First fetch gets oldest
+            # First fetch gets oldest (from front - FIFO)
             fetched1 = await queue.fetch_task()
             assert fetched1.task_id == "task-1"
 
@@ -996,25 +1009,172 @@ class TestTaskQueueFetch:
             fetched2 = await queue.fetch_task()
             assert fetched2.task_id == "task-2"
 
-            # Third fetch gets newest
+            # Third fetch returns None - must keep at least 1 active task
             fetched3 = await queue.fetch_task()
-            assert fetched3.task_id == "task-3"
+            assert fetched3 is None
 
-            # Fourth fetch returns None (empty)
-            fetched4 = await queue.fetch_task()
-            assert fetched4 is None
+            # task-3 should still be QUEUED
+            assert task3.status == TaskStatus.QUEUED
 
     async def test_fetch_task_can_be_listed_with_status_filter(self):
         """Test that fetched tasks can be listed via status filter"""
         queue = TaskQueue()
 
         with patch.object(queue, '_process_queue', new=AsyncMock()):
-            task = Task(task_id="task-1", model_id="model", task_input={})
-            await queue.submit_task(task)
+            # Need at least 2 tasks because fetch keeps at least 1 active task
+            task1 = Task(task_id="task-1", model_id="model", task_input={})
+            task2 = Task(task_id="task-2", model_id="model", task_input={})
+            await queue.submit_task(task1, enqueue_time=100.0)
+            await queue.submit_task(task2, enqueue_time=200.0)
 
             await queue.fetch_task()
 
-            # Should be listable with FETCHED status filter
+            # Should be listable with FETCHED status filter (oldest fetched first - task-1)
             fetched_tasks = await queue.list_tasks(status_filter=TaskStatus.FETCHED)
             assert len(fetched_tasks) == 1
             assert fetched_tasks[0].task_id == "task-1"
+
+    async def test_fetch_task_keeps_at_least_one_active(self):
+        """Test that fetch won't remove the last active task"""
+        queue = TaskQueue()
+
+        with patch.object(queue, '_process_queue', new=AsyncMock()):
+            # Submit only 1 task
+            task = Task(task_id="task-1", model_id="model", task_input={})
+            await queue.submit_task(task)
+
+            # Fetch should return None - can't remove the last active task
+            fetched = await queue.fetch_task()
+            assert fetched is None
+
+            # Task should still be QUEUED
+            assert task.status == TaskStatus.QUEUED
+
+    async def test_fetch_task_with_running_counts_as_active(self):
+        """Test that running task counts as active, allowing fetch of queued"""
+        queue = TaskQueue()
+
+        with patch.object(queue, '_process_queue', new=AsyncMock()):
+            task1 = Task(task_id="task-1", model_id="model", task_input={})
+            task2 = Task(task_id="task-2", model_id="model", task_input={})
+            await queue.submit_task(task1, enqueue_time=100.0)
+            await queue.submit_task(task2, enqueue_time=200.0)
+
+            # Mark task1 as running (counts as 1 active)
+            task1.mark_started()
+
+            # Now: 1 running + 1 queued = 2 active
+            # Can fetch 1, leaving 1 running
+            fetched = await queue.fetch_task()
+            assert fetched is not None
+            assert fetched.task_id == "task-2"
+
+            # Try to fetch again - should fail (only 1 running left)
+            fetched2 = await queue.fetch_task()
+            assert fetched2 is None
+
+
+class TestTaskQueueCleanup:
+    """Tests for cleanup_fetched_tasks method"""
+
+    async def test_cleanup_fetched_tasks_removes_fetched(self):
+        """Test that cleanup removes FETCHED tasks from storage"""
+        queue = TaskQueue()
+
+        with patch.object(queue, '_process_queue', new=AsyncMock()):
+            # Need 3 tasks: can fetch 2, keeps 1
+            task1 = Task(task_id="task-1", model_id="model", task_input={})
+            task2 = Task(task_id="task-2", model_id="model", task_input={})
+            task3 = Task(task_id="task-3", model_id="model", task_input={})
+
+            await queue.submit_task(task1, enqueue_time=100.0)
+            await queue.submit_task(task2, enqueue_time=200.0)
+            await queue.submit_task(task3, enqueue_time=300.0)
+
+            # Fetch 2 tasks (marks them as FETCHED), 1 remains QUEUED
+            # With FIFO: fetch oldest first
+            await queue.fetch_task()  # task-1 (oldest)
+            await queue.fetch_task()  # task-2
+
+            # Verify 2 are FETCHED
+            stats = await queue.get_queue_stats()
+            assert stats["fetched"] == 2
+            assert stats["queued"] == 1
+            assert stats["total"] == 3
+
+            # Cleanup
+            cleaned = await queue.cleanup_fetched_tasks()
+            assert cleaned == 2
+
+            # Verify only task-3 (QUEUED) remains
+            stats = await queue.get_queue_stats()
+            assert stats["fetched"] == 0
+            assert stats["queued"] == 1
+            assert stats["total"] == 1
+
+    async def test_cleanup_fetched_tasks_preserves_other_statuses(self):
+        """Test that cleanup only removes FETCHED tasks, not others"""
+        queue = TaskQueue()
+
+        with patch.object(queue, '_process_queue', new=AsyncMock()):
+            task1 = Task(task_id="task-1", model_id="model", task_input={})
+            task2 = Task(task_id="task-2", model_id="model", task_input={})
+            task3 = Task(task_id="task-3", model_id="model", task_input={})
+            task4 = Task(task_id="task-4", model_id="model", task_input={})
+
+            await queue.submit_task(task1, enqueue_time=100.0)
+            await queue.submit_task(task2, enqueue_time=200.0)
+            await queue.submit_task(task3, enqueue_time=300.0)
+            await queue.submit_task(task4, enqueue_time=400.0)
+
+            # Mark task1 as running (counts as active)
+            task1.mark_started()
+
+            # Now: 1 running + 3 queued = 4 active, can fetch up to 3
+            # Fetch task-2 (oldest QUEUED - FIFO)
+            await queue.fetch_task()
+
+            # Mark task-3 as completed
+            task3.mark_completed({"result": "done"})
+
+            # task-4 remains QUEUED
+
+            # Cleanup
+            cleaned = await queue.cleanup_fetched_tasks()
+            assert cleaned == 1
+
+            # Verify other tasks remain
+            stats = await queue.get_queue_stats()
+            assert stats["fetched"] == 0
+            assert stats["completed"] == 1
+            assert stats["queued"] == 1
+            assert stats["running"] == 1
+            assert stats["total"] == 3
+
+    async def test_cleanup_fetched_tasks_empty_returns_zero(self):
+        """Test that cleanup returns 0 when no FETCHED tasks"""
+        queue = TaskQueue()
+
+        with patch.object(queue, '_process_queue', new=AsyncMock()):
+            task = Task(task_id="task-1", model_id="model", task_input={})
+            await queue.submit_task(task)
+
+            cleaned = await queue.cleanup_fetched_tasks()
+            assert cleaned == 0
+
+    async def test_get_queue_stats_includes_fetched_count(self):
+        """Test that get_queue_stats includes fetched count"""
+        queue = TaskQueue()
+
+        with patch.object(queue, '_process_queue', new=AsyncMock()):
+            # Need at least 2 tasks to fetch 1
+            task1 = Task(task_id="task-1", model_id="model", task_input={})
+            task2 = Task(task_id="task-2", model_id="model", task_input={})
+            await queue.submit_task(task1, enqueue_time=100.0)
+            await queue.submit_task(task2, enqueue_time=200.0)
+
+            await queue.fetch_task()
+
+            stats = await queue.get_queue_stats()
+            assert "fetched" in stats
+            assert stats["fetched"] == 1

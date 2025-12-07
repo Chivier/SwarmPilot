@@ -222,6 +222,13 @@ class TaskClearResponse(BaseModel):
     )
 
 
+class TaskCleanupFetchedResponse(BaseModel):
+    """Response schema for cleaning up fetched tasks"""
+    success: bool
+    message: str
+    cleaned_count: int = Field(..., description="Number of FETCHED tasks removed from storage")
+
+
 class TaskFetchResponse(BaseModel):
     """Response schema for fetching the first queued task with full details"""
     exist: bool = Field(..., description="Whether a task was found and fetched")
@@ -1320,15 +1327,19 @@ async def list_tasks(
 )
 async def fetch_task():
     """
-    Fetch the first queued task from the task queue.
+    Fetch the oldest queued task from the task queue (FIFO).
 
     This endpoint allows clients to retrieve the oldest queued task
     (lowest enqueue_time) from the instance's task queue. The fetched
     task is marked as FETCHED and will not be executed by this instance.
     No callback will be sent for fetched tasks.
 
-    Use this for work redistribution scenarios where another instance
-    or external client needs to take over pending tasks.
+    Use this for work-stealing scenarios where a newly registered instance
+    needs to take over pending tasks from existing instances.
+
+    Note:
+        - At least one active task (RUNNING or QUEUED) will always be kept
+        - Returns exist=False if only one active task remains
 
     Returns:
         - exist: True if a task was fetched, False if no eligible task
@@ -1336,7 +1347,7 @@ async def fetch_task():
     """
     task_queue = get_task_queue()
 
-    # Fetch the oldest queued task
+    # Fetch the oldest queued task (FIFO for work-stealing)
     task = await task_queue.fetch_task()
 
     if task:
@@ -1511,6 +1522,55 @@ async def clear_tasks():
         log_error_with_traceback(
             error=e,
             context="clear_tasks",
+            client_message=client_message,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=client_message
+        )
+
+
+@app.post(
+    "/task/cleanup_fetched",
+    response_model=TaskCleanupFetchedResponse,
+    status_code=status.HTTP_200_OK,
+    responses={
+        500: {"model": ErrorResponse},
+    },
+)
+async def cleanup_fetched_tasks():
+    """
+    Clean up FETCHED tasks from storage to free memory.
+
+    FETCHED tasks are tasks that were stolen by the work-stealing mechanism
+    and transferred to another instance. They remain in storage for queryability
+    but are no longer needed for execution.
+
+    This endpoint removes all FETCHED tasks from the task storage without
+    affecting other tasks (QUEUED, RUNNING, COMPLETED, FAILED).
+
+    Use this periodically to prevent memory accumulation from work-stealing
+    operations, especially in long-running instances with frequent task
+    redistribution.
+
+    Returns:
+        TaskCleanupFetchedResponse with the count of cleaned tasks
+    """
+    task_queue = get_task_queue()
+
+    try:
+        cleaned_count = await task_queue.cleanup_fetched_tasks()
+
+        return TaskCleanupFetchedResponse(
+            success=True,
+            message=f"Successfully cleaned up {cleaned_count} fetched task(s)",
+            cleaned_count=cleaned_count
+        )
+    except Exception as e:
+        client_message = f"Failed to cleanup fetched tasks: {str(e)}"
+        log_error_with_traceback(
+            error=e,
+            context="cleanup_fetched_tasks",
             client_message=client_message,
         )
         raise HTTPException(
