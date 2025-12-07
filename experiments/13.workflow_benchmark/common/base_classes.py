@@ -62,6 +62,9 @@ class BaseTaskSubmitter(threading.Thread, ABC):
         self.stop_event = threading.Event()
         self.running = False
 
+        # HTTP session for connection pooling
+        self._session = requests.Session()
+
         # Tracking
         self.submitted_count = 0
         self.failed_count = 0
@@ -105,7 +108,7 @@ class BaseTaskSubmitter(threading.Thread, ABC):
         try:
             payload = self._prepare_task_payload(task_data)
 
-            response = requests.post(
+            response = self._session.post(
                 f"{self.scheduler_url}/task/submit",
                 json=payload,
                 timeout=5.0
@@ -165,6 +168,8 @@ class BaseTaskSubmitter(threading.Thread, ABC):
         self.logger.info("Stopping task submitter...")
         self.stop_event.set()
         self.running = False
+        # Close HTTP session
+        self._session.close()
 
 
 class BaseTaskReceiver(threading.Thread, ABC):

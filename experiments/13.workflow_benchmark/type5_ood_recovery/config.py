@@ -22,7 +22,16 @@ class OODRecoveryConfig:
     """Total number of tasks to submit."""
 
     qps: float = 1.0
-    """Target queries per second for task submission."""
+    """Default queries per second for task submission."""
+
+    phase1_qps: Optional[float] = None
+    """Phase 1 QPS. If None, uses qps."""
+
+    phase23_qps: Optional[float] = None
+    """Phase 2/3 QPS. If None, uses qps."""
+
+    runtime_scale: float = 1.0
+    """Global scaling factor for task runtime."""
 
     duration: int = 600
     """Maximum experiment duration in seconds."""
@@ -30,21 +39,27 @@ class OODRecoveryConfig:
     # ==========================================================================
     # Phase Configuration
     # ==========================================================================
-    phase1_count: int = 100
+    phase1_count: int = 300
     """Fixed number of tasks in Phase 1 (warmup with correct predictions)."""
 
     phase1_scale: float = 0.1
     """Scaling factor for Phase 1 sleep time and exp_runtime (0.1x base)."""
 
+    phase1_small_peak_ratio: float = 0.8
+    """Ratio of small peak samples in Phase 1 bimodal distribution.
+    Default 0.8 means 80% from small peak, 20% from large peak."""
+
     # ==========================================================================
     # Phase 2/3 Runtime Distribution Mode
     # ==========================================================================
-    phase23_distribution: str = "normal"
+    phase23_distribution: str = "weighted_bimodal"
     """Distribution type for Phase 2/3 actual runtime.
     Options:
     - "normal": Concentrated normal distribution (opposite of Phase 1's bimodal)
     - "uniform": Uniform distribution between uniform_min and uniform_max
     - "peak_dependent": Peak-dependent transformation of base distribution
+    - "four_peak": Four-peak distribution derived from bimodal with random factor selection
+    - "weighted_bimodal": Weighted bimodal sampling with inverse ratio (20%/80%) and 2x scale
     """
 
     # ==========================================================================
@@ -101,6 +116,56 @@ class OODRecoveryConfig:
     Factor 0.2 collapses Peak 2 (~50s) down to ~10s, merging with Peak 1."""
 
     # ==========================================================================
+    # Four-Peak Distribution for Phase 2/3 (when phase23_distribution="four_peak")
+    # ==========================================================================
+    # Creates a well-separated four-peak distribution using median-based splitting:
+    # - Peak 1 (short, < threshold) is split at median into 1a (below) and 1b (above)
+    # - Peak 2 (long, >= threshold) is split at median into 2a (below) and 2b (above)
+    # - Each sub-peak has its own scale factor for maximum separation control
+    #
+    # With default values:
+    #   Peak 1a: short below median × 0.15 → ~0.03-1.6s
+    #   Peak 1b: short above median × 0.35 → ~3.8-6.8s  (gap ~2.2s from 1a)
+    #   Peak 2a: long below median × 0.25  → ~7.1-12.8s (gap ~0.3s from 1b)
+    #   Peak 2b: long above median × 0.25  → ~12.8-14.1s
+
+    four_peak_scale_1a: float = 0.15
+    """Scale factor for Peak 1a (short tasks below median).
+    Smaller value creates lower range, increasing gap to 1b."""
+
+    four_peak_scale_1b: float = 0.35
+    """Scale factor for Peak 1b (short tasks above median).
+    Larger value creates higher range, increasing gap from 1a."""
+
+    four_peak_scale_2a: float = 0.45
+    """Scale factor for Peak 2a (long tasks below median).
+    Increased to create >5s gap from Peak 1b."""
+
+    four_peak_scale_2b: float = 0.65
+    """Scale factor for Peak 2b (long tasks above median).
+    Set to create ~10s gap from Peak 2a."""
+
+    # ==========================================================================
+    # Weighted Bimodal Distribution for Phase 2/3 (when phase23_distribution="weighted_bimodal")
+    # ==========================================================================
+    # Creates an OOD scenario by changing the bimodal sampling ratio and applying a scale factor:
+    # - Phase 1: 80% small peak + 20% large peak (controlled by phase1_small_peak_ratio)
+    # - Phase 2/3: 20% small peak + 80% large peak (inverse ratio) with 2x scale
+    #
+    # This creates a clear distribution shift:
+    # - Phase 1 is dominated by short tasks
+    # - Phase 2/3 is dominated by long tasks (scaled 2x)
+    # The predictor trained on Phase 1 will be unable to predict Phase 2/3 accurately.
+
+    phase23_small_peak_ratio: float = 0.2
+    """Ratio of small peak samples in Phase 2/3 weighted bimodal distribution.
+    Default 0.2 means 20% from small peak, 80% from large peak (inverse of Phase 1)."""
+
+    phase23_bimodal_scale: float = 2.0
+    """Scale factor applied to all Phase 2/3 weighted bimodal samples.
+    Default 2.0 means all values are doubled."""
+
+    # ==========================================================================
     # Phase Transition
     # ==========================================================================
     phase2_transition_count: int = 10
@@ -148,7 +213,7 @@ class OODRecoveryConfig:
     target_quantile: float = 0.9
     """Target quantile for probabilistic strategy."""
 
-    quantiles: list = field(default_factory=lambda: [0.1, 0.25, 0.5, 0.75, 0.99])
+    quantiles: list = field(default_factory=lambda: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99])
     """Quantiles for probabilistic strategy."""
 
     # ==========================================================================
@@ -198,11 +263,26 @@ class OODRecoveryConfig:
                 f"  Phase 2/3 distribution: Uniform[{self.uniform_min}s, {self.uniform_max}s]\n"
                 f"    - Mean: {(self.uniform_min + self.uniform_max) / 2:.2f}s\n"
             )
-        else:  # peak_dependent
+        elif self.phase23_distribution == "peak_dependent":
             phase23_dist_str = (
                 f"  Phase 2/3 distribution: Peak-dependent transformation\n"
                 f"    - Peak 1 (< {self.peak_threshold}s): factor = {self.peak1_factor}x\n"
                 f"    - Peak 2 (>= {self.peak_threshold}s): factor = {self.peak2_factor}x\n"
+            )
+        elif self.phase23_distribution == "four_peak":
+            phase23_dist_str = (
+                f"  Phase 2/3 distribution: Four-peak (median-split)\n"
+                f"    - Peak 1a (short, below median): {self.four_peak_scale_1a}x\n"
+                f"    - Peak 1b (short, above median): {self.four_peak_scale_1b}x\n"
+                f"    - Peak 2a (long, below median):  {self.four_peak_scale_2a}x\n"
+                f"    - Peak 2b (long, above median):  {self.four_peak_scale_2b}x\n"
+            )
+        else:  # weighted_bimodal
+            phase23_dist_str = (
+                f"  Phase 2/3 distribution: Weighted bimodal\n"
+                f"    - Small peak ratio: {self.phase23_small_peak_ratio:.0%}\n"
+                f"    - Large peak ratio: {1 - self.phase23_small_peak_ratio:.0%}\n"
+                f"    - Scale factor: {self.phase23_bimodal_scale}x\n"
             )
 
         return (
@@ -211,9 +291,9 @@ class OODRecoveryConfig:
             f"  Tasks: {self.num_tasks} (Phase1: {self.phase1_count}, Phase2+3: {self.phase23_count})\n"
             f"  QPS: {self.qps}\n"
             f"  Duration: {self.duration}s\n"
-            f"  Phase 1 scale: {self.phase1_scale}x (actual & exp_runtime)\n"
+            f"  Phase 1: scale={self.phase1_scale}x, bimodal ratio={self.phase1_small_peak_ratio:.0%}/{1-self.phase1_small_peak_ratio:.0%} (small/large)\n"
             f"{phase23_dist_str}"
-            f"  Phase 2 exp_runtime: sampled from Phase 1 distribution × {self.phase1_scale}x (wrong)\n"
+            f"  Phase 2 exp_runtime: Inverse correlation (large actual→small peak, small actual→large peak)\n"
             f"  Phase 3 exp_runtime: matches actual sleep (corrected)\n"
             f"  Phase 2→3 transition: after {self.phase2_transition_count} Phase 2 tasks {trigger_type}\n"
             f"  Scheduler: {self.scheduler_url}\n"

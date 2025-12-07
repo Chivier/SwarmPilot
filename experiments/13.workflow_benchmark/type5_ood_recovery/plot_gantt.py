@@ -55,26 +55,29 @@ def fetch_schedule_info(
 
     Args:
         scheduler_url: Scheduler endpoint URL
-        model_id: Model ID to filter by
-        limit: Maximum tasks to fetch
+        model_id: Model ID to filter by (optional, for filtering results)
+        limit: Maximum tasks to fetch (not used by API, kept for compatibility)
 
     Returns:
         Dict mapping task_id to assigned_instance
     """
     url = f"{scheduler_url}/task/schedule_info"
-    params = {"model_id": model_id, "limit": limit}
+    # API doesn't accept query params - it returns all tasks
 
-    response = httpx.get(url, params=params, timeout=30.0)
+    response = httpx.get(url, timeout=30.0)
     response.raise_for_status()
 
     data = response.json()
 
     # Build task_id -> instance_id mapping
+    # Filter by model_id locally since API returns all tasks
     task_to_instance = {}
     for task in data.get("tasks", []):
         task_id = task.get("task_id", "")
         instance_id = task.get("assigned_instance", "")
-        if task_id and instance_id:
+        task_model_id = task.get("model_id", "")
+        # Filter by model_id if specified
+        if task_id and instance_id and (not model_id or task_model_id == model_id):
             task_to_instance[task_id] = instance_id
 
     return task_to_instance
@@ -87,9 +90,13 @@ def load_experiment_data(
     """
     Load experiment data and combine with schedule info.
 
+    Instance assignments are loaded from:
+    1. metrics['task_executions'][*]['instance_id'] if available (preferred)
+    2. Scheduler /task/schedule_info endpoint (fallback)
+
     Args:
         metrics_file: Path to metrics JSON file
-        scheduler_url: Scheduler URL for fetching schedule_info
+        scheduler_url: Scheduler URL for fetching schedule_info (fallback)
 
     Returns:
         Tuple of (list of TaskExecution, experiment_start_time)
@@ -98,46 +105,56 @@ def load_experiment_data(
     with open(metrics_file, 'r') as f:
         metrics = json.load(f)
 
-    # Get model_id from config
-    model_id = metrics.get("config", {}).get("model_id", "sleep_model_a")
-
-    # Fetch schedule info from scheduler
-    print(f"Fetching schedule info from {scheduler_url}...")
-    task_to_instance = fetch_schedule_info(scheduler_url, model_id)
-    print(f"  Found {len(task_to_instance)} task-instance mappings")
-
-    # Check if we have task-level data in metrics
-    # The experiment stores task data in receiver.get_completed_tasks()
-    # which gets saved as part of the metrics
-
-    # For now, we need to reconstruct from the throughput_trend
-    # which doesn't have per-task data.
-    #
-    # SOLUTION: Modify the experiment to also export per-task data
-    # For this script, we'll need that data or run a new experiment
-
-    print("Note: Per-task execution data needs to be exported from experiment.")
-    print("This script expects task data in metrics['task_executions']")
-
     task_executions = []
     experiment_start = 0.0
 
-    if "task_executions" in metrics:
-        experiment_start = metrics.get("experiment_start_time", 0.0)
-        for task_data in metrics["task_executions"]:
-            task_id = task_data["task_id"]
+    if "task_executions" not in metrics:
+        print("Note: No task_executions data in metrics file.")
+        print("Please run the experiment again to generate Gantt chart data.")
+        return task_executions, experiment_start
+
+    experiment_start = metrics.get("experiment_start_time", 0.0)
+
+    # Check if instance_id is already in task_executions (new format)
+    has_instance_id = any(
+        "instance_id" in task_data
+        for task_data in metrics["task_executions"]
+    )
+
+    # Only fetch from scheduler if instance_id is not in metrics
+    task_to_instance = {}
+    if not has_instance_id:
+        print("Instance IDs not found in metrics, fetching from scheduler...")
+        model_id = metrics.get("config", {}).get("model_id", "sleep_model_a")
+        try:
+            task_to_instance = fetch_schedule_info(scheduler_url, model_id)
+            print(f"  Found {len(task_to_instance)} task-instance mappings")
+        except Exception as e:
+            print(f"  Warning: Failed to fetch schedule info: {e}")
+            print("  Gantt chart will have 'unknown' instances")
+    else:
+        print("Using instance IDs from metrics file (no scheduler query needed)")
+
+    # Build task execution list
+    for task_data in metrics["task_executions"]:
+        task_id = task_data["task_id"]
+
+        # Use instance_id from metrics if available, otherwise from scheduler
+        if "instance_id" in task_data:
+            instance_id = task_data["instance_id"]
+        else:
             instance_id = task_to_instance.get(task_id, "unknown")
 
-            task_executions.append(TaskExecution(
-                task_id=task_id,
-                task_index=task_data["task_index"],
-                phase=task_data["phase"],
-                instance_id=instance_id,
-                submit_time=task_data["submit_time"] - experiment_start,
-                complete_time=task_data["complete_time"] - experiment_start,
-                sleep_time_s=task_data["sleep_time_s"],
-                exec_start_time=task_data["complete_time"] - experiment_start - task_data["sleep_time_s"],
-            ))
+        task_executions.append(TaskExecution(
+            task_id=task_id,
+            task_index=task_data["task_index"],
+            phase=task_data["phase"],
+            instance_id=instance_id,
+            submit_time=task_data["submit_time"] - experiment_start,
+            complete_time=task_data["complete_time"] - experiment_start,
+            sleep_time_s=task_data["sleep_time_s"],
+            exec_start_time=task_data["complete_time"] - experiment_start - task_data["sleep_time_s"],
+        ))
 
     return task_executions, experiment_start
 

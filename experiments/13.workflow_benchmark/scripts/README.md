@@ -74,6 +74,35 @@ Ports 8204-8207 → Planner
 
 ---
 
+## Type5: OOD Recovery Experiment
+
+Run the OOD recovery experiment comparing baseline vs recovery modes:
+
+```bash
+cd experiments/13.workflow_benchmark
+
+# Run both modes for comparison (recommended)
+python -m scripts.run_type5_ood_experiment \
+    --num-tasks 500 --qps 2.83 --mode both
+
+# Run with custom services
+python -m scripts.run_type5_ood_experiment \
+    --scheduler-url http://custom:8100 \
+    --predictor-url http://custom:8000 \
+    --skip-service-check \
+    --num-tasks 500 --qps 2.83
+```
+
+**Optimal Configurations:**
+| Instances | QPS | Expected Improvement |
+|-----------|-----|---------------------|
+| 48 | 2.83 | ~23% |
+| 128 | 7.90 | ~38% |
+
+See [type5_ood_recovery/README.md](../type5_ood_recovery/README.md) for detailed documentation.
+
+---
+
 ## Troubleshooting
 
 ```bash

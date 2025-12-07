@@ -198,6 +198,12 @@ class OODTaskReceiver(BaseTaskReceiver):
         task.complete_time = time.time()
         task.is_complete = True
 
+        # Extract instance_id from result data (sent by instance in callback)
+        # The instance_id is nested inside the "result" field of the WebSocket message
+        result_data = data.get("result", {})
+        if isinstance(result_data, dict):
+            task.instance_id = result_data.get("instance_id")
+
         # Update phase complete counts
         with self._phase_lock:
             self.phase_complete_counts[task.phase] += 1

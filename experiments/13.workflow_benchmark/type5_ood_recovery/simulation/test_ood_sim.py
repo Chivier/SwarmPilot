@@ -157,8 +157,9 @@ def run_experiment(config: OODRecoveryConfig, logger, seed: int = 42) -> Dict:
     # Metrics collector
     metrics = MetricsCollector(custom_logger=logger)
 
-    # Rate limiter
-    rate_limiter = RateLimiter(rate=config.qps)
+    # Rate limiter - use phase1_qps for initial rate
+    initial_qps = config.phase1_qps if config.phase1_qps is not None else config.qps
+    rate_limiter = RateLimiter(rate=initial_qps)
 
     # ========================================================================
     # Create Components
@@ -197,7 +198,7 @@ def run_experiment(config: OODRecoveryConfig, logger, seed: int = 42) -> Dict:
     receiver.start()
 
     # Wait for receiver to connect
-    time.sleep(1.0)
+    time.sleep(0.2)  # Brief wait for receiver to connect
 
     # Start submitter
     submitter.start()
@@ -216,10 +217,15 @@ def run_experiment(config: OODRecoveryConfig, logger, seed: int = 42) -> Dict:
     trend_interval = 1.0  # Record throughput every 1 second
     last_trend_time = start_time
 
-    # Print progress every 10 seconds
+    # Print progress with real-time throughput
     elapsed = 0
+    progress_interval = 5  # Print progress every 5 seconds
+    last_progress_elapsed = 0  # Track last printed elapsed to avoid duplicates
+    last_progress_completed = 0  # Track completed count at last progress output
+    last_progress_time = start_time  # Track time at last progress output
+
     while elapsed < config.duration:
-        time.sleep(1)  # Check more frequently for finer-grained throughput tracking
+        time.sleep(0.1)  # Fast polling for responsive throughput tracking
         current_time = time.time()
         elapsed = current_time - start_time
 
@@ -256,15 +262,39 @@ def run_experiment(config: OODRecoveryConfig, logger, seed: int = 42) -> Dict:
         # Check for phase transition
         transition_status = "Yes" if phase_transition_event.is_set() else "No"
 
-        # Print progress every 10 seconds
-        if int(elapsed) % 10 == 0 and int(elapsed) > 0:
+        # Print real-time progress every progress_interval seconds
+        current_progress_elapsed = int(elapsed // progress_interval) * progress_interval
+        if current_progress_elapsed > last_progress_elapsed and current_progress_elapsed > 0:
+            # Calculate throughput for this output interval (between two log outputs)
+            interval_completed = total_completed - last_progress_completed
+            interval_time = current_time - last_progress_time
+            interval_throughput = interval_completed / interval_time if interval_time > 0 else 0.0
+
+            # Calculate cumulative throughput
+            cumul_tp = total_completed / elapsed if elapsed > 0 else 0.0
+
+            # Calculate current phase
+            if not phase_transition_event.is_set():
+                if total_submitted <= config.phase1_count:
+                    current_phase = "P1"
+                else:
+                    current_phase = "P2"
+            else:
+                current_phase = "P3"
+
             logger.info(
-                f"Progress [{elapsed:.1f}s]: "
-                f"Submitted: P1={submitted.get(1, 0)}, P2={submitted.get(2, 0)}, P3={submitted.get(3, 0)} "
-                f"| Completed: P1={completed.get(1, 0)}, P2={completed.get(2, 0)}, P3={completed.get(3, 0)} "
-                f"| Throughput: {throughput_trend[-1]['cumulative_throughput']:.2f} tasks/s"
-                f"| Transition: {transition_status}"
+                f"[{elapsed:6.1f}s] "
+                f"Phase={current_phase} | "
+                f"Submitted: {total_submitted:3d} (P1:{submitted.get(1, 0):2d} P2:{submitted.get(2, 0):2d} P3:{submitted.get(3, 0):2d}) | "
+                f"Completed: {total_completed:3d} (P1:{completed.get(1, 0):2d} P2:{completed.get(2, 0):2d} P3:{completed.get(3, 0):2d}) | "
+                f"Throughput: {interval_throughput:5.2f} tasks/s (avg: {cumul_tp:5.2f}) | "
+                f"Recovery: {transition_status}"
             )
+
+            # Update tracking for next interval
+            last_progress_elapsed = current_progress_elapsed
+            last_progress_completed = total_completed
+            last_progress_time = current_time
 
         # Early stopping: all tasks completed
         if total_completed >= config.num_tasks:
@@ -424,6 +454,27 @@ def run_experiment(config: OODRecoveryConfig, logger, seed: int = 42) -> Dict:
 
     output_dir = ensure_directory(config.output_dir)
 
+    # Build task_executions list for Gantt chart visualization
+    # Instance ID is now captured directly from task result callback
+    task_executions = []
+    tasks_with_instance = 0
+    for task in completed_tasks:
+        if task.submit_time is not None and task.complete_time is not None:
+            instance_id = task.instance_id if task.instance_id else "unknown"
+            if task.instance_id:
+                tasks_with_instance += 1
+            task_executions.append({
+                "task_id": task.task_id,
+                "task_index": task.task_index,
+                "phase": task.phase,
+                "submit_time": task.submit_time,
+                "complete_time": task.complete_time,
+                "sleep_time_s": task.actual_sleep_time,
+                "exp_runtime_ms": task.exp_runtime_ms,
+                "instance_id": instance_id,
+            })
+    logger.info(f"Built {len(task_executions)} task executions ({tasks_with_instance} with instance_id)")
+
     # Build results dictionary
     results = {
         "config": {
@@ -454,6 +505,8 @@ def run_experiment(config: OODRecoveryConfig, logger, seed: int = 42) -> Dict:
         "complete_counts": complete_counts,
         "phase_stats": phase_stats,
         "throughput_trend": throughput_trend,
+        "task_executions": task_executions,
+        "experiment_start_time": start_time,
         "timestamp": datetime.now().isoformat(),
     }
 
@@ -507,6 +560,118 @@ def generate_throughput_plot(
         return None
 
 
+def generate_gantt_chart(
+    results_file: Path,
+    output_dir: Path,
+    mode_suffix: str,
+    scheduler_url: str,
+    logger,
+) -> Optional[Path]:
+    """
+    Generate Gantt chart from experiment results.
+
+    Args:
+        results_file: Path to the metrics JSON file
+        output_dir: Directory to save the plot
+        mode_suffix: Suffix for the plot filename (e.g., "_recovery" or "_baseline")
+        scheduler_url: Scheduler URL for fetching instance assignments
+        logger: Logger instance
+
+    Returns:
+        Path to the generated plot, or None if failed
+    """
+    try:
+        from type5_ood_recovery.plot_gantt import (
+            load_experiment_data,
+            plot_gantt_chart,
+            plot_gantt_with_queuing,
+        )
+
+        # Load experiment data
+        task_executions, _ = load_experiment_data(results_file, scheduler_url)
+
+        if not task_executions:
+            logger.warning("No task execution data found for Gantt chart")
+            return None
+
+        # Determine title based on mode
+        mode_name = "Recovery" if "recovery" in mode_suffix else "Baseline"
+        title = f"Task Execution Gantt Chart ({mode_name} Mode)"
+
+        # Generate simple Gantt chart
+        gantt_file = output_dir / f"gantt_chart{mode_suffix}.png"
+        plot_gantt_chart(task_executions, gantt_file, title=title)
+        logger.info(f"Gantt chart saved to: {gantt_file}")
+
+        # Generate Gantt chart with queueing visualization
+        gantt_queue_file = output_dir / f"gantt_chart_with_queue{mode_suffix}.png"
+        plot_gantt_with_queuing(
+            task_executions,
+            gantt_queue_file,
+            title=f"Task Execution with Queueing ({mode_name} Mode)"
+        )
+        logger.info(f"Gantt chart with queueing saved to: {gantt_queue_file}")
+
+        return gantt_file
+    except ImportError as e:
+        logger.warning(f"Could not import Gantt plotting module: {e}")
+        logger.warning("Skipping Gantt chart generation.")
+        return None
+    except Exception as e:
+        logger.warning(f"Failed to generate Gantt chart: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+
+def generate_all_plots(
+    results_file: Path,
+    output_dir: Path,
+    mode_suffix: str,
+    scheduler_url: str,
+    logger,
+) -> None:
+    """
+    Generate all plots (throughput and Gantt charts) from experiment results.
+
+    Args:
+        results_file: Path to the metrics JSON file
+        output_dir: Directory to save plots
+        mode_suffix: Suffix for plot filenames
+        scheduler_url: Scheduler URL for Gantt chart
+        logger: Logger instance
+    """
+    logger.info("")
+    logger.info("=" * 50)
+    logger.info("Generating all plots...")
+    logger.info("=" * 50)
+
+    # 1. Generate throughput plot
+    logger.info("")
+    logger.info("1. Generating throughput plot...")
+    generate_throughput_plot(
+        results_file=results_file,
+        output_dir=output_dir,
+        mode_suffix=mode_suffix,
+        logger=logger,
+    )
+
+    # 2. Generate Gantt charts
+    logger.info("")
+    logger.info("2. Generating Gantt charts...")
+    generate_gantt_chart(
+        results_file=results_file,
+        output_dir=output_dir,
+        mode_suffix=mode_suffix,
+        scheduler_url=scheduler_url,
+        logger=logger,
+    )
+
+    logger.info("")
+    logger.info("All plots generated successfully!")
+    logger.info("=" * 50)
+
+
 def main():
     """Main entry point."""
 
@@ -530,6 +695,24 @@ def main():
         type=float,
         default=1.0,
         help="Target queries per second (default: 1.0)"
+    )
+    parser.add_argument(
+        "--phase1-qps",
+        type=float,
+        default=None,
+        help="Phase 1 QPS (default: same as --qps)"
+    )
+    parser.add_argument(
+        "--phase23-qps",
+        type=float,
+        default=None,
+        help="Phase 2/3 QPS (default: same as --qps)"
+    )
+    parser.add_argument(
+        "--runtime-scale",
+        type=float,
+        default=1.0,
+        help="Global scaling factor for task runtime (default: 1.0)"
     )
     parser.add_argument(
         "--duration",
@@ -580,10 +763,30 @@ def main():
         help="Scheduler endpoint URL (default: http://127.0.0.1:8100)"
     )
     parser.add_argument(
+        "--predictor-url",
+        type=str,
+        default="http://127.0.0.1:8000",
+        help="Predictor endpoint URL (default: http://127.0.0.1:8000)"
+    )
+    parser.add_argument(
         "--model-id",
         type=str,
         default="sleep_model_a",
         help="Model ID for task submission (default: sleep_model_a)"
+    )
+    parser.add_argument(
+        "--skip-service-check",
+        action="store_true",
+        help="Skip automatic service health checks (use when services are user-started)"
+    )
+
+    # Phase 2/3 distribution configuration
+    parser.add_argument(
+        "--phase23-distribution",
+        type=str,
+        default="four_peak",
+        choices=["normal", "uniform", "peak_dependent", "four_peak"],
+        help="Distribution mode for Phase 2/3 sleep times (default: four_peak)"
     )
 
     # Output configuration
@@ -633,6 +836,9 @@ def main():
     config = OODRecoveryConfig(
         num_tasks=args.num_tasks,
         qps=args.qps,
+        phase1_qps=args.phase1_qps,
+        phase23_qps=args.phase23_qps,
+        runtime_scale=args.runtime_scale,
         duration=args.duration,
         phase1_count=args.phase1_count,
         phase2_transition_count=args.phase2_transition_count,
@@ -642,6 +848,7 @@ def main():
         model_id=args.model_id,
         output_dir=args.output_dir,
         metrics_file=f"metrics{output_suffix}.json",
+        phase23_distribution=args.phase23_distribution,
     )
 
     logger = configure_logging(level="INFO")
@@ -650,6 +857,13 @@ def main():
     logger.info("OOD Recovery Experiment Configuration")
     logger.info("=" * 70)
     logger.info(str(config))
+    logger.info("")
+    logger.info("Phase-Specific QPS Parameters:")
+    logger.info(f"  --qps (default): {config.qps}")
+    logger.info(f"  --phase1-qps:    {config.phase1_qps} (effective: {config.phase1_qps if config.phase1_qps else config.qps})")
+    logger.info(f"  --phase23-qps:   {config.phase23_qps} (effective: {config.phase23_qps if config.phase23_qps else config.qps})")
+    logger.info(f"  --runtime-scale: {config.runtime_scale}")
+    logger.info("=" * 70)
 
     # ========================================================================
     # Setup Scheduler Strategy
@@ -690,18 +904,17 @@ def main():
     logger.info("=" * 70)
 
     # ========================================================================
-    # Generate Throughput Plot
+    # Generate All Plots (Throughput + Gantt Charts)
     # ========================================================================
 
     if not args.no_plot:
-        logger.info("")
-        logger.info("Generating throughput plot...")
         results_file = Path(results.get("_results_file", ""))
         if results_file.exists():
-            generate_throughput_plot(
+            generate_all_plots(
                 results_file=results_file,
                 output_dir=Path(args.output_dir),
                 mode_suffix=output_suffix,
+                scheduler_url=args.scheduler_url,
                 logger=logger,
             )
         else:

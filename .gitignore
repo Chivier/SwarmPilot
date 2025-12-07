@@ -103,3 +103,6 @@ AGENTS.md
 .env.example
 
 output
+
+logs_*
+output_*

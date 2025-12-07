@@ -22,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from common.base_classes import BaseTaskSubmitter
 from common.rate_limiter import RateLimiter
 from .config import OODRecoveryConfig
-from .task_data import OODTaskData, TaskGenerator, get_qps_scale_factor
+from .task_data import OODTaskData, TaskGenerator
 
 
 class OODTaskSubmitter(BaseTaskSubmitter):
@@ -72,7 +72,7 @@ class OODTaskSubmitter(BaseTaskSubmitter):
         super().__init__(
             name="OODSubmitter",
             scheduler_url=config.scheduler_url,
-            qps=config.qps,
+            qps=config.phase1_qps if config.phase1_qps is not None else config.qps,
             duration=config.duration,
             metrics=metrics,
             **kwargs
@@ -85,11 +85,10 @@ class OODTaskSubmitter(BaseTaskSubmitter):
         self.task_generator = task_generator
         self.get_total_completed = get_total_completed
         self.rate_limiter = rate_limiter
-
-        # QPS scaling info (calculated once at init)
-        self._qps_scale_factor = get_qps_scale_factor(config)
-        self._original_qps = config.qps
-        self._scaled_qps = self._original_qps * self._qps_scale_factor
+        
+        # Store phase-specific QPS for switching
+        self.phase1_qps = config.phase1_qps if config.phase1_qps is not None else config.qps
+        self.phase23_qps = config.phase23_qps if config.phase23_qps is not None else config.qps
 
         # Phase tracking
         self.phase1_count = config.phase1_count
@@ -161,16 +160,14 @@ class OODTaskSubmitter(BaseTaskSubmitter):
                 self.phase2_started = True
                 self.current_phase = 2
                 self.logger.info(f"Entering Phase 2 at task index {self.current_index}")
-
-                # Scale QPS at Phase 1 → Phase 2 boundary
-                # QPS scales inversely with task duration: longer tasks = lower QPS
-                if self.rate_limiter is not None:
-                    self.logger.info(
-                        f"Scaling QPS at Phase 1→2 boundary: "
-                        f"{self._original_qps:.2f} → {self._scaled_qps:.2f} "
-                        f"(factor: {self._qps_scale_factor:.4f})"
-                    )
-                    self.rate_limiter.set_rate(self._scaled_qps)
+                
+                # Switch to Phase 2/3 QPS
+                if self.phase23_qps != self.phase1_qps:
+                    self.qps = self.phase23_qps
+                    # Also update the rate limiter if available
+                    if self.rate_limiter is not None:
+                        self.rate_limiter.set_rate(self.phase23_qps)
+                    self.logger.info(f"Switching QPS from {self.phase1_qps} to {self.phase23_qps}")
 
             # Check for Phase 2 → Phase 3 transition
             if (self.current_phase == 2 and
@@ -265,7 +262,7 @@ class OODTaskSubmitter(BaseTaskSubmitter):
             f"Phase1={self.phase1_count} tasks, "
             f"Initial Phase2+3={self.config.phase23_count} tasks, "
             f"Target completions={self.config.num_tasks}, "
-            f"QPS={self.config.qps}, "
+            f"Phase1_QPS={self.phase1_qps}, Phase23_QPS={self.phase23_qps}, "
             f"NoRecovery={self.config.no_recovery}, "
             f"TransitionTrigger={trigger_mode}(count={self.config.phase2_transition_count})"
         )

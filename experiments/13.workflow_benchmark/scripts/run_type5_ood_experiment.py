@@ -27,12 +27,20 @@ def run_experiment(
     mode: str,
     num_tasks: int,
     qps: float,
+    phase1_qps: float,
+    phase23_qps: float,
+    runtime_scale: float,
     duration: int,
     scheduler_url: str,
+    predictor_url: str,
+    model_id: str,
     output_dir: str,
     seed: int,
     phase2_transition_count: int = 10,
+    phase1_count: int = 100,
     transition_on_submit: bool = True,
+    phase23_distribution: str = "four_peak",
+    skip_service_check: bool = False,
 ) -> dict:
     """
     Run a single OOD experiment.
@@ -40,13 +48,21 @@ def run_experiment(
     Args:
         mode: 'recovery' or 'baseline'
         num_tasks: Number of tasks to submit
-        qps: Queries per second
+        qps: Default queries per second
+        phase1_qps: Phase 1 QPS (None = use qps)
+        phase23_qps: Phase 2/3 QPS (None = use qps)
+        runtime_scale: Global scaling factor for task runtime
         duration: Maximum duration in seconds
         scheduler_url: Scheduler URL
+        predictor_url: Predictor URL
+        model_id: Model ID for task submission
         output_dir: Output directory
         seed: Random seed for reproducibility
         phase2_transition_count: Number of Phase 2 tasks before Phase 3 transition
+        phase1_count: Number of tasks in Phase 1
         transition_on_submit: If True, trigger transition on submission count
+        phase23_distribution: Distribution mode for Phase 2/3 sleep times
+        skip_service_check: If True, skip automatic service health checks
 
     Returns:
         dict with experiment results
@@ -56,16 +72,30 @@ def run_experiment(
         sys.executable, "-m", "type5_ood_recovery.simulation.test_ood_sim",
         "--num-tasks", str(num_tasks),
         "--qps", str(qps),
+        "--runtime-scale", str(runtime_scale),
         "--duration", str(duration),
         "--scheduler-url", scheduler_url,
+        "--predictor-url", predictor_url,
+        "--model-id", model_id,
         "--output-dir", output_dir,
         "--seed", str(seed),
         "--phase2-transition-count", str(phase2_transition_count),
+        "--phase1-count", str(phase1_count),
+        "--phase23-distribution", phase23_distribution,
     ]
+    
+    # Add phase-specific QPS if provided
+    if phase1_qps is not None:
+        cmd.extend(["--phase1-qps", str(phase1_qps)])
+    if phase23_qps is not None:
+        cmd.extend(["--phase23-qps", str(phase23_qps)])
 
     # Add transition mode flag
     if not transition_on_submit:
         cmd.append("--transition-on-complete")
+
+    if skip_service_check:
+        cmd.append("--skip-service-check")
 
     if mode == "baseline":
         cmd.append("--no-recovery")
@@ -116,10 +146,34 @@ def main():
         help="Target queries per second (default: 1.0)"
     )
     parser.add_argument(
+        "--phase1-qps",
+        type=float,
+        default=None,
+        help="Phase 1 QPS (default: same as --qps)"
+    )
+    parser.add_argument(
+        "--phase23-qps",
+        type=float,
+        default=None,
+        help="Phase 2/3 QPS (default: same as --qps)"
+    )
+    parser.add_argument(
+        "--runtime-scale",
+        type=float,
+        default=1.0,
+        help="Global scaling factor for task runtime (default: 1.0)"
+    )
+    parser.add_argument(
         "--duration",
         type=int,
         default=600,
         help="Maximum experiment duration in seconds (default: 600)"
+    )
+    parser.add_argument(
+        "--phase1-count",
+        type=int,
+        default=100,
+        help="Number of tasks in Phase 1 (default: 100)"
     )
 
     # Phase transition configuration
@@ -152,6 +206,23 @@ def main():
         default="http://127.0.0.1:8100",
         help="Scheduler URL (default: http://127.0.0.1:8100)"
     )
+    parser.add_argument(
+        "--predictor-url",
+        type=str,
+        default="http://127.0.0.1:8000",
+        help="Predictor URL (default: http://127.0.0.1:8000)"
+    )
+    parser.add_argument(
+        "--model-id",
+        type=str,
+        default="sleep_model_a",
+        help="Model ID for task submission (default: sleep_model_a)"
+    )
+    parser.add_argument(
+        "--skip-service-check",
+        action="store_true",
+        help="Skip automatic service health checks (use when services are user-started)"
+    )
 
     # Output configuration
     parser.add_argument(
@@ -159,6 +230,15 @@ def main():
         type=str,
         default="output_ood",
         help="Output directory (default: output_ood)"
+    )
+
+    # Phase 2/3 distribution configuration
+    parser.add_argument(
+        "--phase23-distribution",
+        type=str,
+        default="four_peak",
+        choices=["normal", "uniform", "peak_dependent", "four_peak"],
+        help="Distribution mode for Phase 2/3 sleep times (default: four_peak)"
     )
 
     # Reproducibility
@@ -174,7 +254,7 @@ def main():
 
     # Determine which modes to run
     if args.mode == "both":
-        modes = ["recovery", "baseline"]
+        modes = ["baseline", "recovery"]  # Run baseline first, then recovery
     else:
         modes = [args.mode]
 
@@ -205,12 +285,20 @@ def main():
             mode=mode,
             num_tasks=args.num_tasks,
             qps=args.qps,
+            phase1_qps=args.phase1_qps,
+            phase23_qps=args.phase23_qps,
+            runtime_scale=args.runtime_scale,
             duration=args.duration,
             scheduler_url=args.scheduler_url,
+            predictor_url=args.predictor_url,
+            model_id=args.model_id,
             output_dir=args.output_dir,
             seed=args.seed,
             phase2_transition_count=args.phase2_transition_count,
             transition_on_submit=transition_on_submit,
+            phase1_count=args.phase1_count,
+            phase23_distribution=args.phase23_distribution,
+            skip_service_check=args.skip_service_check,
         )
         results.append(result)
 
