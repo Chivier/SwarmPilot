@@ -241,6 +241,21 @@ class SubmitTargetResponse(BaseModel):
     current_target: Optional[List[float]] = Field(None, description="Current accumulated target distribution")
 
 
+class SubmitThroughputRequest(BaseModel):
+    """Request model for submitting instance throughput data."""
+    instance_url: str = Field(..., description="Instance endpoint URL")
+    avg_execution_time: float = Field(..., gt=0, description="Average execution time in seconds (must be > 0)")
+
+
+class SubmitThroughputResponse(BaseModel):
+    """Response model for submit_throughput endpoint."""
+    success: bool = Field(..., description="Whether throughput was recorded successfully")
+    message: str = Field(..., description="Status message")
+    instance_url: str = Field(..., description="Instance URL that was submitted")
+    model_id: Optional[str] = Field(None, description="Model ID determined from instance's current deployment")
+    computed_capacity: Optional[float] = Field(None, description="Computed processing capacity (1/avg_execution_time)")
+
+
 # ============================================================================
 # Dummy Endpoint Models (compatible with Scheduler interface)
 # ============================================================================

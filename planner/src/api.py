@@ -27,6 +27,8 @@ from .models import (
     MigrationOutput,
     SubmitTargetRequest,
     SubmitTargetResponse,
+    SubmitThroughputRequest,
+    SubmitThroughputResponse,
     # Dummy endpoint models (compatible with Scheduler)
     InstanceStatus,
     InstanceDrainRequest,
@@ -67,6 +69,10 @@ _auto_optimize_task: Optional[asyncio.Task] = None  # Background task handle
 _first_data_received: bool = False  # True after first /submit_target in current cycle
 _first_migration_done: bool = False  # True after first /deploy/migration completed
 _optimization_timer_start: float = 0.0  # Timestamp when optimization timer starts (after all models submitted)
+
+# Throughput data storage for B matrix updates
+# Structure: {instance_url: {model_id: capacity}}
+_throughput_data: Dict[str, Dict[str, float]] = {}
 
 
 async def _fetch_instance_model(client: httpx.AsyncClient, endpoint: str, timeout: float = 5.0) -> Tuple[str, Optional[str], Optional[str]]:
@@ -230,6 +236,71 @@ async def _auto_optimize_loop():
             # Continue running despite errors
 
 
+def _update_throughput_entry(instance_url: str, model_id: str, new_capacity: float, alpha: float = 0.3):
+    """
+    Update throughput entry using exponential moving average.
+
+    Args:
+        instance_url: Instance endpoint URL
+        model_id: Model ID for this instance
+        new_capacity: New computed capacity (1/avg_execution_time)
+        alpha: EMA smoothing factor (0.3 = 30% new, 70% old)
+    """
+    global _throughput_data
+
+    if instance_url not in _throughput_data:
+        _throughput_data[instance_url] = {}
+
+    if model_id in _throughput_data[instance_url]:
+        # EMA update: new = alpha * new_value + (1 - alpha) * old_value
+        old_capacity = _throughput_data[instance_url][model_id]
+        updated_capacity = alpha * new_capacity + (1 - alpha) * old_capacity
+        _throughput_data[instance_url][model_id] = updated_capacity
+        logger.debug(f"Throughput EMA update: {instance_url}/{model_id}: {old_capacity:.4f} -> {updated_capacity:.4f}")
+    else:
+        # First submission: store exact value
+        _throughput_data[instance_url][model_id] = new_capacity
+        logger.debug(f"Throughput first entry: {instance_url}/{model_id} = {new_capacity:.4f}")
+
+
+def _apply_throughput_to_b_matrix():
+    """
+    Apply collected throughput data to update the B matrix in stored deployment.
+
+    For each (instance, model) pair with throughput data:
+    - Find instance index i from _stored_deployment_input.instances
+    - Find model index j from _stored_model_mapping
+    - Update B[i][j] with the observed capacity
+    """
+    global _stored_deployment_input, _stored_model_mapping, _throughput_data
+
+    if not _stored_deployment_input or not _stored_model_mapping:
+        logger.debug("Cannot apply throughput: no deployment input or model mapping")
+        return
+
+    if not _throughput_data:
+        logger.debug("No throughput data to apply")
+        return
+
+    instances = _stored_deployment_input.instances
+    B = _stored_deployment_input.planner_input.B
+    update_count = 0
+
+    for i, inst in enumerate(instances):
+        instance_url = inst.endpoint
+        if instance_url in _throughput_data:
+            for model_id, capacity in _throughput_data[instance_url].items():
+                if model_id in _stored_model_mapping:
+                    j = _stored_model_mapping[model_id]
+                    old_value = B[i][j]
+                    B[i][j] = capacity
+                    update_count += 1
+                    logger.debug(f"Updated B[{i}][{j}] for {instance_url}/{model_id}: {old_value:.4f} -> {capacity:.4f}")
+
+    if update_count > 0:
+        logger.info(f"Applied {update_count} throughput entries to B matrix")
+
+
 async def _trigger_optimization():
     """Execute the optimization with current targets.
 
@@ -246,6 +317,10 @@ async def _trigger_optimization():
     _auto_optimize_running = True
 
     try:
+        # Apply throughput data to B matrix before optimization
+        if _throughput_data:
+            _apply_throughput_to_b_matrix()
+
         # Use the stored deployment input (which reflects latest deployment state)
         deployment_input = _stored_deployment_input.model_copy(deep=True)
         deployment_input.planner_input.target = _current_target.copy()
@@ -1329,6 +1404,62 @@ async def get_target():
         "model_mapping": _stored_model_mapping,
         "reverse_mapping": _stored_reverse_mapping
     }
+
+
+@app.post("/submit_throughput", response_model=SubmitThroughputResponse)
+async def submit_throughput(request: SubmitThroughputRequest):
+    """
+    Submit throughput data from an instance to update the B matrix.
+
+    This endpoint receives average execution time from instances and converts
+    it to processing capacity (1/avg_execution_time). The capacity is stored
+    and applied to the B matrix before each auto-reconfiguration cycle.
+
+    The model ID is automatically determined by looking up the instance's
+    current deployment state.
+
+    Args:
+        request: Throughput data with instance_url and avg_execution_time
+
+    Returns:
+        SubmitThroughputResponse with computed capacity and status
+    """
+    global _throughput_data, _stored_deployment_input
+
+    # Compute capacity from execution time
+    capacity = 1.0 / request.avg_execution_time
+
+    # Look up instance to determine model
+    model_id = None
+    if _stored_deployment_input is not None:
+        for inst in _stored_deployment_input.instances:
+            if inst.endpoint == request.instance_url:
+                model_id = inst.current_model
+                break
+
+    if model_id is None:
+        # Instance not found in current deployment
+        logger.warning(f"submit_throughput: instance {request.instance_url} not in current deployment")
+        return SubmitThroughputResponse(
+            success=True,
+            message=f"Instance {request.instance_url} not found in current deployment. Data not stored.",
+            instance_url=request.instance_url,
+            model_id=None,
+            computed_capacity=capacity
+        )
+
+    # Store/update throughput data with EMA
+    _update_throughput_entry(request.instance_url, model_id, capacity)
+
+    logger.info(f"Throughput recorded: {request.instance_url} -> {model_id}, capacity={capacity:.4f}")
+
+    return SubmitThroughputResponse(
+        success=True,
+        message=f"Throughput recorded for {model_id} on {request.instance_url}",
+        instance_url=request.instance_url,
+        model_id=model_id,
+        computed_capacity=capacity
+    )
 
 
 # ============================================================================
