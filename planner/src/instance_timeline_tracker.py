@@ -6,6 +6,7 @@ auto-optimization or explicit migration calls occur.
 """
 
 import json
+import math
 import threading
 import time
 from dataclasses import dataclass, asdict
@@ -68,16 +69,34 @@ class InstanceTimelineTracker:
             score: Optimization score achieved
         """
         now = time.time()
+
+        # Convert numpy types to Python native types for JSON serialization
+        # This prevents "Object of type int64 is not JSON serializable" errors
+        instance_counts_native = {k: int(v) for k, v in instance_counts.items()}
+        changes_count_native = int(changes_count)
+        target_distribution_native = [float(x) for x in target_distribution] if target_distribution else None
+
+        # Handle special float values (inf, -inf, nan) which are not valid JSON
+        if score is not None:
+            score_float = float(score)
+            # Convert inf/-inf/nan to None for valid JSON
+            if math.isinf(score_float) or math.isnan(score_float):
+                score_native = None
+            else:
+                score_native = score_float
+        else:
+            score_native = None
+
         entry = TimelineEntry(
             timestamp=now,
             timestamp_iso=datetime.fromtimestamp(now, tz=timezone.utc).isoformat(),
             event_type=event_type,
-            instance_counts=instance_counts,
-            total_instances=sum(instance_counts.values()),
-            changes_count=changes_count,
+            instance_counts=instance_counts_native,
+            total_instances=sum(instance_counts_native.values()),
+            changes_count=changes_count_native,
             success=success,
-            target_distribution=target_distribution,
-            score=score,
+            target_distribution=target_distribution_native,
+            score=score_native,
         )
 
         with self._lock:
