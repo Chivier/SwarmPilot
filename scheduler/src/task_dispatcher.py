@@ -19,6 +19,7 @@ from .http_error_logger import log_http_error
 if TYPE_CHECKING:
     from .training_client import TrainingClient
     from .central_queue import CentralTaskQueue
+    from .throughput_tracker import ThroughputTracker
 
 # Default retry configuration for transient connection errors
 DEFAULT_DISPATCH_RETRIES = 3
@@ -38,6 +39,7 @@ class TaskDispatcher:
         callback_base_url: str = "http://localhost:8000",
         dispatch_retries: int = DEFAULT_DISPATCH_RETRIES,
         dispatch_retry_delay: float = DEFAULT_DISPATCH_RETRY_DELAY,
+        throughput_tracker: Optional["ThroughputTracker"] = None,
     ):
         """
         Initialize task dispatcher.
@@ -51,6 +53,7 @@ class TaskDispatcher:
             callback_base_url: Base URL for task result callbacks
             dispatch_retries: Number of retry attempts for transient connection errors
             dispatch_retry_delay: Initial delay between retries (uses exponential backoff)
+            throughput_tracker: Optional throughput tracker for planner reporting
         """
         self.task_registry = task_registry
         self.instance_registry = instance_registry
@@ -60,6 +63,7 @@ class TaskDispatcher:
         self.callback_base_url = callback_base_url
         self.dispatch_retries = dispatch_retries
         self.dispatch_retry_delay = dispatch_retry_delay
+        self.throughput_tracker = throughput_tracker
 
         # Configure connection pool with shorter keepalive to avoid stale connections
         # This helps prevent ReadError when server closes idle connections
@@ -249,6 +253,13 @@ class TaskDispatcher:
                 )
                 # Try to flush if buffer is full
                 await self.training_client.flush_if_ready()
+
+            # Record throughput for planner reporting
+            if self.throughput_tracker and instance and execution_time_ms:
+                await self.throughput_tracker.record_execution_time(
+                    instance_endpoint=instance.endpoint,
+                    execution_time_ms=execution_time_ms,
+                )
 
         elif status == "failed":
             await self.task_registry.update_status(task_id, TaskStatus.FAILED)

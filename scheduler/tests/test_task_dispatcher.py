@@ -1261,3 +1261,170 @@ class TestTransientErrorRetry:
 
         assert dispatcher.dispatch_retries == 3
         assert dispatcher.dispatch_retry_delay == 0.1
+
+
+# ============================================================================
+# Throughput Tracker Tests
+# ============================================================================
+
+class TestThroughputTracking:
+    """Tests for throughput tracking in TaskDispatcher."""
+
+    @pytest.mark.asyncio
+    async def test_handle_completed_records_throughput(
+        self,
+        task_dispatcher,
+        sample_instance
+    ):
+        """Test that completed task records throughput to tracker."""
+        # Setup throughput tracker mock
+        mock_tracker = MagicMock()
+        mock_tracker.record_execution_time = AsyncMock()
+        task_dispatcher.throughput_tracker = mock_tracker
+
+        await task_dispatcher.instance_registry.register(sample_instance)
+        await task_dispatcher.task_registry.create_task(
+            task_id="task-1",
+            model_id="model-1",
+            task_input={"prompt": "test"},
+            metadata={},
+            assigned_instance=sample_instance.instance_id
+        )
+
+        # Handle completion with execution time
+        await task_dispatcher.handle_task_result(
+            task_id="task-1",
+            status="completed",
+            result={"output": "result"},
+            execution_time_ms=150.0
+        )
+
+        # Verify throughput was recorded
+        mock_tracker.record_execution_time.assert_called_once_with(
+            instance_endpoint=sample_instance.endpoint,
+            execution_time_ms=150.0
+        )
+
+    @pytest.mark.asyncio
+    async def test_handle_completed_without_tracker(
+        self,
+        task_dispatcher,
+        sample_instance
+    ):
+        """Test that completion works without throughput tracker (no errors)."""
+        # Ensure no tracker
+        task_dispatcher.throughput_tracker = None
+
+        await task_dispatcher.instance_registry.register(sample_instance)
+        await task_dispatcher.task_registry.create_task(
+            task_id="task-1",
+            model_id="model-1",
+            task_input={},
+            metadata={},
+            assigned_instance=sample_instance.instance_id
+        )
+
+        # Should not raise error
+        await task_dispatcher.handle_task_result(
+            task_id="task-1",
+            status="completed",
+            result={"output": "result"},
+            execution_time_ms=150.0
+        )
+
+        # Verify task was completed
+        task = await task_dispatcher.task_registry.get("task-1")
+        assert task.status == TaskStatus.COMPLETED
+
+    @pytest.mark.asyncio
+    async def test_handle_failed_does_not_record_throughput(
+        self,
+        task_dispatcher,
+        sample_instance
+    ):
+        """Test that failed task does NOT record throughput."""
+        mock_tracker = MagicMock()
+        mock_tracker.record_execution_time = AsyncMock()
+        task_dispatcher.throughput_tracker = mock_tracker
+
+        await task_dispatcher.instance_registry.register(sample_instance)
+        await task_dispatcher.task_registry.create_task(
+            task_id="task-1",
+            model_id="model-1",
+            task_input={},
+            metadata={},
+            assigned_instance=sample_instance.instance_id
+        )
+
+        # Handle failure
+        await task_dispatcher.handle_task_result(
+            task_id="task-1",
+            status="failed",
+            error="Task execution failed"
+        )
+
+        # Verify throughput was NOT recorded for failed tasks
+        mock_tracker.record_execution_time.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_handle_completed_without_execution_time(
+        self,
+        task_dispatcher,
+        sample_instance
+    ):
+        """Test that completion without execution_time does not record throughput."""
+        mock_tracker = MagicMock()
+        mock_tracker.record_execution_time = AsyncMock()
+        task_dispatcher.throughput_tracker = mock_tracker
+
+        await task_dispatcher.instance_registry.register(sample_instance)
+        await task_dispatcher.task_registry.create_task(
+            task_id="task-1",
+            model_id="model-1",
+            task_input={},
+            metadata={},
+            assigned_instance=sample_instance.instance_id
+        )
+
+        # Handle completion without execution_time
+        await task_dispatcher.handle_task_result(
+            task_id="task-1",
+            status="completed",
+            result={"output": "result"}
+        )
+
+        # Verify throughput was NOT recorded (no execution_time)
+        mock_tracker.record_execution_time.assert_not_called()
+
+    def test_initialization_with_throughput_tracker(
+        self,
+        task_registry,
+        instance_registry,
+        websocket_manager
+    ):
+        """Test TaskDispatcher accepts throughput_tracker parameter."""
+        mock_tracker = MagicMock()
+
+        dispatcher = TaskDispatcher(
+            task_registry=task_registry,
+            instance_registry=instance_registry,
+            websocket_manager=websocket_manager,
+            throughput_tracker=mock_tracker
+        )
+
+        assert dispatcher.throughput_tracker is mock_tracker
+
+    def test_throughput_tracker_defaults_to_none(
+        self,
+        task_registry,
+        instance_registry,
+        websocket_manager
+    ):
+        """Test TaskDispatcher defaults throughput_tracker to None."""
+        dispatcher = TaskDispatcher(
+            task_registry=task_registry,
+            instance_registry=instance_registry,
+            websocket_manager=websocket_manager
+        )
+
+        assert dispatcher.throughput_tracker is None

@@ -121,6 +121,9 @@ class PlannerReportConfig:
     # Request timeout in seconds
     timeout: float = float(os.getenv("PLANNER_REPORT_TIMEOUT", "5.0"))
 
+    # Sliding window size for throughput tracking (internal default, not configurable)
+    throughput_window_size: int = 20
+
 
 @dataclass
 class Config:
