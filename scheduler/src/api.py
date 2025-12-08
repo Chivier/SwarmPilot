@@ -952,10 +952,10 @@ async def register_instance(request: InstanceRegisterRequest):
 @app.post("/instance/remove", response_model=InstanceRemoveResponse)
 async def remove_instance(request: InstanceRemoveRequest):
     """
-    Safely remove an instance from the scheduler.
+    Remove an instance from the scheduler.
 
-    The instance must be in DRAINING state with no pending tasks.
-    Use /instance/drain first, then check /instance/drain/status before removing.
+    Allows removing instances even with pending tasks. Callbacks from removed
+    instances are still accepted, allowing tasks to complete in background.
 
     Args:
         request: Instance removal request with instance_id
@@ -965,38 +965,28 @@ async def remove_instance(request: InstanceRemoveRequest):
 
     Raises:
         HTTPException 404: If instance not found
-        HTTPException 400: If instance cannot be safely removed
     """
-    # Check if instance exists
-    if not await instance_registry.get(request.instance_id):
+    # Remove instance directly (allows pending tasks)
+    try:
+        stats = await instance_registry.get_stats(request.instance_id)
+        pending = stats.pending_tasks if stats else 0
+
+        await instance_registry.remove(request.instance_id)
+
+        if pending > 0:
+            logger.warning(
+                f"Removed instance {request.instance_id} with {pending} pending tasks "
+                f"(callbacks still accepted)"
+            )
+        else:
+            logger.info(f"Removed instance {request.instance_id}")
+
+    except KeyError:
         error_msg = "Instance not found"
         logger.error(f"[remove_instance] {error_msg} | instance_id={request.instance_id}")
         raise HTTPException(
             status_code=404,
             detail={"success": False, "error": error_msg},
-        )
-
-    # Use safe_remove which validates draining state and pending tasks
-    try:
-        await instance_registry.safe_remove(request.instance_id)
-        logger.info(f"Safely removed instance {request.instance_id}")
-    except KeyError:
-        error_msg = "Instance not found"
-        logger.error(f"[remove_instance] Attempted to remove non-existent instance | instance_id={request.instance_id}", exc_info=True)
-        raise HTTPException(
-            status_code=404,
-            detail={"success": False, "error": error_msg},
-        )
-    except ValueError as e:
-        error_msg = str(e)
-        logger.error(f"[remove_instance] Cannot safely remove instance | instance_id={request.instance_id} | error={error_msg}", exc_info=True)
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "success": False,
-                "error": error_msg,
-                "hint": "Use /instance/drain first and wait for tasks to complete"
-            }
         )
 
     return InstanceRemoveResponse(
