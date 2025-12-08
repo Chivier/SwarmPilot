@@ -48,6 +48,7 @@ from workload_generator import (
     generate_slow_peak_distribution,
     generate_fanout_distribution,
     generate_workflow_from_traces,
+    validate_fanout_pattern,
     WorkloadConfig,
     FanoutConfig,
     WorkflowWorkload,
@@ -3257,9 +3258,14 @@ def main(num_workflows: int = 100, qps_a: float = 8.0, seed: int = 42,
     # Generate workflow workload using four normal distributions
     workflow_workload, workflow_config = generate_workflow_from_traces(
         num_workflows=NUM_WORKFLOWS,
-        seed=SEED
+        seed=SEED,
+        use_pattern_fanout=True  # Enable pattern-based fanout (25% segments alternating N(5, 0.6²) and N(14, 0.6²))
     )
     print_workflow_stats(workflow_workload)
+
+    # Validate fanout pattern distribution
+    validate_fanout_pattern(workflow_workload.fanout_values, NUM_WORKFLOWS)
+
     logger.debug(f"Generated {len(workflow_workload.a1_times)} workflows from traces")
 
     # Extract individual task time lists and fanout values

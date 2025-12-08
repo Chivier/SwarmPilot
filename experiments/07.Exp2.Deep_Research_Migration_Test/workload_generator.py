@@ -376,6 +376,126 @@ def generate_fanout_distribution(num_workflows: int,
     return fanout_values.tolist(), config
 
 
+def generate_pattern_based_fanout(
+    num_workflows: int,
+    seed: int = 42,
+    mean_low: int = 5,
+    mean_high: int = 14,
+    std: float = 0.6,
+    min_fanout: int = 4,
+    max_fanout: int = 15
+) -> tuple[List[int], FanoutConfig]:
+    """
+    Generate fanout values using alternating normal distributions in 25% segments.
+
+    Pattern (for non-warmup workflows):
+    - First 25%: Normal distribution with mean=mean_low, std=std
+    - Next 25%: Normal distribution with mean=mean_high, std=std
+    - Next 25%: Normal distribution with mean=mean_low, std=std (repeat)
+    - Last 25%: Normal distribution with mean=mean_high, std=std (repeat)
+
+    This creates a wave pattern with clear separation between low and high fanout phases.
+
+    Args:
+        num_workflows: Number of workflows to generate
+        seed: Random seed for reproducibility
+        mean_low: Mean for low fanout phase (default: 5)
+        mean_high: Mean for high fanout phase (default: 14)
+        std: Standard deviation for both distributions (default: 0.6)
+        min_fanout: Minimum fanout value (hard limit, default: 4)
+        max_fanout: Maximum fanout value (hard limit, default: 15)
+
+    Returns:
+        Tuple of (fanout_values, config)
+    """
+    np.random.seed(seed)
+    random.seed(seed)
+
+    # Calculate segment sizes (handle non-divisible by 4)
+    segment_size = num_workflows // 4
+    remainder = num_workflows % 4
+
+    # Distribute remainder across segments (add 1 to first 'remainder' segments)
+    segment_sizes = [segment_size + (1 if i < remainder else 0) for i in range(4)]
+
+    # Pattern: low, high, low, high
+    means = [mean_low, mean_high, mean_low, mean_high]
+
+    fanout_values = []
+
+    for segment_idx, (size, mean) in enumerate(zip(segment_sizes, means)):
+        # Generate values from normal distribution
+        segment_values = np.random.normal(mean, std, size)
+
+        # Round to integers
+        segment_values = np.round(segment_values).astype(int)
+
+        # Clip to valid range [min_fanout, max_fanout]
+        segment_values = np.clip(segment_values, min_fanout, max_fanout)
+
+        fanout_values.extend(segment_values.tolist())
+
+    # Calculate statistics
+    fanout_array = np.array(fanout_values)
+    mean_fanout = float(np.mean(fanout_array))
+    std_fanout = float(np.std(fanout_array))
+
+    config = FanoutConfig(
+        name="pattern_based_fanout",
+        min_fanout=min_fanout,
+        max_fanout=max_fanout,
+        mean_fanout=mean_fanout,
+        std_fanout=std_fanout,
+        description=f"Pattern-based fanout: 4 segments alternating between N({mean_low},{std}²) and N({mean_high},{std}²)"
+    )
+
+    return fanout_values, config
+
+
+def validate_fanout_pattern(fanout_values: List[int], num_workflows: int, expected_means: List[int] = [5, 14, 5, 14]):
+    """
+    Validate and log fanout pattern distribution.
+
+    Prints statistics for each 25% segment and overall distribution.
+
+    Args:
+        fanout_values: List of fanout values to validate
+        num_workflows: Expected number of workflows
+        expected_means: Expected means for each segment (default: [5, 14, 5, 14])
+    """
+    segment_size = num_workflows // 4
+    remainder = num_workflows % 4
+    segment_sizes = [segment_size + (1 if i < remainder else 0) for i in range(4)]
+
+    print("\n" + "=" * 70)
+    print("FANOUT PATTERN VALIDATION")
+    print("=" * 70)
+
+    start_idx = 0
+
+    for seg_num, (size, expected_mean) in enumerate(zip(segment_sizes, expected_means), 1):
+        segment = fanout_values[start_idx:start_idx + size]
+        seg_array = np.array(segment)
+
+        print(f"\nSegment {seg_num} (workflows {start_idx}-{start_idx+size-1}):")
+        print(f"  Expected: N({expected_mean}, 0.6²)")
+        print(f"  Actual mean: {seg_array.mean():.2f}")
+        print(f"  Actual std: {seg_array.std():.2f}")
+        print(f"  Range: [{seg_array.min()}, {seg_array.max()}]")
+
+        # Distribution
+        unique, counts = np.unique(seg_array, return_counts=True)
+        print(f"  Distribution:")
+        for val, cnt in zip(unique, counts):
+            pct = (cnt / len(seg_array)) * 100
+            bar = '█' * max(1, int(pct / 5))
+            print(f"    {val:2d}: {bar} {cnt:3d} ({pct:5.1f}%)")
+
+        start_idx += size
+
+    print("\n" + "=" * 70)
+
+
 def print_distribution_stats(times: List[float], config: WorkloadConfig):
     """
     Print detailed statistics about a workload distribution.
@@ -416,14 +536,15 @@ class WorkflowWorkload:
 
 def generate_workflow_from_traces(
     num_workflows: int,
-    seed: int = 42
+    seed: int = 42,
+    use_pattern_fanout: bool = False
 ) -> Tuple[WorkflowWorkload, WorkloadConfig]:
     """
     Generate workflow workload data from synthetic trace data.
 
     Process:
     1. Generate synthetic trace data using four normal distributions
-    2. Select a fanout from dr_summary_dict keys
+    2. Select a fanout from dr_summary_dict keys (or use pattern-based generation)
     3. For each workflow:
        - Select one dr_boot value as A1 time
        - Select fanout number of dr_query values as B1 times
@@ -433,6 +554,9 @@ def generate_workflow_from_traces(
     Args:
         num_workflows: Number of workflows to generate
         seed: Random seed for reproducibility
+        use_pattern_fanout: If True, use pattern-based fanout generation (25% segments)
+                           with alternating N(5, 0.6²) and N(14, 0.6²). If False,
+                           use uniform random selection from available fanout values.
 
     Returns:
         Tuple of (WorkflowWorkload, WorkloadConfig)
@@ -451,12 +575,24 @@ def generate_workflow_from_traces(
     a2_times = []
     b1_times = []
     b2_times = []
-    fanout_values = []
 
-    for _ in range(num_workflows):
-        # Select a fanout value
-        fanout = random.choice(available_fanouts)
-        fanout_values.append(fanout)
+    # Generate fanout values based on mode
+    if use_pattern_fanout:
+        # Use pattern-based generation (25% segments alternating between N(5, 0.6²) and N(14, 0.6²))
+        fanout_values, _ = generate_pattern_based_fanout(
+            num_workflows=num_workflows,
+            seed=seed
+        )
+    else:
+        # Use original uniform random selection
+        fanout_values = []
+        for _ in range(num_workflows):
+            fanout = random.choice(available_fanouts)
+            fanout_values.append(fanout)
+
+    # Generate workflow data using the fanout values
+    for workflow_idx in range(num_workflows):
+        fanout = fanout_values[workflow_idx]
 
         # Select A1 time from dr_boot
         a1_time = random.choice(dr_boot)
