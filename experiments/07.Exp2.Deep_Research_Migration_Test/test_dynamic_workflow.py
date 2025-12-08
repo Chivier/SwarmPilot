@@ -2253,7 +2253,7 @@ def get_planner_timeline(planner_url: str = PLANNER_URL) -> Optional[Dict]:
         return None
 
 
-def generate_task_ids(num_workflows: int, fanout_values: List[int], strategy: str) -> tuple[
+def generate_task_ids(num_workflows: int, fanout_values: List[int], strategy: str, experiment_id: str) -> tuple[
     List[str], List[str], List[str], List[str], Dict[str, List[str]], Dict[str, List[str]]]:
     """
     Pre-generate all task IDs for WebSocket subscription.
@@ -2262,6 +2262,7 @@ def generate_task_ids(num_workflows: int, fanout_values: List[int], strategy: st
         num_workflows: Number of workflows
         fanout_values: List of fanout values (number of B1/B2 task pairs per workflow)
         strategy: Scheduling strategy name
+        experiment_id: Unique experiment identifier to prevent task ID collisions
 
     Returns:
         Tuple of (a_task_ids, merge_task_ids, all_b1_task_ids, all_b2_task_ids, b1_task_ids_by_workflow, b2_task_ids_by_workflow)
@@ -2274,23 +2275,23 @@ def generate_task_ids(num_workflows: int, fanout_values: List[int], strategy: st
     b2_task_ids_by_workflow = {}
 
     for i in range(num_workflows):
-        workflow_id = f"wf-{strategy}-{i:04d}"
+        workflow_id = f"wf-{strategy}-{i:04d}-{experiment_id}"
 
-        # A task ID
-        a_task_id = f"task-A-{strategy}-workflow-{i:04d}-A"
+        # A task ID with experiment_id suffix
+        a_task_id = f"task-A-{strategy}-workflow-{i:04d}-A-{experiment_id}"
         a_task_ids.append(a_task_id)
 
-        # Merge A task ID
-        merge_task_id = f"task-A-{strategy}-workflow-{i:04d}-merge"
+        # Merge A task ID with experiment_id suffix
+        merge_task_id = f"task-A-{strategy}-workflow-{i:04d}-merge-{experiment_id}"
         merge_task_ids.append(merge_task_id)
 
-        # B1 and B2 task IDs for this workflow
+        # B1 and B2 task IDs for this workflow with experiment_id suffix
         n = fanout_values[i]
         b1_task_ids = []
         b2_task_ids = []
         for j in range(n):
-            b1_task_id = f"task-B1-{strategy}-workflow-{i:04d}-B1-{j:02d}"
-            b2_task_id = f"task-B2-{strategy}-workflow-{i:04d}-B2-{j:02d}"
+            b1_task_id = f"task-B1-{strategy}-workflow-{i:04d}-B1-{j:02d}-{experiment_id}"
+            b2_task_id = f"task-B2-{strategy}-workflow-{i:04d}-B2-{j:02d}-{experiment_id}"
             b1_task_ids.append(b1_task_id)
             b2_task_ids.append(b2_task_id)
             all_b1_task_ids.append(b1_task_id)
@@ -2666,6 +2667,7 @@ def test_strategy_workflow(
     task_times_b2: List[float],
     fanout_values: List[int],
     qps_a: float,
+    experiment_id: str,
     timeout_minutes: int = 10,
     gqps: Optional[float] = None,
     warmup_ratio: float = 0.0,
@@ -2689,6 +2691,7 @@ def test_strategy_workflow(
         task_times_b2: List of task execution times for B2 tasks (fast peak)
         fanout_values: List of fanout values (number of B1/B2 task pairs per workflow)
         qps_a: Target QPS for A task submission
+        experiment_id: Unique identifier for this experiment run (prevents task ID collisions)
         timeout_minutes: Maximum time to wait for completion
         gqps: Optional global QPS limit for all task submissions
         warmup_ratio: Ratio of warmup workflows (0.0-1.0)
@@ -2734,10 +2737,10 @@ def test_strategy_workflow(
     else:
         all_fanout_values = fanout_values
 
-    # Step 3: Pre-generate all task IDs (B1 and B2 separately)
+    # Step 3: Pre-generate all task IDs (B1 and B2 separately) with experiment_id
     logger.info("Step 3: Pre-generating task IDs")
     a_task_ids, merge_task_ids, all_b1_task_ids, all_b2_task_ids, b1_task_ids_by_workflow, b2_task_ids_by_workflow = generate_task_ids(
-        total_workflows, all_fanout_values, strategy
+        total_workflows, all_fanout_values, strategy, experiment_id
     )
     logger.info(f"Generated {len(a_task_ids)} A task IDs ({num_warmup_workflows} warmup + {num_workflows} actual), "
                f"{len(merge_task_ids)} merge task IDs, {len(all_b1_task_ids)} B1 task IDs, {len(all_b2_task_ids)} B2 task IDs")
@@ -3221,8 +3224,14 @@ def main(num_workflows: int = 100, qps_a: float = 8.0, seed: int = 42,
     if strategies is None:
         strategies = ["min_time", "round_robin", "probabilistic"]
 
+    # Generate unique experiment ID (not affected by seed)
+    # This prevents task ID collisions when running multiple experiments
+    import uuid
+    experiment_id = str(uuid.uuid4())[:8]  # Use first 8 characters of UUID
+
     logger = logging.getLogger("Main")
     logger.info("Starting Experiment 07: Multi-Model Workflow with B1/B2 Split and Merge")
+    logger.info(f"Experiment ID: {experiment_id}")
     logger.info(f"Configuration: {num_workflows} workflows, QPS={qps_a}, seed={seed}")
     if gqps is not None:
         logger.debug(f"Global QPS: {gqps}")
@@ -3318,6 +3327,7 @@ def main(num_workflows: int = 100, qps_a: float = 8.0, seed: int = 42,
             task_times_b2=task_times_b2,
             fanout_values=fanout_values,
             qps_a=QPS_A,
+            experiment_id=experiment_id,
             timeout_minutes=timeout_minutes,
             gqps=gqps,
             warmup_ratio=warmup_ratio,
