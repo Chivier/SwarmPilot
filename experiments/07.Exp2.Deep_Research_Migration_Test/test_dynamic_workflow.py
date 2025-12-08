@@ -2801,7 +2801,7 @@ def test_strategy_workflow(
 
     # Generate all workflows (warmup first, then actual)
     for i in range(total_workflows):
-        workflow_id = f"wf-{strategy}-{i:04d}"
+        workflow_id = f"wf-{strategy}-{i:04d}-{experiment_id}"
         a_task_id = a_task_ids[i]
         merge_task_id = merge_task_ids[i]
         is_warmup = i < num_warmup_workflows
