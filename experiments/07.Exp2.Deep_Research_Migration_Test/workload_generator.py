@@ -9,21 +9,23 @@ Provides workload distributions for B1/B2 split workflow:
 4. Pareto long-tail distribution (from exp02/03)
 5. Fanout distribution (from exp06) - number of B tasks per A task
 
-Data Loading from Real Traces:
-- dr_boot: Task A left peak (boot times)
-- dr_summary_dict: Task A right peak (summary times), keyed by fanout
-- dr_query: Task B left peak (query times)
-- dr_criteria: Task B right peak (criteria evaluation times)
+Synthetic Data Generation using Four Normal Distributions:
+This module generates synthetic workload data using four normal distributions
+to model the four task phases:
+- dr_boot: Task A left peak (boot times) ~ N(30, 2²)
+- dr_summary_dict: Task A right peak (summary times) ~ N(25, 2²), keyed by fanout
+- dr_query: Task B left peak (query times) ~ N(3, 0.3²)
+- dr_criteria: Task B right peak (criteria evaluation times) ~ N(2, 0.2²)
 
 Usage:
-    # Generate trace-based workloads from real data (default mode)
+    # Generate synthetic workloads (default mode)
     python workload_generator.py --num-workflows 100
 
-    # Or explicitly specify trace mode
-    python workload_generator.py --mode trace --num-workflows 100
-
-    # Generate synthetic workloads (original functionality)
+    # Or explicitly specify synthetic mode
     python workload_generator.py --mode synthetic --num-workflows 100
+
+    # Generate trace-based workloads (using four normal distributions)
+    python workload_generator.py --mode trace --num-workflows 100
 
     # Generate both for comparison
     python workload_generator.py --mode both --num-workflows 100
@@ -33,10 +35,10 @@ Usage:
 
     workflow, config = generate_workflow_from_traces(num_workflows=100, seed=42)
     # Access workflow data:
-    # - workflow.a1_times: List of A1 (boot) times
-    # - workflow.a2_times: List of A2 (summary) times
-    # - workflow.b1_times: List of lists of B1 (query) times per workflow
-    # - workflow.b2_times: List of lists of B2 (criteria) times per workflow
+    # - workflow.a1_times: List of A1 (boot) times ~ N(30, 2²)
+    # - workflow.a2_times: List of A2 (summary) times ~ N(25, 2²)
+    # - workflow.b1_times: List of lists of B1 (query) times ~ N(3, 0.3²) per workflow
+    # - workflow.b2_times: List of lists of B2 (criteria) times ~ N(2, 0.2²) per workflow
     # - workflow.fanout_values: List of fanout values per workflow
 """
 
@@ -70,19 +72,20 @@ PARETO_ALPHA = 1.5  # Shape parameter (smaller = more skewed/long-tail)
 FANOUT_MIN = 3  # Minimum number of B tasks per A task
 FANOUT_MAX = 8  # Maximum number of B tasks per A task
 
-# Default scale factor for task execution times
-# Set to 0.35 to achieve ~QPS=1 with 48 nodes (slight overload)
-# k < 0.33: system can handle QPS=1
-# k > 0.33: system will be overloaded at QPS=1
-DEFAULT_SCALE_FACTOR = 0.35
-
 # Data directory path
 DATA_DIR = Path(__file__).parent / "data"
 
 
 def load_trace_data() -> Tuple[List[float], Dict[str, List[float]], List[float], List[float]]:
     """
-    Load real trace data from JSON files.
+    Generate synthetic trace data using four normal distributions for four task phases.
+
+    This function uses normal distributions to generate task execution times
+    for the four phases of the workflow:
+    1. Task A left peak (boot): N(30, 2^2) - Fast boot phase
+    2. Task A right peak (summary): N(25, 2^2) - Summary generation phase
+    3. Task B left peak (query): N(3, 0.3^2) - Fast query phase
+    4. Task B right peak (criteria): N(2, 0.2^2) - Criteria evaluation phase
 
     Returns:
         Tuple containing:
@@ -91,27 +94,39 @@ def load_trace_data() -> Tuple[List[float], Dict[str, List[float]], List[float],
         - dr_query: List of query times (Task B left peak)
         - dr_criteria: List of criteria evaluation times (Task B right peak)
     """
-    # Load dr_boot (Task A left peak - boot times) and convert ms to s
+    # Load template data to get size information
     with open(DATA_DIR / "dr_boot.json", "r") as f:
         dr_boot = json.load(f)
-    dr_boot = [x / 1000 for x in dr_boot]  # ms -> s
 
-    # Load dr_summary_dict (Task A right peak - summary times) and convert ms to s
+    # Generate Task A left peak (boot) using normal distribution: N(30, 2^2)
+    dr_boot = np.random.normal(30, 2, size=len(dr_boot))
+    dr_boot = dr_boot.tolist()
+
+    # Load template data for summary
     with open(DATA_DIR / "dr_summary_dict.json", "r") as f:
         dr_summary_dict = json.load(f)
-    # Convert all values in the dict from ms to s
-    for key in dr_summary_dict:
-        dr_summary_dict[key] = [x / 1000 for x in dr_summary_dict[key]]
 
-    # Load dr_query (Task B left peak - query times) and convert ms to s
+    # Generate Task A right peak (summary) using normal distribution: N(25, 2^2)
+    for i in range(5, 16):
+        dr_summary_dict[str(i)] = np.random.normal(25, 2, size=len(dr_summary_dict[str(i)]))
+        dr_summary_dict[str(i)] = dr_summary_dict[str(i)].tolist()
+
+    # Load template data for query
     with open(DATA_DIR / "dr_query.json", "r") as f:
         dr_query = json.load(f)
-    dr_query = [x / 1000 for x in dr_query]  # ms -> s
 
-    # Load dr_criteria (Task B right peak - criteria evaluation times) and convert ms to s
+    # Generate Task B left peak (query) using normal distribution: N(3, 0.3^2)
+    dr_query = np.random.normal(3, 0.3, size=len(dr_query))
+    dr_query = dr_query.tolist()
+
+    # Load template data for criteria
     with open(DATA_DIR / "dr_criteria.json", "r") as f:
         dr_criteria = json.load(f)
-    dr_criteria = [x / 1000 for x in dr_criteria]  # ms -> s
+
+    # Generate Task B right peak (criteria) using normal distribution: N(2, 0.2^2)
+    dr_criteria = np.random.normal(2, 0.2, size=len(dr_criteria))
+    dr_criteria = dr_criteria.tolist()
+
     return dr_boot, dr_summary_dict, dr_query, dr_criteria
 
 
@@ -401,17 +416,15 @@ class WorkflowWorkload:
 
 def generate_workflow_from_traces(
     num_workflows: int,
-    seed: int = 42,
-    scale_factor: float = None
+    seed: int = 42
 ) -> Tuple[WorkflowWorkload, WorkloadConfig]:
     """
-    Generate workflow workload data from real traces.
+    Generate workflow workload data from synthetic trace data.
 
     Process:
-    1. Load real trace data
-    2. Apply scale_factor to all task times
-    3. Select a fanout from dr_summary_dict keys
-    4. For each workflow:
+    1. Generate synthetic trace data using four normal distributions
+    2. Select a fanout from dr_summary_dict keys
+    3. For each workflow:
        - Select one dr_boot value as A1 time
        - Select fanout number of dr_query values as B1 times
        - Select fanout number of dr_criteria values as B2 times
@@ -420,30 +433,15 @@ def generate_workflow_from_traces(
     Args:
         num_workflows: Number of workflows to generate
         seed: Random seed for reproducibility
-        scale_factor: Scaling factor for all task execution times.
-                      Default is DEFAULT_SCALE_FACTOR (0.35).
-                      - k < 0.33: system can handle QPS=1 with 48 nodes
-                      - k = 0.33: critical point (exactly 48 nodes needed)
-                      - k > 0.33: system will be overloaded at QPS=1
 
     Returns:
         Tuple of (WorkflowWorkload, WorkloadConfig)
     """
-    if scale_factor is None:
-        scale_factor = DEFAULT_SCALE_FACTOR
-
     random.seed(seed)
     np.random.seed(seed)
 
-    # Load trace data
+    # Generate synthetic trace data using four normal distributions
     dr_boot, dr_summary_dict, dr_query, dr_criteria = load_trace_data()
-
-    # Apply scale factor to all trace data
-    dr_boot = [x * scale_factor for x in dr_boot]
-    dr_query = [x * scale_factor for x in dr_query]
-    dr_criteria = [x * scale_factor for x in dr_criteria]
-    for key in dr_summary_dict:
-        dr_summary_dict[key] = [x * scale_factor for x in dr_summary_dict[key]]
 
     # Get available fanout values (keys of dr_summary_dict)
     available_fanouts = [int(k) for k in dr_summary_dict.keys()]
@@ -484,28 +482,25 @@ def generate_workflow_from_traces(
     all_fanouts = np.array(fanout_values)
 
     workflow_workload = WorkflowWorkload(
-        name="trace_based_workflow",
+        name="synthetic_workflow",
         a1_times=a1_times,
         a2_times=a2_times,
         b1_times=b1_times,
         b2_times=b2_times,
         fanout_values=fanout_values,
-        description=f"Workflow from real traces: {num_workflows} workflows, "
-                    f"scale_factor={scale_factor:.4f}, "
-                    f"A1 from dr_boot, A2 from dr_summary_dict, "
-                    f"B1 from dr_query, B2 from dr_criteria"
+        description=f"Workflow from synthetic normal distributions: {num_workflows} workflows, "
+                    f"A1~N(30,2²), A2~N(25,2²), B1~N(3,0.3²), B2~N(2,0.2²)"
     )
 
     # Overall config for statistics
     config = WorkloadConfig(
-        name="trace_based_workflow",
+        name="synthetic_workflow",
         min_time=min(all_a1.min(), all_a2.min(), all_b1.min(), all_b2.min()),
         max_time=max(all_a1.max(), all_a2.max(), all_b1.max(), all_b2.max()),
         mean_time=(all_a1.mean() + all_a2.mean() + all_b1.mean() + all_b2.mean()) / 4,
         std_time=(all_a1.std() + all_a2.std() + all_b1.std() + all_b2.std()) / 4,
-        description=f"Trace-based workflow: {num_workflows} workflows, "
-                    f"scale_factor={scale_factor:.4f}, "
-                    f"avg fanout={all_fanouts.mean():.1f}"
+        description=f"Synthetic workflow: {num_workflows} workflows, "
+                    f"4 normal distributions, avg fanout={all_fanouts.mean():.1f}"
     )
 
     return workflow_workload, config
@@ -609,12 +604,7 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument("--mode", type=str, default="trace",
                         choices=["synthetic", "trace", "both"],
-                        help="Generation mode: trace (from real data, default), synthetic (original), or both")
-    parser.add_argument("--scale-factor", type=float, default=DEFAULT_SCALE_FACTOR,
-                        help=f"Scaling factor for task execution times (default: {DEFAULT_SCALE_FACTOR}). "
-                             "k < 0.33: system can handle QPS=1 with 48 nodes; "
-                             "k = 0.33: critical point; "
-                             "k > 0.33: system overloaded at QPS=1")
+                        help="Generation mode: trace (using 4 normal distributions, default), synthetic (original), or both")
     args = parser.parse_args()
 
     print("=" * 60)
@@ -640,13 +630,17 @@ if __name__ == "__main__":
 
     if args.mode in ["trace", "both"]:
         print("\n" + "=" * 60)
-        print("TRACE-BASED WORKLOAD GENERATION")
+        print("SYNTHETIC WORKLOAD GENERATION (4 Normal Distributions)")
         print("=" * 60)
-        print(f"Scale factor: {args.scale_factor}")
+        print("Using four normal distributions:")
+        print("  A1 (boot): N(30, 2²)")
+        print("  A2 (summary): N(25, 2²)")
+        print("  B1 (query): N(3, 0.3²)")
+        print("  B2 (criteria): N(2, 0.2²)")
 
-        # Generate workflow from real traces
+        # Generate workflow from synthetic normal distributions
         workflow_workload, workflow_config = generate_workflow_from_traces(
-            args.num_workflows, seed=args.seed, scale_factor=args.scale_factor
+            args.num_workflows, seed=args.seed
         )
         print_workflow_stats(workflow_workload)
 
