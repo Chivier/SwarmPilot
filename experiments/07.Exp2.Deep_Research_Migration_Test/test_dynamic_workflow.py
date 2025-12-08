@@ -906,10 +906,10 @@ class ATaskReceiver:
         raw_result = data.get("result") or {}  # Handle None result
         workflow_id = None
 
-        # Extract workflow_id from task_id (format: task-A-{strategy}-workflow-{i:04d}-A)
+        # Extract workflow_id from task_id (format: task-A-{strategy}-workflow-{i:04d}-A-{experiment_id})
         parts = task_id.split("-")
-        if len(parts) >= 5 and parts[3] == "workflow":
-            workflow_id = f"wf-{parts[2]}-{parts[4]}"
+        if len(parts) >= 7 and parts[3] == "workflow":
+            workflow_id = f"wf-{parts[2]}-{parts[4]}-{parts[6]}"
             raw_result["workflow_id"] = workflow_id
             
         self.raw_result_list.append(raw_result)
@@ -1281,10 +1281,10 @@ class B1TaskReceiver:
         complete_time = time.time()
         workflow_id = None
 
-        # Extract workflow_id from task_id (format: task-B1-{strategy}-workflow-{i:04d}-B1-{j:02d})
+        # Extract workflow_id from task_id (format: task-B1-{strategy}-workflow-{i:04d}-B1-{j:02d}-{experiment_id})
         parts = task_id.split("-")
-        if len(parts) >= 5 and parts[3] == "workflow":
-            workflow_id = f"wf-{parts[2]}-{parts[4]}"
+        if len(parts) >= 8 and parts[3] == "workflow":
+            workflow_id = f"wf-{parts[2]}-{parts[4]}-{parts[7]}"
             raw_b_result["workflow_id"] = workflow_id
         
         self.raw_result_list.append(raw_b_result)
@@ -1492,10 +1492,10 @@ class B2TaskReceiver:
         complete_time = time.time()
         workflow_id = None
 
-        # Extract workflow_id from task_id (format: task-B2-{strategy}-workflow-{i:04d}-B2-{j:02d})
+        # Extract workflow_id from task_id (format: task-B2-{strategy}-workflow-{i:04d}-B2-{j:02d}-{experiment_id})
         parts = task_id.split("-")
-        if len(parts) >= 5 and parts[3] == "workflow":
-            workflow_id = f"wf-{parts[2]}-{parts[4]}"
+        if len(parts) >= 8 and parts[3] == "workflow":
+            workflow_id = f"wf-{parts[2]}-{parts[4]}-{parts[7]}"
             raw_result["workflow_id"] = workflow_id
             
         self.raw_result_list.append(raw_result)
@@ -1871,10 +1871,10 @@ class MergeTaskReceiver:
         complete_time = time.time()
         workflow_id = None
 
-        # Extract workflow_id from task_id (format: task-A-{strategy}-workflow-{i:04d}-merge)
+        # Extract workflow_id from task_id (format: task-A-{strategy}-workflow-{i:04d}-merge-{experiment_id})
         parts = task_id.split("-")
-        if len(parts) >= 5 and parts[3] == "workflow" and parts[-1] == "merge":
-            workflow_id = f"wf-{parts[2]}-{parts[4]}"
+        if len(parts) >= 7 and parts[3] == "workflow" and parts[5] == "merge":
+            workflow_id = f"wf-{parts[2]}-{parts[4]}-{parts[6]}"
             raw_result["workflow_id"] = workflow_id
 
         self.raw_result_list.append(raw_result)
