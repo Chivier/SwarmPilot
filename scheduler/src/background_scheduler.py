@@ -10,6 +10,12 @@ from typing import Dict, Any, Optional
 from loguru import logger
 from .model import TaskStatus
 
+# Backpressure water marks for task dispatching
+# HIGH_WATER_MARK: Maximum pending tasks before instance is considered "full"
+# LOW_WATER_MARK: Target pending tasks when selecting instances (prefer less loaded)
+HIGH_WATER_MARK = 5
+LOW_WATER_MARK = 3
+
 
 class BackgroundScheduler:
     """
@@ -121,20 +127,33 @@ class BackgroundScheduler:
             try:
                 logger.debug(f"Starting background scheduling for task {task_id}")
 
-                # 1. Get available instances
-                available_instances = await self.instance_registry.list_active(
-                    model_id=model_id
+                # 1. Get available instances with backpressure
+                # Only consider instances below HIGH_WATER_MARK
+                available_instances = await self.instance_registry.get_instances_below_water_mark(
+                    model_id=model_id,
+                    water_mark=HIGH_WATER_MARK
                 )
 
                 if not available_instances:
-                    # No instances available - mark task as failed
-                    await self.task_registry.update_status(task_id, TaskStatus.FAILED)
-                    await self.task_registry.set_error(
-                        task_id,
-                        f"No available instance for model_id: {model_id}"
-                    )
-                    logger.error(f"Task {task_id}: No available instances for {model_id}")
-                    return
+                    # All instances at or above HIGH_WATER_MARK, or no instances exist
+                    # Check if any active instances exist at all
+                    all_active = await self.instance_registry.list_active(model_id=model_id)
+                    if not all_active:
+                        # No instances at all - mark task as failed
+                        await self.task_registry.update_status(task_id, TaskStatus.FAILED)
+                        await self.task_registry.set_error(
+                            task_id,
+                            f"No available instance for model_id: {model_id}"
+                        )
+                        logger.error(f"Task {task_id}: No available instances for {model_id}")
+                        return
+                    else:
+                        # Backpressure: all instances full, use least loaded one
+                        logger.warning(
+                            f"Task {task_id}: All instances above HIGH_WATER_MARK ({HIGH_WATER_MARK}), "
+                            f"using all active instances"
+                        )
+                        available_instances = all_active
 
                 # 2. Schedule task (predictions + selection + queue update)
                 try:
@@ -223,9 +242,10 @@ class BackgroundScheduler:
         try:
             logger.debug(f"Reassigning task {task_id} (excluding {exclude_instance_id})")
 
-            # 1. Get available instances (excluding the specified one)
-            available_instances = await self.instance_registry.list_active(
-                model_id=model_id
+            # 1. Get available instances with backpressure (excluding the specified one)
+            available_instances = await self.instance_registry.get_instances_below_water_mark(
+                model_id=model_id,
+                water_mark=HIGH_WATER_MARK
             )
 
             # Filter out excluded instance
@@ -236,11 +256,25 @@ class BackgroundScheduler:
                 ]
 
             if not available_instances:
-                logger.error(
-                    f"Task {task_id}: No available instances for reassignment "
-                    f"(model_id: {model_id}, excluding: {exclude_instance_id})"
-                )
-                return False
+                # Backpressure: try all active instances if all are above water mark
+                all_active = await self.instance_registry.list_active(model_id=model_id)
+                if exclude_instance_id:
+                    all_active = [
+                        inst for inst in all_active
+                        if inst.instance_id != exclude_instance_id
+                    ]
+                if all_active:
+                    logger.warning(
+                        f"Task {task_id}: All instances above HIGH_WATER_MARK ({HIGH_WATER_MARK}), "
+                        f"using all active instances for reassignment"
+                    )
+                    available_instances = all_active
+                else:
+                    logger.error(
+                        f"Task {task_id}: No available instances for reassignment "
+                        f"(model_id: {model_id}, excluding: {exclude_instance_id})"
+                    )
+                    return False
 
             # 2. Create task in registry if it doesn't exist
             existing_task = await self.task_registry.get(task_id)
