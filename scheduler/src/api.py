@@ -865,22 +865,26 @@ async def register_instance(request: InstanceRegisterRequest):
     """
     Register a new instance to the scheduler.
 
+    If the instance is already registered, returns success with the existing
+    instance info (duplicate registration is silently ignored).
+
     Args:
         request: Instance registration details
 
     Returns:
         InstanceRegisterResponse with registration status and instance info
-
-    Raises:
-        HTTPException 400: If instance with this ID already exists
     """
-    # Check if instance already exists
-    if await instance_registry.get(request.instance_id):
-        error_msg = "Instance with this ID already exists"
-        logger.error(f"[register_instance] {error_msg} | instance_id={request.instance_id}")
-        raise HTTPException(
-            status_code=400,
-            detail={"success": False, "error": error_msg},
+    # Check if instance already exists - ignore duplicate registration
+    existing_instance = await instance_registry.get(request.instance_id)
+    if existing_instance:
+        logger.warning(
+            f"[register_instance] Duplicate registration ignored | "
+            f"instance_id={request.instance_id} | model_id={existing_instance.model_id}"
+        )
+        return InstanceRegisterResponse(
+            success=True,
+            message="Instance already registered (duplicate registration ignored)",
+            instance=existing_instance,
         )
 
     # Validate platform_info has required keys
