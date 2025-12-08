@@ -53,8 +53,7 @@ from workload_generator import (
     WorkflowWorkload,
     print_distribution_stats,
     print_fanout_stats,
-    print_workflow_stats,
-    DEFAULT_SCALE_FACTOR
+    print_workflow_stats
 )
 
 # Configure logging
@@ -3204,8 +3203,7 @@ def test_strategy_workflow(
 
 def main(num_workflows: int = 100, qps_a: float = 8.0, seed: int = 42,
          strategies: List[str] = None, gqps: Optional[float] = None, warmup_ratio: float = 0.0,
-         continuous_mode: bool = False, metric_portion: float = 0.5, timeout_minutes: int = 20,
-         scale_factor: float = None):
+         continuous_mode: bool = False, metric_portion: float = 0.5, timeout_minutes: int = 20):
     """
     Main entry point for experiment 07.
 
@@ -3219,19 +3217,13 @@ def main(num_workflows: int = 100, qps_a: float = 8.0, seed: int = 42,
         continuous_mode: Enable continuous request mode (2x workflows, track first num_workflows)
         metric_portion: Portion of non-warmup workflows to use for statistics (0.0-1.0, default: 0.5)
         timeout_minutes: Maximum time in minutes to wait for workflows to complete (default: 20)
-        scale_factor: Scaling factor for task execution times (default: DEFAULT_SCALE_FACTOR=0.35)
-                      - k < 0.33: system can handle QPS=1 with 48 nodes
-                      - k = 0.33: critical point
-                      - k > 0.33: system overloaded at QPS=1
     """
-    if scale_factor is None:
-        scale_factor = DEFAULT_SCALE_FACTOR
     if strategies is None:
         strategies = ["min_time", "round_robin", "probabilistic"]
 
     logger = logging.getLogger("Main")
     logger.info("Starting Experiment 07: Multi-Model Workflow with B1/B2 Split and Merge")
-    logger.info(f"Configuration: {num_workflows} workflows, QPS={qps_a}, seed={seed}, scale_factor={scale_factor}")
+    logger.info(f"Configuration: {num_workflows} workflows, QPS={qps_a}, seed={seed}")
     if gqps is not None:
         logger.debug(f"Global QPS: {gqps}")
     if warmup_ratio > 0:
@@ -3250,14 +3242,13 @@ def main(num_workflows: int = 100, qps_a: float = 8.0, seed: int = 42,
     QPS_A = qps_a
     SEED = seed
 
-    # Generate workloads from real traces
-    logger.debug(f"Generating workloads from real traces with scale_factor={scale_factor}...")
+    # Generate workloads using four normal distributions
+    logger.debug(f"Generating workloads using four normal distributions...")
 
-    # Generate workflow workload from traces
+    # Generate workflow workload using four normal distributions
     workflow_workload, workflow_config = generate_workflow_from_traces(
         num_workflows=NUM_WORKFLOWS,
-        seed=SEED,
-        scale_factor=scale_factor
+        seed=SEED
     )
     print_workflow_stats(workflow_workload)
     logger.debug(f"Generated {len(workflow_workload.a1_times)} workflows from traces")
@@ -3285,11 +3276,10 @@ def main(num_workflows: int = 100, qps_a: float = 8.0, seed: int = 42,
     if num_warmup_workflows > 0:
         logger.debug(f"Generating {num_warmup_workflows} warmup workflows from traces (warmup_ratio={warmup_ratio:.1%})")
 
-        # Generate warmup workflow from traces using a different seed
+        # Generate warmup workflow using four normal distributions with a different seed
         warmup_workflow, warmup_config = generate_workflow_from_traces(
             num_workflows=num_warmup_workflows,
-            seed=SEED + 1000,  # Different seed for warmup data
-            scale_factor=scale_factor
+            seed=SEED + 1000  # Different seed for warmup data
         )
 
         # Extract warmup task times and fanout values
@@ -3465,16 +3455,6 @@ if __name__ == "__main__":
         help="Maximum time in minutes to wait for workflows to complete (default: 20)"
     )
 
-    parser.add_argument(
-        "--scale-factor",
-        type=float,
-        default=DEFAULT_SCALE_FACTOR,
-        help=f"Scaling factor for task execution times (default: {DEFAULT_SCALE_FACTOR}). "
-             "k < 0.33: system can handle QPS=1 with 48 nodes; "
-             "k = 0.33: critical point; "
-             "k > 0.33: system overloaded at QPS=1"
-    )
-
     args = parser.parse_args()
 
     main(
@@ -3486,6 +3466,5 @@ if __name__ == "__main__":
         warmup_ratio=args.warmup,
         continuous_mode=args.continuous,
         metric_portion=args.metric_portion,
-        timeout_minutes=args.timeout,
-        scale_factor=args.scale_factor
+        timeout_minutes=args.timeout
     )
