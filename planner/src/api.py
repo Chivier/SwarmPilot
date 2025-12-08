@@ -48,6 +48,7 @@ from . import __version__
 from .logging_config import setup_logging
 from .config import config
 from .available_instance_store import get_available_instance_store, AvailableInstance
+from .migration_optimizer import eliminate_redundant_migrations, detect_model_swap_pairs
 from typing import List
 
 # Configure logging
@@ -392,24 +393,24 @@ async def _trigger_optimization():
         target = np.array(planner_params.target)
 
         # Auto-optimization uses Simulated Annealing
-        # Force change rate to 50% for auto-optimization (more flexibility)
-        AUTO_OPTIMIZE_CHANGE_RATE = 0.5
+        # Force change rate to 30% for auto-optimization
+        AUTO_OPTIMIZE_CHANGE_RATE = 0.3
 
         logger.info(f"Auto-optimization using Simulated Annealing")
-        logger.info(f"Change rate: {planner_params.a} -> Forced to: {AUTO_OPTIMIZE_CHANGE_RATE} (50%)")
+        logger.info(f"Change rate: {planner_params.a} -> Forced to: {AUTO_OPTIMIZE_CHANGE_RATE} (30%)")
         logger.info(f"Optimization parameters: M={planner_params.M}, N={planner_params.N}, B={B}, \ninitial={initial}, a={AUTO_OPTIMIZE_CHANGE_RATE}, target={target}")
         logger.info(f"Current models: {current_models}")
         logger.info(f"Endpoints: {endpoints}")
         logger.info(f"Model mapping: {model_mapping}")
         logger.info(f"Reverse mapping: {reverse_mapping}")
 
-        # Use Simulated Annealing for auto-optimization with 50% change rate
+        # Use Simulated Annealing for auto-optimization with 30% change rate
         optimizer = SimulatedAnnealingOptimizer(
             M=planner_params.M,
             N=planner_params.N,
             B=B,
             initial=initial,
-            a=AUTO_OPTIMIZE_CHANGE_RATE,  # Force 50% change rate for auto-optimization
+            a=AUTO_OPTIMIZE_CHANGE_RATE,  # Force 30% change rate for auto-optimization
             target=target
         )
 
@@ -429,21 +430,88 @@ async def _trigger_optimization():
         deployment_target_models = [reverse_mapping[idx] for idx in deployment]
         instance_store = get_available_instance_store()
 
+        # Phase 1: Build list of instances that need to change
+        change_indices = []
+        change_endpoints = []
+        change_current_models = []
+        change_target_models_list = []
+        for idx, (cur, target_model) in enumerate(zip(current_models, deployment_target_models)):
+            if cur != target_model:
+                change_indices.append(idx)
+                change_endpoints.append(endpoints[idx])
+                change_current_models.append(cur)
+                change_target_models_list.append(target_model)
+
+        # Phase 2: Detect model swap cycles BEFORE fetching from store
+        swap_indices, swap_pairs = detect_model_swap_pairs(
+            change_endpoints,
+            change_current_models,
+            change_target_models_list
+        )
+
+        if swap_indices:
+            logger.info(
+                f"Auto-opt pre-fetch optimization: eliminated {len(swap_indices)} model swap migrations "
+                f"({len(swap_pairs)} binary swaps)"
+            )
+
+        # Phase 3: Fetch target endpoints only for non-swap migrations
         pending_change_original = []
         pending_change_original_model = []
         pending_change_target = []
+        pending_change_target_model = []
+        pending_change_global_indices = []  # Track global index for each pending change
 
-        for idx, (cur, target_model) in enumerate(zip(current_models, deployment_target_models)):
-            if cur != target_model:
-                pending_change_original.append(endpoints[idx])
-                pending_change_original_model.append(cur)
-                target_instance = await instance_store.fetch_one_available_instance(target_model)
-                if not target_instance:
-                    error_msg = f"No available target endpoint for model {target_model}"
-                    client_msg = error_msg
-                    logger.error(f"Auto-optimization failed: {error_msg}. Client will receive: {client_msg}")
-                    raise ValueError(error_msg)
-                pending_change_target.append(target_instance.endpoint)
+        for i, (endpoint, cur_model, target_model) in enumerate(
+            zip(change_endpoints, change_current_models, change_target_models_list)
+        ):
+            if i in swap_indices:
+                logger.debug(f"Auto-opt: Skipping swap migration: {endpoint} ({cur_model} -> {target_model})")
+                continue
+
+            target_instance = await instance_store.fetch_one_available_instance(target_model)
+            if not target_instance:
+                error_msg = f"No available target endpoint for model {target_model}"
+                client_msg = error_msg
+                logger.error(f"Auto-optimization failed: {error_msg}. Client will receive: {client_msg}")
+                raise ValueError(error_msg)
+            pending_change_original.append(endpoint)
+            pending_change_original_model.append(cur_model)
+            pending_change_target.append(target_instance.endpoint)
+            pending_change_target_model.append(target_model)
+            pending_change_global_indices.append(change_indices[i])  # Map to global index
+
+        # Phase 4: Eliminate any remaining endpoint-level cycles (post-fetch)
+        # Store pre-filter lists to track which indices survive
+        pre_filter_original = pending_change_original.copy()
+        pre_filter_global_indices = pending_change_global_indices.copy()
+
+        (
+            pending_change_original,
+            pending_change_original_model,
+            pending_change_target,
+            pending_change_target_model,
+            cancelled_targets
+        ) = eliminate_redundant_migrations(
+            pending_change_original,
+            pending_change_original_model,
+            pending_change_target,
+            pending_change_target_model
+        )
+
+        # Filter global indices to match the filtered lists
+        surviving_endpoints = set(pending_change_original)
+        pending_change_global_indices = [
+            gi for ep, gi in zip(pre_filter_original, pre_filter_global_indices)
+            if ep in surviving_endpoints
+        ]
+
+        # Return cancelled target endpoints to the store (they were fetched but won't be used)
+        for endpoint, model_id in cancelled_targets:
+            await instance_store.add_available_instance(
+                AvailableInstance(model_id=model_id, endpoint=endpoint)
+            )
+            logger.info(f"Auto-opt: Returned cancelled target endpoint to store: {endpoint} (model={model_id})")
 
         # Perform migration if needed
         if pending_change_original:
@@ -475,36 +543,32 @@ async def _trigger_optimization():
             )
 
             # Update _stored_deployment_input with new deployment state
-            # Build mapping from global index to target endpoint
+            # Build mapping from global index to target endpoint using tracked indices
             global_idx_to_target_endpoint = {}
-            change_idx = 0
-            for idx, (cur, target_model) in enumerate(zip(current_models, deployment_target_models)):
-                if cur != target_model:
-                    global_idx_to_target_endpoint[idx] = pending_change_target[change_idx]
-                    change_idx += 1
+            for i, global_idx in enumerate(pending_change_global_indices):
+                global_idx_to_target_endpoint[global_idx] = pending_change_target[i]
 
             # Only update successfully migrated instances
             if len(failed) == 0:
                 # All migrations successful, update all changed instances
-                for idx, (cur, target_model) in enumerate(zip(current_models, deployment_target_models)):
-                    if cur != target_model:
-                        _stored_deployment_input.instances[idx].current_model = target_model
-                        _stored_deployment_input.instances[idx].endpoint = global_idx_to_target_endpoint[idx]
-                logger.info(f"Updated stored deployment state with {changes_count} model and endpoint changes")
+                for global_idx in pending_change_global_indices:
+                    _stored_deployment_input.instances[global_idx].current_model = deployment_target_models[global_idx]
+                    _stored_deployment_input.instances[global_idx].endpoint = global_idx_to_target_endpoint[global_idx]
+                logger.info(f"Updated stored deployment state with {len(pending_change_global_indices)} model and endpoint changes")
             else:
                 # Partial success - only update successful migrations
                 successful_indices = set()
-                for status in migration_status:
-                    if status.success:
-                        successful_indices.add(status.instance_index)
-                change_idx = 0
-                for idx, (cur, target_model) in enumerate(zip(current_models, deployment_target_models)):
-                    if cur != target_model:
-                        if change_idx in successful_indices:
-                            _stored_deployment_input.instances[idx].current_model = target_model
-                            _stored_deployment_input.instances[idx].endpoint = global_idx_to_target_endpoint[idx]
-                        change_idx += 1
-                logger.warning(f"Partial migration success: updated {len(successful_indices)} of {changes_count} changes")
+                for mig_status in migration_status:
+                    if mig_status.success:
+                        successful_indices.add(mig_status.instance_index)
+
+                # Update only successful migrations using tracked global indices
+                for i, global_idx in enumerate(pending_change_global_indices):
+                    if i in successful_indices:
+                        _stored_deployment_input.instances[global_idx].current_model = deployment_target_models[global_idx]
+                        _stored_deployment_input.instances[global_idx].endpoint = pending_change_target[i]
+
+                logger.warning(f"Partial migration success: updated {len(successful_indices)} of {len(pending_change_global_indices)} changes")
         else:
             logger.info(f"Auto-optimization completed: score={score:.4f}, no changes needed")
 
@@ -867,25 +931,95 @@ async def deploy_with_migration(input_data: DeploymentInput):
         # We need to find the changed instance here
         instance_store = get_available_instance_store()
         deployment_target_models = [reverse_mapping[idx] for idx in deployment]
-        pending_change_original_model = []
-        pending_change_original = []
-        pending_change_target = []
         logger.info(f"Start redeployment mapping")
         logger.info(f"Current models: {current_models}")
         logger.info(f"Deployment target models: {deployment_target_models}")
+
+        # Phase 1: Build list of instances that need to change
+        change_indices = []
+        change_endpoints = []
+        change_current_models = []
+        change_target_models = []
         for idx, (cur, target_model) in enumerate(zip(current_models, deployment_target_models)):
             if cur != target_model:
-                pending_change_original.append(endpoints[idx])
-                pending_change_original_model.append(cur)
-                target_instance = await instance_store.fetch_one_available_instance(target_model)
-                if not target_instance:
-                    error_msg = f"No available target endpoint for model {target_model}"
-                    client_msg = f"Invalid input: {error_msg}"
-                    logger.error(f"/deploy/migration failed: {error_msg}. Returning HTTP 400. Client will receive: {client_msg}")
-                    raise ValueError(error_msg)
-                pending_change_target.append(target_instance.endpoint)
+                change_indices.append(idx)
+                change_endpoints.append(endpoints[idx])
+                change_current_models.append(cur)
+                change_target_models.append(target_model)
 
+        # Phase 2: Detect model swap cycles BEFORE fetching from store
+        # This eliminates cases where A(model_x)->model_y and B(model_y)->model_x
+        swap_indices, swap_pairs = detect_model_swap_pairs(
+            change_endpoints,
+            change_current_models,
+            change_target_models
+        )
 
+        if swap_indices:
+            logger.info(
+                f"Pre-fetch optimization: eliminated {len(swap_indices)} model swap migrations "
+                f"({len(swap_pairs)} binary swaps)"
+            )
+
+        # Phase 3: Fetch target endpoints only for non-swap migrations
+        pending_change_original_model = []
+        pending_change_original = []
+        pending_change_target = []
+        pending_change_target_model = []
+        pending_change_global_indices = []  # Track global index for each pending change
+
+        for i, (endpoint, cur_model, target_model) in enumerate(
+            zip(change_endpoints, change_current_models, change_target_models)
+        ):
+            if i in swap_indices:
+                # Skip this migration - it's part of a model swap cycle
+                logger.debug(f"Skipping swap migration: {endpoint} ({cur_model} -> {target_model})")
+                continue
+
+            target_instance = await instance_store.fetch_one_available_instance(target_model)
+            if not target_instance:
+                error_msg = f"No available target endpoint for model {target_model}"
+                client_msg = f"Invalid input: {error_msg}"
+                logger.error(f"/deploy/migration failed: {error_msg}. Returning HTTP 400. Client will receive: {client_msg}")
+                raise ValueError(error_msg)
+            pending_change_original.append(endpoint)
+            pending_change_original_model.append(cur_model)
+            pending_change_target.append(target_instance.endpoint)
+            pending_change_target_model.append(target_model)
+            pending_change_global_indices.append(change_indices[i])  # Map to global index
+
+        # Phase 4: Eliminate any remaining endpoint-level cycles (post-fetch)
+        # Store pre-filter lists to track which indices survive
+        pre_filter_original = pending_change_original.copy()
+        pre_filter_global_indices = pending_change_global_indices.copy()
+
+        (
+            pending_change_original,
+            pending_change_original_model,
+            pending_change_target,
+            pending_change_target_model,
+            cancelled_targets
+        ) = eliminate_redundant_migrations(
+            pending_change_original,
+            pending_change_original_model,
+            pending_change_target,
+            pending_change_target_model
+        )
+
+        # Filter global indices to match the filtered lists
+        # Build set of surviving endpoints for fast lookup
+        surviving_endpoints = set(pending_change_original)
+        pending_change_global_indices = [
+            gi for ep, gi in zip(pre_filter_original, pre_filter_global_indices)
+            if ep in surviving_endpoints
+        ]
+
+        # Return cancelled target endpoints to the store (they were fetched but won't be used)
+        for endpoint, model_id in cancelled_targets:
+            await instance_store.add_available_instance(
+                AvailableInstance(model_id=model_id, endpoint=endpoint)
+            )
+            logger.info(f"Returned cancelled target endpoint to store: {endpoint} (model={model_id})")
 
         logger.info(f"Optimization completed: score={score:.4f}, changes={changes_count}")
         logger.info(f"Pending change original: {pending_change_original}")
@@ -954,13 +1088,10 @@ async def deploy_with_migration(input_data: DeploymentInput):
 
         # Update _stored_deployment_input with the new deployment state
         # This ensures next auto-optimization uses the correct initial state
-        # Build mapping from global index to target endpoint
+        # Build mapping from global index to target endpoint using tracked indices
         global_idx_to_target_endpoint = {}
-        change_idx = 0
-        for idx, (cur, target_model) in enumerate(zip(current_models, deployment_target_models)):
-            if cur != target_model:
-                global_idx_to_target_endpoint[idx] = pending_change_target[change_idx]
-                change_idx += 1
+        for i, global_idx in enumerate(pending_change_global_indices):
+            global_idx_to_target_endpoint[global_idx] = pending_change_target[i]
 
         if overall_success:
             # All migrations successful, update all changed instances
@@ -977,22 +1108,16 @@ async def deploy_with_migration(input_data: DeploymentInput):
             # Note: migration_status[].instance_index is the index in pending_change list,
             # NOT the global instances index. We need to track which changes succeeded.
             successful_change_indices = set()
-            for status in migration_status:
-                if status.success:
-                    successful_change_indices.add(status.instance_index)
+            for mig_status in migration_status:
+                if mig_status.success:
+                    successful_change_indices.add(mig_status.instance_index)
 
-            # Map change_idx (pending_change list index) to global idx
-            change_idx = 0
-            for idx, (cur, target_model) in enumerate(zip(current_models, deployment_target_models)):
-                if cur != target_model:
-                    # This instance was in the pending change list
-                    if change_idx in successful_change_indices:
-                        _stored_deployment_input.instances[idx].current_model = target_model
-                        _stored_deployment_input.instances[idx].endpoint = global_idx_to_target_endpoint[idx]
-                    change_idx += 1
-                else:
-                    # No change needed, keep current state (already correct in _stored_deployment_input)
-                    pass
+            # Update only successful migrations using tracked global indices
+            for i, global_idx in enumerate(pending_change_global_indices):
+                if i in successful_change_indices:
+                    _stored_deployment_input.instances[global_idx].current_model = deployment_target_models[global_idx]
+                    _stored_deployment_input.instances[global_idx].endpoint = pending_change_target[i]
+
             logger.warning(f"Partial deployment: updated {len(successful_change_indices)} of {len(migration_status)} migrations in stored state")
 
         # Mark first migration done - enables auto-optimization timer to start
