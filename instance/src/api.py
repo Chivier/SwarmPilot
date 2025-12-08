@@ -727,20 +727,16 @@ async def deregister_model():
         else:
             logger.info("Scheduler integration disabled, skipping task extraction")
 
-        # Step 3: Wait for currently running task to complete (including callback)
+        # Step 3: Detach currently running task to background
         operation.update_status(DeregisterStatus.WAITING_RUNNING_TASK)
 
-        # Check current_task_id instead of stats["running"] to ensure callback completion.
-        # current_task_id is only cleared AFTER _execute_task() fully completes,
-        # which includes the callback. This prevents race conditions where the task
-        # status changes to COMPLETED before the callback finishes.
         if task_queue.current_task_id is not None:
-            logger.info(f"Waiting for running task {task_queue.current_task_id} to complete including callback (no timeout)")
-
-            while task_queue.current_task_id is not None:
-                await asyncio.sleep(1)
-
-            logger.info("Running task and callback completed")
+            running_task_id = task_queue.current_task_id
+            detached_id = await task_queue.detach_current_task()
+            if detached_id:
+                logger.info(
+                    f"Running task {detached_id} detached and will continue in background."
+                )
         else:
             logger.info("No running tasks to wait for")
 
