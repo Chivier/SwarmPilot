@@ -559,6 +559,64 @@ class TaskQueue:
 
         return cleared_count
 
+    async def peek_pending_tasks(self) -> List[Dict[str, Any]]:
+        """
+        Get all pending (QUEUED) tasks info WITHOUT removing them from the queue.
+
+        Use this to get task info for redistribution, then call remove_task()
+        for each successfully resubmitted task.
+
+        Returns:
+            List of task dictionaries containing task metadata.
+        """
+        pending_tasks = []
+
+        async with self._queue_lock:
+            for task in self.tasks.values():
+                if task.status == TaskStatus.QUEUED:
+                    task_info = {
+                        "task_id": task.task_id,
+                        "model_id": task.model_id,
+                        "task_input": task.task_input,
+                        "enqueue_time": task.enqueue_time,
+                        "submitted_at": task.submitted_at,
+                        "callback_url": getattr(task, "callback_url", None),
+                        "metadata": getattr(task, "metadata", None),
+                    }
+                    pending_tasks.append(task_info)
+
+        logger.debug(f"Peeked {len(pending_tasks)} pending tasks")
+        return pending_tasks
+
+    async def remove_task(self, task_id: str) -> bool:
+        """
+        Remove a specific task from the queue and task storage.
+
+        Args:
+            task_id: ID of the task to remove
+
+        Returns:
+            True if task was removed, False if not found
+        """
+        async with self._queue_lock:
+            if task_id not in self.tasks:
+                return False
+
+            # Remove from task storage
+            del self.tasks[task_id]
+
+            # Remove from priority queue
+            self.queue = [(t, tid) for t, tid in self.queue if tid != task_id]
+            heapq.heapify(self.queue)
+
+            # Remove from insertion order
+            self._insertion_order = deque(
+                tid for tid in self._insertion_order if tid != task_id
+            )
+
+            logger.debug(f"Removed task {task_id} from local queue")
+            return True
+
     async def extract_pending_tasks(self) -> List[Dict[str, Any]]:
         """
         Extract all pending (QUEUED) tasks from the queue for redistribution.

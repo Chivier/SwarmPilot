@@ -682,34 +682,38 @@ async def deregister_model():
         else:
             logger.info("Scheduler integration disabled, skipping drain step")
 
-        # Step 2: Extract pending queued tasks and redistribute to scheduler
+        # Step 2: Get pending queued tasks and redistribute to scheduler
         operation.update_status(DeregisterStatus.EXTRACTING_TASKS)
 
         if scheduler_client.is_enabled:
             try:
-                pending_tasks = await task_queue.extract_pending_tasks()
-                logger.info(f"Extracted {len(pending_tasks)} pending tasks from queue")
+                # Peek tasks without removing - only remove after successful resubmit
+                pending_tasks = await task_queue.peek_pending_tasks()
+                logger.info(f"Found {len(pending_tasks)} pending tasks for redistribution")
 
                 successful_redistributions = 0
                 failed_redistributions = 0
 
                 for task_data in pending_tasks:
+                    task_id = task_data["task_id"]
                     try:
                         success = await scheduler_client.resubmit_task(
-                            task_id=task_data["task_id"],
+                            task_id=task_id,
                             original_instance_id=config.instance_id,
                         )
 
                         if success:
+                            # Remove from local queue only after successful resubmit
+                            await task_queue.remove_task(task_id)
                             successful_redistributions += 1
-                            logger.debug(f"Successfully redistributed task {task_data['task_id']}")
+                            logger.debug(f"Redistributed and removed task {task_id}")
                         else:
                             failed_redistributions += 1
-                            logger.warning(f"Failed to redistribute task {task_data['task_id']}")
+                            logger.warning(f"Failed to redistribute task {task_id}")
 
                     except Exception as e:
                         failed_redistributions += 1
-                        logger.error(f"Error redistributing task {task_data['task_id']}: {str(e)}")
+                        logger.error(f"Error redistributing task {task_id}: {str(e)}")
 
                 redistributed_tasks_count = successful_redistributions
                 operation.redistributed_tasks_count = successful_redistributions
@@ -717,13 +721,13 @@ async def deregister_model():
                 if failed_redistributions > 0:
                     logger.warning(
                         f"Task redistribution: {successful_redistributions} succeeded, "
-                        f"{failed_redistributions} failed"
+                        f"{failed_redistributions} failed (kept in local queue)"
                     )
                 else:
                     logger.info(f"Successfully redistributed all {successful_redistributions} tasks")
 
             except Exception as e:
-                logger.error(f"Failed to extract and redistribute tasks: {str(e)}")
+                logger.error(f"Failed to redistribute tasks: {str(e)}")
         else:
             logger.info("Scheduler integration disabled, skipping task extraction")
 
@@ -1035,49 +1039,52 @@ async def _perform_restart_operation(operation_id: str):
         else:
             logger.info("Scheduler integration disabled, skipping drain step")
 
-        # Step 2: Extract pending queued tasks and redistribute to scheduler
+        # Step 2: Get pending queued tasks and redistribute to scheduler
         operation.update_status(RestartStatus.EXTRACTING_TASKS)
 
         if scheduler_client.is_enabled:
             try:
-                # Extract all pending QUEUED tasks (preserves running task)
-                pending_tasks = await task_queue.extract_pending_tasks()
-                logger.info(f"Extracted {len(pending_tasks)} pending tasks from queue")
+                # Peek tasks without removing - only remove after successful resubmit
+                pending_tasks = await task_queue.peek_pending_tasks()
+                logger.info(f"Found {len(pending_tasks)} pending tasks for redistribution")
 
                 # Redistribute tasks back to scheduler
                 successful_redistributions = 0
                 failed_redistributions = 0
 
                 for task_data in pending_tasks:
+                    task_id = task_data["task_id"]
                     try:
                         success = await scheduler_client.resubmit_task(
-                            task_id=task_data["task_id"],
+                            task_id=task_id,
                             original_instance_id=config.instance_id,
                         )
 
                         if success:
+                            # Remove from local queue only after successful resubmit
+                            await task_queue.remove_task(task_id)
                             successful_redistributions += 1
-                            logger.debug(f"Successfully redistributed task {task_data['task_id']}")
+                            logger.debug(f"Redistributed and removed task {task_id}")
                         else:
                             failed_redistributions += 1
-                            logger.warning(f"Failed to redistribute task {task_data['task_id']}")
+                            logger.warning(f"Failed to redistribute task {task_id}")
 
                     except Exception as e:
                         failed_redistributions += 1
-                        logger.error(f"Error redistributing task {task_data['task_id']}: {str(e)}")
+                        logger.error(f"Error redistributing task {task_id}: {str(e)}")
 
                 operation.redistributed_tasks_count = successful_redistributions
 
                 if failed_redistributions > 0:
                     logger.warning(
                         f"Task redistribution: {successful_redistributions} succeeded, "
-                        f"{failed_redistributions} failed"
+                        f"{failed_redistributions} failed (kept in local queue)"
                     )
                 else:
                     logger.info(f"Successfully redistributed all {successful_redistributions} tasks")
 
             except Exception as e:
-                logger.error(f"Failed to extract and redistribute tasks: {str(e)}")
+                logger.error(f"Failed to redistribute tasks: {str(e)}")
                 # Continue with restart even if redistribution fails
         else:
             logger.info("Scheduler integration disabled, skipping task extraction")
