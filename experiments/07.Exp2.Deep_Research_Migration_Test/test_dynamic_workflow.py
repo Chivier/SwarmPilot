@@ -2910,7 +2910,7 @@ def test_strategy_workflow(
     workflow_states: Dict[str, WorkflowState] = {}
     target_count = 0  # Count of non-warmup workflows marked as targets
     for i in range(total_workflows):
-        workflow_id = f"wf-{strategy}-{i:04d}"
+        workflow_id = f"wf-{strategy}-{i:04d}-{experiment_id}"
         is_warmup = i < num_warmup_workflows
 
         # Determine if this is a target workflow for statistics
