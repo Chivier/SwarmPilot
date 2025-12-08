@@ -70,6 +70,12 @@ PARETO_ALPHA = 1.5  # Shape parameter (smaller = more skewed/long-tail)
 FANOUT_MIN = 3  # Minimum number of B tasks per A task
 FANOUT_MAX = 8  # Maximum number of B tasks per A task
 
+# Default scale factor for task execution times
+# Set to 0.35 to achieve ~QPS=1 with 48 nodes (slight overload)
+# k < 0.33: system can handle QPS=1
+# k > 0.33: system will be overloaded at QPS=1
+DEFAULT_SCALE_FACTOR = 0.35
+
 # Data directory path
 DATA_DIR = Path(__file__).parent / "data"
 
@@ -85,30 +91,27 @@ def load_trace_data() -> Tuple[List[float], Dict[str, List[float]], List[float],
         - dr_query: List of query times (Task B left peak)
         - dr_criteria: List of criteria evaluation times (Task B right peak)
     """
+    # Load dr_boot (Task A left peak - boot times) and convert ms to s
     with open(DATA_DIR / "dr_boot.json", "r") as f:
         dr_boot = json.load(f)
-        
-    dr_boot = np.random.normal(30, 2, size=len(dr_boot))
-    dr_boot = dr_boot.tolist()
+    dr_boot = [x / 1000 for x in dr_boot]  # ms -> s
 
+    # Load dr_summary_dict (Task A right peak - summary times) and convert ms to s
     with open(DATA_DIR / "dr_summary_dict.json", "r") as f:
         dr_summary_dict = json.load(f)
-        
-    for i in range(5, 16):
-        dr_summary_dict[i] = np.random.normal(25, 2, size=len(dr_summary_dict[str(i)]))
-        dr_summary_dict[i] = dr_summary_dict[i].tolist()
-        
+    # Convert all values in the dict from ms to s
+    for key in dr_summary_dict:
+        dr_summary_dict[key] = [x / 1000 for x in dr_summary_dict[key]]
+
+    # Load dr_query (Task B left peak - query times) and convert ms to s
     with open(DATA_DIR / "dr_query.json", "r") as f:
         dr_query = json.load(f)
+    dr_query = [x / 1000 for x in dr_query]  # ms -> s
 
-    dr_query = np.random.normal(3, 0.3, size=len(dr_query))
-    dr_query = dr_query.tolist()
-    
+    # Load dr_criteria (Task B right peak - criteria evaluation times) and convert ms to s
     with open(DATA_DIR / "dr_criteria.json", "r") as f:
         dr_criteria = json.load(f)
-        
-    dr_criteria = np.random.normal(2, 0.2, size=len(dr_criteria))
-    dr_criteria = dr_criteria.tolist()
+    dr_criteria = [x / 1000 for x in dr_criteria]  # ms -> s
     return dr_boot, dr_summary_dict, dr_query, dr_criteria
 
 
@@ -151,6 +154,7 @@ def generate_bimodal_distribution(num_tasks: int, seed: int = 42) -> tuple[List[
         Tuple of (task_times, config)
     """
     np.random.seed(seed)
+    random.seed(seed)
 
     # Calculate number of tasks for each peak
     num_left_peak = int(num_tasks * PEAK_RATIO)
@@ -397,15 +401,17 @@ class WorkflowWorkload:
 
 def generate_workflow_from_traces(
     num_workflows: int,
-    seed: int = 42
+    seed: int = 42,
+    scale_factor: float = None
 ) -> Tuple[WorkflowWorkload, WorkloadConfig]:
     """
     Generate workflow workload data from real traces.
 
     Process:
     1. Load real trace data
-    2. Select a fanout from dr_summary_dict keys
-    3. For each workflow:
+    2. Apply scale_factor to all task times
+    3. Select a fanout from dr_summary_dict keys
+    4. For each workflow:
        - Select one dr_boot value as A1 time
        - Select fanout number of dr_query values as B1 times
        - Select fanout number of dr_criteria values as B2 times
@@ -414,15 +420,30 @@ def generate_workflow_from_traces(
     Args:
         num_workflows: Number of workflows to generate
         seed: Random seed for reproducibility
+        scale_factor: Scaling factor for all task execution times.
+                      Default is DEFAULT_SCALE_FACTOR (0.35).
+                      - k < 0.33: system can handle QPS=1 with 48 nodes
+                      - k = 0.33: critical point (exactly 48 nodes needed)
+                      - k > 0.33: system will be overloaded at QPS=1
 
     Returns:
         Tuple of (WorkflowWorkload, WorkloadConfig)
     """
+    if scale_factor is None:
+        scale_factor = DEFAULT_SCALE_FACTOR
+
     random.seed(seed)
     np.random.seed(seed)
 
     # Load trace data
     dr_boot, dr_summary_dict, dr_query, dr_criteria = load_trace_data()
+
+    # Apply scale factor to all trace data
+    dr_boot = [x * scale_factor for x in dr_boot]
+    dr_query = [x * scale_factor for x in dr_query]
+    dr_criteria = [x * scale_factor for x in dr_criteria]
+    for key in dr_summary_dict:
+        dr_summary_dict[key] = [x * scale_factor for x in dr_summary_dict[key]]
 
     # Get available fanout values (keys of dr_summary_dict)
     available_fanouts = [int(k) for k in dr_summary_dict.keys()]
@@ -470,6 +491,7 @@ def generate_workflow_from_traces(
         b2_times=b2_times,
         fanout_values=fanout_values,
         description=f"Workflow from real traces: {num_workflows} workflows, "
+                    f"scale_factor={scale_factor:.4f}, "
                     f"A1 from dr_boot, A2 from dr_summary_dict, "
                     f"B1 from dr_query, B2 from dr_criteria"
     )
@@ -482,6 +504,7 @@ def generate_workflow_from_traces(
         mean_time=(all_a1.mean() + all_a2.mean() + all_b1.mean() + all_b2.mean()) / 4,
         std_time=(all_a1.std() + all_a2.std() + all_b1.std() + all_b2.std()) / 4,
         description=f"Trace-based workflow: {num_workflows} workflows, "
+                    f"scale_factor={scale_factor:.4f}, "
                     f"avg fanout={all_fanouts.mean():.1f}"
     )
 
@@ -587,6 +610,11 @@ if __name__ == "__main__":
     parser.add_argument("--mode", type=str, default="trace",
                         choices=["synthetic", "trace", "both"],
                         help="Generation mode: trace (from real data, default), synthetic (original), or both")
+    parser.add_argument("--scale-factor", type=float, default=DEFAULT_SCALE_FACTOR,
+                        help=f"Scaling factor for task execution times (default: {DEFAULT_SCALE_FACTOR}). "
+                             "k < 0.33: system can handle QPS=1 with 48 nodes; "
+                             "k = 0.33: critical point; "
+                             "k > 0.33: system overloaded at QPS=1")
     args = parser.parse_args()
 
     print("=" * 60)
@@ -614,10 +642,11 @@ if __name__ == "__main__":
         print("\n" + "=" * 60)
         print("TRACE-BASED WORKLOAD GENERATION")
         print("=" * 60)
+        print(f"Scale factor: {args.scale_factor}")
 
         # Generate workflow from real traces
         workflow_workload, workflow_config = generate_workflow_from_traces(
-            args.num_workflows, seed=args.seed
+            args.num_workflows, seed=args.seed, scale_factor=args.scale_factor
         )
         print_workflow_stats(workflow_workload)
 

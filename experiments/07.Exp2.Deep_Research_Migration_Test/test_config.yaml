@@ -1,6 +1,14 @@
 # Automated Testing Configuration for Experiment 07
 # Multi-Model Workflow with B1/B2 Split and Merge
 
+# Workload scaling configuration
+# Scale factor for task execution times (applied to all trace-based task times)
+# - k < 0.33: system can handle QPS=1 with 48 nodes
+# - k = 0.33: critical point (exactly 48 nodes needed for QPS=1)
+# - k > 0.33: system will be overloaded at QPS=1 with 48 nodes
+# Default: 0.35 (slight overload at QPS=1 with 48 nodes)
+scale_factor: 0.35
+
 # Test matrix parameters
 test_matrix:
   # Number of workflows to test

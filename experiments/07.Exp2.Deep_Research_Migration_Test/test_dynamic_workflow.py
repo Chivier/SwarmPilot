@@ -53,7 +53,8 @@ from workload_generator import (
     WorkflowWorkload,
     print_distribution_stats,
     print_fanout_stats,
-    print_workflow_stats
+    print_workflow_stats,
+    DEFAULT_SCALE_FACTOR
 )
 
 # Configure logging
@@ -903,7 +904,7 @@ class ATaskReceiver:
         
         task_id = data["task_id"]
         status = data["status"]
-        raw_result = data["result"]
+        raw_result = data.get("result") or {}  # Handle None result
         workflow_id = None
 
         # Extract workflow_id from task_id (format: task-A-{strategy}-workflow-{i:04d}-A)
@@ -1277,7 +1278,7 @@ class B1TaskReceiver:
         """
         task_id = data["task_id"]
         status = data["status"]
-        raw_b_result = data["result"]
+        raw_b_result = data.get("result") or {}  # Handle None result
         complete_time = time.time()
         workflow_id = None
 
@@ -1488,7 +1489,7 @@ class B2TaskReceiver:
         """
         task_id = data["task_id"]
         status = data["status"]
-        raw_result = data["result"]
+        raw_result = data.get("result") or {}  # Handle None result
         complete_time = time.time()
         workflow_id = None
 
@@ -1867,7 +1868,7 @@ class MergeTaskReceiver:
         """
         task_id = data["task_id"]
         status = data["status"]
-        raw_result = data["result"]
+        raw_result = data.get("result") or {}  # Handle None result
         complete_time = time.time()
         workflow_id = None
 
@@ -1887,13 +1888,21 @@ class MergeTaskReceiver:
         sleep_time = result.get("sleep_time", 0.0)
         execution_time = data.get("execution_time", 0.0)
 
-        # Create merge task record
+        # Get workflow state to extract merge_submit_time
+        if workflow_id not in self.workflow_states:
+            self.logger.error(f"Unknown workflow_id: {workflow_id}")
+            return
+
+        workflow = self.workflow_states[workflow_id]
+
+        # Create merge task record WITH submit_time
         merge_record = TaskRecord(
             task_id=task_id,
             workflow_id=workflow_id,
             task_type="merge",
             sleep_time=sleep_time,
             exp_runtime=execution_time * 1000,  # Convert seconds to milliseconds
+            submit_time=workflow.merge_submit_time,  # ✅ FIX: Add submit_time from workflow
             complete_time=complete_time,
             status=status,
             execution_time_ms=data.get("execution_time_ms", execution_time * 1000),
@@ -1901,13 +1910,6 @@ class MergeTaskReceiver:
             error=data.get("error")
         )
         self.merge_results.append(merge_record)
-
-        # Update workflow state
-        if workflow_id not in self.workflow_states:
-            self.logger.error(f"Unknown workflow_id: {workflow_id}")
-            return
-
-        workflow = self.workflow_states[workflow_id]
 
         # Mark merge task as complete and finalize workflow
         if status == "completed":
@@ -3202,7 +3204,8 @@ def test_strategy_workflow(
 
 def main(num_workflows: int = 100, qps_a: float = 8.0, seed: int = 42,
          strategies: List[str] = None, gqps: Optional[float] = None, warmup_ratio: float = 0.0,
-         continuous_mode: bool = False, metric_portion: float = 0.5, timeout_minutes: int = 20):
+         continuous_mode: bool = False, metric_portion: float = 0.5, timeout_minutes: int = 20,
+         scale_factor: float = None):
     """
     Main entry point for experiment 07.
 
@@ -3216,13 +3219,19 @@ def main(num_workflows: int = 100, qps_a: float = 8.0, seed: int = 42,
         continuous_mode: Enable continuous request mode (2x workflows, track first num_workflows)
         metric_portion: Portion of non-warmup workflows to use for statistics (0.0-1.0, default: 0.5)
         timeout_minutes: Maximum time in minutes to wait for workflows to complete (default: 20)
+        scale_factor: Scaling factor for task execution times (default: DEFAULT_SCALE_FACTOR=0.35)
+                      - k < 0.33: system can handle QPS=1 with 48 nodes
+                      - k = 0.33: critical point
+                      - k > 0.33: system overloaded at QPS=1
     """
+    if scale_factor is None:
+        scale_factor = DEFAULT_SCALE_FACTOR
     if strategies is None:
         strategies = ["min_time", "round_robin", "probabilistic"]
 
     logger = logging.getLogger("Main")
     logger.info("Starting Experiment 07: Multi-Model Workflow with B1/B2 Split and Merge")
-    logger.info(f"Configuration: {num_workflows} workflows, QPS={qps_a}, seed={seed}")
+    logger.info(f"Configuration: {num_workflows} workflows, QPS={qps_a}, seed={seed}, scale_factor={scale_factor}")
     if gqps is not None:
         logger.debug(f"Global QPS: {gqps}")
     if warmup_ratio > 0:
@@ -3242,12 +3251,13 @@ def main(num_workflows: int = 100, qps_a: float = 8.0, seed: int = 42,
     SEED = seed
 
     # Generate workloads from real traces
-    logger.debug("Generating workloads from real traces...")
+    logger.debug(f"Generating workloads from real traces with scale_factor={scale_factor}...")
 
     # Generate workflow workload from traces
     workflow_workload, workflow_config = generate_workflow_from_traces(
         num_workflows=NUM_WORKFLOWS,
-        seed=SEED
+        seed=SEED,
+        scale_factor=scale_factor
     )
     print_workflow_stats(workflow_workload)
     logger.debug(f"Generated {len(workflow_workload.a1_times)} workflows from traces")
@@ -3278,7 +3288,8 @@ def main(num_workflows: int = 100, qps_a: float = 8.0, seed: int = 42,
         # Generate warmup workflow from traces using a different seed
         warmup_workflow, warmup_config = generate_workflow_from_traces(
             num_workflows=num_warmup_workflows,
-            seed=SEED + 1000  # Different seed for warmup data
+            seed=SEED + 1000,  # Different seed for warmup data
+            scale_factor=scale_factor
         )
 
         # Extract warmup task times and fanout values
@@ -3454,6 +3465,16 @@ if __name__ == "__main__":
         help="Maximum time in minutes to wait for workflows to complete (default: 20)"
     )
 
+    parser.add_argument(
+        "--scale-factor",
+        type=float,
+        default=DEFAULT_SCALE_FACTOR,
+        help=f"Scaling factor for task execution times (default: {DEFAULT_SCALE_FACTOR}). "
+             "k < 0.33: system can handle QPS=1 with 48 nodes; "
+             "k = 0.33: critical point; "
+             "k > 0.33: system overloaded at QPS=1"
+    )
+
     args = parser.parse_args()
 
     main(
@@ -3465,5 +3486,6 @@ if __name__ == "__main__":
         warmup_ratio=args.warmup,
         continuous_mode=args.continuous,
         metric_portion=args.metric_portion,
-        timeout_minutes=args.timeout
+        timeout_minutes=args.timeout,
+        scale_factor=args.scale_factor
     )

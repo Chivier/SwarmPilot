@@ -104,12 +104,12 @@ class DeploymentInput(BaseModel):
 def build_instance_info():
   instance_a_start_port = 8210
   instance_b_start_port = 8300
-  
+
   instance_a_num = requests.get("http://localhost:8100/health").json()["stats"]["total_instances"]
   instance_b_num = requests.get("http://localhost:8200/health").json()["stats"]["total_instances"]
-  
+
   print(f"Initial state: a: {instance_a_num}, b: {instance_b_num}")
-  
+
   all_instances = []
   for i in range(instance_a_num):
     all_instances.append(
@@ -118,8 +118,7 @@ def build_instance_info():
         current_model="sleep_model_a"
       )
     )
-  
-  b_instances = []
+
   for i in range(instance_b_num):
     all_instances.append(
       InstanceInfo(
@@ -127,16 +126,25 @@ def build_instance_info():
         current_model="sleep_model_b"
       )
     )
-    
+
   return all_instances, instance_a_num, instance_b_num
     
   
     
 def build_planner_input(instance_a_num, instance_b_num) -> PlannerInput:
+  # B[i,j] = throughput (QPS) of instance i for model j
+  # Calculated from median execution times in trace data:
+  #   Model A: A1 (boot) + A2 (summary, fanout=10) = 132.085s → 0.007571 req/s
+  #   Model B: B1 (query) + B2 (criteria) = 6.896s → 0.145008 req/s
+  # See calculate_b_parameter.py for calculation details
+
+  # target = [1, 19.153084] to achieve 1:1 instance ratio
+  # This matches the QPS ratio: 0.145008 / 0.007571 ≈ 19.153084
+  # With equal instances (n_a = n_b), total capacity ratio will match target ratio
   return PlannerInput(
     M = instance_a_num + instance_b_num,
     N = 2,
-    B = [[1, 30]] * (instance_a_num + instance_b_num),
+    B = [[0.007571, 0.145008]] * (instance_a_num + instance_b_num),
     a = 1,
     target = [1, 10],
     algorithm = "simulated_annealing",
