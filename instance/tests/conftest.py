@@ -262,6 +262,9 @@ def mock_task_queue():
         "total": 0,
     })
     queue.stop_processing = AsyncMock()
+    queue.extract_pending_tasks = AsyncMock(return_value=[])
+    queue.detach_current_task = AsyncMock(return_value=None)
+    queue._detached_task_id = None
     return queue
 
 

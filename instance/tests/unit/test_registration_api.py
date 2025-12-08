@@ -259,6 +259,7 @@ class TestDeregisterStatusEndpoint:
         api_client,
         mock_docker_manager,
         mock_task_queue,
+        mock_scheduler_client,
         monkeypatch,
     ):
         """Test GET /model/deregister/status - returns operation status"""
@@ -269,46 +270,29 @@ class TestDeregisterStatusEndpoint:
             started_at="2024-01-01T00:00:00Z",
             parameters={}
         )
+        mock_docker_manager.stop_model = AsyncMock(return_value="test-model")
 
-        # Make task queue return pending tasks to keep operation running
+        # Make task queue return pending tasks
         mock_task_queue.get_queue_stats.return_value = {
             "queued": 10,
-            "running": 1,
+            "running": 0,
             "completed": 0,
             "failed": 0,
-            "total": 11,
+            "total": 10,
         }
+        mock_task_queue.current_task_id = None  # No running task to skip wait
 
-        # Prevent background task from running
-        def no_op_create_task(coro):
-            coro.close()
-            return Mock()
-        monkeypatch.setattr("asyncio.create_task", no_op_create_task)
+        mock_scheduler_client.is_enabled = False
 
-        # Initiate deregister
+        # Initiate deregister - now completes synchronously
         deregister_response = api_client.post("/model/deregister")
         assert deregister_response.status_code == status.HTTP_200_OK
-        operation_id = deregister_response.json()["operation_id"]
 
-        # Query status
-        status_response = api_client.get(
-            f"/model/deregister/status?operation_id={operation_id}"
-        )
-
-        # Verify response structure
-        assert status_response.status_code == status.HTTP_200_OK
-        data = status_response.json()
-        assert data["success"] is True
-        assert data["operation_id"] == operation_id
-        assert data["status"] in [
-            "pending", "draining", "extracting_tasks",
-            "waiting_running_task", "deregistering", "completed", "failed"
-        ]
-        assert data["old_model_id"] == "test-model"
-        assert "initiated_at" in data
-        assert "pending_tasks_at_start" in data
-        assert "pending_tasks_completed" in data
-        assert "redistributed_tasks_count" in data
+        # Verify response structure - deregister completes synchronously now
+        response_data = deregister_response.json()
+        assert response_data["success"] is True
+        assert response_data["model_id"] == "test-model"
+        assert "redistributed_tasks_count" in response_data
 
     def test_get_deregister_status_not_found(self, api_client):
         """Test GET /model/deregister/status - operation not found"""
@@ -335,9 +319,8 @@ class TestDeregisterStatusEndpoint:
         mock_docker_manager,
         mock_task_queue,
         mock_scheduler_client,
-        monkeypatch,
     ):
-        """Test GET /model/deregister/status - completed operation shows completed_at"""
+        """Test POST /model/deregister - completes synchronously with no running tasks"""
         # Setup mocks
         mock_docker_manager.is_model_running.return_value = True
         mock_docker_manager.get_current_model.return_value = ModelInfo(
@@ -345,6 +328,7 @@ class TestDeregisterStatusEndpoint:
             started_at="2024-01-01T00:00:00Z",
             parameters={}
         )
+        mock_docker_manager.stop_model = AsyncMock(return_value="test-model")
         mock_scheduler_client.is_enabled = True
         mock_scheduler_client.drain_instance = AsyncMock(return_value={
             "success": True,
@@ -361,31 +345,17 @@ class TestDeregisterStatusEndpoint:
             "failed": 0,
             "total": 0,
         }
+        mock_task_queue.current_task_id = None  # No running task
         mock_task_queue.extract_pending_tasks = AsyncMock(return_value=[])
 
-        # Initiate deregister (this will run and complete quickly)
+        # Deregister completes synchronously
         deregister_response = api_client.post("/model/deregister")
         assert deregister_response.status_code == status.HTTP_200_OK
-        operation_id = deregister_response.json()["operation_id"]
-
-        # Wait a bit for background task to complete
-        import time
-        time.sleep(0.1)
-
-        # Query status
-        status_response = api_client.get(
-            f"/model/deregister/status?operation_id={operation_id}"
-        )
 
         # Verify response
-        assert status_response.status_code == status.HTTP_200_OK
-        data = status_response.json()
+        data = deregister_response.json()
         assert data["success"] is True
-        assert data["operation_id"] == operation_id
-        # Status should be completed since there were no pending tasks
-        if data["status"] == "completed":
-            assert data["completed_at"] is not None
-            assert data["error"] is None
+        assert data["model_id"] == "test-model"
 
 
 @pytest.mark.unit
@@ -397,9 +367,9 @@ class TestDeregisterModelEndpoint:
         api_client,
         mock_docker_manager,
         mock_task_queue,
-        monkeypatch,
+        mock_scheduler_client,
     ):
-        """Test POST /model/deregister - successful initiation"""
+        """Test POST /model/deregister - successful completion"""
         # Setup mocks
         mock_docker_manager.is_model_running.return_value = True
         mock_docker_manager.get_current_model.return_value = ModelInfo(
@@ -407,25 +377,19 @@ class TestDeregisterModelEndpoint:
             started_at="2024-01-01T00:00:00Z",
             parameters={}
         )
-
-        # Prevent background task from running
-        def no_op_create_task(coro):
-            coro.close()
-            return Mock()
-        monkeypatch.setattr("asyncio.create_task", no_op_create_task)
+        mock_docker_manager.stop_model = AsyncMock(return_value="test-model")
+        mock_task_queue.current_task_id = None  # No running task
+        mock_scheduler_client.is_enabled = False
 
         # Make request
         response = api_client.post("/model/deregister")
 
-        # Verify response
+        # Verify response - deregister completes synchronously now
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert data["success"] is True
-        assert "operation_id" in data
-        assert isinstance(data["operation_id"], str)
-        assert len(data["operation_id"]) > 0
-        assert data["status"] == "draining"
-        assert "deregister operation initiated" in data["message"].lower()
+        assert data["model_id"] == "test-model"
+        assert "redistributed_tasks_count" in data
 
     def test_deregister_model_no_model_running(
         self,
@@ -445,14 +409,19 @@ class TestDeregisterModelEndpoint:
         assert "detail" in data
         assert "No model is currently running" in data["detail"]
 
-    def test_deregister_model_already_in_progress(
+    def test_deregister_model_sequential_requests(
         self,
         api_client,
         mock_docker_manager,
         mock_task_queue,
-        monkeypatch,
+        mock_scheduler_client,
     ):
-        """Test POST /model/deregister - fails when deregister already in progress"""
+        """Test POST /model/deregister - sequential requests with synchronous operation.
+
+        With synchronous deregister (blocking until completion), the first request
+        completes before the second one starts. The second request should fail
+        because no model is running after the first deregister.
+        """
         # Setup mocks
         mock_docker_manager.is_model_running.return_value = True
         mock_docker_manager.get_current_model.return_value = ModelInfo(
@@ -460,29 +429,185 @@ class TestDeregisterModelEndpoint:
             started_at="2024-01-01T00:00:00Z",
             parameters={}
         )
-
-        # Make task queue return pending tasks to prevent completion
-        mock_task_queue.get_queue_stats.return_value = {
-            "queued": 100,
-            "running": 0,
-            "completed": 0,
-            "failed": 0,
-            "total": 100,
-        }
-
-        # Prevent background task from running
-        def no_op_create_task(coro):
-            coro.close()
-            return Mock()
-        monkeypatch.setattr("asyncio.create_task", no_op_create_task)
+        mock_docker_manager.stop_model = AsyncMock(return_value="test-model")
+        mock_task_queue.current_task_id = None  # No running task
+        mock_scheduler_client.is_enabled = False
 
         # First request - should succeed
         response1 = api_client.post("/model/deregister")
         assert response1.status_code == status.HTTP_200_OK
+        data1 = response1.json()
+        assert data1["success"] is True
 
-        # Second request - should fail with conflict
+        # After first deregister, no model is running
+        mock_docker_manager.is_model_running.return_value = False
+
+        # Second request - should fail because no model is running
         response2 = api_client.post("/model/deregister")
-        assert response2.status_code == status.HTTP_409_CONFLICT
-        data = response2.json()
-        assert "detail" in data
-        assert "already in progress" in data["detail"]
+        assert response2.status_code == status.HTTP_400_BAD_REQUEST
+        data2 = response2.json()
+        assert "detail" in data2
+        assert "No model is currently running" in data2["detail"]
+
+
+@pytest.mark.unit
+class TestDeregisterTimeoutBehavior:
+    """Tests for deregister endpoint timeout behavior.
+
+    These tests verify the 10-second timeout for waiting on running tasks:
+    - If task completes within 10s: normal flow continues
+    - If task exceeds 10s: task is detached and deregister proceeds
+    """
+
+    def test_deregister_no_running_task_proceeds_immediately(
+        self,
+        api_client,
+        mock_docker_manager,
+        mock_task_queue,
+        mock_scheduler_client,
+    ):
+        """Test deregister proceeds immediately when no task is running.
+
+        When current_task_id is None, the endpoint should skip the wait
+        loop entirely and proceed with deregistration.
+        """
+        # Setup mocks
+        mock_docker_manager.is_model_running.return_value = True
+        mock_docker_manager.get_current_model.return_value = ModelInfo(
+            model_id="test-model",
+            started_at="2024-01-01T00:00:00Z",
+            parameters={}
+        )
+        mock_docker_manager.stop_model = AsyncMock(return_value="test-model")
+        mock_task_queue.current_task_id = None  # No running task
+        mock_task_queue.extract_pending_tasks = AsyncMock(return_value=[])
+        mock_scheduler_client.is_enabled = False
+
+        # Make request
+        response = api_client.post("/model/deregister")
+
+        # Verify success
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["success"] is True
+
+    def test_deregister_detaches_task_after_timeout(
+        self,
+        api_client,
+        mock_docker_manager,
+        mock_task_queue,
+        mock_scheduler_client,
+        monkeypatch,
+    ):
+        """Test deregister detaches task when 10s timeout is reached.
+
+        When a task is running and doesn't complete within 10s,
+        detach_current_task() should be called to allow deregister to proceed.
+        """
+        # Setup mocks
+        mock_docker_manager.is_model_running.return_value = True
+        mock_docker_manager.get_current_model.return_value = ModelInfo(
+            model_id="test-model",
+            started_at="2024-01-01T00:00:00Z",
+            parameters={}
+        )
+        mock_docker_manager.stop_model = AsyncMock(return_value="test-model")
+
+        # Task that never completes (always returns same task_id)
+        mock_task_queue.current_task_id = "long-running-task"
+        mock_task_queue.extract_pending_tasks = AsyncMock(return_value=[])
+        mock_task_queue.detach_current_task = AsyncMock(return_value="long-running-task")
+
+        mock_scheduler_client.is_enabled = False
+
+        # Mock time to simulate timeout quickly
+        import time
+        start_time = time.time()
+        call_count = [0]
+
+        def mock_time():
+            call_count[0] += 1
+            # After first few calls, simulate timeout by returning start + 11 seconds
+            if call_count[0] > 2:
+                return start_time + 11
+            return start_time
+
+        monkeypatch.setattr("time.time", mock_time)
+
+        # Mock asyncio.sleep to not actually sleep
+        async def mock_sleep(seconds):
+            pass
+
+        monkeypatch.setattr("asyncio.sleep", mock_sleep)
+
+        # Make request
+        response = api_client.post("/model/deregister")
+
+        # Verify detach was called
+        assert mock_task_queue.detach_current_task.called
+        assert response.status_code == status.HTTP_200_OK
+
+    def test_deregister_waits_for_task_completion_within_timeout(
+        self,
+        api_client,
+        mock_docker_manager,
+        mock_task_queue,
+        mock_scheduler_client,
+        monkeypatch,
+    ):
+        """Test deregister waits and task completes within 10s timeout.
+
+        When a task completes before the timeout, detach_current_task()
+        should NOT be called.
+        """
+        # Setup mocks
+        mock_docker_manager.is_model_running.return_value = True
+        mock_docker_manager.get_current_model.return_value = ModelInfo(
+            model_id="test-model",
+            started_at="2024-01-01T00:00:00Z",
+            parameters={}
+        )
+        mock_docker_manager.stop_model = AsyncMock(return_value="test-model")
+
+        # Task that completes after first check
+        check_count = [0]
+
+        @property
+        def get_current_task_id(self):
+            check_count[0] += 1
+            if check_count[0] > 1:
+                return None  # Task completed
+            return "quick-task"
+
+        # Use a mock that simulates task completing
+        mock_task_queue.extract_pending_tasks = AsyncMock(return_value=[])
+        mock_task_queue.detach_current_task = AsyncMock(return_value=None)
+
+        # First access returns task_id, subsequent returns None
+        type(mock_task_queue).current_task_id = property(
+            lambda self: "quick-task" if check_count[0] == 0 else None
+        )
+
+        mock_scheduler_client.is_enabled = False
+
+        # Track if detach was called
+        detach_called = [False]
+        original_detach = mock_task_queue.detach_current_task
+
+        async def tracking_detach():
+            detach_called[0] = True
+            return await original_detach()
+
+        mock_task_queue.detach_current_task = tracking_detach
+
+        # Mock asyncio.sleep to increment check_count
+        async def mock_sleep(seconds):
+            check_count[0] += 1
+
+        monkeypatch.setattr("asyncio.sleep", mock_sleep)
+
+        # Make request
+        response = api_client.post("/model/deregister")
+
+        # Verify success without needing to detach
+        assert response.status_code == status.HTTP_200_OK

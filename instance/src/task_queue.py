@@ -59,6 +59,7 @@ class TaskQueue:
         self._insertion_order: deque = deque()  # Track insertion order for O(1) LIFO fetch
         self._queue_lock: asyncio.Lock = asyncio.Lock()  # Ensure thread-safe queue operations
         self.current_task_id: Optional[str] = None
+        self._detached_task_id: Optional[str] = None  # Task detached during deregister timeout
         self.is_processing = False
         self._processing_task: Optional[asyncio.Task] = None
 
@@ -109,6 +110,32 @@ class TaskQueue:
     async def get_task(self, task_id: str) -> Optional[Task]:
         """Get task by ID"""
         return self.tasks.get(task_id)
+
+    async def detach_current_task(self) -> Optional[str]:
+        """
+        Detach the currently running task from the queue tracking.
+
+        This allows deregister operations to proceed without waiting for the
+        task to complete. The detached task will continue running in the
+        background and will still send its callback when finished.
+
+        Returns:
+            The task_id that was detached, or None if no task was running.
+
+        Note:
+            - The task continues to execute in _process_queue()
+            - When the task completes, _detached_task_id is cleared instead of current_task_id
+            - The callback is still sent even after the instance is deregistered
+        """
+        if self.current_task_id is None:
+            return None
+
+        detached_id = self.current_task_id
+        self._detached_task_id = detached_id
+        self.current_task_id = None
+
+        logger.info(f"Task {detached_id} detached - continuing in background")
+        return detached_id
 
     async def fetch_task(self) -> Optional[Task]:
         """
@@ -327,7 +354,14 @@ class TaskQueue:
                     )
                     task.mark_failed(str(e))
 
-                self.current_task_id = None
+                # Handle task completion: check if task was detached during execution
+                if self._detached_task_id == task_id:
+                    # Task was detached (deregister timeout) - clear detached state
+                    self._detached_task_id = None
+                    logger.info(f"Detached task {task_id} completed in background")
+                else:
+                    # Normal case - clear current task
+                    self.current_task_id = None
 
         finally:
             self.is_processing = False

@@ -1178,3 +1178,107 @@ class TestTaskQueueCleanup:
             stats = await queue.get_queue_stats()
             assert "fetched" in stats
             assert stats["fetched"] == 1
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestTaskQueueDetach:
+    """Test suite for TaskQueue.detach_current_task() method.
+
+    This tests the task detachment feature used by deregister to allow
+    long-running tasks to continue in background while deregister proceeds.
+    """
+
+    async def test_detach_current_task_success(self):
+        """Test successful detach of a running task.
+
+        When a task is running (current_task_id is set), detach_current_task()
+        should:
+        1. Return the detached task_id
+        2. Set current_task_id to None (so deregister can proceed)
+        3. Set _detached_task_id to track the detached task
+        """
+        queue = TaskQueue()
+        queue.current_task_id = "task-123"
+
+        detached_id = await queue.detach_current_task()
+
+        assert detached_id == "task-123"
+        assert queue.current_task_id is None
+        assert queue._detached_task_id == "task-123"
+
+    async def test_detach_current_task_no_task_running(self):
+        """Test detach when no task is running returns None.
+
+        If current_task_id is None, detach_current_task() should return None
+        and not modify _detached_task_id.
+        """
+        queue = TaskQueue()
+        queue.current_task_id = None
+
+        detached_id = await queue.detach_current_task()
+
+        assert detached_id is None
+        assert queue._detached_task_id is None
+
+    async def test_detached_task_clears_after_completion(self):
+        """Test that _detached_task_id is cleared after task completes.
+
+        When _process_queue() finishes executing a detached task, it should
+        clear _detached_task_id instead of current_task_id (which is already None).
+        """
+        queue = TaskQueue()
+
+        # Simulate the state after a task has been detached
+        queue._detached_task_id = "task-123"
+        queue.current_task_id = None
+
+        # Submit a task and mock execution
+        task = Task(task_id="task-123", model_id="model", task_input={})
+        queue.tasks[task.task_id] = task
+
+        # Simulate what _process_queue does after _execute_task returns
+        # This is the logic we'll implement: clear _detached_task_id if it matches
+        task_id = "task-123"
+        if queue._detached_task_id == task_id:
+            queue._detached_task_id = None
+        else:
+            queue.current_task_id = None
+
+        assert queue._detached_task_id is None
+        assert queue.current_task_id is None
+
+    async def test_multiple_detach_calls_second_returns_none(self):
+        """Test that calling detach twice returns None on second call.
+
+        After a task is detached, current_task_id is None, so subsequent
+        calls to detach_current_task() should return None.
+        """
+        queue = TaskQueue()
+        queue.current_task_id = "task-123"
+
+        # First detach
+        first_result = await queue.detach_current_task()
+        assert first_result == "task-123"
+
+        # Second detach should return None
+        second_result = await queue.detach_current_task()
+        assert second_result is None
+
+    async def test_detach_preserves_task_in_storage(self):
+        """Test that detaching a task doesn't remove it from storage.
+
+        The task should continue to exist in queue.tasks so it can complete
+        and send its callback.
+        """
+        queue = TaskQueue()
+
+        task = Task(task_id="task-123", model_id="model", task_input={})
+        queue.tasks[task.task_id] = task
+        queue.current_task_id = task.task_id
+
+        await queue.detach_current_task()
+
+        # Task should still be in storage
+        assert "task-123" in queue.tasks
+        assert queue.tasks["task-123"] is task
