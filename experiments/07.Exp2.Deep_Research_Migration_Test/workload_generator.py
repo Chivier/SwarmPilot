@@ -379,10 +379,10 @@ def generate_fanout_distribution(num_workflows: int,
 def generate_pattern_based_fanout(
     num_workflows: int,
     seed: int = 42,
-    mean_low: int = 5,
+    mean_low: int = 6,
     mean_high: int = 14,
     std: float = 0.6,
-    min_fanout: int = 4,
+    min_fanout: int = 5,
     max_fanout: int = 15
 ) -> tuple[List[int], FanoutConfig]:
     """
@@ -399,10 +399,10 @@ def generate_pattern_based_fanout(
     Args:
         num_workflows: Number of workflows to generate
         seed: Random seed for reproducibility
-        mean_low: Mean for low fanout phase (default: 5)
+        mean_low: Mean for low fanout phase (default: 6)
         mean_high: Mean for high fanout phase (default: 14)
         std: Standard deviation for both distributions (default: 0.6)
-        min_fanout: Minimum fanout value (hard limit, default: 4)
+        min_fanout: Minimum fanout value (hard limit, default: 5)
         max_fanout: Maximum fanout value (hard limit, default: 15)
 
     Returns:
@@ -452,7 +452,7 @@ def generate_pattern_based_fanout(
     return fanout_values, config
 
 
-def validate_fanout_pattern(fanout_values: List[int], num_workflows: int, expected_means: List[int] = [5, 14, 5, 14]):
+def validate_fanout_pattern(fanout_values: List[int], num_workflows: int, expected_means: List[int] = [6, 14, 6, 14]):
     """
     Validate and log fanout pattern distribution.
 
@@ -461,7 +461,7 @@ def validate_fanout_pattern(fanout_values: List[int], num_workflows: int, expect
     Args:
         fanout_values: List of fanout values to validate
         num_workflows: Expected number of workflows
-        expected_means: Expected means for each segment (default: [5, 14, 5, 14])
+        expected_means: Expected means for each segment (default: [6, 14, 6, 14])
     """
     segment_size = num_workflows // 4
     remainder = num_workflows % 4
@@ -555,7 +555,7 @@ def generate_workflow_from_traces(
         num_workflows: Number of workflows to generate
         seed: Random seed for reproducibility
         use_pattern_fanout: If True, use pattern-based fanout generation (25% segments)
-                           with alternating N(5, 0.6²) and N(14, 0.6²). If False,
+                           with alternating N(6, 0.6²) and N(14, 0.6²). If False,
                            use uniform random selection from available fanout values.
 
     Returns:
@@ -578,7 +578,7 @@ def generate_workflow_from_traces(
 
     # Generate fanout values based on mode
     if use_pattern_fanout:
-        # Use pattern-based generation (25% segments alternating between N(5, 0.6²) and N(14, 0.6²))
+        # Use pattern-based generation (25% segments alternating between N(6, 0.6²) and N(14, 0.6²))
         fanout_values, _ = generate_pattern_based_fanout(
             num_workflows=num_workflows,
             seed=seed

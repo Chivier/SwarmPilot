@@ -3259,7 +3259,7 @@ def main(num_workflows: int = 100, qps_a: float = 8.0, seed: int = 42,
     workflow_workload, workflow_config = generate_workflow_from_traces(
         num_workflows=NUM_WORKFLOWS,
         seed=SEED,
-        use_pattern_fanout=True  # Enable pattern-based fanout (25% segments alternating N(5, 0.6²) and N(14, 0.6²))
+        use_pattern_fanout=True  # Enable pattern-based fanout (25% segments alternating N(6, 0.6²) and N(14, 0.6²))
     )
     print_workflow_stats(workflow_workload)
 
