@@ -139,7 +139,7 @@ class TaskQueue:
 
     async def fetch_task(self) -> Optional[Task]:
         """
-        Fetch the oldest queued task (lowest enqueue_time) from the queue front.
+        Fetch the newest queued task (highest enqueue_time) from the queue tail.
 
         The task is marked as FETCHED and removed from the execution queue.
         Its callback will NOT be executed.
@@ -151,8 +151,8 @@ class TaskQueue:
             - Only QUEUED tasks are considered for fetching
             - RUNNING, COMPLETED, FAILED tasks are skipped
             - The fetched task remains in self.tasks for queryability via /task/list
-            - Fetching from front (oldest) - FIFO order for work stealing
-            - Uses insertion order tracking for O(1) best-case FIFO access
+            - Fetching from tail (newest) - LIFO order for work stealing
+            - Uses insertion order tracking for O(1) best-case LIFO access
             - Always keeps at least one task (RUNNING or QUEUED) in the instance
         """
         async with self._queue_lock:
@@ -176,12 +176,12 @@ class TaskQueue:
                 )
                 return None
 
-            # Iterate from the front (oldest) to find a QUEUED task - O(1) best case
+            # Iterate from the tail (newest) to find a QUEUED task - O(1) best case
             found_task: Optional[Task] = None
             skipped_task_ids: list = []
 
             while self._insertion_order:
-                task_id = self._insertion_order.popleft()  # Pop from left (oldest)
+                task_id = self._insertion_order.pop()  # Pop from right (newest)
                 task = self.tasks.get(task_id)
 
                 if task and task.status == TaskStatus.QUEUED:
@@ -190,9 +190,9 @@ class TaskQueue:
                 # Track skipped task_ids to restore them if needed
                 skipped_task_ids.append(task_id)
 
-            # Restore skipped task_ids back to insertion order (prepend in original order)
+            # Restore skipped task_ids back to insertion order (append in original order)
             for tid in reversed(skipped_task_ids):
-                self._insertion_order.appendleft(tid)
+                self._insertion_order.append(tid)
 
             if found_task is None:
                 return None
@@ -207,7 +207,7 @@ class TaskQueue:
             found_task.status = TaskStatus.FETCHED
 
             logger.info(
-                f"Task {found_task.task_id} fetched from queue front "
+                f"Task {found_task.task_id} fetched from queue tail "
                 f"(enqueue_time={found_task.enqueue_time:.3f}, "
                 f"remaining: running={running_count}, queued={queued_count - 1})"
             )

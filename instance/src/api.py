@@ -1323,10 +1323,10 @@ async def list_tasks(
 )
 async def fetch_task():
     """
-    Fetch the oldest queued task from the task queue (FIFO).
+    Fetch the newest queued task from the task queue tail (LIFO).
 
-    This endpoint allows clients to retrieve the oldest queued task
-    (lowest enqueue_time) from the instance's task queue. The fetched
+    This endpoint allows clients to retrieve the newest queued task
+    (highest enqueue_time) from the instance's task queue. The fetched
     task is marked as FETCHED and will not be executed by this instance.
     No callback will be sent for fetched tasks.
 
@@ -1343,7 +1343,7 @@ async def fetch_task():
     """
     task_queue = get_task_queue()
 
-    # Fetch the oldest queued task (FIFO for work-stealing)
+    # Fetch the newest queued task from tail (LIFO for work-stealing)
     task = await task_queue.fetch_task()
 
     if task:
