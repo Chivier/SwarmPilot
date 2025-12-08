@@ -318,8 +318,9 @@ async def _trigger_optimization():
 
     try:
         # Apply throughput data to B matrix before optimization
-        if _throughput_data:
-            _apply_throughput_to_b_matrix()
+        # TODO: Temporarily disabled - B matrix update from throughput data
+        # if _throughput_data:
+        #     _apply_throughput_to_b_matrix()
 
         # Use the stored deployment input (which reflects latest deployment state)
         deployment_input = _stored_deployment_input.model_copy(deep=True)
@@ -1438,9 +1439,10 @@ async def submit_throughput(request: SubmitThroughputRequest):
         )
 
     # Store/update throughput data with EMA
-    _update_throughput_entry(request.instance_url, model_id, capacity)
+    # TODO: Temporarily disabled - only accept data without side effects
+    # _update_throughput_entry(request.instance_url, model_id, capacity)
 
-    logger.info(f"Throughput recorded: {request.instance_url} -> {model_id}, capacity={capacity:.4f}")
+    logger.info(f"Throughput received (not stored): {request.instance_url} -> {model_id}, capacity={capacity:.4f}")
 
     return SubmitThroughputResponse(
         success=True,

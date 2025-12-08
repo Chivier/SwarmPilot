@@ -144,7 +144,7 @@ def build_planner_input(instance_a_num, instance_b_num) -> PlannerInput:
   return PlannerInput(
     M = instance_a_num + instance_b_num,
     N = 2,
-    B = [[0.007571, 0.145008]] * (instance_a_num + instance_b_num),
+    B = [[1, 15]] * (instance_a_num + instance_b_num),
     a = 1,
     target = [1, 10],
     algorithm = "simulated_annealing",
