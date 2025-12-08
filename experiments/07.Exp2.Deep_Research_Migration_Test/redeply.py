@@ -138,15 +138,18 @@ def build_planner_input(instance_a_num, instance_b_num) -> PlannerInput:
   #   Model B: B1 (query) + B2 (criteria) = 6.896s → 0.145008 req/s
   # See calculate_b_parameter.py for calculation details
 
-  # target = [1, 19.153084] to achieve 1:1 instance ratio
-  # This matches the QPS ratio: 0.145008 / 0.007571 ≈ 19.153084
-  # With equal instances (n_a = n_b), total capacity ratio will match target ratio
+  # target = [7, 26] to achieve 35:13 instance ratio
+  # With B = [[1, 10]], to get 35 instances for A and 13 for B:
+  #   A capacity: 35 * 1 = 35
+  #   B capacity: 13 * 10 = 130
+  #   Capacity ratio: 35:130 = 7:26
+  # This ensures the planner allocates approximately 35 instances to A and 13 to B
   return PlannerInput(
     M = instance_a_num + instance_b_num,
     N = 2,
-    B = [[1, 15]] * (instance_a_num + instance_b_num),
+    B = [[1, 10]] * (instance_a_num + instance_b_num),
     a = 1,
-    target = [1, 10],
+    target = [7, 26],
     algorithm = "simulated_annealing",
     objective_method = "ratio_difference"
   )  
