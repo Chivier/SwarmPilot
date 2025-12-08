@@ -390,21 +390,20 @@ async def _trigger_optimization():
         initial = np.array(planner_params.initial)
         target = np.array(planner_params.target)
 
-        # Auto-optimization always uses Integer Programming for optimal solutions
+        # Auto-optimization uses Simulated Annealing
         # Force change rate to 50% for auto-optimization (more flexibility)
         AUTO_OPTIMIZE_CHANGE_RATE = 0.5
 
-        logger.info(f"Auto-optimization using Integer Programming (forced)")
-        logger.info(f"Original algorithm setting: {planner_params.algorithm} (will be overridden)")
-        logger.info(f"Original change rate: {planner_params.a} -> Forced to: {AUTO_OPTIMIZE_CHANGE_RATE} (50%)")
+        logger.info(f"Auto-optimization using Simulated Annealing")
+        logger.info(f"Change rate: {planner_params.a} -> Forced to: {AUTO_OPTIMIZE_CHANGE_RATE} (50%)")
         logger.info(f"Optimization parameters: M={planner_params.M}, N={planner_params.N}, B={B}, \ninitial={initial}, a={AUTO_OPTIMIZE_CHANGE_RATE}, target={target}")
         logger.info(f"Current models: {current_models}")
         logger.info(f"Endpoints: {endpoints}")
         logger.info(f"Model mapping: {model_mapping}")
         logger.info(f"Reverse mapping: {reverse_mapping}")
 
-        # Always use Integer Programming for auto-optimization with 50% change rate
-        optimizer = IntegerProgrammingOptimizer(
+        # Use Simulated Annealing for auto-optimization with 50% change rate
+        optimizer = SimulatedAnnealingOptimizer(
             M=planner_params.M,
             N=planner_params.N,
             B=B,
@@ -415,8 +414,11 @@ async def _trigger_optimization():
 
         deployment, score, stats = optimizer.optimize(
             objective_method=planner_params.objective_method,
-            solver_name=planner_params.solver_name,
-            time_limit=planner_params.time_limit,
+            initial_temp=planner_params.initial_temp,
+            final_temp=planner_params.final_temp,
+            cooling_rate=planner_params.cooling_rate,
+            max_iterations=planner_params.max_iterations,
+            iterations_per_temp=planner_params.iterations_per_temp,
             verbose=planner_params.verbose
         )
 
