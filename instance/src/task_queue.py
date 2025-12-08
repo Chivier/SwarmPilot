@@ -563,9 +563,8 @@ class TaskQueue:
         """
         Extract all pending (QUEUED) tasks from the queue for redistribution.
 
-        This method is used during instance redeployment to return queued tasks
-        to the scheduler for reassignment to other instances. Running tasks are
-        preserved and not extracted.
+        This method is used during instance deregistration to return queued tasks
+        to the scheduler for reassignment to other instances.
 
         Returns:
             List of task dictionaries containing task metadata for redistribution.
@@ -573,12 +572,15 @@ class TaskQueue:
             submitted_at, callback_url (if available), and metadata (if available).
 
         Note:
-            - Only QUEUED tasks are extracted, RUNNING tasks are preserved
-            - Extracted tasks are removed from the queue and task storage
+            - QUEUED tasks are extracted for redistribution
+            - FETCHED tasks are removed without redistribution (already picked up)
+            - RUNNING tasks are preserved in the queue
             - This operation is thread-safe (uses queue lock)
         """
         extracted_tasks = []
         extracted_task_ids = set()
+
+        fetched_task_ids = set()
 
         async with self._queue_lock:
             # Extract all queued tasks from priority queue
@@ -603,6 +605,11 @@ class TaskQueue:
 
                     # Remove from task storage
                     del self.tasks[task_id]
+                elif task and task.status == TaskStatus.FETCHED:
+                    # FETCHED tasks: already picked up, remove without redistribution
+                    fetched_task_ids.add(task_id)
+                    del self.tasks[task_id]
+                    logger.debug(f"Removing fetched task {task_id} without redistribution")
                 elif task and task.status == TaskStatus.RUNNING:
                     # Preserve running tasks - add back to queue
                     queued_items.append((enqueue_time, task_id))
@@ -612,13 +619,15 @@ class TaskQueue:
             for item in queued_items:
                 heapq.heappush(self.queue, item)
 
-            # Remove extracted tasks from insertion order tracking
+            # Remove extracted and fetched tasks from insertion order tracking
+            removed_task_ids = extracted_task_ids | fetched_task_ids
             self._insertion_order = deque(
-                tid for tid in self._insertion_order if tid not in extracted_task_ids
+                tid for tid in self._insertion_order if tid not in removed_task_ids
             )
 
         logger.info(
-            f"Extracted {len(extracted_tasks)} pending tasks from queue. "
+            f"Extracted {len(extracted_tasks)} pending tasks, "
+            f"removed {len(fetched_task_ids)} fetched tasks. "
             f"Remaining tasks in queue: {len(self.queue)}"
         )
 
