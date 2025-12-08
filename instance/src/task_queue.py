@@ -141,8 +141,8 @@ class TaskQueue:
         """
         Fetch the newest queued task (highest enqueue_time) from the queue tail.
 
-        The task is marked as FETCHED and removed from the execution queue.
-        Its callback will NOT be executed.
+        The task is completely removed from this instance (not just marked).
+        Its callback will NOT be executed by this instance.
 
         Returns:
             Task object if a queued task was found, None otherwise.
@@ -150,7 +150,7 @@ class TaskQueue:
         Note:
             - Only QUEUED tasks are considered for fetching
             - RUNNING, COMPLETED, FAILED tasks are skipped
-            - The fetched task remains in self.tasks for queryability via /task/list
+            - The fetched task is removed from self.tasks (not kept)
             - Fetching from tail (newest) - LIFO order for work stealing
             - Uses insertion order tracking for O(1) best-case LIFO access
             - Always keeps at least one task (RUNNING or QUEUED) in the instance
@@ -203,11 +203,11 @@ class TaskQueue:
             ]
             heapq.heapify(self.queue)
 
-            # Mark task as FETCHED
-            found_task.status = TaskStatus.FETCHED
+            # Remove task from storage completely (not just mark as FETCHED)
+            del self.tasks[found_task.task_id]
 
             logger.info(
-                f"Task {found_task.task_id} fetched from queue tail "
+                f"Task {found_task.task_id} fetched and removed from instance "
                 f"(enqueue_time={found_task.enqueue_time:.3f}, "
                 f"remaining: running={running_count}, queued={queued_count - 1})"
             )
