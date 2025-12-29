@@ -1,13 +1,12 @@
-"""
-Task registry for managing task lifecycle and state.
+"""Task registry for managing task lifecycle and state.
 
 This module provides thread-safe storage and management of tasks
 throughout their execution lifecycle.
 """
 
-from typing import Dict, List, Optional, Any
 import asyncio
 from datetime import datetime
+from typing import Any
 
 from .model import TaskStatus, TaskTimestamps
 
@@ -19,12 +18,12 @@ class TaskRecord:
         self,
         task_id: str,
         model_id: str,
-        task_input: Dict[str, Any],
-        metadata: Dict[str, Any],
+        task_input: dict[str, Any],
+        metadata: dict[str, Any],
         assigned_instance: str,
-        predicted_time_ms: Optional[float] = None,
-        predicted_error_margin_ms: Optional[float] = None,
-        predicted_quantiles: Optional[Dict[float, float]] = None,
+        predicted_time_ms: float | None = None,
+        predicted_error_margin_ms: float | None = None,
+        predicted_quantiles: dict[float, float] | None = None,
     ):
         self.task_id = task_id
         self.model_id = model_id
@@ -32,8 +31,8 @@ class TaskRecord:
         self.metadata = metadata
         self.assigned_instance = assigned_instance
         self.status = TaskStatus.PENDING
-        self.result: Optional[Dict[str, Any]] = None
-        self.error: Optional[str] = None
+        self.result: dict[str, Any] | None = None
+        self.error: str | None = None
 
         # Prediction information (for queue updates on task completion)
         self.predicted_time_ms = predicted_time_ms
@@ -42,16 +41,15 @@ class TaskRecord:
 
         # Timestamps
         self.submitted_at = datetime.now().isoformat() + "Z"
-        self.started_at: Optional[str] = None
-        self.completed_at: Optional[str] = None
+        self.started_at: str | None = None
+        self.completed_at: str | None = None
 
         # Actual execution time reported by instance (more accurate than timestamp calculation)
-        self._actual_execution_time_ms: Optional[float] = None
+        self._actual_execution_time_ms: float | None = None
 
     @property
-    def execution_time_ms(self) -> Optional[float]:
-        """
-        Get execution time in milliseconds.
+    def execution_time_ms(self) -> float | None:
+        """Get execution time in milliseconds.
 
         Returns the actual execution time reported by the instance if available,
         otherwise calculates from timestamps.
@@ -63,16 +61,19 @@ class TaskRecord:
         # Fallback to timestamp-based calculation
         if self.started_at and self.completed_at:
             try:
-                start = datetime.fromisoformat(self.started_at.replace("Z", "+00:00"))
-                end = datetime.fromisoformat(self.completed_at.replace("Z", "+00:00"))
+                start = datetime.fromisoformat(
+                    self.started_at.replace("Z", "+00:00")
+                )
+                end = datetime.fromisoformat(
+                    self.completed_at.replace("Z", "+00:00")
+                )
                 return (end - start).total_seconds() * 1000
             except Exception:
                 return None
         return None
 
     def set_execution_time(self, execution_time_ms: float) -> None:
-        """
-        Set the actual execution time reported by the instance.
+        """Set the actual execution time reported by the instance.
 
         Args:
             execution_time_ms: Actual execution time in milliseconds
@@ -92,22 +93,21 @@ class TaskRegistry:
     """Thread-safe registry for managing tasks."""
 
     def __init__(self):
-        self._tasks: Dict[str, TaskRecord] = {}
+        self._tasks: dict[str, TaskRecord] = {}
         self._lock = asyncio.Lock()
 
     async def create_task(
         self,
         task_id: str,
         model_id: str,
-        task_input: Dict[str, Any],
-        metadata: Dict[str, Any],
+        task_input: dict[str, Any],
+        metadata: dict[str, Any],
         assigned_instance: str,
-        predicted_time_ms: Optional[float] = None,
-        predicted_error_margin_ms: Optional[float] = None,
-        predicted_quantiles: Optional[Dict[float, float]] = None,
+        predicted_time_ms: float | None = None,
+        predicted_error_margin_ms: float | None = None,
+        predicted_quantiles: dict[float, float] | None = None,
     ) -> TaskRecord:
-        """
-        Create and register a new task.
+        """Create and register a new task.
 
         Args:
             task_id: Unique task identifier
@@ -142,9 +142,8 @@ class TaskRegistry:
             self._tasks[task_id] = task
             return task
 
-    async def get(self, task_id: str) -> Optional[TaskRecord]:
-        """
-        Get a task by ID.
+    async def get(self, task_id: str) -> TaskRecord | None:
+        """Get a task by ID.
 
         Args:
             task_id: ID of task to retrieve
@@ -157,14 +156,13 @@ class TaskRegistry:
 
     async def list_all(
         self,
-        status: Optional[TaskStatus] = None,
-        model_id: Optional[str] = None,
-        instance_id: Optional[str] = None,
+        status: TaskStatus | None = None,
+        model_id: str | None = None,
+        instance_id: str | None = None,
         limit: int = 100,
         offset: int = 0,
-    ) -> tuple[List[TaskRecord], int]:
-        """
-        List tasks with optional filtering and pagination.
+    ) -> tuple[list[TaskRecord], int]:
+        """List tasks with optional filtering and pagination.
 
         Args:
             status: Optional status filter
@@ -198,8 +196,7 @@ class TaskRegistry:
             return tasks, total
 
     async def update_status(self, task_id: str, status: TaskStatus) -> None:
-        """
-        Update task status.
+        """Update task status.
 
         Args:
             task_id: ID of task to update
@@ -218,13 +215,14 @@ class TaskRegistry:
             # Update timestamps
             if status == TaskStatus.RUNNING and task.started_at is None:
                 task.started_at = datetime.now().isoformat() + "Z"
-            elif status in (TaskStatus.COMPLETED, TaskStatus.FAILED):
-                if task.completed_at is None:
-                    task.completed_at = datetime.now().isoformat() + "Z"
+            elif (
+                status in (TaskStatus.COMPLETED, TaskStatus.FAILED)
+                and task.completed_at is None
+            ):
+                task.completed_at = datetime.now().isoformat() + "Z"
 
-    async def set_result(self, task_id: str, result: Dict[str, Any]) -> None:
-        """
-        Set task result.
+    async def set_result(self, task_id: str, result: dict[str, Any]) -> None:
+        """Set task result.
 
         Args:
             task_id: ID of task
@@ -240,8 +238,7 @@ class TaskRegistry:
             self._tasks[task_id].result = result
 
     async def set_error(self, task_id: str, error: str) -> None:
-        """
-        Set task error.
+        """Set task error.
 
         Args:
             task_id: ID of task
@@ -256,9 +253,10 @@ class TaskRegistry:
 
             self._tasks[task_id].error = error
 
-    async def update_assigned_instance(self, task_id: str, new_instance_id: str) -> None:
-        """
-        Update the assigned instance for a task.
+    async def update_assigned_instance(
+        self, task_id: str, new_instance_id: str
+    ) -> None:
+        """Update the assigned instance for a task.
 
         This is used during work stealing when a task is moved from one
         instance to another.
@@ -276,9 +274,10 @@ class TaskRegistry:
 
             self._tasks[task_id].assigned_instance = new_instance_id
 
-    async def update_metadata(self, task_id: str, metadata: Dict[str, Any]) -> TaskRecord:
-        """
-        Update metadata for a task (replaces existing metadata).
+    async def update_metadata(
+        self, task_id: str, metadata: dict[str, Any]
+    ) -> TaskRecord:
+        """Update metadata for a task (replaces existing metadata).
 
         Args:
             task_id: ID of task to update
@@ -301,12 +300,11 @@ class TaskRegistry:
     async def update_prediction(
         self,
         task_id: str,
-        predicted_time_ms: Optional[float],
-        predicted_error_margin_ms: Optional[float] = None,
-        predicted_quantiles: Optional[Dict[float, float]] = None,
+        predicted_time_ms: float | None,
+        predicted_error_margin_ms: float | None = None,
+        predicted_quantiles: dict[float, float] | None = None,
     ) -> None:
-        """
-        Update prediction fields for a task.
+        """Update prediction fields for a task.
 
         Args:
             task_id: ID of task to update
@@ -327,8 +325,7 @@ class TaskRegistry:
             task.predicted_quantiles = predicted_quantiles
 
     async def get_count_by_status(self, status: TaskStatus) -> int:
-        """
-        Get count of tasks with specific status.
+        """Get count of tasks with specific status.
 
         Args:
             status: Status to count
@@ -345,8 +342,7 @@ class TaskRegistry:
             return len(self._tasks)
 
     async def clear_all(self) -> int:
-        """
-        Clear all tasks from the registry.
+        """Clear all tasks from the registry.
 
         Returns:
             Count of tasks that were cleared
@@ -357,8 +353,7 @@ class TaskRegistry:
             return count
 
     async def reset_for_resubmit(self, task_id: str) -> TaskRecord:
-        """
-        Reset a task for resubmission by clearing result/error and timestamps.
+        """Reset a task for resubmission by clearing result/error and timestamps.
 
         This method is used during instance migration to prepare a task for
         rescheduling to a new instance.

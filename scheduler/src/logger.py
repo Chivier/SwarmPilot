@@ -1,5 +1,4 @@
-"""
-Centralized logging configuration using loguru.
+"""Centralized logging configuration using loguru.
 
 This module configures loguru for the entire scheduler application,
 providing structured logging with rotation, retention, and customizable formats.
@@ -8,13 +7,14 @@ providing structured logging with rotation, retention, and customizable formats.
 import logging
 import sys
 from pathlib import Path
+
 from loguru import logger
+
 from .config import config
 
 
 class InterceptHandler(logging.Handler):
-    """
-    Intercept standard logging messages and redirect them to loguru.
+    """Intercept standard logging messages and redirect them to loguru.
 
     This handler is used to capture logs from libraries that use the standard
     logging module (like uvicorn, fastapi, httpx) and route them through loguru
@@ -22,8 +22,7 @@ class InterceptHandler(logging.Handler):
     """
 
     def emit(self, record: logging.LogRecord) -> None:
-        """
-        Emit a log record by forwarding it to loguru.
+        """Emit a log record by forwarding it to loguru.
 
         Args:
             record: The log record from standard logging
@@ -46,8 +45,7 @@ class InterceptHandler(logging.Handler):
 
 
 def setup_logger():
-    """
-    Configure loguru logger with application-specific settings.
+    """Configure loguru logger with application-specific settings.
 
     This function:
     - Removes default handler

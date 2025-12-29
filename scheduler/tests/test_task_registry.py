@@ -1,21 +1,19 @@
-"""
-Unit tests for TaskRegistry and TaskRecord.
+"""Unit tests for TaskRegistry and TaskRecord.
 
 Tests task lifecycle management, status transitions, filtering, and thread safety.
 """
 
-import pytest
-import threading
-from datetime import datetime, timedelta
 from time import sleep
 
-from src.task_registry import TaskRegistry, TaskRecord
-from src.model import TaskStatus, TaskTimestamps
+import pytest
 
+from src.model import TaskStatus, TaskTimestamps
+from src.task_registry import TaskRecord
 
 # ============================================================================
 # TaskRecord Tests
 # ============================================================================
+
 
 class TestTaskRecord:
     """Tests for TaskRecord class."""
@@ -27,7 +25,7 @@ class TestTaskRecord:
             model_id="model-1",
             task_input={"prompt": "test"},
             metadata={"key": "value"},
-            assigned_instance="inst-1"
+            assigned_instance="inst-1",
         )
 
         assert task.task_id == "task-1"
@@ -49,7 +47,7 @@ class TestTaskRecord:
             model_id="model-1",
             task_input={},
             metadata={},
-            assigned_instance="inst-1"
+            assigned_instance="inst-1",
         )
         assert task.execution_time_ms is None
 
@@ -60,7 +58,7 @@ class TestTaskRecord:
             model_id="model-1",
             task_input={},
             metadata={},
-            assigned_instance="inst-1"
+            assigned_instance="inst-1",
         )
 
         # Manually set timestamps
@@ -77,7 +75,7 @@ class TestTaskRecord:
             model_id="model-1",
             task_input={},
             metadata={},
-            assigned_instance="inst-1"
+            assigned_instance="inst-1",
         )
 
         task.started_at = "invalid"
@@ -92,7 +90,7 @@ class TestTaskRecord:
             model_id="model-1",
             task_input={},
             metadata={},
-            assigned_instance="inst-1"
+            assigned_instance="inst-1",
         )
 
         task.started_at = "2024-01-01T12:00:00Z"
@@ -109,6 +107,7 @@ class TestTaskRecord:
 # Task Creation and Retrieval Tests
 # ============================================================================
 
+
 class TestTaskCreation:
     """Tests for task creation and retrieval."""
 
@@ -119,7 +118,7 @@ class TestTaskCreation:
             model_id="model-1",
             task_input={"prompt": "test"},
             metadata={"key": "value"},
-            assigned_instance="inst-1"
+            assigned_instance="inst-1",
         )
 
         assert task is not None
@@ -133,7 +132,7 @@ class TestTaskCreation:
             model_id="model-1",
             task_input={},
             metadata={},
-            assigned_instance="inst-1"
+            assigned_instance="inst-1",
         )
 
         with pytest.raises(ValueError, match="already exists"):
@@ -142,7 +141,7 @@ class TestTaskCreation:
                 model_id="model-1",
                 task_input={},
                 metadata={},
-                assigned_instance="inst-1"
+                assigned_instance="inst-1",
             )
 
     async def test_get_existing_task(self, task_registry):
@@ -152,7 +151,7 @@ class TestTaskCreation:
             model_id="model-1",
             task_input={"test": "data"},
             metadata={},
-            assigned_instance="inst-1"
+            assigned_instance="inst-1",
         )
 
         retrieved = await task_registry.get("task-1")
@@ -170,6 +169,7 @@ class TestTaskCreation:
 # Status Update Tests
 # ============================================================================
 
+
 class TestStatusUpdates:
     """Tests for task status updates."""
 
@@ -180,7 +180,7 @@ class TestStatusUpdates:
             model_id="model-1",
             task_input={},
             metadata={},
-            assigned_instance="inst-1"
+            assigned_instance="inst-1",
         )
 
         await task_registry.update_status("task-1", TaskStatus.RUNNING)
@@ -197,7 +197,7 @@ class TestStatusUpdates:
             model_id="model-1",
             task_input={},
             metadata={},
-            assigned_instance="inst-1"
+            assigned_instance="inst-1",
         )
 
         await task_registry.update_status("task-1", TaskStatus.RUNNING)
@@ -214,7 +214,7 @@ class TestStatusUpdates:
             model_id="model-1",
             task_input={},
             metadata={},
-            assigned_instance="inst-1"
+            assigned_instance="inst-1",
         )
 
         await task_registry.update_status("task-1", TaskStatus.RUNNING)
@@ -236,7 +236,7 @@ class TestStatusUpdates:
             model_id="model-1",
             task_input={},
             metadata={},
-            assigned_instance="inst-1"
+            assigned_instance="inst-1",
         )
 
         # PENDING -> RUNNING
@@ -258,7 +258,7 @@ class TestStatusUpdates:
             model_id="model-1",
             task_input={},
             metadata={},
-            assigned_instance="inst-1"
+            assigned_instance="inst-1",
         )
 
         await task_registry.update_status("task-1", TaskStatus.RUNNING)
@@ -277,7 +277,7 @@ class TestStatusUpdates:
             model_id="model-1",
             task_input={},
             metadata={},
-            assigned_instance="inst-1"
+            assigned_instance="inst-1",
         )
 
         await task_registry.update_status("task-1", TaskStatus.RUNNING)
@@ -295,6 +295,7 @@ class TestStatusUpdates:
 # Result and Error Tests
 # ============================================================================
 
+
 class TestResultAndError:
     """Tests for setting task results and errors."""
 
@@ -305,7 +306,7 @@ class TestResultAndError:
             model_id="model-1",
             task_input={},
             metadata={},
-            assigned_instance="inst-1"
+            assigned_instance="inst-1",
         )
 
         result = {"output": "test output", "tokens": 100}
@@ -326,7 +327,7 @@ class TestResultAndError:
             model_id="model-1",
             task_input={},
             metadata={},
-            assigned_instance="inst-1"
+            assigned_instance="inst-1",
         )
 
         error_msg = "Task execution failed"
@@ -345,6 +346,7 @@ class TestResultAndError:
 # List and Filter Tests
 # ============================================================================
 
+
 class TestListAndFilter:
     """Tests for listing and filtering tasks."""
 
@@ -362,7 +364,7 @@ class TestListAndFilter:
                 model_id="model-1",
                 task_input={},
                 metadata={},
-                assigned_instance="inst-1"
+                assigned_instance="inst-1",
             )
 
         tasks, total = await task_registry.list_all()
@@ -378,7 +380,7 @@ class TestListAndFilter:
                 model_id="model-1",
                 task_input={},
                 metadata={},
-                assigned_instance="inst-1"
+                assigned_instance="inst-1",
             )
 
         for i in range(2):
@@ -388,7 +390,7 @@ class TestListAndFilter:
                 model_id="model-1",
                 task_input={},
                 metadata={},
-                assigned_instance="inst-1"
+                assigned_instance="inst-1",
             )
             await task_registry.update_status(task_id, TaskStatus.RUNNING)
 
@@ -412,7 +414,7 @@ class TestListAndFilter:
                 model_id="model-a",
                 task_input={},
                 metadata={},
-                assigned_instance="inst-1"
+                assigned_instance="inst-1",
             )
 
         for i in range(2):
@@ -421,7 +423,7 @@ class TestListAndFilter:
                 model_id="model-b",
                 task_input={},
                 metadata={},
-                assigned_instance="inst-1"
+                assigned_instance="inst-1",
             )
 
         tasks, total = await task_registry.list_all(model_id="model-a")
@@ -437,7 +439,7 @@ class TestListAndFilter:
                 model_id="model-1",
                 task_input={},
                 metadata={},
-                assigned_instance="inst-1"
+                assigned_instance="inst-1",
             )
 
         for i in range(3):
@@ -446,7 +448,7 @@ class TestListAndFilter:
                 model_id="model-1",
                 task_input={},
                 metadata={},
-                assigned_instance="inst-2"
+                assigned_instance="inst-2",
             )
 
         tasks, total = await task_registry.list_all(instance_id="inst-2")
@@ -462,7 +464,7 @@ class TestListAndFilter:
             model_id="model-a",
             task_input={},
             metadata={},
-            assigned_instance="inst-1"
+            assigned_instance="inst-1",
         )
         await task_registry.update_status("task-1", TaskStatus.RUNNING)
 
@@ -471,7 +473,7 @@ class TestListAndFilter:
             model_id="model-a",
             task_input={},
             metadata={},
-            assigned_instance="inst-2"
+            assigned_instance="inst-2",
         )
         await task_registry.update_status("task-2", TaskStatus.RUNNING)
 
@@ -480,15 +482,13 @@ class TestListAndFilter:
             model_id="model-a",
             task_input={},
             metadata={},
-            assigned_instance="inst-1"
+            assigned_instance="inst-1",
         )
         # Keep PENDING
 
         # Filter by model_id=model-a, status=RUNNING, instance_id=inst-1
         tasks, total = await task_registry.list_all(
-            status=TaskStatus.RUNNING,
-            model_id="model-a",
-            instance_id="inst-1"
+            status=TaskStatus.RUNNING, model_id="model-a", instance_id="inst-1"
         )
         assert len(tasks) == 1
         assert total == 1
@@ -503,7 +503,7 @@ class TestListAndFilter:
                 model_id="model-1",
                 task_input={},
                 metadata={},
-                assigned_instance="inst-1"
+                assigned_instance="inst-1",
             )
             sleep(0.001)  # Ensure different timestamps
 
@@ -532,7 +532,7 @@ class TestListAndFilter:
                 model_id="model-1",
                 task_input={},
                 metadata={},
-                assigned_instance="inst-1"
+                assigned_instance="inst-1",
             )
             task_ids.append(task_id)
             sleep(0.001)
@@ -547,6 +547,7 @@ class TestListAndFilter:
 # ============================================================================
 # Count Operations Tests
 # ============================================================================
+
 
 class TestCountOperations:
     """Tests for task counting operations."""
@@ -563,7 +564,7 @@ class TestCountOperations:
                 model_id="model-1",
                 task_input={},
                 metadata={},
-                assigned_instance="inst-1"
+                assigned_instance="inst-1",
             )
 
         assert await task_registry.get_total_count() == 7
@@ -578,7 +579,7 @@ class TestCountOperations:
                 model_id="model-1",
                 task_input={},
                 metadata={},
-                assigned_instance="inst-1"
+                assigned_instance="inst-1",
             )
 
             if i < 2:
@@ -590,20 +591,26 @@ class TestCountOperations:
 
         assert await task_registry.get_count_by_status(TaskStatus.PENDING) == 1
         assert await task_registry.get_count_by_status(TaskStatus.RUNNING) == 2
-        assert await task_registry.get_count_by_status(TaskStatus.COMPLETED) == 2
+        assert (
+            await task_registry.get_count_by_status(TaskStatus.COMPLETED) == 2
+        )
         assert await task_registry.get_count_by_status(TaskStatus.FAILED) == 0
 
     async def test_get_count_by_status_empty(self, task_registry):
         """Test counting by status when no tasks exist."""
         assert await task_registry.get_count_by_status(TaskStatus.PENDING) == 0
-        assert await task_registry.get_count_by_status(TaskStatus.COMPLETED) == 0
+        assert (
+            await task_registry.get_count_by_status(TaskStatus.COMPLETED) == 0
+        )
 
 
 # ============================================================================
 # Thread Safety Tests
 # ============================================================================
 
+
 @pytest.mark.skip(reason="ThreadSafety tests need async rewrite")
 class TestThreadSafety:
     """Tests for thread-safe operations - DISABLED pending async rewrite."""
+
     pass

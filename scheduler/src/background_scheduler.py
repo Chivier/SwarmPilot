@@ -1,13 +1,14 @@
-"""
-Background task scheduler for non-blocking task submission.
+"""Background task scheduler for non-blocking task submission.
 
 This module handles CPU-intensive scheduling operations in the background,
 allowing API endpoints to return immediately.
 """
 
 import asyncio
-from typing import Dict, Any, Optional
+from typing import Any
+
 from loguru import logger
+
 from .model import TaskStatus
 
 # Backpressure water marks for task dispatching
@@ -18,8 +19,7 @@ LOW_WATER_MARK = 3
 
 
 class BackgroundScheduler:
-    """
-    Handles task scheduling in the background to prevent blocking API responses.
+    """Handles task scheduling in the background to prevent blocking API responses.
 
     When a task is submitted:
     1. API creates task record immediately and returns
@@ -43,8 +43,7 @@ class BackgroundScheduler:
         task_dispatcher,
         max_concurrent_scheduling: int = 50,
     ):
-        """
-        Initialize background scheduler.
+        """Initialize background scheduler.
 
         Args:
             scheduling_strategy: Strategy for selecting instances
@@ -62,7 +61,7 @@ class BackgroundScheduler:
         self._semaphore = asyncio.Semaphore(max_concurrent_scheduling)
 
         # Track active scheduling tasks
-        self._active_tasks: Dict[str, asyncio.Task] = {}
+        self._active_tasks: dict[str, asyncio.Task] = {}
 
         logger.info(
             f"BackgroundScheduler initialized with max_concurrent={max_concurrent_scheduling}"
@@ -72,11 +71,10 @@ class BackgroundScheduler:
         self,
         task_id: str,
         model_id: str,
-        task_input: Dict[str, Any],
-        metadata: Dict[str, Any],
+        task_input: dict[str, Any],
+        metadata: dict[str, Any],
     ) -> None:
-        """
-        Schedule a task in the background (non-blocking).
+        """Schedule a task in the background (non-blocking).
 
         Creates an asyncio task that handles the full scheduling workflow.
         Returns immediately without waiting for scheduling to complete.
@@ -104,11 +102,10 @@ class BackgroundScheduler:
         self,
         task_id: str,
         model_id: str,
-        task_input: Dict[str, Any],
-        metadata: Dict[str, Any],
+        task_input: dict[str, Any],
+        metadata: dict[str, Any],
     ) -> None:
-        """
-        Internal async method to handle full task scheduling workflow.
+        """Internal async method to handle full task scheduling workflow.
 
         This runs in the background and performs:
         1. Get available instances
@@ -125,27 +122,36 @@ class BackgroundScheduler:
         """
         async with self._semaphore:
             try:
-                logger.debug(f"Starting background scheduling for task {task_id}")
+                logger.debug(
+                    f"Starting background scheduling for task {task_id}"
+                )
 
                 # 1. Get available instances with backpressure
                 # Only consider instances below HIGH_WATER_MARK
-                available_instances = await self.instance_registry.get_instances_below_water_mark(
-                    model_id=model_id,
-                    water_mark=HIGH_WATER_MARK
+                available_instances = (
+                    await self.instance_registry.get_instances_below_water_mark(
+                        model_id=model_id, water_mark=HIGH_WATER_MARK
+                    )
                 )
 
                 if not available_instances:
                     # All instances at or above HIGH_WATER_MARK, or no instances exist
                     # Check if any active instances exist at all
-                    all_active = await self.instance_registry.list_active(model_id=model_id)
+                    all_active = await self.instance_registry.list_active(
+                        model_id=model_id
+                    )
                     if not all_active:
                         # No instances at all - mark task as failed
-                        await self.task_registry.update_status(task_id, TaskStatus.FAILED)
+                        await self.task_registry.update_status(
+                            task_id, TaskStatus.FAILED
+                        )
                         await self.task_registry.set_error(
                             task_id,
-                            f"No available instance for model_id: {model_id}"
+                            f"No available instance for model_id: {model_id}",
                         )
-                        logger.error(f"Task {task_id}: No available instances for {model_id}")
+                        logger.error(
+                            f"Task {task_id}: No available instances for {model_id}"
+                        )
                         return
                     else:
                         # Backpressure: all instances full, use least loaded one
@@ -157,23 +163,34 @@ class BackgroundScheduler:
 
                 # 2. Schedule task (predictions + selection + queue update)
                 try:
-                    schedule_result = await self.scheduling_strategy.schedule_task(
-                        model_id=model_id,
-                        metadata=metadata,
-                        available_instances=available_instances,
+                    schedule_result = (
+                        await self.scheduling_strategy.schedule_task(
+                            model_id=model_id,
+                            metadata=metadata,
+                            available_instances=available_instances,
+                        )
                     )
                 except Exception as e:
                     # Scheduling failed - mark task as failed
                     error_msg = str(e)
-                    await self.task_registry.update_status(task_id, TaskStatus.FAILED)
-                    await self.task_registry.set_error(task_id, f"Scheduling failed: {error_msg}")
-                    logger.error(f"[background_scheduler] Task {task_id}: Scheduling failed - {error_msg}", exc_info=True)
+                    await self.task_registry.update_status(
+                        task_id, TaskStatus.FAILED
+                    )
+                    await self.task_registry.set_error(
+                        task_id, f"Scheduling failed: {error_msg}"
+                    )
+                    logger.error(
+                        f"[background_scheduler] Task {task_id}: Scheduling failed - {error_msg}",
+                        exc_info=True,
+                    )
                     return
 
                 # 3. Update task with scheduling results
                 task = await self.task_registry.get(task_id)
                 if not task:
-                    logger.error(f"Task {task_id}: Task not found after scheduling")
+                    logger.error(
+                        f"Task {task_id}: Task not found after scheduling"
+                    )
                     return
 
                 # Update task with prediction info and assigned instance
@@ -181,7 +198,9 @@ class BackgroundScheduler:
                 task.assigned_instance = schedule_result.selected_instance_id
                 if selected_pred:
                     task.predicted_time_ms = selected_pred.predicted_time_ms
-                    task.predicted_error_margin_ms = selected_pred.error_margin_ms
+                    task.predicted_error_margin_ms = (
+                        selected_pred.error_margin_ms
+                    )
                     task.predicted_quantiles = selected_pred.quantiles
 
                 # 4. Update instance stats
@@ -200,28 +219,31 @@ class BackgroundScheduler:
                 # Unexpected error - mark task as failed
                 logger.error(
                     f"[background_scheduler] Task {task_id}: Unexpected error in background scheduling - {e}",
-                    exc_info=True
+                    exc_info=True,
                 )
                 try:
-                    await self.task_registry.update_status(task_id, TaskStatus.FAILED)
+                    await self.task_registry.update_status(
+                        task_id, TaskStatus.FAILED
+                    )
                     await self.task_registry.set_error(
-                        task_id,
-                        f"Internal scheduling error: {str(e)}"
+                        task_id, f"Internal scheduling error: {e!s}"
                     )
                 except Exception:
-                    logger.error(f"[background_scheduler] Task {task_id}: Failed to update task status after error", exc_info=True)
+                    logger.error(
+                        f"[background_scheduler] Task {task_id}: Failed to update task status after error",
+                        exc_info=True,
+                    )
 
     async def reassign_task(
         self,
         task_id: str,
         model_id: str,
-        task_input: Dict[str, Any],
-        enqueue_time: Optional[float] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-        exclude_instance_id: Optional[str] = None,
+        task_input: dict[str, Any],
+        enqueue_time: float | None = None,
+        metadata: dict[str, Any] | None = None,
+        exclude_instance_id: str | None = None,
     ) -> bool:
-        """
-        Reassign a task to a new instance (used during redeployment).
+        """Reassign a task to a new instance (used during redeployment).
 
         This is similar to schedule_task_background, but:
         1. Preserves the original enqueue_time for priority ordering
@@ -240,27 +262,34 @@ class BackgroundScheduler:
             True if successfully reassigned, False otherwise
         """
         try:
-            logger.debug(f"Reassigning task {task_id} (excluding {exclude_instance_id})")
+            logger.debug(
+                f"Reassigning task {task_id} (excluding {exclude_instance_id})"
+            )
 
             # 1. Get available instances with backpressure (excluding the specified one)
-            available_instances = await self.instance_registry.get_instances_below_water_mark(
-                model_id=model_id,
-                water_mark=HIGH_WATER_MARK
+            available_instances = (
+                await self.instance_registry.get_instances_below_water_mark(
+                    model_id=model_id, water_mark=HIGH_WATER_MARK
+                )
             )
 
             # Filter out excluded instance
             if exclude_instance_id:
                 available_instances = [
-                    inst for inst in available_instances
+                    inst
+                    for inst in available_instances
                     if inst.instance_id != exclude_instance_id
                 ]
 
             if not available_instances:
                 # Backpressure: try all active instances if all are above water mark
-                all_active = await self.instance_registry.list_active(model_id=model_id)
+                all_active = await self.instance_registry.list_active(
+                    model_id=model_id
+                )
                 if exclude_instance_id:
                     all_active = [
-                        inst for inst in all_active
+                        inst
+                        for inst in all_active
                         if inst.instance_id != exclude_instance_id
                     ]
                 if all_active:
@@ -289,7 +318,9 @@ class BackgroundScheduler:
                 )
             else:
                 # Task exists, update status to PENDING for rescheduling
-                await self.task_registry.update_status(task_id, TaskStatus.PENDING)
+                await self.task_registry.update_status(
+                    task_id, TaskStatus.PENDING
+                )
 
             # 3. Schedule task using current strategy
             schedule_result = await self.scheduling_strategy.schedule_task(
@@ -301,7 +332,9 @@ class BackgroundScheduler:
             # 4. Update task with scheduling results
             task = await self.task_registry.get(task_id)
             if not task:
-                logger.error(f"Task {task_id}: Task not found after reassignment")
+                logger.error(
+                    f"Task {task_id}: Task not found after reassignment"
+                )
                 return False
 
             # Update task with prediction info and assigned instance
@@ -331,26 +364,25 @@ class BackgroundScheduler:
         except Exception as e:
             logger.error(
                 f"[background_scheduler] Task {task_id}: Failed to reassign task - {e}",
-                exc_info=True
+                exc_info=True,
             )
             return False
 
-    async def get_stats(self) -> Dict[str, Any]:
-        """
-        Get statistics about background scheduling.
+    async def get_stats(self) -> dict[str, Any]:
+        """Get statistics about background scheduling.
 
         Returns:
             Dictionary with scheduling statistics
         """
         return {
             "active_scheduling_tasks": len(self._active_tasks),
-            "max_concurrent_scheduling": self._semaphore._value + len(self._active_tasks),
+            "max_concurrent_scheduling": self._semaphore._value
+            + len(self._active_tasks),
             "available_slots": self._semaphore._value,
         }
 
     async def shutdown(self) -> None:
-        """
-        Gracefully shutdown background scheduler.
+        """Gracefully shutdown background scheduler.
 
         Waits for all active scheduling tasks to complete.
         """
@@ -359,6 +391,8 @@ class BackgroundScheduler:
                 f"Shutting down BackgroundScheduler, "
                 f"waiting for {len(self._active_tasks)} tasks..."
             )
-            await asyncio.gather(*self._active_tasks.values(), return_exceptions=True)
+            await asyncio.gather(
+                *self._active_tasks.values(), return_exceptions=True
+            )
 
         logger.info("BackgroundScheduler shutdown complete")

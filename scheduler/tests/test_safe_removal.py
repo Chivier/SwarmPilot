@@ -1,5 +1,4 @@
-"""
-Unit and integration tests for safe instance removal (drain/remove flow).
+"""Unit and integration tests for safe instance removal (drain/remove flow).
 
 Tests the complete lifecycle:
 1. Draining instances (stop accepting new tasks)
@@ -8,74 +7,92 @@ Tests the complete lifecycle:
 4. Task assignment exclusion for draining instances
 """
 
+
 import pytest
-import time
-from datetime import datetime
 
-from src.instance_registry import InstanceRegistry
 from src.model import Instance, InstanceStatus
-
 
 # ============================================================================
 # Unit Tests for InstanceRegistry Drain Methods
 # ============================================================================
 
+
 class TestInstanceDraining:
     """Tests for instance draining functionality."""
 
-    async def test_start_draining_active_instance(self, instance_registry, sample_instance):
+    async def test_start_draining_active_instance(
+        self, instance_registry, sample_instance
+    ):
         """Test starting drain on an ACTIVE instance."""
         await instance_registry.register(sample_instance)
 
         # Start draining
-        drained = await instance_registry.start_draining(sample_instance.instance_id)
+        drained = await instance_registry.start_draining(
+            sample_instance.instance_id
+        )
 
         assert drained.status == InstanceStatus.DRAINING
         assert drained.drain_initiated_at is not None
         assert isinstance(drained.drain_initiated_at, str)
 
         # Verify timestamp format (ISO 8601 with Z)
-        assert drained.drain_initiated_at.endswith('Z')
+        assert drained.drain_initiated_at.endswith("Z")
 
     async def test_start_draining_nonexistent_instance(self, instance_registry):
         """Test draining non-existent instance raises KeyError."""
         with pytest.raises(KeyError, match="not found"):
             await instance_registry.start_draining("nonexistent-id")
 
-    async def test_start_draining_already_draining(self, instance_registry, sample_instance):
+    async def test_start_draining_already_draining(
+        self, instance_registry, sample_instance
+    ):
         """Test draining already DRAINING instance raises ValueError."""
         await instance_registry.register(sample_instance)
         await instance_registry.start_draining(sample_instance.instance_id)
 
-        with pytest.raises(ValueError, match="already in.*state"):
+        with pytest.raises(ValueError, match=r"already in.*state"):
             await instance_registry.start_draining(sample_instance.instance_id)
 
-    async def test_get_drain_status_active_instance(self, instance_registry, sample_instance):
+    async def test_get_drain_status_active_instance(
+        self, instance_registry, sample_instance
+    ):
         """Test getting drain status for ACTIVE instance."""
         await instance_registry.register(sample_instance)
 
-        status = await instance_registry.get_drain_status(sample_instance.instance_id)
+        status = await instance_registry.get_drain_status(
+            sample_instance.instance_id
+        )
 
         assert status["instance_id"] == sample_instance.instance_id
         assert status["status"] == InstanceStatus.ACTIVE
         assert status["pending_tasks"] == 0
         assert status["running_tasks"] == 0
-        assert status["can_remove"] is False  # ACTIVE instances cannot be removed
+        assert (
+            status["can_remove"] is False
+        )  # ACTIVE instances cannot be removed
         assert status["drain_initiated_at"] is None
 
-    async def test_get_drain_status_draining_no_tasks(self, instance_registry, sample_instance):
+    async def test_get_drain_status_draining_no_tasks(
+        self, instance_registry, sample_instance
+    ):
         """Test drain status for DRAINING instance with no pending tasks."""
         await instance_registry.register(sample_instance)
         await instance_registry.start_draining(sample_instance.instance_id)
 
-        status = await instance_registry.get_drain_status(sample_instance.instance_id)
+        status = await instance_registry.get_drain_status(
+            sample_instance.instance_id
+        )
 
         assert status["status"] == InstanceStatus.DRAINING
         assert status["pending_tasks"] == 0
-        assert status["can_remove"] is True  # Can remove when draining with no tasks
+        assert (
+            status["can_remove"] is True
+        )  # Can remove when draining with no tasks
         assert status["drain_initiated_at"] is not None
 
-    async def test_get_drain_status_draining_with_tasks(self, instance_registry, sample_instance):
+    async def test_get_drain_status_draining_with_tasks(
+        self, instance_registry, sample_instance
+    ):
         """Test drain status for DRAINING instance with pending tasks."""
         await instance_registry.register(sample_instance)
 
@@ -85,13 +102,19 @@ class TestInstanceDraining:
 
         await instance_registry.start_draining(sample_instance.instance_id)
 
-        status = await instance_registry.get_drain_status(sample_instance.instance_id)
+        status = await instance_registry.get_drain_status(
+            sample_instance.instance_id
+        )
 
         assert status["status"] == InstanceStatus.DRAINING
         assert status["pending_tasks"] == 2
-        assert status["can_remove"] is False  # Cannot remove while tasks pending
+        assert (
+            status["can_remove"] is False
+        )  # Cannot remove while tasks pending
 
-    async def test_get_drain_status_nonexistent_instance(self, instance_registry):
+    async def test_get_drain_status_nonexistent_instance(
+        self, instance_registry
+    ):
         """Test getting drain status for non-existent instance raises KeyError."""
         with pytest.raises(KeyError, match="not found"):
             await instance_registry.get_drain_status("nonexistent-id")
@@ -100,7 +123,9 @@ class TestInstanceDraining:
 class TestListActive:
     """Tests for list_active() method."""
 
-    async def test_list_active_excludes_draining(self, instance_registry, sample_instances):
+    async def test_list_active_excludes_draining(
+        self, instance_registry, sample_instances
+    ):
         """Test that list_active() excludes DRAINING instances."""
         # Register 3 instances
         for instance in sample_instances:
@@ -113,9 +138,15 @@ class TestListActive:
         active = await instance_registry.list_active()
 
         assert len(active) == 2
-        assert sample_instances[0].instance_id not in [i.instance_id for i in active]
-        assert sample_instances[1].instance_id in [i.instance_id for i in active]
-        assert sample_instances[2].instance_id in [i.instance_id for i in active]
+        assert sample_instances[0].instance_id not in [
+            i.instance_id for i in active
+        ]
+        assert sample_instances[1].instance_id in [
+            i.instance_id for i in active
+        ]
+        assert sample_instances[2].instance_id in [
+            i.instance_id for i in active
+        ]
 
     async def test_list_active_with_model_filter(self, instance_registry):
         """Test list_active() with model_id filter."""
@@ -124,19 +155,31 @@ class TestListActive:
             instance_id="inst-1",
             model_id="model-a",
             endpoint="http://localhost:8001",
-            platform_info={"software_name": "test", "software_version": "1.0", "hardware_name": "hw1"}
+            platform_info={
+                "software_name": "test",
+                "software_version": "1.0",
+                "hardware_name": "hw1",
+            },
         )
         instance2 = Instance(
             instance_id="inst-2",
             model_id="model-b",
             endpoint="http://localhost:8002",
-            platform_info={"software_name": "test", "software_version": "1.0", "hardware_name": "hw2"}
+            platform_info={
+                "software_name": "test",
+                "software_version": "1.0",
+                "hardware_name": "hw2",
+            },
         )
         instance3 = Instance(
             instance_id="inst-3",
             model_id="model-a",
             endpoint="http://localhost:8003",
-            platform_info={"software_name": "test", "software_version": "1.0", "hardware_name": "hw3"}
+            platform_info={
+                "software_name": "test",
+                "software_version": "1.0",
+                "hardware_name": "hw3",
+            },
         )
 
         await instance_registry.register(instance1)
@@ -152,7 +195,9 @@ class TestListActive:
         assert len(active) == 1
         assert active[0].instance_id == "inst-3"
 
-    async def test_list_active_all_draining(self, instance_registry, sample_instances):
+    async def test_list_active_all_draining(
+        self, instance_registry, sample_instances
+    ):
         """Test list_active() when all instances are draining."""
         for instance in sample_instances:
             await instance_registry.register(instance)
@@ -165,25 +210,33 @@ class TestListActive:
 class TestSafeRemove:
     """Tests for safe_remove() method."""
 
-    async def test_safe_remove_draining_no_tasks(self, instance_registry, sample_instance):
+    async def test_safe_remove_draining_no_tasks(
+        self, instance_registry, sample_instance
+    ):
         """Test safe removal of DRAINING instance with no pending tasks."""
         await instance_registry.register(sample_instance)
         await instance_registry.start_draining(sample_instance.instance_id)
 
         # Should succeed
-        removed = await instance_registry.safe_remove(sample_instance.instance_id)
+        removed = await instance_registry.safe_remove(
+            sample_instance.instance_id
+        )
 
         assert removed.instance_id == sample_instance.instance_id
         assert await instance_registry.get(sample_instance.instance_id) is None
 
-    async def test_safe_remove_active_instance_fails(self, instance_registry, sample_instance):
+    async def test_safe_remove_active_instance_fails(
+        self, instance_registry, sample_instance
+    ):
         """Test safe removal fails for ACTIVE instance."""
         await instance_registry.register(sample_instance)
 
         with pytest.raises(ValueError, match="must be in DRAINING state"):
             await instance_registry.safe_remove(sample_instance.instance_id)
 
-    async def test_safe_remove_with_pending_tasks_fails(self, instance_registry, sample_instance):
+    async def test_safe_remove_with_pending_tasks_fails(
+        self, instance_registry, sample_instance
+    ):
         """Test safe removal fails when instance has pending tasks."""
         await instance_registry.register(sample_instance)
         await instance_registry.increment_pending(sample_instance.instance_id)
@@ -197,7 +250,9 @@ class TestSafeRemove:
         with pytest.raises(KeyError, match="not found"):
             await instance_registry.safe_remove("nonexistent-id")
 
-    async def test_safe_remove_cleans_up_all_data(self, instance_registry, sample_instance):
+    async def test_safe_remove_cleans_up_all_data(
+        self, instance_registry, sample_instance
+    ):
         """Test safe removal removes instance, stats, and queue info."""
         await instance_registry.register(sample_instance)
         await instance_registry.start_draining(sample_instance.instance_id)
@@ -206,14 +261,22 @@ class TestSafeRemove:
 
         # Verify all data is cleaned up
         assert await instance_registry.get(sample_instance.instance_id) is None
-        assert await instance_registry.get_stats(sample_instance.instance_id) is None
-        assert await instance_registry.get_queue_info(sample_instance.instance_id) is None
+        assert (
+            await instance_registry.get_stats(sample_instance.instance_id)
+            is None
+        )
+        assert (
+            await instance_registry.get_queue_info(sample_instance.instance_id)
+            is None
+        )
 
 
 class TestDrainWorkflow:
     """Tests for complete drain → wait → remove workflow."""
 
-    async def test_complete_drain_workflow(self, instance_registry, sample_instance):
+    async def test_complete_drain_workflow(
+        self, instance_registry, sample_instance
+    ):
         """Test the complete workflow: drain → monitor → remove."""
         # 1. Register instance
         await instance_registry.register(sample_instance)
@@ -226,7 +289,9 @@ class TestDrainWorkflow:
         await instance_registry.start_draining(sample_instance.instance_id)
 
         # 4. Check status - cannot remove yet
-        status = await instance_registry.get_drain_status(sample_instance.instance_id)
+        status = await instance_registry.get_drain_status(
+            sample_instance.instance_id
+        )
         assert status["can_remove"] is False
         assert status["pending_tasks"] == 2
 
@@ -234,7 +299,9 @@ class TestDrainWorkflow:
         await instance_registry.decrement_pending(sample_instance.instance_id)
         await instance_registry.increment_completed(sample_instance.instance_id)
 
-        status = await instance_registry.get_drain_status(sample_instance.instance_id)
+        status = await instance_registry.get_drain_status(
+            sample_instance.instance_id
+        )
         assert status["can_remove"] is False  # Still one task
         assert status["pending_tasks"] == 1
 
@@ -242,15 +309,21 @@ class TestDrainWorkflow:
         await instance_registry.decrement_pending(sample_instance.instance_id)
         await instance_registry.increment_completed(sample_instance.instance_id)
 
-        status = await instance_registry.get_drain_status(sample_instance.instance_id)
+        status = await instance_registry.get_drain_status(
+            sample_instance.instance_id
+        )
         assert status["can_remove"] is True  # Now safe to remove
         assert status["pending_tasks"] == 0
 
         # 7. Safe removal
-        removed = await instance_registry.safe_remove(sample_instance.instance_id)
+        removed = await instance_registry.safe_remove(
+            sample_instance.instance_id
+        )
         assert removed.instance_id == sample_instance.instance_id
 
-    async def test_drain_timestamp_persists(self, instance_registry, sample_instance):
+    async def test_drain_timestamp_persists(
+        self, instance_registry, sample_instance
+    ):
         """Test that drain_initiated_at timestamp persists through status checks."""
         await instance_registry.register(sample_instance)
 
@@ -261,10 +334,14 @@ class TestDrainWorkflow:
 
         # Check status multiple times
         for _ in range(3):
-            status = await instance_registry.get_drain_status(sample_instance.instance_id)
+            status = await instance_registry.get_drain_status(
+                sample_instance.instance_id
+            )
             assert status["drain_initiated_at"] == original_timestamp
 
-    async def test_list_all_vs_list_active_after_drain(self, instance_registry, sample_instances):
+    async def test_list_all_vs_list_active_after_drain(
+        self, instance_registry, sample_instances
+    ):
         """Test difference between list_all and list_active after draining."""
         for instance in sample_instances:
             await instance_registry.register(instance)
@@ -278,22 +355,26 @@ class TestDrainWorkflow:
 
         assert len(all_instances) == 3
         assert len(active_instances) == 1
-        assert active_instances[0].instance_id == sample_instances[2].instance_id
+        assert (
+            active_instances[0].instance_id == sample_instances[2].instance_id
+        )
 
 
 # ============================================================================
 # Integration Test for Task Assignment Exclusion
 # ============================================================================
 
+
 class TestTaskAssignmentExclusion:
-    """
-    Integration tests verifying that DRAINING instances don't receive new tasks.
+    """Integration tests verifying that DRAINING instances don't receive new tasks.
 
     Note: These tests verify the instance_registry.list_active() behavior.
     Full API-level testing is in test_api.py.
     """
 
-    async def test_draining_instances_excluded_from_active_list(self, instance_registry):
+    async def test_draining_instances_excluded_from_active_list(
+        self, instance_registry
+    ):
         """Test that draining instances are excluded from task assignment pool."""
         # Create instances
         instances = [
@@ -301,7 +382,11 @@ class TestTaskAssignmentExclusion:
                 instance_id=f"instance-{i}",
                 model_id="test-model",
                 endpoint=f"http://localhost:800{i}",
-                platform_info={"software_name": "test", "software_version": "1.0", "hardware_name": f"hw{i}"}
+                platform_info={
+                    "software_name": "test",
+                    "software_version": "1.0",
+                    "hardware_name": f"hw{i}",
+                },
             )
             for i in range(5)
         ]
@@ -336,13 +421,21 @@ class TestTaskAssignmentExclusion:
             instance_id="inst-1",
             model_id="model-a",
             endpoint="http://localhost:8001",
-            platform_info={"software_name": "test", "software_version": "1.0", "hardware_name": "hw1"}
+            platform_info={
+                "software_name": "test",
+                "software_version": "1.0",
+                "hardware_name": "hw1",
+            },
         )
         instance2 = Instance(
             instance_id="inst-2",
             model_id="model-a",
             endpoint="http://localhost:8002",
-            platform_info={"software_name": "test", "software_version": "1.0", "hardware_name": "hw2"}
+            platform_info={
+                "software_name": "test",
+                "software_version": "1.0",
+                "hardware_name": "hw2",
+            },
         )
 
         # Cycle 1: Register, drain, remove instance1
@@ -360,7 +453,9 @@ class TestTaskAssignmentExclusion:
         assert await instance_registry.get("inst-2") is None
         assert len(await instance_registry.list_all()) == 0
 
-    async def test_concurrent_drain_multiple_instances(self, instance_registry, sample_instances):
+    async def test_concurrent_drain_multiple_instances(
+        self, instance_registry, sample_instances
+    ):
         """Test draining multiple instances concurrently."""
         for instance in sample_instances:
             await instance_registry.register(instance)
@@ -371,7 +466,9 @@ class TestTaskAssignmentExclusion:
 
         # Verify all are draining
         for instance in sample_instances:
-            status = await instance_registry.get_drain_status(instance.instance_id)
+            status = await instance_registry.get_drain_status(
+                instance.instance_id
+            )
             assert status["status"] == InstanceStatus.DRAINING
 
         # No instances should be available for new tasks

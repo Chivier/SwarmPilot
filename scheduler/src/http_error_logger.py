@@ -1,16 +1,15 @@
-"""
-Centralized HTTP error logging utility.
+"""Centralized HTTP error logging utility.
 
 Provides consistent, comprehensive logging for API request errors
 across all HTTP clients in the scheduler, capturing full request/response
 details while filtering sensitive data.
 """
 
-from typing import Any, Dict, Optional, Union
 import json
+from typing import Any
+
 import httpx
 from loguru import logger
-
 
 # Headers that should never be logged (case-insensitive matching)
 SENSITIVE_HEADERS = {
@@ -28,10 +27,9 @@ MAX_BODY_LENGTH = 4096
 
 
 def _sanitize_headers(
-    headers: Union[httpx.Headers, Dict[str, str], None]
-) -> Dict[str, str]:
-    """
-    Remove sensitive headers from a headers dict/object.
+    headers: httpx.Headers | dict[str, str] | None,
+) -> dict[str, str]:
+    """Remove sensitive headers from a headers dict/object.
 
     Args:
         headers: Headers object or dict to sanitize
@@ -51,9 +49,8 @@ def _sanitize_headers(
     return sanitized
 
 
-def _truncate_body(body: Optional[Union[str, bytes, Dict[str, Any]]]) -> str:
-    """
-    Truncate body content for logging.
+def _truncate_body(body: str | bytes | dict[str, Any] | None) -> str:
+    """Truncate body content for logging.
 
     Args:
         body: Request or response body
@@ -79,7 +76,10 @@ def _truncate_body(body: Optional[Union[str, bytes, Dict[str, Any]]]) -> str:
         body_str = str(body)
 
     if len(body_str) > MAX_BODY_LENGTH:
-        return body_str[:MAX_BODY_LENGTH] + f"... [truncated, {len(body_str)} total]"
+        return (
+            body_str[:MAX_BODY_LENGTH]
+            + f"... [truncated, {len(body_str)} total]"
+        )
 
     return body_str
 
@@ -87,16 +87,15 @@ def _truncate_body(body: Optional[Union[str, bytes, Dict[str, Any]]]) -> str:
 def log_http_error(
     error: Exception,
     *,
-    request_url: Optional[str] = None,
-    request_method: Optional[str] = None,
-    request_headers: Optional[Union[httpx.Headers, Dict[str, str]]] = None,
-    request_body: Optional[Union[str, bytes, Dict[str, Any]]] = None,
-    response: Optional[httpx.Response] = None,
-    context: Optional[str] = None,
-    extra: Optional[Dict[str, Any]] = None,
+    request_url: str | None = None,
+    request_method: str | None = None,
+    request_headers: httpx.Headers | dict[str, str] | None = None,
+    request_body: str | bytes | dict[str, Any] | None = None,
+    response: httpx.Response | None = None,
+    context: str | None = None,
+    extra: dict[str, Any] | None = None,
 ) -> None:
-    """
-    Log comprehensive HTTP error information.
+    """Log comprehensive HTTP error information.
 
     This function provides consistent error logging for all API request failures,
     capturing full request/response details while filtering sensitive data.
@@ -156,11 +155,15 @@ def log_http_error(
             pass  # .request property not set
 
     # Build log message components
-    parts = [f"HTTP API Error [{context or 'unknown'}] - {type(error).__name__}: {error}"]
+    parts = [
+        f"HTTP API Error [{context or 'unknown'}] - {type(error).__name__}: {error}"
+    ]
 
     # Request details
     if request_method or request_url:
-        parts.append(f"\n  Request: {request_method or '?'} {request_url or '?'}")
+        parts.append(
+            f"\n  Request: {request_method or '?'} {request_url or '?'}"
+        )
 
     # Sanitized headers
     if request_headers:
@@ -174,7 +177,9 @@ def log_http_error(
     # Response details
     if response is not None:
         parts.append(f"\n  Response Status: {response.status_code}")
-        parts.append(f"\n  Response Headers: {_sanitize_headers(dict(response.headers))}")
+        parts.append(
+            f"\n  Response Headers: {_sanitize_headers(dict(response.headers))}"
+        )
 
         try:
             response_body = response.text

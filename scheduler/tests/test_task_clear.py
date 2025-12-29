@@ -1,5 +1,4 @@
-"""
-Unit tests for task clear functionality.
+"""Unit tests for task clear functionality.
 
 Tests the fix for the central queue not being cleared when /task/clear is called.
 This includes:
@@ -8,18 +7,17 @@ This includes:
 - Submit task rejection during clear
 """
 
-import pytest
-import asyncio
+from contextlib import suppress
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from src.central_queue import CentralTaskQueue, QueuedTask
-from src.task_registry import TaskRegistry
-from src.instance_registry import InstanceRegistry
+import pytest
 
+from src.central_queue import CentralTaskQueue
 
 # ============================================================================
 # CentralTaskQueue.clear() Tests
 # ============================================================================
+
 
 class TestCentralQueueClear:
     """Tests for CentralTaskQueue.clear() method."""
@@ -128,6 +126,7 @@ class TestCentralQueueClear:
 # Task Clear API Tests
 # ============================================================================
 
+
 class TestTaskClearAPI:
     """Tests for /task/clear endpoint with clearing flag."""
 
@@ -138,14 +137,19 @@ class TestTaskClearAPI:
         mock_response.raise_for_status = MagicMock()
         mock_response.json.return_value = {
             "success": True,
-            "cleared_count": {"total": 3, "queued": 2, "completed": 1, "failed": 0}
+            "cleared_count": {
+                "total": 3,
+                "queued": 2,
+                "completed": 1,
+                "failed": 0,
+            },
         }
         return mock_response
 
     @pytest.mark.asyncio
     async def test_clear_tasks_clears_central_queue(self, test_client):
         """Test that /task/clear clears the central queue."""
-        from src.api import central_queue, task_registry
+        from src.api import central_queue
 
         # First clear any existing tasks from previous tests
         await central_queue.clear()
@@ -163,10 +167,17 @@ class TestTaskClearAPI:
             mock_client = AsyncMock()
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock()
-            mock_client.post = AsyncMock(return_value=MagicMock(
-                raise_for_status=MagicMock(),
-                json=MagicMock(return_value={"success": True, "cleared_count": {"total": 0}})
-            ))
+            mock_client.post = AsyncMock(
+                return_value=MagicMock(
+                    raise_for_status=MagicMock(),
+                    json=MagicMock(
+                        return_value={
+                            "success": True,
+                            "cleared_count": {"total": 0},
+                        }
+                    ),
+                )
+            )
             mock_client_class.return_value = mock_client
 
             response = test_client.post("/task/clear")
@@ -183,7 +194,6 @@ class TestTaskClearAPI:
     @pytest.mark.asyncio
     async def test_submit_task_blocked_during_clear(self, test_client):
         """Test that task submission is blocked during clear operation."""
-        from src.api import _clearing_in_progress, _clearing_lock
         import src.api as api_module
 
         # Set clearing flag
@@ -196,13 +206,15 @@ class TestTaskClearAPI:
                     "task_id": "blocked-task",
                     "model_id": "test-model",
                     "task_input": {"data": "test"},
-                    "metadata": {}
-                }
+                    "metadata": {},
+                },
             )
 
             assert response.status_code == 503
             data = response.json()
-            assert "clear operation in progress" in data["detail"]["error"].lower()
+            assert (
+                "clear operation in progress" in data["detail"]["error"].lower()
+            )
 
         finally:
             # Reset flag
@@ -220,10 +232,17 @@ class TestTaskClearAPI:
             mock_client = AsyncMock()
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock()
-            mock_client.post = AsyncMock(return_value=MagicMock(
-                raise_for_status=MagicMock(),
-                json=MagicMock(return_value={"success": True, "cleared_count": {"total": 0}})
-            ))
+            mock_client.post = AsyncMock(
+                return_value=MagicMock(
+                    raise_for_status=MagicMock(),
+                    json=MagicMock(
+                        return_value={
+                            "success": True,
+                            "cleared_count": {"total": 0},
+                        }
+                    ),
+                )
+            )
             mock_client_class.return_value = mock_client
 
             response = test_client.post("/task/clear")
@@ -238,14 +257,14 @@ class TestTaskClearAPI:
         """Test that clearing flag is reset even if clear fails."""
         import src.api as api_module
 
-        with patch("src.api.task_registry.clear_all", new_callable=AsyncMock) as mock_clear:
+        with patch(
+            "src.api.task_registry.clear_all", new_callable=AsyncMock
+        ) as mock_clear:
             mock_clear.side_effect = Exception("Test error")
 
             # This should fail but flag should still be reset
-            try:
-                response = test_client.post("/task/clear")
-            except Exception:
-                pass
+            with suppress(Exception):
+                _response = test_client.post("/task/clear")
 
         # Flag should be reset due to finally block
         assert api_module._clearing_in_progress is False
@@ -273,6 +292,7 @@ class TestTaskClearAPI:
 # Integration Tests
 # ============================================================================
 
+
 class TestTaskClearIntegration:
     """Integration tests for task clear workflow."""
 
@@ -280,7 +300,7 @@ class TestTaskClearIntegration:
     async def test_clear_submit_clear_cycle(self, test_client):
         """Test clear -> submit -> clear cycle works correctly."""
         import src.api as api_module
-        from src.api import central_queue, task_registry, instance_registry
+        from src.api import central_queue
 
         # Ensure clean state
         api_module._clearing_in_progress = False
@@ -290,10 +310,17 @@ class TestTaskClearIntegration:
             mock_client = AsyncMock()
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock()
-            mock_client.post = AsyncMock(return_value=MagicMock(
-                raise_for_status=MagicMock(),
-                json=MagicMock(return_value={"success": True, "cleared_count": {"total": 0}})
-            ))
+            mock_client.post = AsyncMock(
+                return_value=MagicMock(
+                    raise_for_status=MagicMock(),
+                    json=MagicMock(
+                        return_value={
+                            "success": True,
+                            "cleared_count": {"total": 0},
+                        }
+                    ),
+                )
+            )
             mock_client_class.return_value = mock_client
 
             # First clear
@@ -312,10 +339,17 @@ class TestTaskClearIntegration:
             mock_client = AsyncMock()
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock()
-            mock_client.post = AsyncMock(return_value=MagicMock(
-                raise_for_status=MagicMock(),
-                json=MagicMock(return_value={"success": True, "cleared_count": {"total": 0}})
-            ))
+            mock_client.post = AsyncMock(
+                return_value=MagicMock(
+                    raise_for_status=MagicMock(),
+                    json=MagicMock(
+                        return_value={
+                            "success": True,
+                            "cleared_count": {"total": 0},
+                        }
+                    ),
+                )
+            )
             mock_client_class.return_value = mock_client
 
             # Second clear
@@ -341,10 +375,17 @@ class TestTaskClearIntegration:
             mock_client = AsyncMock()
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock()
-            mock_client.post = AsyncMock(return_value=MagicMock(
-                raise_for_status=MagicMock(),
-                json=MagicMock(return_value={"success": True, "cleared_count": {"total": 0}})
-            ))
+            mock_client.post = AsyncMock(
+                return_value=MagicMock(
+                    raise_for_status=MagicMock(),
+                    json=MagicMock(
+                        return_value={
+                            "success": True,
+                            "cleared_count": {"total": 0},
+                        }
+                    ),
+                )
+            )
             mock_client_class.return_value = mock_client
 
             response = test_client.post("/task/clear")

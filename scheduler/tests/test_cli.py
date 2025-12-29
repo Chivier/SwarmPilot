@@ -1,25 +1,24 @@
-"""
-Tests for the CLI module.
+"""Tests for the CLI module.
 
 Covers command-line interface functionality including configuration loading,
 environment variable management, and command execution.
 """
 
-import pytest
 import json
-import tomllib
 import re
-from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
+
+import pytest
+import typer
 from typer.testing import CliRunner
 
-from src.cli import app, load_config_file, apply_config
+from src.cli import app, apply_config, load_config_file
 
 
 def strip_ansi_codes(text: str) -> str:
     """Remove ANSI escape codes from text."""
-    ansi_escape = re.compile(r'\x1b\[[0-9;]*m')
-    return ansi_escape.sub('', text)
+    ansi_escape = re.compile(r"\x1b\[[0-9;]*m")
+    return ansi_escape.sub("", text)
 
 
 @pytest.fixture
@@ -136,7 +135,7 @@ class TestLoadConfigFile:
         invalid_json = tmp_path / "invalid.json"
         invalid_json.write_text("{ invalid json }")
 
-        with pytest.raises(Exception):
+        with pytest.raises(typer.BadParameter):
             load_config_file(invalid_json)
 
     def test_unsupported_format(self, tmp_path):
@@ -157,23 +156,31 @@ class TestLoadConfigFile:
         # Simulate missing yaml library by temporarily removing it from sys.modules
         import sys
 
-        yaml_module = sys.modules.get('yaml')
-        if 'yaml' in sys.modules:
-            del sys.modules['yaml']
+        yaml_module = sys.modules.get("yaml")
+        if "yaml" in sys.modules:
+            del sys.modules["yaml"]
 
         try:
             # Mock the import to raise ImportError
-            with patch('builtins.__import__', side_effect=lambda name, *args, **kwargs:
-                       (_ for _ in ()).throw(ImportError(f"No module named '{name}'")) if name == 'yaml'
-                       else __import__(name, *args, **kwargs)):
+            with patch(
+                "builtins.__import__",
+                side_effect=lambda name, *args, **kwargs: (_ for _ in ()).throw(
+                    ImportError(f"No module named '{name}'")
+                )
+                if name == "yaml"
+                else __import__(name, *args, **kwargs),
+            ):
                 with pytest.raises(Exception) as exc_info:
                     load_config_file(yaml_file)
 
-                assert "pyyaml" in str(exc_info.value).lower() or "import" in str(exc_info.value).lower()
+                assert (
+                    "pyyaml" in str(exc_info.value).lower()
+                    or "import" in str(exc_info.value).lower()
+                )
         finally:
             # Restore yaml module if it was there
             if yaml_module is not None:
-                sys.modules['yaml'] = yaml_module
+                sys.modules["yaml"] = yaml_module
 
 
 class TestApplyConfig:
@@ -304,7 +311,9 @@ class TestStartCommand:
             assert call_args[1]["port"]  # Some port value
             assert "src.api:app" in call_args[0]
 
-    def test_start_with_config_file(self, runner, temp_config_files, monkeypatch):
+    def test_start_with_config_file(
+        self, runner, temp_config_files, monkeypatch
+    ):
         """Test starting with configuration file."""
         with patch("src.cli.uvicorn.run") as mock_run:
             result = runner.invoke(
@@ -322,7 +331,9 @@ class TestStartCommand:
         monkeypatch.delenv("SCHEDULER_PORT", raising=False)
 
         with patch("src.cli.uvicorn.run") as mock_run:
-            result = runner.invoke(app, ["start", "--host", "127.0.0.1", "--port", "9000"])
+            result = runner.invoke(
+                app, ["start", "--host", "127.0.0.1", "--port", "9000"]
+            )
 
             assert result.exit_code == 0
             mock_run.assert_called_once()

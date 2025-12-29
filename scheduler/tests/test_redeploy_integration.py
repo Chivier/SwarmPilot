@@ -1,29 +1,29 @@
-"""
-Integration tests for instance redeployment functionality.
+"""Integration tests for instance redeployment functionality.
 
 Tests the complete redeployment workflow including task extraction,
 redistribution, and instance status transitions.
 """
 
+import asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import patch, AsyncMock, MagicMock
-import asyncio
 
-from src.api import app, instance_registry, task_registry, background_scheduler
-from src.model import InstanceStatus, TaskStatus
-
+from src.api import app, background_scheduler, instance_registry, task_registry
+from src.model import InstanceStatus
 
 # ============================================================================
 # Fixtures
 # ============================================================================
 
+
 @pytest.fixture(autouse=True)
 def reset_registries():
     """Reset registries before each test."""
-    from src.api import scheduling_strategy, predictor_client
-    from src.scheduler import get_strategy
     import src.api as api_module
+    from src.api import predictor_client
+    from src.scheduler import get_strategy
 
     # Clear registries
     instance_registry._instances.clear()
@@ -55,6 +55,7 @@ def client():
 # Tests
 # ============================================================================
 
+
 def test_redeploy_start_endpoint_success(client):
     """Test successful redeployment initiation."""
     # Register two instances (so tasks can be redistributed)
@@ -65,8 +66,8 @@ def test_redeploy_start_endpoint_success(client):
         "platform_info": {
             "software_name": "pytorch",
             "software_version": "2.0",
-            "hardware_name": "gpu-v100"
-        }
+            "hardware_name": "gpu-v100",
+        },
     }
     instance2_data = {
         "instance_id": "instance-2",
@@ -75,8 +76,8 @@ def test_redeploy_start_endpoint_success(client):
         "platform_info": {
             "software_name": "pytorch",
             "software_version": "2.0",
-            "hardware_name": "gpu-v100"
-        }
+            "hardware_name": "gpu-v100",
+        },
     }
 
     # Register both instances
@@ -98,26 +99,30 @@ def test_redeploy_start_endpoint_success(client):
                     "model_id": "model-a",
                     "task_input": {"data": "test"},
                     "enqueue_time": 1234567890.0,
-                    "metadata": {}
+                    "metadata": {},
                 }
             ],
             "current_task": None,
-            "estimated_completion_ms": None
+            "estimated_completion_ms": None,
         }
         mock_response.raise_for_status = MagicMock()
         mock_post.return_value = mock_response
 
         # Mock BackgroundScheduler.reassign_task to return success
-        with patch.object(background_scheduler, "reassign_task", new_callable=AsyncMock) as mock_reassign:
+        with patch.object(
+            background_scheduler, "reassign_task", new_callable=AsyncMock
+        ) as mock_reassign:
             mock_reassign.return_value = True
 
             # Start redeployment on instance-1
             redeploy_request = {
                 "instance_id": "instance-1",
                 "redeploy_reason": "Testing redeployment",
-                "target_model_id": "model-b"
+                "target_model_id": "model-b",
             }
-            response = client.post("/instance/redeploy/start", json=redeploy_request)
+            response = client.post(
+                "/instance/redeploy/start", json=redeploy_request
+            )
 
             # Verify response
             assert response.status_code == 200
@@ -157,13 +162,15 @@ def test_redeploy_start_instance_not_active(client):
         "platform_info": {
             "software_name": "pytorch",
             "software_version": "2.0",
-            "hardware_name": "gpu-v100"
-        }
+            "hardware_name": "gpu-v100",
+        },
     }
     client.post("/instance/register", json=instance_data)
 
     # Set instance to DRAINING status
-    asyncio.run(instance_registry.update_status("instance-1", InstanceStatus.DRAINING))
+    asyncio.run(
+        instance_registry.update_status("instance-1", InstanceStatus.DRAINING)
+    )
 
     # Try to start redeployment
     redeploy_request = {
@@ -188,13 +195,17 @@ def test_redeploy_complete_endpoint_success(client):
         "platform_info": {
             "software_name": "pytorch",
             "software_version": "2.0",
-            "hardware_name": "gpu-v100"
-        }
+            "hardware_name": "gpu-v100",
+        },
     }
     client.post("/instance/register", json=instance_data)
 
     # Set instance to REDEPLOYING status
-    asyncio.run(instance_registry.update_status("instance-1", InstanceStatus.REDEPLOYING))
+    asyncio.run(
+        instance_registry.update_status(
+            "instance-1", InstanceStatus.REDEPLOYING
+        )
+    )
 
     # Complete redeployment with updated configuration
     complete_request = {
@@ -204,8 +215,8 @@ def test_redeploy_complete_endpoint_success(client):
         "platform_info": {
             "software_name": "pytorch",
             "software_version": "2.1",  # Updated version
-            "hardware_name": "gpu-v100"
-        }
+            "hardware_name": "gpu-v100",
+        },
     }
     response = client.post("/instance/redeploy/complete", json=complete_request)
 
@@ -233,8 +244,8 @@ def test_redeploy_complete_instance_not_redeploying(client):
         "platform_info": {
             "software_name": "pytorch",
             "software_version": "2.0",
-            "hardware_name": "gpu-v100"
-        }
+            "hardware_name": "gpu-v100",
+        },
     }
     client.post("/instance/register", json=instance_data)
 
@@ -246,8 +257,8 @@ def test_redeploy_complete_instance_not_redeploying(client):
         "platform_info": {
             "software_name": "pytorch",
             "software_version": "2.0",
-            "hardware_name": "gpu-v100"
-        }
+            "hardware_name": "gpu-v100",
+        },
     }
     response = client.post("/instance/redeploy/complete", json=complete_request)
 
@@ -268,8 +279,8 @@ def test_redeploy_task_redistribution_preserves_priority(client):
             "platform_info": {
                 "software_name": "pytorch",
                 "software_version": "2.0",
-                "hardware_name": "gpu-v100"
-            }
+                "hardware_name": "gpu-v100",
+            },
         }
         client.post("/instance/register", json=instance_data)
 
@@ -285,17 +296,17 @@ def test_redeploy_task_redistribution_preserves_priority(client):
                     "model_id": "model-a",
                     "task_input": {"data": "test1"},
                     "enqueue_time": 1000.0,  # Earlier
-                    "metadata": {}
+                    "metadata": {},
                 },
                 {
                     "task_id": "task-2",
                     "model_id": "model-a",
                     "task_input": {"data": "test2"},
                     "enqueue_time": 2000.0,  # Later
-                    "metadata": {}
-                }
+                    "metadata": {},
+                },
             ],
-            "current_task": None
+            "current_task": None,
         }
         mock_response.raise_for_status = MagicMock()
         mock_post.return_value = mock_response
@@ -303,17 +314,23 @@ def test_redeploy_task_redistribution_preserves_priority(client):
         # Track the enqueue_times passed to reassign_task
         enqueue_times = []
 
-        async def mock_reassign(task_id, model_id, task_input, enqueue_time=None, **kwargs):
+        async def mock_reassign(
+            task_id, model_id, task_input, enqueue_time=None, **kwargs
+        ):
             enqueue_times.append(enqueue_time)
             return True
 
-        with patch.object(background_scheduler, "reassign_task", side_effect=mock_reassign):
+        with patch.object(
+            background_scheduler, "reassign_task", side_effect=mock_reassign
+        ):
             # Start redeployment
             redeploy_request = {
                 "instance_id": "instance-1",
-                "redeploy_reason": "Testing priority preservation"
+                "redeploy_reason": "Testing priority preservation",
             }
-            response = client.post("/instance/redeploy/start", json=redeploy_request)
+            response = client.post(
+                "/instance/redeploy/start", json=redeploy_request
+            )
 
             assert response.status_code == 200
             # Verify enqueue_times were preserved

@@ -1,14 +1,14 @@
-"""
-Training client for sending runtime data to the predictor service.
+"""Training client for sending runtime data to the predictor service.
 
 This module collects actual task execution times and sends them to the
 predictor service for model training.
 """
 
-from typing import Dict, Any, List
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from typing import Any
+
 import httpx
-from dataclasses import dataclass, asdict
-from datetime import datetime, timezone
 from loguru import logger
 
 from .http_error_logger import log_http_error
@@ -19,8 +19,8 @@ class TrainingSample:
     """A single training sample for the predictor."""
 
     model_id: str
-    platform_info: Dict[str, str]
-    features: Dict[str, Any]
+    platform_info: dict[str, str]
+    features: dict[str, Any]
     actual_runtime_ms: float
     timestamp: str
 
@@ -34,10 +34,9 @@ class TrainingClient:
         timeout: float = 10.0,
         batch_size: int = 100,
         min_samples: int = 10,
-        prediction_types: List[str] = None,
+        prediction_types: list[str] | None = None,
     ):
-        """
-        Initialize training client.
+        """Initialize training client.
 
         Args:
             predictor_url: Base URL of the predictor service
@@ -54,7 +53,7 @@ class TrainingClient:
         self.prediction_types = prediction_types or ["expect_error", "quantile"]
 
         # Buffer for collecting training samples
-        self._samples_buffer: List[TrainingSample] = []
+        self._samples_buffer: list[TrainingSample] = []
 
         # Reusable HTTP client with SSL verification disabled for internal network
         self._http_client = httpx.AsyncClient(
@@ -65,12 +64,11 @@ class TrainingClient:
     def add_sample(
         self,
         model_id: str,
-        platform_info: Dict[str, str],
-        features: Dict[str, Any],
+        platform_info: dict[str, str],
+        features: dict[str, Any],
         actual_runtime_ms: float,
     ) -> None:
-        """
-        Add a training sample to the buffer.
+        """Add a training sample to the buffer.
 
         Args:
             model_id: Model/tool identifier
@@ -83,7 +81,7 @@ class TrainingClient:
             platform_info=platform_info,
             features=features,
             actual_runtime_ms=actual_runtime_ms,
-            timestamp=datetime.now(timezone.utc).isoformat(),
+            timestamp=datetime.now(UTC).isoformat(),
         )
         self._samples_buffer.append(sample)
 
@@ -94,8 +92,7 @@ class TrainingClient:
         )
 
     async def flush_if_ready(self) -> bool:
-        """
-        Flush buffer to predictor if batch size reached.
+        """Flush buffer to predictor if batch size reached.
 
         Returns:
             True if training was triggered, False otherwise
@@ -105,8 +102,7 @@ class TrainingClient:
         return False
 
     async def flush(self, force: bool = False) -> bool:
-        """
-        Send all buffered samples to predictor for training.
+        """Send all buffered samples to predictor for training.
 
         Args:
             force: If True, send even if below min_samples threshold
@@ -126,8 +122,8 @@ class TrainingClient:
             return False
 
         # Group samples by (model_id, platform_info) for separate training requests
-        from collections import defaultdict
         import json
+        from collections import defaultdict
 
         grouped_samples = defaultdict(list)
         for sample in self._samples_buffer:
@@ -144,7 +140,7 @@ class TrainingClient:
         success_count = 0
         failure_count = 0
 
-        for (model_id, platform_key), samples in grouped_samples.items():
+        for (model_id, _platform_key), samples in grouped_samples.items():
             try:
                 platform_info = samples[0].platform_info
 
@@ -202,7 +198,7 @@ class TrainingClient:
                 )
                 logger.error(
                     f"[training_client] Failed to train {model_id} on {platform_info['hardware_name']}: {e}",
-                    exc_info=True
+                    exc_info=True,
                 )
                 failure_count += 1
 
@@ -226,8 +222,7 @@ class TrainingClient:
         logger.info(f"Cleared {count} training samples from buffer")
 
     async def close(self) -> None:
-        """
-        Close the HTTP client and cleanup resources.
+        """Close the HTTP client and cleanup resources.
 
         Should be called when shutting down the training client.
         """

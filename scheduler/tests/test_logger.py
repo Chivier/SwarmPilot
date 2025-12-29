@@ -1,13 +1,10 @@
-"""
-Unit tests for logger module.
+"""Unit tests for logger module.
 
 Tests logger configuration and InterceptHandler.
 """
 
 import logging
-import pytest
-from unittest.mock import patch, MagicMock
-from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 
 class TestInterceptHandler:
@@ -27,7 +24,7 @@ class TestInterceptHandler:
             lineno=1,
             msg="Test message",
             args=(),
-            exc_info=None
+            exc_info=None,
         )
         record.levelname = "CUSTOM_LEVEL"  # Invalid level name
 
@@ -36,8 +33,9 @@ class TestInterceptHandler:
 
     def test_emit_with_deep_call_stack(self):
         """Test emit() with deep call stack (lines 40-41)."""
-        from src.logger import InterceptHandler
         import sys
+
+        from src.logger import InterceptHandler
 
         handler = InterceptHandler()
 
@@ -49,11 +47,11 @@ class TestInterceptHandler:
             lineno=1,
             msg="Test message",
             args=(),
-            exc_info=None
+            exc_info=None,
         )
 
         # Mock the frame to test the while loop
-        with patch.object(sys, '_getframe') as mock_getframe:
+        with patch.object(sys, "_getframe") as mock_getframe:
             # Create mock frames
             mock_frame_1 = MagicMock()
             mock_frame_1.f_code.co_filename = logging.__file__
@@ -71,7 +69,7 @@ class TestSetupLogger:
     def test_setup_logger_with_json_logs_enabled(self, tmp_path, monkeypatch):
         """Test setup_logger with JSON logs enabled (line 86)."""
         from loguru import logger
-        from src import config as config_module
+
 
         # Create a temporary log directory
         log_dir = tmp_path / "logs"

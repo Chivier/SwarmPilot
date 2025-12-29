@@ -1,27 +1,27 @@
-"""
-Unit tests for FastAPI endpoints.
+"""Unit tests for FastAPI endpoints.
 
 Tests instance management, task submission, and health check endpoints.
 """
 
+from unittest.mock import AsyncMock, patch
+
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import patch, AsyncMock, MagicMock
 
-from src.api import app, instance_registry, task_registry, task_dispatcher
+from src.api import app, instance_registry, task_registry
 from src.model import TaskStatus
-
 
 # ============================================================================
 # Fixtures
 # ============================================================================
 
+
 @pytest.fixture(autouse=True)
 def reset_registries():
     """Reset registries before each test."""
-    from src.api import scheduling_strategy, predictor_client, config
-    from src.scheduler import get_strategy
     import src.api as api_module
+    from src.api import config, predictor_client
+    from src.scheduler import get_strategy
 
     # Clear registries
     instance_registry._instances.clear()
@@ -57,6 +57,7 @@ def client():
 # Instance Registration Tests
 # ============================================================================
 
+
 class TestInstanceRegistration:
     """Tests for instance registration endpoint."""
 
@@ -71,19 +72,22 @@ class TestInstanceRegistration:
                 "platform_info": {
                     "software_name": "docker",
                     "software_version": "20.10",
-                    "hardware_name": "test-hardware"
-                }
-            }
+                    "hardware_name": "test-hardware",
+                },
+            },
         )
 
         assert response.status_code == 200
         data = response.json()
         assert data["success"] is True
         assert data["instance"]["instance_id"] == "inst-1"
-        assert data["message"] == "Instance registered successfully (work stealing in progress)"
+        assert (
+            data["message"]
+            == "Instance registered successfully (work stealing in progress)"
+        )
 
     def test_register_duplicate_instance(self, client):
-        """Test registering duplicate instance returns 400."""
+        """Test registering duplicate instance returns 200 with warning (idempotent)."""
         # Register first time
         client.post(
             "/instance/register",
@@ -94,12 +98,12 @@ class TestInstanceRegistration:
                 "platform_info": {
                     "software_name": "docker",
                     "software_version": "20.10",
-                    "hardware_name": "test-hardware"
-                }
-            }
+                    "hardware_name": "test-hardware",
+                },
+            },
         )
 
-        # Try to register again
+        # Try to register again - now returns 200 (idempotent behavior)
         response = client.post(
             "/instance/register",
             json={
@@ -109,18 +113,24 @@ class TestInstanceRegistration:
                 "platform_info": {
                     "software_name": "docker",
                     "software_version": "20.10",
-                    "hardware_name": "test-hardware"
-                }
-            }
+                    "hardware_name": "test-hardware",
+                },
+            },
         )
 
-        assert response.status_code == 400
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert (
+            "already registered" in data["message"].lower()
+            or "duplicate" in data["message"].lower()
+        )
 
     def test_register_instance_validation(self, client):
         """Test validation of registration request."""
         response = client.post(
             "/instance/register",
-            json={"instance_id": "inst-1"}  # Missing required fields
+            json={"instance_id": "inst-1"},  # Missing required fields
         )
 
         assert response.status_code == 422  # Validation error
@@ -129,6 +139,7 @@ class TestInstanceRegistration:
 # ============================================================================
 # Instance Removal Tests
 # ============================================================================
+
 
 class TestInstanceRemoval:
     """Tests for instance removal endpoint."""
@@ -145,22 +156,20 @@ class TestInstanceRemoval:
                 "platform_info": {
                     "software_name": "docker",
                     "software_version": "20.10",
-                    "hardware_name": "test-hardware"
-                }
-            }
+                    "hardware_name": "test-hardware",
+                },
+            },
         )
 
         # Drain the instance first (required for safe removal)
         drain_response = client.post(
-            "/instance/drain",
-            json={"instance_id": "inst-1"}
+            "/instance/drain", json={"instance_id": "inst-1"}
         )
         assert drain_response.status_code == 200
 
         # Remove it
         response = client.post(
-            "/instance/remove",
-            json={"instance_id": "inst-1"}
+            "/instance/remove", json={"instance_id": "inst-1"}
         )
 
         assert response.status_code == 200
@@ -171,14 +180,13 @@ class TestInstanceRemoval:
     def test_remove_nonexistent_instance(self, client):
         """Test removing non-existent instance returns 404."""
         response = client.post(
-            "/instance/remove",
-            json={"instance_id": "nonexistent"}
+            "/instance/remove", json={"instance_id": "nonexistent"}
         )
 
         assert response.status_code == 404
 
     async def test_remove_instance_with_pending_tasks(self, client):
-        """Test removing instance with pending tasks (allowed)."""
+        """Test removing instance with pending tasks (allowed with warning)."""
         # Register instance
         client.post(
             "/instance/register",
@@ -189,26 +197,28 @@ class TestInstanceRemoval:
                 "platform_info": {
                     "software_name": "docker",
                     "software_version": "20.10",
-                    "hardware_name": "test-hardware"
-                }
-            }
+                    "hardware_name": "test-hardware",
+                },
+            },
         )
 
         # Add pending task
         await instance_registry.increment_pending("inst-1")
 
-        # Should still allow removal
+        # Removal is allowed even with pending tasks (logs warning)
         response = client.post(
-            "/instance/remove",
-            json={"instance_id": "inst-1"}
+            "/instance/remove", json={"instance_id": "inst-1"}
         )
 
-        assert response.status_code == 400
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
 
 
 # ============================================================================
 # Instance List Tests
 # ============================================================================
+
 
 class TestInstanceList:
     """Tests for instance listing endpoint."""
@@ -226,9 +236,9 @@ class TestInstanceList:
                     "platform_info": {
                         "software_name": "docker",
                         "software_version": "20.10",
-                        "hardware_name": "test-hardware"
-                    }
-                }
+                        "hardware_name": "test-hardware",
+                    },
+                },
             )
 
         response = client.get("/instance/list")
@@ -251,9 +261,9 @@ class TestInstanceList:
                 "platform_info": {
                     "software_name": "docker",
                     "software_version": "20.10",
-                    "hardware_name": "test-hardware"
-                }
-            }
+                    "hardware_name": "test-hardware",
+                },
+            },
         )
         client.post(
             "/instance/register",
@@ -264,9 +274,9 @@ class TestInstanceList:
                 "platform_info": {
                     "software_name": "docker",
                     "software_version": "20.10",
-                    "hardware_name": "test-hardware"
-                }
-            }
+                    "hardware_name": "test-hardware",
+                },
+            },
         )
 
         response = client.get("/instance/list?model_id=model-a")
@@ -290,6 +300,7 @@ class TestInstanceList:
 # Instance Info Tests
 # ============================================================================
 
+
 class TestInstanceInfo:
     """Tests for instance info endpoint."""
 
@@ -305,9 +316,9 @@ class TestInstanceInfo:
                 "platform_info": {
                     "software_name": "docker",
                     "software_version": "20.10",
-                    "hardware_name": "test-hardware"
-                }
-            }
+                    "hardware_name": "test-hardware",
+                },
+            },
         )
 
         response = client.get("/instance/info?instance_id=inst-1")
@@ -330,6 +341,7 @@ class TestInstanceInfo:
 # Task Submission Tests
 # ============================================================================
 
+
 class TestTaskSubmission:
     """Tests for task submission endpoint."""
 
@@ -345,23 +357,26 @@ class TestTaskSubmission:
                 "platform_info": {
                     "software_name": "docker",
                     "software_version": "20.10",
-                    "hardware_name": "test-hardware"
-                }
-            }
+                    "hardware_name": "test-hardware",
+                },
+            },
         )
 
         # Mock predictor and dispatcher
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
-            with patch("src.api.task_dispatcher.dispatch_task_async") as mock_dispatch:
-                response = client.post(
-                    "/task/submit",
-                    json={
-                        "task_id": "task-1",
-                        "model_id": "model-1",
-                        "task_input": {"prompt": "test"},
-                        "metadata": {}
-                    }
-                )
+        with patch(
+            "src.api.predictor_client.predict", new=AsyncMock(return_value=[])
+        ), patch(
+            "src.api.task_dispatcher.dispatch_task_async"
+        ):
+            response = client.post(
+                "/task/submit",
+                json={
+                    "task_id": "task-1",
+                    "model_id": "model-1",
+                    "task_input": {"prompt": "test"},
+                    "metadata": {},
+                },
+            )
 
         assert response.status_code == 200
         data = response.json()
@@ -376,8 +391,8 @@ class TestTaskSubmission:
                 "task_id": "task-1",
                 "model_id": "model-1",
                 "task_input": {"prompt": "test"},
-                "metadata": {}
-            }
+                "metadata": {},
+            },
         )
 
         # Task is queued even when no instances are available
@@ -400,34 +415,37 @@ class TestTaskSubmission:
                 "platform_info": {
                     "software_name": "docker",
                     "software_version": "20.10",
-                    "hardware_name": "test-hardware"
-                }
-            }
+                    "hardware_name": "test-hardware",
+                },
+            },
         )
 
         # Submit task first time
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
-            with patch("src.api.task_dispatcher.dispatch_task_async"):
-                client.post(
-                    "/task/submit",
-                    json={
-                        "task_id": "task-1",
-                        "model_id": "model-1",
-                        "task_input": {},
-                        "metadata": {}
-                    }
-                )
+        with patch(
+            "src.api.predictor_client.predict", new=AsyncMock(return_value=[])
+        ), patch("src.api.task_dispatcher.dispatch_task_async"):
+            client.post(
+                "/task/submit",
+                json={
+                    "task_id": "task-1",
+                    "model_id": "model-1",
+                    "task_input": {},
+                    "metadata": {},
+                },
+            )
 
         # Try to submit again
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
+        with patch(
+            "src.api.predictor_client.predict", new=AsyncMock(return_value=[])
+        ):
             response = client.post(
                 "/task/submit",
                 json={
                     "task_id": "task-1",
                     "model_id": "model-1",
                     "task_input": {},
-                    "metadata": {}
-                }
+                    "metadata": {},
+                },
             )
 
         assert response.status_code == 400
@@ -436,6 +454,7 @@ class TestTaskSubmission:
 # ============================================================================
 # Task List Tests
 # ============================================================================
+
 
 class TestTaskList:
     """Tests for task listing endpoint."""
@@ -452,23 +471,24 @@ class TestTaskList:
                 "platform_info": {
                     "software_name": "docker",
                     "software_version": "20.10",
-                    "hardware_name": "test-hardware"
-                }
-            }
+                    "hardware_name": "test-hardware",
+                },
+            },
         )
 
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
-            with patch("src.api.task_dispatcher.dispatch_task_async"):
-                for i in range(3):
-                    client.post(
-                        "/task/submit",
-                        json={
-                            "task_id": f"task-{i}",
-                            "model_id": "model-1",
-                            "task_input": {},
-                            "metadata": {}
-                        }
-                    )
+        with patch(
+            "src.api.predictor_client.predict", new=AsyncMock(return_value=[])
+        ), patch("src.api.task_dispatcher.dispatch_task_async"):
+            for i in range(3):
+                client.post(
+                    "/task/submit",
+                    json={
+                        "task_id": f"task-{i}",
+                        "model_id": "model-1",
+                        "task_input": {},
+                        "metadata": {},
+                    },
+                )
 
         response = client.get("/task/list")
 
@@ -490,23 +510,24 @@ class TestTaskList:
                 "platform_info": {
                     "software_name": "docker",
                     "software_version": "20.10",
-                    "hardware_name": "test-hardware"
-                }
-            }
+                    "hardware_name": "test-hardware",
+                },
+            },
         )
 
         # Submit task
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
-            with patch("src.api.task_dispatcher.dispatch_task_async"):
-                client.post(
-                    "/task/submit",
-                    json={
-                        "task_id": "task-1",
-                        "model_id": "model-1",
-                        "task_input": {},
-                        "metadata": {}
-                    }
-                )
+        with patch(
+            "src.api.predictor_client.predict", new=AsyncMock(return_value=[])
+        ), patch("src.api.task_dispatcher.dispatch_task_async"):
+            client.post(
+                "/task/submit",
+                json={
+                    "task_id": "task-1",
+                    "model_id": "model-1",
+                    "task_input": {},
+                    "metadata": {},
+                },
+            )
 
         response = client.get("/task/list?status=pending")
 
@@ -528,6 +549,7 @@ class TestTaskList:
 # Task Info Tests
 # ============================================================================
 
+
 class TestTaskInfo:
     """Tests for task info endpoint."""
 
@@ -543,22 +565,23 @@ class TestTaskInfo:
                 "platform_info": {
                     "software_name": "docker",
                     "software_version": "20.10",
-                    "hardware_name": "test-hardware"
-                }
-            }
+                    "hardware_name": "test-hardware",
+                },
+            },
         )
 
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
-            with patch("src.api.task_dispatcher.dispatch_task_async"):
-                client.post(
-                    "/task/submit",
-                    json={
-                        "task_id": "task-1",
-                        "model_id": "model-1",
-                        "task_input": {"test": "data"},
-                        "metadata": {}
-                    }
-                )
+        with patch(
+            "src.api.predictor_client.predict", new=AsyncMock(return_value=[])
+        ), patch("src.api.task_dispatcher.dispatch_task_async"):
+            client.post(
+                "/task/submit",
+                json={
+                    "task_id": "task-1",
+                    "model_id": "model-1",
+                    "task_input": {"test": "data"},
+                    "metadata": {},
+                },
+            )
 
         response = client.get("/task/info?task_id=task-1")
 
@@ -581,8 +604,6 @@ class TestTaskResubmit:
     def test_resubmit_task_success(self, client):
         """Test successful task resubmission with original submission time preserved."""
         from src.predictor_client import Prediction
-        from datetime import datetime
-        from src import api
 
         # Register instance
         client.post(
@@ -594,9 +615,9 @@ class TestTaskResubmit:
                 "platform_info": {
                     "software_name": "docker",
                     "software_version": "20.10",
-                    "hardware_name": "test-hardware"
-                }
-            }
+                    "hardware_name": "test-hardware",
+                },
+            },
         )
 
         # Submit a task
@@ -604,29 +625,30 @@ class TestTaskResubmit:
             instance_id="inst-1",
             predicted_time_ms=100.0,
             quantiles={0.5: 90.0, 0.9: 110.0},
-            error_margin_ms=10.0
+            error_margin_ms=10.0,
         )
 
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[mock_prediction])):
-            with patch("src.api.task_dispatcher.dispatch_task_async"):
-                client.post(
-                    "/task/submit",
-                    json={
-                        "task_id": "task-1",
-                        "model_id": "model-1",
-                        "task_input": {"prompt": "test"},
-                        "metadata": {}
-                    }
-                )
-
-        # Mock central_queue.enqueue to verify it receives correct parameters
-        with patch("src.api.central_queue.enqueue", new=AsyncMock(return_value=1)) as mock_enqueue:
-            response = client.post(
-                "/task/resubmit",
+        with patch(
+            "src.api.predictor_client.predict",
+            new=AsyncMock(return_value=[mock_prediction]),
+        ), patch("src.api.task_dispatcher.dispatch_task_async"):
+            client.post(
+                "/task/submit",
                 json={
                     "task_id": "task-1",
-                    "original_instance_id": "inst-1"
-                }
+                    "model_id": "model-1",
+                    "task_input": {"prompt": "test"},
+                    "metadata": {},
+                },
+            )
+
+        # Mock central_queue.enqueue to verify it receives correct parameters
+        with patch(
+            "src.api.central_queue.enqueue", new=AsyncMock(return_value=1)
+        ) as mock_enqueue:
+            response = client.post(
+                "/task/resubmit",
+                json={"task_id": "task-1", "original_instance_id": "inst-1"},
             )
 
             assert response.status_code == 200
@@ -646,9 +668,10 @@ class TestTaskResubmit:
 
     def test_resubmit_task_preserves_original_time(self, client):
         """Test that resubmit preserves the original submission timestamp."""
-        from src.predictor_client import Prediction
-        from src import api
         import asyncio
+
+        from src import api
+        from src.predictor_client import Prediction
 
         # Register instance
         client.post(
@@ -660,9 +683,9 @@ class TestTaskResubmit:
                 "platform_info": {
                     "software_name": "docker",
                     "software_version": "20.10",
-                    "hardware_name": "test-hardware"
-                }
-            }
+                    "hardware_name": "test-hardware",
+                },
+            },
         )
 
         # Submit a task
@@ -670,40 +693,46 @@ class TestTaskResubmit:
             instance_id="inst-1",
             predicted_time_ms=100.0,
             quantiles={0.5: 90.0, 0.9: 110.0},
-            error_margin_ms=10.0
+            error_margin_ms=10.0,
         )
 
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[mock_prediction])):
-            with patch("src.api.task_dispatcher.dispatch_task_async"):
-                client.post(
-                    "/task/submit",
-                    json={
-                        "task_id": "task-1",
-                        "model_id": "model-1",
-                        "task_input": {"prompt": "test"},
-                        "metadata": {}
-                    }
-                )
+        with patch(
+            "src.api.predictor_client.predict",
+            new=AsyncMock(return_value=[mock_prediction]),
+        ), patch("src.api.task_dispatcher.dispatch_task_async"):
+            client.post(
+                "/task/submit",
+                json={
+                    "task_id": "task-1",
+                    "model_id": "model-1",
+                    "task_input": {"prompt": "test"},
+                    "metadata": {},
+                },
+            )
 
         # Get the original task to capture its submitted_at time
         from datetime import datetime as dt_module
+
         async def get_original_time():
             task = await api.task_registry.get("task-1")
             if task.submitted_at:
-                dt = dt_module.fromisoformat(task.submitted_at.replace("Z", "+00:00"))
+                dt = dt_module.fromisoformat(
+                    task.submitted_at.replace("Z", "+00:00")
+                )
                 return dt.timestamp()
             return None
 
-        original_timestamp = asyncio.get_event_loop().run_until_complete(get_original_time())
+        original_timestamp = asyncio.get_event_loop().run_until_complete(
+            get_original_time()
+        )
 
         # Resubmit and verify the enqueue_time matches original timestamp
-        with patch("src.api.central_queue.enqueue", new=AsyncMock(return_value=1)) as mock_enqueue:
+        with patch(
+            "src.api.central_queue.enqueue", new=AsyncMock(return_value=1)
+        ) as mock_enqueue:
             response = client.post(
                 "/task/resubmit",
-                json={
-                    "task_id": "task-1",
-                    "original_instance_id": "inst-1"
-                }
+                json={"task_id": "task-1", "original_instance_id": "inst-1"},
             )
 
             assert response.status_code == 200
@@ -724,17 +753,14 @@ class TestTaskResubmit:
                 "platform_info": {
                     "software_name": "docker",
                     "software_version": "20.10",
-                    "hardware_name": "test-hardware"
-                }
-            }
+                    "hardware_name": "test-hardware",
+                },
+            },
         )
 
         response = client.post(
             "/task/resubmit",
-            json={
-                "task_id": "nonexistent",
-                "original_instance_id": "inst-1"
-            }
+            json={"task_id": "nonexistent", "original_instance_id": "inst-1"},
         )
 
         assert response.status_code == 404
@@ -742,9 +768,10 @@ class TestTaskResubmit:
 
     def test_resubmit_task_invalid_status_completed(self, client):
         """Test resubmitting completed task returns 400."""
-        from src.predictor_client import Prediction
-        from src import api
         import asyncio
+
+        from src import api
+        from src.predictor_client import Prediction
 
         # Register instance
         client.post(
@@ -756,9 +783,9 @@ class TestTaskResubmit:
                 "platform_info": {
                     "software_name": "docker",
                     "software_version": "20.10",
-                    "hardware_name": "test-hardware"
-                }
-            }
+                    "hardware_name": "test-hardware",
+                },
+            },
         )
 
         # Submit task
@@ -766,34 +793,35 @@ class TestTaskResubmit:
             instance_id="inst-1",
             predicted_time_ms=100.0,
             quantiles={0.5: 90.0, 0.9: 110.0},
-            error_margin_ms=10.0
+            error_margin_ms=10.0,
         )
 
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[mock_prediction])):
-            with patch("src.api.task_dispatcher.dispatch_task_async"):
-                client.post(
-                    "/task/submit",
-                    json={
-                        "task_id": "task-1",
-                        "model_id": "model-1",
-                        "task_input": {"prompt": "test"},
-                        "metadata": {}
-                    }
-                )
+        with patch(
+            "src.api.predictor_client.predict",
+            new=AsyncMock(return_value=[mock_prediction]),
+        ), patch("src.api.task_dispatcher.dispatch_task_async"):
+            client.post(
+                "/task/submit",
+                json={
+                    "task_id": "task-1",
+                    "model_id": "model-1",
+                    "task_input": {"prompt": "test"},
+                    "metadata": {},
+                },
+            )
 
         # Mark task as completed
         async def mark_completed():
-            await api.task_registry.update_status("task-1", TaskStatus.COMPLETED)
+            await api.task_registry.update_status(
+                "task-1", TaskStatus.COMPLETED
+            )
 
         asyncio.get_event_loop().run_until_complete(mark_completed())
 
         # Try to resubmit
         response = client.post(
             "/task/resubmit",
-            json={
-                "task_id": "task-1",
-                "original_instance_id": "inst-1"
-            }
+            json={"task_id": "task-1", "original_instance_id": "inst-1"},
         )
 
         assert response.status_code == 400
@@ -802,9 +830,10 @@ class TestTaskResubmit:
 
     def test_resubmit_task_invalid_status_failed(self, client):
         """Test resubmitting failed task returns 400."""
-        from src.predictor_client import Prediction
-        from src import api
         import asyncio
+
+        from src import api
+        from src.predictor_client import Prediction
 
         # Register instance
         client.post(
@@ -816,9 +845,9 @@ class TestTaskResubmit:
                 "platform_info": {
                     "software_name": "docker",
                     "software_version": "20.10",
-                    "hardware_name": "test-hardware"
-                }
-            }
+                    "hardware_name": "test-hardware",
+                },
+            },
         )
 
         # Submit task
@@ -826,20 +855,22 @@ class TestTaskResubmit:
             instance_id="inst-1",
             predicted_time_ms=100.0,
             quantiles={0.5: 90.0, 0.9: 110.0},
-            error_margin_ms=10.0
+            error_margin_ms=10.0,
         )
 
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[mock_prediction])):
-            with patch("src.api.task_dispatcher.dispatch_task_async"):
-                client.post(
-                    "/task/submit",
-                    json={
-                        "task_id": "task-1",
-                        "model_id": "model-1",
-                        "task_input": {"prompt": "test"},
-                        "metadata": {}
-                    }
-                )
+        with patch(
+            "src.api.predictor_client.predict",
+            new=AsyncMock(return_value=[mock_prediction]),
+        ), patch("src.api.task_dispatcher.dispatch_task_async"):
+            client.post(
+                "/task/submit",
+                json={
+                    "task_id": "task-1",
+                    "model_id": "model-1",
+                    "task_input": {"prompt": "test"},
+                    "metadata": {},
+                },
+            )
 
         # Mark task as failed
         async def mark_failed():
@@ -850,10 +881,7 @@ class TestTaskResubmit:
         # Try to resubmit
         response = client.post(
             "/task/resubmit",
-            json={
-                "task_id": "task-1",
-                "original_instance_id": "inst-1"
-            }
+            json={"task_id": "task-1", "original_instance_id": "inst-1"},
         )
 
         assert response.status_code == 400
@@ -874,9 +902,9 @@ class TestTaskResubmit:
                 "platform_info": {
                     "software_name": "docker",
                     "software_version": "20.10",
-                    "hardware_name": "test-hardware"
-                }
-            }
+                    "hardware_name": "test-hardware",
+                },
+            },
         )
 
         # Submit task
@@ -884,38 +912,40 @@ class TestTaskResubmit:
             instance_id="inst-1",
             predicted_time_ms=100.0,
             quantiles={0.5: 90.0, 0.9: 110.0},
-            error_margin_ms=10.0
+            error_margin_ms=10.0,
         )
 
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[mock_prediction])):
-            with patch("src.api.task_dispatcher.dispatch_task_async"):
-                client.post(
-                    "/task/submit",
-                    json={
-                        "task_id": "task-1",
-                        "model_id": "model-1",
-                        "task_input": {"prompt": "test"},
-                        "metadata": {}
-                    }
-                )
+        with patch(
+            "src.api.predictor_client.predict",
+            new=AsyncMock(return_value=[mock_prediction]),
+        ), patch("src.api.task_dispatcher.dispatch_task_async"):
+            client.post(
+                "/task/submit",
+                json={
+                    "task_id": "task-1",
+                    "model_id": "model-1",
+                    "task_input": {"prompt": "test"},
+                    "metadata": {},
+                },
+            )
 
         # Try to resubmit with non-existent instance
         response = client.post(
             "/task/resubmit",
             json={
                 "task_id": "task-1",
-                "original_instance_id": "nonexistent-instance"
-            }
+                "original_instance_id": "nonexistent-instance",
+            },
         )
 
         assert response.status_code == 404
-        assert "Original instance not found" in response.json()["detail"]["error"]
+        assert (
+            "Original instance not found" in response.json()["detail"]["error"]
+        )
 
     def test_resubmit_task_decrements_pending_count(self, client):
         """Test that resubmit decrements pending count on original instance."""
         from src.predictor_client import Prediction
-        from src import api
-        import asyncio
 
         # Register instance
         client.post(
@@ -927,9 +957,9 @@ class TestTaskResubmit:
                 "platform_info": {
                     "software_name": "docker",
                     "software_version": "20.10",
-                    "hardware_name": "test-hardware"
-                }
-            }
+                    "hardware_name": "test-hardware",
+                },
+            },
         )
 
         # Submit task
@@ -937,40 +967,46 @@ class TestTaskResubmit:
             instance_id="inst-1",
             predicted_time_ms=100.0,
             quantiles={0.5: 90.0, 0.9: 110.0},
-            error_margin_ms=10.0
+            error_margin_ms=10.0,
         )
 
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[mock_prediction])):
-            with patch("src.api.task_dispatcher.dispatch_task_async"):
-                client.post(
-                    "/task/submit",
-                    json={
-                        "task_id": "task-1",
-                        "model_id": "model-1",
-                        "task_input": {"prompt": "test"},
-                        "metadata": {}
-                    }
-                )
+        with patch(
+            "src.api.predictor_client.predict",
+            new=AsyncMock(return_value=[mock_prediction]),
+        ), patch("src.api.task_dispatcher.dispatch_task_async"):
+            client.post(
+                "/task/submit",
+                json={
+                    "task_id": "task-1",
+                    "model_id": "model-1",
+                    "task_input": {"prompt": "test"},
+                    "metadata": {},
+                },
+            )
 
         # Verify decrement_pending is called
-        with patch("src.api.central_queue.enqueue", new=AsyncMock(return_value=1)):
-            with patch("src.api.instance_registry.decrement_pending", new=AsyncMock()) as mock_decrement:
-                response = client.post(
-                    "/task/resubmit",
-                    json={
-                        "task_id": "task-1",
-                        "original_instance_id": "inst-1"
-                    }
-                )
+        with patch(
+            "src.api.central_queue.enqueue", new=AsyncMock(return_value=1)
+        ), patch(
+            "src.api.instance_registry.decrement_pending", new=AsyncMock()
+        ) as mock_decrement:
+            response = client.post(
+                "/task/resubmit",
+                json={
+                    "task_id": "task-1",
+                    "original_instance_id": "inst-1",
+                },
+            )
 
-                assert response.status_code == 200
-                mock_decrement.assert_called_once_with("inst-1")
+            assert response.status_code == 200
+            mock_decrement.assert_called_once_with("inst-1")
 
     def test_resubmit_running_task(self, client):
         """Test resubmitting a running task succeeds."""
-        from src.predictor_client import Prediction
-        from src import api
         import asyncio
+
+        from src import api
+        from src.predictor_client import Prediction
 
         # Register instance
         client.post(
@@ -982,9 +1018,9 @@ class TestTaskResubmit:
                 "platform_info": {
                     "software_name": "docker",
                     "software_version": "20.10",
-                    "hardware_name": "test-hardware"
-                }
-            }
+                    "hardware_name": "test-hardware",
+                },
+            },
         )
 
         # Submit task
@@ -992,20 +1028,22 @@ class TestTaskResubmit:
             instance_id="inst-1",
             predicted_time_ms=100.0,
             quantiles={0.5: 90.0, 0.9: 110.0},
-            error_margin_ms=10.0
+            error_margin_ms=10.0,
         )
 
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[mock_prediction])):
-            with patch("src.api.task_dispatcher.dispatch_task_async"):
-                client.post(
-                    "/task/submit",
-                    json={
-                        "task_id": "task-1",
-                        "model_id": "model-1",
-                        "task_input": {"prompt": "test"},
-                        "metadata": {}
-                    }
-                )
+        with patch(
+            "src.api.predictor_client.predict",
+            new=AsyncMock(return_value=[mock_prediction]),
+        ), patch("src.api.task_dispatcher.dispatch_task_async"):
+            client.post(
+                "/task/submit",
+                json={
+                    "task_id": "task-1",
+                    "model_id": "model-1",
+                    "task_input": {"prompt": "test"},
+                    "metadata": {},
+                },
+            )
 
         # Mark task as running
         async def mark_running():
@@ -1014,13 +1052,12 @@ class TestTaskResubmit:
         asyncio.get_event_loop().run_until_complete(mark_running())
 
         # Resubmit should succeed for running task
-        with patch("src.api.central_queue.enqueue", new=AsyncMock(return_value=1)):
+        with patch(
+            "src.api.central_queue.enqueue", new=AsyncMock(return_value=1)
+        ):
             response = client.post(
                 "/task/resubmit",
-                json={
-                    "task_id": "task-1",
-                    "original_instance_id": "inst-1"
-                }
+                json={"task_id": "task-1", "original_instance_id": "inst-1"},
             )
 
             assert response.status_code == 200
@@ -1041,9 +1078,9 @@ class TestTaskResubmit:
                 "platform_info": {
                     "software_name": "docker",
                     "software_version": "20.10",
-                    "hardware_name": "test-hardware"
-                }
-            }
+                    "hardware_name": "test-hardware",
+                },
+            },
         )
 
         # Submit task
@@ -1051,29 +1088,31 @@ class TestTaskResubmit:
             instance_id="inst-1",
             predicted_time_ms=100.0,
             quantiles={0.5: 90.0, 0.9: 110.0},
-            error_margin_ms=10.0
+            error_margin_ms=10.0,
         )
 
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[mock_prediction])):
-            with patch("src.api.task_dispatcher.dispatch_task_async"):
-                client.post(
-                    "/task/submit",
-                    json={
-                        "task_id": "task-1",
-                        "model_id": "model-1",
-                        "task_input": {"prompt": "test"},
-                        "metadata": {}
-                    }
-                )
-
-        # Mock reset_for_resubmit to raise KeyError
-        with patch("src.api.task_registry.reset_for_resubmit", side_effect=KeyError("not found")):
-            response = client.post(
-                "/task/resubmit",
+        with patch(
+            "src.api.predictor_client.predict",
+            new=AsyncMock(return_value=[mock_prediction]),
+        ), patch("src.api.task_dispatcher.dispatch_task_async"):
+            client.post(
+                "/task/submit",
                 json={
                     "task_id": "task-1",
-                    "original_instance_id": "inst-1"
-                }
+                    "model_id": "model-1",
+                    "task_input": {"prompt": "test"},
+                    "metadata": {},
+                },
+            )
+
+        # Mock reset_for_resubmit to raise KeyError
+        with patch(
+            "src.api.task_registry.reset_for_resubmit",
+            side_effect=KeyError("not found"),
+        ):
+            response = client.post(
+                "/task/resubmit",
+                json={"task_id": "task-1", "original_instance_id": "inst-1"},
             )
 
             assert response.status_code == 404
@@ -1093,9 +1132,9 @@ class TestTaskResubmit:
                 "platform_info": {
                     "software_name": "docker",
                     "software_version": "20.10",
-                    "hardware_name": "test-hardware"
-                }
-            }
+                    "hardware_name": "test-hardware",
+                },
+            },
         )
 
         # Submit task with metadata
@@ -1103,31 +1142,32 @@ class TestTaskResubmit:
             instance_id="inst-1",
             predicted_time_ms=100.0,
             quantiles={0.5: 90.0, 0.9: 110.0},
-            error_margin_ms=10.0
+            error_margin_ms=10.0,
         )
 
         task_metadata = {"user_id": "user-123", "priority": "high"}
 
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[mock_prediction])):
-            with patch("src.api.task_dispatcher.dispatch_task_async"):
-                client.post(
-                    "/task/submit",
-                    json={
-                        "task_id": "task-1",
-                        "model_id": "model-1",
-                        "task_input": {"prompt": "test"},
-                        "metadata": task_metadata
-                    }
-                )
-
-        # Resubmit and verify metadata is preserved
-        with patch("src.api.central_queue.enqueue", new=AsyncMock(return_value=1)) as mock_enqueue:
-            response = client.post(
-                "/task/resubmit",
+        with patch(
+            "src.api.predictor_client.predict",
+            new=AsyncMock(return_value=[mock_prediction]),
+        ), patch("src.api.task_dispatcher.dispatch_task_async"):
+            client.post(
+                "/task/submit",
                 json={
                     "task_id": "task-1",
-                    "original_instance_id": "inst-1"
-                }
+                    "model_id": "model-1",
+                    "task_input": {"prompt": "test"},
+                    "metadata": task_metadata,
+                },
+            )
+
+        # Resubmit and verify metadata is preserved
+        with patch(
+            "src.api.central_queue.enqueue", new=AsyncMock(return_value=1)
+        ) as mock_enqueue:
+            response = client.post(
+                "/task/resubmit",
+                json={"task_id": "task-1", "original_instance_id": "inst-1"},
             )
 
             assert response.status_code == 200
@@ -1162,24 +1202,25 @@ class TestTaskClear:
                 "platform_info": {
                     "software_name": "docker",
                     "software_version": "20.10",
-                    "hardware_name": "test-hardware"
-                }
-            }
+                    "hardware_name": "test-hardware",
+                },
+            },
         )
 
         # Submit multiple tasks
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
-            with patch("src.api.task_dispatcher.dispatch_task_async"):
-                for i in range(3):
-                    client.post(
-                        "/task/submit",
-                        json={
-                            "task_id": f"task-{i}",
-                            "model_id": "model-1",
-                            "task_input": {"test": "data"},
-                            "metadata": {}
-                        }
-                    )
+        with patch(
+            "src.api.predictor_client.predict", new=AsyncMock(return_value=[])
+        ), patch("src.api.task_dispatcher.dispatch_task_async"):
+            for i in range(3):
+                client.post(
+                    "/task/submit",
+                    json={
+                        "task_id": f"task-{i}",
+                        "model_id": "model-1",
+                        "task_input": {"test": "data"},
+                        "metadata": {},
+                    },
+                )
 
         # Verify tasks exist
         response = client.get("/task/list")
@@ -1202,6 +1243,7 @@ class TestTaskClear:
 # ============================================================================
 # Health Check Tests
 # ============================================================================
+
 
 class TestHealthCheck:
     """Tests for health check endpoint."""
@@ -1230,9 +1272,9 @@ class TestHealthCheck:
                 "platform_info": {
                     "software_name": "docker",
                     "software_version": "20.10",
-                    "hardware_name": "test-hardware"
-                }
-            }
+                    "hardware_name": "test-hardware",
+                },
+            },
         )
 
         response = client.get("/health")
@@ -1246,6 +1288,7 @@ class TestHealthCheck:
 # ============================================================================
 # Strategy Management Tests
 # ============================================================================
+
 
 class TestStrategyManagement:
     """Tests for strategy management endpoints."""
@@ -1264,10 +1307,7 @@ class TestStrategyManagement:
     def test_set_strategy_to_min_time(self, client):
         """Test switching to min_time strategy."""
         response = client.post(
-            "/strategy/set",
-            json={
-                "strategy_name": "min_time"
-            }
+            "/strategy/set", json={"strategy_name": "min_time"}
         )
 
         assert response.status_code == 200
@@ -1281,10 +1321,7 @@ class TestStrategyManagement:
     def test_set_strategy_to_round_robin(self, client):
         """Test switching to round_robin strategy."""
         response = client.post(
-            "/strategy/set",
-            json={
-                "strategy_name": "round_robin"
-            }
+            "/strategy/set", json={"strategy_name": "round_robin"}
         )
 
         assert response.status_code == 200
@@ -1297,10 +1334,7 @@ class TestStrategyManagement:
         """Test switching to probabilistic strategy with custom quantile."""
         response = client.post(
             "/strategy/set",
-            json={
-                "strategy_name": "probabilistic",
-                "target_quantile": 0.95
-            }
+            json={"strategy_name": "probabilistic", "target_quantile": 0.95},
         )
 
         assert response.status_code == 200
@@ -1312,10 +1346,7 @@ class TestStrategyManagement:
     def test_set_strategy_invalid_name(self, client):
         """Test setting strategy with invalid name."""
         response = client.post(
-            "/strategy/set",
-            json={
-                "strategy_name": "invalid_strategy"
-            }
+            "/strategy/set", json={"strategy_name": "invalid_strategy"}
         )
 
         assert response.status_code == 422  # Pydantic validation error
@@ -1334,9 +1365,9 @@ class TestStrategyManagement:
                 "platform_info": {
                     "software_name": "docker",
                     "software_version": "20.10",
-                    "hardware_name": "test-hardware"
-                }
-            }
+                    "hardware_name": "test-hardware",
+                },
+            },
         )
 
         # Submit a task (mock predictor)
@@ -1344,27 +1375,26 @@ class TestStrategyManagement:
             instance_id="inst-1",
             predicted_time_ms=100.0,
             quantiles={0.5: 90.0, 0.9: 110.0, 0.95: 120.0, 0.99: 130.0},
-            error_margin_ms=10.0
+            error_margin_ms=10.0,
         )
 
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[mock_prediction])):
-            with patch("src.api.task_dispatcher.dispatch_task_async"):
-                client.post(
-                    "/task/submit",
-                    json={
-                        "task_id": "task-1",
-                        "model_id": "model-1",
-                        "task_input": {"prompt": "test"},
-                        "metadata": {}
-                    }
-                )
+        with patch(
+            "src.api.predictor_client.predict",
+            new=AsyncMock(return_value=[mock_prediction]),
+        ), patch("src.api.task_dispatcher.dispatch_task_async"):
+            client.post(
+                "/task/submit",
+                json={
+                    "task_id": "task-1",
+                    "model_id": "model-1",
+                    "task_input": {"prompt": "test"},
+                    "metadata": {},
+                },
+            )
 
         # Switch strategy
         response = client.post(
-            "/strategy/set",
-            json={
-                "strategy_name": "min_time"
-            }
+            "/strategy/set", json={"strategy_name": "min_time"}
         )
 
         assert response.status_code == 200
@@ -1388,17 +1418,14 @@ class TestStrategyManagement:
                     "platform_info": {
                         "software_name": "docker",
                         "software_version": "20.10",
-                        "hardware_name": "test-hardware"
-                    }
-                }
+                        "hardware_name": "test-hardware",
+                    },
+                },
             )
 
         # Switch from probabilistic to min_time
         response = client.post(
-            "/strategy/set",
-            json={
-                "strategy_name": "min_time"
-            }
+            "/strategy/set", json={"strategy_name": "min_time"}
         )
 
         assert response.status_code == 200
@@ -1431,9 +1458,9 @@ class TestStrategyManagement:
                 "platform_info": {
                     "software_name": "docker",
                     "software_version": "20.10",
-                    "hardware_name": "test-hardware"
-                }
-            }
+                    "hardware_name": "test-hardware",
+                },
+            },
         )
 
         # Submit a task
@@ -1441,30 +1468,29 @@ class TestStrategyManagement:
             instance_id="inst-1",
             predicted_time_ms=100.0,
             quantiles={0.5: 90.0, 0.9: 110.0, 0.95: 120.0, 0.99: 130.0},
-            error_margin_ms=10.0
+            error_margin_ms=10.0,
         )
 
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[mock_prediction])):
-            with patch("src.api.task_dispatcher.dispatch_task_async"):
-                client.post(
-                    "/task/submit",
-                    json={
-                        "task_id": "task-1",
-                        "model_id": "model-1",
-                        "task_input": {"prompt": "test"},
-                        "metadata": {}
-                    }
-                )
+        with patch(
+            "src.api.predictor_client.predict",
+            new=AsyncMock(return_value=[mock_prediction]),
+        ), patch("src.api.task_dispatcher.dispatch_task_async"):
+            client.post(
+                "/task/submit",
+                json={
+                    "task_id": "task-1",
+                    "model_id": "model-1",
+                    "task_input": {"prompt": "test"},
+                    "metadata": {},
+                },
+            )
 
         # Manually set task to RUNNING status
         await task_registry.update_status("task-1", TaskStatus.RUNNING)
 
         # Try to switch strategy - should fail
         response = client.post(
-            "/strategy/set",
-            json={
-                "strategy_name": "min_time"
-            }
+            "/strategy/set", json={"strategy_name": "min_time"}
         )
 
         assert response.status_code == 400
@@ -1475,24 +1501,35 @@ class TestStrategyManagement:
         """Test switching between all strategies."""
         # Start with probabilistic (default)
         response = client.get("/strategy/get")
-        assert response.json()["strategy_info"]["strategy_name"] == "probabilistic"
+        assert (
+            response.json()["strategy_info"]["strategy_name"] == "probabilistic"
+        )
 
         # Switch to min_time
-        response = client.post("/strategy/set", json={"strategy_name": "min_time"})
+        response = client.post(
+            "/strategy/set", json={"strategy_name": "min_time"}
+        )
         assert response.status_code == 200
 
         response = client.get("/strategy/get")
         assert response.json()["strategy_info"]["strategy_name"] == "min_time"
 
         # Switch to round_robin
-        response = client.post("/strategy/set", json={"strategy_name": "round_robin"})
+        response = client.post(
+            "/strategy/set", json={"strategy_name": "round_robin"}
+        )
         assert response.status_code == 200
 
         response = client.get("/strategy/get")
-        assert response.json()["strategy_info"]["strategy_name"] == "round_robin"
+        assert (
+            response.json()["strategy_info"]["strategy_name"] == "round_robin"
+        )
 
         # Switch back to probabilistic
-        response = client.post("/strategy/set", json={"strategy_name": "probabilistic", "target_quantile": 0.8})
+        response = client.post(
+            "/strategy/set",
+            json={"strategy_name": "probabilistic", "target_quantile": 0.8},
+        )
         assert response.status_code == 200
 
         response = client.get("/strategy/get")
@@ -1505,20 +1542,14 @@ class TestStrategyManagement:
         # Quantile > 1.0
         response = client.post(
             "/strategy/set",
-            json={
-                "strategy_name": "probabilistic",
-                "target_quantile": 1.5
-            }
+            json={"strategy_name": "probabilistic", "target_quantile": 1.5},
         )
         assert response.status_code == 422  # Pydantic validation error
 
         # Quantile < 0.0
         response = client.post(
             "/strategy/set",
-            json={
-                "strategy_name": "probabilistic",
-                "target_quantile": -0.1
-            }
+            json={"strategy_name": "probabilistic", "target_quantile": -0.1},
         )
         assert response.status_code == 422  # Pydantic validation error
 
@@ -1526,6 +1557,7 @@ class TestStrategyManagement:
 # ============================================================================
 # Additional Tests for Coverage
 # ============================================================================
+
 
 class TestInstanceRegistrationValidation:
     """Additional tests for instance registration validation."""
@@ -1541,8 +1573,8 @@ class TestInstanceRegistrationValidation:
                 "platform_info": {
                     "software_name": "docker",
                     # Missing software_version and hardware_name
-                }
-            }
+                },
+            },
         )
 
         assert response.status_code == 400
@@ -1566,15 +1598,14 @@ class TestInstanceDrain:
                 "platform_info": {
                     "software_name": "docker",
                     "software_version": "20.10",
-                    "hardware_name": "test-hardware"
-                }
-            }
+                    "hardware_name": "test-hardware",
+                },
+            },
         )
 
         # Drain the instance
         response = client.post(
-            "/instance/drain",
-            json={"instance_id": "inst-1"}
+            "/instance/drain", json={"instance_id": "inst-1"}
         )
 
         assert response.status_code == 200
@@ -1587,8 +1618,7 @@ class TestInstanceDrain:
     def test_drain_nonexistent_instance(self, client):
         """Test draining non-existent instance returns 404."""
         response = client.post(
-            "/instance/drain",
-            json={"instance_id": "nonexistent"}
+            "/instance/drain", json={"instance_id": "nonexistent"}
         )
 
         assert response.status_code == 404
@@ -1612,9 +1642,9 @@ class TestInstanceDrain:
                 "platform_info": {
                     "software_name": "docker",
                     "software_version": "20.10",
-                    "hardware_name": "test-hardware"
-                }
-            }
+                    "hardware_name": "test-hardware",
+                },
+            },
         )
 
         # Manually increment pending count to simulate a dispatched task
@@ -1624,8 +1654,7 @@ class TestInstanceDrain:
 
         # Now drain the instance
         response = client.post(
-            "/instance/drain",
-            json={"instance_id": "inst-1"}
+            "/instance/drain", json={"instance_id": "inst-1"}
         )
 
         assert response.status_code == 200
@@ -1644,15 +1673,12 @@ class TestInstanceDrain:
                 "platform_info": {
                     "software_name": "docker",
                     "software_version": "20.10",
-                    "hardware_name": "test-hardware"
-                }
-            }
+                    "hardware_name": "test-hardware",
+                },
+            },
         )
 
-        client.post(
-            "/instance/drain",
-            json={"instance_id": "inst-1"}
-        )
+        client.post("/instance/drain", json={"instance_id": "inst-1"})
 
         # Check drain status
         response = client.get("/instance/drain/status?instance_id=inst-1")
@@ -1688,9 +1714,9 @@ class TestTaskResultCallback:
                 "platform_info": {
                     "software_name": "docker",
                     "software_version": "20.10",
-                    "hardware_name": "test-hardware"
-                }
-            }
+                    "hardware_name": "test-hardware",
+                },
+            },
         )
 
         # Submit a task
@@ -1698,31 +1724,35 @@ class TestTaskResultCallback:
             instance_id="inst-1",
             predicted_time_ms=100.0,
             quantiles={0.5: 90.0, 0.9: 110.0},
-            error_margin_ms=10.0
+            error_margin_ms=10.0,
         )
 
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[mock_prediction])):
-            with patch("src.api.task_dispatcher.dispatch_task_async"):
-                client.post(
-                    "/task/submit",
-                    json={
-                        "task_id": "task-1",
-                        "model_id": "model-1",
-                        "task_input": {"prompt": "test"},
-                        "metadata": {}
-                    }
-                )
+        with patch(
+            "src.api.predictor_client.predict",
+            new=AsyncMock(return_value=[mock_prediction]),
+        ), patch("src.api.task_dispatcher.dispatch_task_async"):
+            client.post(
+                "/task/submit",
+                json={
+                    "task_id": "task-1",
+                    "model_id": "model-1",
+                    "task_input": {"prompt": "test"},
+                    "metadata": {},
+                },
+            )
 
         # Send callback
-        with patch("src.api.task_dispatcher.handle_task_result", new=AsyncMock()):
+        with patch(
+            "src.api.task_dispatcher.handle_task_result", new=AsyncMock()
+        ):
             response = client.post(
                 "/callback/task_result",
                 json={
                     "task_id": "task-1",
                     "status": "completed",
                     "result": {"output": "test result"},
-                    "execution_time_ms": 150
-                }
+                    "execution_time_ms": 150,
+                },
             )
 
         assert response.status_code == 200
@@ -1737,8 +1767,8 @@ class TestTaskResultCallback:
                 "task_id": "nonexistent",
                 "status": "completed",
                 "result": {"output": "test"},
-                "execution_time_ms": 100
-            }
+                "execution_time_ms": 100,
+            },
         )
 
         assert response.status_code == 404
@@ -1757,29 +1787,31 @@ class TestTaskResultCallback:
                 "platform_info": {
                     "software_name": "docker",
                     "software_version": "20.10",
-                    "hardware_name": "test-hardware"
-                }
-            }
+                    "hardware_name": "test-hardware",
+                },
+            },
         )
 
         mock_prediction = Prediction(
             instance_id="inst-1",
             predicted_time_ms=100.0,
             quantiles={0.5: 90.0, 0.9: 110.0},
-            error_margin_ms=10.0
+            error_margin_ms=10.0,
         )
 
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[mock_prediction])):
-            with patch("src.api.task_dispatcher.dispatch_task_async"):
-                client.post(
-                    "/task/submit",
-                    json={
-                        "task_id": "task-1",
-                        "model_id": "model-1",
-                        "task_input": {"prompt": "test"},
-                        "metadata": {}
-                    }
-                )
+        with patch(
+            "src.api.predictor_client.predict",
+            new=AsyncMock(return_value=[mock_prediction]),
+        ), patch("src.api.task_dispatcher.dispatch_task_async"):
+            client.post(
+                "/task/submit",
+                json={
+                    "task_id": "task-1",
+                    "model_id": "model-1",
+                    "task_input": {"prompt": "test"},
+                    "metadata": {},
+                },
+            )
 
         # Send callback with invalid status
         response = client.post(
@@ -1788,8 +1820,8 @@ class TestTaskResultCallback:
                 "task_id": "task-1",
                 "status": "invalid_status",
                 "result": {"output": "test"},
-                "execution_time_ms": 100
-            }
+                "execution_time_ms": 100,
+            },
         )
 
         assert response.status_code == 400
@@ -1808,40 +1840,44 @@ class TestTaskResultCallback:
                 "platform_info": {
                     "software_name": "docker",
                     "software_version": "20.10",
-                    "hardware_name": "test-hardware"
-                }
-            }
+                    "hardware_name": "test-hardware",
+                },
+            },
         )
 
         mock_prediction = Prediction(
             instance_id="inst-1",
             predicted_time_ms=100.0,
             quantiles={0.5: 90.0, 0.9: 110.0},
-            error_margin_ms=10.0
+            error_margin_ms=10.0,
         )
 
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[mock_prediction])):
-            with patch("src.api.task_dispatcher.dispatch_task_async"):
-                client.post(
-                    "/task/submit",
-                    json={
-                        "task_id": "task-1",
-                        "model_id": "model-1",
-                        "task_input": {"prompt": "test"},
-                        "metadata": {}
-                    }
-                )
+        with patch(
+            "src.api.predictor_client.predict",
+            new=AsyncMock(return_value=[mock_prediction]),
+        ), patch("src.api.task_dispatcher.dispatch_task_async"):
+            client.post(
+                "/task/submit",
+                json={
+                    "task_id": "task-1",
+                    "model_id": "model-1",
+                    "task_input": {"prompt": "test"},
+                    "metadata": {},
+                },
+            )
 
         # Send callback with failure
-        with patch("src.api.task_dispatcher.handle_task_result", new=AsyncMock()):
+        with patch(
+            "src.api.task_dispatcher.handle_task_result", new=AsyncMock()
+        ):
             response = client.post(
                 "/callback/task_result",
                 json={
                     "task_id": "task-1",
                     "status": "failed",
                     "error": "Execution error",
-                    "execution_time_ms": 50
-                }
+                    "execution_time_ms": 50,
+                },
             )
 
         assert response.status_code == 200
@@ -1872,9 +1908,9 @@ class TestTaskSubmissionErrors:
                 "platform_info": {
                     "software_name": "docker",
                     "software_version": "20.10",
-                    "hardware_name": "test-hardware"
-                }
-            }
+                    "hardware_name": "test-hardware",
+                },
+            },
         )
 
         # Submit task - with central queue, task is enqueued immediately
@@ -1884,8 +1920,8 @@ class TestTaskSubmissionErrors:
                 "task_id": "task-1",
                 "model_id": "model-1",
                 "task_input": {"prompt": "test"},
-                "metadata": {}
-            }
+                "metadata": {},
+            },
         )
 
         # API returns immediately with success
@@ -1921,9 +1957,9 @@ class TestTaskSubmissionErrors:
                 "platform_info": {
                     "software_name": "docker",
                     "software_version": "20.10",
-                    "hardware_name": "test-hardware"
-                }
-            }
+                    "hardware_name": "test-hardware",
+                },
+            },
         )
 
         # Submit task - with central queue, task is enqueued immediately
@@ -1933,8 +1969,8 @@ class TestTaskSubmissionErrors:
                 "task_id": "task-1",
                 "model_id": "model-1",
                 "task_input": {"prompt": "test"},
-                "metadata": {}
-            }
+                "metadata": {},
+            },
         )
 
         # API returns immediately with success
@@ -1968,9 +2004,9 @@ class TestTaskSubmissionErrors:
                 "platform_info": {
                     "software_name": "docker",
                     "software_version": "20.10",
-                    "hardware_name": "test-hardware"
-                }
-            }
+                    "hardware_name": "test-hardware",
+                },
+            },
         )
 
         # Submit task with custom metadata - task is enqueued immediately
@@ -1980,8 +2016,8 @@ class TestTaskSubmissionErrors:
                 "task_id": "task-1",
                 "model_id": "model-1",
                 "task_input": {"prompt": "test"},
-                "metadata": {"custom": "data"}
-            }
+                "metadata": {"custom": "data"},
+            },
         )
 
         # API returns immediately with success
@@ -2067,9 +2103,9 @@ class TestDrainEdgeCases:
                 "platform_info": {
                     "software_name": "docker",
                     "software_version": "20.10",
-                    "hardware_name": "test-hardware"
-                }
-            }
+                    "hardware_name": "test-hardware",
+                },
+            },
         )
 
         # Switch to min_time strategy (uses expect_error queue)
@@ -2085,34 +2121,33 @@ class TestDrainEdgeCases:
                 "platform_info": {
                     "software_name": "docker",
                     "software_version": "20.10",
-                    "hardware_name": "test-hardware"
-                }
-            }
+                    "hardware_name": "test-hardware",
+                },
+            },
         )
 
         # Submit a task
         mock_prediction = Prediction(
-            instance_id="inst-2",
-            predicted_time_ms=100.0,
-            error_margin_ms=10.0
+            instance_id="inst-2", predicted_time_ms=100.0, error_margin_ms=10.0
         )
 
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[mock_prediction])):
-            with patch("src.api.task_dispatcher.dispatch_task_async"):
-                client.post(
-                    "/task/submit",
-                    json={
-                        "task_id": "task-1",
-                        "model_id": "model-1",
-                        "task_input": {"prompt": "test"},
-                        "metadata": {}
-                    }
-                )
+        with patch(
+            "src.api.predictor_client.predict",
+            new=AsyncMock(return_value=[mock_prediction]),
+        ), patch("src.api.task_dispatcher.dispatch_task_async"):
+            client.post(
+                "/task/submit",
+                json={
+                    "task_id": "task-1",
+                    "model_id": "model-1",
+                    "task_input": {"prompt": "test"},
+                    "metadata": {},
+                },
+            )
 
         # Drain the instance
         response = client.post(
-            "/instance/drain",
-            json={"instance_id": "inst-2"}
+            "/instance/drain", json={"instance_id": "inst-2"}
         )
 
         assert response.status_code == 200
@@ -2133,9 +2168,9 @@ class TestDrainEdgeCases:
                 "platform_info": {
                     "software_name": "docker",
                     "software_version": "20.10",
-                    "hardware_name": "test-hardware"
-                }
-            }
+                    "hardware_name": "test-hardware",
+                },
+            },
         )
 
         # Submit a task to populate queue
@@ -2143,25 +2178,26 @@ class TestDrainEdgeCases:
             instance_id="inst-1",
             predicted_time_ms=100.0,
             quantiles={0.5: 90.0, 0.9: 110.0, 0.95: 120.0, 0.99: 130.0},
-            error_margin_ms=10.0
+            error_margin_ms=10.0,
         )
 
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[mock_prediction])):
-            with patch("src.api.task_dispatcher.dispatch_task_async"):
-                client.post(
-                    "/task/submit",
-                    json={
-                        "task_id": "task-1",
-                        "model_id": "model-1",
-                        "task_input": {"prompt": "test"},
-                        "metadata": {}
-                    }
-                )
+        with patch(
+            "src.api.predictor_client.predict",
+            new=AsyncMock(return_value=[mock_prediction]),
+        ), patch("src.api.task_dispatcher.dispatch_task_async"):
+            client.post(
+                "/task/submit",
+                json={
+                    "task_id": "task-1",
+                    "model_id": "model-1",
+                    "task_input": {"prompt": "test"},
+                    "metadata": {},
+                },
+            )
 
         # Drain the instance
         response = client.post(
-            "/instance/drain",
-            json={"instance_id": "inst-1"}
+            "/instance/drain", json={"instance_id": "inst-1"}
         )
 
         assert response.status_code == 200
@@ -2198,37 +2234,36 @@ class TestWebSocketEndpoint:
                 "platform_info": {
                     "software_name": "docker",
                     "software_version": "20.10",
-                    "hardware_name": "test-hardware"
-                }
-            }
+                    "hardware_name": "test-hardware",
+                },
+            },
         )
 
         mock_prediction = Prediction(
             instance_id="inst-1",
             predicted_time_ms=100.0,
             quantiles={0.5: 90.0, 0.9: 110.0},
-            error_margin_ms=10.0
+            error_margin_ms=10.0,
         )
 
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[mock_prediction])):
-            with patch("src.api.task_dispatcher.dispatch_task_async"):
-                client.post(
-                    "/task/submit",
-                    json={
-                        "task_id": "task-1",
-                        "model_id": "model-1",
-                        "task_input": {"prompt": "test"},
-                        "metadata": {}
-                    }
-                )
+        with patch(
+            "src.api.predictor_client.predict",
+            new=AsyncMock(return_value=[mock_prediction]),
+        ), patch("src.api.task_dispatcher.dispatch_task_async"):
+            client.post(
+                "/task/submit",
+                json={
+                    "task_id": "task-1",
+                    "model_id": "model-1",
+                    "task_input": {"prompt": "test"},
+                    "metadata": {},
+                },
+            )
 
         # Test WebSocket connection
         with client.websocket_connect("/task/get_result") as websocket:
             # Subscribe to task
-            websocket.send_json({
-                "type": "subscribe",
-                "task_ids": ["task-1"]
-            })
+            websocket.send_json({"type": "subscribe", "task_ids": ["task-1"]})
 
             # Should receive acknowledgment
             ack = websocket.receive_json()
@@ -2242,19 +2277,15 @@ class TestWebSocketEndpoint:
         """Test WebSocket unsubscribe."""
         with client.websocket_connect("/task/get_result") as websocket:
             # Subscribe first
-            websocket.send_json({
-                "type": "subscribe",
-                "task_ids": ["task-1", "task-2"]
-            })
+            websocket.send_json(
+                {"type": "subscribe", "task_ids": ["task-1", "task-2"]}
+            )
 
             ack1 = websocket.receive_json()
             assert len(ack1["subscribed_tasks"]) == 2
 
             # Unsubscribe from one
-            websocket.send_json({
-                "type": "unsubscribe",
-                "task_ids": ["task-1"]
-            })
+            websocket.send_json({"type": "unsubscribe", "task_ids": ["task-1"]})
 
             ack2 = websocket.receive_json()
             assert ack2["type"] == "ack"
@@ -2265,10 +2296,7 @@ class TestWebSocketEndpoint:
         """Test WebSocket with invalid message type."""
         with client.websocket_connect("/task/get_result") as websocket:
             # Send invalid message type
-            websocket.send_json({
-                "type": "invalid_type",
-                "data": "test"
-            })
+            websocket.send_json({"type": "invalid_type", "data": "test"})
 
             # Should receive error message
             error = websocket.receive_json()
@@ -2279,10 +2307,7 @@ class TestWebSocketEndpoint:
         """Test WebSocket with invalid task_ids format."""
         with client.websocket_connect("/task/get_result") as websocket:
             # Send invalid task_ids (not a list)
-            websocket.send_json({
-                "type": "subscribe",
-                "task_ids": "not-a-list"
-            })
+            websocket.send_json({"type": "subscribe", "task_ids": "not-a-list"})
 
             # Should receive error message
             error = websocket.receive_json()
@@ -2293,10 +2318,12 @@ class TestWebSocketEndpoint:
         """Test WebSocket with multiple task subscriptions."""
         with client.websocket_connect("/task/get_result") as websocket:
             # Subscribe to multiple tasks
-            websocket.send_json({
-                "type": "subscribe",
-                "task_ids": ["task-1", "task-2", "task-3"]
-            })
+            websocket.send_json(
+                {
+                    "type": "subscribe",
+                    "task_ids": ["task-1", "task-2", "task-3"],
+                }
+            )
 
             ack = websocket.receive_json()
             assert ack["type"] == "ack"
@@ -2306,10 +2333,7 @@ class TestWebSocketEndpoint:
         """Test WebSocket application-level ping/pong."""
         with client.websocket_connect("/task/get_result") as websocket:
             # Send application-level ping
-            websocket.send_json({
-                "type": "ping",
-                "timestamp": 123456.789
-            })
+            websocket.send_json({"type": "ping", "timestamp": 123456.789})
 
             # Should receive pong response
             pong = websocket.receive_json()
@@ -2333,10 +2357,7 @@ class TestWebSocketEndpoint:
             # Send protocol-level ping (this is handled by the WebSocket server)
             # We can't easily test this from the client side, but we can verify
             # that the endpoint handles it by checking it doesn't break
-            websocket.send_json({
-                "type": "subscribe",
-                "task_ids": ["task-1"]
-            })
+            websocket.send_json({"type": "subscribe", "task_ids": ["task-1"]})
 
             # Should still work
             ack = websocket.receive_json()
@@ -2356,37 +2377,36 @@ class TestWebSocketEndpoint:
                 "platform_info": {
                     "software_name": "docker",
                     "software_version": "20.10",
-                    "hardware_name": "test-hardware"
-                }
-            }
+                    "hardware_name": "test-hardware",
+                },
+            },
         )
 
         mock_prediction = Prediction(
             instance_id="inst-1",
             predicted_time_ms=100.0,
             quantiles={0.5: 90.0, 0.9: 110.0},
-            error_margin_ms=10.0
+            error_margin_ms=10.0,
         )
 
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[mock_prediction])):
-            with patch("src.api.task_dispatcher.dispatch_task_async"):
-                client.post(
-                    "/task/submit",
-                    json={
-                        "task_id": "task-1",
-                        "model_id": "model-1",
-                        "task_input": {"prompt": "test"},
-                        "metadata": {}
-                    }
-                )
+        with patch(
+            "src.api.predictor_client.predict",
+            new=AsyncMock(return_value=[mock_prediction]),
+        ), patch("src.api.task_dispatcher.dispatch_task_async"):
+            client.post(
+                "/task/submit",
+                json={
+                    "task_id": "task-1",
+                    "model_id": "model-1",
+                    "task_input": {"prompt": "test"},
+                    "metadata": {},
+                },
+            )
 
         # Connect and test
         with client.websocket_connect("/task/get_result") as websocket:
             # Subscribe to trigger code paths
-            websocket.send_json({
-                "type": "subscribe",
-                "task_ids": ["task-1"]
-            })
+            websocket.send_json({"type": "subscribe", "task_ids": ["task-1"]})
 
             # Receive ack
             websocket.receive_json()
@@ -2398,7 +2418,10 @@ class TestRemainingErrorHandling:
     def test_register_instance_registry_error(self, client):
         """Test registration with registry error."""
         # Try to register with invalid data that causes internal error
-        with patch("src.api.instance_registry.register", side_effect=ValueError("Internal error")):
+        with patch(
+            "src.api.instance_registry.register",
+            side_effect=ValueError("Internal error"),
+        ):
             response = client.post(
                 "/instance/register",
                 json={
@@ -2408,9 +2431,9 @@ class TestRemainingErrorHandling:
                     "platform_info": {
                         "software_name": "docker",
                         "software_version": "20.10",
-                        "hardware_name": "test-hardware"
-                    }
-                }
+                        "hardware_name": "test-hardware",
+                    },
+                },
             )
 
         assert response.status_code == 400
@@ -2427,16 +2450,18 @@ class TestRemainingErrorHandling:
                 "platform_info": {
                     "software_name": "docker",
                     "software_version": "20.10",
-                    "hardware_name": "test-hardware"
-                }
-            }
+                    "hardware_name": "test-hardware",
+                },
+            },
         )
 
         # Try to drain instance with mocked error
-        with patch("src.api.instance_registry.start_draining", side_effect=ValueError("Cannot drain")):
+        with patch(
+            "src.api.instance_registry.start_draining",
+            side_effect=ValueError("Cannot drain"),
+        ):
             response = client.post(
-                "/instance/drain",
-                json={"instance_id": "inst-1"}
+                "/instance/drain", json={"instance_id": "inst-1"}
             )
 
         assert response.status_code == 400
@@ -2453,23 +2478,25 @@ class TestRemainingErrorHandling:
                 "platform_info": {
                     "software_name": "docker",
                     "software_version": "20.10",
-                    "hardware_name": "test-hardware"
-                }
-            }
+                    "hardware_name": "test-hardware",
+                },
+            },
         )
 
         # Mock to raise timeout error
         # Need to mock the scheduling_strategy used by background_scheduler
-        with patch("src.api.background_scheduler.scheduling_strategy.schedule_task",
-                   side_effect=TimeoutError("Request timeout")):
+        with patch(
+            "src.api.background_scheduler.scheduling_strategy.schedule_task",
+            side_effect=TimeoutError("Request timeout"),
+        ):
             response = client.post(
                 "/task/submit",
                 json={
                     "task_id": "task-1",
                     "model_id": "model-1",
                     "task_input": {"prompt": "test"},
-                    "metadata": {}
-                }
+                    "metadata": {},
+                },
             )
 
         # With background scheduling, API returns 200 immediately
@@ -2489,44 +2516,49 @@ class TestRemainingErrorHandling:
                 "platform_info": {
                     "software_name": "docker",
                     "software_version": "20.10",
-                    "hardware_name": "test-hardware"
-                }
-            }
+                    "hardware_name": "test-hardware",
+                },
+            },
         )
 
         mock_prediction = Prediction(
-            instance_id="inst-1",
-            predicted_time_ms=100.0
+            instance_id="inst-1", predicted_time_ms=100.0
         )
 
         from src.scheduler import ScheduleResult
 
-        with patch("src.api.scheduling_strategy.schedule_task",
-                   new=AsyncMock(return_value=ScheduleResult(
-                       selected_instance_id="inst-1",
-                       selected_prediction=mock_prediction
-                   ))):
-            with patch("src.api.task_registry.create_task",
-                       side_effect=ValueError("Task creation error")):
-                response = client.post(
-                    "/task/submit",
-                    json={
-                        "task_id": "task-1",
-                        "model_id": "model-1",
-                        "task_input": {"prompt": "test"},
-                        "metadata": {}
-                    }
+        with patch(
+            "src.api.scheduling_strategy.schedule_task",
+            new=AsyncMock(
+                return_value=ScheduleResult(
+                    selected_instance_id="inst-1",
+                    selected_prediction=mock_prediction,
                 )
+            ),
+        ), patch(
+            "src.api.task_registry.create_task",
+            side_effect=ValueError("Task creation error"),
+        ):
+            response = client.post(
+                "/task/submit",
+                json={
+                    "task_id": "task-1",
+                    "model_id": "model-1",
+                    "task_input": {"prompt": "test"},
+                    "metadata": {},
+                },
+            )
 
         assert response.status_code == 400
 
     def test_set_strategy_exception(self, client):
         """Test set strategy with exception during initialization."""
         # Mock get_strategy to raise exception
-        with patch("src.api.get_strategy", side_effect=Exception("Strategy init error")):
+        with patch(
+            "src.api.get_strategy", side_effect=Exception("Strategy init error")
+        ):
             response = client.post(
-                "/strategy/set",
-                json={"strategy_name": "min_time"}
+                "/strategy/set", json={"strategy_name": "min_time"}
             )
 
         assert response.status_code == 500
@@ -2534,7 +2566,10 @@ class TestRemainingErrorHandling:
     def test_health_check_with_exception(self, client):
         """Test health check when registry has errors."""
         # Mock to raise exception
-        with patch("src.api.instance_registry.get_total_count", side_effect=Exception("Registry error")):
+        with patch(
+            "src.api.instance_registry.get_total_count",
+            side_effect=Exception("Registry error"),
+        ):
             response = client.get("/health")
 
         assert response.status_code == 503
@@ -2542,16 +2577,18 @@ class TestRemainingErrorHandling:
     def test_remove_instance_key_error(self, client):
         """Test remove instance with KeyError."""
         # Try to remove non-existent instance that causes KeyError
-        with patch("src.api.instance_registry.safe_remove", side_effect=KeyError("not found")):
+        with patch(
+            "src.api.instance_registry.safe_remove",
+            side_effect=KeyError("not found"),
+        ):
             response = client.post(
-                "/instance/remove",
-                json={"instance_id": "nonexistent"}
+                "/instance/remove", json={"instance_id": "nonexistent"}
             )
 
         assert response.status_code == 404
 
-    def test_remove_instance_value_error(self, client):
-        """Test remove instance with ValueError."""
+    def test_remove_instance_success(self, client):
+        """Test remove instance succeeds after registration."""
         # Register instance first
         client.post(
             "/instance/register",
@@ -2562,19 +2599,19 @@ class TestRemainingErrorHandling:
                 "platform_info": {
                     "software_name": "docker",
                     "software_version": "20.10",
-                    "hardware_name": "test-hardware"
-                }
-            }
+                    "hardware_name": "test-hardware",
+                },
+            },
         )
 
-        # Mock to raise ValueError
-        with patch("src.api.instance_registry.safe_remove", side_effect=ValueError("Cannot remove active instance")):
-            response = client.post(
-                "/instance/remove",
-                json={"instance_id": "inst-1"}
-            )
+        # Remove instance - should succeed
+        response = client.post(
+            "/instance/remove", json={"instance_id": "inst-1"}
+        )
 
-        assert response.status_code == 400
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
 
     def test_drain_instance_no_median_quantile(self, client):
         """Test drain when quantile distribution has no 0.5."""
@@ -2590,9 +2627,9 @@ class TestRemainingErrorHandling:
                 "platform_info": {
                     "software_name": "docker",
                     "software_version": "20.10",
-                    "hardware_name": "test-hardware"
-                }
-            }
+                    "hardware_name": "test-hardware",
+                },
+            },
         )
 
         # Submit task with quantiles that do not include 0.5
@@ -2600,25 +2637,26 @@ class TestRemainingErrorHandling:
             instance_id="inst-1",
             predicted_time_ms=100.0,
             quantiles={0.9: 110.0, 0.95: 120.0, 0.99: 130.0},  # No 0.5
-            error_margin_ms=10.0
+            error_margin_ms=10.0,
         )
 
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[mock_prediction])):
-            with patch("src.api.task_dispatcher.dispatch_task_async"):
-                client.post(
-                    "/task/submit",
-                    json={
-                        "task_id": "task-1",
-                        "model_id": "model-1",
-                        "task_input": {"prompt": "test"},
-                        "metadata": {}
-                    }
-                )
+        with patch(
+            "src.api.predictor_client.predict",
+            new=AsyncMock(return_value=[mock_prediction]),
+        ), patch("src.api.task_dispatcher.dispatch_task_async"):
+            client.post(
+                "/task/submit",
+                json={
+                    "task_id": "task-1",
+                    "model_id": "model-1",
+                    "task_input": {"prompt": "test"},
+                    "metadata": {},
+                },
+            )
 
         # Drain should handle missing 0.5 quantile gracefully
         response = client.post(
-            "/instance/drain",
-            json={"instance_id": "inst-1"}
+            "/instance/drain", json={"instance_id": "inst-1"}
         )
 
         assert response.status_code == 200
@@ -2635,13 +2673,15 @@ class TestRemainingErrorHandling:
                 "platform_info": {
                     "software_name": "docker",
                     "software_version": "20.10",
-                    "hardware_name": "test-hardware"
-                }
-            }
+                    "hardware_name": "test-hardware",
+                },
+            },
         )
 
         # Mock get_queue_info to return None
-        with patch("src.api.instance_registry.get_queue_info", return_value=None):
+        with patch(
+            "src.api.instance_registry.get_queue_info", return_value=None
+        ):
             response = client.get("/instance/info?instance_id=inst-1")
 
         assert response.status_code == 500
@@ -2658,9 +2698,9 @@ class TestRemainingErrorHandling:
                 "platform_info": {
                     "software_name": "docker",
                     "software_version": "20.10",
-                    "hardware_name": "test-hardware"
-                }
-            }
+                    "hardware_name": "test-hardware",
+                },
+            },
         )
 
         # Mock get_stats to return None
@@ -2668,7 +2708,6 @@ class TestRemainingErrorHandling:
             response = client.get("/instance/info?instance_id=inst-1")
 
         assert response.status_code == 500
-
 
     def test_get_current_strategy_info_round_robin(self, client):
         """Test getting strategy info for round_robin."""
@@ -2695,18 +2734,22 @@ class TestRemainingErrorHandling:
                     "platform_info": {
                         "software_name": "docker",
                         "software_version": "20.10",
-                        "hardware_name": "test-hardware"
-                    }
-                }
+                        "hardware_name": "test-hardware",
+                    },
+                },
             )
 
         # Switch to min_time (expect_error queues)
-        response = client.post("/strategy/set", json={"strategy_name": "min_time"})
+        response = client.post(
+            "/strategy/set", json={"strategy_name": "min_time"}
+        )
         assert response.status_code == 200
         assert response.json()["reinitialized_instances"] == 3
 
         # Switch to round_robin (probabilistic queues)
-        response = client.post("/strategy/set", json={"strategy_name": "round_robin"})
+        response = client.post(
+            "/strategy/set", json={"strategy_name": "round_robin"}
+        )
         assert response.status_code == 200
         assert response.json()["reinitialized_instances"] == 3
 
@@ -2722,23 +2765,25 @@ class TestRemainingErrorHandling:
                 "platform_info": {
                     "software_name": "docker",
                     "software_version": "20.10",
-                    "hardware_name": "test-hardware"
-                }
-            }
+                    "hardware_name": "test-hardware",
+                },
+            },
         )
 
         # Mock to raise ValueError with "Model not found"
         # Need to mock the scheduling_strategy used by background_scheduler
-        with patch("src.api.background_scheduler.scheduling_strategy.schedule_task",
-                   side_effect=ValueError("Model not found in database")):
+        with patch(
+            "src.api.background_scheduler.scheduling_strategy.schedule_task",
+            side_effect=ValueError("Model not found in database"),
+        ):
             response = client.post(
                 "/task/submit",
                 json={
                     "task_id": "task-1",
                     "model_id": "model-1",
                     "task_input": {"prompt": "test"},
-                    "metadata": {}
-                }
+                    "metadata": {},
+                },
             )
 
         # With background scheduling, API returns 200 immediately
@@ -2751,28 +2796,31 @@ class TestLifespanContextManager:
     async def test_lifespan_startup_success(self):
         """Test successful application startup."""
         from src import api
-        from contextlib import asynccontextmanager
 
         # Track startup calls
         startup_called = False
         shutdown_called = False
 
         # Mock the external services
-        with patch("src.api.background_scheduler.shutdown", new=AsyncMock()) as mock_bg_shutdown:
-            with patch("src.api.task_dispatcher.close", new=AsyncMock()) as mock_dispatcher_close:
-                with patch("src.api.predictor_client.close", new=AsyncMock()) as mock_predictor_close:
-                    # Get the lifespan context manager
-                    lifespan_cm = api.lifespan(api.app)
+        with patch(
+            "src.api.background_scheduler.shutdown", new=AsyncMock()
+        ) as mock_bg_shutdown, patch(
+            "src.api.task_dispatcher.close", new=AsyncMock()
+        ) as mock_dispatcher_close, patch(
+            "src.api.predictor_client.close", new=AsyncMock()
+        ) as mock_predictor_close:
+            # Get the lifespan context manager
+            lifespan_cm = api.lifespan(api.app)
 
-                    # Enter the context (startup)
-                    async with lifespan_cm:
-                        startup_called = True
+            # Enter the context (startup)
+            async with lifespan_cm:
+                startup_called = True
 
-                    shutdown_called = True
-                    # Verify shutdown was called
-                    mock_bg_shutdown.assert_called_once()
-                    mock_dispatcher_close.assert_called_once()
-                    mock_predictor_close.assert_called_once()
+            shutdown_called = True
+            # Verify shutdown was called
+            mock_bg_shutdown.assert_called_once()
+            mock_dispatcher_close.assert_called_once()
+            mock_predictor_close.assert_called_once()
 
         assert startup_called
         assert shutdown_called
@@ -2814,7 +2862,9 @@ class TestLifespanContextManager:
 
         with patch("src.api.background_scheduler.shutdown", mock_bg_shutdown):
             with patch("src.api.task_dispatcher.close", mock_dispatcher_close):
-                with patch("src.api.predictor_client.close", mock_predictor_close):
+                with patch(
+                    "src.api.predictor_client.close", mock_predictor_close
+                ):
                     lifespan_cm = api.lifespan(api.app)
                     # Shutdown errors should propagate
                     with pytest.raises(Exception) as exc_info:
@@ -2844,18 +2894,15 @@ class TestCustomQuantilesInReinitialization:
                 "platform_info": {
                     "software_name": "docker",
                     "software_version": "20.10",
-                    "hardware_name": "test-hardware"
-                }
-            }
+                    "hardware_name": "test-hardware",
+                },
+            },
         )
 
         # Switch strategy with custom quantile
         response = client.post(
             "/strategy/set",
-            json={
-                "strategy_name": "probabilistic",
-                "target_quantile": 0.75
-            }
+            json={"strategy_name": "probabilistic", "target_quantile": 0.75},
         )
 
         assert response.status_code == 200
@@ -2869,8 +2916,8 @@ class TestAdditionalCoveragePaths:
 
     async def test_websocket_subscribe_to_completed_task(self, client):
         """Test subscribing to a task that is already completed."""
-        from src.predictor_client import Prediction
         from src import api
+        from src.predictor_client import Prediction
 
         # Register instance
         client.post(
@@ -2882,9 +2929,9 @@ class TestAdditionalCoveragePaths:
                 "platform_info": {
                     "software_name": "docker",
                     "software_version": "20.10",
-                    "hardware_name": "test-hardware"
-                }
-            }
+                    "hardware_name": "test-hardware",
+                },
+            },
         )
 
         # Submit task
@@ -2892,24 +2939,28 @@ class TestAdditionalCoveragePaths:
             instance_id="inst-1",
             predicted_time_ms=100.0,
             quantiles={0.5: 90.0, 0.9: 110.0},
-            error_margin_ms=10.0
+            error_margin_ms=10.0,
         )
 
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[mock_prediction])):
-            with patch("src.api.task_dispatcher.dispatch_task_async"):
-                client.post(
-                    "/task/submit",
-                    json={
-                        "task_id": "task-1",
-                        "model_id": "model-1",
-                        "task_input": {"prompt": "test"},
-                        "metadata": {}
-                    }
-                )
+        with patch(
+            "src.api.predictor_client.predict",
+            new=AsyncMock(return_value=[mock_prediction]),
+        ), patch("src.api.task_dispatcher.dispatch_task_async"):
+            client.post(
+                "/task/submit",
+                json={
+                    "task_id": "task-1",
+                    "model_id": "model-1",
+                    "task_input": {"prompt": "test"},
+                    "metadata": {},
+                },
+            )
 
         # Mark task as completed
-        from src.model import TaskStatus
         from datetime import datetime
+
+        from src.model import TaskStatus
+
         await api.task_registry.update_status("task-1", TaskStatus.COMPLETED)
         task = await api.task_registry.get("task-1")
         task.result = {"output": "completed"}
@@ -2919,10 +2970,7 @@ class TestAdditionalCoveragePaths:
 
         # Now subscribe to the completed task
         with client.websocket_connect("/task/get_result") as websocket:
-            websocket.send_json({
-                "type": "subscribe",
-                "task_ids": ["task-1"]
-            })
+            websocket.send_json({"type": "subscribe", "task_ids": ["task-1"]})
 
             # Should receive the result immediately
             msg1 = websocket.receive_json()
@@ -2943,10 +2991,9 @@ class TestAdditionalCoveragePaths:
         """Test unsubscribe with invalid task_ids format."""
         with client.websocket_connect("/task/get_result") as websocket:
             # Send unsubscribe with invalid task_ids (not a list)
-            websocket.send_json({
-                "type": "unsubscribe",
-                "task_ids": "not-a-list"
-            })
+            websocket.send_json(
+                {"type": "unsubscribe", "task_ids": "not-a-list"}
+            )
 
             # Should receive error message
             error = websocket.receive_json()
@@ -2957,17 +3004,11 @@ class TestAdditionalCoveragePaths:
         """Test receiving pong message from client."""
         with client.websocket_connect("/task/get_result") as websocket:
             # Send pong message (client responding to server ping)
-            websocket.send_json({
-                "type": "pong",
-                "timestamp": 123456.789
-            })
+            websocket.send_json({"type": "pong", "timestamp": 123456.789})
 
             # Server should just log and continue
             # We can verify by sending a subscribe and getting ack
-            websocket.send_json({
-                "type": "subscribe",
-                "task_ids": ["task-1"]
-            })
+            websocket.send_json({"type": "subscribe", "task_ids": ["task-1"]})
 
             ack = websocket.receive_json()
             assert ack["type"] == "ack"
@@ -2977,7 +3018,7 @@ class TestAdditionalCoveragePaths:
         # This should trigger the KeyError exception path (lines 385-386)
         response = client.post(
             "/instance/remove",
-            json={"instance_id": "definitely-does-not-exist"}
+            json={"instance_id": "definitely-does-not-exist"},
         )
 
         assert response.status_code == 404
@@ -2997,35 +3038,39 @@ class TestAdditionalCoveragePaths:
                 "platform_info": {
                     "software_name": "docker",
                     "software_version": "20.10",
-                    "hardware_name": "test-hardware"
-                }
-            }
+                    "hardware_name": "test-hardware",
+                },
+            },
         )
 
         # Submit task with quantiles that will test the fallback path
         mock_prediction = Prediction(
             instance_id="inst-1",
             predicted_time_ms=100.0,
-            quantiles={0.9: 110.0, 0.95: 120.0},  # No 0.5, will trigger fallback
-            error_margin_ms=10.0
+            quantiles={
+                0.9: 110.0,
+                0.95: 120.0,
+            },  # No 0.5, will trigger fallback
+            error_margin_ms=10.0,
         )
 
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[mock_prediction])):
-            with patch("src.api.task_dispatcher.dispatch_task_async"):
-                client.post(
-                    "/task/submit",
-                    json={
-                        "task_id": "task-1",
-                        "model_id": "model-1",
-                        "task_input": {"prompt": "test"},
-                        "metadata": {}
-                    }
-                )
+        with patch(
+            "src.api.predictor_client.predict",
+            new=AsyncMock(return_value=[mock_prediction]),
+        ), patch("src.api.task_dispatcher.dispatch_task_async"):
+            client.post(
+                "/task/submit",
+                json={
+                    "task_id": "task-1",
+                    "model_id": "model-1",
+                    "task_input": {"prompt": "test"},
+                    "metadata": {},
+                },
+            )
 
         # Drain the instance - should trigger lines 448-450
         response = client.post(
-            "/instance/drain",
-            json={"instance_id": "inst-1"}
+            "/instance/drain", json={"instance_id": "inst-1"}
         )
 
         assert response.status_code == 200

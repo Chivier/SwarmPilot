@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-CLI entry point for the Scheduler service.
+"""CLI entry point for the Scheduler service.
 
 This module provides a command-line interface using Typer for managing
 the scheduler service.
@@ -9,7 +8,6 @@ the scheduler service.
 import os
 import sys
 from pathlib import Path
-from typing import Optional
 
 import typer
 import uvicorn
@@ -27,8 +25,7 @@ os.environ["NO_COLOR"] = "1"
 
 
 def load_config_file(config_path: Path) -> dict:
-    """
-    Load configuration from a file (JSON, TOML, or YAML).
+    """Load configuration from a file (JSON, TOML, or YAML).
 
     Args:
         config_path: Path to the configuration file
@@ -47,20 +44,22 @@ def load_config_file(config_path: Path) -> dict:
     try:
         if suffix == ".json":
             import json
-            with open(config_path, "r") as f:
+
+            with open(config_path) as f:
                 return json.load(f)
         elif suffix == ".toml":
             import tomllib
+
             with open(config_path, "rb") as f:
                 return tomllib.load(f)
         elif suffix in [".yaml", ".yml"]:
             try:
                 import yaml
-            except ImportError:
+            except ImportError as e:
                 raise typer.BadParameter(
                     "PyYAML is not installed. Install it with: uv add pyyaml"
-                )
-            with open(config_path, "r") as f:
+                ) from e
+            with open(config_path) as f:
                 return yaml.safe_load(f)
         else:
             raise typer.BadParameter(
@@ -68,12 +67,11 @@ def load_config_file(config_path: Path) -> dict:
                 f"Supported formats: .json, .toml, .yaml, .yml"
             )
     except Exception as e:
-        raise typer.BadParameter(f"Error loading configuration file: {e}")
+        raise typer.BadParameter(f"Error loading configuration file: {e}") from e
 
 
-def apply_config(config_dict: dict, host: Optional[str], port: Optional[int]) -> None:
-    """
-    Apply configuration from dictionary to environment variables.
+def apply_config(config_dict: dict, host: str | None, port: int | None) -> None:
+    """Apply configuration from dictionary to environment variables.
 
     Command-line arguments take precedence over config file values.
 
@@ -121,19 +119,19 @@ def apply_config(config_dict: dict, host: Optional[str], port: Optional[int]) ->
 
 @app.command()
 def start(
-    host: Optional[str] = typer.Option(
+    host: str | None = typer.Option(
         None,
         "--host",
         "-h",
         help="Server host address (overrides config and environment variables)",
     ),
-    port: Optional[int] = typer.Option(
+    port: int | None = typer.Option(
         None,
         "--port",
         "-p",
         help="Server port number (overrides config and environment variables)",
     ),
-    config: Optional[Path] = typer.Option(
+    config: Path | None = typer.Option(
         None,
         "--config",
         "-c",
@@ -144,8 +142,7 @@ def start(
         readable=True,
     ),
 ) -> None:
-    """
-    Start the scheduler service.
+    """Start the scheduler service.
 
     The configuration priority (highest to lowest):
     1. Command-line arguments (--host, --port)
@@ -154,7 +151,6 @@ def start(
     4. Default values
 
     Examples:
-
         # Start with default configuration
         $ sscheduler start
 
@@ -180,7 +176,9 @@ def start(
 
     # Reload config to pick up environment variable changes
     import importlib
+
     from src import config as config_module
+
     importlib.reload(config_module)
     app_config = config_module.config
 
@@ -210,6 +208,7 @@ def start(
 def version() -> None:
     """Show the scheduler version."""
     from src import __version__
+
     typer.echo(f"Scheduler version: {__version__}")
 
 

@@ -1,12 +1,10 @@
-"""
-Configuration management for the scheduler service.
+"""Configuration management for the scheduler service.
 
 This module centralizes all configuration settings with support for
 environment variables and sensible defaults.
 """
 
 import os
-from typing import Optional
 from dataclasses import dataclass
 
 
@@ -45,7 +43,9 @@ class QueueConfig:
     """Configuration for central task queue."""
 
     # Maximum concurrent dispatch operations
-    max_concurrent_dispatch: int = int(os.getenv("QUEUE_MAX_CONCURRENT_DISPATCH", "50"))
+    max_concurrent_dispatch: int = int(
+        os.getenv("QUEUE_MAX_CONCURRENT_DISPATCH", "50")
+    )
 
 
 @dataclass
@@ -61,7 +61,9 @@ class TrainingConfig:
     batch_size: int = int(os.getenv("TRAINING_BATCH_SIZE", "100"))
 
     # Training frequency in seconds
-    frequency_seconds: int = int(os.getenv("TRAINING_FREQUENCY", "3600"))  # 1 hour
+    frequency_seconds: int = int(
+        os.getenv("TRAINING_FREQUENCY", "3600")
+    )  # 1 hour
 
     # Minimum samples required before training
     min_samples: int = int(os.getenv("TRAINING_MIN_SAMPLES", "10"))
@@ -73,8 +75,12 @@ class TrainingConfig:
     def __post_init__(self):
         """Parse prediction_types from environment variable."""
         if self.prediction_types is None:
-            env_types = os.getenv("TRAINING_PREDICTION_TYPES", "expect_error,quantile")
-            self.prediction_types = [t.strip() for t in env_types.split(",") if t.strip()]
+            env_types = os.getenv(
+                "TRAINING_PREDICTION_TYPES", "expect_error,quantile"
+            )
+            self.prediction_types = [
+                t.strip() for t in env_types.split(",") if t.strip()
+            ]
 
 
 @dataclass
@@ -88,7 +94,9 @@ class LoggingConfig:
     log_dir: str = os.getenv("SCHEDULER_LOG_DIR", "logs")
 
     # Enable JSON structured logging
-    enable_json_logs: bool = os.getenv("SCHEDULER_ENABLE_JSON_LOGS", "false").lower() == "true"
+    enable_json_logs: bool = (
+        os.getenv("SCHEDULER_ENABLE_JSON_LOGS", "false").lower() == "true"
+    )
 
 
 @dataclass
@@ -102,7 +110,9 @@ class ServerConfig:
     port: int = int(os.getenv("SCHEDULER_PORT", "8000"))
 
     # Enable CORS
-    enable_cors: bool = os.getenv("SCHEDULER_ENABLE_CORS", "true").lower() == "true"
+    enable_cors: bool = (
+        os.getenv("SCHEDULER_ENABLE_CORS", "true").lower() == "true"
+    )
 
     # API version
     version: str = "1.0.0"
@@ -139,8 +149,7 @@ class Config:
 
     @classmethod
     def load(cls) -> "Config":
-        """
-        Load configuration from environment variables.
+        """Load configuration from environment variables.
 
         Returns:
             Config object with all settings

@@ -1,33 +1,35 @@
-"""
-Scheduling strategies for task assignment to instances.
+"""Scheduling strategies for task assignment to instances.
 
 This module implements various scheduling strategies to select the best
 instance for executing a task based on predictions.
 """
 
-from typing import List, Optional, Dict, TYPE_CHECKING, Any
+import random
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-import random
+from typing import TYPE_CHECKING, Any
+
 import httpx
 from loguru import logger
 
-from .predictor_client import Prediction
 from .http_error_logger import log_http_error
+from .predictor_client import Prediction
 
 if TYPE_CHECKING:
-    from .model import InstanceQueueBase, Instance
-    from .predictor_client import PredictorClient
     from .instance_registry import InstanceRegistry
+    from .model import Instance, InstanceQueueBase
+    from .predictor_client import PredictorClient
 
 
 random.seed(42)
 
+
 @dataclass
 class ScheduleResult:
     """Result of scheduling operation."""
+
     selected_instance_id: str
-    selected_prediction: Optional[Prediction]
+    selected_prediction: Prediction | None
 
 
 class SchedulingStrategy(ABC):
@@ -38,8 +40,7 @@ class SchedulingStrategy(ABC):
         predictor_client: "PredictorClient",
         instance_registry: "InstanceRegistry",
     ):
-        """
-        Initialize scheduling strategy with dependencies.
+        """Initialize scheduling strategy with dependencies.
 
         Args:
             predictor_client: Client for getting predictions
@@ -51,11 +52,10 @@ class SchedulingStrategy(ABC):
     async def schedule_task(
         self,
         model_id: str,
-        metadata: Dict[str, Any],
-        available_instances: List["Instance"],
+        metadata: dict[str, Any],
+        available_instances: list["Instance"],
     ) -> ScheduleResult:
-        """
-        Schedule a task to an instance (template method).
+        """Schedule a task to an instance (template method).
 
         This orchestrates the complete scheduling workflow:
         1. Get predictions from predictor service
@@ -102,16 +102,18 @@ class SchedulingStrategy(ABC):
         # Step 4: Get prediction for selected instance
         selected_prediction = next(
             (p for p in predictions if p.instance_id == selected_instance_id),
-            None
+            None,
         )
 
         # Step 5: Update queue information
         if selected_prediction:
             await self.update_queue(selected_instance_id, selected_prediction)
         else:
-            logger.warning(f"No prediction is selected:"
-                           f"predictions: {predictions}"
-                           f"selected_instance_id: {selected_instance_id}")
+            logger.warning(
+                f"No prediction is selected:"
+                f"predictions: {predictions}"
+                f"selected_instance_id: {selected_instance_id}"
+            )
 
         return ScheduleResult(
             selected_instance_id=selected_instance_id,
@@ -121,11 +123,10 @@ class SchedulingStrategy(ABC):
     async def get_predictions(
         self,
         model_id: str,
-        metadata: Dict[str, Any],
-        available_instances: List["Instance"],
-    ) -> List[Prediction]:
-        """
-        Get predictions from predictor service.
+        metadata: dict[str, Any],
+        available_instances: list["Instance"],
+    ) -> list[Prediction]:
+        """Get predictions from predictor service.
 
         Uses the prediction type specified by get_prediction_type().
         Converts httpx exceptions to standard Python exceptions.
@@ -147,7 +148,7 @@ class SchedulingStrategy(ABC):
 
         # Get custom quantiles if this is a probabilistic strategy
         quantiles = None
-        if hasattr(self, 'quantiles'):
+        if hasattr(self, "quantiles"):
             quantiles = self.quantiles
 
         try:
@@ -164,7 +165,9 @@ class SchedulingStrategy(ABC):
                 predict_kwargs["quantiles"] = quantiles
 
             predictions = await self.predictor_client.predict(**predict_kwargs)
-            logger.debug(f"sent prediction request model_id: {model_id}, metadata: {metadata}, instances: {available_instances}, prediction_type={prediction_type}, quantiles={quantiles}")
+            logger.debug(
+                f"sent prediction request model_id: {model_id}, metadata: {metadata}, instances: {available_instances}, prediction_type={prediction_type}, quantiles={quantiles}"
+            )
             return predictions
 
         except httpx.HTTPStatusError as e:
@@ -202,9 +205,7 @@ class SchedulingStrategy(ABC):
                 },
                 context="scheduler prediction timeout",
             )
-            raise TimeoutError(
-                f"Predictor service timeout: {str(e)}"
-            ) from e
+            raise TimeoutError(f"Predictor service timeout: {e!s}") from e
 
         except httpx.HTTPError as e:
             # Network errors
@@ -217,15 +218,14 @@ class SchedulingStrategy(ABC):
                 context="scheduler prediction connection error",
             )
             raise ConnectionError(
-                f"Predictor service unavailable: {str(e)}"
+                f"Predictor service unavailable: {e!s}"
             ) from e
 
     async def collect_queue_info(
         self,
-        available_instances: List["Instance"],
-    ) -> Dict[str, "InstanceQueueBase"]:
-        """
-        Collect queue information for all instances.
+        available_instances: list["Instance"],
+    ) -> dict[str, "InstanceQueueBase"]:
+        """Collect queue information for all instances.
 
         Uses a single lock acquisition via get_all_queue_info for efficiency.
 
@@ -238,13 +238,13 @@ class SchedulingStrategy(ABC):
         instance_ids = [inst.instance_id for inst in available_instances]
         return await self.instance_registry.get_all_queue_info(instance_ids)
 
-
     @abstractmethod
     def select_instance(
-        self, predictions: List[Prediction], queue_info: Dict[str, "InstanceQueueBase"]
-    ) -> Optional[str]:
-        """
-        Select the best instance from predictions.
+        self,
+        predictions: list[Prediction],
+        queue_info: dict[str, "InstanceQueueBase"],
+    ) -> str | None:
+        """Select the best instance from predictions.
 
         Args:
             predictions: List of predictions for different instances
@@ -261,8 +261,7 @@ class SchedulingStrategy(ABC):
         instance_id: str,
         prediction: Prediction,
     ) -> None:
-        """
-        Update queue information for selected instance.
+        """Update queue information for selected instance.
 
         Each strategy implements its own queue update logic:
         - MinimumExpectedTimeStrategy: error accumulation
@@ -276,8 +275,7 @@ class SchedulingStrategy(ABC):
         pass
 
     def get_prediction_type(self) -> str:
-        """
-        Get the prediction type required by this strategy.
+        """Get the prediction type required by this strategy.
 
         Returns:
             Prediction type: "expect_error" or "quantile"
@@ -287,8 +285,7 @@ class SchedulingStrategy(ABC):
 
 
 class MinimumExpectedTimeStrategy(SchedulingStrategy):
-    """
-    Strategy that selects the instance with minimum expected queue completion time.
+    """Strategy that selects the instance with minimum expected queue completion time.
 
     This strategy considers both the current queue state (expected time and error margin)
     and the predicted time for the new task. It selects the instance that minimizes
@@ -304,10 +301,11 @@ class MinimumExpectedTimeStrategy(SchedulingStrategy):
         super().__init__(predictor_client, instance_registry)
 
     def select_instance(
-        self, predictions: List[Prediction], queue_info: Dict[str, "InstanceQueueBase"]
-    ) -> Optional[str]:
-        """
-        Select instance with minimum total expected time (queue + new task).
+        self,
+        predictions: list[Prediction],
+        queue_info: dict[str, "InstanceQueueBase"],
+    ) -> str | None:
+        """Select instance with minimum total expected time (queue + new task).
 
         For each instance, calculates: queue_expected + queue_error + task_expected
         and selects the instance with the minimum value.
@@ -326,7 +324,11 @@ class MinimumExpectedTimeStrategy(SchedulingStrategy):
 
             if queue and isinstance(queue, InstanceQueueExpectError):
                 # Calculate total time: queue expected + queue error + new task expected
-                total_time = queue.expected_time_ms + queue.error_margin_ms + pred.predicted_time_ms
+                total_time = (
+                    queue.expected_time_ms
+                    + queue.error_margin_ms
+                    + pred.predicted_time_ms
+                )
             else:
                 # Fallback: no queue info, just use prediction
                 total_time = pred.predicted_time_ms
@@ -342,8 +344,7 @@ class MinimumExpectedTimeStrategy(SchedulingStrategy):
         instance_id: str,
         prediction: Prediction,
     ) -> None:
-        """
-        Update queue using error accumulation formula.
+        """Update queue using error accumulation formula.
 
         Formula:
         - new_expected = current_expected + task_expected
@@ -353,8 +354,9 @@ class MinimumExpectedTimeStrategy(SchedulingStrategy):
             instance_id: Selected instance
             prediction: Prediction for the task
         """
-        from .model import InstanceQueueExpectError
         import math
+
+        from .model import InstanceQueueExpectError
 
         current_queue = await self.instance_registry.get_queue_info(instance_id)
 
@@ -381,9 +383,7 @@ class MinimumExpectedTimeStrategy(SchedulingStrategy):
         new_expected = current_queue.expected_time_ms + task_expected
 
         # Calculate new queue error margin (error accumulation)
-        new_error = math.sqrt(
-            current_queue.error_margin_ms ** 2 + task_error ** 2
-        )
+        new_error = math.sqrt(current_queue.error_margin_ms**2 + task_error**2)
 
         updated_queue = InstanceQueueExpectError(
             instance_id=instance_id,
@@ -391,7 +391,9 @@ class MinimumExpectedTimeStrategy(SchedulingStrategy):
             error_margin_ms=new_error,
         )
 
-        await self.instance_registry.update_queue_info(instance_id, updated_queue)
+        await self.instance_registry.update_queue_info(
+            instance_id, updated_queue
+        )
         logger.debug(
             f"Updated queue (expect_error) for {instance_id}: "
             f"expected_time_ms={new_expected:.2f}, error_margin_ms={new_error:.2f}"
@@ -399,8 +401,7 @@ class MinimumExpectedTimeStrategy(SchedulingStrategy):
 
 
 class ProbabilisticSchedulingStrategy(SchedulingStrategy):
-    """
-    Probabilistic scheduling strategy based on quantile sampling.
+    """Probabilistic scheduling strategy based on quantile sampling.
 
     This strategy considers both the queue distribution and the new task distribution.
     For each instance, it samples from the queue's quantile distribution to estimate
@@ -413,8 +414,7 @@ class ProbabilisticSchedulingStrategy(SchedulingStrategy):
         instance_registry: "InstanceRegistry",
         target_quantile: float = 0.9,
     ):
-        """
-        Initialize probabilistic strategy.
+        """Initialize probabilistic strategy.
 
         Args:
             predictor_client: Client for getting predictions
@@ -430,10 +430,11 @@ class ProbabilisticSchedulingStrategy(SchedulingStrategy):
         return "quantile"
 
     def select_instance(
-        self, predictions: List[Prediction], queue_info: Dict[str, "InstanceQueueBase"]
-    ) -> Optional[str]:
-        """
-        Select instance using Monte Carlo simulation on combined prediction + queue time.
+        self,
+        predictions: list[Prediction],
+        queue_info: dict[str, "InstanceQueueBase"],
+    ) -> str | None:
+        """Select instance using Monte Carlo simulation on combined prediction + queue time.
 
         Performs vectorized Monte Carlo sampling (default: 10 samples) by:
         1. For each instance, interpolate both prediction quantiles and queue quantiles
@@ -449,6 +450,7 @@ class ProbabilisticSchedulingStrategy(SchedulingStrategy):
             Selected instance ID (the one with most wins across Monte Carlo samples)
         """
         import numpy as np
+
         from .model import InstanceQueueProbabilistic
 
         if not predictions:
@@ -478,13 +480,13 @@ class ProbabilisticSchedulingStrategy(SchedulingStrategy):
             if pred.quantiles and len(pred.quantiles) > 0:
                 # Convert dict to sorted arrays for interpolation
                 pred_quantiles = np.array(sorted(pred.quantiles.keys()))
-                pred_values = np.array([pred.quantiles[q] for q in pred_quantiles])
+                pred_values = np.array(
+                    [pred.quantiles[q] for q in pred_quantiles]
+                )
 
                 # Vectorized prediction time sampling
                 prediction_times = np.interp(
-                    random_percentiles,
-                    pred_quantiles,
-                    pred_values
+                    random_percentiles, pred_quantiles, pred_values
                 )
             else:
                 # Fallback: use predicted_time_ms as constant
@@ -496,9 +498,7 @@ class ProbabilisticSchedulingStrategy(SchedulingStrategy):
                 if isinstance(queue, InstanceQueueProbabilistic):
                     # Vectorized queue time sampling
                     queue_times = np.interp(
-                        random_percentiles,
-                        queue.quantiles,
-                        queue.values
+                        random_percentiles, queue.quantiles, queue.values
                     )
                 else:
                     # Fallback: no probabilistic queue info, assume zero queue
@@ -526,8 +526,7 @@ class ProbabilisticSchedulingStrategy(SchedulingStrategy):
         instance_id: str,
         prediction: Prediction,
     ) -> None:
-        """
-        Update queue using Monte Carlo sampling method.
+        """Update queue using Monte Carlo sampling method.
 
         Uses 1000 samples to compute new quantile distribution by combining
         queue distribution and task distribution.
@@ -536,8 +535,9 @@ class ProbabilisticSchedulingStrategy(SchedulingStrategy):
             instance_id: Selected instance
             prediction: Prediction for the task
         """
-        from .model import InstanceQueueProbabilistic
         import numpy as np
+
+        from .model import InstanceQueueProbabilistic
 
         current_queue = await self.instance_registry.get_queue_info(instance_id)
 
@@ -568,7 +568,9 @@ class ProbabilisticSchedulingStrategy(SchedulingStrategy):
                 quantiles=current_queue.quantiles,
                 values=updated_values,
             )
-            await self.instance_registry.update_queue_info(instance_id, updated_queue)
+            await self.instance_registry.update_queue_info(
+                instance_id, updated_queue
+            )
             logger.debug(
                 f"Updated queue (probabilistic, fallback) for {instance_id}: "
                 f"quantiles={current_queue.quantiles}, "
@@ -582,18 +584,14 @@ class ProbabilisticSchedulingStrategy(SchedulingStrategy):
 
         # Sample from queue distribution using vectorized numpy interpolation
         queue_samples = np.interp(
-            random_percentiles,
-            current_queue.quantiles,
-            current_queue.values
+            random_percentiles, current_queue.quantiles, current_queue.values
         )
 
         # Sample from task distribution
         task_quantiles = sorted(prediction.quantiles.keys())
         task_values = [prediction.quantiles[q] for q in task_quantiles]
         task_samples = np.interp(
-            random_percentiles,
-            task_quantiles,
-            task_values
+            random_percentiles, task_quantiles, task_values
         )
 
         # Compute total time samples
@@ -611,7 +609,9 @@ class ProbabilisticSchedulingStrategy(SchedulingStrategy):
             values=updated_values,
         )
 
-        await self.instance_registry.update_queue_info(instance_id, updated_queue)
+        await self.instance_registry.update_queue_info(
+            instance_id, updated_queue
+        )
         logger.debug(
             f"Updated queue (probabilistic, Monte Carlo) for {instance_id}: "
             f"quantiles={current_queue.quantiles}, "
@@ -620,8 +620,7 @@ class ProbabilisticSchedulingStrategy(SchedulingStrategy):
 
 
 class RoundRobinStrategy(SchedulingStrategy):
-    """
-    Round-robin scheduling strategy.
+    """Round-robin scheduling strategy.
 
     Simple strategy that cycles through instances in order.
     Useful for load balancing when predictions are not available.
@@ -637,8 +636,10 @@ class RoundRobinStrategy(SchedulingStrategy):
         self._counter = 0
 
     def select_instance(
-        self, predictions: List[Prediction], queue_info: Dict[str, "InstanceQueueBase"]
-    ) -> Optional[str]:
+        self,
+        predictions: list[Prediction],
+        queue_info: dict[str, "InstanceQueueBase"],
+    ) -> str | None:
         """Select next instance in round-robin order."""
         if not predictions:
             return None
@@ -652,8 +653,7 @@ class RoundRobinStrategy(SchedulingStrategy):
         instance_id: str,
         prediction: Prediction,
     ) -> None:
-        """
-        No-op for RoundRobinStrategy.
+        """No-op for RoundRobinStrategy.
 
         RoundRobin doesn't use queue predictions for scheduling decisions,
         so no queue update is necessary.
@@ -666,10 +666,8 @@ class RoundRobinStrategy(SchedulingStrategy):
         pass
 
 
-
 class RandomStrategy(SchedulingStrategy):
-    """
-    Random scheduling strategy.
+    """Random scheduling strategy.
 
     Worst case of probabilistic
     """
@@ -684,22 +682,22 @@ class RandomStrategy(SchedulingStrategy):
         self._counter = 0
 
     def select_instance(
-        self, predictions: List[Prediction], queue_info: Dict[str, "InstanceQueueBase"]
-    ) -> Optional[str]:
+        self,
+        predictions: list[Prediction],
+        queue_info: dict[str, "InstanceQueueBase"],
+    ) -> str | None:
         """Select next instance in round-robin order."""
         if not predictions:
             return None
-        
-        return random.choice(predictions).instance_id
 
+        return random.choice(predictions).instance_id
 
     async def update_queue(
         self,
         instance_id: str,
         prediction: Prediction,
     ) -> None:
-        """
-        No-op for RoundRobinStrategy.
+        """No-op for RoundRobinStrategy.
 
         RoundRobin doesn't use queue predictions for scheduling decisions,
         so no queue update is necessary.
@@ -713,8 +711,7 @@ class RandomStrategy(SchedulingStrategy):
 
 
 class PowerOfTwoStrategy(SchedulingStrategy):
-    """
-    Random scheduling strategy.
+    """Random scheduling strategy.
 
     Worst case of probabilistic
     """
@@ -729,15 +726,17 @@ class PowerOfTwoStrategy(SchedulingStrategy):
         self._counter = 0
 
     def select_instance(
-        self, predictions: List[Prediction], queue_info: Dict[str, "InstanceQueueBase"]
-    ) -> Optional[str]:
+        self,
+        predictions: list[Prediction],
+        queue_info: dict[str, "InstanceQueueBase"],
+    ) -> str | None:
         """Select next instance in round-robin order."""
         if not predictions:
             return None
-        
+
         for idx in range(len(predictions)):
             predictions[idx].predicted_time_ms = 1.0
-        
+
         # Select Queue
         pred_1 = random.choice(predictions)
         pred_2 = random.choice(predictions)
@@ -748,7 +747,7 @@ class PowerOfTwoStrategy(SchedulingStrategy):
 
         if not predictions:
             return None
-        
+
         # Retrive queue info
         queue_1 = queue_info.get(instance_1)
         queue_2 = queue_info.get(instance_2)
@@ -767,22 +766,19 @@ class PowerOfTwoStrategy(SchedulingStrategy):
             total_time_2 = queue_2.expected_time_ms + pred_2.predicted_time_ms
         else:
             # Fallback: no queue info, just use prediction
-            total_time_2 = pred_2.predicted_time_ms    
+            total_time_2 = pred_2.predicted_time_ms
 
-        
         if total_time_1 < total_time_2:
             return instance_1
         else:
             return instance_2
-
 
     async def update_queue(
         self,
         instance_id: str,
         prediction: Prediction,
     ) -> None:
-        """
-        No-op for RoundRobinStrategy.
+        """No-op for RoundRobinStrategy.
 
         RoundRobin doesn't use queue predictions for scheduling decisions,
         so no queue update is necessary.
@@ -802,8 +798,9 @@ class PowerOfTwoStrategy(SchedulingStrategy):
             instance_id: Selected instance
             prediction: Prediction for the task
         """
-        from .model import InstanceQueueExpectError
         import math
+
+        from .model import InstanceQueueExpectError
 
         current_queue = await self.instance_registry.get_queue_info(instance_id)
 
@@ -830,9 +827,7 @@ class PowerOfTwoStrategy(SchedulingStrategy):
         new_expected = current_queue.expected_time_ms + task_expected
 
         # Calculate new queue error margin (error accumulation)
-        new_error = math.sqrt(
-            current_queue.error_margin_ms ** 2 + task_error ** 2
-        )
+        new_error = math.sqrt(current_queue.error_margin_ms**2 + task_error**2)
 
         updated_queue = InstanceQueueExpectError(
             instance_id=instance_id,
@@ -840,7 +835,9 @@ class PowerOfTwoStrategy(SchedulingStrategy):
             error_margin_ms=new_error,
         )
 
-        await self.instance_registry.update_queue_info(instance_id, updated_queue)
+        await self.instance_registry.update_queue_info(
+            instance_id, updated_queue
+        )
         logger.debug(
             f"Updated queue (expect_error) for {instance_id}: "
             f"expected_time_ms={new_expected:.2f}, error_margin_ms={new_error:.2f}"
@@ -848,8 +845,7 @@ class PowerOfTwoStrategy(SchedulingStrategy):
 
 
 class MinimumExpectedTimeServerlessStrategy(SchedulingStrategy):
-    """
-    Strategy that selects the instance with minimum expected queue completion time.
+    """Strategy that selects the instance with minimum expected queue completion time.
 
     This strategy considers both the current queue state (expected time and error margin)
     and the predicted time for the new task. It selects the instance that minimizes
@@ -865,10 +861,11 @@ class MinimumExpectedTimeServerlessStrategy(SchedulingStrategy):
         super().__init__(predictor_client, instance_registry)
 
     def select_instance(
-        self, predictions: List[Prediction], queue_info: Dict[str, "InstanceQueueBase"]
-    ) -> Optional[str]:
-        """
-        Select instance with minimum total expected time (queue + new task).
+        self,
+        predictions: list[Prediction],
+        queue_info: dict[str, "InstanceQueueBase"],
+    ) -> str | None:
+        """Select instance with minimum total expected time (queue + new task).
 
         For each instance, calculates: queue_expected + queue_error + task_expected
         and selects the instance with the minimum value.
@@ -887,7 +884,11 @@ class MinimumExpectedTimeServerlessStrategy(SchedulingStrategy):
 
             if queue and isinstance(queue, InstanceQueueExpectError):
                 # Calculate total time: queue expected + queue error + new task expected
-                total_time = queue.expected_time_ms + queue.error_margin_ms + pred.predicted_time_ms
+                total_time = (
+                    queue.expected_time_ms
+                    + queue.error_margin_ms
+                    + pred.predicted_time_ms
+                )
             else:
                 # Fallback: no queue info, just use prediction
                 total_time = pred.predicted_time_ms
@@ -903,8 +904,7 @@ class MinimumExpectedTimeServerlessStrategy(SchedulingStrategy):
         instance_id: str,
         prediction: Prediction,
     ) -> None:
-        """
-        Update queue using error accumulation formula.
+        """Update queue using error accumulation formula.
 
         Formula:
         - new_expected = current_expected + task_expected
@@ -914,8 +914,9 @@ class MinimumExpectedTimeServerlessStrategy(SchedulingStrategy):
             instance_id: Selected instance
             prediction: Prediction for the task
         """
-        from .model import InstanceQueueExpectError
         import math
+
+        from .model import InstanceQueueExpectError
 
         current_queue = await self.instance_registry.get_queue_info(instance_id)
 
@@ -942,9 +943,7 @@ class MinimumExpectedTimeServerlessStrategy(SchedulingStrategy):
         new_expected = current_queue.expected_time_ms + task_expected
 
         # Calculate new queue error margin (error accumulation)
-        new_error = math.sqrt(
-            current_queue.error_margin_ms ** 2 + task_error ** 2
-        )
+        new_error = math.sqrt(current_queue.error_margin_ms**2 + task_error**2)
 
         updated_queue = InstanceQueueExpectError(
             instance_id=instance_id,
@@ -952,7 +951,9 @@ class MinimumExpectedTimeServerlessStrategy(SchedulingStrategy):
             error_margin_ms=new_error,
         )
 
-        await self.instance_registry.update_queue_info(instance_id, updated_queue)
+        await self.instance_registry.update_queue_info(
+            instance_id, updated_queue
+        )
         logger.debug(
             f"Updated queue (expect_error) for {instance_id}: "
             f"expected_time_ms={new_expected:.2f}, error_margin_ms={new_error:.2f}"
@@ -960,9 +961,9 @@ class MinimumExpectedTimeServerlessStrategy(SchedulingStrategy):
 
 
 class MinimumExpectedTimeLRStrategy(MinimumExpectedTimeStrategy):
-    """
-    Strategy that selects the instance with minimum expected queue completion time
-    using Linear Regression predictions.
+    """Selects the instance with minimum expected queue completion time.
+
+    Uses Linear Regression predictions.
     """
 
     def get_prediction_type(self) -> str:
@@ -971,9 +972,9 @@ class MinimumExpectedTimeLRStrategy(MinimumExpectedTimeStrategy):
 
 
 class MinimumExpectedTimeDTStrategy(MinimumExpectedTimeStrategy):
-    """
-    Strategy that selects the instance with minimum expected queue completion time
-    using Decision Tree predictions.
+    """Selects the instance with minimum expected queue completion time.
+
+    Uses Decision Tree predictions.
     """
 
     def get_prediction_type(self) -> str:
@@ -987,10 +988,9 @@ def get_strategy(
     predictor_client: "PredictorClient",
     instance_registry: "InstanceRegistry",
     target_quantile: float = 0.9,
-    **kwargs
+    **kwargs,
 ) -> SchedulingStrategy:
-    """
-    Get scheduling strategy by name.
+    """Get scheduling strategy by name.
 
     Args:
         strategy_name: Name of strategy
@@ -1006,9 +1006,13 @@ def get_strategy(
     if strategy_name == "min_time":
         return MinimumExpectedTimeStrategy(predictor_client, instance_registry)
     elif strategy_name == "min_time_lr":
-        return MinimumExpectedTimeLRStrategy(predictor_client, instance_registry)
+        return MinimumExpectedTimeLRStrategy(
+            predictor_client, instance_registry
+        )
     elif strategy_name == "min_time_dt":
-        return MinimumExpectedTimeDTStrategy(predictor_client, instance_registry)
+        return MinimumExpectedTimeDTStrategy(
+            predictor_client, instance_registry
+        )
     elif strategy_name == "probabilistic":
         return ProbabilisticSchedulingStrategy(
             predictor_client, instance_registry, target_quantile=target_quantile
@@ -1020,10 +1024,11 @@ def get_strategy(
     elif strategy_name == "po2":
         return PowerOfTwoStrategy(predictor_client, instance_registry)
     elif strategy_name == "severless":
-        return MinimumExpectedTimeServerlessStrategy(predictor_client, instance_registry)
+        return MinimumExpectedTimeServerlessStrategy(
+            predictor_client, instance_registry
+        )
     else:
         # Default to probabilistic
         return ProbabilisticSchedulingStrategy(
             predictor_client, instance_registry, target_quantile=target_quantile
         )
-

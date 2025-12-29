@@ -1,15 +1,13 @@
-"""
-WebSocket connection manager for real-time task result delivery.
+"""WebSocket connection manager for real-time task result delivery.
 
 This module manages WebSocket connections and task result subscriptions.
 """
 
-from typing import Set, Dict
 import asyncio
 
 from fastapi import WebSocket
 
-from .model import WSTaskResultMessage, TaskStatus, TaskTimestamps
+from .model import TaskStatus, TaskTimestamps, WSTaskResultMessage
 
 
 class ConnectionManager:
@@ -17,14 +15,13 @@ class ConnectionManager:
 
     def __init__(self):
         # Map of task_id -> set of websockets subscribed to that task
-        self._subscriptions: Dict[str, Set[WebSocket]] = {}
+        self._subscriptions: dict[str, set[WebSocket]] = {}
         # Map of websocket -> set of task_ids it's subscribed to
-        self._connections: Dict[WebSocket, Set[str]] = {}
+        self._connections: dict[WebSocket, set[str]] = {}
         self._lock = asyncio.Lock()
 
     async def connect(self, websocket: WebSocket) -> None:
-        """
-        Register a new WebSocket connection.
+        """Register a new WebSocket connection.
 
         Args:
             websocket: WebSocket connection to register
@@ -33,8 +30,7 @@ class ConnectionManager:
             self._connections[websocket] = set()
 
     async def disconnect(self, websocket: WebSocket) -> None:
-        """
-        Unregister a WebSocket connection and clean up subscriptions.
+        """Unregister a WebSocket connection and clean up subscriptions.
 
         Args:
             websocket: WebSocket connection to unregister
@@ -55,9 +51,10 @@ class ConnectionManager:
             if websocket in self._connections:
                 del self._connections[websocket]
 
-    async def subscribe(self, websocket: WebSocket, task_ids: list[str]) -> None:
-        """
-        Subscribe a WebSocket connection to task result updates.
+    async def subscribe(
+        self, websocket: WebSocket, task_ids: list[str]
+    ) -> None:
+        """Subscribe a WebSocket connection to task result updates.
 
         Args:
             websocket: WebSocket connection
@@ -78,9 +75,10 @@ class ConnectionManager:
                 # Add to websocket -> task mapping
                 self._connections[websocket].add(task_id)
 
-    async def unsubscribe(self, websocket: WebSocket, task_ids: list[str]) -> None:
-        """
-        Unsubscribe a WebSocket connection from task result updates.
+    async def unsubscribe(
+        self, websocket: WebSocket, task_ids: list[str]
+    ) -> None:
+        """Unsubscribe a WebSocket connection from task result updates.
 
         Args:
             websocket: WebSocket connection
@@ -99,8 +97,7 @@ class ConnectionManager:
                     self._connections[websocket].discard(task_id)
 
     async def get_subscribed_tasks(self, websocket: WebSocket) -> list[str]:
-        """
-        Get list of task IDs a WebSocket is subscribed to.
+        """Get list of task IDs a WebSocket is subscribed to.
 
         Args:
             websocket: WebSocket connection
@@ -112,8 +109,7 @@ class ConnectionManager:
             return list(self._connections.get(websocket, set()))
 
     async def get_subscribers(self, task_id: str) -> list[WebSocket]:
-        """
-        Get list of WebSockets subscribed to a task.
+        """Get list of WebSockets subscribed to a task.
 
         Args:
             task_id: Task ID
@@ -128,13 +124,12 @@ class ConnectionManager:
         self,
         task_id: str,
         status: TaskStatus,
-        result: dict = None,
-        error: str = None,
+        result: dict | None = None,
+        error: str | None = None,
         timestamps: TaskTimestamps = None,
-        execution_time_ms: int = None,
+        execution_time_ms: int | None = None,
     ) -> None:
-        """
-        Broadcast task result to all subscribed WebSocket connections.
+        """Broadcast task result to all subscribed WebSocket connections.
 
         Args:
             task_id: Task ID
@@ -150,12 +145,18 @@ class ConnectionManager:
         if not subscribers:
             # FIX: Add logging for no subscribers case (may indicate issue)
             from loguru import logger
-            logger.warning(f"No subscribers for task {task_id} when broadcasting result")
+
+            logger.warning(
+                f"No subscribers for task {task_id} when broadcasting result"
+            )
             return
 
         # FIX: Add logging for broadcast start
         from loguru import logger
-        logger.info(f"Broadcasting result for task {task_id} to {len(subscribers)} subscriber(s)")
+
+        logger.info(
+            f"Broadcasting result for task {task_id} to {len(subscribers)} subscriber(s)"
+        )
 
         # Create result message
         message = WSTaskResultMessage(
@@ -177,16 +178,22 @@ class ConnectionManager:
             try:
                 await websocket.send_json(message.model_dump())
                 sent_count += 1
-                logger.debug(f"Successfully sent {task_id} result to websocket {id(websocket)}")
+                logger.debug(
+                    f"Successfully sent {task_id} result to websocket {id(websocket)}"
+                )
             except Exception as e:
                 # FIX: Log the specific error instead of silent catch
                 failed_count += 1
-                logger.error(f"Failed to send {task_id} result to websocket {id(websocket)}: {type(e).__name__}: {e}")
+                logger.error(
+                    f"Failed to send {task_id} result to websocket {id(websocket)}: {type(e).__name__}: {e}"
+                )
                 # Mark for cleanup if sending fails
                 disconnected.append(websocket)
 
         # FIX: Log broadcast summary
-        logger.info(f"Broadcast complete for {task_id}: {sent_count} sent, {failed_count} failed")
+        logger.info(
+            f"Broadcast complete for {task_id}: {sent_count} sent, {failed_count} failed"
+        )
 
         # Clean up disconnected websockets
         for websocket in disconnected:
@@ -196,7 +203,9 @@ class ConnectionManager:
         async with self._lock:
             if task_id in self._subscriptions:
                 subscriber_count = len(self._subscriptions[task_id])
-                logger.debug(f"Cleaning up subscriptions for {task_id} (had {subscriber_count} subscribers)")
+                logger.debug(
+                    f"Cleaning up subscriptions for {task_id} (had {subscriber_count} subscribers)"
+                )
 
                 for ws in self._subscriptions[task_id].copy():
                     if ws in self._connections:

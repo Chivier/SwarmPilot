@@ -1,5 +1,4 @@
-"""
-Unit tests for Pydantic data models.
+"""Unit tests for Pydantic data models.
 
 Tests all model validation, serialization, and enum functionality.
 """
@@ -8,49 +7,49 @@ import pytest
 from pydantic import ValidationError
 
 from src.model import (
-    # Base Models
-    Task,
+    ErrorResponse,
+    HealthErrorResponse,
+    HealthResponse,
+    # Health Models
+    HealthStats,
     Instance,
+    InstanceInfoResponse,
+    InstanceListResponse,
     InstanceQueueBase,
     InstanceQueueProbabilistic,
-    # Response Models
-    SuccessResponse,
-    ErrorResponse,
     # Instance Models
     InstanceRegisterRequest,
     InstanceRegisterResponse,
     InstanceRemoveRequest,
     InstanceRemoveResponse,
-    InstanceListResponse,
     InstanceStats,
-    InstanceInfoResponse,
+    # Response Models
+    SuccessResponse,
+    # Base Models
+    Task,
+    TaskDetailInfo,
+    TaskDetailResponse,
+    TaskInfo,
+    TaskListResponse,
     # Task Models
     TaskStatus,
     TaskSubmitRequest,
-    TaskInfo,
     TaskSubmitResponse,
     TaskSummary,
-    TaskListResponse,
     TaskTimestamps,
-    TaskDetailInfo,
-    TaskDetailResponse,
-    # Health Models
-    HealthStats,
-    HealthResponse,
-    HealthErrorResponse,
+    WSAckMessage,
+    WSErrorMessage,
     # WebSocket Models
     WSMessageType,
     WSSubscribeMessage,
-    WSUnsubscribeMessage,
-    WSAckMessage,
     WSTaskResultMessage,
-    WSErrorMessage,
+    WSUnsubscribeMessage,
 )
-
 
 # ============================================================================
 # Base Models Tests
 # ============================================================================
+
 
 class TestTask:
     """Tests for Task model."""
@@ -61,7 +60,7 @@ class TestTask:
             task_id="task-1",
             model_id="model-1",
             task_input={"prompt": "test"},
-            metadata={"priority": "high"}
+            metadata={"priority": "high"},
         )
         assert task.task_id == "task-1"
         assert task.model_id == "model-1"
@@ -76,10 +75,7 @@ class TestTask:
     def test_empty_dicts(self):
         """Test task with empty input and metadata."""
         task = Task(
-            task_id="task-1",
-            model_id="model-1",
-            task_input={},
-            metadata={}
+            task_id="task-1", model_id="model-1", task_input={}, metadata={}
         )
         assert task.task_input == {}
         assert task.metadata == {}
@@ -90,7 +86,7 @@ class TestTask:
             task_id="task-1",
             model_id="model-1",
             task_input={"x": 1},
-            metadata={"y": 2}
+            metadata={"y": 2},
         )
         data = task.model_dump()
         assert data["task_id"] == "task-1"
@@ -102,7 +98,16 @@ class TestInstance:
 
     def test_valid_instance(self):
         """Test creating a valid instance."""
-        instance = Instance(instance_id="inst-1", model_id="model-1", endpoint="http://localhost:8000", platform_info={"software_name": "docker", "software_version": "20.10", "hardware_name": "test-hardware"})
+        instance = Instance(
+            instance_id="inst-1",
+            model_id="model-1",
+            endpoint="http://localhost:8000",
+            platform_info={
+                "software_name": "docker",
+                "software_version": "20.10",
+                "hardware_name": "test-hardware",
+            },
+        )
         assert instance.instance_id == "inst-1"
         assert instance.endpoint == "http://localhost:8000"
 
@@ -114,7 +119,9 @@ class TestInstance:
     def test_wrong_type(self):
         """Test wrong field type."""
         with pytest.raises(ValidationError):
-            Instance(instance_id=123, model_id="model-1", endpoint="http://test")
+            Instance(
+                instance_id=123, model_id="model-1", endpoint="http://test"
+            )
 
 
 class TestInstanceQueueBase:
@@ -139,7 +146,7 @@ class TestInstanceQueueProbabilistic:
         queue = InstanceQueueProbabilistic(
             instance_id="inst-1",
             quantiles=[0.5, 0.9, 0.95],
-            values=[100.0, 200.0, 300.0]
+            values=[100.0, 200.0, 300.0],
         )
         assert queue.instance_id == "inst-1"
         assert len(queue.quantiles) == 3
@@ -148,9 +155,7 @@ class TestInstanceQueueProbabilistic:
     def test_empty_lists(self):
         """Test with empty quantiles and values."""
         queue = InstanceQueueProbabilistic(
-            instance_id="inst-1",
-            quantiles=[],
-            values=[]
+            instance_id="inst-1", quantiles=[], values=[]
         )
         assert queue.quantiles == []
         assert queue.values == []
@@ -161,7 +166,7 @@ class TestInstanceQueueProbabilistic:
         queue = InstanceQueueProbabilistic(
             instance_id="inst-1",
             quantiles=[0.5, 0.9],
-            values=[100.0, 200.0, 300.0]
+            values=[100.0, 200.0, 300.0],
         )
         assert len(queue.quantiles) == 2
         assert len(queue.values) == 3
@@ -170,6 +175,7 @@ class TestInstanceQueueProbabilistic:
 # ============================================================================
 # Response Models Tests
 # ============================================================================
+
 
 class TestSuccessResponse:
     """Tests for SuccessResponse model."""
@@ -211,6 +217,7 @@ class TestErrorResponse:
 # Instance Management Models Tests
 # ============================================================================
 
+
 class TestInstanceRegisterRequest:
     """Tests for InstanceRegisterRequest model."""
 
@@ -220,7 +227,11 @@ class TestInstanceRegisterRequest:
             instance_id="inst-1",
             model_id="model-1",
             endpoint="http://localhost:8000",
-            platform_info={"software_name": "docker", "software_version": "20.10", "hardware_name": "test-hardware"}
+            platform_info={
+                "software_name": "docker",
+                "software_version": "20.10",
+                "hardware_name": "test-hardware",
+            },
         )
         assert req.instance_id == "inst-1"
         assert req.model_id == "model-1"
@@ -232,11 +243,18 @@ class TestInstanceRegisterResponse:
 
     def test_valid_register_response(self):
         """Test valid registration response."""
-        instance = Instance(instance_id="inst-1", model_id="model-1", endpoint="http://localhost:8000", platform_info={"software_name": "docker", "software_version": "20.10", "hardware_name": "test-hardware"})
+        instance = Instance(
+            instance_id="inst-1",
+            model_id="model-1",
+            endpoint="http://localhost:8000",
+            platform_info={
+                "software_name": "docker",
+                "software_version": "20.10",
+                "hardware_name": "test-hardware",
+            },
+        )
         resp = InstanceRegisterResponse(
-            success=True,
-            message="Registered",
-            instance=instance
+            success=True, message="Registered", instance=instance
         )
         assert resp.success is True
         assert resp.instance.instance_id == "inst-1"
@@ -257,9 +275,7 @@ class TestInstanceRemoveResponse:
     def test_valid_remove_response(self):
         """Test valid remove response."""
         resp = InstanceRemoveResponse(
-            success=True,
-            message="Removed",
-            instance_id="inst-1"
+            success=True, message="Removed", instance_id="inst-1"
         )
         assert resp.success is True
         assert resp.instance_id == "inst-1"
@@ -273,10 +289,15 @@ class TestInstanceListResponse:
         platform_info = {
             "software_name": "docker",
             "software_version": "20.10",
-            "hardware_name": "test-hardware"
+            "hardware_name": "test-hardware",
         }
         instances = [
-            Instance(instance_id=f"inst-{i}", model_id="model-1", endpoint=f"http://localhost:800{i}", platform_info=platform_info)
+            Instance(
+                instance_id=f"inst-{i}",
+                model_id="model-1",
+                endpoint=f"http://localhost:800{i}",
+                platform_info=platform_info,
+            )
             for i in range(3)
         ]
         resp = InstanceListResponse(success=True, count=3, instances=instances)
@@ -296,14 +317,18 @@ class TestInstanceStats:
 
     def test_valid_stats(self):
         """Test valid instance stats."""
-        stats = InstanceStats(pending_tasks=5, completed_tasks=10, failed_tasks=2)
+        stats = InstanceStats(
+            pending_tasks=5, completed_tasks=10, failed_tasks=2
+        )
         assert stats.pending_tasks == 5
         assert stats.completed_tasks == 10
         assert stats.failed_tasks == 2
 
     def test_zero_stats(self):
         """Test stats with zero values."""
-        stats = InstanceStats(pending_tasks=0, completed_tasks=0, failed_tasks=0)
+        stats = InstanceStats(
+            pending_tasks=0, completed_tasks=0, failed_tasks=0
+        )
         assert stats.pending_tasks == 0
 
 
@@ -312,19 +337,27 @@ class TestInstanceInfoResponse:
 
     def test_valid_info_response(self):
         """Test valid info response."""
-        instance = Instance(instance_id="inst-1", model_id="model-1", endpoint="http://test", platform_info={"software_name": "docker", "software_version": "20.10", "hardware_name": "test-hardware"})
+        instance = Instance(
+            instance_id="inst-1",
+            model_id="model-1",
+            endpoint="http://test",
+            platform_info={
+                "software_name": "docker",
+                "software_version": "20.10",
+                "hardware_name": "test-hardware",
+            },
+        )
         queue_info = InstanceQueueProbabilistic(
             instance_id="inst-1",
             quantiles=[0.5, 0.9, 0.95],
-            values=[100.0, 200.0, 300.0]
+            values=[100.0, 200.0, 300.0],
         )
-        stats = InstanceStats(pending_tasks=1, completed_tasks=2, failed_tasks=0)
+        stats = InstanceStats(
+            pending_tasks=1, completed_tasks=2, failed_tasks=0
+        )
 
         resp = InstanceInfoResponse(
-            success=True,
-            instance=instance,
-            queue_info=queue_info,
-            stats=stats
+            success=True, instance=instance, queue_info=queue_info, stats=stats
         )
         assert resp.success is True
         assert resp.instance.instance_id == "inst-1"
@@ -334,6 +367,7 @@ class TestInstanceInfoResponse:
 # ============================================================================
 # Task Models Tests
 # ============================================================================
+
 
 class TestTaskStatus:
     """Tests for TaskStatus enum."""
@@ -365,7 +399,7 @@ class TestTaskSubmitRequest:
             task_id="task-1",
             model_id="model-1",
             task_input={"prompt": "test"},
-            metadata={"key": "value"}
+            metadata={"key": "value"},
         )
         assert req.task_id == "task-1"
         assert req.task_input == {"prompt": "test"}
@@ -380,7 +414,7 @@ class TestTaskInfo:
             task_id="task-1",
             status=TaskStatus.PENDING,
             assigned_instance="inst-1",
-            submitted_at="2024-01-01T00:00:00"
+            submitted_at="2024-01-01T00:00:00",
         )
         assert info.task_id == "task-1"
         assert info.status == TaskStatus.PENDING
@@ -396,12 +430,10 @@ class TestTaskSubmitResponse:
             task_id="task-1",
             status=TaskStatus.PENDING,
             assigned_instance="inst-1",
-            submitted_at="2024-01-01T00:00:00"
+            submitted_at="2024-01-01T00:00:00",
         )
         resp = TaskSubmitResponse(
-            success=True,
-            message="Task submitted",
-            task=task_info
+            success=True, message="Task submitted", task=task_info
         )
         assert resp.success is True
         assert resp.task.task_id == "task-1"
@@ -418,7 +450,7 @@ class TestTaskSummary:
             status=TaskStatus.COMPLETED,
             assigned_instance="inst-1",
             submitted_at="2024-01-01T00:00:00",
-            completed_at="2024-01-01T00:01:00"
+            completed_at="2024-01-01T00:01:00",
         )
         assert summary.completed_at == "2024-01-01T00:01:00"
 
@@ -429,7 +461,7 @@ class TestTaskSummary:
             model_id="model-1",
             status=TaskStatus.PENDING,
             assigned_instance="inst-1",
-            submitted_at="2024-01-01T00:00:00"
+            submitted_at="2024-01-01T00:00:00",
         )
         assert summary.completed_at is None
 
@@ -445,17 +477,12 @@ class TestTaskListResponse:
                 model_id="model-1",
                 status=TaskStatus.PENDING,
                 assigned_instance="inst-1",
-                submitted_at="2024-01-01T00:00:00"
+                submitted_at="2024-01-01T00:00:00",
             )
             for i in range(10)
         ]
         resp = TaskListResponse(
-            success=True,
-            count=10,
-            total=100,
-            offset=0,
-            limit=10,
-            tasks=tasks
+            success=True, count=10, total=100, offset=0, limit=10, tasks=tasks
         )
         assert resp.count == 10
         assert resp.total == 100
@@ -465,12 +492,7 @@ class TestTaskListResponse:
     def test_empty_task_list(self):
         """Test empty task list."""
         resp = TaskListResponse(
-            success=True,
-            count=0,
-            total=0,
-            offset=0,
-            limit=10,
-            tasks=[]
+            success=True, count=0, total=0, offset=0, limit=10, tasks=[]
         )
         assert resp.count == 0
         assert len(resp.tasks) == 0
@@ -484,7 +506,7 @@ class TestTaskTimestamps:
         ts = TaskTimestamps(
             submitted_at="2024-01-01T00:00:00",
             started_at="2024-01-01T00:00:01",
-            completed_at="2024-01-01T00:00:02"
+            completed_at="2024-01-01T00:00:02",
         )
         assert ts.submitted_at == "2024-01-01T00:00:00"
         assert ts.started_at == "2024-01-01T00:00:01"
@@ -506,7 +528,7 @@ class TestTaskDetailInfo:
         ts = TaskTimestamps(
             submitted_at="2024-01-01T00:00:00",
             started_at="2024-01-01T00:00:01",
-            completed_at="2024-01-01T00:00:02"
+            completed_at="2024-01-01T00:00:02",
         )
         detail = TaskDetailInfo(
             task_id="task-1",
@@ -517,7 +539,7 @@ class TestTaskDetailInfo:
             metadata={"key": "value"},
             result={"output": "result"},
             timestamps=ts,
-            execution_time_ms=1000
+            execution_time_ms=1000,
         )
         assert detail.task_id == "task-1"
         assert detail.result == {"output": "result"}
@@ -529,7 +551,7 @@ class TestTaskDetailInfo:
         ts = TaskTimestamps(
             submitted_at="2024-01-01T00:00:00",
             started_at="2024-01-01T00:00:01",
-            completed_at="2024-01-01T00:00:02"
+            completed_at="2024-01-01T00:00:02",
         )
         detail = TaskDetailInfo(
             task_id="task-1",
@@ -539,7 +561,7 @@ class TestTaskDetailInfo:
             task_input={"prompt": "test"},
             metadata={},
             error="Execution failed",
-            timestamps=ts
+            timestamps=ts,
         )
         assert detail.error == "Execution failed"
         assert detail.result is None
@@ -559,7 +581,7 @@ class TestTaskDetailResponse:
             assigned_instance="inst-1",
             task_input={},
             metadata={},
-            timestamps=ts
+            timestamps=ts,
         )
         resp = TaskDetailResponse(success=True, task=detail)
         assert resp.success is True
@@ -569,6 +591,7 @@ class TestTaskDetailResponse:
 # ============================================================================
 # Health Models Tests
 # ============================================================================
+
 
 class TestHealthStats:
     """Tests for HealthStats model."""
@@ -582,7 +605,7 @@ class TestHealthStats:
             pending_tasks=5,
             running_tasks=3,
             completed_tasks=90,
-            failed_tasks=2
+            failed_tasks=2,
         )
         assert stats.total_instances == 10
         assert stats.active_instances == 8
@@ -597,7 +620,7 @@ class TestHealthStats:
             pending_tasks=0,
             running_tasks=0,
             completed_tasks=0,
-            failed_tasks=0
+            failed_tasks=0,
         )
         assert stats.total_instances == 0
 
@@ -608,15 +631,20 @@ class TestHealthResponse:
     def test_healthy_response(self):
         """Test healthy response."""
         stats = HealthStats(
-            total_instances=1, active_instances=1, total_tasks=0,
-            pending_tasks=0, running_tasks=0, completed_tasks=0, failed_tasks=0
+            total_instances=1,
+            active_instances=1,
+            total_tasks=0,
+            pending_tasks=0,
+            running_tasks=0,
+            completed_tasks=0,
+            failed_tasks=0,
         )
         resp = HealthResponse(
             success=True,
             status="healthy",
             timestamp="2024-01-01T00:00:00",
             version="0.1.0",
-            stats=stats
+            stats=stats,
         )
         assert resp.success is True
         assert resp.status == "healthy"
@@ -632,7 +660,7 @@ class TestHealthErrorResponse:
             success=False,
             status="unhealthy",
             error="Service unavailable",
-            timestamp="2024-01-01T00:00:00"
+            timestamp="2024-01-01T00:00:00",
         )
         assert resp.success is False
         assert resp.status == "unhealthy"
@@ -642,6 +670,7 @@ class TestHealthErrorResponse:
 # ============================================================================
 # WebSocket Models Tests
 # ============================================================================
+
 
 class TestWSMessageType:
     """Tests for WSMessageType enum."""
@@ -699,7 +728,9 @@ class TestWSAckMessage:
 
     def test_valid_ack(self):
         """Test valid ACK message."""
-        msg = WSAckMessage(message="Subscribed", subscribed_tasks=["task-1", "task-2"])
+        msg = WSAckMessage(
+            message="Subscribed", subscribed_tasks=["task-1", "task-2"]
+        )
         assert msg.type == WSMessageType.ACK
         assert msg.message == "Subscribed"
         assert len(msg.subscribed_tasks) == 2
@@ -718,14 +749,14 @@ class TestWSTaskResultMessage:
         ts = TaskTimestamps(
             submitted_at="2024-01-01T00:00:00",
             started_at="2024-01-01T00:00:01",
-            completed_at="2024-01-01T00:00:02"
+            completed_at="2024-01-01T00:00:02",
         )
         msg = WSTaskResultMessage(
             task_id="task-1",
             status=TaskStatus.COMPLETED,
             result={"output": "test"},
             timestamps=ts,
-            execution_time_ms=1000
+            execution_time_ms=1000,
         )
         assert msg.type == WSMessageType.RESULT
         assert msg.task_id == "task-1"
@@ -740,7 +771,7 @@ class TestWSTaskResultMessage:
             task_id="task-1",
             status=TaskStatus.FAILED,
             error="Task failed",
-            timestamps=ts
+            timestamps=ts,
         )
         assert msg.status == TaskStatus.FAILED
         assert msg.error == "Task failed"
@@ -768,6 +799,7 @@ class TestWSErrorMessage:
 # Serialization Tests
 # ============================================================================
 
+
 class TestSerialization:
     """Tests for model serialization and deserialization."""
 
@@ -777,7 +809,7 @@ class TestSerialization:
             task_id="task-1",
             model_id="model-1",
             task_input={"key": "value"},
-            metadata={"meta": "data"}
+            metadata={"meta": "data"},
         )
         data = original.model_dump()
         restored = Task.model_validate(data)
@@ -786,26 +818,43 @@ class TestSerialization:
 
     def test_instance_round_trip(self):
         """Test instance serialization and deserialization."""
-        original = Instance(instance_id="inst-1", model_id="model-1", endpoint="http://test", platform_info={"software_name": "docker", "software_version": "20.10", "hardware_name": "test-hardware"})
+        original = Instance(
+            instance_id="inst-1",
+            model_id="model-1",
+            endpoint="http://test",
+            platform_info={
+                "software_name": "docker",
+                "software_version": "20.10",
+                "hardware_name": "test-hardware",
+            },
+        )
         json_str = original.model_dump_json()
         restored = Instance.model_validate_json(json_str)
         assert restored.instance_id == original.instance_id
 
     def test_nested_model_serialization(self):
         """Test serialization of nested models."""
-        instance = Instance(instance_id="inst-1", model_id="model-1", endpoint="http://test", platform_info={"software_name": "docker", "software_version": "20.10", "hardware_name": "test-hardware"})
+        instance = Instance(
+            instance_id="inst-1",
+            model_id="model-1",
+            endpoint="http://test",
+            platform_info={
+                "software_name": "docker",
+                "software_version": "20.10",
+                "hardware_name": "test-hardware",
+            },
+        )
         queue = InstanceQueueProbabilistic(
             instance_id="inst-1",
             quantiles=[0.5, 0.9, 0.95],
-            values=[100.0, 200.0, 300.0]
+            values=[100.0, 200.0, 300.0],
         )
-        stats = InstanceStats(pending_tasks=1, completed_tasks=2, failed_tasks=0)
+        stats = InstanceStats(
+            pending_tasks=1, completed_tasks=2, failed_tasks=0
+        )
 
         resp = InstanceInfoResponse(
-            success=True,
-            instance=instance,
-            queue_info=queue,
-            stats=stats
+            success=True, instance=instance, queue_info=queue, stats=stats
         )
         data = resp.model_dump()
         assert data["instance"]["instance_id"] == "inst-1"

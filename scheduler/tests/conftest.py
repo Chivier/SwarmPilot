@@ -1,35 +1,34 @@
-"""
-Shared pytest fixtures for scheduler tests.
+"""Shared pytest fixtures for scheduler tests.
 
 This module provides reusable fixtures for testing all components of the
 scheduler system including registries, clients, and sample data.
 """
 
+from datetime import UTC, datetime
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
-from datetime import datetime, timezone
-from typing import Dict, Any, List
-from unittest.mock import AsyncMock, MagicMock, Mock
+
+# Import components
+from src.instance_registry import InstanceRegistry
 
 # Import models
 from src.model import (
     Instance,
-    Task,
-    TaskStatus,
     InstanceQueueBase,
     InstanceQueueProbabilistic,
+    Task,
 )
-
-# Import components
-from src.instance_registry import InstanceRegistry
+from src.predictor_client import Prediction, PredictorClient
+from src.task_dispatcher import TaskDispatcher
 from src.task_registry import TaskRegistry
 from src.websocket_manager import ConnectionManager
-from src.predictor_client import PredictorClient, Prediction
-from src.task_dispatcher import TaskDispatcher
-
 
 # ============================================================================
 # Sample Data Fixtures
 # ============================================================================
+
 
 @pytest.fixture
 def sample_instance() -> Instance:
@@ -41,13 +40,13 @@ def sample_instance() -> Instance:
         platform_info={
             "software_name": "docker",
             "software_version": "20.10",
-            "hardware_name": "test-hardware"
-        }
+            "hardware_name": "test-hardware",
+        },
     )
 
 
 @pytest.fixture
-def sample_instances() -> List[Instance]:
+def sample_instances() -> list[Instance]:
     """Create multiple sample instances for testing."""
     return [
         Instance(
@@ -57,8 +56,8 @@ def sample_instances() -> List[Instance]:
             platform_info={
                 "software_name": "docker",
                 "software_version": "20.10",
-                "hardware_name": f"test-hardware-{i}"
-            }
+                "hardware_name": f"test-hardware-{i}",
+            },
         )
         for i in range(1, 4)
     ]
@@ -71,19 +70,19 @@ def sample_task() -> Task:
         task_id="test-task-1",
         model_id="test-model",
         task_input={"prompt": "test prompt"},
-        metadata={"priority": "high"}
+        metadata={"priority": "high"},
     )
 
 
 @pytest.fixture
-def sample_tasks() -> List[Task]:
+def sample_tasks() -> list[Task]:
     """Create multiple sample tasks for testing."""
     return [
         Task(
             task_id=f"task-{i}",
             model_id="test-model",
             task_input={"prompt": f"test prompt {i}"},
-            metadata={"priority": "normal"}
+            metadata={"priority": "normal"},
         )
         for i in range(1, 4)
     ]
@@ -101,7 +100,7 @@ def sample_probabilistic_queue() -> InstanceQueueProbabilistic:
     return InstanceQueueProbabilistic(
         instance_id="test-instance-1",
         quantiles=[0.5, 0.9, 0.95, 0.99],
-        values=[100.0, 200.0, 300.0, 500.0]
+        values=[100.0, 200.0, 300.0, 500.0],
     )
 
 
@@ -112,19 +111,24 @@ def sample_prediction() -> Prediction:
         instance_id="test-instance-1",
         predicted_time_ms=150.0,
         confidence=0.95,
-        quantiles={0.5: 100.0, 0.9: 200.0, 0.95: 300.0, 0.99: 500.0}
+        quantiles={0.5: 100.0, 0.9: 200.0, 0.95: 300.0, 0.99: 500.0},
     )
 
 
 @pytest.fixture
-def sample_predictions() -> List[Prediction]:
+def sample_predictions() -> list[Prediction]:
     """Create multiple sample predictions for testing."""
     return [
         Prediction(
             instance_id=f"instance-{i}",
             predicted_time_ms=100.0 * i,
             confidence=0.9,
-            quantiles={0.5: 50.0 * i, 0.9: 100.0 * i, 0.95: 150.0 * i, 0.99: 200.0 * i}
+            quantiles={
+                0.5: 50.0 * i,
+                0.9: 100.0 * i,
+                0.95: 150.0 * i,
+                0.99: 200.0 * i,
+            },
         )
         for i in range(1, 4)
     ]
@@ -134,6 +138,7 @@ def sample_predictions() -> List[Prediction]:
 # Registry Fixtures
 # ============================================================================
 
+
 @pytest.fixture
 def instance_registry() -> InstanceRegistry:
     """Create a fresh instance registry for testing."""
@@ -142,8 +147,7 @@ def instance_registry() -> InstanceRegistry:
 
 @pytest.fixture
 def instance_registry_with_instances(
-    instance_registry: InstanceRegistry,
-    sample_instances: List[Instance]
+    instance_registry: InstanceRegistry, sample_instances: list[Instance]
 ) -> InstanceRegistry:
     """Create an instance registry pre-populated with instances."""
     for instance in sample_instances:
@@ -159,8 +163,7 @@ def task_registry() -> TaskRegistry:
 
 @pytest.fixture
 def task_registry_with_tasks(
-    task_registry: TaskRegistry,
-    sample_tasks: List[Task]
+    task_registry: TaskRegistry, sample_tasks: list[Task]
 ) -> TaskRegistry:
     """Create a task registry pre-populated with tasks."""
     for task in sample_tasks:
@@ -169,7 +172,7 @@ def task_registry_with_tasks(
             model_id=task.model_id,
             task_input=task.task_input,
             metadata=task.metadata,
-            assigned_instance="instance-1"
+            assigned_instance="instance-1",
         )
     return task_registry
 
@@ -177,6 +180,7 @@ def task_registry_with_tasks(
 # ============================================================================
 # WebSocket Fixtures
 # ============================================================================
+
 
 @pytest.fixture
 def websocket_manager() -> ConnectionManager:
@@ -203,13 +207,14 @@ def mock_websockets(request):
 
     Usage: @pytest.mark.parametrize("mock_websockets", [3], indirect=True)
     """
-    count = getattr(request, 'param', 2)
+    count = getattr(request, "param", 2)
     return [MagicMock() for _ in range(count)]
 
 
 # ============================================================================
 # Predictor Client Fixtures
 # ============================================================================
+
 
 @pytest.fixture
 def mock_predictor_client() -> PredictorClient:
@@ -222,8 +227,7 @@ def mock_predictor_client() -> PredictorClient:
 
 @pytest.fixture
 def predictor_client_with_response(
-    mock_predictor_client: PredictorClient,
-    sample_predictions: List[Prediction]
+    mock_predictor_client: PredictorClient, sample_predictions: list[Prediction]
 ) -> PredictorClient:
     """Create a mock predictor client with preset predictions."""
     mock_predictor_client.predict.return_value = sample_predictions
@@ -235,18 +239,19 @@ def predictor_client_with_response(
 # Task Dispatcher Fixtures
 # ============================================================================
 
+
 @pytest.fixture
 def task_dispatcher(
     task_registry: TaskRegistry,
     instance_registry: InstanceRegistry,
-    websocket_manager: ConnectionManager
+    websocket_manager: ConnectionManager,
 ) -> TaskDispatcher:
     """Create a task dispatcher with fresh registries."""
     return TaskDispatcher(
         task_registry=task_registry,
         instance_registry=instance_registry,
         websocket_manager=websocket_manager,
-        timeout=30.0
+        timeout=30.0,
     )
 
 
@@ -254,20 +259,21 @@ def task_dispatcher(
 def task_dispatcher_with_data(
     task_registry_with_tasks: TaskRegistry,
     instance_registry_with_instances: InstanceRegistry,
-    websocket_manager: ConnectionManager
+    websocket_manager: ConnectionManager,
 ) -> TaskDispatcher:
     """Create a task dispatcher with pre-populated registries."""
     return TaskDispatcher(
         task_registry=task_registry_with_tasks,
         instance_registry=instance_registry_with_instances,
         websocket_manager=websocket_manager,
-        timeout=30.0
+        timeout=30.0,
     )
 
 
 # ============================================================================
 # API Testing Fixtures
 # ============================================================================
+
 
 @pytest.fixture
 def test_app():
@@ -276,6 +282,7 @@ def test_app():
     This fixture imports the app lazily to avoid circular dependencies.
     """
     from src.api import app
+
     return app
 
 
@@ -283,38 +290,45 @@ def test_app():
 def test_client(test_app):
     """Create a FastAPI test client."""
     from fastapi.testclient import TestClient
+
     return TestClient(test_app)
 
 
 @pytest.fixture
-def default_platform_info() -> Dict[str, str]:
+def default_platform_info() -> dict[str, str]:
     """Provide default platform info for testing."""
     return {
         "software_name": "docker",
         "software_version": "20.10",
-        "hardware_name": "test-hardware"
+        "hardware_name": "test-hardware",
     }
 
 
-def make_register_request(instance_id: str, model_id: str, endpoint: str, platform_info: Dict[str, str] = None) -> Dict[str, Any]:
+def make_register_request(
+    instance_id: str,
+    model_id: str,
+    endpoint: str,
+    platform_info: dict[str, str] | None = None,
+) -> dict[str, Any]:
     """Helper function to create instance registration request data."""
     if platform_info is None:
         platform_info = {
             "software_name": "docker",
             "software_version": "20.10",
-            "hardware_name": "test-hardware"
+            "hardware_name": "test-hardware",
         }
     return {
         "instance_id": instance_id,
         "model_id": model_id,
         "endpoint": endpoint,
-        "platform_info": platform_info
+        "platform_info": platform_info,
     }
 
 
 # ============================================================================
 # HTTP Mocking Fixtures
 # ============================================================================
+
 
 @pytest.fixture
 def mock_httpx_client():
@@ -331,27 +345,25 @@ def successful_task_response():
     return {
         "success": True,
         "result": {"output": "test output", "tokens": 100},
-        "execution_time_ms": 150
+        "execution_time_ms": 150,
     }
 
 
 @pytest.fixture
 def failed_task_response():
     """Create a mock failed task execution response."""
-    return {
-        "success": False,
-        "error": "Task execution failed"
-    }
+    return {"success": False, "error": "Task execution failed"}
 
 
 # ============================================================================
 # Utility Fixtures
 # ============================================================================
 
+
 @pytest.fixture
 def current_timestamp() -> str:
     """Get current ISO formatted timestamp."""
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 @pytest.fixture
@@ -376,20 +388,22 @@ def freeze_time(monkeypatch):
 def reset_round_robin_counter():
     """Reset the round-robin counter before each test."""
     from src.scheduler import RoundRobinStrategy
+
     # Reset the class-level counter if it exists
-    if hasattr(RoundRobinStrategy, '_counter'):
+    if hasattr(RoundRobinStrategy, "_counter"):
         RoundRobinStrategy._counter = 0
     yield
     # Clean up after test
-    if hasattr(RoundRobinStrategy, '_counter'):
+    if hasattr(RoundRobinStrategy, "_counter"):
         RoundRobinStrategy._counter = 0
 
 
 @pytest.fixture(autouse=True)
 def reset_global_registries():
     """Reset global registries before each test to ensure test isolation."""
-    from src.api import task_registry, instance_registry
     import asyncio
+
+    from src.api import instance_registry, task_registry
 
     # Clear registries before test
     async def clear_registries():

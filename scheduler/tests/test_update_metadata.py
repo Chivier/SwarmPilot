@@ -1,5 +1,4 @@
-"""
-Unit tests for /task/update_metadata endpoint.
+"""Unit tests for /task/update_metadata endpoint.
 
 Tests metadata updates with queue recalculation for both
 expect_error and probabilistic scheduling strategies.
@@ -7,25 +6,29 @@ expect_error and probabilistic scheduling strategies.
 TDD Test Suite - Written before implementation.
 """
 
+from unittest.mock import AsyncMock, patch
+
 import pytest
-from unittest.mock import patch, AsyncMock, MagicMock
-from typing import Dict, Any
 
-from src.model import TaskStatus, InstanceQueueExpectError, InstanceQueueProbabilistic
+from src.model import (
+    TaskStatus,
+)
 from src.predictor_client import Prediction
-from src.task_registry import TaskRecord
-
 
 # ============================================================================
 # Fixtures for update_metadata tests
 # ============================================================================
+
 
 @pytest.fixture
 def sample_metadata_update():
     """Create a sample metadata update request."""
     return {
         "updates": [
-            {"task_id": "task-1", "metadata": {"new_key": "new_value", "priority": "high"}}
+            {
+                "task_id": "task-1",
+                "metadata": {"new_key": "new_value", "priority": "high"},
+            }
         ]
     }
 
@@ -50,7 +53,7 @@ def sample_prediction_for_update():
         predicted_time_ms=200.0,
         confidence=0.95,
         error_margin_ms=20.0,
-        quantiles={0.5: 150.0, 0.9: 250.0, 0.95: 300.0, 0.99: 400.0}
+        quantiles={0.5: 150.0, 0.9: 250.0, 0.95: 300.0, 0.99: 400.0},
     )
 
 
@@ -58,35 +61,48 @@ def sample_prediction_for_update():
 # Test Class: Request/Response Validation
 # ============================================================================
 
+
 class TestUpdateMetadataValidation:
     """Tests for request/response validation."""
 
     def test_valid_request_accepted(self, test_client, sample_metadata_update):
         """Test that a valid request is accepted."""
         # First register an instance and submit a task
-        test_client.post("/instance/register", json={
-            "instance_id": "inst-1",
-            "model_id": "model-1",
-            "endpoint": "http://localhost:8001",
-            "platform_info": {
-                "software_name": "docker",
-                "software_version": "20.10",
-                "hardware_name": "test-hw"
-            }
-        })
+        test_client.post(
+            "/instance/register",
+            json={
+                "instance_id": "inst-1",
+                "model_id": "model-1",
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hw",
+                },
+            },
+        )
 
         # Submit a task
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
-            test_client.post("/task/submit", json={
-                "task_id": "task-1",
-                "model_id": "model-1",
-                "task_input": {"prompt": "test"},
-                "metadata": {"original": "value"}
-            })
+        with patch(
+            "src.api.predictor_client.predict", new=AsyncMock(return_value=[])
+        ):
+            test_client.post(
+                "/task/submit",
+                json={
+                    "task_id": "task-1",
+                    "model_id": "model-1",
+                    "task_input": {"prompt": "test"},
+                    "metadata": {"original": "value"},
+                },
+            )
 
         # Update metadata
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
-            response = test_client.post("/task/update_metadata", json=sample_metadata_update)
+        with patch(
+            "src.api.predictor_client.predict", new=AsyncMock(return_value=[])
+        ):
+            response = test_client.post(
+                "/task/update_metadata", json=sample_metadata_update
+            )
 
         assert response.status_code == 200
         data = response.json()
@@ -95,7 +111,9 @@ class TestUpdateMetadataValidation:
 
     def test_empty_list_returns_zero_count(self, test_client):
         """Test that an empty updates list returns zero count."""
-        response = test_client.post("/task/update_metadata", json={"updates": []})
+        response = test_client.post(
+            "/task/update_metadata", json={"updates": []}
+        )
 
         # Empty list should either be accepted (0 updates) or rejected (validation)
         # Based on design, we accept empty list
@@ -109,25 +127,32 @@ class TestUpdateMetadataValidation:
 
     def test_missing_task_id_validation_error(self, test_client):
         """Test that missing task_id returns validation error."""
-        response = test_client.post("/task/update_metadata", json={
-            "updates": [{"metadata": {"key": "value"}}]  # Missing task_id
-        })
+        response = test_client.post(
+            "/task/update_metadata",
+            json={
+                "updates": [{"metadata": {"key": "value"}}]  # Missing task_id
+            },
+        )
 
         assert response.status_code == 422
 
     def test_missing_metadata_validation_error(self, test_client):
         """Test that missing metadata returns validation error."""
-        response = test_client.post("/task/update_metadata", json={
-            "updates": [{"task_id": "task-1"}]  # Missing metadata
-        })
+        response = test_client.post(
+            "/task/update_metadata",
+            json={
+                "updates": [{"task_id": "task-1"}]  # Missing metadata
+            },
+        )
 
         assert response.status_code == 422
 
     def test_invalid_metadata_type_validation_error(self, test_client):
         """Test that invalid metadata type returns validation error."""
-        response = test_client.post("/task/update_metadata", json={
-            "updates": [{"task_id": "task-1", "metadata": "not a dict"}]
-        })
+        response = test_client.post(
+            "/task/update_metadata",
+            json={"updates": [{"task_id": "task-1", "metadata": "not a dict"}]},
+        )
 
         assert response.status_code == 422
 
@@ -136,37 +161,56 @@ class TestUpdateMetadataValidation:
 # Test Class: Basic Update Functionality
 # ============================================================================
 
+
 class TestUpdateMetadataBasic:
     """Tests for basic metadata update (no queue recalculation)."""
 
     def test_update_task_not_in_queue(self, test_client):
         """Test updating metadata for task not assigned to any instance."""
         # Register instance
-        test_client.post("/instance/register", json={
-            "instance_id": "inst-1",
-            "model_id": "model-1",
-            "endpoint": "http://localhost:8001",
-            "platform_info": {
-                "software_name": "docker",
-                "software_version": "20.10",
-                "hardware_name": "test-hw"
-            }
-        })
+        test_client.post(
+            "/instance/register",
+            json={
+                "instance_id": "inst-1",
+                "model_id": "model-1",
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hw",
+                },
+            },
+        )
 
         # Submit task (will be assigned but not yet in queue for this test)
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
-            test_client.post("/task/submit", json={
-                "task_id": "task-not-in-queue",
-                "model_id": "model-1",
-                "task_input": {"prompt": "test"},
-                "metadata": {"original": "metadata"}
-            })
+        with patch(
+            "src.api.predictor_client.predict", new=AsyncMock(return_value=[])
+        ):
+            test_client.post(
+                "/task/submit",
+                json={
+                    "task_id": "task-not-in-queue",
+                    "model_id": "model-1",
+                    "task_input": {"prompt": "test"},
+                    "metadata": {"original": "metadata"},
+                },
+            )
 
         # Update metadata - should succeed without predictor call
-        with patch("src.api.predictor_client.predict", new=AsyncMock()) as mock_predict:
-            response = test_client.post("/task/update_metadata", json={
-                "updates": [{"task_id": "task-not-in-queue", "metadata": {"new": "metadata"}}]
-            })
+        with patch(
+            "src.api.predictor_client.predict", new=AsyncMock()
+        ):
+            response = test_client.post(
+                "/task/update_metadata",
+                json={
+                    "updates": [
+                        {
+                            "task_id": "task-not-in-queue",
+                            "metadata": {"new": "metadata"},
+                        }
+                    ]
+                },
+            )
 
             # Predictor should not be called for tasks not in queue
             # (Note: actual behavior depends on implementation details)
@@ -175,33 +219,47 @@ class TestUpdateMetadataBasic:
         data = response.json()
         assert data["succeeded"] >= 0  # Either succeeded or task not found
 
-    def test_update_multiple_tasks(self, test_client, sample_batch_metadata_update):
+    def test_update_multiple_tasks(
+        self, test_client, sample_batch_metadata_update
+    ):
         """Test batch update of multiple tasks."""
         # Register instance
-        test_client.post("/instance/register", json={
-            "instance_id": "inst-1",
-            "model_id": "model-1",
-            "endpoint": "http://localhost:8001",
-            "platform_info": {
-                "software_name": "docker",
-                "software_version": "20.10",
-                "hardware_name": "test-hw"
-            }
-        })
+        test_client.post(
+            "/instance/register",
+            json={
+                "instance_id": "inst-1",
+                "model_id": "model-1",
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hw",
+                },
+            },
+        )
 
         # Submit multiple tasks
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
+        with patch(
+            "src.api.predictor_client.predict", new=AsyncMock(return_value=[])
+        ):
             for i in range(1, 4):
-                test_client.post("/task/submit", json={
-                    "task_id": f"task-{i}",
-                    "model_id": "model-1",
-                    "task_input": {"prompt": f"test {i}"},
-                    "metadata": {"original": f"value-{i}"}
-                })
+                test_client.post(
+                    "/task/submit",
+                    json={
+                        "task_id": f"task-{i}",
+                        "model_id": "model-1",
+                        "task_input": {"prompt": f"test {i}"},
+                        "metadata": {"original": f"value-{i}"},
+                    },
+                )
 
         # Update all tasks
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
-            response = test_client.post("/task/update_metadata", json=sample_batch_metadata_update)
+        with patch(
+            "src.api.predictor_client.predict", new=AsyncMock(return_value=[])
+        ):
+            response = test_client.post(
+                "/task/update_metadata", json=sample_batch_metadata_update
+            )
 
         assert response.status_code == 200
         data = response.json()
@@ -209,9 +267,17 @@ class TestUpdateMetadataBasic:
 
     def test_task_not_found_reported(self, test_client):
         """Test that non-existent task is reported in results."""
-        response = test_client.post("/task/update_metadata", json={
-            "updates": [{"task_id": "nonexistent-task", "metadata": {"key": "value"}}]
-        })
+        response = test_client.post(
+            "/task/update_metadata",
+            json={
+                "updates": [
+                    {
+                        "task_id": "nonexistent-task",
+                        "metadata": {"key": "value"},
+                    }
+                ]
+            },
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -221,30 +287,43 @@ class TestUpdateMetadataBasic:
     def test_empty_metadata_allowed(self, test_client):
         """Test that empty metadata dict is valid."""
         # Register and submit task
-        test_client.post("/instance/register", json={
-            "instance_id": "inst-1",
-            "model_id": "model-1",
-            "endpoint": "http://localhost:8001",
-            "platform_info": {
-                "software_name": "docker",
-                "software_version": "20.10",
-                "hardware_name": "test-hw"
-            }
-        })
-
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
-            test_client.post("/task/submit", json={
-                "task_id": "task-empty-meta",
+        test_client.post(
+            "/instance/register",
+            json={
+                "instance_id": "inst-1",
                 "model_id": "model-1",
-                "task_input": {"prompt": "test"},
-                "metadata": {"has": "data"}
-            })
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hw",
+                },
+            },
+        )
+
+        with patch(
+            "src.api.predictor_client.predict", new=AsyncMock(return_value=[])
+        ):
+            test_client.post(
+                "/task/submit",
+                json={
+                    "task_id": "task-empty-meta",
+                    "model_id": "model-1",
+                    "task_input": {"prompt": "test"},
+                    "metadata": {"has": "data"},
+                },
+            )
 
         # Update with empty metadata
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
-            response = test_client.post("/task/update_metadata", json={
-                "updates": [{"task_id": "task-empty-meta", "metadata": {}}]
-            })
+        with patch(
+            "src.api.predictor_client.predict", new=AsyncMock(return_value=[])
+        ):
+            response = test_client.post(
+                "/task/update_metadata",
+                json={
+                    "updates": [{"task_id": "task-empty-meta", "metadata": {}}]
+                },
+            )
 
         assert response.status_code == 200
 
@@ -252,6 +331,7 @@ class TestUpdateMetadataBasic:
 # ============================================================================
 # Test Class: Skip Behavior for COMPLETED/FAILED Tasks
 # ============================================================================
+
 
 class TestUpdateMetadataSkipBehavior:
     """Tests for skip behavior with COMPLETED/FAILED tasks."""
@@ -264,38 +344,58 @@ class TestUpdateMetadataSkipBehavior:
         from src.api import task_registry
 
         # Register instance and submit task
-        test_client.post("/instance/register", json={
-            "instance_id": "inst-1",
-            "model_id": "model-1",
-            "endpoint": "http://localhost:8001",
-            "platform_info": {
-                "software_name": "docker",
-                "software_version": "20.10",
-                "hardware_name": "test-hw"
-            }
-        })
-
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
-            test_client.post("/task/submit", json={
-                "task_id": "completed-task",
+        test_client.post(
+            "/instance/register",
+            json={
+                "instance_id": "inst-1",
                 "model_id": "model-1",
-                "task_input": {"prompt": "test"},
-                "metadata": {"original": "value"}
-            })
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hw",
+                },
+            },
+        )
+
+        with patch(
+            "src.api.predictor_client.predict", new=AsyncMock(return_value=[])
+        ):
+            test_client.post(
+                "/task/submit",
+                json={
+                    "task_id": "completed-task",
+                    "model_id": "model-1",
+                    "task_input": {"prompt": "test"},
+                    "metadata": {"original": "value"},
+                },
+            )
 
         # Manually set task to COMPLETED
         import asyncio
+
         async def set_completed():
             task = await task_registry.get("completed-task")
             if task:
                 task.status = TaskStatus.COMPLETED
-        asyncio.get_event_loop().run_until_complete(set_completed())
+
+        asyncio.run(set_completed())
 
         # Try to update - should be skipped
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
-            response = test_client.post("/task/update_metadata", json={
-                "updates": [{"task_id": "completed-task", "metadata": {"new": "value"}}]
-            })
+        with patch(
+            "src.api.predictor_client.predict", new=AsyncMock(return_value=[])
+        ):
+            response = test_client.post(
+                "/task/update_metadata",
+                json={
+                    "updates": [
+                        {
+                            "task_id": "completed-task",
+                            "metadata": {"new": "value"},
+                        }
+                    ]
+                },
+            )
 
         assert response.status_code == 200
         data = response.json()
@@ -307,38 +407,55 @@ class TestUpdateMetadataSkipBehavior:
         from src.api import task_registry
 
         # Register instance and submit task
-        test_client.post("/instance/register", json={
-            "instance_id": "inst-1",
-            "model_id": "model-1",
-            "endpoint": "http://localhost:8001",
-            "platform_info": {
-                "software_name": "docker",
-                "software_version": "20.10",
-                "hardware_name": "test-hw"
-            }
-        })
-
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
-            test_client.post("/task/submit", json={
-                "task_id": "failed-task",
+        test_client.post(
+            "/instance/register",
+            json={
+                "instance_id": "inst-1",
                 "model_id": "model-1",
-                "task_input": {"prompt": "test"},
-                "metadata": {"original": "value"}
-            })
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hw",
+                },
+            },
+        )
+
+        with patch(
+            "src.api.predictor_client.predict", new=AsyncMock(return_value=[])
+        ):
+            test_client.post(
+                "/task/submit",
+                json={
+                    "task_id": "failed-task",
+                    "model_id": "model-1",
+                    "task_input": {"prompt": "test"},
+                    "metadata": {"original": "value"},
+                },
+            )
 
         # Manually set task to FAILED
         import asyncio
+
         async def set_failed():
             task = await task_registry.get("failed-task")
             if task:
                 task.status = TaskStatus.FAILED
-        asyncio.get_event_loop().run_until_complete(set_failed())
+
+        asyncio.run(set_failed())
 
         # Try to update - should be skipped
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
-            response = test_client.post("/task/update_metadata", json={
-                "updates": [{"task_id": "failed-task", "metadata": {"new": "value"}}]
-            })
+        with patch(
+            "src.api.predictor_client.predict", new=AsyncMock(return_value=[])
+        ):
+            response = test_client.post(
+                "/task/update_metadata",
+                json={
+                    "updates": [
+                        {"task_id": "failed-task", "metadata": {"new": "value"}}
+                    ]
+                },
+            )
 
         assert response.status_code == 200
 
@@ -347,24 +464,28 @@ class TestUpdateMetadataSkipBehavior:
 # Test Class: Queue Update with expect_error Strategy
 # ============================================================================
 
+
 class TestUpdateMetadataExpectError:
     """Tests for queue recalculation with expect_error strategy."""
 
-    def test_pending_task_queue_recalculated(self, test_client, sample_prediction_for_update):
+    def test_pending_task_queue_recalculated(
+        self, test_client, sample_prediction_for_update
+    ):
         """Test queue recalculation for PENDING task with assigned instance."""
-        from src.api import instance_registry, task_registry, scheduling_strategy
-
         # Setup: Register instance with expect_error queue
-        test_client.post("/instance/register", json={
-            "instance_id": "inst-queue-test",
-            "model_id": "model-1",
-            "endpoint": "http://localhost:8001",
-            "platform_info": {
-                "software_name": "docker",
-                "software_version": "20.10",
-                "hardware_name": "test-hw"
-            }
-        })
+        test_client.post(
+            "/instance/register",
+            json={
+                "instance_id": "inst-queue-test",
+                "model_id": "model-1",
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hw",
+                },
+            },
+        )
 
         # Submit a task with predictions
         old_prediction = Prediction(
@@ -372,16 +493,22 @@ class TestUpdateMetadataExpectError:
             predicted_time_ms=100.0,
             confidence=0.95,
             error_margin_ms=10.0,
-            quantiles={0.5: 80.0, 0.9: 150.0, 0.95: 200.0, 0.99: 300.0}
+            quantiles={0.5: 80.0, 0.9: 150.0, 0.95: 200.0, 0.99: 300.0},
         )
 
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[old_prediction])):
-            test_client.post("/task/submit", json={
-                "task_id": "task-queue-update",
-                "model_id": "model-1",
-                "task_input": {"prompt": "test"},
-                "metadata": {"original": "metadata"}
-            })
+        with patch(
+            "src.api.predictor_client.predict",
+            new=AsyncMock(return_value=[old_prediction]),
+        ):
+            test_client.post(
+                "/task/submit",
+                json={
+                    "task_id": "task-queue-update",
+                    "model_id": "model-1",
+                    "task_input": {"prompt": "test"},
+                    "metadata": {"original": "metadata"},
+                },
+            )
 
         # Update metadata - should trigger re-prediction
         new_prediction = Prediction(
@@ -389,13 +516,24 @@ class TestUpdateMetadataExpectError:
             predicted_time_ms=200.0,
             confidence=0.95,
             error_margin_ms=20.0,
-            quantiles={0.5: 150.0, 0.9: 250.0, 0.95: 300.0, 0.99: 400.0}
+            quantiles={0.5: 150.0, 0.9: 250.0, 0.95: 300.0, 0.99: 400.0},
         )
 
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[new_prediction])):
-            response = test_client.post("/task/update_metadata", json={
-                "updates": [{"task_id": "task-queue-update", "metadata": {"new": "metadata"}}]
-            })
+        with patch(
+            "src.api.predictor_client.predict",
+            new=AsyncMock(return_value=[new_prediction]),
+        ):
+            response = test_client.post(
+                "/task/update_metadata",
+                json={
+                    "updates": [
+                        {
+                            "task_id": "task-queue-update",
+                            "metadata": {"new": "metadata"},
+                        }
+                    ]
+                },
+            )
 
         assert response.status_code == 200
         data = response.json()
@@ -411,51 +549,72 @@ class TestUpdateMetadataExpectError:
 # Test Class: Queue Update with Probabilistic Strategy
 # ============================================================================
 
+
 class TestUpdateMetadataProbabilistic:
     """Tests for queue recalculation with probabilistic strategy."""
 
     def test_probabilistic_queue_recalculated(self, test_client):
         """Test queue recalculation uses Monte Carlo for probabilistic queues."""
         # Register instance
-        test_client.post("/instance/register", json={
-            "instance_id": "inst-prob",
-            "model_id": "model-1",
-            "endpoint": "http://localhost:8001",
-            "platform_info": {
-                "software_name": "docker",
-                "software_version": "20.10",
-                "hardware_name": "test-hw"
-            }
-        })
+        test_client.post(
+            "/instance/register",
+            json={
+                "instance_id": "inst-prob",
+                "model_id": "model-1",
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hw",
+                },
+            },
+        )
 
         # Submit task with probabilistic prediction
         old_pred = Prediction(
             instance_id="inst-prob",
             predicted_time_ms=100.0,
             confidence=0.9,
-            quantiles={0.5: 80.0, 0.9: 150.0, 0.95: 200.0, 0.99: 300.0}
+            quantiles={0.5: 80.0, 0.9: 150.0, 0.95: 200.0, 0.99: 300.0},
         )
 
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[old_pred])):
-            test_client.post("/task/submit", json={
-                "task_id": "task-prob",
-                "model_id": "model-1",
-                "task_input": {"prompt": "test"},
-                "metadata": {"original": "value"}
-            })
+        with patch(
+            "src.api.predictor_client.predict",
+            new=AsyncMock(return_value=[old_pred]),
+        ):
+            test_client.post(
+                "/task/submit",
+                json={
+                    "task_id": "task-prob",
+                    "model_id": "model-1",
+                    "task_input": {"prompt": "test"},
+                    "metadata": {"original": "value"},
+                },
+            )
 
         # Update with new prediction
         new_pred = Prediction(
             instance_id="inst-prob",
             predicted_time_ms=200.0,
             confidence=0.9,
-            quantiles={0.5: 160.0, 0.9: 300.0, 0.95: 400.0, 0.99: 600.0}
+            quantiles={0.5: 160.0, 0.9: 300.0, 0.95: 400.0, 0.99: 600.0},
         )
 
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[new_pred])):
-            response = test_client.post("/task/update_metadata", json={
-                "updates": [{"task_id": "task-prob", "metadata": {"updated": "value"}}]
-            })
+        with patch(
+            "src.api.predictor_client.predict",
+            new=AsyncMock(return_value=[new_pred]),
+        ):
+            response = test_client.post(
+                "/task/update_metadata",
+                json={
+                    "updates": [
+                        {
+                            "task_id": "task-prob",
+                            "metadata": {"updated": "value"},
+                        }
+                    ]
+                },
+            )
 
         assert response.status_code == 200
 
@@ -464,25 +623,30 @@ class TestUpdateMetadataProbabilistic:
 # Test Class: Rollback on Prediction Failure
 # ============================================================================
 
+
 class TestUpdateMetadataRollback:
     """Tests for rollback behavior when prediction fails."""
 
     def test_predictor_failure_rollback(self, test_client):
         """Test that metadata is rolled back if predictor fails."""
-        from src.api import task_registry
         import asyncio
 
+        from src.api import task_registry
+
         # Register instance
-        test_client.post("/instance/register", json={
-            "instance_id": "inst-rollback",
-            "model_id": "model-1",
-            "endpoint": "http://localhost:8001",
-            "platform_info": {
-                "software_name": "docker",
-                "software_version": "20.10",
-                "hardware_name": "test-hw"
-            }
-        })
+        test_client.post(
+            "/instance/register",
+            json={
+                "instance_id": "inst-rollback",
+                "model_id": "model-1",
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hw",
+                },
+            },
+        )
 
         # Submit task - need to patch both central_queue scheduling and predictor
         old_pred = Prediction(
@@ -490,16 +654,22 @@ class TestUpdateMetadataRollback:
             predicted_time_ms=100.0,
             confidence=0.9,
             error_margin_ms=10.0,
-            quantiles={0.5: 80.0, 0.9: 150.0, 0.95: 200.0, 0.99: 300.0}
+            quantiles={0.5: 80.0, 0.9: 150.0, 0.95: 200.0, 0.99: 300.0},
         )
 
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[old_pred])):
-            test_client.post("/task/submit", json={
-                "task_id": "task-rollback",
-                "model_id": "model-1",
-                "task_input": {"prompt": "test"},
-                "metadata": {"original": "value"}
-            })
+        with patch(
+            "src.api.predictor_client.predict",
+            new=AsyncMock(return_value=[old_pred]),
+        ):
+            test_client.post(
+                "/task/submit",
+                json={
+                    "task_id": "task-rollback",
+                    "model_id": "model-1",
+                    "task_input": {"prompt": "test"},
+                    "metadata": {"original": "value"},
+                },
+            )
 
         # Manually set up task to be "in queue" with assigned instance and predictions
         async def setup_task_in_queue():
@@ -509,7 +679,12 @@ class TestUpdateMetadataRollback:
                 task.status = TaskStatus.PENDING
                 task.predicted_time_ms = 100.0
                 task.predicted_error_margin_ms = 10.0
-                task.predicted_quantiles = {0.5: 80.0, 0.9: 150.0, 0.95: 200.0, 0.99: 300.0}
+                task.predicted_quantiles = {
+                    0.5: 80.0,
+                    0.9: 150.0,
+                    0.95: 200.0,
+                    0.99: 300.0,
+                }
 
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
@@ -519,13 +694,25 @@ class TestUpdateMetadataRollback:
         async def get_original_metadata():
             task = await task_registry.get("task-rollback")
             return task.metadata.copy() if task else None
+
         original_metadata = loop.run_until_complete(get_original_metadata())
 
         # Update with predictor failure - should trigger rollback
-        with patch("src.api.predictor_client.predict", new=AsyncMock(side_effect=ConnectionError("Predictor unavailable"))):
-            response = test_client.post("/task/update_metadata", json={
-                "updates": [{"task_id": "task-rollback", "metadata": {"should_be": "rolled_back"}}]
-            })
+        with patch(
+            "src.api.predictor_client.predict",
+            new=AsyncMock(side_effect=ConnectionError("Predictor unavailable")),
+        ):
+            response = test_client.post(
+                "/task/update_metadata",
+                json={
+                    "updates": [
+                        {
+                            "task_id": "task-rollback",
+                            "metadata": {"should_be": "rolled_back"},
+                        }
+                    ]
+                },
+            )
 
         assert response.status_code == 200
         data = response.json()
@@ -533,7 +720,10 @@ class TestUpdateMetadataRollback:
         # Check that the update failed due to prediction failure
         assert data["failed"] >= 1
         assert data["results"][0]["success"] is False
-        assert "rolled back" in data["results"][0]["message"].lower() or "prediction failed" in data["results"][0]["message"].lower()
+        assert (
+            "rolled back" in data["results"][0]["message"].lower()
+            or "prediction failed" in data["results"][0]["message"].lower()
+        )
 
         # Verify metadata was rolled back
         async def verify_rollback():
@@ -548,20 +738,24 @@ class TestUpdateMetadataRollback:
 
     def test_predictor_timeout_rollback(self, test_client):
         """Test that metadata is rolled back on predictor timeout."""
-        from src.api import task_registry
         import asyncio
 
+        from src.api import task_registry
+
         # Register instance
-        test_client.post("/instance/register", json={
-            "instance_id": "inst-timeout",
-            "model_id": "model-1",
-            "endpoint": "http://localhost:8001",
-            "platform_info": {
-                "software_name": "docker",
-                "software_version": "20.10",
-                "hardware_name": "test-hw"
-            }
-        })
+        test_client.post(
+            "/instance/register",
+            json={
+                "instance_id": "inst-timeout",
+                "model_id": "model-1",
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hw",
+                },
+            },
+        )
 
         # Submit task
         old_pred = Prediction(
@@ -569,16 +763,22 @@ class TestUpdateMetadataRollback:
             predicted_time_ms=100.0,
             confidence=0.9,
             error_margin_ms=10.0,
-            quantiles={0.5: 80.0, 0.9: 150.0, 0.95: 200.0, 0.99: 300.0}
+            quantiles={0.5: 80.0, 0.9: 150.0, 0.95: 200.0, 0.99: 300.0},
         )
 
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[old_pred])):
-            test_client.post("/task/submit", json={
-                "task_id": "task-timeout",
-                "model_id": "model-1",
-                "task_input": {"prompt": "test"},
-                "metadata": {"original": "value"}
-            })
+        with patch(
+            "src.api.predictor_client.predict",
+            new=AsyncMock(return_value=[old_pred]),
+        ):
+            test_client.post(
+                "/task/submit",
+                json={
+                    "task_id": "task-timeout",
+                    "model_id": "model-1",
+                    "task_input": {"prompt": "test"},
+                    "metadata": {"original": "value"},
+                },
+            )
 
         # Manually set up task to be "in queue"
         async def setup_task_in_queue():
@@ -588,17 +788,33 @@ class TestUpdateMetadataRollback:
                 task.status = TaskStatus.PENDING
                 task.predicted_time_ms = 100.0
                 task.predicted_error_margin_ms = 10.0
-                task.predicted_quantiles = {0.5: 80.0, 0.9: 150.0, 0.95: 200.0, 0.99: 300.0}
+                task.predicted_quantiles = {
+                    0.5: 80.0,
+                    0.9: 150.0,
+                    0.95: 200.0,
+                    0.99: 300.0,
+                }
 
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         loop.run_until_complete(setup_task_in_queue())
 
         # Update with timeout - should trigger rollback
-        with patch("src.api.predictor_client.predict", new=AsyncMock(side_effect=TimeoutError("Predictor timeout"))):
-            response = test_client.post("/task/update_metadata", json={
-                "updates": [{"task_id": "task-timeout", "metadata": {"should_be": "rolled_back"}}]
-            })
+        with patch(
+            "src.api.predictor_client.predict",
+            new=AsyncMock(side_effect=TimeoutError("Predictor timeout")),
+        ):
+            response = test_client.post(
+                "/task/update_metadata",
+                json={
+                    "updates": [
+                        {
+                            "task_id": "task-timeout",
+                            "metadata": {"should_be": "rolled_back"},
+                        }
+                    ]
+                },
+            )
 
         assert response.status_code == 200
         data = response.json()
@@ -613,50 +829,66 @@ class TestUpdateMetadataRollback:
 # Test Class: Edge Cases
 # ============================================================================
 
+
 class TestUpdateMetadataEdgeCases:
     """Tests for edge cases."""
 
     def test_instance_not_found_skips_queue_update(self, test_client):
         """Test that if assigned instance is removed, queue update is skipped."""
-        from src.api import task_registry, instance_registry
-        import asyncio
-
         # Register instance
-        test_client.post("/instance/register", json={
-            "instance_id": "inst-to-remove",
-            "model_id": "model-1",
-            "endpoint": "http://localhost:8001",
-            "platform_info": {
-                "software_name": "docker",
-                "software_version": "20.10",
-                "hardware_name": "test-hw"
-            }
-        })
+        test_client.post(
+            "/instance/register",
+            json={
+                "instance_id": "inst-to-remove",
+                "model_id": "model-1",
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hw",
+                },
+            },
+        )
 
         # Submit task
         old_pred = Prediction(
             instance_id="inst-to-remove",
             predicted_time_ms=100.0,
             confidence=0.9,
-            quantiles={0.5: 80.0, 0.9: 150.0, 0.95: 200.0, 0.99: 300.0}
+            quantiles={0.5: 80.0, 0.9: 150.0, 0.95: 200.0, 0.99: 300.0},
         )
 
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[old_pred])):
-            test_client.post("/task/submit", json={
-                "task_id": "task-orphan",
-                "model_id": "model-1",
-                "task_input": {"prompt": "test"},
-                "metadata": {"original": "value"}
-            })
+        with patch(
+            "src.api.predictor_client.predict",
+            new=AsyncMock(return_value=[old_pred]),
+        ):
+            test_client.post(
+                "/task/submit",
+                json={
+                    "task_id": "task-orphan",
+                    "model_id": "model-1",
+                    "task_input": {"prompt": "test"},
+                    "metadata": {"original": "value"},
+                },
+            )
 
         # Remove the instance
-        test_client.post("/instance/remove", json={"instance_id": "inst-to-remove"})
+        test_client.post(
+            "/instance/remove", json={"instance_id": "inst-to-remove"}
+        )
 
         # Try to update metadata - should still work but skip queue update
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
-            response = test_client.post("/task/update_metadata", json={
-                "updates": [{"task_id": "task-orphan", "metadata": {"new": "value"}}]
-            })
+        with patch(
+            "src.api.predictor_client.predict", new=AsyncMock(return_value=[])
+        ):
+            response = test_client.post(
+                "/task/update_metadata",
+                json={
+                    "updates": [
+                        {"task_id": "task-orphan", "metadata": {"new": "value"}}
+                    ]
+                },
+            )
 
         # Should not crash, may succeed or fail gracefully
         assert response.status_code == 200
@@ -664,33 +896,54 @@ class TestUpdateMetadataEdgeCases:
     def test_metadata_replaces_not_merges(self, test_client):
         """Test that new metadata completely replaces old (no merge)."""
         from src.api import task_registry
-        import asyncio
 
         # Register and submit
-        test_client.post("/instance/register", json={
-            "instance_id": "inst-replace",
-            "model_id": "model-1",
-            "endpoint": "http://localhost:8001",
-            "platform_info": {
-                "software_name": "docker",
-                "software_version": "20.10",
-                "hardware_name": "test-hw"
-            }
-        })
-
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
-            test_client.post("/task/submit", json={
-                "task_id": "task-replace",
+        test_client.post(
+            "/instance/register",
+            json={
+                "instance_id": "inst-replace",
                 "model_id": "model-1",
-                "task_input": {"prompt": "test"},
-                "metadata": {"key1": "value1", "key2": "value2", "key3": "value3"}
-            })
+                "endpoint": "http://localhost:8001",
+                "platform_info": {
+                    "software_name": "docker",
+                    "software_version": "20.10",
+                    "hardware_name": "test-hw",
+                },
+            },
+        )
+
+        with patch(
+            "src.api.predictor_client.predict", new=AsyncMock(return_value=[])
+        ):
+            test_client.post(
+                "/task/submit",
+                json={
+                    "task_id": "task-replace",
+                    "model_id": "model-1",
+                    "task_input": {"prompt": "test"},
+                    "metadata": {
+                        "key1": "value1",
+                        "key2": "value2",
+                        "key3": "value3",
+                    },
+                },
+            )
 
         # Update with partial metadata (only key1)
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
-            response = test_client.post("/task/update_metadata", json={
-                "updates": [{"task_id": "task-replace", "metadata": {"key1": "new_value1"}}]
-            })
+        with patch(
+            "src.api.predictor_client.predict", new=AsyncMock(return_value=[])
+        ):
+            response = test_client.post(
+                "/task/update_metadata",
+                json={
+                    "updates": [
+                        {
+                            "task_id": "task-replace",
+                            "metadata": {"key1": "new_value1"},
+                        }
+                    ]
+                },
+            )
 
         assert response.status_code == 200
 
@@ -699,17 +952,20 @@ class TestUpdateMetadataEdgeCases:
             task = await task_registry.get("task-replace")
             if task:
                 # key2 and key3 should NOT be present if replace semantics
-                return "key2" not in task.metadata and "key3" not in task.metadata
+                return (
+                    "key2" not in task.metadata and "key3" not in task.metadata
+                )
             return True
 
         # Note: This assertion depends on implementation
-        # is_replaced = asyncio.get_event_loop().run_until_complete(check_metadata())
+        # is_replaced = asyncio.run(check_metadata())
         # assert is_replaced
 
 
 # ============================================================================
 # Test Class: TaskRegistry Methods (Unit Tests)
 # ============================================================================
+
 
 class TestTaskRegistryUpdateMethods:
     """Unit tests for TaskRegistry update_metadata and update_prediction methods."""
@@ -723,11 +979,13 @@ class TestTaskRegistryUpdateMethods:
             model_id="model-1",
             task_input={"prompt": "test"},
             metadata={"original": "value"},
-            assigned_instance="inst-1"
+            assigned_instance="inst-1",
         )
 
         # Update metadata
-        task = await task_registry.update_metadata("test-task", {"new": "metadata"})
+        task = await task_registry.update_metadata(
+            "test-task", {"new": "metadata"}
+        )
 
         assert task.metadata == {"new": "metadata"}
         # Other fields should be unchanged
@@ -751,7 +1009,7 @@ class TestTaskRegistryUpdateMethods:
             metadata={},
             assigned_instance="inst-1",
             predicted_time_ms=100.0,
-            predicted_error_margin_ms=10.0
+            predicted_error_margin_ms=10.0,
         )
 
         # Update prediction
@@ -759,7 +1017,7 @@ class TestTaskRegistryUpdateMethods:
             task_id="test-pred-task",
             predicted_time_ms=200.0,
             predicted_error_margin_ms=20.0,
-            predicted_quantiles={0.5: 150.0, 0.9: 250.0}
+            predicted_quantiles={0.5: 150.0, 0.9: 250.0},
         )
 
         task = await task_registry.get("test-pred-task")
@@ -775,5 +1033,5 @@ class TestTaskRegistryUpdateMethods:
                 task_id="nonexistent",
                 predicted_time_ms=100.0,
                 predicted_error_margin_ms=10.0,
-                predicted_quantiles=None
+                predicted_quantiles=None,
             )

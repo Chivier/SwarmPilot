@@ -1,5 +1,4 @@
-"""
-Unit tests for /task/repredict endpoint.
+"""Unit tests for /task/repredict endpoint.
 
 Tests batch re-prediction of all pending/running tasks
 without modifying metadata.
@@ -7,17 +6,20 @@ without modifying metadata.
 TDD Test Suite - Written before implementation.
 """
 
-import pytest
-from unittest.mock import patch, AsyncMock
 import asyncio
+from unittest.mock import AsyncMock, patch
 
-from src.model import TaskStatus, InstanceQueueExpectError, InstanceQueueProbabilistic
+import pytest
+
+from src.model import (
+    TaskStatus,
+)
 from src.predictor_client import Prediction
-
 
 # ============================================================================
 # Fixtures for repredict tests
 # ============================================================================
+
 
 @pytest.fixture
 def sample_prediction():
@@ -27,7 +29,7 @@ def sample_prediction():
         predicted_time_ms=200.0,
         confidence=0.95,
         error_margin_ms=20.0,
-        quantiles={0.5: 150.0, 0.9: 250.0, 0.95: 300.0, 0.99: 400.0}
+        quantiles={0.5: 150.0, 0.9: 250.0, 0.95: 300.0, 0.99: 400.0},
     )
 
 
@@ -39,37 +41,48 @@ def new_prediction():
         predicted_time_ms=300.0,  # Different from original
         confidence=0.92,
         error_margin_ms=30.0,
-        quantiles={0.5: 250.0, 0.9: 350.0, 0.95: 400.0, 0.99: 500.0}
+        quantiles={0.5: 250.0, 0.9: 350.0, 0.95: 400.0, 0.99: 500.0},
     )
 
 
-def setup_instance_and_task(test_client, task_id: str, model_id: str = "model-1"):
+def setup_instance_and_task(
+    test_client, task_id: str, model_id: str = "model-1"
+):
     """Helper to register instance and submit a task."""
     # Register instance (idempotent)
-    test_client.post("/instance/register", json={
-        "instance_id": "inst-1",
-        "model_id": model_id,
-        "endpoint": "http://localhost:8001",
-        "platform_info": {
-            "software_name": "docker",
-            "software_version": "20.10",
-            "hardware_name": "test-hw"
-        }
-    })
+    test_client.post(
+        "/instance/register",
+        json={
+            "instance_id": "inst-1",
+            "model_id": model_id,
+            "endpoint": "http://localhost:8001",
+            "platform_info": {
+                "software_name": "docker",
+                "software_version": "20.10",
+                "hardware_name": "test-hw",
+            },
+        },
+    )
 
     # Submit task
-    with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
-        test_client.post("/task/submit", json={
-            "task_id": task_id,
-            "model_id": model_id,
-            "task_input": {"prompt": "test"},
-            "metadata": {"height": 512, "width": 512}
-        })
+    with patch(
+        "src.api.predictor_client.predict", new=AsyncMock(return_value=[])
+    ):
+        test_client.post(
+            "/task/submit",
+            json={
+                "task_id": task_id,
+                "model_id": model_id,
+                "task_input": {"prompt": "test"},
+                "metadata": {"height": 512, "width": 512},
+            },
+        )
 
 
 # ============================================================================
 # Test Class: Basic Functionality
 # ============================================================================
+
 
 class TestRepredictBasic:
     """Tests for basic repredict functionality."""
@@ -100,7 +113,8 @@ class TestRepredictBasic:
                 task = await task_registry.get(task_id)
                 if task:
                     task.status = TaskStatus.COMPLETED
-        asyncio.get_event_loop().run_until_complete(set_completed())
+
+        asyncio.run(set_completed())
 
         response = test_client.post("/task/repredict")
 
@@ -115,6 +129,7 @@ class TestRepredictBasic:
 # ============================================================================
 # Test Class: Repredict Functionality
 # ============================================================================
+
 
 class TestRepredictTasks:
     """Tests for actual re-prediction."""
@@ -133,11 +148,20 @@ class TestRepredictTasks:
                 task.status = TaskStatus.PENDING
                 task.predicted_time_ms = 100.0
                 task.predicted_error_margin_ms = 10.0
-                task.predicted_quantiles = {0.5: 80.0, 0.9: 150.0, 0.95: 200.0, 0.99: 300.0}
-        asyncio.get_event_loop().run_until_complete(setup_task_in_queue())
+                task.predicted_quantiles = {
+                    0.5: 80.0,
+                    0.9: 150.0,
+                    0.95: 200.0,
+                    0.99: 300.0,
+                }
+
+        asyncio.run(setup_task_in_queue())
 
         # Mock predictor to return new prediction
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[new_prediction])):
+        with patch(
+            "src.api.predictor_client.predict",
+            new=AsyncMock(return_value=[new_prediction]),
+        ):
             response = test_client.post("/task/repredict")
 
         assert response.status_code == 200
@@ -159,10 +183,19 @@ class TestRepredictTasks:
                 task.status = TaskStatus.RUNNING
                 task.predicted_time_ms = 100.0
                 task.predicted_error_margin_ms = 10.0
-                task.predicted_quantiles = {0.5: 80.0, 0.9: 150.0, 0.95: 200.0, 0.99: 300.0}
-        asyncio.get_event_loop().run_until_complete(setup_task_running())
+                task.predicted_quantiles = {
+                    0.5: 80.0,
+                    0.9: 150.0,
+                    0.95: 200.0,
+                    0.99: 300.0,
+                }
 
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[new_prediction])):
+        asyncio.run(setup_task_running())
+
+        with patch(
+            "src.api.predictor_client.predict",
+            new=AsyncMock(return_value=[new_prediction]),
+        ):
             response = test_client.post("/task/repredict")
 
         assert response.status_code == 200
@@ -186,10 +219,19 @@ class TestRepredictTasks:
                     task.status = TaskStatus.PENDING
                     task.predicted_time_ms = 100.0
                     task.predicted_error_margin_ms = 10.0
-                    task.predicted_quantiles = {0.5: 80.0, 0.9: 150.0, 0.95: 200.0, 0.99: 300.0}
-        asyncio.get_event_loop().run_until_complete(setup_tasks_in_queue())
+                    task.predicted_quantiles = {
+                        0.5: 80.0,
+                        0.9: 150.0,
+                        0.95: 200.0,
+                        0.99: 300.0,
+                    }
 
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[new_prediction])):
+        asyncio.run(setup_tasks_in_queue())
+
+        with patch(
+            "src.api.predictor_client.predict",
+            new=AsyncMock(return_value=[new_prediction]),
+        ):
             response = test_client.post("/task/repredict")
 
         assert response.status_code == 200
@@ -212,10 +254,19 @@ class TestRepredictTasks:
                 task.metadata = original_metadata.copy()
                 task.predicted_time_ms = 100.0
                 task.predicted_error_margin_ms = 10.0
-                task.predicted_quantiles = {0.5: 80.0, 0.9: 150.0, 0.95: 200.0, 0.99: 300.0}
-        asyncio.get_event_loop().run_until_complete(setup_task())
+                task.predicted_quantiles = {
+                    0.5: 80.0,
+                    0.9: 150.0,
+                    0.95: 200.0,
+                    0.99: 300.0,
+                }
 
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[new_prediction])):
+        asyncio.run(setup_task())
+
+        with patch(
+            "src.api.predictor_client.predict",
+            new=AsyncMock(return_value=[new_prediction]),
+        ):
             response = test_client.post("/task/repredict")
 
         assert response.status_code == 200
@@ -224,12 +275,14 @@ class TestRepredictTasks:
         async def verify_metadata():
             task = await task_registry.get("task-no-meta-change")
             assert task.metadata == original_metadata
-        asyncio.get_event_loop().run_until_complete(verify_metadata())
+
+        asyncio.run(verify_metadata())
 
 
 # ============================================================================
 # Test Class: Skip Behavior
 # ============================================================================
+
 
 class TestRepredictSkipBehavior:
     """Tests for skip behavior with COMPLETED/FAILED tasks."""
@@ -244,7 +297,8 @@ class TestRepredictSkipBehavior:
             task = await task_registry.get("task-skip-completed")
             if task:
                 task.status = TaskStatus.COMPLETED
-        asyncio.get_event_loop().run_until_complete(set_completed())
+
+        asyncio.run(set_completed())
 
         response = test_client.post("/task/repredict")
 
@@ -263,7 +317,8 @@ class TestRepredictSkipBehavior:
             task = await task_registry.get("task-skip-failed")
             if task:
                 task.status = TaskStatus.FAILED
-        asyncio.get_event_loop().run_until_complete(set_failed())
+
+        asyncio.run(set_failed())
 
         response = test_client.post("/task/repredict")
 
@@ -284,7 +339,8 @@ class TestRepredictSkipBehavior:
             if task:
                 task.assigned_instance = ""
                 task.status = TaskStatus.PENDING
-        asyncio.get_event_loop().run_until_complete(clear_instance())
+
+        asyncio.run(clear_instance())
 
         response = test_client.post("/task/repredict")
 
@@ -297,6 +353,7 @@ class TestRepredictSkipBehavior:
 # ============================================================================
 # Test Class: Error Handling
 # ============================================================================
+
 
 class TestRepredictErrorHandling:
     """Tests for error handling during repredict."""
@@ -317,11 +374,20 @@ class TestRepredictErrorHandling:
                     task.status = TaskStatus.PENDING
                     task.predicted_time_ms = 100.0
                     task.predicted_error_margin_ms = 10.0
-                    task.predicted_quantiles = {0.5: 80.0, 0.9: 150.0, 0.95: 200.0, 0.99: 300.0}
-        asyncio.get_event_loop().run_until_complete(setup_tasks())
+                    task.predicted_quantiles = {
+                        0.5: 80.0,
+                        0.9: 150.0,
+                        0.95: 200.0,
+                        0.99: 300.0,
+                    }
+
+        asyncio.run(setup_tasks())
 
         # Make predictor fail
-        with patch("src.api.predictor_client.predict", new=AsyncMock(side_effect=Exception("Predictor error"))):
+        with patch(
+            "src.api.predictor_client.predict",
+            new=AsyncMock(side_effect=Exception("Predictor error")),
+        ):
             response = test_client.post("/task/repredict")
 
         assert response.status_code == 200
@@ -332,7 +398,7 @@ class TestRepredictErrorHandling:
 
     def test_predictor_failure_restores_queue(self, test_client):
         """Test that queue is restored on predictor failure."""
-        from src.api import task_registry, instance_registry
+        from src.api import instance_registry, task_registry
 
         setup_instance_and_task(test_client, "task-restore-queue")
 
@@ -346,16 +412,26 @@ class TestRepredictErrorHandling:
                 task.status = TaskStatus.PENDING
                 task.predicted_time_ms = original_prediction_ms
                 task.predicted_error_margin_ms = 10.0
-                task.predicted_quantiles = {0.5: 80.0, 0.9: 150.0, 0.95: 200.0, 0.99: 300.0}
-        asyncio.get_event_loop().run_until_complete(setup_task())
+                task.predicted_quantiles = {
+                    0.5: 80.0,
+                    0.9: 150.0,
+                    0.95: 200.0,
+                    0.99: 300.0,
+                }
+
+        asyncio.run(setup_task())
 
         # Get queue state before
         async def get_queue_before():
             return await instance_registry.get_queue_info("inst-1")
-        queue_before = asyncio.get_event_loop().run_until_complete(get_queue_before())
+
+        _queue_before = asyncio.run(get_queue_before())
 
         # Make predictor fail
-        with patch("src.api.predictor_client.predict", new=AsyncMock(side_effect=Exception("Predictor error"))):
+        with patch(
+            "src.api.predictor_client.predict",
+            new=AsyncMock(side_effect=Exception("Predictor error")),
+        ):
             response = test_client.post("/task/repredict")
 
         assert response.status_code == 200
@@ -370,12 +446,13 @@ class TestRepredictErrorHandling:
 # Test Class: Queue Update with expect_error Strategy
 # ============================================================================
 
+
 class TestRepredictExpectErrorStrategy:
     """Tests for queue updates with expect_error scheduling strategy."""
 
     def test_expect_error_queue_updated(self, test_client, new_prediction):
         """Test that queue is updated correctly with expect_error strategy."""
-        from src.api import task_registry, instance_registry
+        from src.api import task_registry
 
         setup_instance_and_task(test_client, "task-expect-error")
 
@@ -386,11 +463,20 @@ class TestRepredictExpectErrorStrategy:
                 task.status = TaskStatus.PENDING
                 task.predicted_time_ms = 100.0
                 task.predicted_error_margin_ms = 10.0
-                task.predicted_quantiles = {0.5: 80.0, 0.9: 150.0, 0.95: 200.0, 0.99: 300.0}
-        asyncio.get_event_loop().run_until_complete(setup_task())
+                task.predicted_quantiles = {
+                    0.5: 80.0,
+                    0.9: 150.0,
+                    0.95: 200.0,
+                    0.99: 300.0,
+                }
+
+        asyncio.run(setup_task())
 
         # Re-predict with new values
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[new_prediction])):
+        with patch(
+            "src.api.predictor_client.predict",
+            new=AsyncMock(return_value=[new_prediction]),
+        ):
             response = test_client.post("/task/repredict")
 
         assert response.status_code == 200
@@ -402,26 +488,27 @@ class TestRepredictExpectErrorStrategy:
             task = await task_registry.get("task-expect-error")
             # New prediction should be applied
             assert task.predicted_time_ms == new_prediction.predicted_time_ms
-        asyncio.get_event_loop().run_until_complete(verify_prediction())
+
+        asyncio.run(verify_prediction())
 
 
 # ============================================================================
 # Test Class: Queue Update with Probabilistic Strategy
 # ============================================================================
 
+
 class TestRepredictProbabilisticStrategy:
     """Tests for queue updates with probabilistic scheduling strategy."""
 
     def test_probabilistic_queue_updated(self, test_client, new_prediction):
         """Test that queue is updated correctly with probabilistic strategy."""
-        from src.api import task_registry, scheduling_strategy
-        from src.scheduler import ProbabilisticSchedulingStrategy
+        from src.api import task_registry
 
         # Switch to probabilistic strategy
-        response = test_client.post("/strategy/set", json={
-            "strategy_name": "probabilistic",
-            "target_quantile": 0.9
-        })
+        response = test_client.post(
+            "/strategy/set",
+            json={"strategy_name": "probabilistic", "target_quantile": 0.9},
+        )
         if response.status_code != 200:
             pytest.skip("Failed to set probabilistic strategy")
 
@@ -434,11 +521,20 @@ class TestRepredictProbabilisticStrategy:
                 task.status = TaskStatus.PENDING
                 task.predicted_time_ms = 100.0
                 task.predicted_error_margin_ms = 10.0
-                task.predicted_quantiles = {0.5: 80.0, 0.9: 150.0, 0.95: 200.0, 0.99: 300.0}
-        asyncio.get_event_loop().run_until_complete(setup_task())
+                task.predicted_quantiles = {
+                    0.5: 80.0,
+                    0.9: 150.0,
+                    0.95: 200.0,
+                    0.99: 300.0,
+                }
+
+        asyncio.run(setup_task())
 
         # Re-predict
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[new_prediction])):
+        with patch(
+            "src.api.predictor_client.predict",
+            new=AsyncMock(return_value=[new_prediction]),
+        ):
             response = test_client.post("/task/repredict")
 
         assert response.status_code == 200
@@ -449,6 +545,7 @@ class TestRepredictProbabilisticStrategy:
 # ============================================================================
 # Test Class: Mixed Scenarios
 # ============================================================================
+
 
 class TestRepredictMixedScenarios:
     """Tests for mixed scenarios with various task states."""
@@ -469,7 +566,12 @@ class TestRepredictMixedScenarios:
                 task0.status = TaskStatus.PENDING
                 task0.predicted_time_ms = 100.0
                 task0.predicted_error_margin_ms = 10.0
-                task0.predicted_quantiles = {0.5: 80.0, 0.9: 150.0, 0.95: 200.0, 0.99: 300.0}
+                task0.predicted_quantiles = {
+                    0.5: 80.0,
+                    0.9: 150.0,
+                    0.95: 200.0,
+                    0.99: 300.0,
+                }
 
             # Task 1: RUNNING in queue (should be repredicted)
             task1 = await task_registry.get("task-mixed-1")
@@ -478,7 +580,12 @@ class TestRepredictMixedScenarios:
                 task1.status = TaskStatus.RUNNING
                 task1.predicted_time_ms = 100.0
                 task1.predicted_error_margin_ms = 10.0
-                task1.predicted_quantiles = {0.5: 80.0, 0.9: 150.0, 0.95: 200.0, 0.99: 300.0}
+                task1.predicted_quantiles = {
+                    0.5: 80.0,
+                    0.9: 150.0,
+                    0.95: 200.0,
+                    0.99: 300.0,
+                }
 
             # Task 2: COMPLETED (should be skipped)
             task2 = await task_registry.get("task-mixed-2")
@@ -490,9 +597,12 @@ class TestRepredictMixedScenarios:
             if task3:
                 task3.status = TaskStatus.FAILED
 
-        asyncio.get_event_loop().run_until_complete(setup_mixed_states())
+        asyncio.run(setup_mixed_states())
 
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[new_prediction])):
+        with patch(
+            "src.api.predictor_client.predict",
+            new=AsyncMock(return_value=[new_prediction]),
+        ):
             response = test_client.post("/task/repredict")
 
         assert response.status_code == 200

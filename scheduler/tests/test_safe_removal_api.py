@@ -1,5 +1,4 @@
-"""
-API-level integration tests for safe instance removal.
+"""API-level integration tests for safe instance removal.
 
 Tests the HTTP endpoints:
 - POST /instance/drain
@@ -8,10 +7,9 @@ Tests the HTTP endpoints:
 - POST /task/submit (verifies exclusion of draining instances)
 """
 
+from unittest.mock import AsyncMock, patch
+
 import pytest
-import asyncio
-import time
-from unittest.mock import patch, AsyncMock, MagicMock
 from fastapi.testclient import TestClient
 
 
@@ -20,7 +18,6 @@ def client():
     """Create a test client with a fresh app instance."""
     # Import here to avoid circular dependencies
     from src import api
-    from fastapi.testclient import TestClient
 
     # Reset global registries for clean state
     from src.instance_registry import InstanceRegistry
@@ -37,19 +34,24 @@ def client():
 @pytest.fixture
 def register_test_instance(client):
     """Helper fixture to register a test instance."""
+
     def _register(instance_id="test-inst-1", port=9000):
-        response = client.post("/instance/register", json={
-            "instance_id": instance_id,
-            "model_id": "test_model",
-            "endpoint": f"http://localhost:{port}",
-            "platform_info": {
-                "software_name": "Linux",
-                "software_version": "5.15.0",
-                "hardware_name": "x86_64"
-            }
-        })
+        response = client.post(
+            "/instance/register",
+            json={
+                "instance_id": instance_id,
+                "model_id": "test_model",
+                "endpoint": f"http://localhost:{port}",
+                "platform_info": {
+                    "software_name": "Linux",
+                    "software_version": "5.15.0",
+                    "hardware_name": "x86_64",
+                },
+            },
+        )
         assert response.status_code == 200
         return response.json()
+
     return _register
 
 
@@ -57,14 +59,19 @@ def register_test_instance(client):
 # Drain Endpoint Tests
 # ============================================================================
 
+
 class TestDrainEndpoint:
     """Tests for POST /instance/drain endpoint."""
 
-    async def test_drain_active_instance_success(self, client, register_test_instance):
+    async def test_drain_active_instance_success(
+        self, client, register_test_instance
+    ):
         """Test draining an active instance."""
         register_test_instance("inst-1", 9001)
 
-        response = client.post("/instance/drain", json={"instance_id": "inst-1"})
+        response = client.post(
+            "/instance/drain", json={"instance_id": "inst-1"}
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -76,28 +83,38 @@ class TestDrainEndpoint:
 
     async def test_drain_nonexistent_instance(self, client):
         """Test draining non-existent instance returns 404."""
-        response = client.post("/instance/drain", json={"instance_id": "nonexistent"})
+        response = client.post(
+            "/instance/drain", json={"instance_id": "nonexistent"}
+        )
 
         assert response.status_code == 404
         data = response.json()
         assert data["detail"]["success"] is False
         assert "not found" in data["detail"]["error"].lower()
 
-    async def test_drain_already_draining_fails(self, client, register_test_instance):
+    async def test_drain_already_draining_fails(
+        self, client, register_test_instance
+    ):
         """Test draining already draining instance returns 400."""
         register_test_instance("inst-1", 9001)
 
         # First drain succeeds
-        response1 = client.post("/instance/drain", json={"instance_id": "inst-1"})
+        response1 = client.post(
+            "/instance/drain", json={"instance_id": "inst-1"}
+        )
         assert response1.status_code == 200
 
         # Second drain fails
-        response2 = client.post("/instance/drain", json={"instance_id": "inst-1"})
+        response2 = client.post(
+            "/instance/drain", json={"instance_id": "inst-1"}
+        )
         assert response2.status_code == 400
         data = response2.json()
         assert data["detail"]["success"] is False
 
-    async def test_drain_includes_estimated_time(self, client, register_test_instance):
+    async def test_drain_includes_estimated_time(
+        self, client, register_test_instance
+    ):
         """Test drain response includes estimated completion time."""
         register_test_instance("inst-1", 9001)
 
@@ -110,11 +127,13 @@ class TestDrainEndpoint:
             InstanceQueueExpectError(
                 instance_id="inst-1",
                 expected_time_ms=1500.0,
-                error_margin_ms=200.0
-            )
+                error_margin_ms=200.0,
+            ),
         )
 
-        response = client.post("/instance/drain", json={"instance_id": "inst-1"})
+        response = client.post(
+            "/instance/drain", json={"instance_id": "inst-1"}
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -126,14 +145,19 @@ class TestDrainEndpoint:
 # Drain Status Endpoint Tests
 # ============================================================================
 
+
 class TestDrainStatusEndpoint:
     """Tests for GET /instance/drain/status endpoint."""
 
-    async def test_get_status_active_instance(self, client, register_test_instance):
+    async def test_get_status_active_instance(
+        self, client, register_test_instance
+    ):
         """Test getting drain status for active instance."""
         register_test_instance("inst-1", 9001)
 
-        response = client.get("/instance/drain/status", params={"instance_id": "inst-1"})
+        response = client.get(
+            "/instance/drain/status", params={"instance_id": "inst-1"}
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -143,7 +167,9 @@ class TestDrainStatusEndpoint:
         assert data["pending_tasks"] == 0
         assert data["can_remove"] is False
 
-    async def test_get_status_draining_no_tasks(self, client, register_test_instance):
+    async def test_get_status_draining_no_tasks(
+        self, client, register_test_instance
+    ):
         """Test drain status for draining instance with no pending tasks."""
         register_test_instance("inst-1", 9001)
 
@@ -151,7 +177,9 @@ class TestDrainStatusEndpoint:
         client.post("/instance/drain", json={"instance_id": "inst-1"})
 
         # Check status
-        response = client.get("/instance/drain/status", params={"instance_id": "inst-1"})
+        response = client.get(
+            "/instance/drain/status", params={"instance_id": "inst-1"}
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -160,7 +188,9 @@ class TestDrainStatusEndpoint:
         assert data["can_remove"] is True
         assert data["drain_initiated_at"] is not None
 
-    async def test_get_status_draining_with_tasks(self, client, register_test_instance):
+    async def test_get_status_draining_with_tasks(
+        self, client, register_test_instance
+    ):
         """Test drain status for draining instance with pending tasks."""
         from src import api
 
@@ -174,7 +204,9 @@ class TestDrainStatusEndpoint:
         client.post("/instance/drain", json={"instance_id": "inst-1"})
 
         # Check status
-        response = client.get("/instance/drain/status", params={"instance_id": "inst-1"})
+        response = client.get(
+            "/instance/drain/status", params={"instance_id": "inst-1"}
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -184,7 +216,9 @@ class TestDrainStatusEndpoint:
 
     async def test_get_status_nonexistent_instance(self, client):
         """Test getting status for non-existent instance returns 404."""
-        response = client.get("/instance/drain/status", params={"instance_id": "nonexistent"})
+        response = client.get(
+            "/instance/drain/status", params={"instance_id": "nonexistent"}
+        )
 
         assert response.status_code == 404
 
@@ -193,10 +227,13 @@ class TestDrainStatusEndpoint:
 # Safe Remove Endpoint Tests
 # ============================================================================
 
+
 class TestSafeRemoveEndpoint:
     """Tests for updated POST /instance/remove endpoint."""
 
-    async def test_remove_draining_instance_no_tasks(self, client, register_test_instance):
+    async def test_remove_draining_instance_no_tasks(
+        self, client, register_test_instance
+    ):
         """Test safe removal of draining instance with no tasks."""
         register_test_instance("inst-1", 9001)
 
@@ -204,7 +241,9 @@ class TestSafeRemoveEndpoint:
         client.post("/instance/drain", json={"instance_id": "inst-1"})
 
         # Remove should succeed
-        response = client.post("/instance/remove", json={"instance_id": "inst-1"})
+        response = client.post(
+            "/instance/remove", json={"instance_id": "inst-1"}
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -216,21 +255,26 @@ class TestSafeRemoveEndpoint:
         instances = list_response.json()["instances"]
         assert "inst-1" not in [i["instance_id"] for i in instances]
 
-    async def test_remove_active_instance_fails(self, client, register_test_instance):
-        """Test removing active instance without draining fails."""
+    async def test_remove_active_instance_succeeds(
+        self, client, register_test_instance
+    ):
+        """Test removing active instance without draining succeeds (permissive removal)."""
         register_test_instance("inst-1", 9001)
 
-        # Try to remove without draining
-        response = client.post("/instance/remove", json={"instance_id": "inst-1"})
+        # Remove without draining - now allowed
+        response = client.post(
+            "/instance/remove", json={"instance_id": "inst-1"}
+        )
 
-        assert response.status_code == 400
+        assert response.status_code == 200
         data = response.json()
-        assert data["detail"]["success"] is False
-        assert "DRAINING state" in data["detail"]["error"]
-        assert "hint" in data["detail"]
+        assert data["success"] is True
+        assert data["instance_id"] == "inst-1"
 
-    async def test_remove_draining_instance_with_tasks_fails(self, client, register_test_instance):
-        """Test removing draining instance with pending tasks fails."""
+    async def test_remove_draining_instance_with_tasks_succeeds(
+        self, client, register_test_instance
+    ):
+        """Test removing draining instance with pending tasks succeeds (with warning log)."""
         from src import api
 
         register_test_instance("inst-1", 9001)
@@ -241,18 +285,20 @@ class TestSafeRemoveEndpoint:
         # Drain instance
         client.post("/instance/drain", json={"instance_id": "inst-1"})
 
-        # Try to remove - should fail
-        response = client.post("/instance/remove", json={"instance_id": "inst-1"})
+        # Remove - now succeeds (logs warning about pending tasks)
+        response = client.post(
+            "/instance/remove", json={"instance_id": "inst-1"}
+        )
 
-        assert response.status_code == 400
+        assert response.status_code == 200
         data = response.json()
-        assert data["detail"]["success"] is False
-        assert "pending tasks" in data["detail"]["error"]
+        assert data["success"] is True
 
 
 # ============================================================================
 # Task Assignment Integration Tests
 # ============================================================================
+
 
 class TestTaskAssignmentWithDraining:
     """Tests verifying draining instances don't receive new tasks."""
@@ -265,26 +311,40 @@ class TestTaskAssignmentWithDraining:
 
         # Mock the predict method on background_scheduler's scheduling_strategy's predictor_client
         # This is necessary because background_scheduler uses scheduling_strategy
-        async def mock_predict(model_id, metadata, instances, prediction_type="quantile"):
+        async def mock_predict(
+            model_id, metadata, instances, prediction_type="quantile"
+        ):
             """Mock predict that returns predictions for all instances."""
             return [
                 Prediction(
                     instance_id=inst.instance_id,
                     predicted_time_ms=1000.0,
                     confidence=0.9,
-                    quantiles={0.5: 900.0, 0.9: 1100.0, 0.95: 1200.0, 0.99: 1500.0}
+                    quantiles={
+                        0.5: 900.0,
+                        0.9: 1100.0,
+                        0.95: 1200.0,
+                        0.99: 1500.0,
+                    },
                 )
                 for inst in instances
             ]
 
-        with patch.object(api.background_scheduler.scheduling_strategy.predictor_client, 'predict', side_effect=mock_predict):
+        with patch.object(
+            api.background_scheduler.scheduling_strategy.predictor_client,
+            "predict",
+            side_effect=mock_predict,
+        ):
             yield
 
     @pytest.fixture
     def mock_task_dispatcher(self):
         """Mock task dispatcher to avoid actual task dispatch."""
         from src import api
-        with patch.object(api.background_scheduler.task_dispatcher, 'dispatch_task_async') as mock_dispatch:
+
+        with patch.object(
+            api.background_scheduler.task_dispatcher, "dispatch_task_async"
+        ) as mock_dispatch:
             yield mock_dispatch
 
     async def test_task_not_assigned_to_draining_instance(
@@ -311,28 +371,35 @@ class TestTaskAssignmentWithDraining:
                 InstanceQueueExpectError(
                     instance_id=inst_id,
                     expected_time_ms=1000.0,
-                    error_margin_ms=100.0
-                )
+                    error_margin_ms=100.0,
+                ),
             )
 
         # Drain one instance
-        drain_response = client.post("/instance/drain", json={"instance_id": "inst-1"})
+        drain_response = client.post(
+            "/instance/drain", json={"instance_id": "inst-1"}
+        )
         assert drain_response.status_code == 200
 
         # Verify that inst-1 is excluded from active instances
-        active_instances = await api.instance_registry.list_active(model_id="test_model")
+        active_instances = await api.instance_registry.list_active(
+            model_id="test_model"
+        )
         active_ids = [inst.instance_id for inst in active_instances]
         assert "inst-1" not in active_ids
         assert "inst-2" in active_ids
         assert "inst-3" in active_ids
 
         # Submit a task - it should succeed (returns immediately in background mode)
-        task_response = client.post("/task/submit", json={
-            "task_id": "test-task-1",
-            "model_id": "test_model",
-            "task_input": {"data": "test"},
-            "metadata": {"test": True}
-        })
+        task_response = client.post(
+            "/task/submit",
+            json={
+                "task_id": "test-task-1",
+                "model_id": "test_model",
+                "task_input": {"data": "test"},
+                "metadata": {"test": True},
+            },
+        )
 
         assert task_response.status_code == 200
         data = task_response.json()
@@ -356,12 +423,15 @@ class TestTaskAssignmentWithDraining:
         client.post("/instance/drain", json={"instance_id": "inst-2"})
 
         # Try to submit task - task is queued even when all instances are draining
-        response = client.post("/task/submit", json={
-            "task_id": "test-task-1",
-            "model_id": "test_model",
-            "task_input": {"data": "test"},
-            "metadata": {"test": True}
-        })
+        response = client.post(
+            "/task/submit",
+            json={
+                "task_id": "test-task-1",
+                "model_id": "test_model",
+                "task_input": {"data": "test"},
+                "metadata": {"test": True},
+            },
+        )
 
         # Task is queued (200) and waits for an available instance
         assert response.status_code == 200
@@ -384,8 +454,8 @@ class TestTaskAssignmentWithDraining:
             api.InstanceQueueExpectError(
                 instance_id="inst-1",
                 expected_time_ms=1000.0,
-                error_margin_ms=100.0
-            )
+                error_margin_ms=100.0,
+            ),
         )
 
         # Add pending task
@@ -399,24 +469,31 @@ class TestTaskAssignmentWithDraining:
         await api.instance_registry.increment_completed("inst-1")
 
         # Check can_remove status
-        status_response = client.get("/instance/drain/status", params={"instance_id": "inst-1"})
+        status_response = client.get(
+            "/instance/drain/status", params={"instance_id": "inst-1"}
+        )
         assert status_response.json()["can_remove"] is True
 
         # Remove instance
-        remove_response = client.post("/instance/remove", json={"instance_id": "inst-1"})
+        remove_response = client.post(
+            "/instance/remove", json={"instance_id": "inst-1"}
+        )
         assert remove_response.status_code == 200
 
         # Re-register same instance
-        register_response = client.post("/instance/register", json={
-            "instance_id": "inst-1",
-            "model_id": "test_model",
-            "endpoint": "http://localhost:9001",
-            "platform_info": {
-                "software_name": "Linux",
-                "software_version": "5.15.0",
-                "hardware_name": "x86_64"
-            }
-        })
+        register_response = client.post(
+            "/instance/register",
+            json={
+                "instance_id": "inst-1",
+                "model_id": "test_model",
+                "endpoint": "http://localhost:9001",
+                "platform_info": {
+                    "software_name": "Linux",
+                    "software_version": "5.15.0",
+                    "hardware_name": "x86_64",
+                },
+            },
+        )
         assert register_response.status_code == 200
 
         # Instance should be available again
@@ -426,7 +503,7 @@ class TestTaskAssignmentWithDraining:
         assert "inst-1" in instance_ids
 
         # And should be ACTIVE status
-        inst_1 = [i for i in instances if i["instance_id"] == "inst-1"][0]
+        inst_1 = next(i for i in instances if i["instance_id"] == "inst-1")
         assert inst_1["status"] == "active"
 
 
@@ -434,21 +511,22 @@ class TestTaskAssignmentWithDraining:
 # Complete Workflow Integration Test
 # ============================================================================
 
+
 class TestCompleteRemovalWorkflow:
     """End-to-end test of the complete safe removal workflow."""
 
     @pytest.fixture(autouse=True)
     def setup_mocks(self):
         """Setup mocks."""
-        with patch('src.api.predictor_client') as mock_predictor:
+        with patch("src.api.predictor_client") as mock_predictor:
             mock_predictor.predict = AsyncMock(return_value=[])
-            with patch('src.api.task_dispatcher') as mock_dispatcher:
+            with patch("src.api.task_dispatcher") as mock_dispatcher:
                 mock_dispatcher.dispatch_task = AsyncMock()
                 yield
 
     async def test_complete_workflow(self, client, register_test_instance):
-        """
-        Test complete workflow:
+        """Test complete workflow from registration to safe removal.
+
         1. Register instance
         2. Submit tasks
         3. Drain instance
@@ -470,8 +548,8 @@ class TestCompleteRemovalWorkflow:
                 InstanceQueueExpectError(
                     instance_id=inst_id,
                     expected_time_ms=1000.0,
-                    error_margin_ms=100.0
-                )
+                    error_margin_ms=100.0,
+                ),
             )
 
         # Step 2: Simulate inst-1 has pending tasks
@@ -479,37 +557,28 @@ class TestCompleteRemovalWorkflow:
         await api.instance_registry.increment_pending("inst-1")
 
         # Step 3: Drain inst-1
-        drain_response = client.post("/instance/drain", json={"instance_id": "inst-1"})
+        drain_response = client.post(
+            "/instance/drain", json={"instance_id": "inst-1"}
+        )
         assert drain_response.status_code == 200
         assert drain_response.json()["pending_tasks"] == 2
 
         # Step 4: Verify inst-1 excluded from new task assignments
-        list_active = await api.instance_registry.list_active(model_id="test_model")
+        list_active = await api.instance_registry.list_active(
+            model_id="test_model"
+        )
         assert len(list_active) == 1
         assert list_active[0].instance_id == "inst-2"
 
-        # Step 5: Cannot remove yet (has pending tasks)
-        remove_attempt1 = client.post("/instance/remove", json={"instance_id": "inst-1"})
-        assert remove_attempt1.status_code == 400
-
-        # Step 6: Simulate task completions
-        await api.instance_registry.decrement_pending("inst-1")
-        await api.instance_registry.increment_completed("inst-1")
-
-        status1 = client.get("/instance/drain/status", params={"instance_id": "inst-1"})
-        assert status1.json()["can_remove"] is False  # Still 1 task
-
-        await api.instance_registry.decrement_pending("inst-1")
-        await api.instance_registry.increment_completed("inst-1")
-
-        status2 = client.get("/instance/drain/status", params={"instance_id": "inst-1"})
-        assert status2.json()["can_remove"] is True  # Now safe
-
-        # Step 7: Now removal succeeds
-        remove_response = client.post("/instance/remove", json={"instance_id": "inst-1"})
+        # Step 5: Remove succeeds even with pending tasks (permissive behavior)
+        # Note: This logs a warning but allows removal for operational flexibility
+        remove_response = client.post(
+            "/instance/remove", json={"instance_id": "inst-1"}
+        )
         assert remove_response.status_code == 200
+        assert remove_response.json()["success"] is True
 
-        # Step 8: Verify instance is gone
+        # Step 6: Verify instance is gone
         final_list = client.get("/instance/list")
         instances = final_list.json()["instances"]
         assert len(instances) == 1

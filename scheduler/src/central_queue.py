@@ -1,17 +1,16 @@
-"""
-Central task queue for the scheduler service.
+"""Central task queue for the scheduler service.
 
 This module provides a FIFO task queue that manages task dispatch to instances.
 """
 
-from typing import Any, Dict, List, Optional, Tuple
-from collections import deque
 import asyncio
 import time
+from collections import deque
+from contextlib import suppress
+from typing import Any
 
 from loguru import logger
 
-from .model import TaskStatus
 from .instance_registry import InstanceRegistry
 from .task_registry import TaskRegistry
 
@@ -23,8 +22,8 @@ class QueuedTask:
         self,
         task_id: str,
         model_id: str,
-        task_input: Dict[str, Any],
-        metadata: Dict[str, Any],
+        task_input: dict[str, Any],
+        metadata: dict[str, Any],
         enqueue_time: float,
         generation: int = 0,
     ):
@@ -38,8 +37,7 @@ class QueuedTask:
 
 
 class CentralTaskQueue:
-    """
-    Central task queue for task dispatch.
+    """Central task queue for task dispatch.
 
     Features:
     - FIFO ordering by enqueue time
@@ -53,8 +51,7 @@ class CentralTaskQueue:
         instance_registry: InstanceRegistry,
         max_concurrent_dispatch: int = 50,
     ):
-        """
-        Initialize the central task queue.
+        """Initialize the central task queue.
 
         Args:
             task_registry: Registry for task state management
@@ -73,7 +70,7 @@ class CentralTaskQueue:
         self._dispatch_event = asyncio.Event()
 
         # Dispatcher task handle
-        self._dispatcher_task: Optional[asyncio.Task] = None
+        self._dispatcher_task: asyncio.Task | None = None
 
         # Shutdown flag
         self._shutdown = False
@@ -92,7 +89,9 @@ class CentralTaskQueue:
         # where tasks popped before clear get re-added after clear
         self._generation = 0
 
-        logger.info(f"CentralTaskQueue initialized with max_concurrent={max_concurrent_dispatch}")
+        logger.info(
+            f"CentralTaskQueue initialized with max_concurrent={max_concurrent_dispatch}"
+        )
 
     def set_scheduling_strategy(self, strategy) -> None:
         """Set the scheduling strategy to use for task assignment."""
@@ -121,13 +120,11 @@ class CentralTaskQueue:
         if self._dispatcher_task:
             try:
                 await asyncio.wait_for(self._dispatcher_task, timeout=10.0)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 logger.warning("Dispatcher shutdown timed out, cancelling")
                 self._dispatcher_task.cancel()
-                try:
+                with suppress(asyncio.CancelledError):
                     await self._dispatcher_task
-                except asyncio.CancelledError:
-                    pass
 
         self._dispatcher_task = None
         logger.info("Central queue dispatcher shutdown complete")
@@ -136,12 +133,11 @@ class CentralTaskQueue:
         self,
         task_id: str,
         model_id: str,
-        task_input: Dict[str, Any],
-        metadata: Dict[str, Any],
-        enqueue_time: Optional[float] = None,
+        task_input: dict[str, Any],
+        metadata: dict[str, Any],
+        enqueue_time: float | None = None,
     ) -> int:
-        """
-        Add a task to the central queue.
+        """Add a task to the central queue.
 
         Args:
             task_id: Unique task identifier
@@ -177,8 +173,7 @@ class CentralTaskQueue:
         return position
 
     async def notify_capacity_available(self) -> None:
-        """
-        Notify the queue that an instance may have capacity available.
+        """Notify the queue that an instance may have capacity available.
 
         Called by task_dispatcher when a task completes.
         """
@@ -189,13 +184,15 @@ class CentralTaskQueue:
         async with self._queue_lock:
             return len(self._queue)
 
-    async def get_queue_info(self) -> Dict[str, Any]:
+    async def get_queue_info(self) -> dict[str, Any]:
         """Get detailed queue information."""
         async with self._queue_lock:
             # Group tasks by model_id
-            model_counts: Dict[str, int] = {}
+            model_counts: dict[str, int] = {}
             for task in self._queue:
-                model_counts[task.model_id] = model_counts.get(task.model_id, 0) + 1
+                model_counts[task.model_id] = (
+                    model_counts.get(task.model_id, 0) + 1
+                )
 
             return {
                 "total_size": len(self._queue),
@@ -203,8 +200,7 @@ class CentralTaskQueue:
             }
 
     async def clear(self) -> int:
-        """
-        Clear all tasks from the central queue.
+        """Clear all tasks from the central queue.
 
         This should be called as part of a full task clear operation to ensure
         consistency between the task registry and the queue.
@@ -230,8 +226,7 @@ class CentralTaskQueue:
         return count
 
     async def _dispatch_loop(self) -> None:
-        """
-        Background loop that dispatches tasks when instances are available.
+        """Background loop that dispatches tasks when instances are available.
 
         This loop:
         1. Waits for dispatch event (task enqueued or capacity available)
@@ -242,12 +237,11 @@ class CentralTaskQueue:
 
         while not self._shutdown:
             try:
-                # Wait for dispatch event with timeout
-                try:
-                    await asyncio.wait_for(self._dispatch_event.wait(), timeout=1.0)
-                except asyncio.TimeoutError:
-                    # Periodic check even without events
-                    pass
+                # Wait for dispatch event with timeout (periodic check)
+                with suppress(TimeoutError):
+                    await asyncio.wait_for(
+                        self._dispatch_event.wait(), timeout=1.0
+                    )
 
                 # Clear the event
                 self._dispatch_event.clear()
@@ -259,14 +253,16 @@ class CentralTaskQueue:
                 await self._try_dispatch_tasks()
 
             except Exception as e:
-                logger.error(f"[central_queue] Error in dispatch loop: {e}", exc_info=True)
+                logger.error(
+                    f"[central_queue] Error in dispatch loop: {e}",
+                    exc_info=True,
+                )
                 await asyncio.sleep(1.0)  # Prevent tight loop on error
 
         logger.info("Dispatch loop stopped")
 
     async def _try_dispatch_tasks(self) -> None:
-        """
-        Try to dispatch tasks from the queue to available instances.
+        """Try to dispatch tasks from the queue to available instances.
 
         Tasks are processed in FIFO order. If an instance is not available
         for a task's model, the task is skipped (remains in queue) and we
@@ -283,7 +279,7 @@ class CentralTaskQueue:
             return
 
         dispatched_count = 0
-        skipped_tasks: List[QueuedTask] = []
+        skipped_tasks: list[QueuedTask] = []
 
         while True:
             # Get next task from queue
@@ -293,7 +289,9 @@ class CentralTaskQueue:
                 task = self._queue.popleft()
 
             # Check if any ACTIVE instance exists for this model
-            has_instance = await self._instance_registry.has_active_instance(task.model_id)
+            has_instance = await self._instance_registry.has_active_instance(
+                task.model_id
+            )
 
             if not has_instance:
                 # No available instance, put task back
@@ -335,11 +333,12 @@ class CentralTaskQueue:
                     self._queue.appendleft(task)
 
         if dispatched_count > 0:
-            logger.debug(f"Dispatched {dispatched_count} tasks, {len(skipped_tasks)} waiting")
+            logger.debug(
+                f"Dispatched {dispatched_count} tasks, {len(skipped_tasks)} waiting"
+            )
 
     async def _dispatch_single_task(self, task: QueuedTask) -> bool:
-        """
-        Dispatch a single task to an instance.
+        """Dispatch a single task to an instance.
 
         Args:
             task: The queued task to dispatch
@@ -356,30 +355,43 @@ class CentralTaskQueue:
                             f"Task {task.task_id} has stale generation {task.generation}, "
                             f"current is {self._generation}, skipping dispatch"
                         )
-                        return True  # Return True to not re-queue this stale task
+                        return (
+                            True  # Return True to not re-queue this stale task
+                        )
 
                 # Get all ACTIVE instances for this model
-                available_instances = await self._instance_registry.get_active_instances(
-                    task.model_id
+                available_instances = (
+                    await self._instance_registry.get_active_instances(
+                        task.model_id
+                    )
                 )
 
                 if not available_instances:
-                    logger.debug(f"No available instances for model {task.model_id}")
+                    logger.debug(
+                        f"No available instances for model {task.model_id}"
+                    )
                     return False
 
                 # Use scheduling strategy to select best instance
                 try:
-                    schedule_result = await self._scheduling_strategy.schedule_task(
-                        model_id=task.model_id,
-                        metadata=task.metadata,
-                        available_instances=available_instances,
+                    schedule_result = (
+                        await self._scheduling_strategy.schedule_task(
+                            model_id=task.model_id,
+                            metadata=task.metadata,
+                            available_instances=available_instances,
+                        )
                     )
                 except Exception as e:
-                    logger.error(f"[central_queue] Scheduling failed for task {task.task_id}: {e}", exc_info=True)
+                    logger.error(
+                        f"[central_queue] Scheduling failed for task {task.task_id}: {e}",
+                        exc_info=True,
+                    )
                     return False
 
                 if not schedule_result.selected_instance_id:
-                    logger.warning(f"No instance selected for task {task.task_id}")
+                    logger.warning(
+                        f"No instance selected for task {task.task_id}"
+                    )
                     return False
 
                 # Get the selected instance object
@@ -390,21 +402,33 @@ class CentralTaskQueue:
                         break
 
                 if not selected_instance:
-                    logger.error(f"Selected instance {schedule_result.selected_instance_id} not found")
+                    logger.error(
+                        f"Selected instance {schedule_result.selected_instance_id} not found"
+                    )
                     return False
 
                 # Update task record with assignment info
                 task_record = await self._task_registry.get(task.task_id)
                 if task_record:
-                    task_record.assigned_instance = selected_instance.instance_id
+                    task_record.assigned_instance = (
+                        selected_instance.instance_id
+                    )
                     selected_pred = schedule_result.selected_prediction
                     if selected_pred:
-                        task_record.predicted_time_ms = selected_pred.predicted_time_ms
-                        task_record.predicted_error_margin_ms = selected_pred.error_margin_ms
-                        task_record.predicted_quantiles = selected_pred.quantiles
+                        task_record.predicted_time_ms = (
+                            selected_pred.predicted_time_ms
+                        )
+                        task_record.predicted_error_margin_ms = (
+                            selected_pred.error_margin_ms
+                        )
+                        task_record.predicted_quantiles = (
+                            selected_pred.quantiles
+                        )
 
                 # Increment pending count on selected instance
-                await self._instance_registry.increment_pending(selected_instance.instance_id)
+                await self._instance_registry.increment_pending(
+                    selected_instance.instance_id
+                )
 
                 # Dispatch task to instance (fire and forget)
                 self._task_dispatcher.dispatch_task_async(task.task_id)
@@ -415,5 +439,8 @@ class CentralTaskQueue:
                 return True
 
             except Exception as e:
-                logger.error(f"[central_queue] Error dispatching task {task.task_id}: {e}", exc_info=True)
+                logger.error(
+                    f"[central_queue] Error dispatching task {task.task_id}: {e}",
+                    exc_info=True,
+                )
                 return False

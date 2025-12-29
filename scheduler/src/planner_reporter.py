@@ -1,13 +1,14 @@
-"""
-Automatic reporter for sending uncompleted task counts to planner.
+"""Automatic reporter for sending uncompleted task counts to planner.
 
 This module provides a background task that periodically reports the total
 number of uncompleted (pending + running) tasks to the planner service's
 /submit_target endpoint.
 """
 
-from typing import TYPE_CHECKING, Optional
 import asyncio
+from contextlib import suppress
+from typing import TYPE_CHECKING, Optional
+
 import httpx
 from loguru import logger
 
@@ -31,8 +32,7 @@ class PlannerReporter:
         timeout: float = 5.0,
         throughput_tracker: Optional["ThroughputTracker"] = None,
     ):
-        """
-        Initialize the planner reporter.
+        """Initialize the planner reporter.
 
         Args:
             task_registry: TaskRegistry instance for getting task counts
@@ -47,8 +47,8 @@ class PlannerReporter:
         self._timeout = timeout
         self._throughput_tracker = throughput_tracker
 
-        self._model_id: Optional[str] = None
-        self._reporter_task: Optional[asyncio.Task] = None
+        self._model_id: str | None = None
+        self._reporter_task: asyncio.Task | None = None
         self._shutdown = False
         self._http_client = httpx.AsyncClient(
             timeout=timeout,
@@ -56,8 +56,7 @@ class PlannerReporter:
         )
 
     def set_model_id(self, model_id: str) -> None:
-        """
-        Set the model ID for reporting.
+        """Set the model ID for reporting.
 
         This should be called when the first instance registers to the scheduler.
 
@@ -68,7 +67,9 @@ class PlannerReporter:
             self._model_id = model_id
             logger.info(f"Planner reporter model_id set to: {model_id}")
         else:
-            logger.debug(f"Model ID already set to {self._model_id}, ignoring {model_id}")
+            logger.debug(
+                f"Model ID already set to {self._model_id}, ignoring {model_id}"
+            )
 
     async def start(self) -> None:
         """Start the background reporter loop."""
@@ -90,10 +91,8 @@ class PlannerReporter:
 
         if self._reporter_task:
             self._reporter_task.cancel()
-            try:
+            with suppress(asyncio.CancelledError):
                 await self._reporter_task
-            except asyncio.CancelledError:
-                pass
 
         await self._http_client.aclose()
         self._reporter_task = None
@@ -112,7 +111,9 @@ class PlannerReporter:
 
                 # Only report if model_id is set
                 if self._model_id is None:
-                    logger.debug("Skipping report: model_id not set yet (no instances registered)")
+                    logger.debug(
+                        "Skipping report: model_id not set yet (no instances registered)"
+                    )
                     continue
 
                 await self._report_to_planner()
@@ -120,7 +121,10 @@ class PlannerReporter:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error(f"[planner_reporter] Error in planner report loop: {e}", exc_info=True)
+                logger.error(
+                    f"[planner_reporter] Error in planner report loop: {e}",
+                    exc_info=True,
+                )
                 # Continue running despite errors
 
         logger.debug("Planner report loop stopped")
@@ -129,8 +133,12 @@ class PlannerReporter:
         """Report current uncompleted task count to planner."""
         try:
             # Get uncompleted task count (pending + running)
-            pending = await self._task_registry.get_count_by_status(TaskStatus.PENDING)
-            running = await self._task_registry.get_count_by_status(TaskStatus.RUNNING)
+            pending = await self._task_registry.get_count_by_status(
+                TaskStatus.PENDING
+            )
+            running = await self._task_registry.get_count_by_status(
+                TaskStatus.RUNNING
+            )
             total_uncompleted = pending + running
 
             # POST to planner's /submit_target endpoint
@@ -139,7 +147,7 @@ class PlannerReporter:
                 json={
                     "model_id": self._model_id,
                     "value": float(total_uncompleted),
-                }
+                },
             )
             response.raise_for_status()
 
@@ -177,7 +185,9 @@ class PlannerReporter:
             )
             logger.warning(f"Planner report HTTP error: {e}")
         except Exception as e:
-            logger.error(f"[planner_reporter] Planner report error: {e}", exc_info=True)
+            logger.error(
+                f"[planner_reporter] Planner report error: {e}", exc_info=True
+            )
 
     async def _report_throughput(self) -> None:
         """Report throughput data for instances with recent data to planner.
@@ -193,17 +203,22 @@ class PlannerReporter:
             averages = await self._throughput_tracker.get_averages_for_recent_instances_seconds()
 
             if not averages:
-                logger.debug("[PlannerReporter] No instances with new throughput data to report")
+                logger.debug(
+                    "[PlannerReporter] No instances with new throughput data to report"
+                )
                 return
 
-            for instance_endpoint, avg_execution_time_seconds in averages.items():
+            for (
+                instance_endpoint,
+                avg_execution_time_seconds,
+            ) in averages.items():
                 try:
                     await self._http_client.post(
                         f"{self._planner_url}/submit_throughput",
                         json={
                             "instance_url": instance_endpoint,
                             "avg_execution_time": avg_execution_time_seconds,
-                        }
+                        },
                     )
                     logger.debug(
                         f"Reported throughput to planner: instance={instance_endpoint}, "
@@ -218,4 +233,7 @@ class PlannerReporter:
                 f"[PlannerReporter] Reported throughput for {len(averages)} instance(s) with recent data"
             )
         except Exception as e:
-            logger.error(f"[planner_reporter] Throughput report error: {e}", exc_info=True)
+            logger.error(
+                f"[planner_reporter] Throughput report error: {e}",
+                exc_info=True,
+            )

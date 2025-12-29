@@ -1,25 +1,29 @@
-"""
-Task dispatcher for sending tasks to instances and handling results.
+"""Task dispatcher for sending tasks to instances and handling results.
 
 This module manages the actual execution of tasks on instances,
 including sending task requests and processing results.
 """
 
-from typing import Dict, Any, Optional, TYPE_CHECKING
 import asyncio
+from typing import TYPE_CHECKING, Any, Optional
+
 import httpx
 from loguru import logger
 
-from .model import TaskStatus, InstanceQueueExpectError, InstanceQueueProbabilistic
-from .task_registry import TaskRegistry
-from .instance_registry import InstanceRegistry
-from .websocket_manager import ConnectionManager
 from .http_error_logger import log_http_error
+from .instance_registry import InstanceRegistry
+from .model import (
+    InstanceQueueExpectError,
+    InstanceQueueProbabilistic,
+    TaskStatus,
+)
+from .task_registry import TaskRegistry
+from .websocket_manager import ConnectionManager
 
 if TYPE_CHECKING:
-    from .training_client import TrainingClient
     from .central_queue import CentralTaskQueue
     from .throughput_tracker import ThroughputTracker
+    from .training_client import TrainingClient
 
 # Default retry configuration for transient connection errors
 DEFAULT_DISPATCH_RETRIES = 3
@@ -41,8 +45,7 @@ class TaskDispatcher:
         dispatch_retry_delay: float = DEFAULT_DISPATCH_RETRY_DELAY,
         throughput_tracker: Optional["ThroughputTracker"] = None,
     ):
-        """
-        Initialize task dispatcher.
+        """Initialize task dispatcher.
 
         Args:
             task_registry: Task registry for tracking task state
@@ -65,6 +68,9 @@ class TaskDispatcher:
         self.dispatch_retry_delay = dispatch_retry_delay
         self.throughput_tracker = throughput_tracker
 
+        # Background tasks set - keeps references to fire-and-forget tasks
+        self._background_tasks: set[asyncio.Task] = set()
+
         # Configure connection pool with shorter keepalive to avoid stale connections
         # This helps prevent ReadError when server closes idle connections
         # The keepalive_expiry should be shorter than uvicorn's default (5s)
@@ -81,15 +87,16 @@ class TaskDispatcher:
             limits=limits,
         )
         # Reference to central queue (set by api.py)
-        self._central_queue: Optional["CentralTaskQueue"] = None
+        self._central_queue: CentralTaskQueue | None = None
 
     def set_central_queue(self, queue: "CentralTaskQueue") -> None:
         """Set the central queue reference for capacity notifications."""
         self._central_queue = queue
 
-    async def dispatch_task(self, task_id: str, enqueue_time: Optional[float] = None) -> None:
-        """
-        Dispatch a task to its assigned instance for execution.
+    async def dispatch_task(
+        self, task_id: str, enqueue_time: float | None = None
+    ) -> None:
+        """Dispatch a task to its assigned instance for execution.
 
         This is an async operation that sends the task to the instance,
         waits for the result, and updates task status accordingly.
@@ -169,7 +176,9 @@ class TaskDispatcher:
                 extra={"task_id": task_id, "instance_id": instance.instance_id},
             )
             await self.task_registry.update_status(task_id, TaskStatus.FAILED)
-            await self.task_registry.set_error(task_id, f"Task dispatch failed: {str(e)}")
+            await self.task_registry.set_error(
+                task_id, f"Task dispatch failed: {e!s}"
+            )
             await self.instance_registry.increment_failed(instance.instance_id)
             await self._notify_task_completion(task_id)
 
@@ -189,7 +198,9 @@ class TaskDispatcher:
                 extra={"task_id": task_id, "instance_id": instance.instance_id},
             )
             await self.task_registry.update_status(task_id, TaskStatus.FAILED)
-            await self.task_registry.set_error(task_id, f"Task dispatch error: {str(e)}")
+            await self.task_registry.set_error(
+                task_id, f"Task dispatch error: {e!s}"
+            )
             await self.instance_registry.increment_failed(instance.instance_id)
             await self._notify_task_completion(task_id)
 
@@ -197,12 +208,11 @@ class TaskDispatcher:
         self,
         task_id: str,
         status: str,
-        result: Optional[Dict[str, Any]] = None,
-        error: Optional[str] = None,
-        execution_time_ms: Optional[float] = None,
+        result: dict[str, Any] | None = None,
+        error: str | None = None,
+        execution_time_ms: float | None = None,
     ) -> None:
-        """
-        Handle task result callback from instance.
+        """Handle task result callback from instance.
 
         This is called when an instance sends back task results via the callback endpoint.
 
@@ -223,7 +233,9 @@ class TaskDispatcher:
 
         # Update task based on status
         if status == "completed":
-            await self.task_registry.update_status(task_id, TaskStatus.COMPLETED)
+            await self.task_registry.update_status(
+                task_id, TaskStatus.COMPLETED
+            )
             if result:
                 await self.task_registry.set_result(task_id, result)
             if execution_time_ms is not None:
@@ -231,10 +243,16 @@ class TaskDispatcher:
 
             # Update instance stats
             if instance:
-                await self.instance_registry.increment_completed(instance.instance_id)
+                await self.instance_registry.increment_completed(
+                    instance.instance_id
+                )
 
             # Update queue information based on actual execution time
-            if instance and execution_time_ms and task.predicted_time_ms is not None:
+            if (
+                instance
+                and execution_time_ms
+                and task.predicted_time_ms is not None
+            ):
                 await self._update_queue_on_completion(
                     instance_id=instance.instance_id,
                     predicted_time_ms=task.predicted_time_ms,
@@ -268,7 +286,9 @@ class TaskDispatcher:
 
             # Update instance stats
             if instance:
-                await self.instance_registry.increment_failed(instance.instance_id)
+                await self.instance_registry.increment_failed(
+                    instance.instance_id
+                )
 
         # Notify WebSocket subscribers
         await self._notify_task_completion(task_id)
@@ -278,23 +298,28 @@ class TaskDispatcher:
             await self._central_queue.notify_capacity_available()
 
     async def _notify_task_completion(self, task_id: str) -> None:
-        """
-        Notify WebSocket subscribers about task completion.
+        """Notify WebSocket subscribers about task completion.
 
         Args:
             task_id: ID of completed task
         """
         task = await self.task_registry.get(task_id)
         if not task:
-            logger.warning(f"Cannot notify completion for {task_id}: task not found in registry")
+            logger.warning(
+                f"Cannot notify completion for {task_id}: task not found in registry"
+            )
             return
 
         # Only notify if task is in terminal state
         if task.status not in (TaskStatus.COMPLETED, TaskStatus.FAILED):
-            logger.debug(f"Skipping notification for {task_id}: status={task.status} (not terminal)")
+            logger.debug(
+                f"Skipping notification for {task_id}: status={task.status} (not terminal)"
+            )
             return
 
-        logger.info(f"Notifying completion for {task_id}: status={task.status}, execution_time={task.execution_time_ms}ms")
+        logger.info(
+            f"Notifying completion for {task_id}: status={task.status}, execution_time={task.execution_time_ms}ms"
+        )
 
         await self.websocket_manager.broadcast_task_result(
             task_id=task.task_id,
@@ -308,17 +333,18 @@ class TaskDispatcher:
         logger.debug(f"Notification complete for {task_id}")
 
     def dispatch_task_async(self, task_id: str) -> None:
-        """
-        Dispatch a task asynchronously (fire and forget).
+        """Dispatch a task asynchronously (fire and forget).
 
         Args:
             task_id: ID of task to dispatch
         """
-        asyncio.create_task(self.dispatch_task(task_id))
+        task = asyncio.create_task(self.dispatch_task(task_id))
+        # Store reference to prevent garbage collection; auto-discard on completion
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
 
     async def close(self) -> None:
-        """
-        Close the HTTP client and cleanup resources.
+        """Close the HTTP client and cleanup resources.
 
         Should be called when shutting down the dispatcher.
         """
@@ -329,11 +355,10 @@ class TaskDispatcher:
         instance_id: str,
         predicted_time_ms: float,
         actual_time_ms: float,
-        predicted_error_margin_ms: Optional[float] = None,
-        predicted_quantiles: Optional[Dict[float, float]] = None,
+        predicted_error_margin_ms: float | None = None,
+        predicted_quantiles: dict[float, float] | None = None,
     ) -> None:
-        """
-        Update queue information when a task completes.
+        """Update queue information when a task completes.
 
         According to the scheduling strategy documentation:
         - Shortest Queue: Update expect with actual time, keep error unchanged
@@ -362,7 +387,9 @@ class TaskDispatcher:
                 expected_time_ms=new_expected,
                 error_margin_ms=current_queue.error_margin_ms,  # Keep error unchanged
             )
-            await self.instance_registry.update_queue_info(instance_id, updated_queue)
+            await self.instance_registry.update_queue_info(
+                instance_id, updated_queue
+            )
 
         elif isinstance(current_queue, InstanceQueueProbabilistic):
             # Probabilistic strategy: Update quantiles using Monte Carlo method
@@ -378,16 +405,14 @@ class TaskDispatcher:
                 queue_samples = np.interp(
                     random_percentiles,
                     current_queue.quantiles,
-                    current_queue.values
+                    current_queue.values,
                 )
 
                 # Sample from predicted task distribution
                 task_quantiles = sorted(predicted_quantiles.keys())
                 task_values = [predicted_quantiles[q] for q in task_quantiles]
                 task_samples = np.interp(
-                    random_percentiles,
-                    task_quantiles,
-                    task_values
+                    random_percentiles, task_quantiles, task_values
                 )
 
                 # Subtract predicted task time and add actual time
@@ -407,11 +432,18 @@ class TaskDispatcher:
                     quantiles=current_queue.quantiles,
                     values=updated_values,
                 )
-                await self.instance_registry.update_queue_info(instance_id, updated_queue)
+                await self.instance_registry.update_queue_info(
+                    instance_id, updated_queue
+                )
             else:
                 # Fallback: Simple subtraction and addition for all quantiles
                 updated_values = [
-                    max(0.0, current_queue.values[i] - predicted_time_ms + actual_time_ms)
+                    max(
+                        0.0,
+                        current_queue.values[i]
+                        - predicted_time_ms
+                        + actual_time_ms,
+                    )
                     for i in range(len(current_queue.quantiles))
                 ]
                 updated_queue = InstanceQueueProbabilistic(
@@ -419,11 +451,12 @@ class TaskDispatcher:
                     quantiles=current_queue.quantiles,
                     values=updated_values,
                 )
-                await self.instance_registry.update_queue_info(instance_id, updated_queue)
+                await self.instance_registry.update_queue_info(
+                    instance_id, updated_queue
+                )
 
     def _is_transient_connection_error(self, error: Exception) -> bool:
-        """
-        Check if an error is a transient connection error that should be retried.
+        """Check if an error is a transient connection error that should be retried.
 
         Transient errors include:
         - ReadError: Connection was reset by peer (stale keep-alive connection)
@@ -439,31 +472,21 @@ class TaskDispatcher:
         # Check for specific httpx error types that indicate transient issues
         error_type = type(error).__name__
 
-        # ReadError occurs when server closes connection unexpectedly
-        # This commonly happens with stale keep-alive connections
-        if error_type == "ReadError":
-            return True
-
-        # ConnectError can be transient (e.g., temporary network issues)
-        if error_type == "ConnectError":
-            return True
-
-        # RemoteProtocolError indicates protocol-level issues
-        if error_type == "RemoteProtocolError":
-            return True
-
-        return False
+        # These error types are commonly transient and worth retrying:
+        # - ReadError: Server closes connection unexpectedly (stale keep-alive)
+        # - ConnectError: Temporary network issues
+        # - RemoteProtocolError: Protocol-level issues
+        return error_type in ("ReadError", "ConnectError", "RemoteProtocolError")
 
     async def _submit_via_http(
         self,
         instance: Any,
         task_id: str,
         model_id: str,
-        task_input: Dict[str, Any],
-        enqueue_time: Optional[float] = None,
+        task_input: dict[str, Any],
+        enqueue_time: float | None = None,
     ) -> None:
-        """
-        Submit task to instance via HTTP with retry logic for transient errors.
+        """Submit task to instance via HTTP with retry logic for transient errors.
 
         This method includes automatic retry for transient connection errors
         (e.g., ReadError from stale keep-alive connections). The retry uses
@@ -479,7 +502,9 @@ class TaskDispatcher:
         Raises:
             httpx.HTTPError: If HTTP request fails after all retries
         """
-        logger.info(f"Submitting task {task_id} to instance {instance.instance_id} via HTTP")
+        logger.info(
+            f"Submitting task {task_id} to instance {instance.instance_id} via HTTP"
+        )
 
         # Prepare callback URL for result notification
         callback_url = f"{self.callback_base_url}/callback/task_result"
@@ -497,7 +522,7 @@ class TaskDispatcher:
             payload["enqueue_time"] = enqueue_time
 
         url = f"{instance.endpoint}/task/submit"
-        last_error: Optional[Exception] = None
+        last_error: Exception | None = None
 
         # Retry loop for transient connection errors
         for attempt in range(self.dispatch_retries):
@@ -513,15 +538,22 @@ class TaskDispatcher:
                         f"Instance rejected task: {submit_result.get('message', 'Unknown error')}"
                     )
 
-                logger.info(f"Task {task_id} accepted by instance {instance.instance_id} via HTTP")
+                logger.info(
+                    f"Task {task_id} accepted by instance {instance.instance_id} via HTTP"
+                )
                 return  # Success - exit the retry loop
 
             except httpx.HTTPError as e:
                 last_error = e
 
                 # Check if this is a transient error that should be retried
-                if self._is_transient_connection_error(e) and attempt < self.dispatch_retries - 1:
-                    delay = self.dispatch_retry_delay * (2 ** attempt)  # Exponential backoff
+                if (
+                    self._is_transient_connection_error(e)
+                    and attempt < self.dispatch_retries - 1
+                ):
+                    delay = self.dispatch_retry_delay * (
+                        2**attempt
+                    )  # Exponential backoff
                     logger.warning(
                         f"Task dispatch transient error ({type(e).__name__}) for {task_id}, "
                         f"retrying in {delay:.2f}s (attempt {attempt + 1}/{self.dispatch_retries})"

@@ -1,13 +1,12 @@
-"""
-Tests for the TrainingClient module.
+"""Tests for the TrainingClient module.
 
 Covers training data collection, buffering, and submission to the predictor service.
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from datetime import datetime
+
 import httpx
+import pytest
 
 from src.training_client import TrainingClient, TrainingSample
 
@@ -90,7 +89,9 @@ class TestAddSample:
         self, mock_datetime, training_client, platform_info, features
     ):
         """Test adding a single training sample."""
-        mock_datetime.now.return_value.isoformat.return_value = "2024-01-01T00:00:00"
+        mock_datetime.now.return_value.isoformat.return_value = (
+            "2024-01-01T00:00:00"
+        )
 
         training_client.add_sample(
             model_id="model-1",
@@ -113,7 +114,9 @@ class TestAddSample:
         self, mock_datetime, training_client, platform_info, features
     ):
         """Test adding multiple training samples."""
-        mock_datetime.now.return_value.isoformat.return_value = "2024-01-01T00:00:00"
+        mock_datetime.now.return_value.isoformat.return_value = (
+            "2024-01-01T00:00:00"
+        )
 
         for i in range(5):
             training_client.add_sample(
@@ -131,12 +134,24 @@ class TestAddSample:
             assert sample.actual_runtime_ms == float(i * 100)
 
     @patch("src.training_client.datetime")
-    def test_add_sample_different_platforms(self, mock_datetime, training_client, features):
+    def test_add_sample_different_platforms(
+        self, mock_datetime, training_client, features
+    ):
         """Test adding samples from different platforms."""
-        mock_datetime.now.return_value.isoformat.return_value = "2024-01-01T00:00:00"
+        mock_datetime.now.return_value.isoformat.return_value = (
+            "2024-01-01T00:00:00"
+        )
 
-        platform1 = {"software_name": "docker", "software_version": "20.10", "hardware_name": "hw1"}
-        platform2 = {"software_name": "docker", "software_version": "20.10", "hardware_name": "hw2"}
+        platform1 = {
+            "software_name": "docker",
+            "software_version": "20.10",
+            "hardware_name": "hw1",
+        }
+        platform2 = {
+            "software_name": "docker",
+            "software_version": "20.10",
+            "hardware_name": "hw2",
+        }
 
         training_client.add_sample("model-1", platform1, features, 100.0)
         training_client.add_sample("model-1", platform2, features, 200.0)
@@ -150,16 +165,22 @@ class TestFlushIfReady:
     """Tests for automatic flush when batch size reached."""
 
     @pytest.mark.asyncio
-    async def test_flush_when_batch_size_reached(self, training_client, platform_info, features):
+    async def test_flush_when_batch_size_reached(
+        self, training_client, platform_info, features
+    ):
         """Test that flush is triggered when batch size is reached."""
         # Add samples up to batch size
         for i in range(training_client.batch_size):
-            training_client.add_sample("model-1", platform_info, features, float(i))
+            training_client.add_sample(
+                "model-1", platform_info, features, float(i)
+            )
 
         # Mock the HTTP client
         mock_response = MagicMock()
         mock_response.raise_for_status = MagicMock()
-        training_client._http_client.post = AsyncMock(return_value=mock_response)
+        training_client._http_client.post = AsyncMock(
+            return_value=mock_response
+        )
 
         result = await training_client.flush_if_ready()
 
@@ -169,16 +190,22 @@ class TestFlushIfReady:
         assert training_client.get_buffer_size() == 0
 
     @pytest.mark.asyncio
-    async def test_no_flush_below_batch_size(self, training_client, platform_info, features):
+    async def test_no_flush_below_batch_size(
+        self, training_client, platform_info, features
+    ):
         """Test that flush is not triggered below batch size."""
         # Add samples below batch size
         for i in range(training_client.batch_size - 1):
-            training_client.add_sample("model-1", platform_info, features, float(i))
+            training_client.add_sample(
+                "model-1", platform_info, features, float(i)
+            )
 
         result = await training_client.flush_if_ready()
 
         assert result is False
-        assert training_client.get_buffer_size() == training_client.batch_size - 1
+        assert (
+            training_client.get_buffer_size() == training_client.batch_size - 1
+        )
 
 
 class TestFlush:
@@ -192,20 +219,28 @@ class TestFlush:
         assert result is False
 
     @pytest.mark.asyncio
-    async def test_flush_below_minimum_without_force(self, training_client, platform_info, features):
+    async def test_flush_below_minimum_without_force(
+        self, training_client, platform_info, features
+    ):
         """Test that flush skips training when below min_samples without force."""
         # Add samples below minimum
         for i in range(training_client.min_samples - 1):
-            training_client.add_sample("model-1", platform_info, features, float(i))
+            training_client.add_sample(
+                "model-1", platform_info, features, float(i)
+            )
 
         result = await training_client.flush(force=False)
 
         assert result is False
         # Buffer should not be cleared
-        assert training_client.get_buffer_size() == training_client.min_samples - 1
+        assert (
+            training_client.get_buffer_size() == training_client.min_samples - 1
+        )
 
     @pytest.mark.asyncio
-    async def test_flush_with_force_flag(self, training_client, platform_info, features):
+    async def test_flush_with_force_flag(
+        self, training_client, platform_info, features
+    ):
         """Test that force flag bypasses min_samples check."""
         # Add just 1 sample (below minimum)
         training_client.add_sample("model-1", platform_info, features, 100.0)
@@ -213,7 +248,9 @@ class TestFlush:
         # Mock HTTP client
         mock_response = MagicMock()
         mock_response.raise_for_status = MagicMock()
-        training_client._http_client.post = AsyncMock(return_value=mock_response)
+        training_client._http_client.post = AsyncMock(
+            return_value=mock_response
+        )
 
         result = await training_client.flush(force=True)
 
@@ -223,16 +260,22 @@ class TestFlush:
         assert training_client.get_buffer_size() == 0
 
     @pytest.mark.asyncio
-    async def test_flush_single_model_platform(self, training_client, platform_info, features):
+    async def test_flush_single_model_platform(
+        self, training_client, platform_info, features
+    ):
         """Test flushing samples for a single model-platform combination."""
         # Add enough samples
         for i in range(training_client.min_samples):
-            training_client.add_sample("model-1", platform_info, features, float(i * 100))
+            training_client.add_sample(
+                "model-1", platform_info, features, float(i * 100)
+            )
 
         # Mock HTTP client
         mock_response = MagicMock()
         mock_response.raise_for_status = MagicMock()
-        training_client._http_client.post = AsyncMock(return_value=mock_response)
+        training_client._http_client.post = AsyncMock(
+            return_value=mock_response
+        )
 
         result = await training_client.flush()
 
@@ -250,9 +293,15 @@ class TestFlush:
             assert training_data["model_id"] == "model-1"
             assert training_data["platform_info"] == platform_info
             assert "prediction_type" in training_data
-            assert training_data["prediction_type"] in ["expect_error", "quantile"]
+            assert training_data["prediction_type"] in [
+                "expect_error",
+                "quantile",
+            ]
             assert "features_list" in training_data
-            assert len(training_data["features_list"]) == training_client.min_samples
+            assert (
+                len(training_data["features_list"])
+                == training_client.min_samples
+            )
 
             # Verify sample structure (new format with runtime_ms)
             for i, sample in enumerate(training_data["features_list"]):
@@ -260,13 +309,23 @@ class TestFlush:
                 assert sample["runtime_ms"] == float(i * 100)
 
     @pytest.mark.asyncio
-    async def test_flush_multiple_model_platform_groups(self, training_client, features):
+    async def test_flush_multiple_model_platform_groups(
+        self, training_client, features
+    ):
         """Test flushing samples grouped by model-platform combination."""
-        platform1 = {"software_name": "docker", "software_version": "20.10", "hardware_name": "hw1"}
-        platform2 = {"software_name": "docker", "software_version": "20.10", "hardware_name": "hw2"}
+        platform1 = {
+            "software_name": "docker",
+            "software_version": "20.10",
+            "hardware_name": "hw1",
+        }
+        platform2 = {
+            "software_name": "docker",
+            "software_version": "20.10",
+            "hardware_name": "hw2",
+        }
 
         # Add samples for different combinations
-        for i in range(5):
+        for _ in range(5):
             training_client.add_sample("model-1", platform1, features, 100.0)
             training_client.add_sample("model-1", platform2, features, 200.0)
             training_client.add_sample("model-2", platform1, features, 300.0)
@@ -276,27 +335,35 @@ class TestFlush:
         # Mock HTTP client
         mock_response = MagicMock()
         mock_response.raise_for_status = MagicMock()
-        training_client._http_client.post = AsyncMock(return_value=mock_response)
+        training_client._http_client.post = AsyncMock(
+            return_value=mock_response
+        )
 
         result = await training_client.flush(force=True)
 
         assert result is True
         assert training_client.get_buffer_size() == 0
 
-        # With multi-model training: 3 model-platform combinations × 2 prediction types = 6 calls
+        # With multi-model training: 3 model-platform combos x 2 prediction types = 6 calls
         assert training_client._http_client.post.call_count == 6
 
     @pytest.mark.asyncio
-    async def test_flush_http_success(self, training_client, platform_info, features):
+    async def test_flush_http_success(
+        self, training_client, platform_info, features
+    ):
         """Test successful HTTP request during flush."""
         # Add samples
         for i in range(training_client.min_samples):
-            training_client.add_sample("model-1", platform_info, features, float(i))
+            training_client.add_sample(
+                "model-1", platform_info, features, float(i)
+            )
 
         # Mock successful HTTP response
         mock_response = MagicMock()
         mock_response.raise_for_status = MagicMock()
-        training_client._http_client.post = AsyncMock(return_value=mock_response)
+        training_client._http_client.post = AsyncMock(
+            return_value=mock_response
+        )
 
         result = await training_client.flush()
 
@@ -305,11 +372,15 @@ class TestFlush:
         assert mock_response.raise_for_status.call_count == 2
 
     @pytest.mark.asyncio
-    async def test_flush_http_error(self, training_client, platform_info, features):
+    async def test_flush_http_error(
+        self, training_client, platform_info, features
+    ):
         """Test HTTP error handling during flush."""
         # Add samples
         for i in range(training_client.min_samples):
-            training_client.add_sample("model-1", platform_info, features, float(i))
+            training_client.add_sample(
+                "model-1", platform_info, features, float(i)
+            )
 
         # Mock HTTP error
         training_client._http_client.post = AsyncMock(
@@ -326,11 +397,19 @@ class TestFlush:
     @pytest.mark.asyncio
     async def test_flush_partial_failures(self, training_client, features):
         """Test handling partial failures across multiple groups."""
-        platform1 = {"software_name": "docker", "software_version": "20.10", "hardware_name": "hw1"}
-        platform2 = {"software_name": "docker", "software_version": "20.10", "hardware_name": "hw2"}
+        platform1 = {
+            "software_name": "docker",
+            "software_version": "20.10",
+            "hardware_name": "hw1",
+        }
+        platform2 = {
+            "software_name": "docker",
+            "software_version": "20.10",
+            "hardware_name": "hw2",
+        }
 
         # Add samples for different platforms
-        for i in range(5):
+        for _ in range(5):
             training_client.add_sample("model-1", platform1, features, 100.0)
             training_client.add_sample("model-1", platform2, features, 200.0)
 
@@ -341,7 +420,12 @@ class TestFlush:
         mock_success.raise_for_status = MagicMock()
 
         training_client._http_client.post = AsyncMock(
-            side_effect=[mock_success, httpx.HTTPError("Failed"), mock_success, mock_success]
+            side_effect=[
+                mock_success,
+                httpx.HTTPError("Failed"),
+                mock_success,
+                mock_success,
+            ]
         )
 
         result = await training_client.flush(force=True)
@@ -352,7 +436,9 @@ class TestFlush:
         assert training_client.get_buffer_size() == 0
 
     @pytest.mark.asyncio
-    async def test_flush_clears_buffer_after_attempt(self, training_client, platform_info, features):
+    async def test_flush_clears_buffer_after_attempt(
+        self, training_client, platform_info, features
+    ):
         """Test that buffer is cleared even if training fails."""
         training_client.add_sample("model-1", platform_info, features, 100.0)
 
@@ -367,14 +453,16 @@ class TestFlush:
         assert training_client.get_buffer_size() == 0
 
     @pytest.mark.asyncio
-    async def test_multi_model_training_both_types(self, platform_info, features):
+    async def test_multi_model_training_both_types(
+        self, platform_info, features
+    ):
         """Test that both prediction types are trained correctly."""
         # Create client with both prediction types
         client = TrainingClient(
             predictor_url="http://predictor:8000",
             batch_size=100,
             min_samples=10,
-            prediction_types=["expect_error", "quantile"]
+            prediction_types=["expect_error", "quantile"],
         )
 
         # Add samples
@@ -402,14 +490,16 @@ class TestFlush:
         assert "quantile" in prediction_types_called
 
     @pytest.mark.asyncio
-    async def test_multi_model_training_single_type(self, platform_info, features):
+    async def test_multi_model_training_single_type(
+        self, platform_info, features
+    ):
         """Test training with only one prediction type configured."""
         # Create client with only quantile
         client = TrainingClient(
             predictor_url="http://predictor:8000",
             batch_size=100,
             min_samples=10,
-            prediction_types=["quantile"]
+            prediction_types=["quantile"],
         )
 
         # Add samples
@@ -438,13 +528,15 @@ class TestFlush:
             predictor_url="http://predictor:8000",
             batch_size=100,
             min_samples=10,
-            prediction_types=["quantile"]
+            prediction_types=["quantile"],
         )
 
         # Add samples with specific features and runtime
         for i in range(10):
             custom_features = {"input_size": 1000 + i, "batch": 32}
-            client.add_sample("model-1", platform_info, custom_features, float(i * 10))
+            client.add_sample(
+                "model-1", platform_info, custom_features, float(i * 10)
+            )
 
         # Mock HTTP client
         mock_response = MagicMock()
@@ -477,10 +569,14 @@ class TestBufferManagement:
         """Test getting buffer size when empty."""
         assert training_client.get_buffer_size() == 0
 
-    def test_get_buffer_size_with_samples(self, training_client, platform_info, features):
+    def test_get_buffer_size_with_samples(
+        self, training_client, platform_info, features
+    ):
         """Test getting buffer size with samples."""
         for i in range(10):
-            training_client.add_sample("model-1", platform_info, features, float(i))
+            training_client.add_sample(
+                "model-1", platform_info, features, float(i)
+            )
 
         assert training_client.get_buffer_size() == 10
 
@@ -489,10 +585,14 @@ class TestBufferManagement:
         training_client.clear_buffer()
         assert training_client.get_buffer_size() == 0
 
-    def test_clear_buffer_with_samples(self, training_client, platform_info, features):
+    def test_clear_buffer_with_samples(
+        self, training_client, platform_info, features
+    ):
         """Test clearing buffer with samples."""
         for i in range(10):
-            training_client.add_sample("model-1", platform_info, features, float(i))
+            training_client.add_sample(
+                "model-1", platform_info, features, float(i)
+            )
 
         assert training_client.get_buffer_size() == 10
 
@@ -500,10 +600,14 @@ class TestBufferManagement:
 
         assert training_client.get_buffer_size() == 0
 
-    def test_clear_buffer_does_not_send_data(self, training_client, platform_info, features):
+    def test_clear_buffer_does_not_send_data(
+        self, training_client, platform_info, features
+    ):
         """Test that clear_buffer does not trigger any HTTP requests."""
         for i in range(10):
-            training_client.add_sample("model-1", platform_info, features, float(i))
+            training_client.add_sample(
+                "model-1", platform_info, features, float(i)
+            )
 
         # Mock HTTP client to verify no calls are made
         training_client._http_client.post = AsyncMock()

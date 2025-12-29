@@ -1,21 +1,19 @@
-"""
-Instance registry for managing compute instances.
+"""Instance registry for managing compute instances.
 
 This module provides thread-safe storage and management of instances
 that can execute tasks.
 """
 
-from typing import Dict, List, Optional
 import asyncio
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from .model import (
     Instance,
-    InstanceStatus,
-    InstanceStats,
     InstanceQueueBase,
-    InstanceQueueProbabilistic,
     InstanceQueueExpectError,
+    InstanceQueueProbabilistic,
+    InstanceStats,
+    InstanceStatus,
 )
 
 
@@ -23,24 +21,22 @@ class InstanceRegistry:
     """Thread-safe registry for managing instances."""
 
     def __init__(self, queue_info_type: str = "probabilistic"):
-        """
-        Initialize instance registry.
+        """Initialize instance registry.
 
         Args:
             queue_info_type: Type of queue information to maintain
                             ("probabilistic" or "expect_error")
         """
-        self._instances: Dict[str, Instance] = {}
-        self._queue_info: Dict[str, InstanceQueueBase] = {}
-        self._stats: Dict[str, InstanceStats] = {}
+        self._instances: dict[str, Instance] = {}
+        self._queue_info: dict[str, InstanceQueueBase] = {}
+        self._stats: dict[str, InstanceStats] = {}
         self._lock = asyncio.Lock()
         self._queue_info_type = queue_info_type
         # Store quantiles configuration for probabilistic queues
         self._quantiles = [0.5, 0.9, 0.95, 0.99]  # Default quantiles
 
     async def register(self, instance: Instance) -> None:
-        """
-        Register a new instance.
+        """Register a new instance.
 
         Args:
             instance: Instance to register
@@ -50,24 +46,30 @@ class InstanceRegistry:
         """
         async with self._lock:
             if instance.instance_id in self._instances:
-                raise ValueError(f"Instance {instance.instance_id} already exists")
+                raise ValueError(
+                    f"Instance {instance.instance_id} already exists"
+                )
 
             self._instances[instance.instance_id] = instance
 
             # Initialize queue info based on scheduling strategy type
             if self._queue_info_type == "expect_error":
-                self._queue_info[instance.instance_id] = InstanceQueueExpectError(
-                    instance_id=instance.instance_id,
-                    expected_time_ms=0.0,
-                    error_margin_ms=0.0,
+                self._queue_info[instance.instance_id] = (
+                    InstanceQueueExpectError(
+                        instance_id=instance.instance_id,
+                        expected_time_ms=0.0,
+                        error_margin_ms=0.0,
+                    )
                 )
             else:  # Default to probabilistic
                 # Use stored quantiles configuration
                 values = [0.0] * len(self._quantiles)
-                self._queue_info[instance.instance_id] = InstanceQueueProbabilistic(
-                    instance_id=instance.instance_id,
-                    quantiles=self._quantiles.copy(),
-                    values=values,
+                self._queue_info[instance.instance_id] = (
+                    InstanceQueueProbabilistic(
+                        instance_id=instance.instance_id,
+                        quantiles=self._quantiles.copy(),
+                        values=values,
+                    )
                 )
 
             # Initialize statistics
@@ -78,8 +80,7 @@ class InstanceRegistry:
             )
 
     async def remove(self, instance_id: str) -> Instance:
-        """
-        Remove an instance from the registry.
+        """Remove an instance from the registry.
 
         Args:
             instance_id: ID of instance to remove
@@ -100,9 +101,8 @@ class InstanceRegistry:
 
             return instance
 
-    async def get(self, instance_id: str) -> Optional[Instance]:
-        """
-        Get an instance by ID.
+    async def get(self, instance_id: str) -> Instance | None:
+        """Get an instance by ID.
 
         Args:
             instance_id: ID of instance to retrieve
@@ -113,9 +113,10 @@ class InstanceRegistry:
         async with self._lock:
             return self._instances.get(instance_id)
 
-    async def update_status(self, instance_id: str, status: InstanceStatus) -> None:
-        """
-        Update the status of an instance.
+    async def update_status(
+        self, instance_id: str, status: InstanceStatus
+    ) -> None:
+        """Update the status of an instance.
 
         Args:
             instance_id: ID of instance to update
@@ -132,12 +133,16 @@ class InstanceRegistry:
             instance.status = status
 
             # Update drain_initiated_at timestamp if transitioning to DRAINING
-            if status == InstanceStatus.DRAINING and not instance.drain_initiated_at:
-                instance.drain_initiated_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+            if (
+                status == InstanceStatus.DRAINING
+                and not instance.drain_initiated_at
+            ):
+                instance.drain_initiated_at = (
+                    datetime.now(UTC).isoformat().replace("+00:00", "Z")
+                )
 
-    async def list_all(self, model_id: Optional[str] = None) -> List[Instance]:
-        """
-        List all instances, optionally filtered by model_id.
+    async def list_all(self, model_id: str | None = None) -> list[Instance]:
+        """List all instances, optionally filtered by model_id.
 
         Args:
             model_id: Optional model ID filter
@@ -153,9 +158,10 @@ class InstanceRegistry:
 
             return instances
 
-    async def get_queue_info(self, instance_id: str) -> Optional[InstanceQueueBase]:
-        """
-        Get queue information for an instance.
+    async def get_queue_info(
+        self, instance_id: str
+    ) -> InstanceQueueBase | None:
+        """Get queue information for an instance.
 
         Args:
             instance_id: ID of instance
@@ -167,10 +173,9 @@ class InstanceRegistry:
             return self._queue_info.get(instance_id)
 
     async def get_all_queue_info(
-        self, instance_ids: Optional[List[str]] = None
-    ) -> Dict[str, InstanceQueueBase]:
-        """
-        Get queue information for all instances in a single lock acquisition.
+        self, instance_ids: list[str] | None = None
+    ) -> dict[str, InstanceQueueBase]:
+        """Get queue information for all instances in a single lock acquisition.
 
         This method is optimized for collecting queue info for multiple instances
         at once, reducing lock contention from O(N) to O(1) per call.
@@ -194,10 +199,10 @@ class InstanceRegistry:
                     if iid in self._queue_info
                 }
 
-    async def update_queue_info(self, instance_id: str, queue_info: InstanceQueueBase) -> None:
-
-        """
-        Update queue information for an instance.
+    async def update_queue_info(
+        self, instance_id: str, queue_info: InstanceQueueBase
+    ) -> None:
+        """Update queue information for an instance.
 
         Args:
             instance_id: ID of instance
@@ -207,9 +212,8 @@ class InstanceRegistry:
             if instance_id in self._instances:
                 self._queue_info[instance_id] = queue_info
 
-    async def get_stats(self, instance_id: str) -> Optional[InstanceStats]:
-        """
-        Get statistics for an instance.
+    async def get_stats(self, instance_id: str) -> InstanceStats | None:
+        """Get statistics for an instance.
 
         Args:
             instance_id: ID of instance
@@ -247,8 +251,7 @@ class InstanceRegistry:
                 self._stats[instance_id].failed_tasks += 1
 
     async def reset_all_pending_tasks(self) -> int:
-        """
-        Reset pending_tasks counter to 0 for all instances.
+        """Reset pending_tasks counter to 0 for all instances.
 
         This should be called when clearing all tasks from the task registry
         to ensure instance stats remain consistent.
@@ -265,8 +268,7 @@ class InstanceRegistry:
             return count
 
     async def start_draining(self, instance_id: str) -> Instance:
-        """
-        Mark instance as draining - stops accepting new tasks.
+        """Mark instance as draining - stops accepting new tasks.
 
         Args:
             instance_id: ID of instance to start draining
@@ -289,12 +291,13 @@ class InstanceRegistry:
                 )
 
             instance.status = InstanceStatus.DRAINING
-            instance.drain_initiated_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+            instance.drain_initiated_at = (
+                datetime.now(UTC).isoformat().replace("+00:00", "Z")
+            )
             return instance
 
-    async def get_drain_status(self, instance_id: str) -> Dict:
-        """
-        Get draining status for an instance.
+    async def get_drain_status(self, instance_id: str) -> dict:
+        """Get draining status for an instance.
 
         Args:
             instance_id: ID of instance
@@ -318,7 +321,7 @@ class InstanceRegistry:
                     "pending_tasks": 0,
                     "running_tasks": 0,
                     "can_remove": True,
-                    "drain_initiated_at": instance.drain_initiated_at
+                    "drain_initiated_at": instance.drain_initiated_at,
                 }
 
             can_remove = (
@@ -332,12 +335,11 @@ class InstanceRegistry:
                 "pending_tasks": stats.pending_tasks,
                 "running_tasks": 0,  # pending_tasks includes running
                 "can_remove": can_remove,
-                "drain_initiated_at": instance.drain_initiated_at
+                "drain_initiated_at": instance.drain_initiated_at,
             }
 
-    async def list_active(self, model_id: Optional[str] = None) -> List[Instance]:
-        """
-        List only ACTIVE instances (excludes draining/removing).
+    async def list_active(self, model_id: str | None = None) -> list[Instance]:
+        """List only ACTIVE instances (excludes draining/removing).
 
         Args:
             model_id: Optional model ID filter
@@ -347,7 +349,8 @@ class InstanceRegistry:
         """
         async with self._lock:
             instances = [
-                i for i in self._instances.values()
+                i
+                for i in self._instances.values()
                 if i.status == InstanceStatus.ACTIVE
             ]
 
@@ -357,8 +360,7 @@ class InstanceRegistry:
             return instances
 
     async def safe_remove(self, instance_id: str) -> Instance:
-        """
-        Safely remove an instance - only if draining and no pending tasks.
+        """Safely remove an instance - only if draining and no pending tasks.
 
         Args:
             instance_id: ID of instance to remove
@@ -411,9 +413,8 @@ class InstanceRegistry:
 
     async def get_instances_below_water_mark(
         self, model_id: str, water_mark: int
-    ) -> List[Instance]:
-        """
-        Get active instances with pending_tasks below the specified water mark.
+    ) -> list[Instance]:
+        """Get active instances with pending_tasks below the specified water mark.
 
         Args:
             model_id: Model ID filter
@@ -439,8 +440,7 @@ class InstanceRegistry:
     async def is_any_instance_available(
         self, model_id: str, high_water_mark: int
     ) -> bool:
-        """
-        Check if any active instance for the model can accept new tasks.
+        """Check if any active instance for the model can accept new tasks.
 
         Args:
             model_id: Model ID filter
@@ -463,8 +463,7 @@ class InstanceRegistry:
             return False
 
     async def get_pending_tasks_count(self, instance_id: str) -> int:
-        """
-        Get the current pending tasks count for an instance.
+        """Get the current pending tasks count for an instance.
 
         Args:
             instance_id: ID of instance
@@ -477,8 +476,7 @@ class InstanceRegistry:
             return stats.pending_tasks if stats else 0
 
     async def has_active_instance(self, model_id: str) -> bool:
-        """
-        Check if any ACTIVE instance exists for the model.
+        """Check if any ACTIVE instance exists for the model.
 
         Args:
             model_id: Model ID filter
@@ -488,13 +486,15 @@ class InstanceRegistry:
         """
         async with self._lock:
             for instance in self._instances.values():
-                if instance.model_id == model_id and instance.status == InstanceStatus.ACTIVE:
+                if (
+                    instance.model_id == model_id
+                    and instance.status == InstanceStatus.ACTIVE
+                ):
                     return True
             return False
 
-    async def get_active_instances(self, model_id: str) -> List[Instance]:
-        """
-        Get all ACTIVE instances for the model.
+    async def get_active_instances(self, model_id: str) -> list[Instance]:
+        """Get all ACTIVE instances for the model.
 
         Args:
             model_id: Model ID filter
@@ -504,13 +504,14 @@ class InstanceRegistry:
         """
         async with self._lock:
             return [
-                inst for inst in self._instances.values()
-                if inst.model_id == model_id and inst.status == InstanceStatus.ACTIVE
+                inst
+                for inst in self._instances.values()
+                if inst.model_id == model_id
+                and inst.status == InstanceStatus.ACTIVE
             ]
 
     async def clear_all(self) -> int:
-        """
-        Clear all instances from the registry.
+        """Clear all instances from the registry.
 
         Returns:
             Count of instances that were cleared

@@ -1,19 +1,17 @@
-"""
-Unit tests for HTTP error logging utility.
+"""Unit tests for HTTP error logging utility.
 
 Tests header sanitization, body truncation, and error logging functionality.
 """
 
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
 import httpx
 
 from src.http_error_logger import (
-    log_http_error,
+    MAX_BODY_LENGTH,
     _sanitize_headers,
     _truncate_body,
-    SENSITIVE_HEADERS,
-    MAX_BODY_LENGTH,
+    log_http_error,
 )
 
 
@@ -22,7 +20,10 @@ class TestSanitizeHeaders:
 
     def test_sanitizes_authorization(self):
         """Test that Authorization header is redacted."""
-        headers = {"Authorization": "Bearer secret123", "Content-Type": "application/json"}
+        headers = {
+            "Authorization": "Bearer secret123",
+            "Content-Type": "application/json",
+        }
         result = _sanitize_headers(headers)
         assert result["Authorization"] == "[REDACTED]"
         assert result["Content-Type"] == "application/json"
@@ -127,6 +128,7 @@ class TestTruncateBody:
 
     def test_handles_non_serializable_dict(self):
         """Test that non-serializable dicts are converted via str()."""
+
         # Create a dict with non-serializable value
         class NonSerializable:
             def __str__(self):
@@ -180,7 +182,9 @@ class TestLogHttpError:
             "Server error", request=request, response=response
         )
 
-        log_http_error(error, request_body={"data": "test"}, context="test context")
+        log_http_error(
+            error, request_body={"data": "test"}, context="test context"
+        )
 
         mock_logger.error.assert_called_once()
         log_message = mock_logger.error.call_args[0][0]
@@ -272,7 +276,9 @@ class TestLogHttpError:
         response.status_code = 500
         response.headers = httpx.Headers({})
         # Make response.text raise an exception
-        type(response).text = property(lambda self: (_ for _ in ()).throw(Exception("Cannot read")))
+        type(response).text = property(
+            lambda self: (_ for _ in ()).throw(Exception("Cannot read"))
+        )
 
         error = httpx.HTTPStatusError(
             "Server error", request=request, response=response
@@ -334,3 +340,78 @@ class TestLogHttpError:
         assert "http://unreachable.com/api" in log_message
         # Should not have response section
         assert "Response Status" not in log_message
+
+    @patch("src.http_error_logger.logger")
+    def test_http_status_error_request_property_raises_runtime_error(
+        self, mock_logger
+    ):
+        """Test handling when HTTPStatusError.request raises RuntimeError."""
+
+        # Create an HTTPStatusError subclass that raises RuntimeError on property access
+        class ErrorWithBrokenRequest(httpx.HTTPStatusError):
+            @property
+            def request(self):
+                raise RuntimeError("Request not set")
+
+            @property
+            def response(self):
+                raise RuntimeError("Response not set")
+
+        # Create instance using parent's __new__ to avoid constructor issues
+        error = Exception.__new__(ErrorWithBrokenRequest)
+        error.args = ("Mocked error",)
+
+        # Should not raise - the RuntimeError should be caught
+        log_http_error(
+            error,
+            request_url="http://fallback.com",
+            request_method="GET",
+            context="runtime error test",
+        )
+
+        mock_logger.error.assert_called_once()
+        log_message = mock_logger.error.call_args[0][0]
+        assert "runtime error test" in log_message
+
+    @patch("src.http_error_logger.logger")
+    def test_http_status_error_response_property_raises_runtime_error(
+        self, mock_logger
+    ):
+        """Test handling when HTTPStatusError.response raises RuntimeError but request works."""
+
+        # Create an HTTPStatusError subclass that works for request but fails on response
+        class ErrorWithBrokenResponse(httpx.HTTPStatusError):
+            def __init__(self):
+                self._request = MagicMock(spec=httpx.Request)
+                self._request.url = "http://example.com/api"
+                self._request.method = "POST"
+                self._request.headers = httpx.Headers({})
+                self.args = ("Test error",)
+
+            @property
+            def request(self):
+                return self._request
+
+            @property
+            def response(self):
+                raise RuntimeError("Response not set")
+
+        error = ErrorWithBrokenResponse()
+        log_http_error(error, context="response error test")
+
+        mock_logger.error.assert_called_once()
+
+
+class TestTruncateBodyEdgeCases:
+    """Additional edge case tests for body truncation."""
+
+    def test_dict_with_circular_reference_fallback_to_str(self):
+        """Test that circular reference dict falls back to str()."""
+        # Create dict with circular reference - json.dumps will fail
+        circular = {}
+        circular["self"] = circular
+
+        result = _truncate_body(circular)
+        # Should fallback to str(body) - won't show full structure but won't crash
+        assert result is not None
+        assert len(result) > 0
