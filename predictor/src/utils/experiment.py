@@ -1,5 +1,4 @@
-"""
-Experiment mode utilities for synthetic predictions.
+"""Experiment mode utilities for synthetic predictions.
 
 Allows testing and integration without requiring trained models.
 
@@ -11,41 +10,35 @@ Supported distribution types:
 2. Multimodal distributions (via exp_modes parameter):
    - Gaussian Mixture Model (GMM)
    - Each mode has: mean, weight, cv (optional)
-
-Example multimodal configuration:
-    features = {
-        'exp_runtime': 5000,  # Overall expected runtime (used as reference)
-        'exp_modes': [
-            {'mean': 2000, 'weight': 0.6, 'cv': 0.15},  # Fast mode (60%)
-            {'mean': 8000, 'weight': 0.3, 'cv': 0.20},  # Slow mode (30%)
-            {'mean': 15000, 'weight': 0.1, 'cv': 0.10}  # Very slow mode (10%)
-        ]
-    }
 """
 
-import traceback
-from typing import Any, Dict, List, Optional
+from __future__ import annotations
+
+from typing import Any
+
 import numpy as np
 
-from .logging import get_logger
+from src.utils.logging import get_logger
 
 logger = get_logger()
 
 
-def is_experiment_mode(features: Dict[str, Any], platform_info: Dict[str, str]) -> bool:
-    """
-    Check if request is in experiment mode.
+def is_experiment_mode(
+    features: dict[str, Any],
+    platform_info: dict[str, str],
+) -> bool:
+    """Check if request is in experiment mode.
 
     Experiment mode is triggered if:
     1. features contains 'exp_runtime' field, OR
     2. All platform_info fields are set to "exp"
 
     Args:
-        features: Feature dictionary from prediction request
-        platform_info: Platform information dict
+        features: Feature dictionary from prediction request.
+        platform_info: Platform information dict.
 
     Returns:
-        True if experiment mode should be used
+        True if experiment mode should be used.
     """
     # Check for exp_runtime in features
     if 'exp_runtime' in features:
@@ -60,18 +53,17 @@ def is_experiment_mode(features: Dict[str, Any], platform_info: Dict[str, str]) 
     return False
 
 
-def get_exp_runtime(features: Dict[str, Any]) -> float:
-    """
-    Extract experimental runtime value from features.
+def get_exp_runtime(features: dict[str, Any]) -> float:
+    """Extract experimental runtime value from features.
 
     Args:
-        features: Feature dictionary
+        features: Feature dictionary.
 
     Returns:
-        Experimental runtime value
+        Experimental runtime value.
 
     Raises:
-        ValueError: If exp_runtime not found or invalid
+        ValueError: If exp_runtime not found or invalid.
     """
     if 'exp_runtime' not in features:
         error_msg = "Experiment mode requires 'exp_runtime' in features"
@@ -108,19 +100,17 @@ def get_exp_runtime(features: Dict[str, Any]) -> float:
 
 def generate_expect_error_prediction(
     exp_runtime: float,
-    cv: float = 0.30
-) -> Dict[str, Any]:
-    """
-    Generate synthetic expect/error prediction.
+    cv: float = 0.30,
+) -> dict[str, Any]:
+    """Generate synthetic expect/error prediction.
 
     Args:
-        exp_runtime: Expected runtime value
-        cv: Coefficient of variation (default: 0.30, i.e., 30% standard deviation)
-            This parameter controls the error margin relative to expected runtime.
-            Higher CV means more uncertainty in the prediction.
+        exp_runtime: Expected runtime value.
+        cv: Coefficient of variation (default: 0.30). Controls the error
+            margin relative to expected runtime.
 
     Returns:
-        Dict with expected_runtime_ms and error_margin_ms
+        Dict with expected_runtime_ms and error_margin_ms.
     """
     return {
         'expected_runtime_ms': exp_runtime,
@@ -129,29 +119,28 @@ def generate_expect_error_prediction(
 
 
 def generate_multimodal_samples(
-    modes: List[Dict[str, Any]],
+    modes: list[dict[str, Any]],
     num_samples: int = 2000,
-    rng: Optional[np.random.RandomState] = None
+    rng: np.random.RandomState | None = None,
 ) -> np.ndarray:
-    """
-    Generate samples from a Gaussian Mixture Model (multimodal distribution).
+    """Generate samples from a Gaussian Mixture Model (multimodal).
 
     Each mode is specified as a dict with:
     - mean: Center of the mode (required)
-    - weight: Probability weight for this mode (required, should sum to 1)
-    - cv: Coefficient of variation for this mode (optional, default: 0.20)
-    - skewness: Skewness for this mode (optional, default: 0, uses normal if 0)
+    - weight: Probability weight (required, should sum to 1)
+    - cv: Coefficient of variation (optional, default: 0.20)
+    - skewness: Skewness for this mode (optional, default: 0)
 
     Args:
-        modes: List of mode specifications
-        num_samples: Number of samples to generate
-        rng: Random state for reproducibility
+        modes: List of mode specifications.
+        num_samples: Number of samples to generate.
+        rng: Random state for reproducibility.
 
     Returns:
-        Array of samples from the mixture distribution
+        Array of samples from the mixture distribution.
 
     Raises:
-        ValueError: If modes are invalid
+        ValueError: If modes are invalid.
     """
     if rng is None:
         rng = np.random.RandomState(42)
@@ -205,63 +194,27 @@ def generate_multimodal_samples(
 
 def generate_quantile_prediction(
     exp_runtime: float,
-    quantiles: list = None,
+    quantiles: list[float] | None = None,
     cv: float = 0.30,
     skewness: float = 0.0,
-    modes: List[Dict[str, Any]] = None
-) -> Dict[str, Any]:
-    """
-    Generate synthetic quantile prediction using configurable distribution.
+    modes: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Generate synthetic quantile prediction using configurable distribution.
 
     Supports three distribution types:
-
     1. Unimodal Normal (default): skewness=0, modes=None
-       - Symmetric distribution around exp_runtime
-       - Good for stable, predictable tasks
-
     2. Unimodal Log-normal: skewness>0, modes=None
-       - Right-skewed (long-tail) distribution
-       - Good for tasks with occasional long executions
-
-    3. Multimodal (Gaussian Mixture): modes=[...] (overrides cv/skewness)
-       - Multiple peaks in the distribution
-       - Good for mixed workloads (e.g., cache hit vs miss, batch sizes)
-
-    The coefficient of variation (CV) controls the spread of the distribution.
-    For probabilistic scheduling to work well, the CV should match the actual
-    runtime variability. Typical values:
-    - Low variability tasks: CV = 0.10 - 0.20
-    - Medium variability: CV = 0.30 - 0.50
-    - High variability (long-tail): CV = 0.50 - 1.50
+    3. Multimodal (Gaussian Mixture): modes=[...]
 
     Args:
-        exp_runtime: Expected runtime value (used as distribution center for unimodal,
-                     or as reference for error margin calculation in multimodal)
-        quantiles: List of quantile levels (optional, defaults to [0.5, 0.9, 0.95, 0.99])
-        cv: Coefficient of variation (default: 0.30, i.e., 30% standard deviation)
-            Higher CV produces wider spread between quantiles, which is important
-            for probabilistic scheduling to differentiate instances effectively.
-            Ignored if modes is provided.
-        skewness: Distribution skewness control (default: 0.0)
-            - 0.0: Use normal distribution (symmetric)
-            - > 0: Use log-normal distribution with right skew
-            - Typical long-tail tasks have skewness 1.0 - 3.0
-            Ignored if modes is provided.
-        modes: List of mode specifications for multimodal distribution (optional)
-            Each mode is a dict with:
-            - mean: Center of the mode (required)
-            - weight: Probability weight for this mode (required)
-            - cv: Coefficient of variation for this mode (optional, default: 0.20)
-            - skewness: Skewness for this mode (optional, default: 0)
-
-            Example for bimodal (cache hit/miss):
-            [
-                {'mean': 50, 'weight': 0.8, 'cv': 0.10},   # Cache hit (80%)
-                {'mean': 500, 'weight': 0.2, 'cv': 0.30}   # Cache miss (20%)
-            ]
+        exp_runtime: Expected runtime value.
+        quantiles: List of quantile levels (defaults to [0.5, 0.9, 0.95, 0.99]).
+        cv: Coefficient of variation (default: 0.30). Ignored if modes provided.
+        skewness: Distribution skewness (default: 0.0). Ignored if modes provided.
+        modes: List of mode specifications for multimodal distribution.
 
     Returns:
-        Dict with 'quantiles' key containing quantile: value pairs
+        Dict with quantiles key containing quantile: value pairs.
     """
     if quantiles is None:
         # Use default quantiles
@@ -311,67 +264,27 @@ def generate_quantile_prediction(
 
 def generate_experiment_prediction(
     prediction_type: str,
-    features: Dict[str, Any],
-    config: Dict[str, Any] = None
-) -> Dict[str, Any]:
-    """
-    Generate experiment mode prediction based on prediction type.
-
-    BACKWARD COMPATIBLE: All new parameters are optional with sensible defaults.
-    Existing code using only 'exp_runtime' will continue to work unchanged.
+    features: dict[str, Any],
+    config: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Generate experiment mode prediction based on prediction type.
 
     Distribution parameters can be specified in features:
-
-    1. Unimodal distribution (default, backward compatible):
-       - exp_runtime (required): Expected runtime value in ms
-       - exp_cv (optional): Coefficient of variation (default: 0.30)
-       - exp_skewness (optional): Skewness parameter (default: 0.0)
-
-    2. Multimodal distribution (new feature):
-       - exp_runtime (required): Used as reference for error margin calculation
-       - exp_modes (optional): List of mode specifications, each with:
-         - mean: Center of the mode (required)
-         - weight: Probability weight (required)
-         - cv: Coefficient of variation for this mode (optional, default: 0.20)
-         - skewness: Skewness for this mode (optional, default: 0)
-
-    Example configurations:
-
-    # Backward compatible (unimodal normal)
-    features = {'exp_runtime': 1000}
-
-    # Unimodal with long tail
-    features = {'exp_runtime': 1000, 'exp_cv': 1.0, 'exp_skewness': 2.5}
-
-    # Bimodal (cache hit/miss scenario)
-    features = {
-        'exp_runtime': 275,  # Weighted average for error margin
-        'exp_modes': [
-            {'mean': 50, 'weight': 0.8, 'cv': 0.10},   # Cache hit (80%)
-            {'mean': 500, 'weight': 0.2, 'cv': 0.30}   # Cache miss (20%)
-        ]
-    }
-
-    # Trimodal (different batch sizes)
-    features = {
-        'exp_runtime': 5000,
-        'exp_modes': [
-            {'mean': 1000, 'weight': 0.5, 'cv': 0.15},   # Small batch (50%)
-            {'mean': 5000, 'weight': 0.35, 'cv': 0.20},  # Medium batch (35%)
-            {'mean': 15000, 'weight': 0.15, 'cv': 0.10}  # Large batch (15%)
-        ]
-    }
+    - exp_runtime (required): Expected runtime value in ms
+    - exp_cv (optional): Coefficient of variation (default: 0.30)
+    - exp_skewness (optional): Skewness parameter (default: 0.0)
+    - exp_modes (optional): List of mode specifications for multimodal
 
     Args:
-        prediction_type: Either 'expect_error' or 'quantile'
-        features: Feature dictionary with exp_runtime and optional distribution params
-        config: Optional config (used for quantiles list in quantile type)
+        prediction_type: Either 'expect_error' or 'quantile'.
+        features: Feature dictionary with exp_runtime and optional params.
+        config: Optional config (used for quantiles list in quantile type).
 
     Returns:
-        Prediction result dict
+        Prediction result dict.
 
     Raises:
-        ValueError: If prediction_type invalid or exp_runtime missing
+        ValueError: If prediction_type invalid or exp_runtime missing.
     """
     exp_runtime = get_exp_runtime(features)
 

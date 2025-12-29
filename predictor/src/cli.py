@@ -3,18 +3,20 @@
 Provides commands to start, manage, and configure the predictor service.
 """
 
+from __future__ import annotations
+
 import os
 import sys
 import traceback
 from pathlib import Path
-from typing import Optional
 
 import typer
 from typer import Option
 from typing_extensions import Annotated
 
-from .config import PredictorConfig, set_config
-from .utils.logging import get_logger
+from src.config import PredictorConfig
+from src.config import set_config
+from src.utils.logging import get_logger
 
 logger = get_logger()
 
@@ -36,22 +38,42 @@ app.add_typer(config_app, name="config")
 
 @app.command()
 def start(
-    host: Annotated[str, Option("--host", "-h", help="Host to bind the server to")] = "0.0.0.0",
-    port: Annotated[int, Option("--port", "-p", help="Port to bind the server to")] = 8000,
-    reload: Annotated[bool, Option("--reload/--no-reload", help="Enable auto-reload for development")] = False,
-    workers: Annotated[int, Option("--workers", "-w", help="Number of worker processes")] = 1,
-    storage_dir: Annotated[Optional[str], Option("--storage-dir", "-s", help="Directory to store models")] = None,
-    config_file: Annotated[Optional[Path], Option("--config", "-c", help="Path to configuration file")] = None,
-    log_level: Annotated[str, Option("--log-level", "-l", help="Logging level")] = "info",
-    log_dir: Annotated[Optional[str], Option("--log-dir", help="Directory to store log files")] = None,
-):
+    host: Annotated[
+        str, Option("--host", "-h", help="Host to bind the server to")
+    ] = "0.0.0.0",
+    port: Annotated[
+        int, Option("--port", "-p", help="Port to bind the server to")
+    ] = 8000,
+    reload: Annotated[
+        bool, Option("--reload/--no-reload", help="Enable auto-reload")
+    ] = False,
+    workers: Annotated[
+        int, Option("--workers", "-w", help="Number of worker processes")
+    ] = 1,
+    storage_dir: Annotated[
+        str | None, Option("--storage-dir", "-s", help="Directory to store models")
+    ] = None,
+    config_file: Annotated[
+        Path | None, Option("--config", "-c", help="Path to configuration file")
+    ] = None,
+    log_level: Annotated[
+        str, Option("--log-level", "-l", help="Logging level")
+    ] = "info",
+    log_dir: Annotated[
+        str | None, Option("--log-dir", help="Directory to store log files")
+    ] = None,
+) -> None:
     """Start the predictor service.
 
-    Examples:
-        spredictor start
-        spredictor start --reload
-        spredictor start --host 127.0.0.1 --port 8080
-        spredictor start --workers 4 --storage-dir ./my_models
+    Args:
+        host: Host to bind the server to.
+        port: Port to bind the server to.
+        reload: Enable auto-reload for development.
+        workers: Number of worker processes.
+        storage_dir: Directory to store models.
+        config_file: Path to configuration file.
+        log_level: Logging level.
+        log_dir: Directory to store log files.
     """
     import uvicorn
 
@@ -82,7 +104,8 @@ def start(
     set_config(config)
 
     # Initialize logging system before starting the server
-    from .utils.logging import setup_logging
+    from src.utils.logging import setup_logging
+
     setup_logging(
         log_dir=config.log_dir,
         log_level=config.log_level
@@ -119,14 +142,18 @@ def start(
 
 @app.command()
 def health(
-    host: Annotated[str, Option("--host", "-h", help="Host to check")] = "localhost",
-    port: Annotated[int, Option("--port", "-p", help="Port to check")] = 8000,
-):
+    host: Annotated[
+        str, Option("--host", "-h", help="Host to check")
+    ] = "localhost",
+    port: Annotated[
+        int, Option("--port", "-p", help="Port to check")
+    ] = 8000,
+) -> None:
     """Check the health of a running predictor service.
 
-    Examples:
-        spredictor health
-        spredictor health --host 127.0.0.1 --port 8080
+    Args:
+        host: Host to check.
+        port: Port to check.
     """
     import httpx
 
@@ -184,12 +211,8 @@ def health(
 
 
 @app.command()
-def version():
-    """Show version information and dependencies.
-
-    Examples:
-        spredictor version
-    """
+def version() -> None:
+    """Show version information and dependencies."""
     import torch
     import fastapi
     import uvicorn
@@ -213,17 +236,20 @@ def version():
 
 @app.command(name="list")
 def list_models(
-    storage_dir: Annotated[Optional[str], Option("--storage-dir", "-s", help="Storage directory")] = None,
-    verbose: Annotated[bool, Option("--verbose", "-v", help="Show detailed information")] = False,
-):
+    storage_dir: Annotated[
+        str | None, Option("--storage-dir", "-s", help="Storage directory")
+    ] = None,
+    verbose: Annotated[
+        bool, Option("--verbose", "-v", help="Show detailed information")
+    ] = False,
+) -> None:
     """List all trained models in the storage directory.
 
-    Examples:
-        spredictor list
-        spredictor list --verbose
-        spredictor list --storage-dir ./my_models
+    Args:
+        storage_dir: Storage directory path.
+        verbose: Show detailed information.
     """
-    from .storage.model_storage import ModelStorage
+    from src.storage.model_storage import ModelStorage
 
     # Load config and override storage_dir if provided
     config = PredictorConfig.from_toml()
@@ -272,13 +298,14 @@ def list_models(
 
 @config_app.command("show")
 def config_show(
-    config_file: Annotated[Optional[Path], Option("--config", "-c", help="Path to configuration file")] = None,
-):
+    config_file: Annotated[
+        Path | None, Option("--config", "-c", help="Path to configuration file")
+    ] = None,
+) -> None:
     """Show current configuration.
 
-    Examples:
-        spredictor config show
-        spredictor config show --config predictor.toml
+    Args:
+        config_file: Path to configuration file.
     """
     # Load configuration
     if config_file:
@@ -303,15 +330,18 @@ def config_show(
 
 @config_app.command("init")
 def config_init(
-    output: Annotated[Path, Option("--output", "-o", help="Output file path")] = Path("predictor.toml"),
-    force: Annotated[bool, Option("--force", "-f", help="Overwrite existing file")] = False,
-):
+    output: Annotated[
+        Path, Option("--output", "-o", help="Output file path")
+    ] = Path("predictor.toml"),
+    force: Annotated[
+        bool, Option("--force", "-f", help="Overwrite existing file")
+    ] = False,
+) -> None:
     """Initialize a default configuration file.
 
-    Examples:
-        spredictor config init
-        spredictor config init --output my-config.toml
-        spredictor config init --force
+    Args:
+        output: Output file path.
+        force: Overwrite existing file.
     """
     if output.exists() and not force:
         typer.echo(f"❌ Configuration file already exists: {output}", err=True)

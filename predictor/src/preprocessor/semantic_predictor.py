@@ -1,24 +1,32 @@
-from typing import Dict, Optional, Tuple
+"""Transformer-based model for output length prediction.
+
+Provides a semantic preprocessor that uses a transformer model to predict
+output length from input text, which can be used as a feature for runtime
+prediction.
+"""
+
+from __future__ import annotations
+
+from typing import Any
 
 import torch
 import yaml
+from torch import nn
+from transformers import AutoConfig
+from transformers import AutoModel
 from transformers import AutoTokenizer
-from typing import Dict, Optional, Tuple, List
-from .base_preprocessor import BasePreprocessor
 
-"""
-Transformer-based model architectures for output length prediction.
-"""
-
-from typing import Dict, Optional, Tuple
-
-import torch
-import torch.nn as nn
-from transformers import AutoConfig, AutoModel
+from src.preprocessor.base_preprocessor import BasePreprocessor
 
 
 class TransformerLengthPredictor(nn.Module):
-    """Transformer encoder model for predicting output length."""
+    """Transformer encoder model for predicting output length.
+
+    Attributes:
+        transformer: The underlying transformer model.
+        dropout: Dropout layer for regularization.
+        regressor: Linear layer for regression output.
+    """
 
     def __init__(
         self,
@@ -26,27 +34,26 @@ class TransformerLengthPredictor(nn.Module):
         hidden_size: int = 768,
         num_attention_heads: int = 12,
         intermediate_size: int = 3072,
-        vocab_size: int = 30522,  # BERT vocab size
+        vocab_size: int = 30522,
         max_position_embeddings: int = 512,
         hidden_dropout_prob: float = 0.1,
         attention_probs_dropout_prob: float = 0.1,
         use_pretrained: bool = False,
-        pretrained_model_name: Optional[str] = None,
-    ):
-        """
-        Initialize the model.
+        pretrained_model_name: str | None = None,
+    ) -> None:
+        """Initialize the model.
 
         Args:
-            num_layers: Number of transformer layers
-            hidden_size: Hidden dimension size
-            num_attention_heads: Number of attention heads
-            intermediate_size: Size of feed-forward network
-            vocab_size: Vocabulary size
-            max_position_embeddings: Maximum sequence length
-            hidden_dropout_prob: Dropout probability
-            attention_probs_dropout_prob: Attention dropout
-            use_pretrained: Whether to use pretrained transformer
-            pretrained_model_name: Name of pretrained model if use_pretrained=True
+            num_layers: Number of transformer layers.
+            hidden_size: Hidden dimension size.
+            num_attention_heads: Number of attention heads.
+            intermediate_size: Size of feed-forward network.
+            vocab_size: Vocabulary size.
+            max_position_embeddings: Maximum sequence length.
+            hidden_dropout_prob: Dropout probability.
+            attention_probs_dropout_prob: Attention dropout.
+            use_pretrained: Whether to use pretrained transformer.
+            pretrained_model_name: Name of pretrained model if use_pretrained.
         """
         super().__init__()
 
@@ -68,8 +75,10 @@ class TransformerLengthPredictor(nn.Module):
             config.attention_probs_dropout_prob = attention_probs_dropout_prob
 
             self.transformer = AutoModel.from_config(config)
-            print(f"Created transformer with {num_layers} layers, "
-                  f"hidden_size={hidden_size}")
+            print(
+                f"Created transformer with {num_layers} layers, "
+                f"hidden_size={hidden_size}"
+            )
 
         # Regression head
         self.dropout = nn.Dropout(hidden_dropout_prob)
@@ -84,15 +93,14 @@ class TransformerLengthPredictor(nn.Module):
         input_ids: torch.Tensor,
         attention_mask: torch.Tensor,
     ) -> torch.Tensor:
-        """
-        Forward pass.
+        """Forward pass.
 
         Args:
-            input_ids: Token IDs [batch_size, seq_len]
-            attention_mask: Attention mask [batch_size, seq_len]
+            input_ids: Token IDs [batch_size, seq_len].
+            attention_mask: Attention mask [batch_size, seq_len].
 
         Returns:
-            Predicted output lengths [batch_size]
+            Predicted output lengths [batch_size].
         """
         # Get transformer outputs
         outputs = self.transformer(
@@ -101,131 +109,156 @@ class TransformerLengthPredictor(nn.Module):
         )
 
         # Use [CLS] token representation (first token)
-        cls_output = outputs.last_hidden_state[:, 0, :]  # [batch_size, hidden_size]
+        cls_output = outputs.last_hidden_state[:, 0, :]
 
         # Apply dropout and regression head
         cls_output = self.dropout(cls_output)
-        predictions = self.regressor(cls_output).squeeze(-1)  # [batch_size]
+        predictions = self.regressor(cls_output).squeeze(-1)
 
         return predictions
 
     def count_parameters(self) -> int:
-        """Count the number of trainable parameters."""
+        """Count the number of trainable parameters.
+
+        Returns:
+            Number of trainable parameters.
+        """
         return sum(p.numel() for p in self.parameters() if p.requires_grad)
 
-def create_model_from_config(config: Dict) -> TransformerLengthPredictor:
-    """
-    Create a model from a configuration dictionary.
+
+def create_model_from_config(
+    config: dict[str, Any],
+) -> TransformerLengthPredictor:
+    """Create a model from a configuration dictionary.
 
     Args:
-        config: Model configuration
+        config: Model configuration.
 
     Returns:
-        Initialized model
+        Initialized model.
     """
     model = TransformerLengthPredictor(
-        num_layers=config['num_layers'],
-        hidden_size=config['hidden_size'],
-        num_attention_heads=config['num_attention_heads'],
-        intermediate_size=config['intermediate_size'],
-        vocab_size=config.get('vocab_size', 30522),
-        max_position_embeddings=config.get('max_position_embeddings', 512),
-        hidden_dropout_prob=config.get('hidden_dropout_prob', 0.1),
-        attention_probs_dropout_prob=config.get('attention_probs_dropout_prob', 0.1),
-        use_pretrained=config.get('use_pretrained', False),
-        pretrained_model_name=config.get('pretrained_model_name', None),
+        num_layers=config["num_layers"],
+        hidden_size=config["hidden_size"],
+        num_attention_heads=config["num_attention_heads"],
+        intermediate_size=config["intermediate_size"],
+        vocab_size=config.get("vocab_size", 30522),
+        max_position_embeddings=config.get("max_position_embeddings", 512),
+        hidden_dropout_prob=config.get("hidden_dropout_prob", 0.1),
+        attention_probs_dropout_prob=config.get(
+            "attention_probs_dropout_prob", 0.1
+        ),
+        use_pretrained=config.get("use_pretrained", False),
+        pretrained_model_name=config.get("pretrained_model_name", None),
     )
 
     param_count = model.count_parameters()
-    print(f"Model created with {param_count:,} parameters "
-          f"({param_count / 1e6:.1f}M)")
-
-    return model
-
-def create_model_from_config(config: Dict) -> TransformerLengthPredictor:
-    """
-    Create a model from a configuration dictionary.
-
-    Args:
-        config: Model configuration
-
-    Returns:
-        Initialized model
-    """
-    model = TransformerLengthPredictor(
-        num_layers=config['num_layers'],
-        hidden_size=config['hidden_size'],
-        num_attention_heads=config['num_attention_heads'],
-        intermediate_size=config['intermediate_size'],
-        vocab_size=config.get('vocab_size', 30522),
-        max_position_embeddings=config.get('max_position_embeddings', 512),
-        hidden_dropout_prob=config.get('hidden_dropout_prob', 0.1),
-        attention_probs_dropout_prob=config.get('attention_probs_dropout_prob', 0.1),
-        use_pretrained=config.get('use_pretrained', False),
-        pretrained_model_name=config.get('pretrained_model_name', None),
+    print(
+        f"Model created with {param_count:,} parameters "
+        f"({param_count / 1e6:.1f}M)"
     )
-
-    param_count = model.count_parameters()
-    print(f"Model created with {param_count:,} parameters "
-          f"({param_count / 1e6:.1f}M)")
 
     return model
 
 
 class SemanticPredictor(BasePreprocessor):
-    def __init__(self, model_path: str, model_config_path: str):
+    """Semantic preprocessor using transformer for output length prediction.
+
+    Attributes:
+        model_path: Path to the trained model weights.
+        model_config: Configuration dictionary for the model.
+        model: The transformer model instance.
+        tokenizer: Tokenizer for processing input text.
+        max_length: Maximum sequence length for tokenization.
+    """
+
+    def __init__(self, model_path: str, model_config_path: str) -> None:
+        """Initialize the semantic predictor.
+
+        Args:
+            model_path: Path to the trained model weights file.
+            model_config_path: Path to the model configuration YAML file.
+        """
         self.model_path = model_path
-        with open(model_config_path, 'r') as f:
-          self.model_config = yaml.safe_load(f)
+        with open(model_config_path) as f:
+            self.model_config = yaml.safe_load(f)
+
         # Load prediction model
         self.load_model()
-        
-        self.tokenizer_name = self.model_config['data']['tokenizer_name']
-        self.max_length = self.model_config['data']['max_length']
+
+        self.tokenizer_name = self.model_config["data"]["tokenizer_name"]
+        self.max_length = self.model_config["data"]["max_length"]
         self.tokenizer = AutoTokenizer.from_pretrained(self.tokenizer_name)
 
-    def load_model(self):
-      model_specific_config = self.model_config['model']  
-      self.model = create_model_from_config(model_specific_config)
-      checkpoint = torch.load(self.model_path, map_location='cpu')
-      if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
-          self.model.load_state_dict(checkpoint['model_state_dict'])
-      else:
-          self.model.load_state_dict(checkpoint)
-      self.model.eval()
-        
-    def process_input(self, input_text: str):
+    def load_model(self) -> None:
+        """Load the model from the checkpoint file."""
+        model_specific_config = self.model_config["model"]
+        self.model = create_model_from_config(model_specific_config)
+        checkpoint = torch.load(self.model_path, map_location="cpu")
+        if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
+            self.model.load_state_dict(checkpoint["model_state_dict"])
+        else:
+            self.model.load_state_dict(checkpoint)
+        self.model.train(False)
+
+    def process_input(
+        self,
+        input_text: str,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Tokenize and process input text.
+
+        Args:
+            input_text: The input text to process.
+
+        Returns:
+            Tuple of (input_ids, attention_mask) tensors.
+        """
         encoded = self.tokenizer(
             input_text,
             max_length=self.max_length,
-            padding='max_length',
+            padding="max_length",
             truncation=True,
-            return_tensors='pt'
+            return_tensors="pt",
         )
-        
-        attention_mask = torch.stack([encoded['attention_mask'].squeeze(0)])
-        input_ids = torch.stack([encoded['input_ids'].squeeze(0)])
+
+        attention_mask = torch.stack([encoded["attention_mask"].squeeze(0)])
+        input_ids = torch.stack([encoded["input_ids"].squeeze(0)])
         return input_ids, attention_mask
-    
-    def predict(self, input_text: List[str]) -> Tuple[Dict[str, int], bool]:
-      assert len(input_text) == 1, "SemanticPredictor only supports one input text"
-      input_ids, attention_mask = self.process_input(input_text[0])
-      with torch.no_grad():
-          predictions = self.model(input_ids, attention_mask)
-      prediction = predictions.numpy()[0]
-      # Return False: do not remove original input feature
-      return {"output_length": int(prediction)}, True
-      
-    def __call__(self, input_text: List[str]) -> Tuple[Dict[str, int], bool]:
-        """
-        Callable interface for the preprocessor.
+
+    def predict(
+        self,
+        input_text: list[str],
+    ) -> tuple[dict[str, int], bool]:
+        """Make a prediction for the input text.
 
         Args:
-            input_text: List containing a single input text string
+            input_text: List containing a single input text string.
 
         Returns:
-            Tuple of (predictions dict, remove_origin flag)
+            Tuple of (predictions dict, remove_origin flag).
+
+        Raises:
+            AssertionError: If input_text does not contain exactly one string.
+        """
+        assert len(input_text) == 1, (
+            "SemanticPredictor only supports one input text"
+        )
+        input_ids, attention_mask = self.process_input(input_text[0])
+        with torch.no_grad():
+            predictions = self.model(input_ids, attention_mask)
+        prediction = predictions.numpy()[0]
+        return {"output_length": int(prediction)}, True
+
+    def __call__(
+        self,
+        input_text: list[str],
+    ) -> tuple[dict[str, int], bool]:
+        """Callable interface for the preprocessor.
+
+        Args:
+            input_text: List containing a single input text string.
+
+        Returns:
+            Tuple of (predictions dict, remove_origin flag).
         """
         return self.predict(input_text)
-    
-    

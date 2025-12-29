@@ -1,45 +1,49 @@
-"""
-Quantile predictor using MLP with pinball loss.
+"""Quantile predictor using MLP with pinball loss.
 
 Provides quantile-based runtime predictions for SLA-aware scheduling.
 
 Architecture: Base + Delta design for guaranteed monotonicity.
-    - MLP outputs: [base, δ₁, δ₂, ..., δₙ₋₁]
-    - Quantiles: q₀ = base, qᵢ = qᵢ₋₁ + softplus(δᵢ)
-    - This ensures q₀ ≤ q₁ ≤ ... ≤ qₙ₋₁ by construction
+    - MLP outputs: [base, delta_1, delta_2, ..., delta_n-1]
+    - Quantiles: q_0 = base, q_i = q_{i-1} + softplus(delta_i)
+    - This ensures q_0 <= q_1 <= ... <= q_{n-1} by construction
 """
 
-import traceback
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import torch.optim as optim
-import numpy as np
-from typing import Any, Dict, List
+from __future__ import annotations
 
-from .base import BasePredictor
-from .mlp import MLP
-from ..utils.logging import get_logger
+from typing import Any
+
+import numpy as np
+import torch
+from torch import nn
+from torch import optim
+from torch.nn import functional as F
+
+from src.predictor.base import BasePredictor
+from src.predictor.mlp import MLP
+from src.utils.logging import get_logger
+
 
 logger = get_logger()
 
 
 class BaseDeltaTransform(nn.Module):
-    """
-    Transform base + delta outputs to monotonic quantile predictions.
+    """Transform base + delta outputs to monotonic quantile predictions.
 
-    Takes raw MLP output [base, δ₁, δ₂, ...] and converts to
-    quantile values [q₀, q₁, q₂, ...] where qᵢ = qᵢ₋₁ + softplus(δᵢ).
+    Takes raw MLP output [base, delta_1, delta_2, ...] and converts to
+    quantile values [q_0, q_1, q_2, ...] where q_i = q_{i-1} + softplus(delta_i).
 
     This guarantees monotonicity by construction since softplus(x) > 0 for all x.
+
+    Attributes:
+        num_quantiles: Number of quantile levels to predict.
+        delta_scale: Scale factor for deltas.
     """
 
-    def __init__(self, num_quantiles: int, delta_scale: float = 1.0):
-        """
-        Initialize transform.
+    def __init__(self, num_quantiles: int, delta_scale: float = 1.0) -> None:
+        """Initialize transform.
 
         Args:
-            num_quantiles: Number of quantile levels to predict
+            num_quantiles: Number of quantile levels to predict.
             delta_scale: Scale factor for deltas (default: 1.0).
                 Higher values allow larger gaps between quantiles.
         """
@@ -48,17 +52,16 @@ class BaseDeltaTransform(nn.Module):
         self.delta_scale = delta_scale
 
     def forward(self, raw_output: torch.Tensor) -> torch.Tensor:
-        """
-        Convert base + delta representation to quantile values.
+        """Convert base + delta representation to quantile values.
 
         Args:
-            raw_output: Shape (batch_size, num_quantiles) where:
-                - raw_output[:, 0] is the base value (lowest quantile)
-                - raw_output[:, 1:] are deltas to be transformed via softplus
+            raw_output: Shape (batch_size, num_quantiles) where
+                raw_output[:, 0] is the base value (lowest quantile) and
+                raw_output[:, 1:] are deltas to be transformed via softplus.
 
         Returns:
             Quantile predictions of shape (batch_size, num_quantiles)
-            guaranteed to be monotonically non-decreasing
+            guaranteed to be monotonically non-decreasing.
         """
         if self.num_quantiles == 1:
             # Single quantile: just return the base
@@ -84,18 +87,24 @@ class BaseDeltaTransform(nn.Module):
 
 
 class PinballLoss(nn.Module):
-    """
-    Pinball loss (quantile loss) for quantile regression.
+    """Pinball loss (quantile loss) for quantile regression.
 
-    Loss = max(q * (y - ŷ), (q - 1) * (y - ŷ))
+    Loss = max(q * (y - y_hat), (q - 1) * (y - y_hat))
     where q is the quantile level.
 
     Optionally includes a monotonicity penalty to ensure q_i <= q_{i+1}.
+
+    Attributes:
+        quantiles: Tensor of quantile levels.
+        monotonicity_penalty: Weight for monotonicity penalty term.
     """
 
-    def __init__(self, quantiles: List[float], monotonicity_penalty: float = 0.0):
-        """
-        Initialize pinball loss.
+    def __init__(
+        self,
+        quantiles: list[float],
+        monotonicity_penalty: float = 0.0,
+    ) -> None:
+        """Initialize pinball loss.
 
         Args:
             quantiles: List of quantile levels (e.g., [0.5, 0.9, 0.95, 0.99])

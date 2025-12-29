@@ -29,6 +29,7 @@ dev = [
     "pytest-asyncio>=0.21.0",
     "httpx>=0.25.0",
     "pytest-cov>=4.1.0",
+    "ruff>=0.8.0",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -42,3 +43,49 @@ build-backend = "hatchling.build"
 dev = [
     "aiohttp>=3.13.2",
 ]
+
+[tool.pytest.ini_options]
+asyncio_mode = "strict"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["src"]
+omit = ["*/__main__.py"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "pass",
+    "@abstractmethod",
+]
+omit = [
+    "src/cli.py",  # CLI commands require running uvicorn server
+]
+
+[tool.ruff]
+line-length = 80
+target-version = "py311"
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # Pyflakes
+    "I",      # isort
+    "UP",     # pyupgrade
+    "D",      # pydocstyle
+]
+ignore = [
+    "D100",   # Missing docstring in public module (handle manually)
+    "D104",   # Missing docstring in public package
+    "D107",   # Missing docstring in __init__
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.isort]
+force-single-line = true
+known-first-party = ["src"]
+lines-after-imports = 2

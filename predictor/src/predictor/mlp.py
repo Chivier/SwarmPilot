@@ -1,33 +1,41 @@
-"""
-PyTorch MLP implementation for runtime prediction.
+"""PyTorch MLP implementation for runtime prediction.
 
 Provides a configurable multi-layer perceptron with flexible output dimensions.
 """
 
+from __future__ import annotations
+
 import torch
-import torch.nn as nn
-from typing import List
+from torch import nn
 
 
 torch.use_deterministic_algorithms(True)
 
 
 class MLP(nn.Module):
-    """
-    Multi-layer Perceptron for regression tasks.
+    """Multi-layer Perceptron for regression tasks.
 
     Supports configurable hidden layers and multiple outputs.
+
+    Attributes:
+        input_dim: Number of input features.
+        output_dim: Number of output values.
+        hidden_layers: List of hidden layer sizes.
     """
 
-    def __init__(self, input_dim: int, output_dim: int = 1,
-                 hidden_layers: List[int] = None):
-        """
-        Initialize MLP.
+    def __init__(
+        self,
+        input_dim: int,
+        output_dim: int = 1,
+        hidden_layers: list[int] | None = None,
+    ) -> None:
+        """Initialize MLP.
 
         Args:
-            input_dim: Number of input features
-            output_dim: Number of output values (1 for expect_error, len(quantiles) for quantile)
-            hidden_layers: List of hidden layer sizes (default: [64, 32])
+            input_dim: Number of input features.
+            output_dim: Number of output values (1 for expect_error,
+                len(quantiles) for quantile).
+            hidden_layers: List of hidden layer sizes (default: [64, 32]).
         """
         super(MLP, self).__init__()
 
@@ -54,43 +62,40 @@ class MLP(nn.Module):
         self.network = nn.Sequential(*layers)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Forward pass.
+        """Forward pass.
 
         Args:
-            x: Input tensor of shape (batch_size, input_dim)
+            x: Input tensor of shape (batch_size, input_dim).
 
         Returns:
-            Output tensor of shape (batch_size, output_dim)
+            Output tensor of shape (batch_size, output_dim).
         """
         return self.network(x)
 
-    def get_config(self) -> dict:
-        """
-        Get model configuration for serialization.
+    def get_config(self) -> dict[str, int | list[int]]:
+        """Get model configuration for serialization.
 
         Returns:
-            Dict with model architecture parameters
+            Dict with model architecture parameters.
         """
         return {
             'input_dim': self.input_dim,
             'output_dim': self.output_dim,
-            'hidden_layers': self.hidden_layers
+            'hidden_layers': self.hidden_layers,
         }
 
     @classmethod
-    def from_config(cls, config: dict) -> 'MLP':
-        """
-        Create MLP instance from configuration dict.
+    def from_config(cls, config: dict[str, int | list[int]]) -> MLP:
+        """Create MLP instance from configuration dict.
 
         Args:
-            config: Configuration dict from get_config()
+            config: Configuration dict from get_config().
 
         Returns:
-            New MLP instance with the same architecture
+            New MLP instance with the same architecture.
         """
         return cls(
             input_dim=config['input_dim'],
             output_dim=config['output_dim'],
-            hidden_layers=config['hidden_layers']
+            hidden_layers=config['hidden_layers'],
         )

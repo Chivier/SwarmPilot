@@ -327,3 +327,116 @@ class TestStorageInfo:
         assert info['model_count'] == 2
         assert info['total_size_bytes'] > 0
         assert info['is_accessible'] is True
+
+
+class TestModelIds:
+    """Tests for get model_ids method from get_storage_info."""
+
+    def test_get_storage_info_includes_model_ids(self, storage):
+        """Should return model_ids in storage info."""
+        # Save some models
+        storage.save_model(
+            'model1__pytorch-2.0__cpu__quantile',
+            {'weights': [1, 2, 3]},
+            {'model_id': 'model1', 'prediction_type': 'quantile'}
+        )
+
+        info = storage.get_storage_info()
+        assert 'model_count' in info
+        assert info['model_count'] == 1
+
+    def test_storage_overwrite_model(self, storage):
+        """Should overwrite model when saving with same key."""
+        model_key = 'test__pytorch-2.0__cpu__quantile'
+
+        # Save first version
+        storage.save_model(
+            model_key,
+            {'weights': [1, 2, 3]},
+            {'model_id': 'test', 'samples_count': 100}
+        )
+
+        # Save second version (overwrite)
+        storage.save_model(
+            model_key,
+            {'weights': [10, 20, 30]},
+            {'model_id': 'test', 'samples_count': 200}
+        )
+
+        # Verify only one file exists
+        info = storage.get_storage_info()
+        assert info['model_count'] == 1
+
+        # Verify content is updated
+        loaded = storage.load_model(model_key)
+        assert loaded['predictor_state']['weights'] == [10, 20, 30]
+        assert loaded['metadata']['samples_count'] == 200
+
+
+class TestStorageErrorHandling:
+    """Tests for storage error handling paths."""
+
+    def test_list_models_with_corrupted_file(self, temp_storage_dir):
+        """Should skip corrupted model files and continue listing."""
+        from src.storage.model_storage import ModelStorage
+        import os
+
+        storage = ModelStorage(storage_dir=temp_storage_dir)
+
+        # Save a valid model
+        storage.save_model(
+            'valid_model__pytorch__cpu__quantile',
+            {'weights': [1, 2, 3]},
+            {'model_id': 'valid', 'prediction_type': 'quantile'}
+        )
+
+        # Create a corrupted model file
+        corrupted_path = os.path.join(temp_storage_dir, 'corrupted__pytorch__cpu__quantile.joblib')
+        with open(corrupted_path, 'wb') as f:
+            f.write(b'not a valid joblib file')
+
+        # List should succeed and skip the corrupted file
+        models = storage.list_models()
+
+        # Should only have the valid model
+        assert len(models) == 1
+        assert models[0]['model_id'] == 'valid'
+
+    def test_load_model_with_corrupted_file(self, temp_storage_dir):
+        """Should raise exception when loading corrupted model."""
+        from src.storage.model_storage import ModelStorage
+        import os
+
+        storage = ModelStorage(storage_dir=temp_storage_dir)
+
+        # Create a corrupted model file
+        corrupted_path = os.path.join(temp_storage_dir, 'corrupted__pytorch__cpu__quantile.joblib')
+        with open(corrupted_path, 'wb') as f:
+            f.write(b'not a valid joblib file')
+
+        # Loading should raise exception
+        with pytest.raises(Exception):
+            storage.load_model('corrupted__pytorch__cpu__quantile')
+
+    def test_save_model_to_readonly_directory(self, temp_storage_dir):
+        """Should handle permission errors gracefully."""
+        from src.storage.model_storage import ModelStorage
+        import os
+        import stat
+
+        storage = ModelStorage(storage_dir=temp_storage_dir)
+
+        # Make directory read-only
+        os.chmod(temp_storage_dir, stat.S_IRUSR | stat.S_IXUSR)
+
+        try:
+            # Try to save - should raise PermissionError
+            with pytest.raises(PermissionError):
+                storage.save_model(
+                    'test_model__pytorch__cpu__quantile',
+                    {'weights': [1, 2, 3]},
+                    {'model_id': 'test', 'prediction_type': 'quantile'}
+                )
+        finally:
+            # Restore permissions for cleanup
+            os.chmod(temp_storage_dir, stat.S_IRWXU)

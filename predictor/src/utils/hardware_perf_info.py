@@ -1,7 +1,9 @@
-"""
-Hardware performance information for Nvidia Tesla series GPUs.
+"""Hardware performance information for Nvidia Tesla series GPUs.
+
 Contains CUDA core counts, theoretical TFLOPS, and memory specifications.
 """
+
+from __future__ import annotations
 
 # Nvidia Tesla Series GPU Specifications (V100 to H100)
 NVIDIA_TESLA_SPECS = {
@@ -120,44 +122,42 @@ NVIDIA_TESLA_SPECS = {
 }
 
 
-def get_gpu_spec(gpu_name: str) -> dict:
-    """
-    Get specifications for a specific GPU model.
+def get_gpu_spec(gpu_name: str) -> dict[str, int | float]:
+    """Get specifications for a specific GPU model.
 
     Args:
-        gpu_name: Name of the GPU (e.g., "V100", "A100", "H100")
+        gpu_name: Name of the GPU (e.g., V100, A100, H100).
 
     Returns:
-        Dictionary containing GPU specifications
+        Dictionary containing GPU specifications.
 
     Raises:
-        KeyError: If GPU model is not found
+        KeyError: If GPU model is not found.
     """
     if gpu_name not in NVIDIA_TESLA_SPECS:
-        raise KeyError(f"GPU model '{gpu_name}' not found. Available models: {list(NVIDIA_TESLA_SPECS.keys())}")
+        available = list(NVIDIA_TESLA_SPECS.keys())
+        raise KeyError(f"GPU model '{gpu_name}' not found. Available: {available}")
     return NVIDIA_TESLA_SPECS[gpu_name]
 
 
-def list_available_gpus() -> list:
-    """
-    Get list of all available GPU models in the database.
+def list_available_gpus() -> list[str]:
+    """Get list of all available GPU models in the database.
 
     Returns:
-        List of GPU model names
+        List of GPU model names.
     """
     return list(NVIDIA_TESLA_SPECS.keys())
 
 
-def compare_gpus(gpu1: str, gpu2: str) -> dict:
-    """
-    Compare specifications between two GPU models.
+def compare_gpus(gpu1: str, gpu2: str) -> dict[str, str | float]:
+    """Compare specifications between two GPU models.
 
     Args:
-        gpu1: First GPU model name
-        gpu2: Second GPU model name
+        gpu1: First GPU model name.
+        gpu2: Second GPU model name.
 
     Returns:
-        Dictionary with comparison results
+        Dictionary with comparison results (ratios).
     """
     spec1 = get_gpu_spec(gpu1)
     spec2 = get_gpu_spec(gpu2)

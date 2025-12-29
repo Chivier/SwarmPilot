@@ -1,53 +1,62 @@
-"""
-FastAPI application for runtime prediction service.
+"""FastAPI application for runtime prediction service.
 
 All API endpoints are implemented in this module.
 """
 
-from fastapi import FastAPI, HTTPException, status, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse
-from contextlib import asynccontextmanager
-from typing import Dict, Any, Optional, Tuple
-import traceback
+from __future__ import annotations
+
 import json
 import random
-import numpy as np
-from collections import OrderedDict
 import threading
+import traceback
+from collections import OrderedDict
+from contextlib import asynccontextmanager
+from typing import Any
 
-from .models import (
-    TrainingRequest, TrainingResponse,
-    PredictionRequest, PredictionResponse,
-    ModelListResponse, ModelMetadata,
-    HealthResponse
-)
-from .storage.model_storage import ModelStorage
-from .predictor.expect_error import ExpectErrorPredictor
-from .predictor.quantile import QuantilePredictor
-from .predictor.linear_regression import LinearRegressionPredictor
-from .predictor.decision_tree import DecisionTreePredictor
-from .utils.experiment import is_experiment_mode, generate_experiment_prediction
-from .config import get_config
-from .utils.logging import get_logger, setup_logging
-from .preprocessor.preprocessors_registry import PreprocessorsRegistry
+import numpy as np
+from fastapi import FastAPI
+from fastapi import HTTPException
+from fastapi import status
+from fastapi import WebSocket
+from fastapi import WebSocketDisconnect
+from fastapi.responses import JSONResponse
+
+from src.config import get_config
+from src.models import HealthResponse
+from src.models import ModelListResponse
+from src.models import ModelMetadata
+from src.models import PredictionRequest
+from src.models import PredictionResponse
+from src.models import TrainingRequest
+from src.models import TrainingResponse
+from src.predictor.decision_tree import DecisionTreePredictor
+from src.predictor.expect_error import ExpectErrorPredictor
+from src.predictor.linear_regression import LinearRegressionPredictor
+from src.predictor.quantile import QuantilePredictor
+from src.preprocessor.preprocessors_registry import PreprocessorsRegistry
+from src.storage.model_storage import ModelStorage
+from src.utils.experiment import generate_experiment_prediction
+from src.utils.experiment import is_experiment_mode
+from src.utils.logging import get_logger
+from src.utils.logging import setup_logging
+
 
 logger = get_logger()
 
 
 def _log_error(
     error_context: str,
-    error_detail: dict,
-    exception: Exception = None,
-    include_traceback: bool = True
+    error_detail: dict[str, Any],
+    exception: Exception | None = None,
+    include_traceback: bool = True,
 ) -> None:
-    """
-    Log error with standardized format including context, client response, and traceback.
+    """Log error with standardized format including context and traceback.
 
     Args:
-        error_context: Description of where/what the error occurred
-        error_detail: The error detail dict that will be returned to client
-        exception: The exception object (if any)
-        include_traceback: Whether to include full traceback in log
+        error_context: Description of where/what the error occurred.
+        error_detail: The error detail dict that will be returned to client.
+        exception: The exception object (if any).
+        include_traceback: Whether to include full traceback in log.
     """
     log_lines = [
         f"Error occurred: {error_context}",
@@ -64,9 +73,12 @@ def _log_error(
     logger.error("\n".join(log_lines))
 
 
-# Initialize storage (will use config when available, otherwise default)
 def get_storage() -> ModelStorage:
-    """Get ModelStorage instance using current configuration."""
+    """Get ModelStorage instance using current configuration.
+
+    Returns:
+        ModelStorage instance configured with storage directory from config.
+    """
     config = get_config()
     return ModelStorage(storage_dir=config.storage_dir)
 
@@ -76,35 +88,35 @@ preprocessors_registry = PreprocessorsRegistry()
 
 
 class ModelCache:
-    """
-    Thread-safe LRU cache for loaded prediction models.
+    """Thread-safe LRU cache for loaded prediction models.
 
-    Caches predictor instances to avoid reloading models from disk on every prediction.
-    Uses OrderedDict for LRU eviction policy.
+    Caches predictor instances to avoid reloading models from disk
+    on every prediction. Uses OrderedDict for LRU eviction policy.
+
+    Attributes:
+        max_size: Maximum number of models to cache.
     """
 
-    def __init__(self, max_size: int = 100):
-        """
-        Initialize model cache.
+    def __init__(self, max_size: int = 100) -> None:
+        """Initialize model cache.
 
         Args:
-            max_size: Maximum number of models to cache (default: 100)
+            max_size: Maximum number of models to cache.
         """
         self.max_size = max_size
-        self._cache: OrderedDict[str, Tuple[Any, str]] = OrderedDict()  # key -> (predictor, prediction_type)
+        self._cache: OrderedDict[str, tuple[Any, str]] = OrderedDict()
         self._lock = threading.Lock()
         self._hits = 0
         self._misses = 0
 
-    def get(self, model_key: str) -> Optional[Tuple[Any, str]]:
-        """
-        Get cached predictor for model_key.
+    def get(self, model_key: str) -> tuple[Any, str] | None:
+        """Get cached predictor for model_key.
 
         Args:
-            model_key: The model identifier
+            model_key: The model identifier.
 
         Returns:
-            Tuple of (predictor, prediction_type) if cached, None otherwise
+            Tuple of (predictor, prediction_type) if cached, None otherwise.
         """
         with self._lock:
             if model_key in self._cache:
@@ -120,13 +132,12 @@ class ModelCache:
                 return None
 
     def put(self, model_key: str, predictor: Any, prediction_type: str) -> None:
-        """
-        Cache a predictor instance.
+        """Cache a predictor instance.
 
         Args:
-            model_key: The model identifier
-            predictor: The predictor instance to cache
-            prediction_type: Type of prediction ('expect_error' or 'quantile')
+            model_key: The model identifier.
+            predictor: The predictor instance to cache.
+            prediction_type: Type of prediction (expect_error or quantile).
         """
         with self._lock:
             # If already exists, move to end
@@ -144,11 +155,10 @@ class ModelCache:
             logger.debug(f"Cached model_key={model_key}, cache size={len(self._cache)}")
 
     def invalidate(self, model_key: str) -> None:
-        """
-        Remove a model from cache (e.g., after retraining).
+        """Remove a model from cache (e.g., after retraining).
 
         Args:
-            model_key: The model identifier to remove
+            model_key: The model identifier to remove.
         """
         with self._lock:
             if model_key in self._cache:
@@ -163,12 +173,11 @@ class ModelCache:
             self._misses = 0
             logger.info("Cleared model cache")
 
-    def get_stats(self) -> Dict[str, Any]:
-        """
-        Get cache statistics.
+    def get_stats(self) -> dict[str, Any]:
+        """Get cache statistics.
 
         Returns:
-            Dictionary with cache statistics
+            Dictionary with cache statistics including hit rate.
         """
         with self._lock:
             total = self._hits + self._misses
@@ -188,7 +197,14 @@ model_cache = ModelCache(max_size=100)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Lifespan context manager for startup and shutdown events."""
+    """Lifespan context manager for startup and shutdown events.
+
+    Args:
+        app: The FastAPI application instance.
+
+    Yields:
+        None after startup, cleanup runs on shutdown.
+    """
     # Startup
     logger.info("FastAPI application starting up")
     storage_info = storage.get_storage_info()
@@ -201,9 +217,12 @@ async def lifespan(app: FastAPI):
     logger.info("FastAPI application shutting down")
 
 
-# Initialize FastAPI app with lifespan
 def create_app() -> FastAPI:
-    """Create and configure FastAPI application."""
+    """Create and configure FastAPI application.
+
+    Returns:
+        Configured FastAPI application instance.
+    """
     config = get_config()
     return FastAPI(
         title=config.app_name,
@@ -218,10 +237,12 @@ app = create_app()
 
 @app.get("/health", response_model=HealthResponse, tags=["Health"])
 async def health_check():
-    """
-    Health check endpoint.
+    """Health check endpoint.
 
     Returns service health status and checks if storage is accessible.
+
+    Returns:
+        HealthResponse with status or error if storage unavailable.
     """
     try:
         storage_info = storage.get_storage_info()
@@ -261,11 +282,13 @@ async def health_check():
 
 @app.get("/cache/stats", tags=["Cache"])
 async def get_cache_stats():
-    """
-    Get model cache statistics.
+    """Get model cache statistics.
 
     Returns information about cache performance including hit rate,
     current size, and total hits/misses.
+
+    Returns:
+        JSONResponse with cache statistics.
     """
     try:
         stats = model_cache.get_stats()
@@ -295,11 +318,13 @@ async def get_cache_stats():
 
 @app.post("/cache/clear", tags=["Cache"])
 async def clear_cache():
-    """
-    Clear all cached models.
+    """Clear all cached models.
 
     Useful for freeing memory or forcing model reloads.
     This does not affect stored models on disk.
+
+    Returns:
+        JSONResponse confirming cache cleared.
     """
     try:
         model_cache.clear()
@@ -329,10 +354,12 @@ async def clear_cache():
 
 @app.get("/list", response_model=ModelListResponse, tags=["Models"])
 async def list_models():
-    """
-    List all trained models with their metadata.
+    """List all trained models with their metadata.
 
     Returns information about all models stored in the system.
+
+    Returns:
+        ModelListResponse containing list of all stored models.
     """
     try:
         models_data = storage.list_models()
@@ -370,11 +397,19 @@ async def list_models():
 
 @app.post("/train", response_model=TrainingResponse, tags=["Training"])
 async def train_model(request: TrainingRequest):
-    """
-    Train or update a model.
+    """Train or update a model.
 
     Trains an MLP model on the provided features and runtime data.
     Supports both expect_error and quantile prediction types.
+
+    Args:
+        request: TrainingRequest with model_id, features, and config.
+
+    Returns:
+        TrainingResponse with training status and model key.
+
+    Raises:
+        HTTPException: If validation fails or training errors occur.
     """
     try:
         # Validate minimum samples
@@ -574,11 +609,19 @@ async def train_model(request: TrainingRequest):
 
 @app.post("/predict", response_model=PredictionResponse, tags=["Prediction"])
 async def predict(request: PredictionRequest):
-    """
-    Make a runtime prediction.
+    """Make a runtime prediction.
 
     Returns prediction based on trained model or experiment mode.
     Supports both expect_error and quantile prediction types.
+
+    Args:
+        request: PredictionRequest with model_id, features, and platform_info.
+
+    Returns:
+        PredictionResponse with prediction result.
+
+    Raises:
+        HTTPException: If model not found or prediction fails.
     """
     random.seed(42)
     np.random.seed(42)
@@ -819,11 +862,13 @@ async def predict(request: PredictionRequest):
 
 @app.websocket("/ws/predict")
 async def websocket_predict(websocket: WebSocket):
-    """
-    WebSocket endpoint for real-time runtime predictions.
+    """WebSocket endpoint for real-time runtime predictions.
 
     Accepts PredictionRequest JSON messages and returns PredictionResponse JSON.
     Keeps connection open for multiple prediction requests.
+
+    Args:
+        websocket: The WebSocket connection instance.
     """
     await websocket.accept()
 
@@ -1089,13 +1134,12 @@ async def websocket_predict(websocket: WebSocket):
 
 if __name__ == "__main__":
     import uvicorn
-    from .config import get_config
 
     # Initialize logging when running directly
-    config = get_config()
+    run_config = get_config()
     setup_logging(
-        log_dir=config.log_dir,
-        log_level=config.log_level
+        log_dir=run_config.log_dir,
+        log_level=run_config.log_level,
     )
 
     uvicorn.run(app, host="0.0.0.0", port=8000)

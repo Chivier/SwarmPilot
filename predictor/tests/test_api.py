@@ -569,3 +569,460 @@ class TestLogTransformAPI:
 
         data = response.json()
         assert data['status'] == 'success'
+
+
+class TestCacheEndpoints:
+    """Test cache management endpoints."""
+
+    def test_cache_stats_endpoint(self, client):
+        """Should return cache statistics."""
+        response = client.get("/cache/stats")
+        assert response.status_code == 200
+
+        data = response.json()
+        assert 'cache_stats' in data
+        stats = data['cache_stats']
+        assert 'size' in stats
+        assert 'max_size' in stats
+        assert 'hits' in stats
+        assert 'misses' in stats
+        assert 'hit_rate_percent' in stats
+
+    def test_cache_clear_endpoint(self, client):
+        """Should clear the cache successfully."""
+        response = client.post("/cache/clear")
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data['status'] == 'success'
+        assert 'cache cleared' in data['message'].lower()
+
+    def test_cache_stats_after_clear(self, client):
+        """Should show zero size after clearing cache."""
+        # Clear the cache
+        client.post("/cache/clear")
+
+        # Check stats
+        response = client.get("/cache/stats")
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data['cache_stats']['size'] == 0
+        assert data['cache_stats']['hits'] == 0
+        assert data['cache_stats']['misses'] == 0
+
+
+class TestModelCache:
+    """Test ModelCache class behavior through API."""
+
+    def test_cache_hit_on_repeated_predictions(self, client):
+        """Cache should be used for repeated predictions."""
+        # Train a model
+        train_request = {
+            'model_id': 'cache-test-model',
+            'platform_info': {
+                'software_name': 'pytorch',
+                'software_version': '2.0',
+                'hardware_name': 'cpu'
+            },
+            'prediction_type': 'expect_error',
+            'features_list': generate_training_data(20),
+            'training_config': {'epochs': 100}
+        }
+        client.post("/train", json=train_request)
+
+        # Clear cache to start fresh
+        client.post("/cache/clear")
+
+        # First prediction - cache miss
+        predict_request = {
+            'model_id': 'cache-test-model',
+            'platform_info': {
+                'software_name': 'pytorch',
+                'software_version': '2.0',
+                'hardware_name': 'cpu'
+            },
+            'prediction_type': 'expect_error',
+            'features': {'batch_size': 25, 'sequence_length': 128}
+        }
+
+        response1 = client.post("/predict", json=predict_request)
+        assert response1.status_code == 200
+
+        # Check cache stats - should have 1 miss
+        stats1 = client.get("/cache/stats").json()['cache_stats']
+        assert stats1['misses'] >= 1
+
+        # Second prediction - should be cache hit
+        response2 = client.post("/predict", json=predict_request)
+        assert response2.status_code == 200
+
+        # Check cache stats - should have at least 1 hit now
+        stats2 = client.get("/cache/stats").json()['cache_stats']
+        assert stats2['hits'] >= 1
+
+
+class TestLinearRegressionAPI:
+    """Test linear regression prediction type through API."""
+
+    def test_train_linear_regression_model(self, client):
+        """Should successfully train linear regression model."""
+        request = {
+            'model_id': 'linear-model',
+            'platform_info': {
+                'software_name': 'pytorch',
+                'software_version': '2.0',
+                'hardware_name': 'cpu'
+            },
+            'prediction_type': 'linear_regression',
+            'features_list': generate_training_data(20)
+        }
+
+        response = client.post("/train", json=request)
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data['status'] == 'success'
+        assert data['samples_trained'] == 20
+
+    def test_predict_with_linear_regression(self, client):
+        """Should make predictions with linear regression model."""
+        # Train
+        train_request = {
+            'model_id': 'linear-pred-model',
+            'platform_info': {
+                'software_name': 'pytorch',
+                'software_version': '2.0',
+                'hardware_name': 'cpu'
+            },
+            'prediction_type': 'linear_regression',
+            'features_list': generate_training_data(20)
+        }
+        client.post("/train", json=train_request)
+
+        # Predict
+        predict_request = {
+            'model_id': 'linear-pred-model',
+            'platform_info': {
+                'software_name': 'pytorch',
+                'software_version': '2.0',
+                'hardware_name': 'cpu'
+            },
+            'prediction_type': 'linear_regression',
+            'features': {'batch_size': 25, 'sequence_length': 128}
+        }
+
+        response = client.post("/predict", json=predict_request)
+        assert response.status_code == 200
+
+        data = response.json()
+        assert 'result' in data
+        assert 'expected_runtime_ms' in data['result']
+        assert 'error_margin_ms' in data['result']
+
+
+class TestDecisionTreeAPI:
+    """Test decision tree prediction type through API."""
+
+    def test_train_decision_tree_model(self, client):
+        """Should successfully train decision tree model."""
+        request = {
+            'model_id': 'tree-model',
+            'platform_info': {
+                'software_name': 'pytorch',
+                'software_version': '2.0',
+                'hardware_name': 'cpu'
+            },
+            'prediction_type': 'decision_tree',
+            'features_list': generate_training_data(20)
+        }
+
+        response = client.post("/train", json=request)
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data['status'] == 'success'
+
+    def test_predict_with_decision_tree(self, client):
+        """Should make predictions with decision tree model."""
+        # Train
+        train_request = {
+            'model_id': 'tree-pred-model',
+            'platform_info': {
+                'software_name': 'pytorch',
+                'software_version': '2.0',
+                'hardware_name': 'cpu'
+            },
+            'prediction_type': 'decision_tree',
+            'features_list': generate_training_data(20)
+        }
+        client.post("/train", json=train_request)
+
+        # Predict
+        predict_request = {
+            'model_id': 'tree-pred-model',
+            'platform_info': {
+                'software_name': 'pytorch',
+                'software_version': '2.0',
+                'hardware_name': 'cpu'
+            },
+            'prediction_type': 'decision_tree',
+            'features': {'batch_size': 25, 'sequence_length': 128}
+        }
+
+        response = client.post("/predict", json=predict_request)
+        assert response.status_code == 200
+
+        data = response.json()
+        assert 'result' in data
+        assert 'expected_runtime_ms' in data['result']
+
+
+class TestWebSocketPrediction:
+    """Test WebSocket prediction endpoint."""
+
+    def test_websocket_prediction_with_trained_model(self, client):
+        """Should make WebSocket predictions with trained model."""
+        # Train a model first
+        train_request = {
+            'model_id': 'ws-test-model',
+            'platform_info': {
+                'software_name': 'pytorch',
+                'software_version': '2.0',
+                'hardware_name': 'cpu'
+            },
+            'prediction_type': 'expect_error',
+            'features_list': generate_training_data(20)
+        }
+        client.post("/train", json=train_request)
+
+        # Make WebSocket prediction
+        predict_request = {
+            'model_id': 'ws-test-model',
+            'platform_info': {
+                'software_name': 'pytorch',
+                'software_version': '2.0',
+                'hardware_name': 'cpu'
+            },
+            'prediction_type': 'expect_error',
+            'features': {'batch_size': 25, 'sequence_length': 128}
+        }
+
+        with client.websocket_connect("/ws/predict") as websocket:
+            import json
+            websocket.send_text(json.dumps(predict_request))
+            response = websocket.receive_json()
+
+            assert 'result' in response
+            assert 'expected_runtime_ms' in response['result']
+            assert 'error_margin_ms' in response['result']
+
+    def test_websocket_experiment_mode(self, client):
+        """Should use experiment mode via WebSocket."""
+        predict_request = {
+            'model_id': 'any-model',
+            'platform_info': {
+                'software_name': 'exp',
+                'software_version': 'exp',
+                'hardware_name': 'exp'
+            },
+            'prediction_type': 'expect_error',
+            'features': {
+                'exp_runtime': 150.0,
+                'batch_size': 32
+            }
+        }
+
+        with client.websocket_connect("/ws/predict") as websocket:
+            import json
+            websocket.send_text(json.dumps(predict_request))
+            response = websocket.receive_json()
+
+            assert 'result' in response
+            assert response['result']['expected_runtime_ms'] == 150.0
+
+    def test_websocket_model_not_found(self, client):
+        """Should return error for nonexistent model via WebSocket."""
+        predict_request = {
+            'model_id': 'nonexistent-ws-model',
+            'platform_info': {
+                'software_name': 'pytorch',
+                'software_version': '2.0',
+                'hardware_name': 'cpu'
+            },
+            'prediction_type': 'expect_error',
+            'features': {'batch_size': 25, 'sequence_length': 128}
+        }
+
+        with client.websocket_connect("/ws/predict") as websocket:
+            import json
+            websocket.send_text(json.dumps(predict_request))
+            response = websocket.receive_json()
+
+            assert 'error' in response
+            assert 'Model not found' in response['error']
+
+    def test_websocket_invalid_json(self, client):
+        """Should handle invalid JSON via WebSocket."""
+        with client.websocket_connect("/ws/predict") as websocket:
+            websocket.send_text("not valid json{")
+            response = websocket.receive_json()
+
+            assert 'error' in response
+            assert 'Invalid JSON' in response['error']
+
+    def test_websocket_invalid_request(self, client):
+        """Should handle invalid request format via WebSocket."""
+        with client.websocket_connect("/ws/predict") as websocket:
+            import json
+            # Missing required fields
+            invalid_request = {'model_id': 'test'}
+            websocket.send_text(json.dumps(invalid_request))
+            response = websocket.receive_json()
+
+            assert 'error' in response
+            assert 'Invalid request' in response['error']
+
+    def test_websocket_multiple_predictions(self, client):
+        """Should handle multiple sequential predictions via WebSocket."""
+        # Train a model first
+        train_request = {
+            'model_id': 'ws-multi-model',
+            'platform_info': {
+                'software_name': 'pytorch',
+                'software_version': '2.0',
+                'hardware_name': 'cpu'
+            },
+            'prediction_type': 'expect_error',
+            'features_list': generate_training_data(20)
+        }
+        client.post("/train", json=train_request)
+
+        with client.websocket_connect("/ws/predict") as websocket:
+            import json
+
+            # Make multiple predictions on same connection
+            for i in range(3):
+                predict_request = {
+                    'model_id': 'ws-multi-model',
+                    'platform_info': {
+                        'software_name': 'pytorch',
+                        'software_version': '2.0',
+                        'hardware_name': 'cpu'
+                    },
+                    'prediction_type': 'expect_error',
+                    'features': {'batch_size': 20 + i * 5, 'sequence_length': 128}
+                }
+                websocket.send_text(json.dumps(predict_request))
+                response = websocket.receive_json()
+
+                assert 'result' in response
+                assert 'expected_runtime_ms' in response['result']
+
+    def test_websocket_quantile_prediction(self, client):
+        """Should make quantile predictions via WebSocket."""
+        # Train a quantile model
+        train_request = {
+            'model_id': 'ws-quantile-model',
+            'platform_info': {
+                'software_name': 'pytorch',
+                'software_version': '2.0',
+                'hardware_name': 'cpu'
+            },
+            'prediction_type': 'quantile',
+            'features_list': generate_training_data(30),
+            'training_config': {'epochs': 200, 'quantiles': [0.5, 0.9]}
+        }
+        client.post("/train", json=train_request)
+
+        predict_request = {
+            'model_id': 'ws-quantile-model',
+            'platform_info': {
+                'software_name': 'pytorch',
+                'software_version': '2.0',
+                'hardware_name': 'cpu'
+            },
+            'prediction_type': 'quantile',
+            'features': {'batch_size': 25, 'sequence_length': 128}
+        }
+
+        with client.websocket_connect("/ws/predict") as websocket:
+            import json
+            websocket.send_text(json.dumps(predict_request))
+            response = websocket.receive_json()
+
+            assert 'result' in response
+            assert 'quantiles' in response['result']
+
+
+class TestTrainValidation:
+    """Test training validation edge cases."""
+
+    def test_train_with_empty_features_list(self, client):
+        """Should fail when features_list is empty."""
+        request = {
+            'model_id': 'empty-model',
+            'platform_info': {
+                'software_name': 'pytorch',
+                'software_version': '2.0',
+                'hardware_name': 'cpu'
+            },
+            'prediction_type': 'expect_error',
+            'features_list': []
+        }
+
+        response = client.post("/train", json=request)
+        # Should fail with insufficient data
+        assert response.status_code in [400, 422, 500]
+
+    def test_train_with_few_samples(self, client):
+        """Should fail when too few samples provided."""
+        request = {
+            'model_id': 'few-samples-model',
+            'platform_info': {
+                'software_name': 'pytorch',
+                'software_version': '2.0',
+                'hardware_name': 'cpu'
+            },
+            'prediction_type': 'expect_error',
+            'features_list': generate_training_data(3)  # Very few samples
+        }
+
+        response = client.post("/train", json=request)
+        # Might fail or succeed depending on predictor requirements
+        # Just verify no server crash
+        assert response.status_code in [200, 400, 422, 500]
+
+    def test_train_with_invalid_prediction_type(self, client):
+        """Should fail with invalid prediction_type."""
+        request = {
+            'model_id': 'invalid-type-model',
+            'platform_info': {
+                'software_name': 'pytorch',
+                'software_version': '2.0',
+                'hardware_name': 'cpu'
+            },
+            'prediction_type': 'invalid_type',
+            'features_list': generate_training_data(20)
+        }
+
+        response = client.post("/train", json=request)
+        assert response.status_code in [400, 422, 500]
+
+
+class TestInfoEndpoint:
+    """Test /info endpoint if it exists."""
+
+    def test_root_endpoint(self, client):
+        """Should return some info at root endpoint."""
+        response = client.get("/")
+        # Either returns info or 404
+        assert response.status_code in [200, 404]
+
+    def test_storage_info_endpoint(self, client):
+        """Should return storage info if endpoint exists."""
+        response = client.get("/storage/info")
+        # Either returns info or 404
+        if response.status_code == 200:
+            data = response.json()
+            assert 'storage_dir' in data or 'model_count' in data

@@ -1,83 +1,93 @@
-"""
-Base predictor interface.
+"""Base predictor interface.
 
 Defines the abstract base class for all predictor implementations.
 """
 
-from abc import ABC, abstractmethod
-from typing import Any, Dict, List
+from __future__ import annotations
 
-from ..utils.logging import get_logger
+from abc import ABC
+from abc import abstractmethod
+from typing import Any
+
+from src.utils.logging import get_logger
+
 
 logger = get_logger()
 
 
 class BasePredictor(ABC):
-    """Abstract base class for runtime predictors."""
+    """Abstract base class for runtime predictors.
+
+    This class defines the interface that all predictor implementations
+    must follow. Subclasses implement specific prediction algorithms.
+    """
 
     @abstractmethod
-    def train(self, features_list: List[Dict[str, Any]], config: Dict[str, Any] = None) -> Dict[str, Any]:
-        """
-        Train the predictor on the given feature data.
+    def train(
+        self,
+        features_list: list[dict[str, Any]],
+        config: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Train the predictor on the given feature data.
 
         Args:
-            features_list: List of feature dictionaries with runtime_ms field
-            config: Optional training configuration
+            features_list: List of feature dictionaries with runtime_ms field.
+            config: Optional training configuration.
 
         Returns:
-            Dict containing training metadata (feature_names, samples_count, etc.)
+            Dict containing training metadata (feature_names, samples_count).
 
         Raises:
-            ValueError: If training data is invalid
+            ValueError: If training data is invalid.
         """
         pass
 
     @abstractmethod
-    def predict(self, features: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Make a prediction for the given features.
+    def predict(self, features: dict[str, Any]) -> dict[str, Any]:
+        """Make a prediction for the given features.
 
         Args:
-            features: Dictionary of feature values
+            features: Dictionary of feature values.
 
         Returns:
-            Dict containing prediction results (format depends on predictor type)
+            Dict containing prediction results (format depends on predictor).
 
         Raises:
-            ValueError: If features are invalid or model not trained
+            ValueError: If features are invalid or model not trained.
         """
         pass
 
     @abstractmethod
-    def get_model_state(self) -> Dict[str, Any]:
-        """
-        Get the complete model state for serialization.
+    def get_model_state(self) -> dict[str, Any]:
+        """Get the complete model state for serialization.
 
         Returns:
-            Dict containing all model parameters and metadata
+            Dict containing all model parameters and metadata.
         """
         pass
 
     @abstractmethod
-    def load_model_state(self, state: Dict[str, Any]) -> None:
-        """
-        Load a previously saved model state.
+    def load_model_state(self, state: dict[str, Any]) -> None:
+        """Load a previously saved model state.
 
         Args:
-            state: Model state dict from get_model_state()
+            state: Model state dict from get_model_state().
         """
         pass
 
-    def validate_features(self, features: Dict[str, Any], expected_features: List[str]) -> None:
-        """
-        Validate that features match expected feature names.
+    def validate_features(
+        self,
+        features: dict[str, Any],
+        expected_features: list[str],
+    ) -> None:
+        """Validate that features match expected feature names.
 
         Args:
-            features: Feature dictionary to validate
-            expected_features: List of expected feature names
+            features: Feature dictionary to validate.
+            expected_features: List of expected feature names.
 
         Raises:
-            ValueError: If features don't match expectations
+            ValueError: If features don't match expectations.
         """
         provided_features = set(features.keys())
         expected_features_set = set(expected_features)
@@ -104,21 +114,22 @@ class BasePredictor(ABC):
         if extra:
             logger.debug(f"Extra features provided (ignored): {sorted(extra)}")
 
-    def extract_features_and_labels(self, features_list: List[Dict[str, Any]]) -> tuple:
-        """
-        Extract feature matrix X and label vector y from features_list.
+    def extract_features_and_labels(
+        self,
+        features_list: list[dict[str, Any]],
+    ) -> tuple[list[list[Any]], list[Any], list[str]]:
+        """Extract feature matrix X and label vector y from features_list.
 
         Args:
-            features_list: List of feature dictionaries with runtime_ms
+            features_list: List of feature dictionaries with runtime_ms.
 
         Returns:
-            Tuple of (X, y, feature_names) where:
-                X: List of feature value lists
-                y: List of runtime_ms values
-                feature_names: Ordered list of feature names (excluding runtime_ms)
+            Tuple of (X, y, feature_names) where X is the feature matrix,
+            y is the list of runtime_ms values, and feature_names is the
+            ordered list of feature names (excluding runtime_ms).
 
         Raises:
-            ValueError: If samples have inconsistent features
+            ValueError: If samples have inconsistent features.
         """
         if not features_list:
             error_msg = "features_list is empty"
@@ -130,7 +141,9 @@ class BasePredictor(ABC):
 
         # Get feature names (all keys except runtime_ms) from first sample
         first_sample = features_list[0]
-        feature_names = sorted([k for k in first_sample.keys() if k != 'runtime_ms'])
+        feature_names = sorted(
+            [k for k in first_sample.keys() if k != 'runtime_ms']
+        )
 
         if not feature_names:
             error_msg = "No features found (only runtime_ms present)"
@@ -144,7 +157,9 @@ class BasePredictor(ABC):
         # Extract feature values in consistent order
         X = []
         for idx, sample in enumerate(features_list):
-            sample_features = sorted([k for k in sample.keys() if k != 'runtime_ms'])
+            sample_features = sorted(
+                [k for k in sample.keys() if k != 'runtime_ms']
+            )
 
             # Validate all samples have same features
             if sample_features != feature_names:
@@ -168,23 +183,24 @@ class BasePredictor(ABC):
         return X, y, feature_names
 
     def filter_constant_features(
-        self, X: List[List[Any]], feature_names: List[str]
-    ) -> tuple:
-        """
-        Filter out constant features (features with zero variance).
+        self,
+        X: list[list[Any]],
+        feature_names: list[str],
+    ) -> tuple[list[list[Any]], list[str], list[str]]:
+        """Filter out constant features (features with zero variance).
 
         Constant features provide no predictive value and can cause numerical
         issues during normalization (division by zero or near-zero std).
 
         Args:
-            X: Feature matrix as list of lists
-            feature_names: Ordered list of feature names
+            X: Feature matrix as list of lists.
+            feature_names: Ordered list of feature names.
 
         Returns:
-            Tuple of (filtered_X, filtered_feature_names, removed_features) where:
-                filtered_X: Feature matrix with constant features removed
-                filtered_feature_names: Feature names after filtering
-                removed_features: List of feature names that were removed
+            Tuple of (filtered_X, filtered_feature_names, removed_features)
+            where filtered_X is the matrix with constant features removed,
+            filtered_feature_names is the remaining feature names, and
+            removed_features lists the names that were removed.
         """
         if not X or not feature_names:
             return X, feature_names, []
@@ -211,19 +227,20 @@ class BasePredictor(ABC):
         return filtered_X, filtered_feature_names, removed_features
 
     def filter_features_for_prediction(
-        self, features: Dict[str, Any], valid_feature_names: List[str]
-    ) -> Dict[str, Any]:
-        """
-        Filter input features to only include valid (non-constant) features.
+        self,
+        features: dict[str, Any],
+        valid_feature_names: list[str],
+    ) -> dict[str, Any]:
+        """Filter input features to only include valid (non-constant) features.
 
         Used during prediction to automatically remove features that were
         identified as constant during training.
 
         Args:
-            features: Full feature dictionary from user
-            valid_feature_names: List of feature names that should be kept
+            features: Full feature dictionary from user.
+            valid_feature_names: List of feature names that should be kept.
 
         Returns:
-            Filtered feature dictionary containing only valid features
+            Filtered feature dictionary containing only valid features.
         """
         return {k: v for k, v in features.items() if k in valid_feature_names}

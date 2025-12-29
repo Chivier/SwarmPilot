@@ -383,3 +383,44 @@ class TestDistributionParameters:
         q99 = float(quantiles['0.99'])
         ratio = q99 / q50
         assert ratio < 2.5, f"Expected ratio < 2.5 for symmetric, got {ratio:.2f}"
+
+
+class TestMultimodalEdgeCases:
+    """Test multimodal edge cases and error handling."""
+
+    def test_multimodal_without_rng(self):
+        """Should use default random state when rng is None."""
+        modes = [
+            {'mean': 100, 'cv': 0.2, 'weight': 1.0}
+        ]
+        # No rng provided - should use default
+        samples = generate_multimodal_samples(modes, num_samples=10)
+        assert len(samples) == 10
+
+    def test_multimodal_empty_modes_raises_error(self):
+        """Should raise error when modes list is empty."""
+        with pytest.raises(ValueError, match="At least one mode"):
+            generate_multimodal_samples([], num_samples=10)
+
+    def test_multimodal_with_zero_weight_mode(self):
+        """Should handle mode with very low weight that produces 0 samples."""
+        import numpy as np
+        modes = [
+            {'mean': 100, 'cv': 0.2, 'weight': 100.0},  # Dominant mode
+            {'mean': 1000, 'cv': 0.2, 'weight': 0.001},  # Negligible weight
+        ]
+        # With small total samples, the tiny weight mode gets 0 samples
+        samples = generate_multimodal_samples(modes, num_samples=10, rng=np.random.RandomState(42))
+        assert len(samples) == 10
+
+    def test_multimodal_sample_count_adjustment(self):
+        """Should adjust sample counts to match total."""
+        import numpy as np
+        modes = [
+            {'mean': 100, 'cv': 0.2, 'weight': 1.0},
+            {'mean': 200, 'cv': 0.2, 'weight': 1.0},
+            {'mean': 300, 'cv': 0.2, 'weight': 1.0},
+        ]
+        # 7 samples split 3 ways - needs adjustment
+        samples = generate_multimodal_samples(modes, num_samples=7, rng=np.random.RandomState(42))
+        assert len(samples) == 7

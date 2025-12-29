@@ -7,58 +7,72 @@ Supports configuration from multiple sources with priority:
 4. Default values (lowest priority)
 """
 
+from __future__ import annotations
+
 from pathlib import Path
-from typing import Optional
 
 from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings
+from pydantic_settings import SettingsConfigDict
 
 
 class PredictorConfig(BaseSettings):
-    """Configuration for the predictor service."""
+    """Configuration for the predictor service.
+
+    Attributes:
+        host: Host to bind the server to.
+        port: Port to bind the server to.
+        reload: Enable auto-reload for development.
+        workers: Number of worker processes (production).
+        storage_dir: Directory to store trained models.
+        log_level: Logging level.
+        log_dir: Directory to store log files.
+        app_name: Application name.
+        app_version: Application version.
+    """
 
     # Server settings
     host: str = Field(
         default="0.0.0.0",
-        description="Host to bind the server to"
+        description="Host to bind the server to",
     )
     port: int = Field(
         default=8000,
-        description="Port to bind the server to"
+        description="Port to bind the server to",
     )
     reload: bool = Field(
         default=False,
-        description="Enable auto-reload for development"
+        description="Enable auto-reload for development",
     )
     workers: int = Field(
         default=1,
-        description="Number of worker processes (production)"
+        description="Number of worker processes (production)",
     )
 
     # Storage settings
     storage_dir: str = Field(
         default="models",
-        description="Directory to store trained models"
+        description="Directory to store trained models",
     )
 
     # Logging settings
     log_level: str = Field(
         default="info",
-        description="Logging level (debug, info, warning, error, critical)"
+        description="Logging level (debug, info, warning, error, critical)",
     )
     log_dir: str = Field(
         default="logs",
-        description="Directory to store log files"
+        description="Directory to store log files",
     )
 
     # Application metadata
     app_name: str = Field(
         default="Runtime Predictor Service",
-        description="Application name"
+        description="Application name",
     )
     app_version: str = Field(
         default="0.1.0",
-        description="Application version"
+        description="Application version",
     )
 
     model_config = SettingsConfigDict(
@@ -70,12 +84,12 @@ class PredictorConfig(BaseSettings):
     )
 
     @classmethod
-    def from_toml(cls, config_path: Optional[Path] = None) -> "PredictorConfig":
+    def from_toml(cls, config_path: Path | None = None) -> PredictorConfig:
         """Load configuration from TOML file.
 
         Args:
             config_path: Path to configuration file. If None, searches for
-                        predictor.toml in current directory and parent directories.
+                predictor.toml in current directory and parent directories.
 
         Returns:
             PredictorConfig instance with values from TOML file and environment.
@@ -128,7 +142,7 @@ class PredictorConfig(BaseSettings):
         storage_path.mkdir(parents=True, exist_ok=True)
         return storage_path
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, str | int | bool]:
         """Convert configuration to dictionary.
 
         Returns:
@@ -148,7 +162,7 @@ class PredictorConfig(BaseSettings):
 
 
 # Global configuration instance
-_config: Optional[PredictorConfig] = None
+_config: PredictorConfig | None = None
 
 
 def get_config() -> PredictorConfig:
