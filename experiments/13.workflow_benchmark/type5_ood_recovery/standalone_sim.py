@@ -327,7 +327,7 @@ class SimulationEngine:
         ]
         
         # Task generator
-        self.task_generator = TaskGenerator(seed=seed)
+        self.task_generator = TaskGenerator(seed=seed, config=config)
         
         # Phase tracking
         self.current_phase = 1
@@ -871,6 +871,18 @@ def parse_args():
         default=0.2,
         help="Ratio of small peak samples in Phase 2/3 (default: 0.2)"
     )
+    parser.add_argument(
+        "--phase1-scale",
+        type=float,
+        default=0.1,
+        help="Scale factor for Phase 1 runtime (default: 0.1)"
+    )
+    parser.add_argument(
+        "--phase1-small-peak-ratio",
+        type=float,
+        default=0.8,
+        help="Ratio of small peak samples in Phase 1 (default: 0.8, i.e., 80%% small peak)"
+    )
 
     # Mode
     parser.add_argument(
@@ -929,6 +941,8 @@ def main():
         phase23_distribution=args.phase23_distribution,
         phase23_bimodal_scale=args.phase23_bimodal_scale,
         phase23_small_peak_ratio=args.phase23_small_peak_ratio,
+        phase1_scale=args.phase1_scale,  # Phase 1 runtime scale factor
+        phase1_small_peak_ratio=args.phase1_small_peak_ratio,  # Phase 1 distribution ratio
         no_recovery=args.no_recovery,
         runtime_scale=args.runtime_scale,  # Pass runtime_scale to config for calculate_times()
     )

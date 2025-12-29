@@ -37,6 +37,49 @@ uv run python type5_ood_recovery/standalone_sim.py \
 
 ## Quick Start (5 minutes)
 
+### All-in-One Experiment Runner (Recommended)
+
+Run both Recovery and Baseline simulations, then automatically perform SLO analysis:
+
+```bash
+cd experiments/13.workflow_benchmark
+
+# Run with optimal configuration
+python type5_ood_recovery/run_ood_experiment.py \
+    --num-instances 512 \
+    --num-tasks 10000 \
+    --phase1-count 500 \
+    --phase1-qps 200.0 \
+    --phase23-qps 180.0 \
+    --phase23-distribution weighted_bimodal \
+    --runtime-scale 0.05 \
+    --phase23-bimodal-scale 3.0 \
+    --phase23-small-peak-ratio 0.1 \
+    --phase2-transition-count 300 \
+    --seed 42 \
+    --output-dir output_experiment
+```
+
+This will:
+1. Run **Recovery** simulation → `output_experiment/recovery/`
+2. Run **Baseline** simulation → `output_experiment/baseline/`
+3. Generate **SLO analysis** plots → `output_experiment/slo_analysis/`
+
+#### Additional Options
+
+```bash
+# Skip SLO analysis
+python type5_ood_recovery/run_ood_experiment.py --skip-slo-analysis
+
+# Custom SLO thresholds (1.0 to 5.0, step 0.2)
+python type5_ood_recovery/run_ood_experiment.py \
+    --slo-min-threshold 1.0 \
+    --slo-max-threshold 5.0 \
+    --slo-step 0.2
+```
+
+---
+
 ### 1. Start Services (Optional)
 If not using user-started instances:
 ```bash
@@ -45,7 +88,7 @@ cd experiments/13.workflow_benchmark/scripts
 ./start_type5_services.sh 48
 ```
 
-### 2. Run Experiment
+### 2. Run Experiment (Manual)
 
 **Option A: Run Both Modes (Recommended)**
 ```bash
@@ -356,3 +399,83 @@ The increased `phase23-bimodal-scale` and reduced `phase23-small-peak-ratio` cre
 3. **Phase 3** (Recovery): Predictions corrected, throughput restored
 
 The experiment measures how quickly and effectively the system recovers from Phase 2 to Phase 3.
+
+---
+
+## SLO Violation Rate Analysis
+
+Analyze SLO (Service Level Objective) violations by comparing task latency to execution time across different ratio thresholds.
+
+### SLO Definition
+
+- **Execution Time** = `complete_time - exec_start_time` (actual task processing time)
+- **Latency** = `complete_time - submit_time` (total time from submission to completion)
+- **SLO Ratio** = `latency / execution_time`
+- **SLO Violation**: A task violates SLO when `ratio > threshold`
+
+### Usage
+
+```bash
+# Navigate to experiment directory
+cd experiments/13.workflow_benchmark
+
+# Run with default settings (thresholds 1.0 to 10.0, step 0.5)
+/path/to/.venv/bin/python3 type5_ood_recovery/plot_slo_violation.py
+
+# Or use uv from project root
+cd /path/to/swarmpilot-refresh
+uv run python experiments/13.workflow_benchmark/type5_ood_recovery/plot_slo_violation.py \
+    --baseline experiments/13.workflow_benchmark/output_realtime_diff/baseline/metrics.json \
+    --recovery experiments/13.workflow_benchmark/output_realtime_diff/recovery/metrics.json \
+    --output-dir experiments/13.workflow_benchmark/type5_ood_recovery/results/slo_analysis
+```
+
+### Parameters
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `--baseline` | `output_realtime_diff/baseline/metrics.json` | Path to baseline metrics |
+| `--recovery` | `output_realtime_diff/recovery/metrics.json` | Path to recovery metrics |
+| `--output-dir` | `type5_ood_recovery/results/slo_analysis` | Output directory for plots |
+| `--min-threshold` | 1.0 | Minimum SLO ratio threshold |
+| `--max-threshold` | 10.0 | Maximum SLO ratio threshold |
+| `--step` | 0.5 | Step size for threshold sweep |
+
+### Examples
+
+```bash
+# Fine-grained search (1.0 to 5.0, step 0.2)
+python3 type5_ood_recovery/plot_slo_violation.py \
+    --min-threshold 1.0 \
+    --max-threshold 5.0 \
+    --step 0.2
+
+# Coarse search (1.0 to 20.0, step 1.0)
+python3 type5_ood_recovery/plot_slo_violation.py \
+    --min-threshold 1.0 \
+    --max-threshold 20.0 \
+    --step 1.0
+```
+
+### Output
+
+Generates one plot per threshold value in the output directory:
+- `slo_ratio_1.0.png`
+- `slo_ratio_1.5.png`
+- `slo_ratio_2.0.png`
+- ... (19 plots for default settings)
+- `slo_ratio_10.0.png`
+
+Each plot shows:
+- **X-axis**: Phase 2 (OOD), Phase 3 (Post-Recovery), All Tasks (P2+P3)
+- **Y-axis**: SLO Violation Rate (%)
+- **Bars**: Baseline (red) vs Recovery (blue)
+- **Info box**: Task counts per phase
+
+> **Note**: Phase 1 (warmup) data is excluded from the analysis to focus on the OOD and Recovery phases where the comparison is meaningful.
+
+### Interpretation
+
+- **Lower threshold** (e.g., 1.5): Strict SLO - latency should be close to pure execution time
+- **Higher threshold** (e.g., 5.0): Relaxed SLO - allows more queuing/scheduling overhead
+- **Recovery advantage**: Lower violation rates in Phase 3 compared to Baseline indicate successful recovery
