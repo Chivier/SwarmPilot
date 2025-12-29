@@ -98,6 +98,12 @@ class TestPlannerInput:
         planner_input = PlannerInput(**sample_planner_input)
         assert planner_input.initial[0] == -1
 
+    def test_initial_none_allowed(self, sample_planner_input):
+        """Test None is allowed for initial (validator returns None)."""
+        sample_planner_input["initial"] = None
+        planner_input = PlannerInput(**sample_planner_input)
+        assert planner_input.initial is None
+
     def test_target_wrong_length(self, sample_planner_input):
         """Test validation fails when target has wrong length."""
         sample_planner_input["target"] = [20.0, 30.0]  # Only 2, need 3

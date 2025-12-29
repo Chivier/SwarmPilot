@@ -1,84 +1,102 @@
 """FastAPI application for the Planner service."""
 
-from datetime import datetime, timezone
-from typing import Optional, Dict, Tuple
-import numpy as np
-import random
 import asyncio
+import random
 import time
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
+from typing import Optional
 
-np.random.seed(42)
-random.seed(42)
-
+import httpx
+import numpy as np
 from fastapi import FastAPI, HTTPException, status
 from fastapi.responses import JSONResponse
 from loguru import logger
-import httpx
 
+from . import __version__
+from .available_instance_store import (
+    AvailableInstance,
+    get_available_instance_store,
+)
+from .config import config
+from .core.swarm_optimizer import (
+    IntegerProgrammingOptimizer,
+    SimulatedAnnealingOptimizer,
+)
+from .deployment_service import (
+    InstanceDeployer,
+    InstanceMigrator,
+    ModelMapper,
+)
+from .logging_config import setup_logging
+from .migration_optimizer import (
+    detect_model_swap_pairs,
+    eliminate_redundant_migrations,
+)
 from .models import (
-    PlannerInput,
-    PlannerOutput,
     DeploymentInput,
     DeploymentOutput,
-    DeploymentStatus,
+    InstanceDrainRequest,
+    InstanceDrainResponse,
+    InstanceDrainStatusResponse,
     InstanceRegisterRequest,
     InstanceRegisterResponse,
+    InstanceRemoveRequest,
+    InstanceRemoveResponse,
+    InstanceStatus,
     MigrationOutput,
+    PlannerInput,
+    PlannerOutput,
     SubmitTargetRequest,
     SubmitTargetResponse,
     SubmitThroughputRequest,
     SubmitThroughputResponse,
-    # Dummy endpoint models (compatible with Scheduler)
-    InstanceStatus,
-    InstanceDrainRequest,
-    InstanceDrainResponse,
-    InstanceDrainStatusResponse,
-    InstanceRemoveRequest,
-    InstanceRemoveResponse,
     TaskResubmitRequest,
     TaskResubmitResponse,
 )
-from .deployment_service import ModelMapper, InstanceDeployer, InstanceMigrator
-from .core.swarm_optimizer import (
-    SimulatedAnnealingOptimizer,
-    IntegerProgrammingOptimizer,
-)
-from . import __version__
-from .logging_config import setup_logging
-from .config import config
-from .available_instance_store import get_available_instance_store, AvailableInstance
-from .migration_optimizer import eliminate_redundant_migrations, detect_model_swap_pairs
-from typing import List
+
+np.random.seed(42)
+random.seed(42)
 
 # Configure logging
 setup_logging()
 
 # Global state for target distribution and model mapping
 # These are set when /deploy or /deploy/migration is called
-_stored_model_mapping: Optional[Dict[str, int]] = None
-_stored_reverse_mapping: Optional[Dict[int, str]] = None
-_current_target: Optional[List[float]] = None
+_stored_model_mapping: dict[str, int] | None = None
+_stored_reverse_mapping: dict[int, str] | None = None
+_current_target: list[float] | None = None
 
 # Global state for auto-optimization
-_submitted_models: set = set()  # Track which models have submitted targets in current round
+_submitted_models: set = (
+    set()
+)  # Track which models have submitted targets in current round
 _auto_optimize_running: bool = False  # Flag to prevent concurrent optimizations
-_stored_deployment_input: Optional["DeploymentInput"] = None  # Stored for auto-optimization
-_auto_optimize_task: Optional[asyncio.Task] = None  # Background task handle
+_stored_deployment_input: Optional["DeploymentInput"] = (
+    None  # Stored for auto-optimization
+)
+_auto_optimize_task: asyncio.Task | None = None  # Background task handle
 
 # New state for event-driven optimization timing
-_first_data_received: bool = False  # True after first /submit_target in current cycle
-_first_migration_done: bool = False  # True after first /deploy/migration completed
-_optimization_timer_start: float = 0.0  # Timestamp when optimization timer starts (after all models submitted)
+_first_data_received: bool = (
+    False  # True after first /submit_target in current cycle
+)
+_first_migration_done: bool = (
+    False  # True after first /deploy/migration completed
+)
+_optimization_timer_start: float = (
+    0.0  # Timestamp when optimization timer starts (after all models submitted)
+)
 
 # Throughput data storage for B matrix updates
 # Structure: {instance_url: {model_id: capacity}}
-_throughput_data: Dict[str, Dict[str, float]] = {}
+_throughput_data: dict[str, dict[str, float]] = {}
 
 
-async def _fetch_instance_model(client: httpx.AsyncClient, endpoint: str, timeout: float = 5.0) -> Tuple[str, Optional[str], Optional[str]]:
-    """
-    Fetch the current model running on an instance via /info endpoint.
+async def _fetch_instance_model(
+    client: httpx.AsyncClient, endpoint: str, timeout: float = 5.0
+) -> tuple[str, str | None, str | None]:
+    """Fetch the current model running on an instance via /info endpoint.
 
     Args:
         client: httpx AsyncClient for making requests
@@ -94,7 +112,9 @@ async def _fetch_instance_model(client: httpx.AsyncClient, endpoint: str, timeou
         response = await client.get(f"{endpoint}/info", timeout=timeout)
         if response.status_code == 200:
             data = response.json()
-            if data.get("success") and data.get("instance", {}).get("current_model"):
+            if data.get("success") and data.get("instance", {}).get(
+                "current_model"
+            ):
                 model_id = data["instance"]["current_model"].get("model_id")
                 return (endpoint, model_id, None)
             else:
@@ -109,12 +129,9 @@ async def _fetch_instance_model(client: httpx.AsyncClient, endpoint: str, timeou
 
 
 async def _verify_instance_states(
-    endpoints: list,
-    expected_models: list,
-    timeout: float = 5.0
-) -> Tuple[bool, list, dict]:
-    """
-    Verify that all instances are running the expected models by querying /info endpoints in parallel.
+    endpoints: list, expected_models: list, timeout: float = 5.0
+) -> tuple[bool, list, dict]:
+    """Verify that all instances are running the expected models by querying /info endpoints in parallel.
 
     Args:
         endpoints: List of instance endpoint URLs
@@ -128,33 +145,44 @@ async def _verify_instance_states(
         - actual_states: Dict mapping endpoint -> actual_model_id
     """
     if len(endpoints) != len(expected_models):
-        raise ValueError(f"endpoints ({len(endpoints)}) and expected_models ({len(expected_models)}) must have same length")
+        raise ValueError(
+            f"endpoints ({len(endpoints)}) and expected_models ({len(expected_models)}) must have same length"
+        )
 
     async with httpx.AsyncClient() as client:
         # Fetch all instance states in parallel
-        tasks = [_fetch_instance_model(client, endpoint, timeout) for endpoint in endpoints]
+        tasks = [
+            _fetch_instance_model(client, endpoint, timeout)
+            for endpoint in endpoints
+        ]
         results = await asyncio.gather(*tasks)
 
     actual_states = {}
     mismatches = []
 
-    for (endpoint, actual_model, error), expected_model in zip(results, expected_models):
+    for (endpoint, actual_model, error), expected_model in zip(
+        results, expected_models
+    ):
         actual_states[endpoint] = actual_model
 
         if error:
-            mismatches.append({
-                "endpoint": endpoint,
-                "expected": expected_model,
-                "actual": None,
-                "error": error
-            })
+            mismatches.append(
+                {
+                    "endpoint": endpoint,
+                    "expected": expected_model,
+                    "actual": None,
+                    "error": error,
+                }
+            )
         elif actual_model != expected_model:
-            mismatches.append({
-                "endpoint": endpoint,
-                "expected": expected_model,
-                "actual": actual_model,
-                "error": None
-            })
+            mismatches.append(
+                {
+                    "endpoint": endpoint,
+                    "expected": expected_model,
+                    "actual": actual_model,
+                    "error": None,
+                }
+            )
 
     all_match = len(mismatches) == 0
     return (all_match, mismatches, actual_states)
@@ -174,7 +202,9 @@ async def _auto_optimize_loop():
     """
     global _auto_optimize_running, _optimization_timer_start
 
-    logger.info(f"Auto-optimization loop started (interval={config.auto_optimize_interval}s)")
+    logger.info(
+        f"Auto-optimization loop started (interval={config.auto_optimize_interval}s)"
+    )
 
     last_countdown_log = 0.0  # Track when we last logged countdown
 
@@ -187,23 +217,34 @@ async def _auto_optimize_loop():
                 continue
 
             # Skip if no deployment has been made yet
-            if _stored_model_mapping is None or _stored_deployment_input is None:
-                logger.debug("Auto-optimization skipped: no deployment configured yet")
+            if (
+                _stored_model_mapping is None
+                or _stored_deployment_input is None
+            ):
+                logger.debug(
+                    "Auto-optimization skipped: no deployment configured yet"
+                )
                 continue
 
             # Skip if optimization is already running
             if _auto_optimize_running:
-                logger.debug("Auto-optimization skipped: previous run still in progress")
+                logger.debug(
+                    "Auto-optimization skipped: previous run still in progress"
+                )
                 continue
 
             # Timer only starts after both first data received AND first migration done
             if not _first_data_received or not _first_migration_done:
-                logger.debug(f"Auto-optimization skipped: waiting for initial conditions (data_received={_first_data_received}, migration_done={_first_migration_done})")
+                logger.debug(
+                    f"Auto-optimization skipped: waiting for initial conditions (data_received={_first_data_received}, migration_done={_first_migration_done})"
+                )
                 continue
 
             # Check if all models have submitted targets this round
             if len(_submitted_models) < len(_stored_model_mapping):
-                logger.debug(f"Auto-optimization skipped: waiting for all models ({len(_submitted_models)}/{len(_stored_model_mapping)} submitted)")
+                logger.debug(
+                    f"Auto-optimization skipped: waiting for all models ({len(_submitted_models)}/{len(_stored_model_mapping)} submitted)"
+                )
                 continue
 
             # All models submitted - check if timer has started
@@ -211,7 +252,9 @@ async def _auto_optimize_loop():
                 # Start the timer now that all models have submitted
                 _optimization_timer_start = time.time()
                 last_countdown_log = time.time()
-                logger.info(f"All {len(_submitted_models)} models submitted, optimization timer started (interval={config.auto_optimize_interval}s)")
+                logger.info(
+                    f"All {len(_submitted_models)} models submitted, optimization timer started (interval={config.auto_optimize_interval}s)"
+                )
                 continue
 
             # Check if interval has elapsed since timer started
@@ -222,11 +265,15 @@ async def _auto_optimize_loop():
                 # Log countdown every 10 seconds
                 if time.time() - last_countdown_log >= 10.0:
                     last_countdown_log = time.time()
-                    logger.info(f"Redeployment countdown: {remaining:.0f}s remaining ({elapsed:.0f}s / {config.auto_optimize_interval}s elapsed)")
+                    logger.info(
+                        f"Redeployment countdown: {remaining:.0f}s remaining ({elapsed:.0f}s / {config.auto_optimize_interval}s elapsed)"
+                    )
                 continue
 
             # All conditions met, trigger optimization
-            logger.info(f"Auto-optimization triggered: all {len(_submitted_models)} models submitted, {elapsed:.1f}s elapsed")
+            logger.info(
+                f"Auto-optimization triggered: all {len(_submitted_models)} models submitted, {elapsed:.1f}s elapsed"
+            )
             await _trigger_optimization()
 
         except asyncio.CancelledError:
@@ -237,9 +284,10 @@ async def _auto_optimize_loop():
             # Continue running despite errors
 
 
-def _update_throughput_entry(instance_url: str, model_id: str, new_capacity: float, alpha: float = 0.3):
-    """
-    Update throughput entry using exponential moving average.
+def _update_throughput_entry(
+    instance_url: str, model_id: str, new_capacity: float, alpha: float = 0.3
+):
+    """Update throughput entry using exponential moving average.
 
     Args:
         instance_url: Instance endpoint URL
@@ -257,16 +305,19 @@ def _update_throughput_entry(instance_url: str, model_id: str, new_capacity: flo
         old_capacity = _throughput_data[instance_url][model_id]
         updated_capacity = alpha * new_capacity + (1 - alpha) * old_capacity
         _throughput_data[instance_url][model_id] = updated_capacity
-        logger.debug(f"Throughput EMA update: {instance_url}/{model_id}: {old_capacity:.4f} -> {updated_capacity:.4f}")
+        logger.debug(
+            f"Throughput EMA update: {instance_url}/{model_id}: {old_capacity:.4f} -> {updated_capacity:.4f}"
+        )
     else:
         # First submission: store exact value
         _throughput_data[instance_url][model_id] = new_capacity
-        logger.debug(f"Throughput first entry: {instance_url}/{model_id} = {new_capacity:.4f}")
+        logger.debug(
+            f"Throughput first entry: {instance_url}/{model_id} = {new_capacity:.4f}"
+        )
 
 
 def _apply_throughput_to_b_matrix():
-    """
-    Apply collected throughput data to update the B matrix in stored deployment.
+    """Apply collected throughput data to update the B matrix in stored deployment.
 
     For each (instance, model) pair with throughput data:
     - Find instance index i from _stored_deployment_input.instances
@@ -276,7 +327,9 @@ def _apply_throughput_to_b_matrix():
     global _stored_deployment_input, _stored_model_mapping, _throughput_data
 
     if not _stored_deployment_input or not _stored_model_mapping:
-        logger.debug("Cannot apply throughput: no deployment input or model mapping")
+        logger.debug(
+            "Cannot apply throughput: no deployment input or model mapping"
+        )
         return
 
     if not _throughput_data:
@@ -296,7 +349,9 @@ def _apply_throughput_to_b_matrix():
                     old_value = B[i][j]
                     B[i][j] = capacity
                     update_count += 1
-                    logger.debug(f"Updated B[{i}][{j}] for {instance_url}/{model_id}: {old_value:.4f} -> {capacity:.4f}")
+                    logger.debug(
+                        f"Updated B[{i}][{j}] for {instance_url}/{model_id}: {old_value:.4f} -> {capacity:.4f}"
+                    )
 
     if update_count > 0:
         logger.info(f"Applied {update_count} throughput entries to B matrix")
@@ -312,8 +367,16 @@ async def _trigger_optimization():
     After successful optimization, updates _stored_deployment_input with the new
     deployment state so that the next auto-optimization uses the correct initial state.
     """
-    global _auto_optimize_running, _submitted_models, _stored_model_mapping, _stored_reverse_mapping, _current_target
-    global _optimization_timer_start, _first_data_received, _stored_deployment_input
+    global \
+        _auto_optimize_running, \
+        _submitted_models, \
+        _stored_model_mapping, \
+        _stored_reverse_mapping, \
+        _current_target
+    global \
+        _optimization_timer_start, \
+        _first_data_received, \
+        _stored_deployment_input
 
     _auto_optimize_running = True
 
@@ -327,28 +390,40 @@ async def _trigger_optimization():
         deployment_input = _stored_deployment_input.model_copy(deep=True)
         deployment_input.planner_input.target = _current_target.copy()
 
-        logger.info(f"Running auto-optimization with targets: {_current_target}")
+        logger.info(
+            f"Running auto-optimization with targets: {_current_target}"
+        )
 
         # Import here to avoid circular import
-        from .deployment_service import ModelMapper, InstanceMigrator
+        from .deployment_service import InstanceMigrator, ModelMapper
 
         # Get expected state from stored deployment
-        expected_models = [inst.current_model for inst in deployment_input.instances]
+        expected_models = [
+            inst.current_model for inst in deployment_input.instances
+        ]
         endpoints = [inst.endpoint for inst in deployment_input.instances]
 
         # Step 0: Verify instance states before computing optimization
-        logger.info(f"Verifying instance states for {len(endpoints)} instances...")
+        logger.info(
+            f"Verifying instance states for {len(endpoints)} instances..."
+        )
         all_match, mismatches, actual_states = await _verify_instance_states(
             endpoints, expected_models, timeout=5.0
         )
 
         if not all_match:
-            logger.warning(f"Found {len(mismatches)} instance state mismatches:")
+            logger.warning(
+                f"Found {len(mismatches)} instance state mismatches:"
+            )
             for m in mismatches:
                 if m["error"]:
-                    logger.warning(f"  {m['endpoint']}: expected={m['expected']}, error={m['error']}")
+                    logger.warning(
+                        f"  {m['endpoint']}: expected={m['expected']}, error={m['error']}"
+                    )
                 else:
-                    logger.warning(f"  {m['endpoint']}: expected={m['expected']}, actual={m['actual']}")
+                    logger.warning(
+                        f"  {m['endpoint']}: expected={m['expected']}, actual={m['actual']}"
+                    )
 
             # Update stored state to match actual state
             updated_count = 0
@@ -356,18 +431,28 @@ async def _trigger_optimization():
                 actual_model = actual_states.get(endpoint)
                 if actual_model and actual_model != expected_models[idx]:
                     # Update stored deployment input with actual model
-                    _stored_deployment_input.instances[idx].current_model = actual_model
+                    _stored_deployment_input.instances[
+                        idx
+                    ].current_model = actual_model
                     deployment_input.instances[idx].current_model = actual_model
                     updated_count += 1
-                    logger.info(f"Updated stored state for {endpoint}: {expected_models[idx]} -> {actual_model}")
+                    logger.info(
+                        f"Updated stored state for {endpoint}: {expected_models[idx]} -> {actual_model}"
+                    )
 
             if updated_count > 0:
-                logger.info(f"Corrected {updated_count} instance states based on actual /info responses")
+                logger.info(
+                    f"Corrected {updated_count} instance states based on actual /info responses"
+                )
 
             # Refresh expected_models after correction
-            expected_models = [inst.current_model for inst in deployment_input.instances]
+            expected_models = [
+                inst.current_model for inst in deployment_input.instances
+            ]
         else:
-            logger.info(f"All {len(endpoints)} instances verified - states match expected")
+            logger.info(
+                f"All {len(endpoints)} instances verified - states match expected"
+            )
 
         # Now use verified current_models for optimization
         current_models = expected_models
@@ -383,9 +468,13 @@ async def _trigger_optimization():
         logger.info(f"Computed initial_ids from current_models: {initial_ids}")
 
         planner_params = deployment_input.planner_input.model_copy(deep=True)
-        logger.info(f"planner_params.initial before override: {planner_params.initial}")
+        logger.info(
+            f"planner_params.initial before override: {planner_params.initial}"
+        )
         planner_params.initial = initial_ids
-        logger.info(f"planner_params.initial after override: {planner_params.initial}")
+        logger.info(
+            f"planner_params.initial after override: {planner_params.initial}"
+        )
 
         # Run optimization
         B = np.array(planner_params.B)
@@ -396,9 +485,13 @@ async def _trigger_optimization():
         # Force change rate to 30% for auto-optimization
         AUTO_OPTIMIZE_CHANGE_RATE = 0.3
 
-        logger.info(f"Auto-optimization using Simulated Annealing")
-        logger.info(f"Change rate: {planner_params.a} -> Forced to: {AUTO_OPTIMIZE_CHANGE_RATE} (30%)")
-        logger.info(f"Optimization parameters: M={planner_params.M}, N={planner_params.N}, B={B}, \ninitial={initial}, a={AUTO_OPTIMIZE_CHANGE_RATE}, target={target}")
+        logger.info("Auto-optimization using Simulated Annealing")
+        logger.info(
+            f"Change rate: {planner_params.a} -> Forced to: {AUTO_OPTIMIZE_CHANGE_RATE} (30%)"
+        )
+        logger.info(
+            f"Optimization parameters: M={planner_params.M}, N={planner_params.N}, B={B}, \ninitial={initial}, a={AUTO_OPTIMIZE_CHANGE_RATE}, target={target}"
+        )
         logger.info(f"Current models: {current_models}")
         logger.info(f"Endpoints: {endpoints}")
         logger.info(f"Model mapping: {model_mapping}")
@@ -411,7 +504,7 @@ async def _trigger_optimization():
             B=B,
             initial=initial,
             a=AUTO_OPTIMIZE_CHANGE_RATE,  # Force 30% change rate for auto-optimization
-            target=target
+            target=target,
         )
 
         deployment, score, stats = optimizer.optimize(
@@ -421,7 +514,7 @@ async def _trigger_optimization():
             cooling_rate=planner_params.cooling_rate,
             max_iterations=planner_params.max_iterations,
             iterations_per_temp=planner_params.iterations_per_temp,
-            verbose=planner_params.verbose
+            verbose=planner_params.verbose,
         )
 
         changes_count = optimizer.compute_changes(deployment)
@@ -435,7 +528,9 @@ async def _trigger_optimization():
         change_endpoints = []
         change_current_models = []
         change_target_models_list = []
-        for idx, (cur, target_model) in enumerate(zip(current_models, deployment_target_models)):
+        for idx, (cur, target_model) in enumerate(
+            zip(current_models, deployment_target_models)
+        ):
             if cur != target_model:
                 change_indices.append(idx)
                 change_endpoints.append(endpoints[idx])
@@ -444,9 +539,7 @@ async def _trigger_optimization():
 
         # Phase 2: Detect model swap cycles BEFORE fetching from store
         swap_indices, swap_pairs = detect_model_swap_pairs(
-            change_endpoints,
-            change_current_models,
-            change_target_models_list
+            change_endpoints, change_current_models, change_target_models_list
         )
 
         if swap_indices:
@@ -463,23 +556,37 @@ async def _trigger_optimization():
         pending_change_global_indices = []  # Track global index for each pending change
 
         for i, (endpoint, cur_model, target_model) in enumerate(
-            zip(change_endpoints, change_current_models, change_target_models_list)
+            zip(
+                change_endpoints,
+                change_current_models,
+                change_target_models_list,
+            )
         ):
             if i in swap_indices:
-                logger.debug(f"Auto-opt: Skipping swap migration: {endpoint} ({cur_model} -> {target_model})")
+                logger.debug(
+                    f"Auto-opt: Skipping swap migration: {endpoint} ({cur_model} -> {target_model})"
+                )
                 continue
 
-            target_instance = await instance_store.fetch_one_available_instance(target_model)
+            target_instance = await instance_store.fetch_one_available_instance(
+                target_model
+            )
             if not target_instance:
-                error_msg = f"No available target endpoint for model {target_model}"
+                error_msg = (
+                    f"No available target endpoint for model {target_model}"
+                )
                 client_msg = error_msg
-                logger.error(f"Auto-optimization failed: {error_msg}. Client will receive: {client_msg}")
+                logger.error(
+                    f"Auto-optimization failed: {error_msg}. Client will receive: {client_msg}"
+                )
                 raise ValueError(error_msg)
             pending_change_original.append(endpoint)
             pending_change_original_model.append(cur_model)
             pending_change_target.append(target_instance.endpoint)
             pending_change_target_model.append(target_model)
-            pending_change_global_indices.append(change_indices[i])  # Map to global index
+            pending_change_global_indices.append(
+                change_indices[i]
+            )  # Map to global index
 
         # Phase 4: Eliminate any remaining endpoint-level cycles (post-fetch)
         # Store pre-filter lists to track which indices survive
@@ -491,18 +598,19 @@ async def _trigger_optimization():
             pending_change_original_model,
             pending_change_target,
             pending_change_target_model,
-            cancelled_targets
+            cancelled_targets,
         ) = eliminate_redundant_migrations(
             pending_change_original,
             pending_change_original_model,
             pending_change_target,
-            pending_change_target_model
+            pending_change_target_model,
         )
 
         # Filter global indices to match the filtered lists
         surviving_endpoints = set(pending_change_original)
         pending_change_global_indices = [
-            gi for ep, gi in zip(pre_filter_original, pre_filter_global_indices)
+            gi
+            for ep, gi in zip(pre_filter_original, pre_filter_global_indices)
             if ep in surviving_endpoints
         ]
 
@@ -511,29 +619,31 @@ async def _trigger_optimization():
             await instance_store.add_available_instance(
                 AvailableInstance(model_id=model_id, endpoint=endpoint)
             )
-            logger.info(f"Auto-opt: Returned cancelled target endpoint to store: {endpoint} (model={model_id})")
+            logger.info(
+                f"Auto-opt: Returned cancelled target endpoint to store: {endpoint} (model={model_id})"
+            )
 
         # Perform migration if needed
         if pending_change_original:
-            scheduler_mapping = config.get_scheduler_url(deployment_input.scheduler_mapping)
+            scheduler_mapping = config.get_scheduler_url(
+                deployment_input.scheduler_mapping
+            )
             migrator = InstanceMigrator(
                 timeout=config.instance_timeout,
                 scheduler_mapping=scheduler_mapping,
                 max_retries=config.instance_max_retries,
-                retry_delay=config.instance_retry_delay
+                retry_delay=config.instance_retry_delay,
             )
             migration_status = await migrator.migration_instances(
-                pending_change_original,
-                pending_change_target
+                pending_change_original, pending_change_target
             )
 
             # Add original endpoints back to store
-            for model_id, endpoint in zip(pending_change_original_model, pending_change_original):
+            for model_id, endpoint in zip(
+                pending_change_original_model, pending_change_original
+            ):
                 await instance_store.add_available_instance(
-                    AvailableInstance(
-                        model_id=model_id,
-                        endpoint=endpoint
-                    )
+                    AvailableInstance(model_id=model_id, endpoint=endpoint)
                 )
 
             failed = [s for s in migration_status if not s.success]
@@ -546,15 +656,23 @@ async def _trigger_optimization():
             # Build mapping from global index to target endpoint using tracked indices
             global_idx_to_target_endpoint = {}
             for i, global_idx in enumerate(pending_change_global_indices):
-                global_idx_to_target_endpoint[global_idx] = pending_change_target[i]
+                global_idx_to_target_endpoint[global_idx] = (
+                    pending_change_target[i]
+                )
 
             # Only update successfully migrated instances
             if len(failed) == 0:
                 # All migrations successful, update all changed instances
                 for global_idx in pending_change_global_indices:
-                    _stored_deployment_input.instances[global_idx].current_model = deployment_target_models[global_idx]
-                    _stored_deployment_input.instances[global_idx].endpoint = global_idx_to_target_endpoint[global_idx]
-                logger.info(f"Updated stored deployment state with {len(pending_change_global_indices)} model and endpoint changes")
+                    _stored_deployment_input.instances[
+                        global_idx
+                    ].current_model = deployment_target_models[global_idx]
+                    _stored_deployment_input.instances[
+                        global_idx
+                    ].endpoint = global_idx_to_target_endpoint[global_idx]
+                logger.info(
+                    f"Updated stored deployment state with {len(pending_change_global_indices)} model and endpoint changes"
+                )
             else:
                 # Partial success - only update successful migrations
                 successful_indices = set()
@@ -565,16 +683,28 @@ async def _trigger_optimization():
                 # Update only successful migrations using tracked global indices
                 for i, global_idx in enumerate(pending_change_global_indices):
                     if i in successful_indices:
-                        _stored_deployment_input.instances[global_idx].current_model = deployment_target_models[global_idx]
-                        _stored_deployment_input.instances[global_idx].endpoint = pending_change_target[i]
+                        _stored_deployment_input.instances[
+                            global_idx
+                        ].current_model = deployment_target_models[global_idx]
+                        _stored_deployment_input.instances[
+                            global_idx
+                        ].endpoint = pending_change_target[i]
 
-                logger.warning(f"Partial migration success: updated {len(successful_indices)} of {len(pending_change_global_indices)} changes")
+                logger.warning(
+                    f"Partial migration success: updated {len(successful_indices)} of {len(pending_change_global_indices)} changes"
+                )
         else:
-            logger.info(f"Auto-optimization completed: score={score:.4f}, no changes needed")
+            logger.info(
+                f"Auto-optimization completed: score={score:.4f}, no changes needed"
+            )
 
         # Record instance counts to timeline after auto-optimization
         try:
-            from .instance_timeline_tracker import get_timeline_tracker, compute_instance_counts
+            from .instance_timeline_tracker import (
+                compute_instance_counts,
+                get_timeline_tracker,
+            )
+
             tracker = get_timeline_tracker()
             counts = compute_instance_counts(_stored_deployment_input.instances)
             tracker.record_migration(
@@ -582,8 +712,10 @@ async def _trigger_optimization():
                 instance_counts=counts,
                 changes_count=changes_count,
                 success=(len(failed) == 0) if pending_change_original else True,
-                target_distribution=list(_current_target) if _current_target else None,
-                score=float(score)
+                target_distribution=list(_current_target)
+                if _current_target
+                else None,
+                score=float(score),
             )
         except Exception as e:
             logger.warning(f"Failed to record timeline entry: {e}")
@@ -597,10 +729,14 @@ async def _trigger_optimization():
         # Always reset state for next cycle after optimization attempt completes
         # This ensures the countdown only restarts after all migration work is done
         _submitted_models.clear()
-        _optimization_timer_start = 0.0  # Reset timer, will restart when all models submit again
+        _optimization_timer_start = (
+            0.0  # Reset timer, will restart when all models submit again
+        )
         _first_data_received = False  # Reset to wait for new data round
         _auto_optimize_running = False
-        logger.info("Auto-optimization state reset for next cycle, countdown will restart after new data arrives")
+        logger.info(
+            "Auto-optimization state reset for next cycle, countdown will restart after new data arrives"
+        )
 
 
 # Validate configuration on startup
@@ -621,7 +757,9 @@ async def lifespan(app: FastAPI):
 
     # Startup
     if config.auto_optimize_enabled:
-        logger.info(f"Starting auto-optimization loop (interval={config.auto_optimize_interval}s)")
+        logger.info(
+            f"Starting auto-optimization loop (interval={config.auto_optimize_interval}s)"
+        )
         _auto_optimize_task = asyncio.create_task(_auto_optimize_loop())
     else:
         logger.info("Auto-optimization is disabled")
@@ -658,29 +796,24 @@ async def global_exception_handler(request, exc):
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={
             "success": False,
-            "error": f"Internal server error: {str(exc)}"
-        }
+            "error": f"Internal server error: {str(exc)}",
+        },
     )
 
 
 @app.get("/health")
 async def health_check():
-    """
-    Health check endpoint for monitoring and load balancing.
+    """Health check endpoint for monitoring and load balancing.
 
     Returns:
         Health status with timestamp
     """
-    return {
-        "status": "healthy",
-        "timestamp": datetime.now(timezone.utc).isoformat()
-    }
+    return {"status": "healthy", "timestamp": datetime.now(UTC).isoformat()}
 
 
 @app.get("/info")
 async def service_info():
-    """
-    Get service information and capabilities.
+    """Get service information and capabilities.
 
     Returns:
         Service metadata including version and supported algorithms
@@ -689,16 +822,19 @@ async def service_info():
         "service": "planner",
         "version": __version__,
         "algorithms": ["simulated_annealing", "integer_programming"],
-        "objective_methods": ["relative_error", "ratio_difference", "weighted_squared"],
+        "objective_methods": [
+            "relative_error",
+            "ratio_difference",
+            "weighted_squared",
+        ],
         "description": "Model deployment optimization service",
-        "available_instances": get_available_instance_store().available_instances
+        "available_instances": get_available_instance_store().available_instances,
     }
 
 
 @app.post("/plan", response_model=PlannerOutput)
 async def plan_deployment(input_data: PlannerInput):
-    """
-    Compute optimal deployment plan without execution.
+    """Compute optimal deployment plan without execution.
 
     This endpoint runs the optimization algorithm to find the best model
     deployment configuration but does not deploy to any instances.
@@ -713,8 +849,10 @@ async def plan_deployment(input_data: PlannerInput):
         HTTPException: If optimization fails or parameters are invalid
     """
     try:
-        logger.info(f"Received /plan request: M={input_data.M}, N={input_data.N}, "
-                   f"algorithm={input_data.algorithm}")
+        logger.info(
+            f"Received /plan request: M={input_data.M}, N={input_data.N}, "
+            f"algorithm={input_data.algorithm}"
+        )
 
         # Convert inputs to numpy arrays
         B = np.array(input_data.B)
@@ -729,7 +867,7 @@ async def plan_deployment(input_data: PlannerInput):
                 B=B,
                 initial=initial,
                 a=input_data.a,
-                target=target
+                target=target,
             )
 
             deployment, score, stats = optimizer.optimize(
@@ -739,7 +877,7 @@ async def plan_deployment(input_data: PlannerInput):
                 cooling_rate=input_data.cooling_rate,
                 max_iterations=input_data.max_iterations,
                 iterations_per_temp=input_data.iterations_per_temp,
-                verbose=input_data.verbose
+                verbose=input_data.verbose,
             )
 
         elif input_data.algorithm == "integer_programming":
@@ -749,23 +887,24 @@ async def plan_deployment(input_data: PlannerInput):
                 B=B,
                 initial=initial,
                 a=input_data.a,
-                target=target
+                target=target,
             )
 
             deployment, score, stats = optimizer.optimize(
                 objective_method=input_data.objective_method,
                 solver_name=input_data.solver_name,
                 time_limit=input_data.time_limit,
-                verbose=input_data.verbose
+                verbose=input_data.verbose,
             )
 
         else:
             error_msg = f"Unknown algorithm: {input_data.algorithm}"
             client_msg = error_msg
-            logger.error(f"/plan request failed: {error_msg}. Returning HTTP 400. Client will receive: {client_msg}")
+            logger.error(
+                f"/plan request failed: {error_msg}. Returning HTTP 400. Client will receive: {client_msg}"
+            )
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=client_msg
+                status_code=status.HTTP_400_BAD_REQUEST, detail=client_msg
             )
 
         # Compute service capacity and changes
@@ -777,39 +916,46 @@ async def plan_deployment(input_data: PlannerInput):
             score=float(score),
             stats=stats,
             service_capacity=service_capacity.tolist(),
-            changes_count=int(changes_count)
+            changes_count=int(changes_count),
         )
 
-        logger.info(f"Optimization completed: score={score:.4f}, changes={changes_count}")
+        logger.info(
+            f"Optimization completed: score={score:.4f}, changes={changes_count}"
+        )
         return result
 
     except ImportError as e:
         client_msg = f"Algorithm dependency not available: {str(e)}"
-        logger.error(f"/plan request failed - ImportError: {e}. Returning HTTP 500. Client will receive: {client_msg}", exc_info=True)
+        logger.error(
+            f"/plan request failed - ImportError: {e}. Returning HTTP 500. Client will receive: {client_msg}",
+            exc_info=True,
+        )
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=client_msg
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=client_msg
         )
     except ValueError as e:
         client_msg = f"Invalid input: {str(e)}"
-        logger.error(f"/plan request failed - ValueError: {e}. Returning HTTP 400. Client will receive: {client_msg}", exc_info=True)
+        logger.error(
+            f"/plan request failed - ValueError: {e}. Returning HTTP 400. Client will receive: {client_msg}",
+            exc_info=True,
+        )
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=client_msg
+            status_code=status.HTTP_400_BAD_REQUEST, detail=client_msg
         )
     except Exception as e:
         client_msg = f"Optimization failed: {str(e)}"
-        logger.error(f"/plan request failed - Unexpected error: {e}. Returning HTTP 500. Client will receive: {client_msg}", exc_info=True)
+        logger.error(
+            f"/plan request failed - Unexpected error: {e}. Returning HTTP 500. Client will receive: {client_msg}",
+            exc_info=True,
+        )
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=client_msg
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=client_msg
         )
 
 
 @app.post("/deploy/migration", response_model=MigrationOutput)
 async def deploy_with_migration(input_data: DeploymentInput):
-    """
-    Compute optimal deployment plan and execute it across instances with migration mode.
+    """Compute optimal deployment plan and execute it across instances with migration mode.
 
     Workflow:
     1. Extract model names from instances
@@ -829,8 +975,10 @@ async def deploy_with_migration(input_data: DeploymentInput):
         HTTPException: If optimization or deployment fails
     """
     try:
-        logger.info(f"Received /deploy/migration request: {len(input_data.instances)} instances, "
-                   f"algorithm={input_data.planner_input.algorithm}")
+        logger.info(
+            f"Received /deploy/migration request: {len(input_data.instances)} instances, "
+            f"algorithm={input_data.planner_input.algorithm}"
+        )
 
         # Step 1: Extract model names from instances
         current_models = [inst.current_model for inst in input_data.instances]
@@ -846,27 +994,41 @@ async def deploy_with_migration(input_data: DeploymentInput):
         logger.info(f"Model mapping: {model_mapping}")
 
         # Store mapping for submit_target use
-        global _stored_model_mapping, _stored_reverse_mapping, _current_target, _stored_deployment_input, _submitted_models
-        global _first_data_received, _first_migration_done, _optimization_timer_start
+        global \
+            _stored_model_mapping, \
+            _stored_reverse_mapping, \
+            _current_target, \
+            _stored_deployment_input, \
+            _submitted_models
+        global \
+            _first_data_received, \
+            _first_migration_done, \
+            _optimization_timer_start
         _stored_model_mapping = model_mapping
         _stored_reverse_mapping = reverse_mapping
         _current_target = [0.0] * len(model_mapping)
-        _stored_deployment_input = input_data.model_copy(deep=True)  # Store for auto-optimization
+        _stored_deployment_input = input_data.model_copy(
+            deep=True
+        )  # Store for auto-optimization
         _submitted_models.clear()  # Reset submitted models for new deployment
         # Reset auto-optimization state for new deployment cycle
         _first_data_received = False
         _optimization_timer_start = 0.0
-        logger.info(f"Stored model mapping for submit_target: {len(model_mapping)} models")
+        logger.info(
+            f"Stored model mapping for submit_target: {len(model_mapping)} models"
+        )
 
         # Update planner_input.initial with mapped IDs
         try:
             initial_ids = mapper.map_names_to_ids(current_models, model_mapping)
         except ValueError as e:
             client_msg = f"Model mapping failed: {str(e)}"
-            logger.error(f"Deployment request failed - Model mapping error: {e}. Returning HTTP 400. Client will receive: {client_msg}", exc_info=True)
+            logger.error(
+                f"Deployment request failed - Model mapping error: {e}. Returning HTTP 400. Client will receive: {client_msg}",
+                exc_info=True,
+            )
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=client_msg
+                status_code=status.HTTP_400_BAD_REQUEST, detail=client_msg
             )
 
         # Override the initial field in planner_input
@@ -885,7 +1047,7 @@ async def deploy_with_migration(input_data: DeploymentInput):
                 B=B,
                 initial=initial,
                 a=planner_params.a,
-                target=target
+                target=target,
             )
 
             deployment, score, stats = optimizer.optimize(
@@ -895,7 +1057,7 @@ async def deploy_with_migration(input_data: DeploymentInput):
                 cooling_rate=planner_params.cooling_rate,
                 max_iterations=planner_params.max_iterations,
                 iterations_per_temp=planner_params.iterations_per_temp,
-                verbose=planner_params.verbose
+                verbose=planner_params.verbose,
             )
 
         elif planner_params.algorithm == "integer_programming":
@@ -905,23 +1067,24 @@ async def deploy_with_migration(input_data: DeploymentInput):
                 B=B,
                 initial=initial,
                 a=planner_params.a,
-                target=target
+                target=target,
             )
 
             deployment, score, stats = optimizer.optimize(
                 objective_method=planner_params.objective_method,
                 solver_name=planner_params.solver_name,
                 time_limit=planner_params.time_limit,
-                verbose=planner_params.verbose
+                verbose=planner_params.verbose,
             )
 
         else:
             error_msg = f"Unknown algorithm: {planner_params.algorithm}"
             client_msg = error_msg
-            logger.error(f"/deploy/migration request failed: {error_msg}. Returning HTTP 400. Client will receive: {client_msg}")
+            logger.error(
+                f"/deploy/migration request failed: {error_msg}. Returning HTTP 400. Client will receive: {client_msg}"
+            )
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=client_msg
+                status_code=status.HTTP_400_BAD_REQUEST, detail=client_msg
             )
 
         service_capacity = optimizer.compute_service_capacity(deployment)
@@ -931,7 +1094,7 @@ async def deploy_with_migration(input_data: DeploymentInput):
         # We need to find the changed instance here
         instance_store = get_available_instance_store()
         deployment_target_models = [reverse_mapping[idx] for idx in deployment]
-        logger.info(f"Start redeployment mapping")
+        logger.info("Start redeployment mapping")
         logger.info(f"Current models: {current_models}")
         logger.info(f"Deployment target models: {deployment_target_models}")
 
@@ -940,7 +1103,9 @@ async def deploy_with_migration(input_data: DeploymentInput):
         change_endpoints = []
         change_current_models = []
         change_target_models = []
-        for idx, (cur, target_model) in enumerate(zip(current_models, deployment_target_models)):
+        for idx, (cur, target_model) in enumerate(
+            zip(current_models, deployment_target_models)
+        ):
             if cur != target_model:
                 change_indices.append(idx)
                 change_endpoints.append(endpoints[idx])
@@ -950,9 +1115,7 @@ async def deploy_with_migration(input_data: DeploymentInput):
         # Phase 2: Detect model swap cycles BEFORE fetching from store
         # This eliminates cases where A(model_x)->model_y and B(model_y)->model_x
         swap_indices, swap_pairs = detect_model_swap_pairs(
-            change_endpoints,
-            change_current_models,
-            change_target_models
+            change_endpoints, change_current_models, change_target_models
         )
 
         if swap_indices:
@@ -973,20 +1136,30 @@ async def deploy_with_migration(input_data: DeploymentInput):
         ):
             if i in swap_indices:
                 # Skip this migration - it's part of a model swap cycle
-                logger.debug(f"Skipping swap migration: {endpoint} ({cur_model} -> {target_model})")
+                logger.debug(
+                    f"Skipping swap migration: {endpoint} ({cur_model} -> {target_model})"
+                )
                 continue
 
-            target_instance = await instance_store.fetch_one_available_instance(target_model)
+            target_instance = await instance_store.fetch_one_available_instance(
+                target_model
+            )
             if not target_instance:
-                error_msg = f"No available target endpoint for model {target_model}"
+                error_msg = (
+                    f"No available target endpoint for model {target_model}"
+                )
                 client_msg = f"Invalid input: {error_msg}"
-                logger.error(f"/deploy/migration failed: {error_msg}. Returning HTTP 400. Client will receive: {client_msg}")
+                logger.error(
+                    f"/deploy/migration failed: {error_msg}. Returning HTTP 400. Client will receive: {client_msg}"
+                )
                 raise ValueError(error_msg)
             pending_change_original.append(endpoint)
             pending_change_original_model.append(cur_model)
             pending_change_target.append(target_instance.endpoint)
             pending_change_target_model.append(target_model)
-            pending_change_global_indices.append(change_indices[i])  # Map to global index
+            pending_change_global_indices.append(
+                change_indices[i]
+            )  # Map to global index
 
         # Phase 4: Eliminate any remaining endpoint-level cycles (post-fetch)
         # Store pre-filter lists to track which indices survive
@@ -998,19 +1171,20 @@ async def deploy_with_migration(input_data: DeploymentInput):
             pending_change_original_model,
             pending_change_target,
             pending_change_target_model,
-            cancelled_targets
+            cancelled_targets,
         ) = eliminate_redundant_migrations(
             pending_change_original,
             pending_change_original_model,
             pending_change_target,
-            pending_change_target_model
+            pending_change_target_model,
         )
 
         # Filter global indices to match the filtered lists
         # Build set of surviving endpoints for fast lookup
         surviving_endpoints = set(pending_change_original)
         pending_change_global_indices = [
-            gi for ep, gi in zip(pre_filter_original, pre_filter_global_indices)
+            gi
+            for ep, gi in zip(pre_filter_original, pre_filter_global_indices)
             if ep in surviving_endpoints
         ]
 
@@ -1019,22 +1193,33 @@ async def deploy_with_migration(input_data: DeploymentInput):
             await instance_store.add_available_instance(
                 AvailableInstance(model_id=model_id, endpoint=endpoint)
             )
-            logger.info(f"Returned cancelled target endpoint to store: {endpoint} (model={model_id})")
+            logger.info(
+                f"Returned cancelled target endpoint to store: {endpoint} (model={model_id})"
+            )
 
-        logger.info(f"Optimization completed: score={score:.4f}, changes={changes_count}")
+        logger.info(
+            f"Optimization completed: score={score:.4f}, changes={changes_count}"
+        )
         logger.info(f"Pending change original: {pending_change_original}")
-        logger.info(f"Pending change original model: {pending_change_original_model}")
+        logger.info(
+            f"Pending change original model: {pending_change_original_model}"
+        )
         logger.info(f"Pending change target: {pending_change_target}")
 
         # Step 4: Map result IDs back to model names
         try:
-            target_models = mapper.map_ids_to_names(deployment.tolist(), reverse_mapping)
+            target_models = mapper.map_ids_to_names(
+                deployment.tolist(), reverse_mapping
+            )
         except ValueError as e:
             client_msg = f"Failed to map deployment IDs to names: {str(e)}"
-            logger.error(f"/deploy/migration failed - ID mapping error: {e}. Returning HTTP 500. Client will receive: {client_msg}", exc_info=True)
+            logger.error(
+                f"/deploy/migration failed - ID mapping error: {e}. Returning HTTP 500. Client will receive: {client_msg}",
+                exc_info=True,
+            )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=client_msg
+                detail=client_msg,
             )
 
         logger.info(f"Target models: {target_models}")
@@ -1045,9 +1230,13 @@ async def deploy_with_migration(input_data: DeploymentInput):
         logger.debug(f"Using scheduler mapping: {scheduler_mapping}")
 
         # Validate that all target models have scheduler mappings
-        missing_models = [m for m in set(target_models) if m not in scheduler_mapping]
+        missing_models = [
+            m for m in set(target_models) if m not in scheduler_mapping
+        ]
         if missing_models:
-            logger.warning(f"Missing scheduler mapping for models: {missing_models}")
+            logger.warning(
+                f"Missing scheduler mapping for models: {missing_models}"
+            )
 
         # Perform migration for instances that need to change
         migration_status = []
@@ -1056,21 +1245,21 @@ async def deploy_with_migration(input_data: DeploymentInput):
                 timeout=config.instance_timeout,
                 scheduler_mapping=scheduler_mapping,
                 max_retries=config.instance_max_retries,
-                retry_delay=config.instance_retry_delay
+                retry_delay=config.instance_retry_delay,
             )
             migration_status = await migrator.migration_instances(
-                pending_change_original,
-                pending_change_target
+                pending_change_original, pending_change_target
             )
-            logger.info(f"Migration completed for {len(pending_change_original)} instances")
+            logger.info(
+                f"Migration completed for {len(pending_change_original)} instances"
+            )
 
         # Append original endpoint to the storage for future use
-        for model_id, endpoint in zip(pending_change_original_model, pending_change_original):
+        for model_id, endpoint in zip(
+            pending_change_original_model, pending_change_original
+        ):
             await instance_store.add_available_instance(
-                AvailableInstance(
-                    model_id=model_id,
-                    endpoint=endpoint
-                )
+                AvailableInstance(model_id=model_id, endpoint=endpoint)
             )
 
         # Step 6: Aggregate results
@@ -1082,7 +1271,9 @@ async def deploy_with_migration(input_data: DeploymentInput):
         overall_success = len(failed_instances) == 0
 
         if not overall_success:
-            logger.warning(f"Deployment partially failed: {len(failed_instances)} instances failed")
+            logger.warning(
+                f"Deployment partially failed: {len(failed_instances)} instances failed"
+            )
         else:
             logger.info("Deployment completed successfully for all instances")
 
@@ -1097,12 +1288,20 @@ async def deploy_with_migration(input_data: DeploymentInput):
             # All migrations successful, update all changed instances
             for idx, target_model in enumerate(deployment_target_models):
                 if idx in global_idx_to_target_endpoint:
-                    _stored_deployment_input.instances[idx].current_model = target_model
-                    _stored_deployment_input.instances[idx].endpoint = global_idx_to_target_endpoint[idx]
+                    _stored_deployment_input.instances[
+                        idx
+                    ].current_model = target_model
+                    _stored_deployment_input.instances[
+                        idx
+                    ].endpoint = global_idx_to_target_endpoint[idx]
                 else:
                     # No change needed for this instance, just update model (should be same)
-                    _stored_deployment_input.instances[idx].current_model = target_model
-            logger.info(f"Updated stored deployment state with deployment result and endpoints: {deployment_target_models}")
+                    _stored_deployment_input.instances[
+                        idx
+                    ].current_model = target_model
+            logger.info(
+                f"Updated stored deployment state with deployment result and endpoints: {deployment_target_models}"
+            )
         else:
             # Partial success - only update successfully migrated instances
             # Note: migration_status[].instance_index is the index in pending_change list,
@@ -1115,10 +1314,16 @@ async def deploy_with_migration(input_data: DeploymentInput):
             # Update only successful migrations using tracked global indices
             for i, global_idx in enumerate(pending_change_global_indices):
                 if i in successful_change_indices:
-                    _stored_deployment_input.instances[global_idx].current_model = deployment_target_models[global_idx]
-                    _stored_deployment_input.instances[global_idx].endpoint = pending_change_target[i]
+                    _stored_deployment_input.instances[
+                        global_idx
+                    ].current_model = deployment_target_models[global_idx]
+                    _stored_deployment_input.instances[
+                        global_idx
+                    ].endpoint = pending_change_target[i]
 
-            logger.warning(f"Partial deployment: updated {len(successful_change_indices)} of {len(migration_status)} migrations in stored state")
+            logger.warning(
+                f"Partial deployment: updated {len(successful_change_indices)} of {len(migration_status)} migrations in stored state"
+            )
 
         # Mark first migration done - enables auto-optimization timer to start
         _first_migration_done = True
@@ -1126,7 +1331,11 @@ async def deploy_with_migration(input_data: DeploymentInput):
 
         # Record instance counts to timeline
         try:
-            from .instance_timeline_tracker import get_timeline_tracker, compute_instance_counts
+            from .instance_timeline_tracker import (
+                compute_instance_counts,
+                get_timeline_tracker,
+            )
+
             tracker = get_timeline_tracker()
             counts = compute_instance_counts(_stored_deployment_input.instances)
             tracker.record_migration(
@@ -1134,8 +1343,10 @@ async def deploy_with_migration(input_data: DeploymentInput):
                 instance_counts=counts,
                 changes_count=int(changes_count),
                 success=overall_success,
-                target_distribution=list(target) if target is not None else None,
-                score=float(score)
+                target_distribution=list(target)
+                if target is not None
+                else None,
+                score=float(score),
             )
         except Exception as e:
             logger.warning(f"Failed to record timeline entry: {e}")
@@ -1148,7 +1359,7 @@ async def deploy_with_migration(input_data: DeploymentInput):
             changes_count=int(changes_count),
             deployment_status=migration_status,
             success=overall_success,
-            failed_instances=failed_instances
+            failed_instances=failed_instances,
         )
 
         return result
@@ -1157,30 +1368,36 @@ async def deploy_with_migration(input_data: DeploymentInput):
         raise
     except ImportError as e:
         client_msg = f"Algorithm dependency not available: {str(e)}"
-        logger.error(f"/deploy/migration failed - ImportError: {e}. Returning HTTP 500. Client will receive: {client_msg}", exc_info=True)
+        logger.error(
+            f"/deploy/migration failed - ImportError: {e}. Returning HTTP 500. Client will receive: {client_msg}",
+            exc_info=True,
+        )
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=client_msg
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=client_msg
         )
     except ValueError as e:
         client_msg = f"Invalid input: {str(e)}"
-        logger.error(f"/deploy/migration failed - ValueError: {e}. Returning HTTP 400. Client will receive: {client_msg}", exc_info=True)
+        logger.error(
+            f"/deploy/migration failed - ValueError: {e}. Returning HTTP 400. Client will receive: {client_msg}",
+            exc_info=True,
+        )
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=client_msg
+            status_code=status.HTTP_400_BAD_REQUEST, detail=client_msg
         )
     except Exception as e:
         client_msg = f"Deployment failed: {str(e)}"
-        logger.error(f"/deploy/migration failed - Unexpected error: {e}. Returning HTTP 500. Client will receive: {client_msg}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=client_msg
+        logger.error(
+            f"/deploy/migration failed - Unexpected error: {e}. Returning HTTP 500. Client will receive: {client_msg}",
+            exc_info=True,
         )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=client_msg
+        )
+
 
 @app.post("/deploy", response_model=DeploymentOutput)
 async def deploy_with_optimization(input_data: DeploymentInput):
-    """
-    Compute optimal deployment plan and execute it across instances.
+    """Compute optimal deployment plan and execute it across instances.
 
     Workflow:
     1. Extract model names from instances
@@ -1200,8 +1417,10 @@ async def deploy_with_optimization(input_data: DeploymentInput):
         HTTPException: If optimization or deployment fails
     """
     try:
-        logger.info(f"Received /deploy request: {len(input_data.instances)} instances, "
-                   f"algorithm={input_data.planner_input.algorithm}")
+        logger.info(
+            f"Received /deploy request: {len(input_data.instances)} instances, "
+            f"algorithm={input_data.planner_input.algorithm}"
+        )
 
         # Step 1: Extract model names from instances
         current_models = [inst.current_model for inst in input_data.instances]
@@ -1217,27 +1436,41 @@ async def deploy_with_optimization(input_data: DeploymentInput):
         logger.info(f"Model mapping: {model_mapping}")
 
         # Store mapping for submit_target use
-        global _stored_model_mapping, _stored_reverse_mapping, _current_target, _stored_deployment_input, _submitted_models
-        global _first_data_received, _first_migration_done, _optimization_timer_start
+        global \
+            _stored_model_mapping, \
+            _stored_reverse_mapping, \
+            _current_target, \
+            _stored_deployment_input, \
+            _submitted_models
+        global \
+            _first_data_received, \
+            _first_migration_done, \
+            _optimization_timer_start
         _stored_model_mapping = model_mapping
         _stored_reverse_mapping = reverse_mapping
         _current_target = [0.0] * len(model_mapping)
-        _stored_deployment_input = input_data.model_copy(deep=True)  # Store for auto-optimization
+        _stored_deployment_input = input_data.model_copy(
+            deep=True
+        )  # Store for auto-optimization
         _submitted_models.clear()  # Reset submitted models for new deployment
         # Reset auto-optimization state for new deployment cycle
         _first_data_received = False
         _optimization_timer_start = 0.0
-        logger.info(f"Stored model mapping for submit_target: {len(model_mapping)} models")
+        logger.info(
+            f"Stored model mapping for submit_target: {len(model_mapping)} models"
+        )
 
         # Update planner_input.initial with mapped IDs
         try:
             initial_ids = mapper.map_names_to_ids(current_models, model_mapping)
         except ValueError as e:
             client_msg = f"Model mapping failed: {str(e)}"
-            logger.error(f"Deployment request failed - Model mapping error: {e}. Returning HTTP 400. Client will receive: {client_msg}", exc_info=True)
+            logger.error(
+                f"Deployment request failed - Model mapping error: {e}. Returning HTTP 400. Client will receive: {client_msg}",
+                exc_info=True,
+            )
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=client_msg
+                status_code=status.HTTP_400_BAD_REQUEST, detail=client_msg
             )
 
         # Override the initial field in planner_input
@@ -1256,7 +1489,7 @@ async def deploy_with_optimization(input_data: DeploymentInput):
                 B=B,
                 initial=initial,
                 a=planner_params.a,
-                target=target
+                target=target,
             )
 
             deployment, score, stats = optimizer.optimize(
@@ -1266,7 +1499,7 @@ async def deploy_with_optimization(input_data: DeploymentInput):
                 cooling_rate=planner_params.cooling_rate,
                 max_iterations=planner_params.max_iterations,
                 iterations_per_temp=planner_params.iterations_per_temp,
-                verbose=planner_params.verbose
+                verbose=planner_params.verbose,
             )
 
         elif planner_params.algorithm == "integer_programming":
@@ -1276,39 +1509,47 @@ async def deploy_with_optimization(input_data: DeploymentInput):
                 B=B,
                 initial=initial,
                 a=planner_params.a,
-                target=target
+                target=target,
             )
 
             deployment, score, stats = optimizer.optimize(
                 objective_method=planner_params.objective_method,
                 solver_name=planner_params.solver_name,
                 time_limit=planner_params.time_limit,
-                verbose=planner_params.verbose
+                verbose=planner_params.verbose,
             )
 
         else:
             error_msg = f"Unknown algorithm: {planner_params.algorithm}"
             client_msg = error_msg
-            logger.error(f"/deploy request failed: {error_msg}. Returning HTTP 400. Client will receive: {client_msg}")
+            logger.error(
+                f"/deploy request failed: {error_msg}. Returning HTTP 400. Client will receive: {client_msg}"
+            )
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=client_msg
+                status_code=status.HTTP_400_BAD_REQUEST, detail=client_msg
             )
 
         service_capacity = optimizer.compute_service_capacity(deployment)
         changes_count = optimizer.compute_changes(deployment)
 
-        logger.info(f"Optimization completed: score={score:.4f}, changes={changes_count}")
+        logger.info(
+            f"Optimization completed: score={score:.4f}, changes={changes_count}"
+        )
 
         # Step 4: Map result IDs back to model names
         try:
-            target_models = mapper.map_ids_to_names(deployment.tolist(), reverse_mapping)
+            target_models = mapper.map_ids_to_names(
+                deployment.tolist(), reverse_mapping
+            )
         except ValueError as e:
             client_msg = f"Failed to map deployment IDs to names: {str(e)}"
-            logger.error(f"/deploy failed - ID mapping error: {e}. Returning HTTP 500. Client will receive: {client_msg}", exc_info=True)
+            logger.error(
+                f"/deploy failed - ID mapping error: {e}. Returning HTTP 500. Client will receive: {client_msg}",
+                exc_info=True,
+            )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=client_msg
+                detail=client_msg,
             )
 
         logger.info(f"Target models: {target_models}")
@@ -1318,7 +1559,9 @@ async def deploy_with_optimization(input_data: DeploymentInput):
         # Note: DeploymentInput uses scheduler_mapping, get first URL if available
         first_scheduler = None
         if input_data.scheduler_mapping:
-            first_scheduler = next(iter(input_data.scheduler_mapping.values()), None)
+            first_scheduler = next(
+                iter(input_data.scheduler_mapping.values()), None
+            )
         scheduler_url = config.get_scheduler_url(first_scheduler)
         logger.debug(f"Using scheduler URL: {scheduler_url}")
 
@@ -1326,12 +1569,12 @@ async def deploy_with_optimization(input_data: DeploymentInput):
             timeout=config.instance_timeout,
             scheduler_url=scheduler_url,
             max_retries=config.instance_max_retries,
-            retry_delay=config.instance_retry_delay
+            retry_delay=config.instance_retry_delay,
         )
         deployment_statuses = await deployer.deploy_to_instances(
             endpoints=endpoints,
             target_models=target_models,
-            previous_models=current_models
+            previous_models=current_models,
         )
 
         # Step 6: Aggregate results
@@ -1343,7 +1586,9 @@ async def deploy_with_optimization(input_data: DeploymentInput):
         overall_success = len(failed_instances) == 0
 
         if not overall_success:
-            logger.warning(f"Deployment partially failed: {len(failed_instances)} instances failed")
+            logger.warning(
+                f"Deployment partially failed: {len(failed_instances)} instances failed"
+            )
         else:
             logger.info("Deployment completed successfully for all instances")
 
@@ -1355,7 +1600,7 @@ async def deploy_with_optimization(input_data: DeploymentInput):
             changes_count=int(changes_count),
             deployment_status=deployment_statuses,
             success=overall_success,
-            failed_instances=failed_instances
+            failed_instances=failed_instances,
         )
 
         return result
@@ -1364,31 +1609,36 @@ async def deploy_with_optimization(input_data: DeploymentInput):
         raise
     except ImportError as e:
         client_msg = f"Algorithm dependency not available: {str(e)}"
-        logger.error(f"/deploy failed - ImportError: {e}. Returning HTTP 500. Client will receive: {client_msg}", exc_info=True)
+        logger.error(
+            f"/deploy failed - ImportError: {e}. Returning HTTP 500. Client will receive: {client_msg}",
+            exc_info=True,
+        )
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=client_msg
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=client_msg
         )
     except ValueError as e:
         client_msg = f"Invalid input: {str(e)}"
-        logger.error(f"/deploy failed - ValueError: {e}. Returning HTTP 400. Client will receive: {client_msg}", exc_info=True)
+        logger.error(
+            f"/deploy failed - ValueError: {e}. Returning HTTP 400. Client will receive: {client_msg}",
+            exc_info=True,
+        )
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=client_msg
+            status_code=status.HTTP_400_BAD_REQUEST, detail=client_msg
         )
     except Exception as e:
         client_msg = f"Deployment failed: {str(e)}"
-        logger.error(f"/deploy failed - Unexpected error: {e}. Returning HTTP 500. Client will receive: {client_msg}", exc_info=True)
+        logger.error(
+            f"/deploy failed - Unexpected error: {e}. Returning HTTP 500. Client will receive: {client_msg}",
+            exc_info=True,
+        )
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=client_msg
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=client_msg
         )
 
 
 @app.post("/instance/register", response_model=InstanceRegisterResponse)
 async def register_available_instance(request: InstanceRegisterRequest):
-    """
-    Register an available instance to the planner's available instance store.
+    """Register an available instance to the planner's available instance store.
 
     This endpoint has the same parameters as the scheduler's /instance/register
     but stores instances for migration-based redeployment instead of task scheduling.
@@ -1413,8 +1663,7 @@ async def register_available_instance(request: InstanceRegisterRequest):
 
         # Create AvailableInstance and add to store
         available_instance = AvailableInstance(
-            model_id=request.model_id,
-            endpoint=request.endpoint
+            model_id=request.model_id, endpoint=request.endpoint
         )
 
         await instance_store.add_available_instance(available_instance)
@@ -1426,22 +1675,23 @@ async def register_available_instance(request: InstanceRegisterRequest):
 
         return InstanceRegisterResponse(
             success=True,
-            message=f"Instance {request.instance_id} registered successfully for model {request.model_id}"
+            message=f"Instance {request.instance_id} registered successfully for model {request.model_id}",
         )
 
     except Exception as e:
         client_msg = f"Failed to register instance: {str(e)}"
-        logger.error(f"/instance/register failed - Error: {e}. Returning HTTP 500. Client will receive: {client_msg}", exc_info=True)
+        logger.error(
+            f"/instance/register failed - Error: {e}. Returning HTTP 500. Client will receive: {client_msg}",
+            exc_info=True,
+        )
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=client_msg
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=client_msg
         )
 
+
 @app.get("/migration/info")
-def get_migration_info() -> Dict[str, AvailableInstance]:
-    """
-    this endpoint is show current available instances for migration
-    """
+def get_migration_info() -> dict[str, AvailableInstance]:
+    """Get current available instances for migration."""
     instance_store = get_available_instance_store()
 
     return instance_store.available_instances
@@ -1449,8 +1699,7 @@ def get_migration_info() -> Dict[str, AvailableInstance]:
 
 @app.post("/submit_target", response_model=SubmitTargetResponse)
 async def submit_target(request: SubmitTargetRequest):
-    """
-    Submit queue length from scheduler to update target distribution.
+    """Submit queue length from scheduler to update target distribution.
 
     This endpoint receives queue length data from each scheduler and accumulates
     it into the target distribution array. Only effective after /deploy or
@@ -1462,7 +1711,11 @@ async def submit_target(request: SubmitTargetRequest):
     Returns:
         SubmitTargetResponse with update status and current target
     """
-    global _current_target, _stored_model_mapping, _submitted_models, _first_data_received
+    global \
+        _current_target, \
+        _stored_model_mapping, \
+        _submitted_models, \
+        _first_data_received
 
     # No error if mapping doesn't exist, just no effect
     if _stored_model_mapping is None:
@@ -1470,16 +1723,18 @@ async def submit_target(request: SubmitTargetRequest):
         return SubmitTargetResponse(
             success=True,
             message="No active mapping. Call /deploy or /deploy/migration first.",
-            current_target=None
+            current_target=None,
         )
 
     # Check if model_id exists in mapping
     if request.model_id not in _stored_model_mapping:
-        logger.info(f"submit_target: model_id {request.model_id} not in mapping")
+        logger.info(
+            f"submit_target: model_id {request.model_id} not in mapping"
+        )
         return SubmitTargetResponse(
             success=True,
             message=f"Model {request.model_id} not in current mapping",
-            current_target=_current_target
+            current_target=_current_target,
         )
 
     # Update target at corresponding position
@@ -1492,21 +1747,24 @@ async def submit_target(request: SubmitTargetRequest):
     # Mark that first data has been received in this cycle
     if not _first_data_received:
         _first_data_received = True
-        logger.info(f"First data received in this cycle from model {request.model_id}")
+        logger.info(
+            f"First data received in this cycle from model {request.model_id}"
+        )
 
-    logger.info(f"Updated target[{idx}] for model {request.model_id} to {request.value} ({len(_submitted_models)}/{len(_stored_model_mapping)} models submitted)")
+    logger.info(
+        f"Updated target[{idx}] for model {request.model_id} to {request.value} ({len(_submitted_models)}/{len(_stored_model_mapping)} models submitted)"
+    )
 
     return SubmitTargetResponse(
         success=True,
         message=f"Updated target[{idx}] for {request.model_id} ({len(_submitted_models)}/{len(_stored_model_mapping)} submitted)",
-        current_target=_current_target
+        current_target=_current_target,
     )
 
 
 @app.get("/target")
 async def get_target():
-    """
-    Get current accumulated target distribution.
+    """Get current accumulated target distribution.
 
     Returns the current target array and model mapping set by /deploy or
     /deploy/migration, updated by /submit_target calls.
@@ -1517,14 +1775,13 @@ async def get_target():
     return {
         "target": _current_target,
         "model_mapping": _stored_model_mapping,
-        "reverse_mapping": _stored_reverse_mapping
+        "reverse_mapping": _stored_reverse_mapping,
     }
 
 
 @app.post("/submit_throughput", response_model=SubmitThroughputResponse)
 async def submit_throughput(request: SubmitThroughputRequest):
-    """
-    Submit throughput data from an instance to update the B matrix.
+    """Submit throughput data from an instance to update the B matrix.
 
     This endpoint receives average execution time from instances and converts
     it to processing capacity (1/avg_execution_time). The capacity is stored
@@ -1554,27 +1811,31 @@ async def submit_throughput(request: SubmitThroughputRequest):
 
     if model_id is None:
         # Instance not found in current deployment
-        logger.warning(f"submit_throughput: instance {request.instance_url} not in current deployment")
+        logger.warning(
+            f"submit_throughput: instance {request.instance_url} not in current deployment"
+        )
         return SubmitThroughputResponse(
             success=True,
             message=f"Instance {request.instance_url} not found in current deployment. Data not stored.",
             instance_url=request.instance_url,
             model_id=None,
-            computed_capacity=capacity
+            computed_capacity=capacity,
         )
 
     # Store/update throughput data with EMA
     # TODO: Temporarily disabled - only accept data without side effects
     # _update_throughput_entry(request.instance_url, model_id, capacity)
 
-    logger.info(f"Throughput received (not stored): {request.instance_url} -> {model_id}, capacity={capacity:.4f}")
+    logger.info(
+        f"Throughput received (not stored): {request.instance_url} -> {model_id}, capacity={capacity:.4f}"
+    )
 
     return SubmitThroughputResponse(
         success=True,
         message=f"Throughput recorded for {model_id} on {request.instance_url}",
         instance_url=request.instance_url,
         model_id=model_id,
-        computed_capacity=capacity
+        computed_capacity=capacity,
     )
 
 
@@ -1584,10 +1845,10 @@ async def submit_throughput(request: SubmitThroughputRequest):
 # without requiring actual Scheduler functionality.
 # ============================================================================
 
+
 @app.post("/instance/drain", response_model=InstanceDrainResponse)
 async def dummy_drain_instance(request: InstanceDrainRequest):
-    """
-    Dummy drain endpoint for instances registered to Planner.
+    """Dummy drain endpoint for instances registered to Planner.
 
     Always returns success since Planner doesn't manage task queues.
     This allows instances registered to Planner to complete their
@@ -1607,14 +1868,13 @@ async def dummy_drain_instance(request: InstanceDrainRequest):
         status=InstanceStatus.DRAINING,
         pending_tasks=0,
         running_tasks=0,
-        estimated_completion_time_ms=0.0
+        estimated_completion_time_ms=0.0,
     )
 
 
 @app.get("/instance/drain/status", response_model=InstanceDrainStatusResponse)
 async def dummy_drain_status(instance_id: str):
-    """
-    Dummy drain status endpoint for instances registered to Planner.
+    """Dummy drain status endpoint for instances registered to Planner.
 
     Always returns can_remove=True since Planner doesn't manage task queues.
 
@@ -1632,14 +1892,13 @@ async def dummy_drain_status(instance_id: str):
         pending_tasks=0,
         running_tasks=0,
         can_remove=True,
-        drain_initiated_at=None
+        drain_initiated_at=None,
     )
 
 
 @app.post("/instance/remove", response_model=InstanceRemoveResponse)
 async def dummy_remove_instance(request: InstanceRemoveRequest):
-    """
-    Dummy remove endpoint for instances registered to Planner.
+    """Dummy remove endpoint for instances registered to Planner.
 
     Always returns success. This allows instances registered to Planner
     to complete their deregister flow without errors.
@@ -1654,14 +1913,13 @@ async def dummy_remove_instance(request: InstanceRemoveRequest):
     return InstanceRemoveResponse(
         success=True,
         message=f"Instance {request.instance_id} removed (Planner dummy)",
-        instance_id=request.instance_id
+        instance_id=request.instance_id,
     )
 
 
 @app.post("/task/resubmit", response_model=TaskResubmitResponse)
 async def dummy_resubmit_task(request: TaskResubmitRequest):
-    """
-    Dummy task resubmit endpoint for instances registered to Planner.
+    """Dummy task resubmit endpoint for instances registered to Planner.
 
     Always returns success. Planner doesn't manage task queues,
     so resubmission is a no-op.
@@ -1678,7 +1936,7 @@ async def dummy_resubmit_task(request: TaskResubmitRequest):
     )
     return TaskResubmitResponse(
         success=True,
-        message=f"Task {request.task_id} resubmit acknowledged (Planner dummy)"
+        message=f"Task {request.task_id} resubmit acknowledged (Planner dummy)",
     )
 
 
@@ -1690,8 +1948,7 @@ async def dummy_resubmit_task(request: TaskResubmitRequest):
 
 @app.get("/timeline")
 async def get_instance_timeline():
-    """
-    Get the instance count timeline.
+    """Get the instance count timeline.
 
     Returns all recorded migration events with instance counts per model.
     Each entry includes timestamp, event type, instance counts, and metrics.
@@ -1700,20 +1957,16 @@ async def get_instance_timeline():
         Dictionary with success status and list of timeline entries
     """
     from .instance_timeline_tracker import get_timeline_tracker
+
     tracker = get_timeline_tracker()
     entries = tracker.get_entries()
     logger.info(f"Timeline requested: {len(entries)} entries")
-    return {
-        "success": True,
-        "entry_count": len(entries),
-        "entries": entries
-    }
+    return {"success": True, "entry_count": len(entries), "entries": entries}
 
 
 @app.post("/timeline/clear")
 async def clear_instance_timeline():
-    """
-    Clear the instance count timeline.
+    """Clear the instance count timeline.
 
     Should be called at the start of a new experiment to ensure
     clean timeline data.
@@ -1722,15 +1975,14 @@ async def clear_instance_timeline():
         Dictionary with success status and confirmation message
     """
     from .instance_timeline_tracker import get_timeline_tracker
+
     tracker = get_timeline_tracker()
     tracker.clear()
     logger.info("Timeline cleared via API")
-    return {
-        "success": True,
-        "message": "Timeline cleared successfully"
-    }
+    return {"success": True, "message": "Timeline cleared successfully"}
 
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8000)

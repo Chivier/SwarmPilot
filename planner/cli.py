@@ -1,13 +1,12 @@
-"""
-CLI entry point for the Planner service.
+"""CLI entry point for the Planner service.
 
 Provides the `splanner` command for managing the planner service.
 """
 
 import os
+
 import typer
 import uvicorn
-from typing import Optional
 
 # Disable rich/colors globally for typer
 os.environ["NO_COLOR"] = "1"
@@ -22,9 +21,7 @@ app = typer.Typer(
 
 @app.callback()
 def callback():
-    """
-    Planner service CLI - Optimize model-to-instance deployment
-    """
+    """Planner service CLI - Optimize model-to-instance deployment."""
     pass
 
 
@@ -50,8 +47,7 @@ def start(
         case_sensitive=False,
     ),
 ):
-    """
-    Start the Planner service.
+    """Start the Planner service.
 
     Examples:
         splanner start
@@ -88,7 +84,7 @@ def start(
 
 @app.command(name="version")
 def version():
-    """Show version information"""
+    """Show version information."""
     typer.echo("planner 0.1.0")
 
 

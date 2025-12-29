@@ -495,7 +495,8 @@ class TestInstanceMigrator:
 
             assert result["success"] is True
             client_mock.post.assert_called_once_with(
-                "http://test:8080/model/deregister"
+                "http://test:8080/model/deregister",
+                timeout=None
             )
 
 
@@ -648,3 +649,392 @@ class TestAvailableInstanceStore:
 
         # Should not raise any error
         await store.remove_available_instance(instance)
+
+    @pytest.mark.asyncio
+    async def test_remove_instance_not_in_list(self):
+        """Test removing instance that's not in the list logs warning."""
+        store = AvailableInstanceStore()
+
+        instance1 = AvailableInstance(
+            model_id="model_0",
+            endpoint="http://instance-1:8080"
+        )
+        instance2 = AvailableInstance(
+            model_id="model_0",
+            endpoint="http://instance-2:8080"
+        )
+
+        await store.add_available_instance(instance1)
+
+        # Try to remove instance2 which was never added
+        # Should not raise error, but logs a warning
+        await store.remove_available_instance(instance2)
+
+        # instance1 should still be there
+        instances = await store.get_available_instances_by_model_id("model_0")
+        assert len(instances) == 1
+        assert instances[0].endpoint == "http://instance-1:8080"
+
+    @pytest.mark.asyncio
+    async def test_fetch_one_when_list_empty(self):
+        """Test fetching when model exists but list is empty returns None."""
+        store = AvailableInstanceStore()
+
+        instance = AvailableInstance(
+            model_id="model_0",
+            endpoint="http://instance-1:8080"
+        )
+
+        await store.add_available_instance(instance)
+
+        # Fetch the instance - now list is empty for model_0
+        fetched = await store.fetch_one_available_instance("model_0")
+        assert fetched is not None
+
+        # Try to fetch again when list is empty
+        fetched_again = await store.fetch_one_available_instance("model_0")
+        assert fetched_again is None
+
+
+class TestInstanceDeployerRetryLogic:
+    """Tests for retry logic and error handling in InstanceDeployer."""
+
+    def test_is_retryable_error_connect_error(self):
+        """Test that ConnectError is retryable."""
+        deployer = InstanceDeployer(timeout=30)
+        error = httpx.ConnectError("Connection refused")
+        assert deployer._is_retryable_error(error) is True
+
+    def test_is_retryable_error_timeout(self):
+        """Test that TimeoutException is retryable."""
+        deployer = InstanceDeployer(timeout=30)
+        error = httpx.TimeoutException("Request timed out")
+        assert deployer._is_retryable_error(error) is True
+
+    def test_is_retryable_error_http_500(self):
+        """Test that HTTP 500 errors are retryable."""
+        deployer = InstanceDeployer(timeout=30)
+
+        mock_response = MagicMock()
+        mock_response.status_code = 500
+        error = httpx.HTTPStatusError(
+            "Server Error",
+            request=MagicMock(),
+            response=mock_response
+        )
+        assert deployer._is_retryable_error(error) is True
+
+    def test_is_retryable_error_http_502(self):
+        """Test that HTTP 502 errors are retryable."""
+        deployer = InstanceDeployer(timeout=30)
+
+        mock_response = MagicMock()
+        mock_response.status_code = 502
+        error = httpx.HTTPStatusError(
+            "Bad Gateway",
+            request=MagicMock(),
+            response=mock_response
+        )
+        assert deployer._is_retryable_error(error) is True
+
+    def test_is_retryable_error_http_501_not_retryable(self):
+        """Test that HTTP 501 (Not Implemented) is NOT retryable."""
+        deployer = InstanceDeployer(timeout=30)
+
+        mock_response = MagicMock()
+        mock_response.status_code = 501
+        error = httpx.HTTPStatusError(
+            "Not Implemented",
+            request=MagicMock(),
+            response=mock_response
+        )
+        assert deployer._is_retryable_error(error) is False
+
+    def test_is_retryable_error_http_400_not_retryable(self):
+        """Test that HTTP 400 errors are NOT retryable."""
+        deployer = InstanceDeployer(timeout=30)
+
+        mock_response = MagicMock()
+        mock_response.status_code = 400
+        error = httpx.HTTPStatusError(
+            "Bad Request",
+            request=MagicMock(),
+            response=mock_response
+        )
+        assert deployer._is_retryable_error(error) is False
+
+    def test_is_retryable_error_other_exception_not_retryable(self):
+        """Test that other exceptions are NOT retryable."""
+        deployer = InstanceDeployer(timeout=30)
+        error = ValueError("Some value error")
+        assert deployer._is_retryable_error(error) is False
+
+    @pytest.mark.asyncio
+    async def test_deploy_model_connect_error(self, mock_instance_responses):
+        """Test deployment handles ConnectError gracefully."""
+        deployer = InstanceDeployer(timeout=30)
+
+        with patch("httpx.AsyncClient") as mock_client:
+            client_mock = mock_client.return_value.__aenter__.return_value
+            client_mock.get = AsyncMock(side_effect=httpx.ConnectError("Connection refused"))
+
+            status = await deployer.deploy_model(
+                endpoint="http://test:8080",
+                target_model="model_1",
+                instance_index=0,
+                previous_model="model_0"
+            )
+
+            assert status.success is False
+            assert "Connection failed" in status.error_message
+
+    @pytest.mark.asyncio
+    async def test_deploy_model_timeout_error(self, mock_instance_responses):
+        """Test deployment handles TimeoutException gracefully."""
+        deployer = InstanceDeployer(timeout=30)
+
+        with patch("httpx.AsyncClient") as mock_client:
+            client_mock = mock_client.return_value.__aenter__.return_value
+            client_mock.get = AsyncMock(side_effect=httpx.TimeoutException("Timed out"))
+
+            status = await deployer.deploy_model(
+                endpoint="http://test:8080",
+                target_model="model_1",
+                instance_index=0,
+                previous_model="model_0"
+            )
+
+            assert status.success is False
+            assert "timed out" in status.error_message
+
+    @pytest.mark.asyncio
+    async def test_deploy_model_request_error(self, mock_instance_responses):
+        """Test deployment handles RequestError gracefully."""
+        deployer = InstanceDeployer(timeout=30)
+
+        with patch("httpx.AsyncClient") as mock_client:
+            client_mock = mock_client.return_value.__aenter__.return_value
+            client_mock.get = AsyncMock(
+                side_effect=httpx.RequestError("Network error", request=MagicMock())
+            )
+
+            status = await deployer.deploy_model(
+                endpoint="http://test:8080",
+                target_model="model_1",
+                instance_index=0,
+                previous_model="model_0"
+            )
+
+            assert status.success is False
+            assert "Request error" in status.error_message
+
+    @pytest.mark.asyncio
+    async def test_deploy_model_unexpected_error(self, mock_instance_responses):
+        """Test deployment handles unexpected exceptions gracefully."""
+        deployer = InstanceDeployer(timeout=30)
+
+        with patch("httpx.AsyncClient") as mock_client:
+            client_mock = mock_client.return_value.__aenter__.return_value
+            client_mock.get = AsyncMock(side_effect=RuntimeError("Unexpected error"))
+
+            status = await deployer.deploy_model(
+                endpoint="http://test:8080",
+                target_model="model_1",
+                instance_index=0,
+                previous_model="model_0"
+            )
+
+            assert status.success is False
+            assert "Unexpected error" in status.error_message
+
+    @pytest.mark.asyncio
+    async def test_deploy_model_previous_model_from_instance(self, mock_instance_responses):
+        """Test that previous_model is extracted from instance if not provided."""
+        deployer = InstanceDeployer(timeout=30)
+
+        with patch("httpx.AsyncClient") as mock_client:
+            client_mock = mock_client.return_value.__aenter__.return_value
+
+            # Mock /info response
+            mock_info_response = MagicMock()
+            mock_info_response.json.return_value = mock_instance_responses["info"]
+            mock_info_response.raise_for_status = MagicMock()
+
+            # Mock /model/stop response
+            mock_stop_response = MagicMock()
+            mock_stop_response.json.return_value = mock_instance_responses["stop"]
+            mock_stop_response.raise_for_status = MagicMock()
+
+            # Mock /model/start response
+            mock_start_response = MagicMock()
+            mock_start_response.json.return_value = mock_instance_responses["start"]
+            mock_start_response.raise_for_status = MagicMock()
+
+            client_mock.get = AsyncMock(side_effect=[mock_info_response, mock_stop_response])
+            client_mock.post = AsyncMock(return_value=mock_start_response)
+
+            status = await deployer.deploy_model(
+                endpoint="http://test:8080",
+                target_model="model_1",
+                instance_index=0,
+                previous_model=None  # Not provided
+            )
+
+            assert status.success is True
+            assert status.previous_model == "model_0"  # From instance info
+
+
+class TestInstanceDeployerRestartMethods:
+    """Tests for restart model methods in InstanceDeployer."""
+
+    @pytest.mark.asyncio
+    async def test_restart_model_success(self):
+        """Test successful restart model operation."""
+        deployer = InstanceDeployer(timeout=30, scheduler_url="http://scheduler:8100")
+
+        with patch("httpx.AsyncClient") as mock_client:
+            client_mock = mock_client.return_value.__aenter__.return_value
+
+            mock_response = MagicMock()
+            mock_response.json.return_value = {
+                "operation_id": "restart-123",
+                "status": "in_progress"
+            }
+            mock_response.raise_for_status = MagicMock()
+            client_mock.post = AsyncMock(return_value=mock_response)
+
+            result = await deployer.restart_model(
+                endpoint="http://test:8080",
+                target_model="model_1"
+            )
+
+            assert result["operation_id"] == "restart-123"
+            assert result["status"] == "in_progress"
+
+    @pytest.mark.asyncio
+    async def test_restart_model_failure(self):
+        """Test restart model handles failure."""
+        deployer = InstanceDeployer(timeout=30)
+
+        with patch("httpx.AsyncClient") as mock_client:
+            client_mock = mock_client.return_value.__aenter__.return_value
+            client_mock.post = AsyncMock(side_effect=httpx.ConnectError("Connection refused"))
+
+            with pytest.raises(Exception):
+                await deployer.restart_model(
+                    endpoint="http://test:8080",
+                    target_model="model_1"
+                )
+
+    @pytest.mark.asyncio
+    async def test_get_restart_status_success(self):
+        """Test successful get restart status operation."""
+        deployer = InstanceDeployer(timeout=30)
+
+        with patch("httpx.AsyncClient") as mock_client:
+            client_mock = mock_client.return_value.__aenter__.return_value
+
+            mock_response = MagicMock()
+            mock_response.json.return_value = {
+                "operation_id": "restart-123",
+                "status": "completed",
+                "progress": 100
+            }
+            mock_response.raise_for_status = MagicMock()
+            client_mock.get = AsyncMock(return_value=mock_response)
+
+            result = await deployer.get_restart_status(
+                endpoint="http://test:8080",
+                operation_id="restart-123"
+            )
+
+            assert result["operation_id"] == "restart-123"
+            assert result["status"] == "completed"
+
+    @pytest.mark.asyncio
+    async def test_get_restart_status_failure(self):
+        """Test get restart status handles failure."""
+        deployer = InstanceDeployer(timeout=30)
+
+        with patch("httpx.AsyncClient") as mock_client:
+            client_mock = mock_client.return_value.__aenter__.return_value
+            client_mock.get = AsyncMock(side_effect=httpx.TimeoutException("Timed out"))
+
+            with pytest.raises(Exception):
+                await deployer.get_restart_status(
+                    endpoint="http://test:8080",
+                    operation_id="restart-123"
+                )
+
+
+class TestInstanceMigratorErrorPaths:
+    """Tests for error handling in InstanceMigrator."""
+
+    @pytest.mark.asyncio
+    async def test_migration_deregister_failure(self, mock_migration_info_responses):
+        """Test migration handles deregister failure."""
+        migrator = InstanceMigrator(
+            timeout=30,
+            scheduler_mapping={"model_0": "http://scheduler:8100", "model_1": "http://scheduler:8100"}
+        )
+
+        with patch("httpx.AsyncClient") as mock_client:
+            client_mock = mock_client.return_value.__aenter__.return_value
+
+            mock_original_info = MagicMock()
+            mock_original_info.json.return_value = mock_migration_info_responses["original_info"]
+            mock_original_info.raise_for_status = MagicMock()
+
+            mock_target_info = MagicMock()
+            mock_target_info.json.return_value = mock_migration_info_responses["target_info"]
+            mock_target_info.raise_for_status = MagicMock()
+
+            client_mock.get = AsyncMock(side_effect=[
+                mock_original_info,
+                mock_target_info
+            ])
+
+            # Mock the deregister_model method to fail
+            with patch.object(migrator, 'deregister_model', new_callable=AsyncMock) as mock_deregister:
+                mock_deregister.side_effect = httpx.ConnectError("Connection refused")
+
+                status = await migrator.migration_model(
+                    original_endpoint="http://original:8080",
+                    target_endpoint="http://target:8080",
+                    instance_index=0
+                )
+
+                assert status.success is False
+
+
+class TestMigrationInstancesSuccess:
+    """Tests for migration_instances bulk migration success paths."""
+
+    @pytest.mark.asyncio
+    async def test_migration_instances_empty_list(self):
+        """Test migration_instances with empty list returns empty results."""
+        migrator = InstanceMigrator()
+
+        result = await migrator.migration_instances(
+            original_endpoints=[],
+            target_endpoints=[]
+        )
+
+        # Should return empty list
+        assert result == []
+
+
+class TestInstanceDeployerSchedulerUrl:
+    """Tests for InstanceDeployer scheduler URL handling."""
+
+    def test_deployer_stores_scheduler_url(self):
+        """Test deployer stores scheduler URL when provided."""
+        deployer = InstanceDeployer(scheduler_url="http://scheduler:8100")
+
+        assert deployer.scheduler_url == "http://scheduler:8100"
+
+    def test_deployer_stores_none_scheduler_url(self):
+        """Test deployer stores None when no scheduler URL provided."""
+        deployer = InstanceDeployer()
+
+        assert deployer.scheduler_url is None

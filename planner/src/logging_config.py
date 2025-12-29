@@ -1,5 +1,4 @@
-"""
-Unified logging configuration using loguru.
+"""Unified logging configuration using loguru.
 
 This module provides a centralized logging configuration for the Planner service.
 It uses loguru as the logging backend and provides functionality to intercept
@@ -20,16 +19,14 @@ from loguru import logger
 
 
 class InterceptHandler(logging.Handler):
-    """
-    Intercept standard logging calls and redirect them to loguru.
+    """Intercept standard logging calls and redirect them to loguru.
 
     This handler is used to bridge the gap between Python's standard logging
     module and loguru, allowing all log messages to be handled consistently.
     """
 
     def emit(self, record: logging.LogRecord) -> None:
-        """
-        Emit a log record by redirecting it to loguru.
+        """Emit a log record by redirecting it to loguru.
 
         Args:
             record: The log record to emit
@@ -52,8 +49,7 @@ class InterceptHandler(logging.Handler):
 
 
 def setup_logging() -> None:
-    """
-    Configure loguru with environment variables and intercept standard logging.
+    """Configure loguru with environment variables and intercept standard logging.
 
     This function:
     1. Reads PLANNER_LOG_DIR and PLANNER_LOGURU_LEVEL environment variables
@@ -65,7 +61,15 @@ def setup_logging() -> None:
     log_level = os.getenv("PLANNER_LOGURU_LEVEL", "INFO").upper()
 
     # Validate log level
-    valid_levels = {"TRACE", "DEBUG", "INFO", "SUCCESS", "WARNING", "ERROR", "CRITICAL"}
+    valid_levels = {
+        "TRACE",
+        "DEBUG",
+        "INFO",
+        "SUCCESS",
+        "WARNING",
+        "ERROR",
+        "CRITICAL",
+    }
     if log_level not in valid_levels:
         log_level = "INFO"
 
@@ -80,9 +84,9 @@ def setup_logging() -> None:
     logger.add(
         sys.stderr,
         format="{time:YYYY-MM-DD HH:mm:ss.SSS} | "
-               "{level: <8} | "
-               "{name}:{function}:{line} - "
-               "{message}",
+        "{level: <8} | "
+        "{name}:{function}:{line} - "
+        "{message}",
         level=log_level,
         colorize=False,
     )
@@ -113,7 +117,12 @@ def setup_logging() -> None:
     logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
 
     # Intercept specific loggers
-    for logger_name in ["uvicorn", "uvicorn.error", "uvicorn.access", "fastapi"]:
+    for logger_name in [
+        "uvicorn",
+        "uvicorn.error",
+        "uvicorn.access",
+        "fastapi",
+    ]:
         logging_logger = logging.getLogger(logger_name)
         logging_logger.handlers = [InterceptHandler()]
         logging_logger.propagate = False
@@ -122,8 +131,7 @@ def setup_logging() -> None:
 
 
 def get_logger(name: str = None):
-    """
-    Get a loguru logger instance.
+    """Get a loguru logger instance.
 
     Args:
         name: Optional name for the logger context

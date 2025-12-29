@@ -375,3 +375,232 @@ class TestInstanceRegisterEndpoint:
         response = client.post("/instance/register", json=request_data)
 
         assert response.status_code == 422  # Validation error
+
+
+class TestDummyEndpoints:
+    """Tests for dummy scheduler compatibility endpoints."""
+
+    def test_instance_drain_success(self, client):
+        """Test /instance/drain dummy endpoint returns success."""
+        request_data = {
+            "instance_id": "test-instance"
+        }
+
+        response = client.post("/instance/drain", json=request_data)
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["instance_id"] == "test-instance"
+        assert data["status"] == "draining"
+        assert data["pending_tasks"] == 0
+        assert data["running_tasks"] == 0
+
+    def test_instance_drain_status_success(self, client):
+        """Test /instance/drain/status dummy endpoint returns can_remove=True."""
+        response = client.get("/instance/drain/status", params={"instance_id": "test-instance"})
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["can_remove"] is True
+        assert data["instance_id"] == "test-instance"
+
+    def test_instance_remove_success(self, client):
+        """Test /instance/remove dummy endpoint returns success."""
+        request_data = {
+            "instance_id": "test-instance"
+        }
+
+        response = client.post("/instance/remove", json=request_data)
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["instance_id"] == "test-instance"
+
+    def test_task_resubmit_success(self, client):
+        """Test /task/resubmit dummy endpoint returns success."""
+        request_data = {
+            "task_id": "task-123",
+            "original_instance_id": "instance-1"
+        }
+
+        response = client.post("/task/resubmit", json=request_data)
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+
+    def test_timeline_get(self, client):
+        """Test /timeline GET endpoint."""
+        response = client.get("/timeline")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "entries" in data
+        assert isinstance(data["entries"], list)
+
+    def test_timeline_clear(self, client):
+        """Test /timeline/clear POST endpoint."""
+        response = client.post("/timeline/clear")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+
+
+class TestPlanEndpointErrors:
+    """Tests for /plan endpoint error paths."""
+
+    def test_plan_invalid_a_value(self, client, sample_planner_input):
+        """Test plan fails with a value out of range."""
+        sample_planner_input["a"] = 1.5  # Out of 0-1 range
+
+        response = client.post("/plan", json=sample_planner_input)
+
+        # Pydantic validation catches this
+        assert response.status_code == 422
+
+    def test_plan_negative_iterations(self, client, sample_planner_input):
+        """Test plan handles negative max_iterations."""
+        sample_planner_input["max_iterations"] = -10
+
+        response = client.post("/plan", json=sample_planner_input)
+
+        # Pydantic validation catches this
+        assert response.status_code == 422
+
+
+class TestMigrationInfoEndpoint:
+    """Tests for /migration/info endpoint."""
+
+    def test_migration_info_returns_available_instances(self, client):
+        """Test migration info returns available instances dict."""
+        with patch("src.api.get_available_instance_store") as mock_store:
+            # Mock the store to return an empty dict
+            mock_instance = MagicMock()
+            mock_instance.available_instances = {}
+            mock_store.return_value = mock_instance
+
+            response = client.get("/migration/info")
+
+            assert response.status_code == 200
+            data = response.json()
+            # Returns a dict (could be empty)
+            assert isinstance(data, dict)
+
+
+class TestDeployMigrationEndpoint:
+    """Tests for /deploy/migration endpoint."""
+
+    @pytest.fixture
+    def deployment_migration_input(self, sample_instances, sample_planner_input):
+        """Create valid deployment input for migration."""
+        return {
+            "instances": sample_instances,
+            "planner_input": sample_planner_input,
+            "scheduler_mapping": {}
+        }
+
+    def test_deploy_migration_invalid_instances_count(self, client, sample_planner_input):
+        """Test deployment migration fails with wrong instance count."""
+        invalid_input = {
+            "instances": [
+                {"endpoint": "http://instance-1:8080", "current_model": "model_0"}
+            ],  # Only 1 instance but M=4
+            "planner_input": sample_planner_input,
+            "scheduler_mapping": {}
+        }
+
+        response = client.post("/deploy/migration", json=invalid_input)
+
+        assert response.status_code == 422  # Validation error
+
+    def test_deploy_migration_no_changes_success(self, client, deployment_migration_input):
+        """Test deployment migration succeeds when no changes needed."""
+        deployment_migration_input["planner_input"]["max_iterations"] = 10
+
+        # When optimizer returns same deployment, no changes needed = success
+        response = client.post("/deploy/migration", json=deployment_migration_input)
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+
+
+class TestSubmitTargetEndpoint:
+    """Tests for /submit_target endpoint."""
+
+    def test_submit_target_no_deployment_returns_message(self, client, reset_throughput_state):
+        """Test submit_target returns message when no deployment configured."""
+        from src import api as api_module
+        api_module._stored_model_mapping = None
+
+        response = client.post("/submit_target", json={
+            "model_id": "model_a",
+            "value": 100.0
+        })
+
+        # Returns 200 with message when no mapping
+        assert response.status_code == 200
+        data = response.json()
+        assert "no mapping exists" in data["message"].lower() or data["success"] is True
+
+    def test_submit_target_unknown_model_returns_message(self, client, setup_throughput_deployment_state):
+        """Test submit_target returns message for unknown model."""
+        response = client.post("/submit_target", json={
+            "model_id": "unknown_model",
+            "value": 100.0
+        })
+
+        # Returns 200 with message for unknown model
+        assert response.status_code == 200
+        data = response.json()
+        assert "message" in data
+
+    def test_submit_target_success(self, client, setup_throughput_deployment_state):
+        """Test successful target submission."""
+        response = client.post("/submit_target", json={
+            "model_id": "model_a",
+            "value": 100.0
+        })
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+
+
+class TestInstanceRegisterEndpoint:
+    """Tests for /instance/register endpoint."""
+
+    def test_register_instance_success(self, client):
+        """Test successful instance registration."""
+        with patch("src.api.get_available_instance_store") as mock_store:
+            mock_instance_store = MagicMock()
+            mock_instance_store.add_available_instance = AsyncMock()
+            mock_store.return_value = mock_instance_store
+
+            response = client.post("/instance/register", json={
+                "instance_id": "test-instance-1",
+                "model_id": "test_model",
+                "endpoint": "http://test:8080",
+                "platform_info": {}
+            })
+
+            assert response.status_code == 200
+            data = response.json()
+            assert data["success"] is True
+
+
+class TestTargetEndpoint:
+    """Tests for /target endpoint."""
+
+    def test_get_target_returns_target(self, client, setup_throughput_deployment_state):
+        """Test get target returns target array."""
+        response = client.get("/target")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "target" in data
+        assert isinstance(data["target"], list)

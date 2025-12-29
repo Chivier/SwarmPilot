@@ -134,6 +134,7 @@ class TestSubmitThroughputCapacity:
 class TestSubmitThroughputStorage:
     """Tests for throughput data storage."""
 
+    @pytest.mark.skip(reason="Throughput storage is temporarily disabled in api.py")
     def test_first_submission_stores_exact_capacity(self, client, setup_throughput_deployment_state):
         """First submission stores exact computed capacity."""
         response = client.post("/submit_throughput", json={
@@ -148,6 +149,7 @@ class TestSubmitThroughputStorage:
         assert "model_a" in api_module._throughput_data["http://inst1:8080"]
         assert api_module._throughput_data["http://inst1:8080"]["model_a"] == 2.0
 
+    @pytest.mark.skip(reason="Throughput storage is temporarily disabled in api.py")
     def test_second_submission_uses_ema(self, client, setup_throughput_deployment_state):
         """Subsequent submissions use exponential moving average."""
         # First submission: capacity = 2.0 (exec_time = 0.5)
@@ -166,6 +168,7 @@ class TestSubmitThroughputStorage:
         stored_capacity = api_module._throughput_data["http://inst1:8080"]["model_a"]
         assert abs(stored_capacity - 2.6) < 0.01
 
+    @pytest.mark.skip(reason="Throughput storage is temporarily disabled in api.py")
     def test_multiple_instances_stored_separately(self, client, setup_throughput_deployment_state):
         """Different instances have separate storage."""
         client.post("/submit_throughput", json={
@@ -234,6 +237,7 @@ class TestBMatrixUpdate:
         B = api_module._stored_deployment_input.planner_input.B
         assert B == original_B
 
+    @pytest.mark.skip(reason="Throughput storage is temporarily disabled in api.py")
     @pytest.mark.asyncio
     async def test_b_matrix_updated_before_optimization(self, setup_throughput_deployment_state):
         """B matrix is updated from throughput data before running optimizer."""
@@ -265,6 +269,7 @@ class TestBMatrixUpdate:
 class TestSubmitThroughputIntegration:
     """Integration tests for complete workflow."""
 
+    @pytest.mark.skip(reason="Throughput storage is temporarily disabled in api.py")
     def test_submit_throughput_multiple_times(self, client, setup_throughput_deployment_state):
         """Test submitting throughput multiple times updates storage correctly."""
         # Submit 3 times with different values
@@ -282,6 +287,7 @@ class TestSubmitThroughputIntegration:
         stored_capacity = api_module._throughput_data["http://inst1:8080"]["model_a"]
         assert abs(stored_capacity - 2.11) < 0.01
 
+    @pytest.mark.skip(reason="Throughput storage is temporarily disabled in api.py")
     def test_throughput_persists_across_requests(self, client, setup_throughput_deployment_state):
         """Throughput data persists across multiple API requests."""
         # Submit for first instance

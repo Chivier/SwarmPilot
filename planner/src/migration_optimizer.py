@@ -24,17 +24,13 @@ Example:
     {0, 1}
 """
 
-from typing import List, Tuple, Set, Dict
 from loguru import logger
 
 
 def detect_model_swap_pairs(
-    endpoints: List[str],
-    current_models: List[str],
-    target_models: List[str]
-) -> Tuple[Set[int], List[Tuple[int, int]]]:
-    """
-    Detect model swap pairs BEFORE fetching from store.
+    endpoints: list[str], current_models: list[str], target_models: list[str]
+) -> tuple[set[int], list[tuple[int, int]]]:
+    """Detect model swap pairs BEFORE fetching from store.
 
     This function identifies instances that need to swap models with each other.
     These can be eliminated without any actual migration, as the net effect is zero.
@@ -65,11 +61,11 @@ def detect_model_swap_pairs(
     if n == 0:
         return set(), []
 
-    indices_to_eliminate: Set[int] = set()
-    swap_pairs: List[Tuple[int, int]] = []
+    indices_to_eliminate: set[int] = set()
+    swap_pairs: list[tuple[int, int]] = []
 
     # Build mapping: current_model -> list of indices that have this model
-    model_to_indices: Dict[str, List[int]] = {}
+    model_to_indices: dict[str, list[int]] = {}
     for idx, model in enumerate(current_models):
         if model not in model_to_indices:
             model_to_indices[model] = []
@@ -93,11 +89,7 @@ def detect_model_swap_pairs(
 
         # Try to find a cycle starting from this index
         cycle = _find_model_swap_cycle(
-            start_idx,
-            current_models,
-            target_models,
-            model_to_indices,
-            visited
+            start_idx, current_models, target_models, model_to_indices, visited
         )
 
         if cycle and len(cycle) >= 2:
@@ -119,7 +111,7 @@ def detect_model_swap_pairs(
     if indices_to_eliminate:
         logger.info(
             f"Model swap detection: eliminated {len(indices_to_eliminate)} migrations "
-            f"({len(swap_pairs)} binary swaps, {len(indices_to_eliminate) - 2*len(swap_pairs)} in larger cycles)"
+            f"({len(swap_pairs)} binary swaps, {len(indices_to_eliminate) - 2 * len(swap_pairs)} in larger cycles)"
         )
     else:
         logger.debug("No model swap pairs detected")
@@ -129,13 +121,12 @@ def detect_model_swap_pairs(
 
 def _find_model_swap_cycle(
     start_idx: int,
-    current_models: List[str],
-    target_models: List[str],
-    model_to_indices: Dict[str, List[int]],
-    global_visited: Set[int]
-) -> List[int]:
-    """
-    Find a cycle of model swaps starting from start_idx.
+    current_models: list[str],
+    target_models: list[str],
+    model_to_indices: dict[str, list[int]],
+    global_visited: set[int],
+) -> list[int]:
+    """Find a cycle of model swaps starting from start_idx.
 
     A cycle exists when following the chain of "who has what I need" leads back to start.
     """
@@ -185,13 +176,12 @@ def _find_model_swap_cycle(
 
 
 def eliminate_redundant_migrations(
-    pending_change_original: List[str],
-    pending_change_original_model: List[str],
-    pending_change_target: List[str],
-    pending_change_target_model: List[str]
-) -> Tuple[List[str], List[str], List[str], List[str], List[Tuple[str, str]]]:
-    """
-    Eliminate redundant migration cycles (supports any cycle length: binary, ternary, n-ary).
+    pending_change_original: list[str],
+    pending_change_original_model: list[str],
+    pending_change_target: list[str],
+    pending_change_target_model: list[str],
+) -> tuple[list[str], list[str], list[str], list[str], list[tuple[str, str]]]:
+    """Eliminate redundant migration cycles (supports any cycle length: binary, ternary, n-ary).
 
     A migration cycle is a closed loop where migrations cancel each other out.
     For example:
@@ -221,7 +211,9 @@ def eliminate_redundant_migrations(
         return [], [], [], [], []
 
     # Detect all cycle indices
-    indices_to_remove = _detect_cycles(pending_change_original, pending_change_target)
+    indices_to_remove = _detect_cycles(
+        pending_change_original, pending_change_target
+    )
 
     if not indices_to_remove:
         logger.info("No redundant migration cycles detected")
@@ -230,22 +222,21 @@ def eliminate_redundant_migrations(
             pending_change_original_model.copy(),
             pending_change_target.copy(),
             pending_change_target_model.copy(),
-            []
+            [],
         )
 
     # Collect target endpoints that need to be returned to store
-    cancelled_targets: List[Tuple[str, str]] = []
+    cancelled_targets: list[tuple[str, str]] = []
     for idx in indices_to_remove:
-        cancelled_targets.append((
-            pending_change_target[idx],
-            pending_change_target_model[idx]
-        ))
+        cancelled_targets.append(
+            (pending_change_target[idx], pending_change_target_model[idx])
+        )
 
     # Filter out redundant migrations
-    filtered_original: List[str] = []
-    filtered_original_model: List[str] = []
-    filtered_target: List[str] = []
-    filtered_target_model: List[str] = []
+    filtered_original: list[str] = []
+    filtered_original_model: list[str] = []
+    filtered_target: list[str] = []
+    filtered_target_model: list[str] = []
 
     for i in range(n):
         if i not in indices_to_remove:
@@ -264,16 +255,14 @@ def eliminate_redundant_migrations(
         filtered_original_model,
         filtered_target,
         filtered_target_model,
-        cancelled_targets
+        cancelled_targets,
     )
 
 
 def _detect_cycles(
-    pending_change_original: List[str],
-    pending_change_target: List[str]
-) -> Set[int]:
-    """
-    Detect all migration indices that are part of cycles using graph traversal.
+    pending_change_original: list[str], pending_change_target: list[str]
+) -> set[int]:
+    """Detect all migration indices that are part of cycles using graph traversal.
 
     Algorithm:
     1. Build a directed graph: original[i] -> target[i]
@@ -290,31 +279,39 @@ def _detect_cycles(
         Set of indices representing migrations that are part of cycles
     """
     n = len(pending_change_original)
-    indices_to_remove: Set[int] = set()
+    indices_to_remove: set[int] = set()
 
     # Debug logging
-    logger.debug(f"Cycle detection input - original endpoints: {pending_change_original}")
-    logger.debug(f"Cycle detection input - target endpoints: {pending_change_target}")
+    logger.debug(
+        f"Cycle detection input - original endpoints: {pending_change_original}"
+    )
+    logger.debug(
+        f"Cycle detection input - target endpoints: {pending_change_target}"
+    )
 
     # Build mapping: original endpoint -> index
-    original_to_index: Dict[str, int] = {}
+    original_to_index: dict[str, int] = {}
     for idx, ep in enumerate(pending_change_original):
         original_to_index[ep] = idx
 
     # Build directed graph: original -> target
     # Only include edges where target is also in original (potential cycle edges)
-    graph: Dict[str, str] = {}
+    graph: dict[str, str] = {}
     for i in range(n):
         if pending_change_target[i] in original_to_index:
             graph[pending_change_original[i]] = pending_change_target[i]
-            logger.debug(f"Added edge to graph: {pending_change_original[i]} -> {pending_change_target[i]}")
+            logger.debug(
+                f"Added edge to graph: {pending_change_original[i]} -> {pending_change_target[i]}"
+            )
         else:
-            logger.debug(f"Skipped edge (target not in original): {pending_change_original[i]} -> {pending_change_target[i]}")
+            logger.debug(
+                f"Skipped edge (target not in original): {pending_change_original[i]} -> {pending_change_target[i]}"
+            )
 
     logger.debug(f"Graph edges count: {len(graph)}")
 
     # Track globally visited nodes to avoid re-processing
-    visited_globally: Set[str] = set()
+    visited_globally: set[str] = set()
 
     # For each potential starting point, check if it forms a cycle
     for start_idx in range(n):
@@ -335,14 +332,15 @@ def _detect_cycles(
                 indices_to_remove.add(idx)
                 visited_globally.add(node)
 
-            logger.info(f"Detected cycle: {' -> '.join(cycle_path)} -> {cycle_path[0]}")
+            logger.info(
+                f"Detected cycle: {' -> '.join(cycle_path)} -> {cycle_path[0]}"
+            )
 
     return indices_to_remove
 
 
-def _find_cycle_from(start: str, graph: Dict[str, str]) -> List[str]:
-    """
-    Starting from 'start', traverse the graph to detect if a cycle exists back to start.
+def _find_cycle_from(start: str, graph: dict[str, str]) -> list[str]:
+    """Starting from 'start', traverse the graph to detect if a cycle exists back to start.
 
     This function performs a simple path traversal, following edges in the graph
     until either:
@@ -358,8 +356,8 @@ def _find_cycle_from(start: str, graph: Dict[str, str]) -> List[str]:
         List of nodes in the cycle (in order), or empty list if no cycle found.
         The returned list does NOT include the return edge back to start.
     """
-    path: List[str] = [start]
-    visited: Set[str] = {start}
+    path: list[str] = [start]
+    visited: set[str] = {start}
     current = start
 
     while current in graph:

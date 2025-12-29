@@ -9,10 +9,9 @@ import json
 import math
 import threading
 import time
-from dataclasses import dataclass, asdict
-from datetime import datetime, timezone
+from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Dict, List, Optional
 
 from loguru import logger
 
@@ -24,27 +23,29 @@ class TimelineEntry:
     timestamp: float
     timestamp_iso: str
     event_type: str  # "deploy_migration" or "auto_optimize"
-    instance_counts: Dict[str, int]
+    instance_counts: dict[str, int]
     total_instances: int
     changes_count: int
     success: bool
-    target_distribution: Optional[List[float]] = None
-    score: Optional[float] = None
+    target_distribution: list[float] | None = None
+    score: float | None = None
 
 
 class InstanceTimelineTracker:
     """Thread-safe tracker for instance count timeline with JSON persistence."""
 
-    def __init__(self, output_path: str = "./logs/instance_count_timeline.json"):
+    def __init__(
+        self, output_path: str = "./logs/instance_count_timeline.json"
+    ):
         """Initialize the timeline tracker.
 
         Args:
             output_path: Path to the JSON file for persisting timeline data.
         """
         self._output_path = Path(output_path)
-        self._entries: List[TimelineEntry] = []
+        self._entries: list[TimelineEntry] = []
         self._lock = threading.Lock()
-        self._created_at = datetime.now(timezone.utc).isoformat()
+        self._created_at = datetime.now(UTC).isoformat()
 
         # Ensure output directory exists
         self._output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -52,11 +53,11 @@ class InstanceTimelineTracker:
     def record_migration(
         self,
         event_type: str,
-        instance_counts: Dict[str, int],
+        instance_counts: dict[str, int],
         changes_count: int,
         success: bool,
-        target_distribution: Optional[List[float]] = None,
-        score: Optional[float] = None,
+        target_distribution: list[float] | None = None,
+        score: float | None = None,
     ) -> None:
         """Record a migration event to the timeline.
 
@@ -74,7 +75,11 @@ class InstanceTimelineTracker:
         # This prevents "Object of type int64 is not JSON serializable" errors
         instance_counts_native = {k: int(v) for k, v in instance_counts.items()}
         changes_count_native = int(changes_count)
-        target_distribution_native = [float(x) for x in target_distribution] if target_distribution else None
+        target_distribution_native = (
+            [float(x) for x in target_distribution]
+            if target_distribution
+            else None
+        )
 
         # Handle special float values (inf, -inf, nan) which are not valid JSON
         if score is not None:
@@ -89,7 +94,7 @@ class InstanceTimelineTracker:
 
         entry = TimelineEntry(
             timestamp=now,
-            timestamp_iso=datetime.fromtimestamp(now, tz=timezone.utc).isoformat(),
+            timestamp_iso=datetime.fromtimestamp(now, tz=UTC).isoformat(),
             event_type=event_type,
             instance_counts=instance_counts_native,
             total_instances=sum(instance_counts_native.values()),
@@ -122,11 +127,11 @@ class InstanceTimelineTracker:
         """Clear timeline for new experiment run."""
         with self._lock:
             self._entries.clear()
-            self._created_at = datetime.now(timezone.utc).isoformat()
+            self._created_at = datetime.now(UTC).isoformat()
             self._persist()
         logger.info("Timeline cleared")
 
-    def get_entries(self) -> List[dict]:
+    def get_entries(self) -> list[dict]:
         """Get all timeline entries as dictionaries."""
         with self._lock:
             return [asdict(e) for e in self._entries]
@@ -138,7 +143,7 @@ class InstanceTimelineTracker:
 
 
 # Global singleton
-_tracker: Optional[InstanceTimelineTracker] = None
+_tracker: InstanceTimelineTracker | None = None
 _tracker_lock = threading.Lock()
 
 
@@ -161,7 +166,7 @@ def get_timeline_tracker(
         return _tracker
 
 
-def compute_instance_counts(instances) -> Dict[str, int]:
+def compute_instance_counts(instances) -> dict[str, int]:
     """Compute instance counts per model from instances list.
 
     Args:
@@ -170,7 +175,7 @@ def compute_instance_counts(instances) -> Dict[str, int]:
     Returns:
         Dict mapping model_id to count of instances running that model.
     """
-    counts: Dict[str, int] = {}
+    counts: dict[str, int] = {}
     for inst in instances:
         model = inst.current_model
         counts[model] = counts.get(model, 0) + 1

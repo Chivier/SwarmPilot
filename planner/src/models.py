@@ -1,17 +1,19 @@
 """Data models for the Planner service."""
 
-from typing import List, Optional, Dict, Any, Literal
 from enum import Enum
-from pydantic import BaseModel, Field, field_validator, model_validator
-from loguru import logger
+from typing import Any, Literal
 
+from loguru import logger
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 # ============================================================================
 # Instance Status Enum (compatible with Scheduler)
 # ============================================================================
 
+
 class InstanceStatus(str, Enum):
     """Enumeration of possible instance statuses (compatible with Scheduler)."""
+
     INITIALIZING = "initializing"
     ACTIVE = "active"
     DRAINING = "draining"
@@ -25,32 +27,49 @@ class PlannerInput(BaseModel):
     # Core parameters
     M: int = Field(..., description="Number of instances", gt=0)
     N: int = Field(..., description="Number of model types", gt=0)
-    B: List[List[float]] = Field(..., description="Batch capacity matrix [M×N]")
+    B: list[list[float]] = Field(..., description="Batch capacity matrix [M×N]")
     # When deploying the model, inital status will be computed from the instance informations
-    initial: Optional[List[int]] = Field(None, description="Initial deployment [M], -1 = no model")
-    a: float = Field(..., description="Change constraint (0 < a ≤ 1)", gt=0, le=1)
-    target: List[float] = Field(..., description="Target request distribution [N]")
+    initial: list[int] | None = Field(
+        None, description="Initial deployment [M], -1 = no model"
+    )
+    a: float = Field(
+        ..., description="Change constraint (0 < a ≤ 1)", gt=0, le=1
+    )
+    target: list[float] = Field(
+        ..., description="Target request distribution [N]"
+    )
 
     # Algorithm configuration
     algorithm: Literal["simulated_annealing", "integer_programming"] = Field(
         default="simulated_annealing",
-        description="Optimization algorithm to use"
+        description="Optimization algorithm to use",
     )
-    objective_method: Literal["relative_error", "ratio_difference", "weighted_squared"] = Field(
-        default="relative_error",
-        description="Objective function method"
-    )
+    objective_method: Literal[
+        "relative_error", "ratio_difference", "weighted_squared"
+    ] = Field(default="relative_error", description="Objective function method")
     verbose: bool = Field(default=True, description="Enable logging")
 
     # Simulated Annealing parameters
-    initial_temp: float = Field(default=100.0, description="Starting temperature", gt=0)
-    final_temp: float = Field(default=0.01, description="Ending temperature", gt=0)
-    cooling_rate: float = Field(default=0.95, description="Temperature decay", gt=0, lt=1)
-    max_iterations: int = Field(default=5000, description="Max iterations", gt=0)
-    iterations_per_temp: int = Field(default=100, description="Iterations per temperature", gt=0)
+    initial_temp: float = Field(
+        default=100.0, description="Starting temperature", gt=0
+    )
+    final_temp: float = Field(
+        default=0.01, description="Ending temperature", gt=0
+    )
+    cooling_rate: float = Field(
+        default=0.95, description="Temperature decay", gt=0, lt=1
+    )
+    max_iterations: int = Field(
+        default=5000, description="Max iterations", gt=0
+    )
+    iterations_per_temp: int = Field(
+        default=100, description="Iterations per temperature", gt=0
+    )
 
     # Integer Programming parameters
-    solver_name: str = Field(default="PULP_CBC_CMD", description="Solver backend")
+    solver_name: str = Field(
+        default="PULP_CBC_CMD", description="Solver backend"
+    )
     time_limit: int = Field(default=300, description="Timeout (seconds)", gt=0)
 
     @field_validator("B")
@@ -97,7 +116,7 @@ class PlannerInput(BaseModel):
             for i, model_id in enumerate(v):
                 # Valid values: -1 (no model) or 0 to N-1 (valid model IDs)
                 if model_id != -1 and (model_id < 0 or model_id >= N):
-                    error_msg = f"initial[{i}] has invalid model ID {model_id}, must be -1 or in range [0, {N-1}]"
+                    error_msg = f"initial[{i}] has invalid model ID {model_id}, must be -1 or in range [0, {N - 1}]"
                     logger.error(f"PlannerInput validation failed: {error_msg}")
                     raise ValueError(error_msg)
 
@@ -134,10 +153,14 @@ class PlannerInput(BaseModel):
 class PlannerOutput(BaseModel):
     """Output from the optimization algorithm."""
 
-    deployment: List[int] = Field(..., description="Optimized assignment [M] (model IDs)")
+    deployment: list[int] = Field(
+        ..., description="Optimized assignment [M] (model IDs)"
+    )
     score: float = Field(..., description="Objective value (lower = better)")
-    stats: Dict[str, Any] = Field(..., description="Algorithm statistics")
-    service_capacity: List[float] = Field(..., description="Capacity per model [N]")
+    stats: dict[str, Any] = Field(..., description="Algorithm statistics")
+    service_capacity: list[float] = Field(
+        ..., description="Capacity per model [N]"
+    )
     changes_count: int = Field(..., description="Changes from initial state")
 
 
@@ -151,10 +174,14 @@ class InstanceInfo(BaseModel):
 class DeploymentInput(BaseModel):
     """Input for deployment with optimization."""
 
-    instances: List[InstanceInfo] = Field(..., description="Target instances")
+    instances: list[InstanceInfo] = Field(..., description="Target instances")
     planner_input: PlannerInput = Field(..., description="Optimization config")
-    scheduler_mapping: Dict[str, str] = Field(None, description="mapping of model name to scheduler")
-    instance_scheduler_mapping: Optional[Dict[str, str]] = Field(None, description="mapping of instance endpoint to scheduler URL")
+    scheduler_mapping: dict[str, str] = Field(
+        None, description="mapping of model name to scheduler"
+    )
+    instance_scheduler_mapping: dict[str, str] | None = Field(
+        None, description="mapping of instance endpoint to scheduler URL"
+    )
 
     @model_validator(mode="after")
     def validate_instances_match(self):
@@ -172,20 +199,28 @@ class DeploymentStatus(BaseModel):
     instance_index: int = Field(..., description="Instance index")
     endpoint: str = Field(..., description="Instance endpoint")
     target_model: str = Field(..., description="Target model name")
-    previous_model: Optional[str] = Field(None, description="Previous model name")
+    previous_model: str | None = Field(None, description="Previous model name")
     success: bool = Field(..., description="Success flag")
-    error_message: Optional[str] = Field(None, description="Error details")
+    error_message: str | None = Field(None, description="Error details")
     deployment_time: float = Field(..., description="Deployment duration (sec)")
+
 
 class MigrationStatus(BaseModel):
     """Status of deployment to a single instance."""
-    instance_index: int = Field(..., description="Instance index in pending change list")
-    original_endpoint: str = Field(..., description="Original instance endpoint before migration")
-    target_endpoint: str = Field(..., description="Target instance endpoint after migration")
+
+    instance_index: int = Field(
+        ..., description="Instance index in pending change list"
+    )
+    original_endpoint: str = Field(
+        ..., description="Original instance endpoint before migration"
+    )
+    target_endpoint: str = Field(
+        ..., description="Target instance endpoint after migration"
+    )
     target_model: str = Field(..., description="Target model name")
-    previous_model: Optional[str] = Field(None, description="Previous model name")
+    previous_model: str | None = Field(None, description="Previous model name")
     success: bool = Field(..., description="Success flag")
-    error_message: Optional[str] = Field(None, description="Error details")
+    error_message: str | None = Field(None, description="Error details")
     deployment_time: float = Field(..., description="Deployment duration (sec)")
 
     # Deprecated field for backward compatibility
@@ -195,105 +230,154 @@ class MigrationStatus(BaseModel):
         return self.original_endpoint
 
 
-
 class DeploymentOutput(PlannerOutput):
     """Output from deployment with execution status."""
 
-    deployment_status: List[DeploymentStatus] = Field(..., description="Per-instance results")
+    deployment_status: list[DeploymentStatus] = Field(
+        ..., description="Per-instance results"
+    )
     success: bool = Field(..., description="Overall success flag")
-    failed_instances: List[int] = Field(..., description="Failed instance indices")
+    failed_instances: list[int] = Field(
+        ..., description="Failed instance indices"
+    )
+
 
 class MigrationOutput(PlannerOutput):
     """Output from deployment with execution status."""
 
-    deployment_status: List[MigrationStatus] = Field(..., description="Per-instance results")
+    deployment_status: list[MigrationStatus] = Field(
+        ..., description="Per-instance results"
+    )
     success: bool = Field(..., description="Overall success flag")
-    failed_instances: List[int] = Field(..., description="Failed instance indices")
+    failed_instances: list[int] = Field(
+        ..., description="Failed instance indices"
+    )
 
 
 class InstanceRegisterRequest(BaseModel):
     """Request model for instance registration (compatible with scheduler)."""
+
     instance_id: str = Field(..., description="Unique instance identifier")
-    model_id: str = Field(..., description="Model ID supported by this instance")
+    model_id: str = Field(
+        ..., description="Model ID supported by this instance"
+    )
     endpoint: str = Field(..., description="Instance HTTP endpoint URL")
-    platform_info: Dict[str, str] = Field(
+    platform_info: dict[str, str] = Field(
         default_factory=dict,
-        description="Platform info (software_name, software_version, hardware_name)"
+        description="Platform info (software_name, software_version, hardware_name)",
     )
 
 
 class InstanceRegisterResponse(BaseModel):
     """Response model for instance registration."""
-    success: bool = Field(..., description="Whether registration was successful")
+
+    success: bool = Field(
+        ..., description="Whether registration was successful"
+    )
     message: str = Field(..., description="Status message")
 
 
 class SubmitTargetRequest(BaseModel):
     """Request model for submitting target queue length from scheduler."""
+
     model_id: str = Field(..., description="Model identifier from scheduler")
     value: float = Field(..., description="Queue length from scheduler")
 
 
 class SubmitTargetResponse(BaseModel):
     """Response model for submit_target endpoint."""
-    success: bool = Field(..., description="Whether target was updated successfully")
+
+    success: bool = Field(
+        ..., description="Whether target was updated successfully"
+    )
     message: str = Field(..., description="Status message")
-    current_target: Optional[List[float]] = Field(None, description="Current accumulated target distribution")
+    current_target: list[float] | None = Field(
+        None, description="Current accumulated target distribution"
+    )
 
 
 class SubmitThroughputRequest(BaseModel):
     """Request model for submitting instance throughput data."""
+
     instance_url: str = Field(..., description="Instance endpoint URL")
-    avg_execution_time: float = Field(..., gt=0, description="Average execution time in seconds (must be > 0)")
+    avg_execution_time: float = Field(
+        ..., gt=0, description="Average execution time in seconds (must be > 0)"
+    )
 
 
 class SubmitThroughputResponse(BaseModel):
     """Response model for submit_throughput endpoint."""
-    success: bool = Field(..., description="Whether throughput was recorded successfully")
+
+    success: bool = Field(
+        ..., description="Whether throughput was recorded successfully"
+    )
     message: str = Field(..., description="Status message")
-    instance_url: str = Field(..., description="Instance URL that was submitted")
-    model_id: Optional[str] = Field(None, description="Model ID determined from instance's current deployment")
-    computed_capacity: Optional[float] = Field(None, description="Computed processing capacity (1/avg_execution_time)")
+    instance_url: str = Field(
+        ..., description="Instance URL that was submitted"
+    )
+    model_id: str | None = Field(
+        None,
+        description="Model ID determined from instance's current deployment",
+    )
+    computed_capacity: float | None = Field(
+        None, description="Computed processing capacity (1/avg_execution_time)"
+    )
 
 
 # ============================================================================
 # Dummy Endpoint Models (compatible with Scheduler interface)
 # ============================================================================
 
+
 class InstanceDrainRequest(BaseModel):
     """Request model for instance drain (compatible with Scheduler)."""
+
     instance_id: str = Field(..., description="Instance ID to drain")
 
 
 class InstanceDrainResponse(BaseModel):
     """Response model for instance drain (compatible with Scheduler)."""
-    success: bool = Field(..., description="Whether drain was initiated successfully")
+
+    success: bool = Field(
+        ..., description="Whether drain was initiated successfully"
+    )
     message: str = Field(..., description="Status message")
     instance_id: str = Field(..., description="Instance ID")
     status: InstanceStatus = Field(..., description="Current instance status")
     pending_tasks: int = Field(..., description="Number of pending tasks")
     running_tasks: int = Field(..., description="Number of running tasks")
-    estimated_completion_time_ms: Optional[float] = Field(None, description="Estimated completion time")
+    estimated_completion_time_ms: float | None = Field(
+        None, description="Estimated completion time"
+    )
 
 
 class InstanceDrainStatusResponse(BaseModel):
     """Response model for instance drain status check (compatible with Scheduler)."""
-    success: bool = Field(..., description="Whether status check was successful")
+
+    success: bool = Field(
+        ..., description="Whether status check was successful"
+    )
     instance_id: str = Field(..., description="Instance ID")
     status: InstanceStatus = Field(..., description="Current instance status")
     pending_tasks: int = Field(..., description="Number of pending tasks")
     running_tasks: int = Field(..., description="Number of running tasks")
-    can_remove: bool = Field(..., description="Whether instance can be safely removed")
-    drain_initiated_at: Optional[str] = Field(None, description="ISO timestamp when drain started")
+    can_remove: bool = Field(
+        ..., description="Whether instance can be safely removed"
+    )
+    drain_initiated_at: str | None = Field(
+        None, description="ISO timestamp when drain started"
+    )
 
 
 class InstanceRemoveRequest(BaseModel):
     """Request model for instance removal (compatible with Scheduler)."""
+
     instance_id: str = Field(..., description="Instance ID to remove")
 
 
 class InstanceRemoveResponse(BaseModel):
     """Response model for instance removal (compatible with Scheduler)."""
+
     success: bool = Field(..., description="Whether removal was successful")
     message: str = Field(..., description="Status message")
     instance_id: str = Field(..., description="Instance ID that was removed")
@@ -301,11 +385,17 @@ class InstanceRemoveResponse(BaseModel):
 
 class TaskResubmitRequest(BaseModel):
     """Request model for task resubmission (compatible with Scheduler)."""
+
     task_id: str = Field(..., description="ID of the task to resubmit")
-    original_instance_id: str = Field(..., description="ID of the original instance")
+    original_instance_id: str = Field(
+        ..., description="ID of the original instance"
+    )
 
 
 class TaskResubmitResponse(BaseModel):
     """Response model for task resubmission (compatible with Scheduler)."""
-    success: bool = Field(..., description="Whether resubmission was successful")
+
+    success: bool = Field(
+        ..., description="Whether resubmission was successful"
+    )
     message: str = Field(..., description="Status message")

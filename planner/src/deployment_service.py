@@ -2,22 +2,21 @@
 
 import asyncio
 import time
-from typing import Any, List, Dict, Optional
+import traceback
+from typing import Any
+
 import httpx
 from loguru import logger
-import traceback
 
 from .models import DeploymentStatus, MigrationStatus
-from .available_instance_store import AvailableInstance, AvailableInstanceStore
 
 
 class ModelMapper:
     """Handles mapping between model names and integer IDs."""
 
     @staticmethod
-    def create_mapping(model_names: List[str]) -> Dict[str, int]:
-        """
-        Create a mapping from model names to integer IDs.
+    def create_mapping(model_names: list[str]) -> dict[str, int]:
+        """Create a mapping from model names to integer IDs.
 
         Args:
             model_names: List of model names (may contain duplicates)
@@ -36,9 +35,10 @@ class ModelMapper:
         return {name: idx for idx, name in enumerate(unique_models)}
 
     @staticmethod
-    def map_names_to_ids(names: List[str], mapping: Dict[str, int]) -> List[int]:
-        """
-        Convert model names to IDs using the mapping.
+    def map_names_to_ids(
+        names: list[str], mapping: dict[str, int]
+    ) -> list[int]:
+        """Convert model names to IDs using the mapping.
 
         Args:
             names: List of model names
@@ -60,9 +60,10 @@ class ModelMapper:
         return result
 
     @staticmethod
-    def map_ids_to_names(ids: List[int], reverse_mapping: Dict[int, str]) -> List[str]:
-        """
-        Convert model IDs to names using reverse mapping.
+    def map_ids_to_names(
+        ids: list[int], reverse_mapping: dict[int, str]
+    ) -> list[str]:
+        """Convert model IDs to names using reverse mapping.
 
         Args:
             ids: List of model IDs
@@ -90,12 +91,11 @@ class InstanceDeployer:
     def __init__(
         self,
         timeout: int = 30,
-        scheduler_url: Optional[str] = None,
+        scheduler_url: str | None = None,
         max_retries: int = 3,
-        retry_delay: float = 1.0
+        retry_delay: float = 1.0,
     ):
-        """
-        Initialize the deployer.
+        """Initialize the deployer.
 
         Args:
             timeout: HTTP request timeout in seconds
@@ -109,8 +109,7 @@ class InstanceDeployer:
         self.retry_delay = retry_delay
 
     def _is_retryable_error(self, error: Exception) -> bool:
-        """
-        Determine if an error is retryable.
+        """Determine if an error is retryable.
 
         Args:
             error: The exception to check
@@ -129,9 +128,8 @@ class InstanceDeployer:
 
         return False
 
-    async def get_instance_info(self, endpoint: str) -> Optional[Dict]:
-        """
-        Get current status and model info from an instance.
+    async def get_instance_info(self, endpoint: str) -> dict | None:
+        """Get current status and model info from an instance.
 
         Args:
             endpoint: Instance endpoint URL
@@ -146,7 +144,9 @@ class InstanceDeployer:
                 data = response.json()
                 return data.get("instance", {})
         except Exception as e:
-            logger.error(f"Failed to get info from {endpoint}: {e}", exc_info=True)
+            logger.error(
+                f"Failed to get info from {endpoint}: {e}", exc_info=True
+            )
             return None
 
     async def deploy_model(
@@ -154,10 +154,9 @@ class InstanceDeployer:
         endpoint: str,
         target_model: str,
         instance_index: int,
-        previous_model: Optional[str] = None
+        previous_model: str | None = None,
     ) -> DeploymentStatus:
-        """
-        Deploy a model to a single instance.
+        """Deploy a model to a single instance.
 
         Workflow:
         1. Get current model from instance
@@ -184,8 +183,14 @@ class InstanceDeployer:
                 info_response.raise_for_status()
                 info_data = info_response.json()
 
-                current_model_data = info_data.get("instance", {}).get("current_model")
-                current_model_id = current_model_data.get("model_id") if current_model_data else None
+                current_model_data = info_data.get("instance", {}).get(
+                    "current_model"
+                )
+                current_model_id = (
+                    current_model_data.get("model_id")
+                    if current_model_data
+                    else None
+                )
 
                 # Update previous_model if we got it from the instance
                 if previous_model is None and current_model_id:
@@ -204,20 +209,27 @@ class InstanceDeployer:
                         previous_model=previous_model,
                         success=True,
                         error_message=None,
-                        deployment_time=deployment_time
+                        deployment_time=deployment_time,
                     )
 
                 # Step 3: Stop current model if running (with retry)
                 if current_model_id:
-                    logger.info(f"Stopping model {current_model_id} on {endpoint}")
+                    logger.info(
+                        f"Stopping model {current_model_id} on {endpoint}"
+                    )
                     for attempt in range(self.max_retries):
                         try:
-                            stop_response = await client.get(f"{endpoint}/model/stop")
+                            stop_response = await client.get(
+                                f"{endpoint}/model/stop"
+                            )
                             stop_response.raise_for_status()
                             break  # Success, exit retry loop
                         except Exception as e:
-                            if attempt < self.max_retries - 1 and self._is_retryable_error(e):
-                                delay = self.retry_delay * (2 ** attempt)
+                            if (
+                                attempt < self.max_retries - 1
+                                and self._is_retryable_error(e)
+                            ):
+                                delay = self.retry_delay * (2**attempt)
                                 logger.warning(
                                     f"Stop failed (attempt {attempt + 1}/{self.max_retries}), "
                                     f"retrying in {delay}s: {str(e)}"
@@ -228,26 +240,27 @@ class InstanceDeployer:
 
                 # Step 4: Start target model (with retry)
                 logger.info(f"Starting model {target_model} on {endpoint}")
-                start_payload = {
-                    "model_id": target_model,
-                    "parameters": {}
-                }
+                start_payload = {"model_id": target_model, "parameters": {}}
                 # Add scheduler_url if available
                 if self.scheduler_url:
                     start_payload["scheduler_url"] = self.scheduler_url
-                    logger.debug(f"Including scheduler_url: {self.scheduler_url}")
+                    logger.debug(
+                        f"Including scheduler_url: {self.scheduler_url}"
+                    )
 
                 for attempt in range(self.max_retries):
                     try:
                         start_response = await client.post(
-                            f"{endpoint}/model/start",
-                            json=start_payload
+                            f"{endpoint}/model/start", json=start_payload
                         )
                         start_response.raise_for_status()
                         break  # Success, exit retry loop
                     except Exception as e:
-                        if attempt < self.max_retries - 1 and self._is_retryable_error(e):
-                            delay = self.retry_delay * (2 ** attempt)
+                        if (
+                            attempt < self.max_retries - 1
+                            and self._is_retryable_error(e)
+                        ):
+                            delay = self.retry_delay * (2**attempt)
                             logger.warning(
                                 f"Start failed (attempt {attempt + 1}/{self.max_retries}), "
                                 f"retrying in {delay}s: {str(e)}"
@@ -269,14 +282,16 @@ class InstanceDeployer:
                     previous_model=previous_model,
                     success=True,
                     error_message=None,
-                    deployment_time=deployment_time
+                    deployment_time=deployment_time,
                 )
 
         except httpx.HTTPStatusError as e:
             # Try to extract error message from response JSON
             try:
                 error_data = e.response.json()
-                error_msg = error_data.get("error", error_data.get("detail", e.response.text))
+                error_msg = error_data.get(
+                    "error", error_data.get("detail", e.response.text)
+                )
             except Exception:
                 error_msg = e.response.text or f"HTTP {e.response.status_code}"
 
@@ -285,7 +300,7 @@ class InstanceDeployer:
         except httpx.ConnectError as e:
             error_message = f"Connection failed: {str(e)}"
             logger.error(f"Failed to connect to {endpoint}: {error_message}")
-        except httpx.TimeoutException as e:
+        except httpx.TimeoutException:
             error_message = f"Request timed out after {self.timeout}s"
             logger.error(f"Timeout deploying to {endpoint}: {error_message}")
         except httpx.RequestError as e:
@@ -303,17 +318,16 @@ class InstanceDeployer:
             previous_model=previous_model,
             success=False,
             error_message=error_message,
-            deployment_time=deployment_time
+            deployment_time=deployment_time,
         )
 
     async def restart_model(
         self,
         endpoint: str,
         target_model: str,
-        parameters: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
-        """
-        Initiate a model restart operation on an instance.
+        parameters: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Initiate a model restart operation on an instance.
 
         This calls the /model/restart endpoint which performs a graceful restart:
         1. Drains the current scheduler (stops accepting new tasks)
@@ -333,10 +347,7 @@ class InstanceDeployer:
         Raises:
             Exception: If restart initiation fails
         """
-        payload = {
-            "model_id": target_model,
-            "parameters": parameters or {}
-        }
+        payload = {"model_id": target_model, "parameters": parameters or {}}
 
         # Add scheduler_url if available
         if self.scheduler_url:
@@ -345,22 +356,20 @@ class InstanceDeployer:
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 response = await client.post(
-                    f"{endpoint}/model/restart",
-                    json=payload
+                    f"{endpoint}/model/restart", json=payload
                 )
                 response.raise_for_status()
                 return response.json()
         except Exception as e:
-            logger.error(f"Failed to initiate restart on {endpoint}: {e}", exc_info=True)
+            logger.error(
+                f"Failed to initiate restart on {endpoint}: {e}", exc_info=True
+            )
             raise
 
     async def get_restart_status(
-        self,
-        endpoint: str,
-        operation_id: str
-    ) -> Dict[str, Any]:
-        """
-        Get the status of a restart operation.
+        self, endpoint: str, operation_id: str
+    ) -> dict[str, Any]:
+        """Get the status of a restart operation.
 
         Args:
             endpoint: Instance endpoint URL
@@ -376,22 +385,24 @@ class InstanceDeployer:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 response = await client.get(
                     f"{endpoint}/model/restart/status",
-                    params={"operation_id": operation_id}
+                    params={"operation_id": operation_id},
                 )
                 response.raise_for_status()
                 return response.json()
         except Exception as e:
-            logger.error(f"Failed to get restart status from {endpoint}: {e}", exc_info=True)
+            logger.error(
+                f"Failed to get restart status from {endpoint}: {e}",
+                exc_info=True,
+            )
             raise
 
     async def deploy_to_instances(
         self,
-        endpoints: List[str],
-        target_models: List[str],
-        previous_models: List[Optional[str]]
-    ) -> List[DeploymentStatus]:
-        """
-        Deploy models to multiple instances concurrently.
+        endpoints: list[str],
+        target_models: list[str],
+        previous_models: list[str | None],
+    ) -> list[DeploymentStatus]:
+        """Deploy models to multiple instances concurrently.
 
         Args:
             endpoints: List of instance endpoint URLs
@@ -403,16 +414,17 @@ class InstanceDeployer:
         """
         tasks = [
             self.deploy_model(endpoint, target_model, idx, previous_model)
-            for idx, (endpoint, target_model, previous_model)
-            in enumerate(zip(endpoints, target_models, previous_models))
+            for idx, (endpoint, target_model, previous_model) in enumerate(
+                zip(endpoints, target_models, previous_models)
+            )
         ]
 
         return await asyncio.gather(*tasks)
 
-
-    def map_ids_to_names(ids: List[int], reverse_mapping: Dict[int, str]) -> List[str]:
-        """
-        Convert model IDs to names using reverse mapping.
+    def map_ids_to_names(
+        ids: list[int], reverse_mapping: dict[int, str]
+    ) -> list[str]:
+        """Convert model IDs to names using reverse mapping.
 
         Args:
             ids: List of model IDs
@@ -427,7 +439,9 @@ class InstanceDeployer:
         result = []
         for model_id in ids:
             if model_id not in reverse_mapping:
-                raise ValueError(f"Model ID {model_id} not found in reverse mapping")
+                raise ValueError(
+                    f"Model ID {model_id} not found in reverse mapping"
+                )
             result.append(reverse_mapping[model_id])
         return result
 
@@ -438,18 +452,17 @@ class InstanceMigrator:
     def __init__(
         self,
         timeout: int = 30,
-        scheduler_mapping: Dict[str, str] = None,
+        scheduler_mapping: dict[str, str] = None,
         max_retries: int = 3,
         retry_delay: float = 1.0,
     ):
-        """
-        Initialize the deployer.
+        """Initialize the migrator.
 
         Args:
-            timeout: HTTP request timeout in seconds
-            scheduler_url: Scheduler URL for instance registration (optional)
-            max_retries: Maximum number of retry attempts for failed requests
-            retry_delay: Initial delay between retries in seconds (exponential backoff)
+            timeout: HTTP request timeout in seconds.
+            scheduler_mapping: Mapping of model names to scheduler URLs.
+            max_retries: Maximum number of retry attempts for failed requests.
+            retry_delay: Initial delay between retries (exponential backoff).
         """
         self.timeout = timeout
         self.scheduler_mapping = scheduler_mapping
@@ -457,8 +470,7 @@ class InstanceMigrator:
         self.retry_delay = retry_delay
 
     def _is_retryable_error(self, error: Exception) -> bool:
-        """
-        Determine if an error is retryable.
+        """Determine if an error is retryable.
 
         Args:
             error: The exception to check
@@ -477,9 +489,8 @@ class InstanceMigrator:
 
         return False
 
-    async def get_instance_info(self, endpoint: str) -> Optional[Dict]:
-        """
-        Get current status and model info from an instance.
+    async def get_instance_info(self, endpoint: str) -> dict | None:
+        """Get current status and model info from an instance.
 
         Args:
             endpoint: Instance endpoint URL
@@ -494,15 +505,24 @@ class InstanceMigrator:
                 data = response.json()
                 return data.get("instance", {})
         except Exception as e:
-            logger.error(f"Failed to get info from {endpoint}: {e}", exc_info=True)
+            logger.error(
+                f"Failed to get info from {endpoint}: {e}", exc_info=True
+            )
             return None
 
     async def migration_model(
-        self,
-        original_endpoint: str,
-        target_endpoint: str,
-        instance_index: int
+        self, original_endpoint: str, target_endpoint: str, instance_index: int
     ) -> MigrationStatus:
+        """Migrate a model from one instance to another.
+
+        Args:
+            original_endpoint: Source instance endpoint URL.
+            target_endpoint: Destination instance endpoint URL.
+            instance_index: Index of this migration in the batch.
+
+        Returns:
+            MigrationStatus with success/failure information.
+        """
         start_time = time.time()
         current_model_id = None
         target_model_id = None
@@ -511,12 +531,16 @@ class InstanceMigrator:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 # Step 1: get the information from original endpoint
                 try:
-                    info_response = await client.get(f"{original_endpoint}/info")
+                    info_response = await client.get(
+                        f"{original_endpoint}/info"
+                    )
                     info_response.raise_for_status()
                     info_data = info_response.json()
                 except httpx.HTTPStatusError as e:
                     error_msg = f"Failed to get info from original endpoint {original_endpoint}: HTTP {e.response.status_code}"
-                    logger.error(f"Migration failed: {error_msg}", exc_info=True)
+                    logger.error(
+                        f"Migration failed: {error_msg}", exc_info=True
+                    )
                     return MigrationStatus(
                         instance_index=instance_index,
                         original_endpoint=original_endpoint,
@@ -525,11 +549,13 @@ class InstanceMigrator:
                         previous_model=current_model_id,
                         success=False,
                         error_message=error_msg,
-                        deployment_time=time.time() - start_time
+                        deployment_time=time.time() - start_time,
                     )
                 except httpx.RequestError as e:
                     error_msg = f"Request error getting info from original endpoint {original_endpoint}: {str(e)}"
-                    logger.error(f"Migration failed: {error_msg}", exc_info=True)
+                    logger.error(
+                        f"Migration failed: {error_msg}", exc_info=True
+                    )
                     return MigrationStatus(
                         instance_index=instance_index,
                         original_endpoint=original_endpoint,
@@ -538,12 +564,20 @@ class InstanceMigrator:
                         previous_model=current_model_id,
                         success=False,
                         error_message=error_msg,
-                        deployment_time=time.time() - start_time
+                        deployment_time=time.time() - start_time,
                     )
 
-                current_model_data = info_data.get("instance", {}).get("current_model")
-                current_instance_id = info_data.get("instance", {}).get("instance_id")
-                current_model_id = current_model_data.get("model_id") if current_model_data else None
+                current_model_data = info_data.get("instance", {}).get(
+                    "current_model"
+                )
+                current_instance_id = info_data.get("instance", {}).get(
+                    "instance_id"
+                )
+                current_model_id = (
+                    current_model_data.get("model_id")
+                    if current_model_data
+                    else None
+                )
 
                 # Step 2: get the information from target endpoint
                 try:
@@ -552,7 +586,9 @@ class InstanceMigrator:
                     info_data = info_response.json()
                 except httpx.HTTPStatusError as e:
                     error_msg = f"Failed to get info from target endpoint {target_endpoint}: HTTP {e.response.status_code}"
-                    logger.error(f"Migration failed: {error_msg}", exc_info=True)
+                    logger.error(
+                        f"Migration failed: {error_msg}", exc_info=True
+                    )
                     return MigrationStatus(
                         instance_index=instance_index,
                         original_endpoint=original_endpoint,
@@ -561,11 +597,13 @@ class InstanceMigrator:
                         previous_model=current_model_id,
                         success=False,
                         error_message=error_msg,
-                        deployment_time=time.time() - start_time
+                        deployment_time=time.time() - start_time,
                     )
                 except httpx.RequestError as e:
                     error_msg = f"Request error getting info from target endpoint {target_endpoint}: {str(e)}"
-                    logger.error(f"Migration failed: {error_msg}", exc_info=True)
+                    logger.error(
+                        f"Migration failed: {error_msg}", exc_info=True
+                    )
                     return MigrationStatus(
                         instance_index=instance_index,
                         original_endpoint=original_endpoint,
@@ -574,15 +612,25 @@ class InstanceMigrator:
                         previous_model=current_model_id,
                         success=False,
                         error_message=error_msg,
-                        deployment_time=time.time() - start_time
+                        deployment_time=time.time() - start_time,
                     )
 
-                target_model_data = info_data.get("instance", {}).get("current_model")
-                target_instance_id = info_data.get('instance', {}).get("instance_id")
-                target_model_id = target_model_data.get("model_id") if target_model_data else None
+                target_model_data = info_data.get("instance", {}).get(
+                    "current_model"
+                )
+                target_instance_id = info_data.get("instance", {}).get(
+                    "instance_id"
+                )
+                target_model_id = (
+                    target_model_data.get("model_id")
+                    if target_model_data
+                    else None
+                )
 
                 if current_model_id == target_model_id:
-                    logger.info(f"Instance {current_instance_id} have same model as {target_instance_id}, skip migration")
+                    logger.info(
+                        f"Instance {current_instance_id} have same model as {target_instance_id}, skip migration"
+                    )
                     migration_time = time.time() - start_time
                     return MigrationStatus(
                         instance_index=instance_index,
@@ -592,11 +640,14 @@ class InstanceMigrator:
                         previous_model=current_model_id,
                         success=True,
                         error_message=None,
-                        deployment_time=migration_time
+                        deployment_time=migration_time,
                     )
 
                 # Step 3: Validate scheduler_mapping has the target model
-                if not self.scheduler_mapping or target_model_id not in self.scheduler_mapping:
+                if (
+                    not self.scheduler_mapping
+                    or target_model_id not in self.scheduler_mapping
+                ):
                     error_msg = f"No scheduler mapping found for model {target_model_id}. Available models: {list(self.scheduler_mapping.keys()) if self.scheduler_mapping else []}"
                     logger.error(f"Migration failed: {error_msg}")
                     migration_time = time.time() - start_time
@@ -608,24 +659,29 @@ class InstanceMigrator:
                         previous_model=current_model_id,
                         success=False,
                         error_message=error_msg,
-                        deployment_time=migration_time
+                        deployment_time=migration_time,
                     )
 
                 scheduler_url = self.scheduler_mapping[target_model_id]
-                logger.info(f"Migrating from {original_endpoint} to {target_endpoint} with model {target_model_id}")
+                logger.info(
+                    f"Migrating from {original_endpoint} to {target_endpoint} with model {target_model_id}"
+                )
 
-                payload = {
-                    "scheduler_url": scheduler_url
-                }
+                payload = {"scheduler_url": scheduler_url}
 
                 # Step 4: Deregister original endpoint (no timeout)
                 try:
                     logger.info(f"Deregistering {original_endpoint}")
-                    deregister_response = await self.deregister_model(original_endpoint)
+                    await self.deregister_model(original_endpoint)
                     logger.info(f"Deregister completed for {original_endpoint}")
                 except Exception as e:
-                    error_msg = f"Failed to deregister {original_endpoint}: {str(e)}"
-                    logger.error(f"Migration failed during deregister: {error_msg}", exc_info=True)
+                    error_msg = (
+                        f"Failed to deregister {original_endpoint}: {str(e)}"
+                    )
+                    logger.error(
+                        f"Migration failed during deregister: {error_msg}",
+                        exc_info=True,
+                    )
                     logger.error(f"Traceback: {traceback.format_exc()}")
                     return MigrationStatus(
                         instance_index=instance_index,
@@ -635,12 +691,14 @@ class InstanceMigrator:
                         previous_model=current_model_id,
                         success=False,
                         error_message=error_msg,
-                        deployment_time=time.time() - start_time
+                        deployment_time=time.time() - start_time,
                     )
 
                 # Step 5: Register new instance immediately after deregister completes
                 try:
-                    logger.info(f"Registering {target_endpoint} after deregister")
+                    logger.info(
+                        f"Registering {target_endpoint} after deregister"
+                    )
                     register_response = await client.post(
                         f"{target_endpoint}/model/register", json=payload
                     )
@@ -648,7 +706,10 @@ class InstanceMigrator:
                     logger.info(f"Register completed for {target_endpoint}")
                 except httpx.HTTPStatusError as e:
                     error_msg = f"Failed to register {target_endpoint}: HTTP {e.response.status_code} - {e.response.text}"
-                    logger.error(f"Migration failed during register: {error_msg}", exc_info=True)
+                    logger.error(
+                        f"Migration failed during register: {error_msg}",
+                        exc_info=True,
+                    )
                     return MigrationStatus(
                         instance_index=instance_index,
                         original_endpoint=original_endpoint,
@@ -657,11 +718,14 @@ class InstanceMigrator:
                         previous_model=current_model_id,
                         success=False,
                         error_message=error_msg,
-                        deployment_time=time.time() - start_time
+                        deployment_time=time.time() - start_time,
                     )
                 except httpx.RequestError as e:
                     error_msg = f"Request error during register {target_endpoint}: {str(e)}"
-                    logger.error(f"Migration failed during register: {error_msg}", exc_info=True)
+                    logger.error(
+                        f"Migration failed during register: {error_msg}",
+                        exc_info=True,
+                    )
                     return MigrationStatus(
                         instance_index=instance_index,
                         original_endpoint=original_endpoint,
@@ -670,7 +734,7 @@ class InstanceMigrator:
                         previous_model=current_model_id,
                         success=False,
                         error_message=error_msg,
-                        deployment_time=time.time() - start_time
+                        deployment_time=time.time() - start_time,
                     )
 
             # Now everything is done
@@ -687,11 +751,14 @@ class InstanceMigrator:
                 previous_model=current_model_id,
                 success=True,
                 error_message=None,
-                deployment_time=migration_time
+                deployment_time=migration_time,
             )
         except Exception as e:
             error_msg = f"Unexpected error during migration: {str(e)}"
-            logger.error(f"Migration from {original_endpoint} to {target_endpoint} failed: {error_msg}", exc_info=True)
+            logger.error(
+                f"Migration from {original_endpoint} to {target_endpoint} failed: {error_msg}",
+                exc_info=True,
+            )
             return MigrationStatus(
                 instance_index=instance_index,
                 original_endpoint=original_endpoint,
@@ -700,16 +767,14 @@ class InstanceMigrator:
                 previous_model=current_model_id,
                 success=False,
                 error_message=error_msg,
-                deployment_time=time.time() - start_time
+                deployment_time=time.time() - start_time,
             )
- 
 
     async def deregister_model(
         self,
         endpoint: str,
-    ) -> Dict[str, Any]:
-        """
-        Initiate a model deregister operation on an instance.
+    ) -> dict[str, Any]:
+        """Initiate a model deregister operation on an instance.
 
         This calls the /model/deregister endpoint which performs a graceful deregister from scheduler:
         1. Just call the deregister method on the instance, then it will do everything itself.
@@ -725,27 +790,26 @@ class InstanceMigrator:
         Raises:
             Exception: If deregister initiation fails
         """
-
         try:
             # No timeout for deregister - allow graceful completion
             async with httpx.AsyncClient() as client:
                 response = await client.post(
-                    f"{endpoint}/model/deregister",
-                    timeout=None
+                    f"{endpoint}/model/deregister", timeout=None
                 )
                 response.raise_for_status()
                 return response.json()
         except Exception as e:
-            logger.error(f"Failed to deregister model on {endpoint}: {e}", exc_info=True)
+            logger.error(
+                f"Failed to deregister model on {endpoint}: {e}", exc_info=True
+            )
             raise
 
     async def migration_instances(
         self,
-        original_endpoints: List[str],
-        target_endpoints: List[str],
-    ) -> List[MigrationStatus]:
-        """
-        Migrate models across multiple instances concurrently.
+        original_endpoints: list[str],
+        target_endpoints: list[str],
+    ) -> list[MigrationStatus]:
+        """Migrate models across multiple instances concurrently.
 
         Args:
             original_endpoints: List of original instance endpoint URLs
@@ -756,8 +820,9 @@ class InstanceMigrator:
         """
         tasks = [
             self.migration_model(original, target, idx)
-            for idx, (original, target)
-            in enumerate(zip(original_endpoints, target_endpoints))
+            for idx, (original, target) in enumerate(
+                zip(original_endpoints, target_endpoints)
+            )
         ]
 
         return await asyncio.gather(*tasks)
