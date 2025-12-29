@@ -106,3 +106,6 @@ output
 
 logs_*
 output_*
+
+# Experiment raw results
+experiments/07.Exp2.Deep_Research_Migration_Test/raw_results_*
