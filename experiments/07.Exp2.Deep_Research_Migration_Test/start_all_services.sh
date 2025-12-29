@@ -151,11 +151,13 @@ if ! check_health "http://localhost:$PREDICTOR_PORT"; then
 fi
 
 
-# Step 4: Start Planner with Migration 
+# Step 4: Start Planner with Migration
+# NOTE: AUTO_OPTIMIZE_ENABLED=False to disable Planner's reactive optimization.
+# Use --oracle-deploy in test_dynamic_workflow.py for predictive redeployment instead.
 echo ""
 echo "Step 4: Starting Planner"
 start_service "planner" \
-    "cd $PROJECT_ROOT/planner && AUTO_OPTIMIZE_ENABLED=True AUTO_OPTIMIZE_INTERVAL=60 uv run python -m uvicorn src.api:app --port $PLANNER_PORT" \
+    "cd $PROJECT_ROOT/planner && AUTO_OPTIMIZE_ENABLED=False uv run python -m uvicorn src.api:app --port $PLANNER_PORT" \
     "$PLANNER_PORT"
 
 # Step 2: Start Scheduler A (for Group A)

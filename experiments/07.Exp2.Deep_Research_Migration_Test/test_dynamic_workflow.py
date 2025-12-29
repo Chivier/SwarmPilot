@@ -319,6 +319,480 @@ class WorkflowCompletionEvent:
 
 
 # ============================================================================
+# MigrationPlan and OracleDeployer for Predictive Redeployment
+# ============================================================================
+
+@dataclass
+class MigrationPlan:
+    """Pre-computed migration plan for predictive redeployment."""
+    trigger_time: float      # Time to trigger migration (relative to experiment start)
+    target_a_instances: int  # Target number of A model instances
+    target_b_instances: int  # Target number of B model instances
+    reason: str              # Reason for migration (for debugging)
+
+
+class OracleDeployer:
+    """
+    Thread 8: Oracle-based Predictive Redeployment Controller.
+
+    Uses pre-generated workflow data to predict future load and trigger
+    migrations BEFORE load changes occur, rather than reacting to queue backlogs.
+
+    Key insight: Since all workflow data is pre-generated, we have perfect
+    foresight of future load patterns and can proactively migrate instances.
+
+    IMPORTANT:
+    1. Pass the SAME inter_arrival_times that will be used by PoissonTaskSubmitter
+       to ensure migration timeline matches actual task submission.
+    2. Call signal_task_submission_started() when actual task submission begins
+       to synchronize the migration timeline with task submission.
+    """
+
+    def __init__(self,
+                 planner_url: str,
+                 scheduler_a_url: str,
+                 scheduler_b_url: str,
+                 total_instances: int,
+                 fanout_values: List[int],  # Combined fanout values (warmup + actual)
+                 inter_arrival_times: np.ndarray,  # Pre-computed inter-arrival times (MUST match PoissonTaskSubmitter)
+                 window_size_s: float = 5.0,
+                 lookahead_s: float = 3.0,
+                 min_change_threshold: int = 2,
+                 two_phase_mode: bool = False,
+                 two_phase_split_index: int = 0,
+                 num_warmup_workflows: int = 0):
+        """
+        Initialize Oracle Deployer.
+
+        Args:
+            planner_url: Planner API endpoint
+            scheduler_a_url: Scheduler A endpoint (for querying instances)
+            scheduler_b_url: Scheduler B endpoint (for querying instances)
+            total_instances: Total number of instances in the system
+            fanout_values: Combined fanout values list (warmup + actual, must match inter_arrival_times length)
+            inter_arrival_times: Pre-computed inter-arrival times (MUST be the same array used by PoissonTaskSubmitter)
+            window_size_s: Size of load estimation window in seconds
+            lookahead_s: How far ahead to trigger migrations (seconds)
+            min_change_threshold: Minimum instance change to trigger migration
+            two_phase_mode: If True, use simplified two-phase migration (single migration point)
+            two_phase_split_index: Index where large-fanout phase starts (within main workflows, not including warmup)
+            num_warmup_workflows: Number of warmup workflows (to offset two_phase_split_index)
+        """
+        self.planner_url = planner_url
+        self.scheduler_a_url = scheduler_a_url
+        self.scheduler_b_url = scheduler_b_url
+        self.total_instances = total_instances
+        self.window_size = window_size_s
+        self.lookahead = lookahead_s
+        self.min_change = min_change_threshold
+        self.two_phase_mode = two_phase_mode
+        self.two_phase_split_index = two_phase_split_index
+        self.num_warmup_workflows = num_warmup_workflows
+
+        # Initialize logger first (needed by _precompute_migration_plan)
+        self.logger = logging.getLogger("Thread8.OracleDeployer")
+
+        # Synchronization: wait for task submission to start before triggering migrations
+        self._task_submission_started = threading.Event()
+
+        # Task execution time estimates (seconds) - from workload_generator.py
+        self.a1_duration = 30.0     # A1 (boot): N(30, 2²) = 30 seconds
+        self.a2_duration = 25.0     # A2 (summary): N(25, 2²) = 25 seconds
+        self.b1_duration = 3.0      # B1 (query): N(3, 0.3²) = 3 seconds
+        self.b2_duration = 2.0      # B2 (criteria): N(2, 0.2²) = 2 seconds
+
+        # Pre-compute migration plan using the SAME inter-arrival times and fanout values
+        if two_phase_mode:
+            self.migration_plan = self._precompute_two_phase_migration(fanout_values, inter_arrival_times)
+        else:
+            self.migration_plan = self._precompute_migration_plan(fanout_values, inter_arrival_times)
+        self.plan_index = 0
+
+        # Current allocation tracking
+        self.current_a_instances = total_instances // 2
+        self.current_b_instances = total_instances - self.current_a_instances
+
+        # Thread control
+        self.running = False
+        self.thread = None
+        self.experiment_start_time = None
+
+    def _precompute_migration_plan(self, fanout_values: List[int], inter_arrival_times: np.ndarray) -> List[MigrationPlan]:
+        """
+        Pre-compute the entire migration timeline from workflow data.
+
+        Uses workload patterns to determine optimal instance allocation
+        for each time window, then creates migration plans that trigger
+        BEFORE the load changes (lookahead).
+
+        Args:
+            fanout_values: Combined fanout values list (warmup + actual)
+            inter_arrival_times: Pre-computed inter-arrival times (same as PoissonTaskSubmitter uses)
+        """
+        plans = []
+
+        # Validate lengths match
+        if len(fanout_values) != len(inter_arrival_times):
+            self.logger.warning(f"Length mismatch: fanout_values={len(fanout_values)}, inter_arrival_times={len(inter_arrival_times)}")
+
+        # Use the SAME inter-arrival times that PoissonTaskSubmitter will use
+        # This ensures migration timeline matches actual task submission
+        a_submit_times = np.cumsum(inter_arrival_times)
+
+        # Compute load for each time window
+        max_time = a_submit_times[-1] + 60  # Add buffer
+        current_allocation = (self.total_instances // 2, self.total_instances // 2)
+
+        for window_start in np.arange(0, max_time, self.window_size):
+            window_end = window_start + self.window_size
+
+            # Find workflows that start in this window
+            workflows_in_window = []
+            for i, submit_time in enumerate(a_submit_times):
+                if window_start <= submit_time < window_end:
+                    workflows_in_window.append(fanout_values[i])
+
+            if not workflows_in_window:
+                continue
+
+            # Compute workload for A and B models
+            num_a_tasks = len(workflows_in_window)
+            total_fanout = sum(workflows_in_window)
+
+            # A workload: A1 (initial) + A2 (merge) per workflow
+            a_work = num_a_tasks * (self.a1_duration + self.a2_duration)
+            # B workload: B1 + B2 per fanout item
+            b_work = total_fanout * (self.b1_duration + self.b2_duration)
+
+            total_work = a_work + b_work
+            if total_work > 0:
+                # Compute optimal allocation based on work ratio
+                optimal_a = int(round(self.total_instances * a_work / total_work))
+                optimal_a = max(1, min(self.total_instances - 1, optimal_a))
+                optimal_b = self.total_instances - optimal_a
+            else:
+                optimal_a, optimal_b = current_allocation
+
+            # Create migration if change is significant
+            if abs(optimal_a - current_allocation[0]) >= self.min_change:
+                trigger_time = max(0, window_start - self.lookahead)
+                plans.append(MigrationPlan(
+                    trigger_time=trigger_time,
+                    target_a_instances=optimal_a,
+                    target_b_instances=optimal_b,
+                    reason=f"window={window_start:.1f}s, a_work={a_work:.4f}, b_work={b_work:.4f}"
+                ))
+                current_allocation = (optimal_a, optimal_b)
+
+        self.logger.info(f"Pre-computed {len(plans)} migration plans")
+        return plans
+
+    def _precompute_two_phase_migration(self, fanout_values: List[int], inter_arrival_times: np.ndarray) -> List[MigrationPlan]:
+        """
+        Pre-compute a SINGLE migration for two-phase mode.
+
+        Two-phase mode:
+        - Phase 1: warmup + first 20% of main workflows use small fanout (mean=6)
+        - Phase 2: remaining 80% of main workflows use large fanout (mean=14)
+        - Migration is triggered after 5 large-fanout tasks have been submitted
+
+        Returns a list with exactly ONE migration plan.
+        """
+        plans = []
+
+        # Bias factor: shift resources towards model B
+        # A positive value (e.g., 0.15) means 15% more instances allocated to B
+        B_BIAS_FACTOR = 0.15
+
+        # Compute submit times from inter-arrival times
+        a_submit_times = np.cumsum(inter_arrival_times)
+
+        # Phase 1: warmup + small fanout tasks (indices 0 to warmup + small_fanout_count - 1)
+        # Phase 2: large fanout tasks (indices warmup + small_fanout_count onwards)
+
+        # Global index where large-fanout phase starts = warmup + two_phase_split_index
+        large_phase_start_idx = self.num_warmup_workflows + self.two_phase_split_index
+
+        self.logger.info(f"Two-phase mode: warmup={self.num_warmup_workflows}, "
+                        f"small_fanout_count={self.two_phase_split_index}, "
+                        f"large_phase_start_idx={large_phase_start_idx}, "
+                        f"B_bias={B_BIAS_FACTOR:.0%}")
+
+        # ================================================================
+        # HARDCODED INSTANCE ALLOCATIONS
+        # Pre-calculated based on actual workload_generator.py data
+        # These values match the hardcoded QPS values in main()
+        #
+        # Task durations (from workload_generator.py):
+        #   A1 (boot): N(30, 2²) = 30 seconds
+        #   A2 (summary): N(25, 2²) = 25 seconds
+        #   B1 (query): N(3, 0.3²) = 3 seconds
+        #   B2 (criteria): N(2, 0.2²) = 2 seconds
+        #
+        # Total A work = 55 seconds per workflow (A is bottleneck)
+        # Total B work = 5 seconds per B task
+        #
+        # With 48 instances, 15% B bias, 115% overload:
+        #   Phase 1 (fanout=6):  A=24, B=24 -> QPS=0.50 wf/s
+        #   Phase 2 (fanout=14): A=14, B=34 -> QPS=0.29 wf/s
+        # ================================================================
+        HARDCODED_PHASE1_A = 24
+        HARDCODED_PHASE1_B = 24
+        HARDCODED_PHASE2_A = 14
+        HARDCODED_PHASE2_B = 34
+
+        # Scale to actual instance count if different from 48
+        if self.total_instances != 48:
+            scale = self.total_instances / 48.0
+            optimal_a_phase1 = max(1, min(self.total_instances - 1, int(round(HARDCODED_PHASE1_A * scale))))
+            optimal_a_phase2 = max(1, min(self.total_instances - 1, int(round(HARDCODED_PHASE2_A * scale))))
+        else:
+            optimal_a_phase1 = HARDCODED_PHASE1_A
+            optimal_a_phase2 = HARDCODED_PHASE2_A
+
+        optimal_b_phase1 = self.total_instances - optimal_a_phase1
+        optimal_b_phase2 = self.total_instances - optimal_a_phase2
+
+        phase1_fanouts = fanout_values[:large_phase_start_idx]
+        phase2_fanouts = fanout_values[large_phase_start_idx:]
+
+        self.logger.info(f"Phase 1 (small fanout={np.mean(phase1_fanouts) if phase1_fanouts else 6:.1f}): "
+                        f"HARDCODED A={optimal_a_phase1}, B={optimal_b_phase1}")
+        self.logger.info(f"Phase 2 (large fanout={np.mean(phase2_fanouts) if phase2_fanouts else 14:.1f}): "
+                        f"HARDCODED A={optimal_a_phase2}, B={optimal_b_phase2}")
+
+        # ========== HARDCODED QPS VALUES ==========
+        # These match the values in main() for consistency
+        # Calculated: (num_A_instances / 55s) * 1.15 overload
+        HARDCODED_PHASE1_QPS = 0.50  # workflows/s (24 A instances / 55s * 1.15)
+        HARDCODED_PHASE2_QPS = 0.29  # workflows/s (14 A instances / 55s * 1.15)
+
+        optimal_qps_phase1 = HARDCODED_PHASE1_QPS
+        optimal_qps_phase2 = HARDCODED_PHASE2_QPS
+
+        self.logger.info(f"Phase 1 QPS: {optimal_qps_phase1:.2f} wf/s (HARDCODED)")
+        self.logger.info(f"Phase 2 QPS: {optimal_qps_phase2:.2f} wf/s (HARDCODED)")
+
+        # Store QPS values for external access
+        self.phase1_qps = optimal_qps_phase1
+        self.phase2_qps = optimal_qps_phase2
+        self.qps_transition_index = large_phase_start_idx  # Workflow index where QPS changes
+
+        self.logger.info(f"QPS transition: {optimal_qps_phase1:.2f} -> {optimal_qps_phase2:.2f} "
+                        f"at workflow #{large_phase_start_idx}")
+
+        # Create SINGLE migration plan: trigger after 5 large-fanout tasks have been submitted
+        # Migration index = large_phase_start_idx + 5
+        migration_trigger_idx = large_phase_start_idx + 5
+        if migration_trigger_idx < len(a_submit_times):
+            trigger_time = a_submit_times[migration_trigger_idx]
+
+            # Only create migration if there's a significant change
+            if abs(optimal_a_phase2 - optimal_a_phase1) >= self.min_change:
+                plans.append(MigrationPlan(
+                    trigger_time=trigger_time,
+                    target_a_instances=optimal_a_phase2,
+                    target_b_instances=optimal_b_phase2,
+                    reason=f"two_phase: small_fanout({optimal_a_phase1}/{optimal_b_phase1})->large_fanout({optimal_a_phase2}/{optimal_b_phase2})"
+                ))
+                self.logger.info(f"Two-phase migration: trigger at t={trigger_time:.2f}s "
+                               f"(after workflow #{migration_trigger_idx}), "
+                               f"A: {optimal_a_phase1}->{optimal_a_phase2}, B: {optimal_b_phase1}->{optimal_b_phase2}")
+            else:
+                self.logger.info(f"Two-phase: No migration needed (change < {self.min_change} instances)")
+
+        # Store initial optimal allocation for Phase 1 (this will be set at experiment start)
+        self.initial_optimal_a = optimal_a_phase1
+        self.initial_optimal_b = optimal_b_phase1
+
+        self.logger.info(f"Two-phase mode: {len(plans)} migration(s) planned")
+        return plans
+
+    def get_qps_for_workflow(self, workflow_index: int) -> float:
+        """
+        Get the optimal QPS for a given workflow index.
+
+        Args:
+            workflow_index: Global workflow index (including warmup)
+
+        Returns:
+            Optimal QPS for that phase
+        """
+        if not self.two_phase_mode:
+            return None  # Not in two-phase mode
+
+        if workflow_index < self.qps_transition_index:
+            return self.phase1_qps
+        else:
+            return self.phase2_qps
+
+    def _get_current_instance_assignments(self):
+        """
+        Query real instance assignments from Schedulers.
+
+        CRITICAL: Must query real state before each migration because
+        instance-model mappings change after migrations.
+        """
+        all_instances = []
+
+        # Query Scheduler A
+        try:
+            resp = requests.get(f"{self.scheduler_a_url}/instance/list", timeout=5.0)
+            if resp.ok:
+                for inst in resp.json().get("instances", []):
+                    all_instances.append({
+                        "endpoint": inst.get("endpoint") or f"http://localhost:{inst.get('port', 0)}",
+                        "current_model": inst.get("model_id", "unknown")
+                    })
+        except Exception as e:
+            self.logger.error(f"Failed to query Scheduler A instances: {e}")
+
+        # Query Scheduler B
+        try:
+            resp = requests.get(f"{self.scheduler_b_url}/instance/list", timeout=5.0)
+            if resp.ok:
+                for inst in resp.json().get("instances", []):
+                    all_instances.append({
+                        "endpoint": inst.get("endpoint") or f"http://localhost:{inst.get('port', 0)}",
+                        "current_model": inst.get("model_id", "unknown")
+                    })
+        except Exception as e:
+            self.logger.error(f"Failed to query Scheduler B instances: {e}")
+
+        return all_instances
+
+    def _trigger_migration(self, plan: MigrationPlan):
+        """Execute a migration by calling the Planner API."""
+        # Get current real instance state
+        all_instances = self._get_current_instance_assignments()
+
+        if not all_instances:
+            self.logger.error("No instances found from schedulers, skipping migration")
+            return
+
+        # Count current allocations
+        current_a = sum(1 for i in all_instances if i["current_model"] == "sleep_model_a")
+        current_b = sum(1 for i in all_instances if i["current_model"] == "sleep_model_b")
+        self.logger.info(f"Current: A={current_a}, B={current_b} -> Target: A={plan.target_a_instances}, B={plan.target_b_instances}")
+
+        # Throughput coefficients (must match B matrix)
+        # Model A: 0.0347 QPS per instance
+        # Model B: 0.369 QPS per instance
+        throughput_a = 0.0347
+        throughput_b = 0.369
+
+        # IMPORTANT: Planner expects target as CAPACITY ratios, not instance count ratios.
+        # We must compute the capacity that would result from the desired instance counts,
+        # then send that as the target so Planner allocates instances accordingly.
+        target_a_capacity = plan.target_a_instances * throughput_a
+        target_b_capacity = plan.target_b_instances * throughput_b
+
+        self.logger.info(f"Target capacity: A={target_a_capacity:.3f}, B={target_b_capacity:.3f}")
+
+        # Build migration request
+        payload = {
+            "instances": all_instances,
+            "planner_input": {
+                "M": len(all_instances),
+                "N": 2,
+                "B": [[throughput_a, throughput_b]] * len(all_instances),
+                "a": 1.0,
+                "target": [target_a_capacity, target_b_capacity],  # Capacity ratios, not instance ratios
+                "algorithm": "simulated_annealing",
+                "objective_method": "ratio_difference"
+            },
+            "scheduler_mapping": {
+                "sleep_model_a": self.scheduler_a_url,
+                "sleep_model_b": self.scheduler_b_url
+            }
+        }
+
+        try:
+            response = requests.post(
+                f"{self.planner_url}/deploy/migration",
+                json=payload,
+                timeout=60.0
+            )
+            if response.ok:
+                result = response.json()
+                self.logger.info(f"Migration completed: changes={result.get('changes_count', 'N/A')}")
+            else:
+                self.logger.error(f"Migration failed: HTTP {response.status_code} - {response.text[:200]}")
+        except Exception as e:
+            self.logger.error(f"Migration error: {e}")
+
+    def _run(self):
+        """Main loop: execute migrations according to pre-computed plan."""
+        self.logger.info(f"Oracle deployer waiting for task submission to start...")
+        self.logger.info(f"Pre-computed {len(self.migration_plan)} migration plans")
+
+        # Wait for task submission to start (with timeout to avoid hanging)
+        if not self._task_submission_started.wait(timeout=300):
+            self.logger.warning("Timeout waiting for task submission signal, aborting")
+            return
+
+        # Now set the start time - synchronized with actual task submission
+        self.experiment_start_time = time.time()
+        self.logger.info(f"Task submission started, beginning migration schedule")
+
+        # In two-phase mode, trigger initial deployment for Phase 1 optimal allocation
+        if self.two_phase_mode and hasattr(self, 'initial_optimal_a'):
+            self.logger.info(f"Two-phase mode: triggering initial deployment for Phase 1 "
+                           f"(A={self.initial_optimal_a}, B={self.initial_optimal_b})")
+            initial_plan = MigrationPlan(
+                trigger_time=0.0,
+                target_a_instances=self.initial_optimal_a,
+                target_b_instances=self.initial_optimal_b,
+                reason="two_phase_initial: optimal for small fanout"
+            )
+            self._trigger_migration(initial_plan)
+
+        while self.running and self.plan_index < len(self.migration_plan):
+            elapsed = time.time() - self.experiment_start_time
+            next_plan = self.migration_plan[self.plan_index]
+
+            if elapsed >= next_plan.trigger_time:
+                self.logger.info(f"Executing migration {self.plan_index + 1}/{len(self.migration_plan)}: "
+                               f"A={next_plan.target_a_instances}, B={next_plan.target_b_instances} "
+                               f"({next_plan.reason})")
+                self._trigger_migration(next_plan)
+                self.plan_index += 1
+            else:
+                # Wait for next migration time
+                wait_time = min(0.5, next_plan.trigger_time - elapsed)
+                time.sleep(wait_time)
+
+        self.logger.info("Oracle deployer completed all planned migrations")
+
+    def signal_task_submission_started(self):
+        """
+        Signal that task submission has started.
+
+        Call this method when the A task submitter actually begins submitting tasks.
+        This synchronizes the migration timeline with the actual task submission.
+        """
+        self.logger.info("Received signal: task submission started")
+        self._task_submission_started.set()
+
+    def start(self):
+        """Start the oracle deployer thread."""
+        self.running = True
+        self.plan_index = 0
+        self._task_submission_started.clear()  # Reset the event
+        self.thread = threading.Thread(target=self._run, name="Thread8-OracleDeployer")
+        self.thread.start()
+        self.logger.info("Oracle deployer thread started (waiting for task submission signal)")
+
+    def stop(self):
+        """Stop the oracle deployer thread."""
+        self.running = False
+        self._task_submission_started.set()  # Unblock if waiting
+        if self.thread:
+            self.thread.join(timeout=10.0)
+            self.logger.info("Oracle deployer thread stopped")
+
+
+# ============================================================================
 # Thread 1: Poisson Task Submitter for A Tasks
 # ============================================================================
 
@@ -337,18 +811,20 @@ class PoissonTaskSubmitter:
                  workflow_states: Dict[str, WorkflowState],
                  model_id: str = "sleep_model_a",
                  strategy: str = "default",
-                 rate_limiter: Optional[RateLimiter] = None):
+                 rate_limiter: Optional[RateLimiter] = None,
+                 inter_arrival_times: Optional[np.ndarray] = None):
         """
         Initialize Poisson task submitter.
 
         Args:
             scheduler_url: Scheduler A URL (e.g., http://localhost:8100)
             tasks: List of pre-generated A task data
-            qps: Target queries per second (e.g., 8.0) - ignored if rate_limiter is provided
+            qps: Target queries per second (e.g., 8.0) - used to generate inter-arrival times if not provided
             workflow_states: Shared workflow state dictionary
             model_id: Model ID to use for tasks
             strategy: Scheduling strategy name (for MAPE error simulation)
             rate_limiter: Optional shared rate limiter for global QPS control
+            inter_arrival_times: Optional pre-computed inter-arrival times (for synchronization with OracleDeployer)
         """
         self.scheduler_url = scheduler_url
         self.tasks = tasks
@@ -357,6 +833,7 @@ class PoissonTaskSubmitter:
         self.model_id = model_id
         self.strategy = strategy
         self.rate_limiter = rate_limiter
+        self.inter_arrival_times = inter_arrival_times  # Pre-computed times for oracle sync
         self.logger = logging.getLogger("Thread1.ATaskSubmitter")
 
         # Tracking
@@ -541,9 +1018,24 @@ class PoissonTaskSubmitter:
         - --qps controls A task arrival pattern (Poisson process)
         - --gqps controls global submission rate across all tasks
         """
-        # Generate inter-arrival times (exponential distribution)
-        lambda_rate = self.qps
-        inter_arrival_times = np.random.exponential(1.0 / lambda_rate, len(self.tasks))
+        # Use pre-computed inter-arrival times if provided (for OracleDeployer synchronization)
+        # Otherwise generate new times using exponential distribution
+        if self.inter_arrival_times is not None:
+            inter_arrival_times = self.inter_arrival_times
+            # Calculate effective QPS from pre-computed times
+            total_time = np.sum(inter_arrival_times)
+            effective_qps = len(inter_arrival_times) / total_time if total_time > 0 else 0
+            self.logger.info("=" * 60)
+            self.logger.info("USING PRE-COMPUTED INTER-ARRIVAL TIMES (HARDCODED QPS)")
+            self.logger.info(f"  User-provided QPS: {self.qps:.2f} (IGNORED)")
+            self.logger.info(f"  Effective avg QPS: {effective_qps:.2f} wf/s")
+            self.logger.info(f"  Total tasks: {len(inter_arrival_times)}")
+            self.logger.info(f"  Expected duration: {total_time:.1f}s")
+            self.logger.info("=" * 60)
+        else:
+            lambda_rate = self.qps
+            inter_arrival_times = np.random.exponential(1.0 / lambda_rate, len(self.tasks))
+            self.logger.info(f"Using user-provided QPS: {self.qps:.2f} wf/s")
 
         self.submission_start_time = time.time()
 
@@ -2679,7 +3171,9 @@ def test_strategy_workflow(
     warmup_fanout_values: Optional[List[int]] = None,
     continuous_mode: bool = False,
     target_workflows: Optional[int] = None,
-    metric_portion: float = 0.5
+    metric_portion: float = 0.5,
+    oracle_deployer: Optional['OracleDeployer'] = None,
+    inter_arrival_times: Optional[np.ndarray] = None
 ) -> Dict:
     """
     Test a single scheduling strategy with dynamic workflow fanout (B1/B2 split).
@@ -2703,6 +3197,8 @@ def test_strategy_workflow(
         continuous_mode: Enable continuous request mode (bool)
         target_workflows: Target number of workflows for continuous mode (optional)
         metric_portion: Portion of non-warmup workflows to include in statistics (0.0-1.0, default: 0.5)
+        oracle_deployer: Optional OracleDeployer for predictive redeployment (will be signaled when task submission starts)
+        inter_arrival_times: Optional pre-computed inter-arrival times (for OracleDeployer synchronization)
 
     Returns:
         Dictionary of test results
@@ -3031,15 +3527,33 @@ def test_strategy_workflow(
         qps=qps_a,
         workflow_states=workflow_states,
         strategy=strategy,
-        rate_limiter=rate_limiter
+        rate_limiter=rate_limiter,
+        inter_arrival_times=inter_arrival_times  # For OracleDeployer synchronization
     )
     a_submitter.start()
 
-    # Step 13: Wait for A task submission to complete
-    logger.info("Step 13: Waiting for A task submission to complete")
+    # Signal oracle deployer that task submission has started
+    if oracle_deployer is not None:
+        oracle_deployer.signal_task_submission_started()
+
+    # Step 13: Wait for A task submission to complete (with early stop support)
+    logger.info("Step 13: Waiting for A task submission to complete (or early stop when target workflows done)")
+    early_stopped = False
     while a_submitter.is_alive():
+        # Check if monitor has stopped (target workflows completed)
+        if not monitor.is_alive():
+            logger.info("=" * 60)
+            logger.info("EARLY STOP: Target workflows completed, stopping A task submission")
+            logger.info("=" * 60)
+            a_submitter.stop()
+            early_stopped = True
+            break
         time.sleep(0.5)
-    logger.debug("A task submission complete")
+
+    if early_stopped:
+        logger.info(f"A task submission early stopped after {len(a_submitter.submitted_tasks)}/{len(a_tasks)} tasks")
+    else:
+        logger.debug("A task submission complete")
 
     # Step 14: Wait for workflow completion with timeout
     logger.info(f"Step 14: Waiting for target workflows to complete (timeout: {timeout_minutes} minutes)")
@@ -3207,7 +3721,8 @@ def test_strategy_workflow(
 
 def main(num_workflows: int = 100, qps_a: float = 8.0, seed: int = 42,
          strategies: List[str] = None, gqps: Optional[float] = None, warmup_ratio: float = 0.0,
-         continuous_mode: bool = False, metric_portion: float = 0.5, timeout_minutes: int = 20):
+         continuous_mode: bool = False, metric_portion: float = 0.5, timeout_minutes: int = 20,
+         oracle_deploy: bool = False, two_phase_mode: bool = False):
     """
     Main entry point for experiment 07.
 
@@ -3221,6 +3736,8 @@ def main(num_workflows: int = 100, qps_a: float = 8.0, seed: int = 42,
         continuous_mode: Enable continuous request mode (2x workflows, track first num_workflows)
         metric_portion: Portion of non-warmup workflows to use for statistics (0.0-1.0, default: 0.5)
         timeout_minutes: Maximum time in minutes to wait for workflows to complete (default: 20)
+        oracle_deploy: Enable oracle-based predictive redeployment
+        two_phase_mode: Enable two-phase fanout (20% small, 80% large) with single migration
     """
     if strategies is None:
         strategies = ["min_time", "round_robin", "probabilistic"]
@@ -3275,6 +3792,62 @@ def main(num_workflows: int = 100, qps_a: float = 8.0, seed: int = 42,
     task_times_a2 = workflow_workload.a2_times
     fanout_values = workflow_workload.fanout_values
 
+    # Two-phase fanout constants (defined here for use in warmup too)
+    SMALL_FANOUT_MEAN = 6
+    LARGE_FANOUT_MEAN = 14
+    FANOUT_STD = 0.6
+    two_phase_split_index = 0  # Will be set if two_phase_mode is enabled
+
+    # Two-phase fanout mode: override fanout values
+    # Pattern: first 20% = small fanout (mean=6), remaining 80% = large fanout (mean=14)
+    if two_phase_mode:
+        logger.info("TWO-PHASE MODE: Generating custom fanout pattern (20% small, 80% large)")
+        rng = np.random.RandomState(SEED + 7777)
+
+        # Calculate split point (first 20% use small fanout)
+        small_fanout_count = int(NUM_WORKFLOWS * 0.2)
+        large_fanout_count = NUM_WORKFLOWS - small_fanout_count
+
+        small_fanouts = np.clip(
+            rng.normal(SMALL_FANOUT_MEAN, FANOUT_STD, small_fanout_count).astype(int),
+            5, 15
+        ).tolist()
+        large_fanouts = np.clip(
+            rng.normal(LARGE_FANOUT_MEAN, FANOUT_STD, large_fanout_count).astype(int),
+            5, 15
+        ).tolist()
+
+        fanout_values = small_fanouts + large_fanouts
+        logger.info(f"Two-phase fanout: {small_fanout_count} small (mean={np.mean(small_fanouts):.1f}), "
+                   f"{large_fanout_count} large (mean={np.mean(large_fanouts):.1f})")
+
+        # Store the split point for OracleDeployer
+        two_phase_split_index = small_fanout_count
+        logger.info(f"Phase transition at workflow index {two_phase_split_index}")
+
+        # IMPORTANT: Regenerate B task times to match new fanout values
+        # B1 (query): N(3, 0.3²) - mean=3ms, std=0.3ms
+        # B2 (criteria): N(2, 0.2²) - mean=2ms, std=0.2ms
+        logger.info("TWO-PHASE MODE: Regenerating B task times to match new fanout values")
+        b_rng = np.random.RandomState(SEED + 7779)  # Different seed for B task times
+        total_b_tasks = sum(fanout_values)
+        b1_times_pool = np.abs(b_rng.normal(3.0, 0.3, total_b_tasks)).tolist()  # abs to avoid negative
+        b2_times_pool = np.abs(b_rng.normal(2.0, 0.2, total_b_tasks)).tolist()
+
+        # Rebuild B1/B2 times as nested lists (per workflow)
+        workflow_b1_times = []
+        workflow_b2_times = []
+        b_idx = 0
+        for fanout in fanout_values:
+            workflow_b1_times.append(b1_times_pool[b_idx:b_idx + fanout])
+            workflow_b2_times.append(b2_times_pool[b_idx:b_idx + fanout])
+            b_idx += fanout
+
+        # Override workflow_workload's B times
+        workflow_workload.b1_times = workflow_b1_times
+        workflow_workload.b2_times = workflow_b2_times
+        logger.info(f"Regenerated {total_b_tasks} B1 and B2 task times for two-phase mode")
+
     # Flatten B1 and B2 task times for the task time pools
     # These will be indexed by the b_task_index when submitting
     task_times_b1 = [t for workflow_b1 in workflow_workload.b1_times for t in workflow_b1]
@@ -3302,14 +3875,45 @@ def main(num_workflows: int = 100, qps_a: float = 8.0, seed: int = 42,
         warmup_task_times_a2 = warmup_workflow.a2_times
         warmup_fanout_values = warmup_workflow.fanout_values
 
-        # Flatten warmup B1 and B2 task times
+        logger.debug(f"Generated {len(warmup_task_times_a)} warmup A1 task times from traces")
+        logger.debug(f"Generated {len(warmup_task_times_a2)} warmup A2 task times from traces")
+
+        # In two-phase mode, override warmup fanout to use small fanout (mean=6)
+        if two_phase_mode:
+            logger.info("TWO-PHASE MODE: Overriding warmup fanout to use small fanout (mean=6)")
+            warmup_rng = np.random.RandomState(SEED + 7778)  # Different seed from main fanout
+            warmup_fanout_values = np.clip(
+                warmup_rng.normal(SMALL_FANOUT_MEAN, FANOUT_STD, num_warmup_workflows).astype(int),
+                5, 15
+            ).tolist()
+            logger.info(f"Warmup fanout (two-phase): mean={np.mean(warmup_fanout_values):.1f}")
+
+            # IMPORTANT: Regenerate warmup B task times to match new fanout values
+            logger.info("TWO-PHASE MODE: Regenerating warmup B task times to match new fanout values")
+            warmup_b_rng = np.random.RandomState(SEED + 7780)  # Different seed for warmup B task times
+            warmup_total_b_tasks = sum(warmup_fanout_values)
+            warmup_b1_pool = np.abs(warmup_b_rng.normal(3.0, 0.3, warmup_total_b_tasks)).tolist()
+            warmup_b2_pool = np.abs(warmup_b_rng.normal(2.0, 0.2, warmup_total_b_tasks)).tolist()
+
+            # Rebuild warmup B1/B2 times as nested lists
+            warmup_workflow_b1_times = []
+            warmup_workflow_b2_times = []
+            warmup_b_idx = 0
+            for fanout in warmup_fanout_values:
+                warmup_workflow_b1_times.append(warmup_b1_pool[warmup_b_idx:warmup_b_idx + fanout])
+                warmup_workflow_b2_times.append(warmup_b2_pool[warmup_b_idx:warmup_b_idx + fanout])
+                warmup_b_idx += fanout
+
+            warmup_workflow.b1_times = warmup_workflow_b1_times
+            warmup_workflow.b2_times = warmup_workflow_b2_times
+            logger.info(f"Regenerated {warmup_total_b_tasks} warmup B1 and B2 task times for two-phase mode")
+
+        # Flatten warmup B1 and B2 task times (after potential override)
         warmup_task_times_b1 = [t for workflow_b1 in warmup_workflow.b1_times for t in workflow_b1]
         warmup_task_times_b2 = [t for workflow_b2 in warmup_workflow.b2_times for t in workflow_b2]
 
-        logger.debug(f"Generated {len(warmup_task_times_a)} warmup A1 task times from traces")
-        logger.debug(f"Generated {len(warmup_task_times_a2)} warmup A2 task times from traces")
-        logger.debug(f"Generated {len(warmup_task_times_b1)} warmup B1 task times from traces")
-        logger.debug(f"Generated {len(warmup_task_times_b2)} warmup B2 task times from traces")
+        logger.debug(f"Generated {len(warmup_task_times_b1)} warmup B1 task times")
+        logger.debug(f"Generated {len(warmup_task_times_b2)} warmup B2 task times")
         logger.debug(f"Warmup fanout distribution: min={min(warmup_fanout_values)}, max={max(warmup_fanout_values)}, mean={np.mean(warmup_fanout_values):.2f}")
     else:
         warmup_fanout_values = None
@@ -3322,31 +3926,162 @@ def main(num_workflows: int = 100, qps_a: float = 8.0, seed: int = 42,
     # Run tests for specified strategies
     all_results = []
 
+    # Query total instances if oracle deploy is enabled
+    total_instances = 0
+    inter_arrival_times = None  # Pre-computed inter-arrival times for oracle sync
+    combined_fanout_values = None  # Combined fanout values for oracle sync
+    phase1_qps = None
+    phase2_qps = None
+    qps_transition_index = 0
+    if oracle_deploy:
+        logger.info("Oracle deploy enabled, querying total instances from schedulers...")
+        try:
+            resp_a = requests.get(f"{SCHEDULER_A_URL}/health", timeout=5.0)
+            resp_b = requests.get(f"{SCHEDULER_B_URL}/health", timeout=5.0)
+            if resp_a.ok and resp_b.ok:
+                instances_a = resp_a.json().get("stats", {}).get("total_instances", 0)
+                instances_b = resp_b.json().get("stats", {}).get("total_instances", 0)
+                total_instances = instances_a + instances_b
+                logger.info(f"Total instances: {total_instances} (A: {instances_a}, B: {instances_b})")
+
+                # Create combined fanout values (warmup + actual) for OracleDeployer
+                if warmup_fanout_values is not None:
+                    combined_fanout_values = list(warmup_fanout_values) + list(fanout_values)
+                else:
+                    combined_fanout_values = list(fanout_values)
+                logger.info(f"Combined fanout values: {len(combined_fanout_values)} workflows")
+
+                # In two-phase mode, use HARDCODED optimal QPS values
+                # These are pre-calculated based on actual trace data and 48 instances
+                # User-provided QPS values are IGNORED in two-phase mode
+                if two_phase_mode:
+                    logger.info("=" * 60)
+                    logger.info("TWO-PHASE MODE: Using HARDCODED optimal QPS values")
+                    logger.info("=" * 60)
+                    logger.warning(f"Ignoring user-provided QPS={QPS_A:.2f}")
+
+                    # ================================================================
+                    # HARDCODED QPS VALUES
+                    # Pre-calculated based on actual workload_generator.py data:
+                    #   - 48 total instances
+                    #   - 15% B model bias
+                    #   - 15% overload factor
+                    #
+                    # Task durations (from workload_generator.py):
+                    #   A1 (boot): N(30, 2²) = 30 seconds
+                    #   A2 (summary): N(25, 2²) = 25 seconds
+                    #   B1 (query): N(3, 0.3²) = 3 seconds
+                    #   B2 (criteria): N(2, 0.2²) = 2 seconds
+                    #
+                    # Total A work per workflow = 55 seconds (A is always bottleneck)
+                    # Total B work per B task = 5 seconds
+                    #
+                    # Phase 1 (small fanout = 6):
+                    #   Instance allocation: A=24, B=24
+                    #   A capacity: 24/55 = 0.436 wf/s
+                    #   Target QPS (115% overload): 0.50 wf/s
+                    #
+                    # Phase 2 (large fanout = 14):
+                    #   Instance allocation: A=14, B=34
+                    #   A capacity: 14/55 = 0.255 wf/s
+                    #   Target QPS (115% overload): 0.29 wf/s
+                    # ================================================================
+                    HARDCODED_PHASE1_QPS = 0.50  # 1 workflow every 2.0 seconds
+                    HARDCODED_PHASE2_QPS = 0.29  # 1 workflow every 3.4 seconds
+
+                    phase1_qps = HARDCODED_PHASE1_QPS
+                    phase2_qps = HARDCODED_PHASE2_QPS
+
+                    # Phase transition index = warmup + small_fanout_count (first 20%)
+                    qps_transition_index = num_warmup_workflows + two_phase_split_index
+
+                    logger.info(f"Phase 1 (fanout=6):  QPS={phase1_qps:.2f} wf/s (interval={1/phase1_qps:.2f}s)")
+                    logger.info(f"Phase 2 (fanout=14): QPS={phase2_qps:.2f} wf/s (interval={1/phase2_qps:.2f}s)")
+                    logger.info(f"QPS transition at workflow #{qps_transition_index}")
+                    logger.info("=" * 60)
+
+                # Pre-compute inter-arrival times with phase-aware QPS
+                rng = np.random.RandomState(SEED + 9999)
+                total_tasks = NUM_WORKFLOWS + num_warmup_workflows
+
+                if two_phase_mode and phase1_qps and phase2_qps:
+                    # Generate inter-arrival times with different QPS for each phase
+                    inter_arrival_times = []
+                    for i in range(total_tasks):
+                        if i < qps_transition_index:
+                            qps = phase1_qps
+                        else:
+                            qps = phase2_qps
+                        inter_arrival_times.append(rng.exponential(1.0 / qps))
+                    inter_arrival_times = np.array(inter_arrival_times)
+                    logger.info(f"Pre-computed {len(inter_arrival_times)} inter-arrival times "
+                               f"(phase1: {qps_transition_index} @ {phase1_qps:.2f} QPS, "
+                               f"phase2: {total_tasks - qps_transition_index} @ {phase2_qps:.2f} QPS)")
+                else:
+                    # Single QPS for entire experiment
+                    inter_arrival_times = rng.exponential(1.0 / QPS_A, total_tasks)
+                    logger.info(f"Pre-computed {len(inter_arrival_times)} inter-arrival times @ {QPS_A:.2f} QPS")
+
+            else:
+                logger.error("Failed to query scheduler health, disabling oracle deploy")
+                oracle_deploy = False
+        except Exception as e:
+            logger.error(f"Failed to query schedulers: {e}, disabling oracle deploy")
+            oracle_deploy = False
+
     for strategy in strategies:
         logger.info(f"\n{'=' * 80}\nTesting strategy: {strategy}\n{'=' * 80}")
-        results = test_strategy_workflow(
-            strategy=strategy,
-            num_workflows=NUM_WORKFLOWS,
-            task_times_a=task_times_a,
-            task_times_a2=task_times_a2,
-            task_times_b1=task_times_b1,
-            task_times_b2=task_times_b2,
-            fanout_values=fanout_values,
-            qps_a=QPS_A,
-            experiment_id=experiment_id,
-            timeout_minutes=timeout_minutes,
-            gqps=gqps,
-            warmup_ratio=warmup_ratio,
-            warmup_task_times_a=warmup_task_times_a,
-            warmup_task_times_a2=warmup_task_times_a2,
-            warmup_task_times_b1=warmup_task_times_b1,
-            warmup_task_times_b2=warmup_task_times_b2,
-            warmup_fanout_values=warmup_fanout_values,
-            continuous_mode=continuous_mode,
-            target_workflows=TARGET_WORKFLOWS,
-            metric_portion=metric_portion
-        )
-        all_results.append(results)
+
+        # Create and start OracleDeployer for this strategy run
+        oracle_deployer = None
+        if oracle_deploy:
+            logger.info("Creating OracleDeployer for predictive redeployment...")
+            oracle_deployer = OracleDeployer(
+                planner_url=PLANNER_URL,
+                scheduler_a_url=SCHEDULER_A_URL,
+                scheduler_b_url=SCHEDULER_B_URL,
+                total_instances=total_instances,
+                fanout_values=combined_fanout_values,  # Combined warmup + actual fanout
+                inter_arrival_times=inter_arrival_times,  # Use pre-computed times
+                window_size_s=5.0,
+                lookahead_s=3.0,
+                min_change_threshold=2,
+                two_phase_mode=two_phase_mode,
+                two_phase_split_index=two_phase_split_index,
+                num_warmup_workflows=num_warmup_workflows
+            )
+            oracle_deployer.start()
+
+        try:
+            results = test_strategy_workflow(
+                strategy=strategy,
+                num_workflows=NUM_WORKFLOWS,
+                task_times_a=task_times_a,
+                task_times_a2=task_times_a2,
+                task_times_b1=task_times_b1,
+                task_times_b2=task_times_b2,
+                fanout_values=fanout_values,
+                qps_a=QPS_A,
+                experiment_id=experiment_id,
+                timeout_minutes=timeout_minutes,
+                gqps=gqps,
+                warmup_ratio=warmup_ratio,
+                warmup_task_times_a=warmup_task_times_a,
+                warmup_task_times_a2=warmup_task_times_a2,
+                warmup_task_times_b1=warmup_task_times_b1,
+                warmup_task_times_b2=warmup_task_times_b2,
+                warmup_fanout_values=warmup_fanout_values,
+                continuous_mode=continuous_mode,
+                target_workflows=TARGET_WORKFLOWS,
+                metric_portion=metric_portion,
+                oracle_deployer=oracle_deployer,
+                inter_arrival_times=inter_arrival_times  # Pass to PoissonTaskSubmitter
+            )
+            all_results.append(results)
+        finally:
+            # Stop OracleDeployer after strategy completes
+            if oracle_deployer:
+                oracle_deployer.stop()
 
         # Brief pause between strategies
         time.sleep(5.0)
@@ -3471,6 +4206,26 @@ if __name__ == "__main__":
         help="Maximum time in minutes to wait for workflows to complete (default: 20)"
     )
 
+    parser.add_argument(
+        "--oracle-deploy",
+        action="store_true",
+        help="Enable oracle-based predictive redeployment. Uses pre-generated workflow data to predict future load and proactively trigger migrations BEFORE load changes occur."
+    )
+
+    parser.add_argument(
+        "--two-phase",
+        action="store_true",
+        dest="two_phase",
+        default=True,
+        help="(DEFAULT=ON) Enable two-phase fanout mode: warmup+first 20%% use small fanout (mean=6), remaining 80%% use large fanout (mean=14). Oracle performs ONE migration after 5 large-fanout tasks."
+    )
+    parser.add_argument(
+        "--no-two-phase",
+        action="store_false",
+        dest="two_phase",
+        help="Disable two-phase fanout mode, use uniform fanout distribution instead."
+    )
+
     args = parser.parse_args()
 
     main(
@@ -3482,5 +4237,7 @@ if __name__ == "__main__":
         warmup_ratio=args.warmup,
         continuous_mode=args.continuous,
         metric_portion=args.metric_portion,
-        timeout_minutes=args.timeout
+        timeout_minutes=args.timeout,
+        oracle_deploy=args.oracle_deploy,
+        two_phase_mode=args.two_phase
     )

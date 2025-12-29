@@ -133,23 +133,25 @@ def build_instance_info():
     
 def build_planner_input(instance_a_num, instance_b_num) -> PlannerInput:
   # B[i,j] = throughput (QPS) of instance i for model j
-  # Calculated from median execution times in trace data:
-  #   Model A: A1 (boot) + A2 (summary, fanout=10) = 132.085s → 0.007571 req/s
-  #   Model B: B1 (query) + B2 (criteria) = 6.896s → 0.145008 req/s
-  # See calculate_b_parameter.py for calculation details
-
-  # target = [7, 26] to achieve 35:13 instance ratio
-  # With B = [[1, 10]], to get 35 instances for A and 13 for B:
-  #   A capacity: 35 * 1 = 35
-  #   B capacity: 13 * 10 = 130
-  #   Capacity ratio: 35:130 = 7:26
-  # This ensures the planner allocates approximately 35 instances to A and 13 to B
+  # Calculated from trace medians (values in seconds, no /1000 conversion):
+  #   Model A: A1 (boot) median=~1.03s + A2 (summary, fanout=10) median=~27.79s
+  #            -> combined ~= 28.82s => 0.0347 req/s
+  #   Model B: B1 (query) median=~2.66s + B2 (criteria) median=~0.05s
+  #            -> combined ~= 2.71s  => 0.369 req/s
+  #
+  # Fanout pattern uses alternating N(6,0.6^2)/N(14,0.6^2) → mean fanout ≈ 10,
+  # so per-workflow service demand for A and B are roughly balanced
+  # (A ~= 28.8s for 2 A tasks, B ~= 27s for ~20 B tasks).
+  # To make the initial optimization land on ~equal instance counts (e.g., 24/24
+  # when 48 endpoints are present), set target to the per-model capacity ratio
+  # of a 1:1 instance split: cap_A:cap_B = 0.0347 : 0.369 ≈ 1 : 10.63.
+  # Auto-optimization will still adapt based on /submit_target signals later.
   return PlannerInput(
     M = instance_a_num + instance_b_num,
     N = 2,
-    B = [[1, 10]] * (instance_a_num + instance_b_num),
+    B = [[0.0347, 0.369]] * (instance_a_num + instance_b_num),
     a = 1,
-    target = [7, 26],
+    target = [1.0, 10.63],
     algorithm = "simulated_annealing",
     objective_method = "ratio_difference"
   )  
