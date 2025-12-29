@@ -1,6 +1,4 @@
-"""
-Pytest configuration and shared fixtures for all tests.
-"""
+"""Pytest configuration and shared fixtures for all tests."""
 
 import sys
 from pathlib import Path
@@ -47,6 +45,7 @@ def mock_config(monkeypatch):
     config.get_model_directory = Mock(return_value=Path("/tmp/test_base/test_dockers/test_model"))
     config.get_model_container_name = Mock(return_value="test-instance-test_model")
     # Hot-standby configuration
+    config.standby_enabled = False  # Disabled by default for tests
     config.standby_port_offset = 1000
     config.hot_standby_max_retries = 3
     config.hot_standby_initial_delay = 5.0
@@ -55,6 +54,7 @@ def mock_config(monkeypatch):
     config.standby_restart_delay = 30
     config.backup_health_check_timeout = 600
     config.health_check_timeout = 30
+    config.traditional_restart_delay = 60  # Default restart delay
     return config
 
 
@@ -243,6 +243,7 @@ def mock_docker_manager():
 def mock_task_queue():
     """Fixture providing a mock TaskQueue."""
     queue = Mock()
+    queue.current_task_id = None  # Prevent infinite loop in _perform_restart_operation
     queue.submit_task = AsyncMock(return_value=1)
     queue.get_task = AsyncMock(return_value=None)
     queue.list_tasks = AsyncMock(return_value=[])
@@ -263,6 +264,8 @@ def mock_task_queue():
     })
     queue.stop_processing = AsyncMock()
     queue.extract_pending_tasks = AsyncMock(return_value=[])
+    queue.peek_pending_tasks = AsyncMock(return_value=[])  # Used in _perform_restart_operation
+    queue.remove_task = AsyncMock(return_value=True)  # Used for task redistribution
     queue.detach_current_task = AsyncMock(return_value=None)
     queue._detached_task_id = None
     return queue

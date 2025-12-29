@@ -1,15 +1,18 @@
-"""
-Task queue management with FIFO processing
-"""
+"""Task queue management with FIFO processing."""
 
 import asyncio
+import contextlib
 import heapq
 import time
 import traceback
 from collections import deque
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Any
 
 from loguru import logger
+
+from src.manager_factory import get_docker_manager
+from src.models import Task, TaskStatus
+from src.scheduler_client import get_scheduler_client
 
 
 def log_error_with_traceback(
@@ -17,13 +20,12 @@ def log_error_with_traceback(
     context: str,
     additional_info: str = "",
 ) -> None:
-    """
-    Log error with detailed information and traceback.
+    """Log error with detailed information and traceback.
 
     Args:
-        error: The exception that occurred
-        context: Context description of where the error occurred
-        additional_info: Additional context information
+        error: The exception that occurred.
+        context: Context description of where the error occurred.
+        additional_info: Additional context information.
     """
     tb_str = traceback.format_exc()
     if additional_info:
@@ -40,32 +42,40 @@ def log_error_with_traceback(
             f"  Traceback:\n{tb_str}"
         )
 
-from .config import config
-from .manager_factory import get_docker_manager
-from .models import Task, TaskStatus
-from .scheduler_client import get_scheduler_client
-
 
 class TaskQueue:
-    """
-    Manages task queue with priority-based processing.
+    """Manages task queue with priority-based processing.
 
     Tasks are processed based on their enqueue_time (earliest first) using a min-heap.
     """
 
     def __init__(self):
-        self.tasks: Dict[str, Task] = {}  # All tasks by task_id
-        self.queue: List[Tuple[float, str]] = []  # Priority queue: (enqueue_time, task_id)
-        self._insertion_order: deque = deque()  # Track insertion order for O(1) LIFO fetch
-        self._queue_lock: asyncio.Lock = asyncio.Lock()  # Ensure thread-safe queue operations
-        self.current_task_id: Optional[str] = None
-        self._detached_task_id: Optional[str] = None  # Task detached during deregister timeout
-        self.is_processing = False
-        self._processing_task: Optional[asyncio.Task] = None
+        """Initialize TaskQueue with priority-based processing.
 
-    async def submit_task(self, task: Task, enqueue_time: Optional[float] = None) -> int:
+        Sets up the task storage, priority queue (min-heap by enqueue_time),
+        insertion order tracking for LIFO fetch, and thread-safe locks.
         """
-        Submit a new task to the queue.
+        self.tasks: dict[str, Task] = {}  # All tasks by task_id
+        self.queue: list[
+            tuple[float, str]
+        ] = []  # Priority queue: (enqueue_time, task_id)
+        self._insertion_order: deque = (
+            deque()
+        )  # Track insertion order for O(1) LIFO fetch
+        self._queue_lock: asyncio.Lock = (
+            asyncio.Lock()
+        )  # Ensure thread-safe queue operations
+        self.current_task_id: str | None = None
+        self._detached_task_id: str | None = (
+            None  # Task detached during deregister timeout
+        )
+        self.is_processing = False
+        self._processing_task: asyncio.Task | None = None
+
+    async def submit_task(
+        self, task: Task, enqueue_time: float | None = None
+    ) -> int:
+        """Submit a new task to the queue.
 
         Args:
             task: Task object to submit
@@ -84,7 +94,7 @@ class TaskQueue:
         # Set enqueue_time if provided, otherwise use current time
         if enqueue_time is not None:
             task.enqueue_time = enqueue_time
-        elif not hasattr(task, 'enqueue_time') or task.enqueue_time is None:
+        elif not hasattr(task, "enqueue_time") or task.enqueue_time is None:
             task.enqueue_time = time.time()
 
         # Add to storage and priority queue
@@ -107,13 +117,12 @@ class TaskQueue:
         # Return position in queue
         return queue_size
 
-    async def get_task(self, task_id: str) -> Optional[Task]:
-        """Get task by ID"""
+    async def get_task(self, task_id: str) -> Task | None:
+        """Get task by ID."""
         return self.tasks.get(task_id)
 
-    async def detach_current_task(self) -> Optional[str]:
-        """
-        Detach the currently running task from the queue tracking.
+    async def detach_current_task(self) -> str | None:
+        """Detach the currently running task from the queue tracking.
 
         This allows deregister operations to proceed without waiting for the
         task to complete. The detached task will continue running in the
@@ -137,9 +146,8 @@ class TaskQueue:
         logger.info(f"Task {detached_id} detached - continuing in background")
         return detached_id
 
-    async def fetch_task(self) -> Optional[Task]:
-        """
-        Fetch the newest queued task (highest enqueue_time) from the queue tail.
+    async def fetch_task(self) -> Task | None:
+        """Fetch the newest queued task (highest enqueue_time) from the queue tail.
 
         The task is completely removed from this instance (not just marked).
         Its callback will NOT be executed by this instance.
@@ -177,7 +185,7 @@ class TaskQueue:
                 return None
 
             # Iterate from the tail (newest) to find a QUEUED task - O(1) best case
-            found_task: Optional[Task] = None
+            found_task: Task | None = None
             skipped_task_ids: list = []
 
             while self._insertion_order:
@@ -216,11 +224,10 @@ class TaskQueue:
 
     async def list_tasks(
         self,
-        status_filter: Optional[TaskStatus] = None,
-        limit: Optional[int] = None
-    ) -> List[Task]:
-        """
-        List all tasks with optional filtering.
+        status_filter: TaskStatus | None = None,
+        limit: int | None = None,
+    ) -> list[Task]:
+        """List all tasks with optional filtering.
 
         Args:
             status_filter: Filter by task status
@@ -245,8 +252,7 @@ class TaskQueue:
         return tasks
 
     async def delete_task(self, task_id: str) -> bool:
-        """
-        Delete a task.
+        """Delete a task.
 
         Can only delete queued, completed, or failed tasks.
         Cannot delete running tasks.
@@ -271,7 +277,9 @@ class TaskQueue:
         if task.status == TaskStatus.QUEUED:
             async with self._queue_lock:
                 # Remove task from priority queue
-                self.queue = [(t, tid) for t, tid in self.queue if tid != task_id]
+                self.queue = [
+                    (t, tid) for t, tid in self.queue if tid != task_id
+                ]
                 heapq.heapify(self.queue)
 
         # Remove from storage
@@ -279,21 +287,32 @@ class TaskQueue:
         logger.info(f"Task {task_id} deleted")
         return True
 
-    async def get_queue_stats(self) -> Dict[str, int]:
-        """Get task queue statistics"""
+    async def get_queue_stats(self) -> dict[str, int]:
+        """Get task queue statistics."""
         stats = {
             "total": len(self.tasks),
-            "queued": sum(1 for t in self.tasks.values() if t.status == TaskStatus.QUEUED),
-            "running": sum(1 for t in self.tasks.values() if t.status == TaskStatus.RUNNING),
-            "completed": sum(1 for t in self.tasks.values() if t.status == TaskStatus.COMPLETED),
-            "failed": sum(1 for t in self.tasks.values() if t.status == TaskStatus.FAILED),
-            "fetched": sum(1 for t in self.tasks.values() if t.status == TaskStatus.FETCHED),
+            "queued": sum(
+                1 for t in self.tasks.values() if t.status == TaskStatus.QUEUED
+            ),
+            "running": sum(
+                1 for t in self.tasks.values() if t.status == TaskStatus.RUNNING
+            ),
+            "completed": sum(
+                1
+                for t in self.tasks.values()
+                if t.status == TaskStatus.COMPLETED
+            ),
+            "failed": sum(
+                1 for t in self.tasks.values() if t.status == TaskStatus.FAILED
+            ),
+            "fetched": sum(
+                1 for t in self.tasks.values() if t.status == TaskStatus.FETCHED
+            ),
         }
         return stats
 
     async def cleanup_fetched_tasks(self) -> int:
-        """
-        Remove all FETCHED tasks from storage to free memory.
+        """Remove all FETCHED tasks from storage to free memory.
 
         FETCHED tasks are tasks that were stolen by work-stealing mechanism
         and are no longer needed in this instance.
@@ -302,7 +321,8 @@ class TaskQueue:
             Number of tasks cleaned up
         """
         fetched_task_ids = [
-            task_id for task_id, task in self.tasks.items()
+            task_id
+            for task_id, task in self.tasks.items()
             if task.status == TaskStatus.FETCHED
         ]
 
@@ -310,13 +330,14 @@ class TaskQueue:
             del self.tasks[task_id]
 
         if fetched_task_ids:
-            logger.info(f"Cleaned up {len(fetched_task_ids)} fetched tasks from storage")
+            logger.info(
+                f"Cleaned up {len(fetched_task_ids)} fetched tasks from storage"
+            )
 
         return len(fetched_task_ids)
 
     async def _process_queue(self):
-        """
-        Process tasks from the priority queue sequentially.
+        """Process tasks from the priority queue sequentially.
 
         This runs as a background task and processes tasks one by one,
         prioritizing tasks with the earliest enqueue_time.
@@ -358,7 +379,9 @@ class TaskQueue:
                 if self._detached_task_id == task_id:
                     # Task was detached (deregister timeout) - clear detached state
                     self._detached_task_id = None
-                    logger.info(f"Detached task {task_id} completed in background")
+                    logger.info(
+                        f"Detached task {task_id} completed in background"
+                    )
                 else:
                     # Normal case - clear current task
                     self.current_task_id = None
@@ -368,8 +391,7 @@ class TaskQueue:
             logger.info("Task queue processing stopped")
 
     async def _execute_task(self, task: Task):
-        """
-        Execute a single task.
+        """Execute a single task.
 
         Args:
             task: Task to execute
@@ -406,7 +428,9 @@ class TaskQueue:
 
             # Mark task as completed
             task.mark_completed(result)
-            logger.info(f"Task {task.task_id} completed successfully in {execution_time_ms:.2f}ms")
+            logger.info(
+                f"Task {task.task_id} completed successfully in {execution_time_ms:.2f}ms"
+            )
 
             # Send callback if URL is provided
             await self._send_callback(
@@ -441,12 +465,11 @@ class TaskQueue:
         self,
         task_id: str,
         status: str,
-        result: Optional[Dict] = None,
-        error: Optional[str] = None,
-        execution_time_ms: Optional[float] = None,
+        result: dict | None = None,
+        error: str | None = None,
+        execution_time_ms: float | None = None,
     ):
-        """
-        Send task result callback to scheduler.
+        """Send task result callback to scheduler.
 
         Tries WebSocket first, falls back to HTTP if WebSocket unavailable.
 
@@ -458,7 +481,7 @@ class TaskQueue:
             execution_time_ms: Execution time in milliseconds
         """
         # Try WebSocket first
-        from .websocket_client_singleton import get_websocket_client
+        from src.websocket_client_singleton import get_websocket_client
 
         ws_client = get_websocket_client()
         websocket_success = False
@@ -506,9 +529,8 @@ class TaskQueue:
                 additional_info=f"Status: {status}",
             )
 
-    async def clear_all_tasks(self, force: bool = True) -> Dict[str, int]:
-        """
-        Clear all tasks from the queue and task storage.
+    async def clear_all_tasks(self, force: bool = True) -> dict[str, int]:
+        """Clear all tasks from the queue and task storage.
 
         This will remove all tasks regardless of their status (queued, running,
         completed, or failed).
@@ -544,7 +566,7 @@ class TaskQueue:
             "completed": stats["completed"],
             "failed": stats["failed"],
             "fetched": stats["fetched"],
-            "total": stats["total"]
+            "total": stats["total"],
         }
 
         self.tasks.clear()
@@ -559,9 +581,8 @@ class TaskQueue:
 
         return cleared_count
 
-    async def peek_pending_tasks(self) -> List[Dict[str, Any]]:
-        """
-        Get all pending (QUEUED) tasks info WITHOUT removing them from the queue.
+    async def peek_pending_tasks(self) -> list[dict[str, Any]]:
+        """Get all pending (QUEUED) tasks info WITHOUT removing them from the queue.
 
         Use this to get task info for redistribution, then call remove_task()
         for each successfully resubmitted task.
@@ -589,8 +610,7 @@ class TaskQueue:
         return pending_tasks
 
     async def remove_task(self, task_id: str) -> bool:
-        """
-        Remove a specific task from the queue and task storage.
+        """Remove a specific task from the queue and task storage.
 
         Args:
             task_id: ID of the task to remove
@@ -617,9 +637,8 @@ class TaskQueue:
             logger.debug(f"Removed task {task_id} from local queue")
             return True
 
-    async def extract_pending_tasks(self) -> List[Dict[str, Any]]:
-        """
-        Extract all pending (QUEUED) tasks from the queue for redistribution.
+    async def extract_pending_tasks(self) -> list[dict[str, Any]]:
+        """Extract all pending (QUEUED) tasks from the queue for redistribution.
 
         This method is used during instance deregistration to return queued tasks
         to the scheduler for reassignment to other instances.
@@ -667,11 +686,15 @@ class TaskQueue:
                     # FETCHED tasks: already picked up, remove without redistribution
                     fetched_task_ids.add(task_id)
                     del self.tasks[task_id]
-                    logger.debug(f"Removing fetched task {task_id} without redistribution")
+                    logger.debug(
+                        f"Removing fetched task {task_id} without redistribution"
+                    )
                 elif task and task.status == TaskStatus.RUNNING:
                     # Preserve running tasks - add back to queue
                     queued_items.append((enqueue_time, task_id))
-                    logger.debug(f"Preserving running task {task_id} during extraction")
+                    logger.debug(
+                        f"Preserving running task {task_id} during extraction"
+                    )
 
             # Restore non-extracted tasks back to queue
             for item in queued_items:
@@ -680,7 +703,9 @@ class TaskQueue:
             # Remove extracted and fetched tasks from insertion order tracking
             removed_task_ids = extracted_task_ids | fetched_task_ids
             self._insertion_order = deque(
-                tid for tid in self._insertion_order if tid not in removed_task_ids
+                tid
+                for tid in self._insertion_order
+                if tid not in removed_task_ids
             )
 
         logger.info(
@@ -691,9 +716,8 @@ class TaskQueue:
 
         return extracted_tasks
 
-    async def get_current_task_info(self) -> Optional[Dict[str, Any]]:
-        """
-        Get information about the currently executing task.
+    async def get_current_task_info(self) -> dict[str, Any] | None:
+        """Get information about the currently executing task.
 
         Returns:
             Dictionary containing task_id and estimated_completion_ms,
@@ -714,14 +738,21 @@ class TaskQueue:
         estimated_completion_ms = None
         if task.started_at:
             try:
-                from datetime import datetime, UTC
-                started_time = datetime.fromisoformat(task.started_at.replace("Z", "+00:00"))
-                elapsed_ms = (datetime.now(UTC) - started_time).total_seconds() * 1000
+                from datetime import UTC, datetime
+
+                started_time = datetime.fromisoformat(
+                    task.started_at.replace("Z", "+00:00")
+                )
+                elapsed_ms = (
+                    datetime.now(UTC) - started_time
+                ).total_seconds() * 1000
 
                 # Simple heuristic: assume average task takes 5 seconds
                 # In production, this could use historical data
                 avg_task_duration_ms = 5000
-                estimated_remaining_ms = max(0, avg_task_duration_ms - elapsed_ms)
+                estimated_remaining_ms = max(
+                    0, avg_task_duration_ms - elapsed_ms
+                )
                 estimated_completion_ms = estimated_remaining_ms
             except Exception as e:
                 tb_str = traceback.format_exc()
@@ -737,21 +768,19 @@ class TaskQueue:
         }
 
     async def stop_processing(self):
-        """Stop queue processing (graceful shutdown)"""
+        """Stop queue processing (graceful shutdown)."""
         if self._processing_task and not self._processing_task.done():
             self._processing_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._processing_task
-            except asyncio.CancelledError:
-                pass
 
 
 # Global task queue instance
-_task_queue: Optional[TaskQueue] = None
+_task_queue: TaskQueue | None = None
 
 
 def get_task_queue() -> TaskQueue:
-    """Get or create the global task queue instance"""
+    """Get or create the global task queue instance."""
     global _task_queue
     if _task_queue is None:
         _task_queue = TaskQueue()

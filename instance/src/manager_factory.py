@@ -1,21 +1,20 @@
-"""
-Manager factory for dynamic manager selection.
+"""Manager factory for dynamic manager selection.
 
 This module provides a factory function that returns the appropriate manager
 based on the configuration. It allows switching between DockerManager and
 SubprocessManager at runtime.
 """
 
-from typing import Union
+from src.config import config
+from src.docker_manager import (
+    DockerManager,
+    get_docker_manager as get_docker_manager_impl,
+)
+from src.subprocess_manager import SubprocessManager, get_subprocess_manager
 
-from .config import config
-from .docker_manager import DockerManager, get_docker_manager as get_docker_manager_impl
-from .subprocess_manager import SubprocessManager, get_subprocess_manager
 
-
-def get_docker_manager() -> Union[DockerManager, SubprocessManager]:
-    """
-    Get the appropriate manager based on configuration.
+def get_docker_manager() -> DockerManager | SubprocessManager:
+    """Get the appropriate manager based on configuration.
 
     This function returns either a DockerManager or SubprocessManager instance
     depending on the config.use_docker setting. The function name is kept as

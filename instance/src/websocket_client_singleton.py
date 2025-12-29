@@ -1,14 +1,11 @@
-"""
-WebSocket client singleton for global access.
-"""
+"""WebSocket client singleton for global access."""
 
-from typing import Optional
-from .websocket_client import WebSocketClient
+from src.websocket_client import WebSocketClient
 
-_websocket_client: Optional[WebSocketClient] = None
+_websocket_client: WebSocketClient | None = None
 
 
-def get_websocket_client() -> Optional[WebSocketClient]:
+def get_websocket_client() -> WebSocketClient | None:
     """Get the global WebSocket client instance."""
     return _websocket_client
 

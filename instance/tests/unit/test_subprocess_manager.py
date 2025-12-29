@@ -5,6 +5,7 @@ Unit tests for src/subprocess_manager.py
 import pytest
 import asyncio
 import json
+import signal
 from unittest.mock import Mock, AsyncMock, patch, MagicMock
 from pathlib import Path
 import httpx
@@ -240,15 +241,17 @@ class TestSubprocessManager:
         mock_process.returncode = None  # Still running
         mock_process.pid = 12345
         mock_process.wait = AsyncMock(return_value=0)
-        mock_process.terminate = Mock()
         manager.uv_run_process = mock_process
 
-        stopped_id = await manager.stop_model()
+        # Mock os.killpg (new implementation uses SIGKILL directly)
+        with patch("os.killpg") as mock_killpg:
+            stopped_id = await manager.stop_model()
 
         assert stopped_id == "test-model"
         assert manager.current_model is None
         assert manager.uv_run_process is None
-        mock_process.terminate.assert_called_once()
+        # Implementation uses os.killpg with SIGKILL
+        mock_killpg.assert_called_once_with(12345, signal.SIGKILL)
 
     async def test_stop_model_none_running(self):
         """Test stopping when no model is running returns None"""
@@ -281,7 +284,7 @@ class TestSubprocessManager:
         assert manager.current_model is None
 
     async def test_stop_model_process_termination_failure(self):
-        """Test stopping when process termination fails"""
+        """Test stopping when os.killpg fails raises RuntimeError"""
         manager = SubprocessManager()
 
         manager.current_model = ModelInfo(
@@ -291,20 +294,24 @@ class TestSubprocessManager:
             container_name="model_instance_test-model"
         )
 
-        # Mock subprocess that fails to terminate
+        # Mock subprocess
         mock_process = AsyncMock()
         mock_process.returncode = None
         mock_process.pid = 12345
-        mock_process.terminate = Mock(side_effect=OSError("Permission denied"))
+        # kill also fails so there's no fallback
+        mock_process.kill = Mock(side_effect=OSError("Permission denied"))
         manager.uv_run_process = mock_process
 
-        with pytest.raises(RuntimeError) as exc_info:
-            await manager.stop_model()
+        # Mock os.killpg to raise ProcessLookupError (triggers fallback to kill)
+        # Then kill() raises OSError, which should bubble up as RuntimeError
+        with patch("os.killpg", side_effect=ProcessLookupError("No such process")):
+            with pytest.raises(RuntimeError) as exc_info:
+                await manager.stop_model()
 
         assert "Failed to stop subprocess" in str(exc_info.value)
 
-    async def test_stop_model_force_kill(self):
-        """Test stopping with force kill when graceful termination times out"""
+    async def test_stop_model_fallback_to_process_kill(self):
+        """Test stopping falls back to process.kill() when os.killpg raises ProcessLookupError"""
         manager = SubprocessManager()
 
         manager.current_model = ModelInfo(
@@ -314,26 +321,21 @@ class TestSubprocessManager:
             container_name="model_instance_test-model"
         )
 
-        # Mock subprocess that doesn't respond to terminate but responds to kill
+        # Mock subprocess
         mock_process = AsyncMock()
         mock_process.returncode = None
         mock_process.pid = 12345
-        mock_process.terminate = Mock()
-        mock_process.kill = Mock()
-        # First wait (after terminate) times out, second wait (after kill) succeeds
-        mock_process.wait = AsyncMock(side_effect=[asyncio.TimeoutError(), None])
+        mock_process.kill = Mock()  # Fallback to individual process kill
+        mock_process.wait = AsyncMock(return_value=0)
         manager.uv_run_process = mock_process
 
-        # Mock wait_for to let the TimeoutError propagate from process.wait()
-        original_wait_for = asyncio.wait_for
-        async def mock_wait_for(coro, timeout):
-            return await original_wait_for(coro, timeout)
-
-        with patch("asyncio.wait_for", side_effect=mock_wait_for):
+        # Mock os.killpg to raise ProcessLookupError (triggers fallback to process.kill())
+        with patch("os.killpg", side_effect=ProcessLookupError("No such process")):
             stopped_id = await manager.stop_model()
 
         assert stopped_id == "test-model"
-        mock_process.terminate.assert_called_once()
+        assert manager.current_model is None
+        # Should fallback to process.kill() when killpg fails
         mock_process.kill.assert_called_once()
 
     async def test_restart_model_success(self, mock_model_registry, mock_config, temp_model_directory):
@@ -677,21 +679,20 @@ class TestSubprocessManager:
         assert "did not become healthy" in str(exc_info.value)
 
     async def test_stop_subprocess(self):
-        """Test stopping subprocess cleanly"""
+        """Test stopping subprocess with SIGKILL to process group"""
         manager = SubprocessManager()
 
-        # Mock subprocess that terminates gracefully
+        # Mock subprocess
         mock_process = AsyncMock()
         mock_process.returncode = None
         mock_process.pid = 12345
         mock_process.wait = AsyncMock(return_value=0)
-        mock_process.terminate = Mock()
 
-        with patch("asyncio.wait_for") as mock_wait_for:
-            mock_wait_for.return_value = None  # wait() returns immediately
+        with patch("os.killpg") as mock_killpg:
             await manager._stop_subprocess(mock_process)
 
-        mock_process.terminate.assert_called_once()
+        # Implementation uses os.killpg with SIGKILL on the process group
+        mock_killpg.assert_called_once_with(12345, signal.SIGKILL)
 
     async def test_stop_subprocess_already_finished(self):
         """Test stopping subprocess that already finished"""
@@ -705,22 +706,22 @@ class TestSubprocessManager:
         # Should not raise and should return early
         await manager._stop_subprocess(mock_process)
 
-    async def test_stop_subprocess_force_kill(self):
-        """Test force killing subprocess when graceful termination fails"""
+    async def test_stop_subprocess_fallback_to_process_kill(self):
+        """Test fallback to process.kill() when os.killpg fails with ProcessLookupError"""
         manager = SubprocessManager()
 
-        # Mock subprocess that doesn't respond to terminate
+        # Mock subprocess
         mock_process = AsyncMock()
         mock_process.returncode = None
         mock_process.pid = 12345
-        mock_process.terminate = Mock()
-        mock_process.kill = Mock()
+        mock_process.kill = Mock()  # Fallback method
         mock_process.wait = AsyncMock(return_value=0)
 
-        with patch("asyncio.wait_for", side_effect=asyncio.TimeoutError()):
+        # Mock os.killpg to raise ProcessLookupError (triggers fallback)
+        with patch("os.killpg", side_effect=ProcessLookupError("No such process")):
             await manager._stop_subprocess(mock_process)
 
-        mock_process.terminate.assert_called_once()
+        # Should fallback to process.kill()
         mock_process.kill.assert_called_once()
 
     async def test_close(self):

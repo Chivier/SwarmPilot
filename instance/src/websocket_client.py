@@ -1,19 +1,22 @@
-"""
-WebSocket client for Instance-to-Scheduler communication.
+"""WebSocket client for Instance-to-Scheduler communication.
 
 This module provides WebSocket client functionality for Instance services
 to communicate with the Scheduler.
 """
 
 import asyncio
+import builtins
+import contextlib
 import json
 import traceback
 import uuid
-from datetime import datetime, UTC
-from typing import Dict, Optional, Callable, Any
+from collections.abc import Callable
+from datetime import UTC, datetime
+from typing import Any
+
 import websockets
-from websockets import ClientConnection
 from loguru import logger
+from websockets import ClientConnection
 
 
 def log_error_with_traceback(
@@ -21,8 +24,7 @@ def log_error_with_traceback(
     context: str,
     additional_info: str = "",
 ) -> None:
-    """
-    Log error with detailed information and traceback.
+    """Log error with detailed information and traceback.
 
     Args:
         error: The exception that occurred
@@ -46,8 +48,7 @@ def log_error_with_traceback(
 
 
 class WebSocketClient:
-    """
-    WebSocket client for connecting Instance to Scheduler.
+    """WebSocket client for connecting Instance to Scheduler.
 
     Handles connection lifecycle, automatic reconnection, and message exchange.
     """
@@ -57,12 +58,11 @@ class WebSocketClient:
         scheduler_url: str,
         instance_id: str,
         model_id: str,
-        platform_info: Optional[Dict[str, Any]] = None,
+        platform_info: dict[str, Any] | None = None,
         reconnect_delay_max: int = 32,
         heartbeat_interval: int = 30,
     ):
-        """
-        Initialize WebSocket client.
+        """Initialize WebSocket client.
 
         Args:
             scheduler_url: Scheduler WebSocket URL (ws://host:port/instance/ws)
@@ -78,7 +78,7 @@ class WebSocketClient:
         self.platform_info = platform_info or {}
 
         # Connection state
-        self.websocket: Optional[ClientConnection] = None
+        self.websocket: ClientConnection | None = None
         self.running = False
         self.connected = False
 
@@ -88,15 +88,15 @@ class WebSocketClient:
 
         # Heartbeat configuration
         self.heartbeat_interval = heartbeat_interval
-        self._heartbeat_task: Optional[asyncio.Task] = None
+        self._heartbeat_task: asyncio.Task | None = None
 
         # Message handlers
-        self.message_handlers: Dict[str, Callable] = {}
-        self._pending_acks: Dict[str, asyncio.Future] = {}
+        self.message_handlers: dict[str, Callable] = {}
+        self._pending_acks: dict[str, asyncio.Future] = {}
 
         # Background tasks
-        self._connection_task: Optional[asyncio.Task] = None
-        self._receive_task: Optional[asyncio.Task] = None
+        self._connection_task: asyncio.Task | None = None
+        self._receive_task: asyncio.Task | None = None
 
         logger.info(
             f"WebSocketClient initialized for instance {instance_id}, "
@@ -134,15 +134,13 @@ class WebSocketClient:
             try:
                 await self.send_unregister()
                 await asyncio.sleep(0.5)  # Give time for message to send
-            except:
+            except Exception:
                 pass
 
         # Close WebSocket
         if self.websocket:
-            try:
+            with contextlib.suppress(builtins.BaseException):
                 await self.websocket.close()
-            except:
-                pass
 
         # Cancel connection task
         if self._connection_task and not self._connection_task.done():
@@ -151,8 +149,7 @@ class WebSocketClient:
         logger.info("WebSocket client stopped")
 
     def register_handler(self, message_type: str, handler: Callable) -> None:
-        """
-        Register a message handler for a specific message type.
+        """Register a message handler for a specific message type.
 
         Args:
             message_type: Message type to handle
@@ -163,13 +160,12 @@ class WebSocketClient:
 
     async def send_message(
         self,
-        message: Dict[str, Any],
+        message: dict[str, Any],
         require_ack: bool = False,
         timeout: float = 10.0,
         skip_connection_check: bool = False,
-    ) -> Optional[Dict[str, Any]]:
-        """
-        Send a message to the Scheduler.
+    ) -> dict[str, Any] | None:
+        """Send a message to the Scheduler.
 
         Args:
             message: Message dictionary
@@ -184,7 +180,9 @@ class WebSocketClient:
             ConnectionError: If not connected
             TimeoutError: If ACK timeout
         """
-        if not skip_connection_check and (not self.connected or not self.websocket):
+        if not skip_connection_check and (
+            not self.connected or not self.websocket
+        ):
             raise ConnectionError("Not connected to Scheduler")
 
         if not self.websocket:
@@ -194,7 +192,9 @@ class WebSocketClient:
         if "message_id" not in message:
             message["message_id"] = str(uuid.uuid4())
         if "timestamp" not in message:
-            message["timestamp"] = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+            message["timestamp"] = (
+                datetime.now(UTC).isoformat().replace("+00:00", "Z")
+            )
 
         message_id = message["message_id"]
 
@@ -207,14 +207,18 @@ class WebSocketClient:
         try:
             # Send message
             await self.websocket.send(json.dumps(message))
-            logger.debug(f"Sent message type={message.get('type')} id={message_id}")
+            logger.debug(
+                f"Sent message type={message.get('type')} id={message_id}"
+            )
 
             # Wait for ACK if required
             if require_ack:
                 try:
-                    ack_data = await asyncio.wait_for(ack_future, timeout=timeout)
+                    ack_data = await asyncio.wait_for(
+                        ack_future, timeout=timeout
+                    )
                     return ack_data
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     logger.warning(f"ACK timeout for message {message_id}")
                     raise TimeoutError(f"ACK timeout for message {message_id}")
                 finally:
@@ -233,12 +237,11 @@ class WebSocketClient:
         self,
         task_id: str,
         status: str,
-        result: Optional[Dict[str, Any]] = None,
-        error: Optional[str] = None,
-        execution_time_ms: Optional[float] = None,
+        result: dict[str, Any] | None = None,
+        error: str | None = None,
+        execution_time_ms: float | None = None,
     ) -> bool:
-        """
-        Send task result to Scheduler.
+        """Send task result to Scheduler.
 
         Args:
             task_id: Task identifier
@@ -263,7 +266,9 @@ class WebSocketClient:
             ack = await self.send_message(message, require_ack=True)
             success = ack.get("success", False) if ack else False
             if success:
-                logger.info(f"Task result for {task_id} acknowledged by Scheduler")
+                logger.info(
+                    f"Task result for {task_id} acknowledged by Scheduler"
+                )
             return success
         except Exception as e:
             log_error_with_traceback(
@@ -305,7 +310,9 @@ class WebSocketClient:
         while self.running:
             try:
                 # Attempt to connect
-                logger.info(f"Connecting to Scheduler at {self.scheduler_url}...")
+                logger.info(
+                    f"Connecting to Scheduler at {self.scheduler_url}..."
+                )
                 self.websocket = await websockets.connect(
                     self.scheduler_url,
                     max_size=16 * 1024 * 1024,  # 16MB
@@ -322,7 +329,9 @@ class WebSocketClient:
                 self.reconnect_delay = 1
 
                 # Start heartbeat
-                self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
+                self._heartbeat_task = asyncio.create_task(
+                    self._heartbeat_loop()
+                )
 
                 # Start receiving messages
                 self._receive_task = asyncio.create_task(self._receive_loop())
@@ -352,10 +361,8 @@ class WebSocketClient:
                     self._heartbeat_task.cancel()
 
                 if self.websocket:
-                    try:
+                    with contextlib.suppress(builtins.BaseException):
                         await self.websocket.close()
-                    except:
-                        pass
                     self.websocket = None
 
             # Reconnect with exponential backoff
@@ -363,8 +370,7 @@ class WebSocketClient:
                 logger.info(f"Reconnecting in {self.reconnect_delay}s...")
                 await asyncio.sleep(self.reconnect_delay)
                 self.reconnect_delay = min(
-                    self.reconnect_delay * 2,
-                    self.reconnect_delay_max
+                    self.reconnect_delay * 2, self.reconnect_delay_max
                 )
 
         logger.info("Connection loop stopped")
@@ -381,7 +387,9 @@ class WebSocketClient:
 
         try:
             # Skip connection check for registration message since we're establishing the connection
-            await self.send_message(register_msg, require_ack=False, skip_connection_check=True)
+            await self.send_message(
+                register_msg, require_ack=False, skip_connection_check=True
+            )
             logger.info("Sent registration message to Scheduler")
         except Exception as e:
             log_error_with_traceback(
@@ -435,9 +443,8 @@ class WebSocketClient:
         finally:
             self.connected = False
 
-    async def _handle_message(self, message: Dict[str, Any]) -> None:
-        """
-        Handle received message.
+    async def _handle_message(self, message: dict[str, Any]) -> None:
+        """Handle received message.
 
         Args:
             message: Parsed message dictionary

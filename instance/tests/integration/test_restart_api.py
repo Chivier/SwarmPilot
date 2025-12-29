@@ -275,7 +275,7 @@ class TestRestartBackgroundOperation:
 
         # Verify all steps were called
         mock_scheduler_client.drain_instance.assert_called_once()
-        mock_task_queue.get_queue_stats.assert_called()
+        mock_task_queue.peek_pending_tasks.assert_called()  # Updated: now uses peek_pending_tasks
         mock_docker_manager.stop_model.assert_called_once()
         mock_scheduler_client.deregister_instance.assert_called_once()
         mock_docker_manager.start_model.assert_called_once_with(
@@ -315,7 +315,7 @@ class TestRestartBackgroundOperation:
         # Setup registry mock
         mock_model_registry.model_exists.return_value = True
 
-        # Setup task queue mock - extract pending tasks returns 3 tasks
+        # Setup task queue mock - peek pending tasks returns 3 tasks
         pending_tasks_to_return = [
             {
                 "task_id": f"task-{i}",
@@ -328,16 +328,9 @@ class TestRestartBackgroundOperation:
             }
             for i in range(3)
         ]
-        mock_task_queue.extract_pending_tasks = AsyncMock(return_value=pending_tasks_to_return)
-
-        # No running tasks
-        mock_task_queue.get_queue_stats = AsyncMock(return_value={
-            "queued": 0,
-            "running": 0,
-            "completed": 3,
-            "failed": 0,
-            "total": 3,
-        })
+        mock_task_queue.peek_pending_tasks = AsyncMock(return_value=pending_tasks_to_return)
+        mock_task_queue.remove_task = AsyncMock(return_value=True)  # For task redistribution
+        mock_task_queue.current_task_id = None  # No running tasks
 
         # Patch global functions
         monkeypatch.setattr("src.api.get_docker_manager", lambda: mock_docker_manager)
@@ -366,10 +359,12 @@ class TestRestartBackgroundOperation:
         # Verify operation completed
         assert operation.status == RestartStatus.COMPLETED
         assert operation.redistributed_tasks_count == 3
-        # Verify extract_pending_tasks was called
-        mock_task_queue.extract_pending_tasks.assert_called_once()
+        # Verify peek_pending_tasks was called
+        mock_task_queue.peek_pending_tasks.assert_called_once()
         # Verify resubmit_task was called 3 times
         assert mock_scheduler_client.resubmit_task.call_count == 3
+        # Verify remove_task was called 3 times (after successful resubmit)
+        assert mock_task_queue.remove_task.call_count == 3
 
     async def test_perform_restart_operation_model_not_found(
         self,
@@ -458,14 +453,10 @@ class TestRestartBackgroundOperation:
         mock_model_registry.model_exists.return_value = True
 
         # Setup task queue mock - no queued tasks, but running task never completes
-        mock_task_queue.extract_pending_tasks = AsyncMock(return_value=[])
-        mock_task_queue.get_queue_stats.return_value = {
-            "queued": 0,
-            "running": 1,  # Always have a running task that never completes
-            "completed": 0,
-            "failed": 0,
-            "total": 1,
-        }
+        mock_task_queue.peek_pending_tasks = AsyncMock(return_value=[])
+        # Simulate a running task by setting current_task_id to a non-None value
+        # This will cause the while loop to wait for it to complete
+        mock_task_queue.current_task_id = "running-task-id"
 
         # Patch global functions
         monkeypatch.setattr("src.api.get_docker_manager", lambda: mock_docker_manager)

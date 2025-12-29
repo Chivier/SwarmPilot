@@ -1,5 +1,4 @@
-"""
-Scheduler Client for Instance Service.
+"""Scheduler Client for Instance Service.
 
 This module provides functionality for instances to communicate with the scheduler,
 including registration, deregistration, task result callbacks, configuration
@@ -61,7 +60,7 @@ import time
 import traceback
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional
+from typing import Any
 from urllib.parse import urlparse
 
 import httpx
@@ -73,8 +72,7 @@ def log_error_with_traceback(
     context: str,
     additional_info: str = "",
 ) -> None:
-    """
-    Log error with detailed information and traceback.
+    """Log error with detailed information and traceback.
 
     Args:
         error: The exception that occurred
@@ -102,45 +100,59 @@ def log_error_with_traceback(
 
 def _get_gpu0_name() -> str:
     """Get the name of GPU0, or 'CPU' if no GPU is available.
-    
+
     Tries multiple methods to detect GPU:
     1. pynvml (NVIDIA Management Library Python bindings)
     2. nvidia-smi command
     3. Falls back to 'CPU' if no GPU is found
-    
+
     Returns:
         GPU name string (e.g., "NVIDIA GeForce RTX 3090") or "CPU"
     """
     # Method 1: Try pynvml
     try:
         import pynvml
+
         pynvml.nvmlInit()
         handle = pynvml.nvmlDeviceGetHandleByIndex(0)
         name = pynvml.nvmlDeviceGetName(handle)
         pynvml.nvmlShutdown()
         # Decode bytes to string if needed
         if isinstance(name, bytes):
-            name = name.decode('utf-8')
+            name = name.decode("utf-8")
         return name
     except (ImportError, Exception):
         pass
-    
+
     # Method 2: Try nvidia-smi command
     try:
         result = subprocess.run(
-            ['nvidia-smi', '--query-gpu=name', '--format=csv,noheader', '-i', '0'],
+            [
+                "nvidia-smi",
+                "--query-gpu=name",
+                "--format=csv,noheader",
+                "-i",
+                "0",
+            ],
             capture_output=True,
             text=True,
             timeout=5,
-            check=True
+            check=True,
         )
         if result.stdout:
-            gpu_name = result.stdout.strip().split('\n')[0]  # Get first line (GPU0)
+            gpu_name = result.stdout.strip().split("\n")[
+                0
+            ]  # Get first line (GPU0)
             if gpu_name:
                 return gpu_name
-    except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError, Exception):
+    except (
+        subprocess.TimeoutExpired,
+        subprocess.CalledProcessError,
+        FileNotFoundError,
+        Exception,
+    ):
         pass
-    
+
     # No GPU found, return CPU
     return "CPU"
 
@@ -156,12 +168,22 @@ class PredictorConfig:
     service for runtime predictions.
     """
 
-    url: str = field(default_factory=lambda: os.getenv("PREDICTOR_URL", "http://localhost:8001"))
-    timeout: float = field(default_factory=lambda: float(os.getenv("PREDICTOR_TIMEOUT", "5.0")))
-    max_retries: int = field(default_factory=lambda: int(os.getenv("PREDICTOR_MAX_RETRIES", "3")))
-    retry_delay: float = field(default_factory=lambda: float(os.getenv("PREDICTOR_RETRY_DELAY", "1.0")))
+    url: str = field(
+        default_factory=lambda: os.getenv(
+            "PREDICTOR_URL", "http://localhost:8001"
+        )
+    )
+    timeout: float = field(
+        default_factory=lambda: float(os.getenv("PREDICTOR_TIMEOUT", "5.0"))
+    )
+    max_retries: int = field(
+        default_factory=lambda: int(os.getenv("PREDICTOR_MAX_RETRIES", "3"))
+    )
+    retry_delay: float = field(
+        default_factory=lambda: float(os.getenv("PREDICTOR_RETRY_DELAY", "1.0"))
+    )
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization.
 
         Returns:
@@ -182,12 +204,18 @@ class SchedulingConfig:
     These settings define how the scheduler should assign tasks to this instance.
     """
 
-    default_strategy: str = field(default_factory=lambda: os.getenv("SCHEDULING_STRATEGY", "probabilistic"))
+    default_strategy: str = field(
+        default_factory=lambda: os.getenv(
+            "SCHEDULING_STRATEGY", "probabilistic"
+        )
+    )
     probabilistic_quantile: float = field(
-        default_factory=lambda: float(os.getenv("SCHEDULING_PROBABILISTIC_QUANTILE", "0.9"))
+        default_factory=lambda: float(
+            os.getenv("SCHEDULING_PROBABILISTIC_QUANTILE", "0.9")
+        )
     )
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization.
 
         Returns:
@@ -207,13 +235,22 @@ class TrainingConfig:
     """
 
     enable_auto_training: bool = field(
-        default_factory=lambda: os.getenv("TRAINING_ENABLE_AUTO", "false").lower() == "true"
+        default_factory=lambda: os.getenv(
+            "TRAINING_ENABLE_AUTO", "false"
+        ).lower()
+        == "true"
     )
-    batch_size: int = field(default_factory=lambda: int(os.getenv("TRAINING_BATCH_SIZE", "100")))
-    frequency_seconds: int = field(default_factory=lambda: int(os.getenv("TRAINING_FREQUENCY", "3600")))
-    min_samples: int = field(default_factory=lambda: int(os.getenv("TRAINING_MIN_SAMPLES", "10")))
+    batch_size: int = field(
+        default_factory=lambda: int(os.getenv("TRAINING_BATCH_SIZE", "100"))
+    )
+    frequency_seconds: int = field(
+        default_factory=lambda: int(os.getenv("TRAINING_FREQUENCY", "3600"))
+    )
+    min_samples: int = field(
+        default_factory=lambda: int(os.getenv("TRAINING_MIN_SAMPLES", "10"))
+    )
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization.
 
         Returns:
@@ -234,16 +271,28 @@ class WebSocketConfig:
     These settings control WebSocket connection behavior between instance and scheduler.
     """
 
-    heartbeat_interval: int = field(default_factory=lambda: int(os.getenv("WEBSOCKET_HEARTBEAT_INTERVAL", "30")))
-    heartbeat_timeout_threshold: int = field(
-        default_factory=lambda: int(os.getenv("WEBSOCKET_HEARTBEAT_THRESHOLD", "3"))
+    heartbeat_interval: int = field(
+        default_factory=lambda: int(
+            os.getenv("WEBSOCKET_HEARTBEAT_INTERVAL", "30")
+        )
     )
-    ack_timeout: float = field(default_factory=lambda: float(os.getenv("WEBSOCKET_ACK_TIMEOUT", "10.0")))
+    heartbeat_timeout_threshold: int = field(
+        default_factory=lambda: int(
+            os.getenv("WEBSOCKET_HEARTBEAT_THRESHOLD", "3")
+        )
+    )
+    ack_timeout: float = field(
+        default_factory=lambda: float(
+            os.getenv("WEBSOCKET_ACK_TIMEOUT", "10.0")
+        )
+    )
     max_message_size: int = field(
-        default_factory=lambda: int(os.getenv("WEBSOCKET_MAX_MESSAGE_SIZE", str(16 * 1024 * 1024)))
+        default_factory=lambda: int(
+            os.getenv("WEBSOCKET_MAX_MESSAGE_SIZE", str(16 * 1024 * 1024))
+        )
     )
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization.
 
         Returns:
@@ -269,17 +318,17 @@ class SchedulerClient:
 
     def __init__(
         self,
-        scheduler_url: Optional[str] = None,
-        instance_id: Optional[str] = None,
-        instance_endpoint: Optional[str] = None,
+        scheduler_url: str | None = None,
+        instance_id: str | None = None,
+        instance_endpoint: str | None = None,
         timeout: float = 10.0,
         max_retries: int = 3,
         retry_delay: float = 2.0,
-        predictor_config: Optional[PredictorConfig] = None,
-        scheduling_config: Optional[SchedulingConfig] = None,
-        training_config: Optional[TrainingConfig] = None,
-        websocket_config: Optional[WebSocketConfig] = None,
-        scheduler_module_path: Optional[str] = None,
+        predictor_config: PredictorConfig | None = None,
+        scheduling_config: SchedulingConfig | None = None,
+        training_config: TrainingConfig | None = None,
+        websocket_config: WebSocketConfig | None = None,
+        scheduler_module_path: str | None = None,
     ):
         """Initialize scheduler client with configuration.
 
@@ -301,10 +350,15 @@ class SchedulerClient:
                                   Falls back to SCHEDULER_MODULE_PATH env var
         """
         # Core connection settings
-        self.scheduler_url = scheduler_url or os.getenv("SCHEDULER_URL", "http://localhost:8000")
-        self.instance_id = instance_id or os.getenv("INSTANCE_ID", str(uuid.uuid4()))
+        self.scheduler_url = scheduler_url or os.getenv(
+            "SCHEDULER_URL", "http://localhost:8000"
+        )
+        self.instance_id = instance_id or os.getenv(
+            "INSTANCE_ID", str(uuid.uuid4())
+        )
         self.instance_endpoint = instance_endpoint or os.getenv(
-            "INSTANCE_ENDPOINT", f"http://localhost:{os.getenv('INSTANCE_PORT', '8000')}"
+            "INSTANCE_ENDPOINT",
+            f"http://localhost:{os.getenv('INSTANCE_PORT', '8000')}",
         )
 
         # Request settings
@@ -325,14 +379,16 @@ class SchedulerClient:
 
         # Registration and process state
         self._registered = False
-        self._scheduler_process: Optional[subprocess.Popen] = None
+        self._scheduler_process: subprocess.Popen | None = None
 
-        print(f"Initializing scheduler client:")
+        print("Initializing scheduler client:")
         print(f"  Scheduler URL: {self.scheduler_url}")
         print(f"  Instance ID: {self.instance_id}")
         print(f"  Instance Endpoint: {self.instance_endpoint}")
         print(f"  Predictor URL: {self.predictor_config.url}")
-        print(f"  Scheduling Strategy: {self.scheduling_config.default_strategy}")
+        print(
+            f"  Scheduling Strategy: {self.scheduling_config.default_strategy}"
+        )
 
     @property
     def is_enabled(self) -> bool:
@@ -363,7 +419,7 @@ class SchedulerClient:
             return False
         return self._scheduler_process.poll() is None
 
-    def get_config_dict(self) -> Dict[str, Any]:
+    def get_config_dict(self) -> dict[str, Any]:
         """Get all configuration as a dictionary.
 
         Returns:
@@ -394,7 +450,9 @@ class SchedulerClient:
             except OSError:
                 return True
 
-    def _find_available_port(self, start_port: int, max_attempts: int = 100) -> Optional[int]:
+    def _find_available_port(
+        self, start_port: int, max_attempts: int = 100
+    ) -> int | None:
         """Find an available port starting from the given port.
 
         Args:
@@ -430,7 +488,9 @@ class SchedulerClient:
             new_port: New port number
         """
         parsed = urlparse(self.scheduler_url)
-        self.scheduler_url = f"{parsed.scheme}://{parsed.hostname}:{new_port}{parsed.path}"
+        self.scheduler_url = (
+            f"{parsed.scheme}://{parsed.hostname}:{new_port}{parsed.path}"
+        )
 
     async def _check_predictor_available(self) -> bool:
         """Check if predictor service is available.
@@ -438,19 +498,27 @@ class SchedulerClient:
         Returns:
             True if predictor is reachable and healthy, False otherwise
         """
-        print(f"Checking predictor availability at {self.predictor_config.url}...")
+        print(
+            f"Checking predictor availability at {self.predictor_config.url}..."
+        )
 
         try:
-            async with httpx.AsyncClient(timeout=self.predictor_config.timeout) as client:
-                response = await client.get(f"{self.predictor_config.url}/health")
+            async with httpx.AsyncClient(
+                timeout=self.predictor_config.timeout
+            ) as client:
+                response = await client.get(
+                    f"{self.predictor_config.url}/health"
+                )
                 response.raise_for_status()
                 data = response.json()
 
                 if data.get("status") == "healthy":
-                    print(f"✓ Predictor service is healthy")
+                    print("✓ Predictor service is healthy")
                     return True
                 else:
-                    print(f"✗ Predictor service returned unhealthy status: {data}")
+                    print(
+                        f"✗ Predictor service returned unhealthy status: {data}"
+                    )
                     return False
 
         except httpx.HTTPError as e:
@@ -468,7 +536,9 @@ class SchedulerClient:
             )
             return False
 
-    async def _wait_for_scheduler_ready(self, timeout: float = 30.0, check_interval: float = 1.0) -> bool:
+    async def _wait_for_scheduler_ready(
+        self, timeout: float = 30.0, check_interval: float = 1.0
+    ) -> bool:
         """Wait for scheduler to become ready.
 
         Args:
@@ -533,7 +603,7 @@ class SchedulerClient:
             ```python
             client = SchedulerClient(
                 scheduler_url="http://localhost:8000",
-                predictor_config=PredictorConfig(url="http://localhost:8001")
+                predictor_config=PredictorConfig(url="http://localhost:8001"),
             )
 
             # Start scheduler with auto port discovery
@@ -549,8 +619,12 @@ class SchedulerClient:
         # Step 1: Check predictor availability
         if check_predictor:
             if not await self._check_predictor_available():
-                print("✗ Cannot start scheduler: Predictor service is not available")
-                print("  Please ensure predictor is running before starting scheduler")
+                print(
+                    "✗ Cannot start scheduler: Predictor service is not available"
+                )
+                print(
+                    "  Please ensure predictor is running before starting scheduler"
+                )
                 return False
 
         # Step 2: Check if scheduler is already running
@@ -563,37 +637,51 @@ class SchedulerClient:
                 async with httpx.AsyncClient(timeout=2.0) as client:
                     response = await client.get(f"{self.scheduler_url}/health")
                     if response.status_code == 200:
-                        print(f"✓ Scheduler is already running at {self.scheduler_url}")
+                        print(
+                            f"✓ Scheduler is already running at {self.scheduler_url}"
+                        )
                         return True
             except Exception:
                 pass
 
             # Port is occupied by something else
             if auto_find_port:
-                print(f"⚠ Port {current_port} is occupied, searching for available port...")
-                available_port = self._find_available_port(current_port + 1, max_port_search)
+                print(
+                    f"⚠ Port {current_port} is occupied, searching for available port..."
+                )
+                available_port = self._find_available_port(
+                    current_port + 1, max_port_search
+                )
 
                 if available_port is None:
-                    print(f"✗ Could not find available port in range {current_port + 1} to {current_port + max_port_search}")
+                    print(
+                        f"✗ Could not find available port in range {current_port + 1} to {current_port + max_port_search}"
+                    )
                     return False
 
                 print(f"✓ Found available port: {available_port}")
                 self._update_scheduler_url_port(available_port)
                 current_port = available_port
             else:
-                print(f"✗ Port {current_port} is already in use (auto_find_port=False)")
+                print(
+                    f"✗ Port {current_port} is already in use (auto_find_port=False)"
+                )
                 return False
 
         # Step 3: Verify scheduler module exists
         if not os.path.exists(self.scheduler_module_path):
-            raise RuntimeError(f"Scheduler module not found at: {self.scheduler_module_path}")
+            raise RuntimeError(
+                f"Scheduler module not found at: {self.scheduler_module_path}"
+            )
 
         # Step 4: Prepare environment variables
         env = os.environ.copy()
         env["SCHEDULER_PORT"] = str(current_port)
         env["PREDICTOR_URL"] = self.predictor_config.url
         env["SCHEDULING_STRATEGY"] = self.scheduling_config.default_strategy
-        env["SCHEDULING_PROBABILISTIC_QUANTILE"] = str(self.scheduling_config.probabilistic_quantile)
+        env["SCHEDULING_PROBABILISTIC_QUANTILE"] = str(
+            self.scheduling_config.probabilistic_quantile
+        )
 
         # Step 5: Start scheduler process
         print(f"Starting scheduler at port {current_port}...")
@@ -617,7 +705,9 @@ class SchedulerClient:
             ]
 
             # Change to scheduler directory
-            scheduler_dir = os.path.dirname(os.path.abspath(self.scheduler_module_path))
+            scheduler_dir = os.path.dirname(
+                os.path.abspath(self.scheduler_module_path)
+            )
 
             self._scheduler_process = subprocess.Popen(
                 cmd,
@@ -628,7 +718,9 @@ class SchedulerClient:
                 text=True,
             )
 
-            print(f"✓ Scheduler process started (PID: {self._scheduler_process.pid})")
+            print(
+                f"✓ Scheduler process started (PID: {self._scheduler_process.pid})"
+            )
 
         except Exception as e:
             log_error_with_traceback(
@@ -666,7 +758,9 @@ class SchedulerClient:
             self._scheduler_process = None
             return True
 
-        print(f"Stopping scheduler process (PID: {self._scheduler_process.pid})...")
+        print(
+            f"Stopping scheduler process (PID: {self._scheduler_process.pid})..."
+        )
 
         try:
             self._scheduler_process.terminate()
@@ -693,7 +787,7 @@ class SchedulerClient:
     async def register_instance(
         self,
         model_id: str,
-        platform_info: Optional[Dict[str, Any]] = None,
+        platform_info: dict[str, Any] | None = None,
         include_config: bool = True,
     ) -> bool:
         """Register this instance with the scheduler.
@@ -745,12 +839,18 @@ class SchedulerClient:
 
                 if result.get("success", False):
                     self._registered = True
-                    print(f"✓ Instance {self.instance_id} registered with scheduler successfully")
+                    print(
+                        f"✓ Instance {self.instance_id} registered with scheduler successfully"
+                    )
                     print(f"  Model: {model_id}")
-                    print(f"  Platform: {platform_info.get('software_name', 'unknown')}")
+                    print(
+                        f"  Platform: {platform_info.get('software_name', 'unknown')}"
+                    )
                     if include_config:
                         print(f"  Predictor: {self.predictor_config.url}")
-                        print(f"  Strategy: {self.scheduling_config.default_strategy}")
+                        print(
+                            f"  Strategy: {self.scheduling_config.default_strategy}"
+                        )
                     return True
                 else:
                     error_msg = result.get("error", "Unknown error")
@@ -764,11 +864,15 @@ class SchedulerClient:
                     additional_info=f"Scheduler URL: {self.scheduler_url}",
                 )
                 if attempt < self.max_retries - 1:
-                    delay = self.retry_delay * (2**attempt)  # Exponential backoff
+                    delay = self.retry_delay * (
+                        2**attempt
+                    )  # Exponential backoff
                     print(f"  Retrying in {delay}s...")
                     await asyncio.sleep(delay)
                 else:
-                    print(f"✗ Failed to register instance after {self.max_retries} attempts")
+                    print(
+                        f"✗ Failed to register instance after {self.max_retries} attempts"
+                    )
                     return False
 
             except Exception as e:
@@ -791,7 +895,9 @@ class SchedulerClient:
             True if deregistration successful, False otherwise
         """
         if not self.is_enabled or not self._registered:
-            print("Cannot deregister: scheduler disabled or instance not registered")
+            print(
+                "Cannot deregister: scheduler disabled or instance not registered"
+            )
             return False
 
         deregistration_data = {
@@ -809,7 +915,9 @@ class SchedulerClient:
 
             if result.get("success", False):
                 self._registered = False
-                print(f"✓ Instance {self.instance_id} deregistered from scheduler")
+                print(
+                    f"✓ Instance {self.instance_id} deregistered from scheduler"
+                )
                 return True
             else:
                 error_msg = result.get("error", "Unknown error")
@@ -832,7 +940,7 @@ class SchedulerClient:
             )
             return False
 
-    async def drain_instance(self) -> Dict[str, Any]:
+    async def drain_instance(self) -> dict[str, Any]:
         """Request the scheduler to drain this instance.
 
         Stops the scheduler from assigning new tasks to this instance while allowing
@@ -845,7 +953,9 @@ class SchedulerClient:
             Exception: If drain request fails
         """
         if not self.is_enabled:
-            raise Exception("Scheduler integration disabled (SCHEDULER_URL not set)")
+            raise Exception(
+                "Scheduler integration disabled (SCHEDULER_URL not set)"
+            )
 
         drain_data = {
             "instance_id": self.instance_id,
@@ -865,7 +975,9 @@ class SchedulerClient:
                 print(f"  Pending tasks: {result.get('pending_tasks', 0)}")
                 print(f"  Running tasks: {result.get('running_tasks', 0)}")
                 if "estimated_completion_time_ms" in result:
-                    print(f"  Estimated completion: {result['estimated_completion_time_ms']}ms")
+                    print(
+                        f"  Estimated completion: {result['estimated_completion_time_ms']}ms"
+                    )
                 return result
             else:
                 error_msg = result.get("error", "Unknown error")
@@ -877,7 +989,7 @@ class SchedulerClient:
                 context="drain_instance",
                 additional_info=f"Instance ID: {self.instance_id}",
             )
-            raise Exception(f"Failed to drain instance: {str(e)}")
+            raise Exception(f"Failed to drain instance: {e!s}")
 
         except Exception as e:
             log_error_with_traceback(
@@ -885,7 +997,7 @@ class SchedulerClient:
                 context="drain_instance",
                 additional_info=f"Instance ID: {self.instance_id}",
             )
-            raise Exception(f"Unexpected error during drain: {str(e)}")
+            raise Exception(f"Unexpected error during drain: {e!s}")
 
     async def resubmit_task(
         self,
@@ -908,7 +1020,9 @@ class SchedulerClient:
             Exception: If scheduler integration is disabled or request fails
         """
         if not self.is_enabled:
-            raise Exception("Cannot resubmit task: scheduler integration is disabled")
+            raise Exception(
+                "Cannot resubmit task: scheduler integration is disabled"
+            )
 
         endpoint = f"{self.scheduler_url}/task/resubmit"
 
@@ -969,9 +1083,9 @@ class SchedulerClient:
         task_id: str,
         status: str,
         callback_url: str,
-        result: Optional[Dict[str, Any]] = None,
-        error: Optional[str] = None,
-        execution_time_ms: Optional[float] = None,
+        result: dict[str, Any] | None = None,
+        error: str | None = None,
+        execution_time_ms: float | None = None,
     ) -> bool:
         """Send task result to scheduler via callback.
 
@@ -995,8 +1109,8 @@ class SchedulerClient:
 
         if result is not None:
             callback_data["result"] = result
-            result['callback_timestamp'] = time.time()
-            result['instance_id'] = self.instance_id
+            result["callback_timestamp"] = time.time()
+            result["instance_id"] = self.instance_id
         if error is not None:
             callback_data["error"] = error
         if execution_time_ms is not None:
@@ -1032,7 +1146,9 @@ class SchedulerClient:
                     delay = self.retry_delay * (2**attempt)
                     await asyncio.sleep(delay)
                 else:
-                    print(f"✗ Failed to send callback after {self.max_retries} attempts")
+                    print(
+                        f"✗ Failed to send callback after {self.max_retries} attempts"
+                    )
                     return False
 
             except Exception as e:
@@ -1047,7 +1163,7 @@ class SchedulerClient:
 
     # ==================== Utility Methods ====================
 
-    def _get_platform_info(self) -> Dict[str, Any]:
+    def _get_platform_info(self) -> dict[str, Any]:
         """Get platform information with support for user overrides.
 
         Checks config for platform overrides (from environment variables or CLI args).
@@ -1058,29 +1174,36 @@ class SchedulerClient:
         Returns:
             Dictionary containing platform information
         """
-        from .config import config
+        from src.config import config
 
         return {
             "software_name": config.platform_software_name or platform.system(),
-            "software_version": config.platform_software_version or platform.release(),
+            "software_version": config.platform_software_version
+            or platform.release(),
             "hardware_name": config.platform_hardware_name or _get_gpu0_name(),
         }
 
-    def update_predictor_config(self, predictor_config: PredictorConfig) -> None:
+    def update_predictor_config(
+        self, predictor_config: PredictorConfig
+    ) -> None:
         """Update predictor configuration."""
         self.predictor_config = predictor_config
         print(f"Updated predictor config: {predictor_config.url}")
 
-    def update_scheduling_config(self, scheduling_config: SchedulingConfig) -> None:
+    def update_scheduling_config(
+        self, scheduling_config: SchedulingConfig
+    ) -> None:
         """Update scheduling configuration."""
         self.scheduling_config = scheduling_config
-        print(f"Updated scheduling config: {scheduling_config.default_strategy}")
+        print(
+            f"Updated scheduling config: {scheduling_config.default_strategy}"
+        )
 
 
 # ==================== Global Client Instance ====================
 
 
-_scheduler_client: Optional[SchedulerClient] = None
+_scheduler_client: SchedulerClient | None = None
 
 
 def get_scheduler_client() -> SchedulerClient:
@@ -1092,14 +1215,14 @@ def get_scheduler_client() -> SchedulerClient:
 
 
 def initialize_scheduler_client(
-    scheduler_url: Optional[str] = None,
-    instance_id: Optional[str] = None,
-    instance_endpoint: Optional[str] = None,
-    predictor_config: Optional[PredictorConfig] = None,
-    scheduling_config: Optional[SchedulingConfig] = None,
-    training_config: Optional[TrainingConfig] = None,
-    websocket_config: Optional[WebSocketConfig] = None,
-    scheduler_module_path: Optional[str] = None,
+    scheduler_url: str | None = None,
+    instance_id: str | None = None,
+    instance_endpoint: str | None = None,
+    predictor_config: PredictorConfig | None = None,
+    scheduling_config: SchedulingConfig | None = None,
+    training_config: TrainingConfig | None = None,
+    websocket_config: WebSocketConfig | None = None,
+    scheduler_module_path: str | None = None,
 ) -> SchedulerClient:
     """Initialize and configure the global scheduler client."""
     global _scheduler_client

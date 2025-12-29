@@ -1,5 +1,4 @@
-"""
-Instance Service API
+"""Instance Service API.
 
 This module implements the FastAPI application for the Instance Service.
 It provides endpoints for model management, task management, and instance monitoring.
@@ -11,11 +10,26 @@ import traceback
 import uuid
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query, Response, status
-from pydantic import BaseModel, Field
 from loguru import logger
+from pydantic import BaseModel, Field
+
+from src.config import config
+from src.manager_factory import get_docker_manager
+from src.model_registry import get_registry
+from src.models import (
+    DeregisterOperation,
+    DeregisterStatus,
+    InstanceStatus,
+    RestartOperation,
+    RestartStatus,
+    Task,
+    TaskStatus,
+)
+from src.scheduler_client import _get_gpu0_name, get_scheduler_client
+from src.task_queue import get_task_queue
 
 
 def log_error_with_traceback(
@@ -23,13 +37,12 @@ def log_error_with_traceback(
     context: str,
     client_message: str,
 ) -> None:
-    """
-    Log error with detailed information, client message, and traceback.
+    """Log error with detailed information, client message, and traceback.
 
     Args:
-        error: The exception that occurred
-        context: Context description of where the error occurred
-        client_message: The message that will be returned to the client
+        error: The exception that occurred.
+        context: Context description of where the error occurred.
+        client_message: The message that will be returned to the client.
     """
     tb_str = traceback.format_exc()
     logger.error(
@@ -39,15 +52,6 @@ def log_error_with_traceback(
         f"  Traceback:\n{tb_str}"
     )
 
-from .config import config
-from .manager_factory import get_docker_manager
-from .model_registry import get_registry
-from .models import InstanceStatus, Task, TaskStatus, RestartOperation, RestartStatus, DeregisterOperation, DeregisterStatus
-from .task_queue import get_task_queue
-from .scheduler_client import get_scheduler_client, _get_gpu0_name
-from .websocket_client import WebSocketClient
-from .websocket_client_singleton import get_websocket_client, set_websocket_client
-from . import logger as _  # Import logger module to initialize logging
 
 # =============================================================================
 # Pydantic Models for Request/Response Schemas
@@ -56,61 +60,68 @@ from . import logger as _  # Import logger module to initialize logging
 
 # Model Management Schemas
 class StandbyConfig(BaseModel):
-    """Configuration for standby (hot-standby) behavior"""
-    port_offset: Optional[int] = Field(
+    """Configuration for standby (hot-standby) behavior."""
+
+    port_offset: int | None = Field(
         default=None,
-        description="Port offset for standby process (default: from env INSTANCE_STANDBY_PORT_OFFSET or 1000)"
+        description="Port offset for standby process (default: from env INSTANCE_STANDBY_PORT_OFFSET or 1000)",
     )
-    max_retries: Optional[int] = Field(
+    max_retries: int | None = Field(
         default=None,
-        description="Maximum retries for standby startup (default: from env INSTANCE_HOT_STANDBY_MAX_RETRIES or 3)"
+        description="Maximum retries for standby startup (default: from env INSTANCE_HOT_STANDBY_MAX_RETRIES or 3)",
     )
-    initial_delay: Optional[float] = Field(
+    initial_delay: float | None = Field(
         default=None,
-        description="Initial delay before retry in seconds (default: from env INSTANCE_HOT_STANDBY_INITIAL_DELAY or 5.0)"
+        description="Initial delay before retry in seconds (default: from env INSTANCE_HOT_STANDBY_INITIAL_DELAY or 5.0)",
     )
-    max_delay: Optional[float] = Field(
+    max_delay: float | None = Field(
         default=None,
-        description="Maximum delay between retries in seconds (default: from env INSTANCE_HOT_STANDBY_MAX_DELAY or 30.0)"
+        description="Maximum delay between retries in seconds (default: from env INSTANCE_HOT_STANDBY_MAX_DELAY or 30.0)",
     )
-    backoff_multiplier: Optional[float] = Field(
+    backoff_multiplier: float | None = Field(
         default=None,
-        description="Backoff multiplier for retry delays (default: from env INSTANCE_HOT_STANDBY_BACKOFF_MULTIPLIER or 2.0)"
+        description="Backoff multiplier for retry delays (default: from env INSTANCE_HOT_STANDBY_BACKOFF_MULTIPLIER or 2.0)",
     )
-    restart_delay: Optional[int] = Field(
+    restart_delay: int | None = Field(
         default=None,
-        description="Delay before restarting standby after hot-switch in seconds (default: from env INSTANCE_STANDBY_RESTART_DELAY or 30)"
+        description="Delay before restarting standby after hot-switch in seconds (default: from env INSTANCE_STANDBY_RESTART_DELAY or 30)",
     )
-    health_check_timeout: Optional[int] = Field(
+    health_check_timeout: int | None = Field(
         default=None,
-        description="Health check timeout for standby process in seconds (default: from env INSTANCE_BACKUP_HEALTH_TIMEOUT or 600)"
+        description="Health check timeout for standby process in seconds (default: from env INSTANCE_BACKUP_HEALTH_TIMEOUT or 600)",
     )
-    traditional_restart_delay: Optional[int] = Field(
+    traditional_restart_delay: int | None = Field(
         default=None,
-        description="Delay for traditional restart when standby disabled in seconds (default: from env INSTANCE_TRADITIONAL_RESTART_DELAY or 30)"
+        description="Delay for traditional restart when standby disabled in seconds (default: from env INSTANCE_TRADITIONAL_RESTART_DELAY or 30)",
     )
 
 
 class ModelStartRequest(BaseModel):
-    """Request schema for starting a model"""
-    model_id: str = Field(..., description="Unique identifier of the model/tool to start")
-    parameters: Optional[Dict[str, Any]] = Field(
+    """Request schema for starting a model."""
+
+    model_id: str = Field(
+        ..., description="Unique identifier of the model/tool to start"
+    )
+    parameters: dict[str, Any] | None = Field(
         default_factory=dict,
-        description="Model-specific initialization parameters"
+        description="Model-specific initialization parameters",
     )
-    scheduler_url: str = Field(..., description="Scheduler URL to register with (must not be empty)")
-    standby: Optional[bool] = Field(
-        default=None,
-        description="Enable/disable standby mode. If None, uses env INSTANCE_STANDBY_ENABLED (default: true)"
+    scheduler_url: str = Field(
+        ..., description="Scheduler URL to register with (must not be empty)"
     )
-    standby_config: Optional[StandbyConfig] = Field(
+    standby: bool | None = Field(
         default=None,
-        description="Standby configuration overrides. Values override environment variable defaults."
+        description="Enable/disable standby mode. If None, uses env INSTANCE_STANDBY_ENABLED (default: true)",
+    )
+    standby_config: StandbyConfig | None = Field(
+        default=None,
+        description="Standby configuration overrides. Values override environment variable defaults.",
     )
 
 
 class ModelStartResponse(BaseModel):
-    """Response schema for model start endpoint"""
+    """Response schema for model start endpoint."""
+
     success: bool
     message: str
     model_id: str
@@ -118,60 +129,79 @@ class ModelStartResponse(BaseModel):
 
 
 class ModelStopResponse(BaseModel):
-    """Response schema for model stop endpoint"""
+    """Response schema for model stop endpoint."""
+
     success: bool
     message: str
     model_id: str
 
 
 class ModelRestartRequest(BaseModel):
-    """Request schema for restarting a model"""
-    model_id: str = Field(..., description="Unique identifier of the new model/tool to start")
-    parameters: Optional[Dict[str, Any]] = Field(
-        default_factory=dict,
-        description="Model-specific initialization parameters"
+    """Request schema for restarting a model."""
+
+    model_id: str = Field(
+        ..., description="Unique identifier of the new model/tool to start"
     )
-    scheduler_url: str = Field(..., description="New scheduler URL to register with (must not be empty)")
+    parameters: dict[str, Any] | None = Field(
+        default_factory=dict,
+        description="Model-specific initialization parameters",
+    )
+    scheduler_url: str = Field(
+        ...,
+        description="New scheduler URL to register with (must not be empty)",
+    )
 
 
 class ModelRestartResponse(BaseModel):
-    """Response schema for model restart endpoint"""
+    """Response schema for model restart endpoint."""
+
     success: bool
     message: str
-    operation_id: str = Field(..., description="Unique ID to track this restart operation")
+    operation_id: str = Field(
+        ..., description="Unique ID to track this restart operation"
+    )
     status: str = Field(..., description="Initial status (should be 'pending')")
 
 
 class RestartStatusResponse(BaseModel):
-    """Response schema for restart status endpoint"""
+    """Response schema for restart status endpoint."""
+
     success: bool
     operation_id: str
     status: str = Field(..., description="Current restart status")
-    old_model_id: Optional[str] = None
+    old_model_id: str | None = None
     new_model_id: str
     initiated_at: str
-    completed_at: Optional[str] = None
+    completed_at: str | None = None
     pending_tasks_at_start: int
     pending_tasks_completed: int
     redistributed_tasks_count: int = Field(
         default=0,
-        description="Number of pending tasks redistributed to scheduler"
+        description="Number of pending tasks redistributed to scheduler",
     )
-    error: Optional[str] = None
+    error: str | None = None
 
 
 # Task Management Schemas
 class TaskSubmitRequest(BaseModel):
-    """Request schema for submitting a task"""
+    """Request schema for submitting a task."""
+
     task_id: str = Field(..., description="Unique identifier for this task")
     model_id: str = Field(..., description="Model/tool ID to use for this task")
-    task_input: Dict[str, Any] = Field(..., description="Model-specific input data")
-    enqueue_time: Optional[float] = Field(None, description="Optional Unix timestamp for task priority ordering")
-    callback_url: Optional[str] = Field(None, description="Optional callback URL for task result")
+    task_input: dict[str, Any] = Field(
+        ..., description="Model-specific input data"
+    )
+    enqueue_time: float | None = Field(
+        None, description="Optional Unix timestamp for task priority ordering"
+    )
+    callback_url: str | None = Field(
+        None, description="Optional callback URL for task result"
+    )
 
 
 class TaskSubmitResponse(BaseModel):
-    """Response schema for task submission"""
+    """Response schema for task submission."""
+
     success: bool
     message: str
     task_id: str
@@ -180,76 +210,99 @@ class TaskSubmitResponse(BaseModel):
 
 
 class TaskDetail(BaseModel):
-    """Schema for detailed task information"""
+    """Schema for detailed task information."""
+
     task_id: str
     model_id: str
-    status: str = Field(..., description="Status: queued, running, completed, failed")
-    task_input: Optional[Dict[str, Any]] = None
+    status: str = Field(
+        ..., description="Status: queued, running, completed, failed"
+    )
+    task_input: dict[str, Any] | None = None
     submitted_at: str
-    started_at: Optional[str] = None
-    completed_at: Optional[str] = None
-    result: Optional[Dict[str, Any]] = None
-    error: Optional[str] = None
+    started_at: str | None = None
+    completed_at: str | None = None
+    result: dict[str, Any] | None = None
+    error: str | None = None
 
 
 class TaskListResponse(BaseModel):
-    """Response schema for task list endpoint"""
+    """Response schema for task list endpoint."""
+
     success: bool
     total: int
-    tasks: List[TaskDetail]
+    tasks: list[TaskDetail]
 
 
 class TaskGetResponse(BaseModel):
-    """Response schema for getting a specific task"""
+    """Response schema for getting a specific task."""
+
     success: bool
     task: TaskDetail
 
 
 class TaskDeleteResponse(BaseModel):
-    """Response schema for task deletion"""
+    """Response schema for task deletion."""
+
     success: bool
     message: str
     task_id: str
 
 
 class TaskClearResponse(BaseModel):
-    """Response schema for clearing all tasks"""
+    """Response schema for clearing all tasks."""
+
     success: bool
     message: str
-    cleared_count: Dict[str, int] = Field(
+    cleared_count: dict[str, int] = Field(
         ...,
-        description="Number of tasks cleared by status (queued, completed, failed, total)"
+        description="Number of tasks cleared by status (queued, completed, failed, total)",
     )
 
 
 class TaskCleanupFetchedResponse(BaseModel):
-    """Response schema for cleaning up fetched tasks"""
+    """Response schema for cleaning up fetched tasks."""
+
     success: bool
     message: str
-    cleaned_count: int = Field(..., description="Number of FETCHED tasks removed from storage")
+    cleaned_count: int = Field(
+        ..., description="Number of FETCHED tasks removed from storage"
+    )
 
 
 class TaskFetchResponse(BaseModel):
-    """Response schema for fetching the first queued task with full details"""
+    """Response schema for fetching the first queued task with full details."""
+
     exist: bool = Field(..., description="Whether a task was found and fetched")
-    task_id: str = Field(..., description="ID of the fetched task, empty string if none")
+    task_id: str = Field(
+        ..., description="ID of the fetched task, empty string if none"
+    )
     # Additional fields for task redistribution (optional for backward compatibility)
-    model_id: Optional[str] = Field(None, description="Model ID of the fetched task")
-    task_input: Optional[Dict[str, Any]] = Field(None, description="Task input data")
-    enqueue_time: Optional[float] = Field(None, description="Original enqueue timestamp for priority ordering")
-    submitted_at: Optional[str] = Field(None, description="Original submission timestamp (ISO 8601)")
+    model_id: str | None = Field(
+        None, description="Model ID of the fetched task"
+    )
+    task_input: dict[str, Any] | None = Field(
+        None, description="Task input data"
+    )
+    enqueue_time: float | None = Field(
+        None, description="Original enqueue timestamp for priority ordering"
+    )
+    submitted_at: str | None = Field(
+        None, description="Original submission timestamp (ISO 8601)"
+    )
 
 
 # Management Schemas
 class ModelInfo(BaseModel):
-    """Current model information"""
+    """Current model information."""
+
     model_id: str
     started_at: str
-    parameters: Dict[str, Any]
+    parameters: dict[str, Any]
 
 
 class TaskQueueStats(BaseModel):
-    """Task queue statistics"""
+    """Task queue statistics."""
+
     total: int
     queued: int
     running: int
@@ -258,90 +311,124 @@ class TaskQueueStats(BaseModel):
 
 
 class StandbyInfo(BaseModel):
-    """Hot-standby port information"""
+    """Hot-standby port information."""
+
     enabled: bool = Field(..., description="Whether hot-standby is enabled")
-    primary_port: Optional[int] = Field(None, description="Current primary (active) port")
-    standby_port: Optional[int] = Field(None, description="Current standby port")
-    standby_ready: bool = Field(False, description="Whether standby is healthy and ready for hot-switch")
-    standby_state: Optional[str] = Field(None, description="Standby port state: uninitialized, starting, healthy, stopping, stopped, failed")
+    primary_port: int | None = Field(
+        None, description="Current primary (active) port"
+    )
+    standby_port: int | None = Field(None, description="Current standby port")
+    standby_ready: bool = Field(
+        False, description="Whether standby is healthy and ready for hot-switch"
+    )
+    standby_state: str | None = Field(
+        None,
+        description="Standby port state: uninitialized, starting, healthy, stopping, stopped, failed",
+    )
 
 
 class InstanceInfo(BaseModel):
-    """Instance information"""
+    """Instance information."""
+
     instance_id: str
     status: str = Field(..., description="Status: idle, running, busy, error")
-    current_model: Optional[ModelInfo] = None
+    current_model: ModelInfo | None = None
     task_queue: TaskQueueStats
     uptime: int = Field(..., description="Uptime in seconds")
     version: str
-    hardware_name: Optional[str] = Field(None, description="Hardware name (e.g., GPU name)")
-    software_name: Optional[str] = Field(None, description="Software platform name (e.g., sglang, vllm)")
-    software_version: Optional[str] = Field(None, description="Software platform version")
-    active_port: Optional[int] = Field(None, description="Currently active model port")
-    standby: Optional[StandbyInfo] = Field(None, description="Hot-standby port information (SubprocessManager only)")
+    hardware_name: str | None = Field(
+        None, description="Hardware name (e.g., GPU name)"
+    )
+    software_name: str | None = Field(
+        None, description="Software platform name (e.g., sglang, vllm)"
+    )
+    software_version: str | None = Field(
+        None, description="Software platform version"
+    )
+    active_port: int | None = Field(
+        None, description="Currently active model port"
+    )
+    standby: StandbyInfo | None = Field(
+        None,
+        description="Hot-standby port information (SubprocessManager only)",
+    )
 
 
 class InfoResponse(BaseModel):
-    """Response schema for info endpoint"""
+    """Response schema for info endpoint."""
+
     success: bool
     instance: InstanceInfo
 
 
 class HealthResponse(BaseModel):
-    """Response schema for health check endpoint"""
+    """Response schema for health check endpoint."""
+
     status: str
     timestamp: str
-    error: Optional[str] = None
+    error: str | None = None
 
 
 class ErrorResponse(BaseModel):
-    """Standard error response format"""
+    """Standard error response format."""
+
     success: bool = False
     error: str
 
 
 class SuccessResponse(BaseModel):
-    """Standard success response format"""
+    """Standard success response format."""
+
     success: bool = True
     message: str
 
+
 class ModelRegisterRequest(BaseModel):
-    """Model register request format"""
-    scheduler_url: str = Field(..., description="Scheduler URL to register with")
+    """Model register request format."""
+
+    scheduler_url: str = Field(
+        ..., description="Scheduler URL to register with"
+    )
 
 
 class ModelRegisterResponse(BaseModel):
-    """Response schema for model register endpoint"""
+    """Response schema for model register endpoint."""
+
     success: bool = True
     message: str = ""
 
 
 class DeregisterStatusResponse(BaseModel):
-    """Response schema for deregister status endpoint"""
+    """Response schema for deregister status endpoint."""
+
     success: bool
     operation_id: str
     status: str = Field(..., description="Current deregister status")
-    old_model_id: Optional[str] = None
+    old_model_id: str | None = None
     initiated_at: str
-    completed_at: Optional[str] = None
+    completed_at: str | None = None
     pending_tasks_at_start: int
     pending_tasks_completed: int
     redistributed_tasks_count: int = Field(
         default=0,
-        description="Number of pending tasks redistributed to scheduler"
+        description="Number of pending tasks redistributed to scheduler",
     )
-    error: Optional[str] = None
+    error: str | None = None
 
 
 class ModelDeregisterResponse(BaseModel):
-    """Response schema for synchronous model deregister endpoint"""
+    """Response schema for synchronous model deregister endpoint."""
+
     success: bool
     message: str
-    model_id: Optional[str] = Field(None, description="The model ID that was deregistered")
+    model_id: str | None = Field(
+        None, description="The model ID that was deregistered"
+    )
     redistributed_tasks_count: int = Field(
         default=0,
-        description="Number of pending tasks redistributed to scheduler"
+        description="Number of pending tasks redistributed to scheduler",
     )
+
 
 # =============================================================================
 # FastAPI Application
@@ -351,15 +438,14 @@ class ModelDeregisterResponse(BaseModel):
 _startup_time = time.time()
 
 # Track restart operations
-_restart_operations: Dict[str, RestartOperation] = {}
-_deregister_operations: Dict[str, DeregisterOperation] = {}
+_restart_operations: dict[str, RestartOperation] = {}
+_deregister_operations: dict[str, DeregisterOperation] = {}
 _restart_operation_lock = asyncio.Lock()
 _deregister_operation_lock = asyncio.Lock()
 
 
 def construct_websocket_url(http_url: str) -> str:
-    """
-    Construct WebSocket URL from HTTP scheduler URL.
+    """Construct WebSocket URL from HTTP scheduler URL.
 
     WebSocket server runs on HTTP port + 1.
     Example: http://scheduler:8000 -> ws://scheduler:8001/instance/ws
@@ -407,8 +493,9 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Failed to load model registry: {e}")
 
-
-    logger.info("Using HTTP-only communication with Scheduler (WebSocket disabled)")
+    logger.info(
+        "Using HTTP-only communication with Scheduler (WebSocket disabled)"
+    )
 
     yield
 
@@ -421,7 +508,7 @@ async def lifespan(app: FastAPI):
         try:
             await scheduler_client.deregister_instance()
         except Exception as e:
-            logger.warning(f"Failed to deregister from scheduler: {str(e)}")
+            logger.warning(f"Failed to deregister from scheduler: {e!s}")
 
     # Stop task processing
     task_queue = get_task_queue()
@@ -450,6 +537,7 @@ app = FastAPI(
 # Model Management Endpoints
 # =============================================================================
 
+
 @app.post(
     "/model/start",
     response_model=ModelStartResponse,
@@ -460,8 +548,7 @@ app = FastAPI(
     },
 )
 async def start_model(request: ModelStartRequest):
-    """
-    Start a model/tool on this instance.
+    """Start a model/tool on this instance.
 
     Each instance can only serve one model at a time. If a model is already
     running, it must be stopped before starting a new one.
@@ -472,7 +559,7 @@ async def start_model(request: ModelStartRequest):
     if not request.scheduler_url or request.scheduler_url.strip() == "":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="scheduler_url is required and cannot be empty"
+            detail="scheduler_url is required and cannot be empty",
         )
 
     docker_manager = get_docker_manager()
@@ -482,21 +569,22 @@ async def start_model(request: ModelStartRequest):
     if await docker_manager.is_model_running():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Another model is already running. Stop the current model first."
+            detail="Another model is already running. Stop the current model first.",
         )
 
     # Validate model exists in registry
     if not registry.model_exists(request.model_id):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Model not found in registry: {request.model_id}"
+            detail=f"Model not found in registry: {request.model_id}",
         )
 
     # Build standby configuration dict from request (only include non-None values)
     standby_config_dict = None
     if request.standby_config is not None:
         standby_config_dict = {
-            k: v for k, v in request.standby_config.model_dump().items()
+            k: v
+            for k, v in request.standby_config.model_dump().items()
             if v is not None
         }
 
@@ -506,13 +594,13 @@ async def start_model(request: ModelStartRequest):
             request.model_id,
             request.parameters,
             standby_enabled=request.standby,
-            standby_config=standby_config_dict
+            standby_config=standby_config_dict,
         )
 
         software_name = request.parameters.get("software_name", None)
         software_version = request.parameters.get("software_version", None)
         hardware_name = request.parameters.get("hardware_name", None)
-        
+
         if software_name:
             config.platform_software_name = software_name
         if software_version:
@@ -531,20 +619,26 @@ async def start_model(request: ModelStartRequest):
         # Register with scheduler if enabled
         if scheduler_client.is_enabled:
             try:
-                await scheduler_client.register_instance(model_id=request.model_id)
-                logger.info(f"Successfully registered with scheduler via HTTP: {scheduler_client.scheduler_url}")
+                await scheduler_client.register_instance(
+                    model_id=request.model_id
+                )
+                logger.info(
+                    f"Successfully registered with scheduler via HTTP: {scheduler_client.scheduler_url}"
+                )
             except Exception as e:
                 # Log error but don't fail model start
-                logger.warning(f"Failed to register with scheduler via HTTP: {str(e)}")
+                logger.warning(
+                    f"Failed to register with scheduler via HTTP: {e!s}"
+                )
 
         return ModelStartResponse(
             success=True,
             message="Model started successfully",
             model_id=model_info.model_id,
-            status="running"
+            status="running",
         )
     except Exception as e:
-        client_message = f"Failed to start model: {str(e)}"
+        client_message = f"Failed to start model: {e!s}"
         log_error_with_traceback(
             error=e,
             context=f"start_model(model_id={request.model_id})",
@@ -552,7 +646,7 @@ async def start_model(request: ModelStartRequest):
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=client_message
+            detail=client_message,
         )
 
 
@@ -565,8 +659,7 @@ async def start_model(request: ModelStartRequest):
     },
 )
 async def stop_model():
-    """
-    Stop the currently running model on this instance.
+    """Stop the currently running model on this instance.
 
     This will gracefully shutdown the model container and free up resources.
     """
@@ -576,7 +669,7 @@ async def stop_model():
     if not await docker_manager.is_model_running():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No model is currently running"
+            detail="No model is currently running",
         )
 
     # Stop the model
@@ -590,15 +683,15 @@ async def stop_model():
                 await scheduler_client.deregister_instance()
             except Exception as e:
                 # Log error but don't fail model stop
-                logger.warning(f"Failed to deregister from scheduler: {str(e)}")
+                logger.warning(f"Failed to deregister from scheduler: {e!s}")
 
         return ModelStopResponse(
             success=True,
             message="Model stopped successfully",
-            model_id=model_id or "unknown"
+            model_id=model_id or "unknown",
         )
     except Exception as e:
-        client_message = f"Failed to stop model: {str(e)}"
+        client_message = f"Failed to stop model: {e!s}"
         log_error_with_traceback(
             error=e,
             context="stop_model",
@@ -606,8 +699,9 @@ async def stop_model():
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=client_message
+            detail=client_message,
         )
+
 
 @app.post(
     "/model/deregister",
@@ -620,8 +714,7 @@ async def stop_model():
     },
 )
 async def deregister_model():
-    """
-    Deregister the current model from the scheduler synchronously.
+    """Deregister the current model from the scheduler synchronously.
 
     This is a **blocking** operation that:
     1. Drains from the current scheduler (stops accepting new tasks)
@@ -633,14 +726,13 @@ async def deregister_model():
     deregister operation is finished. Use this when you need to ensure
     the instance is fully drained before proceeding.
     """
-
     docker_manager = get_docker_manager()
 
     # Check if a model is running
     if not await docker_manager.is_model_running():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No model is currently running"
+            detail="No model is currently running",
         )
 
     # Get current model info
@@ -650,10 +742,13 @@ async def deregister_model():
     # Check if there's already a deregister operation in progress
     async with _deregister_operation_lock:
         for op in _deregister_operations.values():
-            if op.status not in (DeregisterStatus.COMPLETED, DeregisterStatus.FAILED):
+            if op.status not in (
+                DeregisterStatus.COMPLETED,
+                DeregisterStatus.FAILED,
+            ):
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
-                    detail=f"A deregister operation is already in progress (operation_id: {op.operation_id})"
+                    detail=f"A deregister operation is already in progress (operation_id: {op.operation_id})",
                 )
 
         # Create deregister operation for tracking
@@ -665,7 +760,9 @@ async def deregister_model():
         operation.update_status(DeregisterStatus.DRAINING)
         _deregister_operations[operation_id] = operation
 
-    logger.info(f"Starting synchronous deregister operation {operation_id} for model: {model_id}")
+    logger.info(
+        f"Starting synchronous deregister operation {operation_id} for model: {model_id}"
+    )
 
     try:
         scheduler_client = get_scheduler_client()
@@ -678,7 +775,7 @@ async def deregister_model():
                 await scheduler_client.drain_instance()
                 logger.info("Instance draining from scheduler")
             except Exception as e:
-                logger.warning(f"Failed to drain from scheduler: {str(e)}")
+                logger.warning(f"Failed to drain from scheduler: {e!s}")
         else:
             logger.info("Scheduler integration disabled, skipping drain step")
 
@@ -689,7 +786,9 @@ async def deregister_model():
             try:
                 # Peek tasks without removing - only remove after successful resubmit
                 pending_tasks = await task_queue.peek_pending_tasks()
-                logger.info(f"Found {len(pending_tasks)} pending tasks for redistribution")
+                logger.info(
+                    f"Found {len(pending_tasks)} pending tasks for redistribution"
+                )
 
                 successful_redistributions = 0
                 failed_redistributions = 0
@@ -706,14 +805,20 @@ async def deregister_model():
                             # Remove from local queue only after successful resubmit
                             await task_queue.remove_task(task_id)
                             successful_redistributions += 1
-                            logger.debug(f"Redistributed and removed task {task_id}")
+                            logger.debug(
+                                f"Redistributed and removed task {task_id}"
+                            )
                         else:
                             failed_redistributions += 1
-                            logger.warning(f"Failed to redistribute task {task_id}")
+                            logger.warning(
+                                f"Failed to redistribute task {task_id}"
+                            )
 
                     except Exception as e:
                         failed_redistributions += 1
-                        logger.error(f"Error redistributing task {task_id}: {str(e)}")
+                        logger.error(
+                            f"Error redistributing task {task_id}: {e!s}"
+                        )
 
                 redistributed_tasks_count = successful_redistributions
                 operation.redistributed_tasks_count = successful_redistributions
@@ -724,18 +829,21 @@ async def deregister_model():
                         f"{failed_redistributions} failed (kept in local queue)"
                     )
                 else:
-                    logger.info(f"Successfully redistributed all {successful_redistributions} tasks")
+                    logger.info(
+                        f"Successfully redistributed all {successful_redistributions} tasks"
+                    )
 
             except Exception as e:
-                logger.error(f"Failed to redistribute tasks: {str(e)}")
+                logger.error(f"Failed to redistribute tasks: {e!s}")
         else:
-            logger.info("Scheduler integration disabled, skipping task extraction")
+            logger.info(
+                "Scheduler integration disabled, skipping task extraction"
+            )
 
         # Step 3: Detach currently running task to background
         operation.update_status(DeregisterStatus.WAITING_RUNNING_TASK)
 
         if task_queue.current_task_id is not None:
-            running_task_id = task_queue.current_task_id
             detached_id = await task_queue.detach_current_task()
             if detached_id:
                 logger.info(
@@ -751,11 +859,13 @@ async def deregister_model():
                 await scheduler_client.deregister_instance()
                 logger.info("Successfully deregistered from scheduler")
             except Exception as e:
-                logger.warning(f"Failed to deregister from scheduler: {str(e)}")
+                logger.warning(f"Failed to deregister from scheduler: {e!s}")
 
         # Mark operation as completed
         operation.update_status(DeregisterStatus.COMPLETED)
-        logger.info(f"Synchronous deregister operation {operation_id} completed successfully")
+        logger.info(
+            f"Synchronous deregister operation {operation_id} completed successfully"
+        )
 
         return ModelDeregisterResponse(
             success=True,
@@ -781,7 +891,7 @@ async def deregister_model():
 
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Deregister operation failed: {error_msg}"
+            detail=f"Deregister operation failed: {error_msg}",
         )
 
 
@@ -793,9 +903,10 @@ async def deregister_model():
         404: {"model": ErrorResponse},
     },
 )
-async def get_deregister_status(operation_id: str = Query(..., description="Deregister operation ID")):
-    """
-    Get the status of a model deregister operation.
+async def get_deregister_status(
+    operation_id: str = Query(..., description="Deregister operation ID"),
+):
+    """Get the status of a model deregister operation.
 
     Returns the current state of the deregister operation including progress,
     status, and any errors that occurred.
@@ -806,7 +917,7 @@ async def get_deregister_status(operation_id: str = Query(..., description="Dere
     if not operation:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Deregister operation not found: {operation_id}"
+            detail=f"Deregister operation not found: {operation_id}",
         )
 
     return DeregisterStatusResponse(
@@ -832,8 +943,7 @@ async def get_deregister_status(operation_id: str = Query(..., description="Dere
     },
 )
 async def register_model(request: ModelRegisterRequest):
-    """
-    Register current instance to a specific scheduler without stopping the model.
+    """Register current instance to a specific scheduler without stopping the model.
 
     This allows an instance to dynamically register to a new scheduler while
     keeping the current model running.
@@ -850,14 +960,14 @@ async def register_model(request: ModelRegisterRequest):
         logger.error("No model is currently running")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No model is currently running. Start a model first."
+            detail="No model is currently running. Start a model first.",
         )
 
     # Validate scheduler_url is not empty
     if not request.scheduler_url or request.scheduler_url.strip() == "":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="scheduler_url is required and cannot be empty"
+            detail="scheduler_url is required and cannot be empty",
         )
 
     # Get current model info
@@ -865,7 +975,7 @@ async def register_model(request: ModelRegisterRequest):
     if not current_model:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Failed to get current model information"
+            detail="Failed to get current model information",
         )
 
     # Update scheduler URL
@@ -876,21 +986,27 @@ async def register_model(request: ModelRegisterRequest):
     # Register with scheduler
     if scheduler_client.is_enabled:
         try:
-            success = await scheduler_client.register_instance(model_id=current_model.model_id)
+            success = await scheduler_client.register_instance(
+                model_id=current_model.model_id
+            )
             if success:
-                logger.info(f"Successfully registered with scheduler: {request.scheduler_url}")
+                logger.info(
+                    f"Successfully registered with scheduler: {request.scheduler_url}"
+                )
                 return ModelRegisterResponse(
                     success=True,
-                    message=f"Successfully registered model '{current_model.model_id}' with scheduler at {request.scheduler_url}"
+                    message=f"Successfully registered model '{current_model.model_id}' with scheduler at {request.scheduler_url}",
                 )
             else:
-                logger.warning(f"Failed to register with scheduler: {request.scheduler_url}")
+                logger.warning(
+                    f"Failed to register with scheduler: {request.scheduler_url}"
+                )
                 return ModelRegisterResponse(
                     success=False,
-                    message=f"Failed to register with scheduler at {request.scheduler_url}"
+                    message=f"Failed to register with scheduler at {request.scheduler_url}",
                 )
         except Exception as e:
-            client_message = f"Failed to register with scheduler: {str(e)}"
+            client_message = f"Failed to register with scheduler: {e!s}"
             log_error_with_traceback(
                 error=e,
                 context=f"register_model(scheduler_url={request.scheduler_url})",
@@ -898,12 +1014,11 @@ async def register_model(request: ModelRegisterRequest):
             )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=client_message
+                detail=client_message,
             )
 
     return ModelRegisterResponse(
-        success=False,
-        message="Scheduler client is not enabled"
+        success=False, message="Scheduler client is not enabled"
     )
 
 
@@ -917,8 +1032,7 @@ async def register_model(request: ModelRegisterRequest):
     },
 )
 async def restart_model(request: ModelRestartRequest):
-    """
-    Restart the model with a new model and scheduler.
+    """Restart the model with a new model and scheduler.
 
     This is a non-blocking operation that:
     1. Drains from the current scheduler (stops accepting new tasks)
@@ -935,7 +1049,7 @@ async def restart_model(request: ModelRestartRequest):
     if not request.scheduler_url or request.scheduler_url.strip() == "":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="scheduler_url is required and cannot be empty"
+            detail="scheduler_url is required and cannot be empty",
         )
 
     docker_manager = get_docker_manager()
@@ -945,14 +1059,14 @@ async def restart_model(request: ModelRestartRequest):
     if not await docker_manager.is_model_running():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No model is currently running"
+            detail="No model is currently running",
         )
 
     # Validate new model exists in registry
     if not registry.model_exists(request.model_id):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Model not found in registry: {request.model_id}"
+            detail=f"Model not found in registry: {request.model_id}",
         )
 
     # Get current model info
@@ -964,7 +1078,7 @@ async def restart_model(request: ModelRestartRequest):
             if op.status not in (RestartStatus.COMPLETED, RestartStatus.FAILED):
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
-                    detail=f"A restart operation is already in progress (operation_id: {op.operation_id})"
+                    detail=f"A restart operation is already in progress (operation_id: {op.operation_id})",
                 )
 
         # Create restart operation
@@ -1000,8 +1114,7 @@ async def restart_model(request: ModelRestartRequest):
 
 
 async def _perform_restart_operation(operation_id: str):
-    """
-    Background task to perform the model restart operation.
+    """Background task to perform the model restart operation.
 
     This function executes the following steps:
     1. Drain from scheduler (if enabled)
@@ -1032,10 +1145,10 @@ async def _perform_restart_operation(operation_id: str):
         if scheduler_client.is_enabled:
             try:
                 await scheduler_client.drain_instance()
-                logger.info(f"Instance draining from scheduler")
+                logger.info("Instance draining from scheduler")
             except Exception as e:
                 # Log warning but continue - instance might already be draining or not registered
-                logger.warning(f"Failed to drain from scheduler: {str(e)}")
+                logger.warning(f"Failed to drain from scheduler: {e!s}")
         else:
             logger.info("Scheduler integration disabled, skipping drain step")
 
@@ -1046,7 +1159,9 @@ async def _perform_restart_operation(operation_id: str):
             try:
                 # Peek tasks without removing - only remove after successful resubmit
                 pending_tasks = await task_queue.peek_pending_tasks()
-                logger.info(f"Found {len(pending_tasks)} pending tasks for redistribution")
+                logger.info(
+                    f"Found {len(pending_tasks)} pending tasks for redistribution"
+                )
 
                 # Redistribute tasks back to scheduler
                 successful_redistributions = 0
@@ -1064,14 +1179,20 @@ async def _perform_restart_operation(operation_id: str):
                             # Remove from local queue only after successful resubmit
                             await task_queue.remove_task(task_id)
                             successful_redistributions += 1
-                            logger.debug(f"Redistributed and removed task {task_id}")
+                            logger.debug(
+                                f"Redistributed and removed task {task_id}"
+                            )
                         else:
                             failed_redistributions += 1
-                            logger.warning(f"Failed to redistribute task {task_id}")
+                            logger.warning(
+                                f"Failed to redistribute task {task_id}"
+                            )
 
                     except Exception as e:
                         failed_redistributions += 1
-                        logger.error(f"Error redistributing task {task_id}: {str(e)}")
+                        logger.error(
+                            f"Error redistributing task {task_id}: {e!s}"
+                        )
 
                 operation.redistributed_tasks_count = successful_redistributions
 
@@ -1081,13 +1202,17 @@ async def _perform_restart_operation(operation_id: str):
                         f"{failed_redistributions} failed (kept in local queue)"
                     )
                 else:
-                    logger.info(f"Successfully redistributed all {successful_redistributions} tasks")
+                    logger.info(
+                        f"Successfully redistributed all {successful_redistributions} tasks"
+                    )
 
             except Exception as e:
-                logger.error(f"Failed to redistribute tasks: {str(e)}")
+                logger.error(f"Failed to redistribute tasks: {e!s}")
                 # Continue with restart even if redistribution fails
         else:
-            logger.info("Scheduler integration disabled, skipping task extraction")
+            logger.info(
+                "Scheduler integration disabled, skipping task extraction"
+            )
 
         # Step 3: Wait for currently running task to complete (including callback)
         operation.update_status(RestartStatus.WAITING_RUNNING_TASK)
@@ -1097,7 +1222,9 @@ async def _perform_restart_operation(operation_id: str):
         # which includes the callback. This prevents race conditions where the task
         # status changes to COMPLETED before the callback finishes.
         if task_queue.current_task_id is not None:
-            logger.info(f"Waiting for running task {task_queue.current_task_id} to complete including callback")
+            logger.info(
+                f"Waiting for running task {task_queue.current_task_id} to complete including callback"
+            )
 
             # Poll task queue until running task completes (including callback)
             max_wait_time = 300  # 5 minutes timeout
@@ -1135,7 +1262,7 @@ async def _perform_restart_operation(operation_id: str):
                 logger.info("Deregistered from scheduler")
             except Exception as e:
                 # Log warning but continue
-                logger.warning(f"Failed to deregister: {str(e)}")
+                logger.warning(f"Failed to deregister: {e!s}")
 
         # Step 6: Start new model
         operation.update_status(RestartStatus.STARTING_MODEL)
@@ -1143,11 +1270,12 @@ async def _perform_restart_operation(operation_id: str):
 
         # Validate model exists
         if not registry.model_exists(operation.new_model_id):
-            raise ValueError(f"Model not found in registry: {operation.new_model_id}")
+            raise ValueError(
+                f"Model not found in registry: {operation.new_model_id}"
+            )
 
-        model_info = await docker_manager.start_model(
-            operation.new_model_id,
-            operation.new_parameters
+        await docker_manager.start_model(
+            operation.new_model_id, operation.new_parameters
         )
         logger.info(f"Started new model: {operation.new_model_id}")
 
@@ -1162,11 +1290,15 @@ async def _perform_restart_operation(operation_id: str):
         # Register with scheduler if enabled
         if scheduler_client.is_enabled:
             try:
-                await scheduler_client.register_instance(model_id=operation.new_model_id)
-                logger.info(f"Registered with scheduler: {scheduler_client.scheduler_url}")
+                await scheduler_client.register_instance(
+                    model_id=operation.new_model_id
+                )
+                logger.info(
+                    f"Registered with scheduler: {scheduler_client.scheduler_url}"
+                )
             except Exception as e:
                 # Log warning but mark operation as completed
-                logger.warning(f"Failed to register with scheduler: {str(e)}")
+                logger.warning(f"Failed to register with scheduler: {e!s}")
 
         # Mark operation as completed
         operation.update_status(RestartStatus.COMPLETED)
@@ -1190,6 +1322,7 @@ async def _perform_restart_operation(operation_id: str):
 # Task Management Endpoints
 # =============================================================================
 
+
 @app.post(
     "/task/submit",
     response_model=TaskSubmitResponse,
@@ -1200,8 +1333,7 @@ async def _perform_restart_operation(operation_id: str):
     },
 )
 async def submit_task(request: TaskSubmitRequest):
-    """
-    Submit a new task to the task queue.
+    """Submit a new task to the task queue.
 
     Tasks are processed sequentially in FIFO order. The task will be queued
     and executed when all previous tasks are completed.
@@ -1214,18 +1346,20 @@ async def submit_task(request: TaskSubmitRequest):
         logger.warning("No model is currently running")
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="No model is currently running"
+            detail="No model is currently running",
         )
 
     # Validate model_id matches currently running model
     current_model = await docker_manager.get_current_model()
     if current_model and current_model.model_id != request.model_id:
-        logger.warning(f"Model ID does not match the currently running model. "
-                       f"Expected: {current_model.model_id}, Got: {request.model_id}")
+        logger.warning(
+            f"Model ID does not match the currently running model. "
+            f"Expected: {current_model.model_id}, Got: {request.model_id}"
+        )
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=f"Model ID does not match the currently running model. "
-                   f"Expected: {current_model.model_id}, Got: {request.model_id}"
+            f"Expected: {current_model.model_id}, Got: {request.model_id}",
         )
 
     # Create task
@@ -1233,19 +1367,21 @@ async def submit_task(request: TaskSubmitRequest):
         task_id=request.task_id,
         model_id=request.model_id,
         task_input=request.task_input,
-        callback_url=request.callback_url
+        callback_url=request.callback_url,
     )
 
     # Submit to queue with optional enqueue_time for priority ordering
     try:
-        position = await task_queue.submit_task(task, enqueue_time=request.enqueue_time)
+        position = await task_queue.submit_task(
+            task, enqueue_time=request.enqueue_time
+        )
 
         return TaskSubmitResponse(
             success=True,
             message="Task submitted successfully",
             task_id=task.task_id,
             status=task.status.value,
-            position=position
+            position=position,
         )
     except ValueError as e:
         client_message = str(e)
@@ -1255,8 +1391,7 @@ async def submit_task(request: TaskSubmitRequest):
             client_message=client_message,
         )
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=client_message
+            status_code=status.HTTP_400_BAD_REQUEST, detail=client_message
         )
 
 
@@ -1266,20 +1401,16 @@ async def submit_task(request: TaskSubmitRequest):
     status_code=status.HTTP_200_OK,
 )
 async def list_tasks(
-    status_filter: Optional[str] = Query(
+    status_filter: str | None = Query(
         None,
         alias="status",
-        description="Filter by status: queued, running, completed, failed"
+        description="Filter by status: queued, running, completed, failed",
     ),
     limit: int = Query(
-        100,
-        description="Maximum number of tasks to return",
-        ge=1,
-        le=1000
-    )
+        100, description="Maximum number of tasks to return", ge=1, le=1000
+    ),
 ):
-    """
-    List all tasks and their current status in the queue.
+    """List all tasks and their current status in the queue.
 
     Results can be filtered by status and limited in count.
     """
@@ -1294,7 +1425,7 @@ async def list_tasks(
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Invalid status: {status_filter}. "
-                       f"Valid values: queued, running, completed, failed"
+                f"Valid values: queued, running, completed, failed",
             )
 
     # Get tasks
@@ -1311,15 +1442,13 @@ async def list_tasks(
             started_at=task.started_at,
             completed_at=task.completed_at,
             result=task.result,
-            error=task.error
+            error=task.error,
         )
         for task in tasks
     ]
 
     return TaskListResponse(
-        success=True,
-        total=len(task_details),
-        tasks=task_details
+        success=True, total=len(task_details), tasks=task_details
     )
 
 
@@ -1329,8 +1458,7 @@ async def list_tasks(
     status_code=status.HTTP_200_OK,
 )
 async def fetch_task():
-    """
-    Fetch the newest queued task from the task queue tail (LIFO).
+    """Fetch the newest queued task from the task queue tail (LIFO).
 
     This endpoint allows clients to retrieve the newest queued task
     (highest enqueue_time) from the instance's task queue. The fetched
@@ -1363,10 +1491,7 @@ async def fetch_task():
             submitted_at=task.submitted_at,
         )
     else:
-        return TaskFetchResponse(
-            exist=False,
-            task_id=""
-        )
+        return TaskFetchResponse(exist=False, task_id="")
 
 
 @app.get(
@@ -1378,8 +1503,7 @@ async def fetch_task():
     },
 )
 async def get_task(task_id: str):
-    """
-    Get detailed information about a specific task.
+    """Get detailed information about a specific task.
 
     Returns the complete task information including input, output, timestamps,
     and status.
@@ -1390,8 +1514,7 @@ async def get_task(task_id: str):
     task = await task_queue.get_task(task_id)
     if not task:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Task not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Task not found"
         )
 
     # Convert to response format
@@ -1404,13 +1527,10 @@ async def get_task(task_id: str):
         started_at=task.started_at,
         completed_at=task.completed_at,
         result=task.result,
-        error=task.error
+        error=task.error,
     )
 
-    return TaskGetResponse(
-        success=True,
-        task=task_detail
-    )
+    return TaskGetResponse(success=True, task=task_detail)
 
 
 @app.delete(
@@ -1423,8 +1543,7 @@ async def get_task(task_id: str):
     },
 )
 async def delete_task(task_id: str):
-    """
-    Cancel a queued task or remove a completed/failed task from the list.
+    """Cancel a queued task or remove a completed/failed task from the list.
 
     Running tasks cannot be cancelled. Only queued tasks can be cancelled,
     and completed/failed tasks can be removed from history.
@@ -1436,14 +1555,13 @@ async def delete_task(task_id: str):
         deleted = await task_queue.delete_task(task_id)
         if not deleted:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Task not found"
+                status_code=status.HTTP_404_NOT_FOUND, detail="Task not found"
             )
 
         return TaskDeleteResponse(
             success=True,
             message="Task cancelled/removed successfully",
-            task_id=task_id
+            task_id=task_id,
         )
     except ValueError as e:
         client_message = str(e)
@@ -1453,8 +1571,7 @@ async def delete_task(task_id: str):
             client_message=client_message,
         )
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=client_message
+            status_code=status.HTTP_400_BAD_REQUEST, detail=client_message
         )
 
 
@@ -1467,8 +1584,7 @@ async def delete_task(task_id: str):
     },
 )
 async def clear_tasks():
-    """
-    Force clear all tasks and restart the backend subprocess.
+    """Force clear all tasks and restart the backend subprocess.
 
     This will:
     1. Force kill and restart the backend subprocess (if a model is running)
@@ -1492,13 +1608,17 @@ async def clear_tasks():
     try:
         # Step 1: Force kill and restart subprocess if a model is running
         if await docker_manager.is_model_running():
-            logger.info("Force killing and restarting subprocess for /task/clear")
+            logger.info(
+                "Force killing and restarting subprocess for /task/clear"
+            )
             try:
                 model_id = await docker_manager.restart_model()
                 if model_id:
-                    logger.info(f"Successfully restarted subprocess for model: {model_id}")
+                    logger.info(
+                        f"Successfully restarted subprocess for model: {model_id}"
+                    )
             except Exception as e:
-                client_message = f"Failed to restart subprocess: {str(e)}"
+                client_message = f"Failed to restart subprocess: {e!s}"
                 log_error_with_traceback(
                     error=e,
                     context="clear_tasks/restart_subprocess",
@@ -1506,7 +1626,7 @@ async def clear_tasks():
                 )
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=client_message
+                    detail=client_message,
                 )
 
         # Step 2: Clear all tasks (including any that were "running")
@@ -1516,12 +1636,12 @@ async def clear_tasks():
         return TaskClearResponse(
             success=True,
             message=f"Successfully cleared {cleared_count['total']} task(s) and restarted subprocess",
-            cleared_count=cleared_count
+            cleared_count=cleared_count,
         )
     except HTTPException:
         raise
     except Exception as e:
-        client_message = f"Failed to clear tasks: {str(e)}"
+        client_message = f"Failed to clear tasks: {e!s}"
         log_error_with_traceback(
             error=e,
             context="clear_tasks",
@@ -1529,7 +1649,7 @@ async def clear_tasks():
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=client_message
+            detail=client_message,
         )
 
 
@@ -1542,8 +1662,7 @@ async def clear_tasks():
     },
 )
 async def cleanup_fetched_tasks():
-    """
-    Clean up FETCHED tasks from storage to free memory.
+    """Clean up FETCHED tasks from storage to free memory.
 
     FETCHED tasks are tasks that were stolen by the work-stealing mechanism
     and transferred to another instance. They remain in storage for queryability
@@ -1567,10 +1686,10 @@ async def cleanup_fetched_tasks():
         return TaskCleanupFetchedResponse(
             success=True,
             message=f"Successfully cleaned up {cleaned_count} fetched task(s)",
-            cleaned_count=cleaned_count
+            cleaned_count=cleaned_count,
         )
     except Exception as e:
-        client_message = f"Failed to cleanup fetched tasks: {str(e)}"
+        client_message = f"Failed to cleanup fetched tasks: {e!s}"
         log_error_with_traceback(
             error=e,
             context="cleanup_fetched_tasks",
@@ -1578,7 +1697,7 @@ async def cleanup_fetched_tasks():
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=client_message
+            detail=client_message,
         )
 
 
@@ -1586,14 +1705,14 @@ async def cleanup_fetched_tasks():
 # Management Endpoints
 # =============================================================================
 
+
 @app.get(
     "/info",
     response_model=InfoResponse,
     status_code=status.HTTP_200_OK,
 )
 async def get_info():
-    """
-    Get current status and information about this instance.
+    """Get current status and information about this instance.
 
     Returns comprehensive information including current model, task queue
     statistics, and instance metadata.
@@ -1608,18 +1727,23 @@ async def get_info():
         # Sanitize parameters to ensure JSON-serializable values only
         # Some parameters may contain non-serializable objects (locks, handles, etc.)
         import json
+
         try:
             # Deep copy and filter to only JSON-serializable values
-            sanitized_params = json.loads(json.dumps(current_model.parameters, default=str))
+            sanitized_params = json.loads(
+                json.dumps(current_model.parameters, default=str)
+            )
         except (TypeError, ValueError):
             # If serialization fails, use empty dict as fallback
             sanitized_params = {}
-            logger.warning("Failed to serialize model parameters, using empty dict")
+            logger.warning(
+                "Failed to serialize model parameters, using empty dict"
+            )
 
         current_model_info = ModelInfo(
             model_id=current_model.model_id,
             started_at=current_model.started_at,
-            parameters=sanitized_params
+            parameters=sanitized_params,
         )
 
     # Get task queue stats
@@ -1636,7 +1760,7 @@ async def get_info():
 
     # Calculate uptime
     uptime = int(time.time() - _startup_time)
-    
+
     # Get platform info (hardware and software)
     # Priority: config overrides > env vars > model params > auto-detection
     try:
@@ -1649,6 +1773,7 @@ async def get_info():
 
         # Apply environment variable overrides (deprecated, kept for backward compatibility)
         import os
+
         env_software_name = os.getenv("INSTANCE_SOFTWARE_NAME")
         env_software_version = os.getenv("INSTANCE_SOFTWARE_VERSION")
 
@@ -1686,7 +1811,8 @@ async def get_info():
     active_port = None
 
     # Check if using SubprocessManager with hot-standby support
-    from .subprocess_manager import SubprocessManager
+    from src.subprocess_manager import SubprocessManager
+
     if isinstance(docker_manager, SubprocessManager):
         active_port = docker_manager.active_port
 
@@ -1698,13 +1824,10 @@ async def get_info():
                 primary_port=dual_state.primary.port,
                 standby_port=dual_state.standby.port,
                 standby_ready=docker_manager.is_standby_ready(),
-                standby_state=dual_state.standby.state.value
+                standby_state=dual_state.standby.state.value,
             )
         else:
-            standby_info = StandbyInfo(
-                enabled=False,
-                standby_ready=False
-            )
+            standby_info = StandbyInfo(enabled=False, standby_ready=False)
 
     # Build response
     instance_info = InstanceInfo(
@@ -1718,13 +1841,10 @@ async def get_info():
         software_name=software_name,
         software_version=software_version,
         active_port=active_port,
-        standby=standby_info
+        standby=standby_info,
     )
 
-    return InfoResponse(
-        success=True,
-        instance=instance_info
-    )
+    return InfoResponse(success=True, instance=instance_info)
 
 
 @app.get(
@@ -1735,9 +1855,10 @@ async def get_info():
         404: {"model": ErrorResponse},
     },
 )
-async def get_restart_status(operation_id: str = Query(..., description="Restart operation ID")):
-    """
-    Get the status of a model restart operation.
+async def get_restart_status(
+    operation_id: str = Query(..., description="Restart operation ID"),
+):
+    """Get the status of a model restart operation.
 
     Returns the current state of the restart operation including progress,
     status, and any errors that occurred.
@@ -1748,7 +1869,7 @@ async def get_restart_status(operation_id: str = Query(..., description="Restart
     if not operation:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Restart operation not found: {operation_id}"
+            detail=f"Restart operation not found: {operation_id}",
         )
 
     return RestartStatusResponse(
@@ -1775,8 +1896,7 @@ async def get_restart_status(operation_id: str = Query(..., description="Restart
     },
 )
 async def health_check(response: Response):
-    """
-    Health check endpoint for monitoring and load balancing.
+    """Health check endpoint for monitoring and load balancing.
 
     Returns 200 if the instance is healthy and ready to accept requests.
     Returns 503 if the instance is unhealthy or not ready.
@@ -1791,13 +1911,13 @@ async def health_check(response: Response):
             return HealthResponse(
                 status="unhealthy",
                 error="Model container is not responding",
-                timestamp=datetime.now(UTC).isoformat().replace("+00:00", "Z")
+                timestamp=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
             )
 
     # Instance is healthy
     return HealthResponse(
         status="healthy",
-        timestamp=datetime.now(UTC).isoformat().replace("+00:00", "Z")
+        timestamp=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
     )
 
 
@@ -1813,5 +1933,5 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=config.instance_port,
-        log_config=None  # Disable uvicorn's default logging config, let loguru handle it
+        log_config=None,  # Disable uvicorn's default logging config, let loguru handle it
     )

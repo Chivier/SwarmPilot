@@ -331,6 +331,36 @@ class TestFindAvailablePort:
         # Should stop when port exceeds valid range
         assert port is None or port <= 65535
 
+    def test_find_available_port_all_ports_unavailable(self):
+        """Test find_available_port returns None when all ports are unavailable"""
+        # Mock is_port_available to always return unavailable
+        from unittest.mock import patch, Mock
+
+        mock_result = Mock()
+        mock_result.available = False
+        mock_result.error = "Port in use"
+
+        with patch("src.port_utils.is_port_available", return_value=mock_result):
+            port = find_available_port(10000, max_attempts=5)
+
+        assert port is None
+
+    def test_is_port_available_oserror_handling(self):
+        """Test is_port_available handles OSError gracefully"""
+        from unittest.mock import patch, Mock
+
+        mock_socket = Mock()
+        mock_socket.__enter__ = Mock(return_value=mock_socket)
+        mock_socket.__exit__ = Mock(return_value=False)
+        mock_socket.bind = Mock(side_effect=OSError("Address already in use"))
+        mock_socket.setsockopt = Mock()
+
+        with patch("socket.socket", return_value=mock_socket):
+            result = is_port_available(8080)
+
+        assert result.available is False
+        assert "Address already in use" in result.error
+
 
 # =============================================================================
 # Phase 2 & 3: SubprocessManager Hot-Standby Tests
@@ -678,8 +708,13 @@ class TestInferenceLock:
 
         assert lock_acquired is True
 
-    async def test_hot_switch_waits_for_inference_lock(self, mock_config):
-        """Test hot-switch waits for inference to complete"""
+    async def test_hot_switch_waits_for_state_lock(self, mock_config):
+        """Test hot-switch waits for state lock but NOT inference lock.
+
+        The hot-switch implementation uses _state_lock (not _inference_lock)
+        to prevent concurrent state modifications. It does NOT wait for ongoing
+        inference - it kills the primary process immediately for fast failover.
+        """
         manager = SubprocessManager()
 
         # Set up current model
@@ -696,14 +731,12 @@ class TestInferenceLock:
         port_b = PortInfo(port=10000, role=PortRole.STANDBY, state=PortState.HEALTHY)
         manager._dual_port_state = DualPortState(port_a=port_a, port_b=port_b)
 
-        # Acquire inference lock to simulate ongoing inference
+        # Hot-switch should complete even when inference lock is held
+        # (because hot-switch uses _state_lock, not _inference_lock)
         async with manager._inference_lock:
-            # Start hot-switch in background - it should wait for lock
-            switch_started = asyncio.Event()
             switch_completed = asyncio.Event()
 
             async def do_switch():
-                switch_started.set()
                 with patch.object(manager, "_restart_standby_background", new_callable=AsyncMock):
                     with patch("src.subprocess_manager.config", mock_config):
                         await manager._perform_hot_switch()
@@ -711,18 +744,40 @@ class TestInferenceLock:
 
             task = asyncio.create_task(do_switch())
 
-            # Wait for switch to start (it will block on lock)
-            await switch_started.wait()
-
-            # Give it a moment to try acquiring the lock
+            # Give it time to complete
             await asyncio.sleep(0.01)
 
-            # Should not be completed yet (blocked on inference lock)
-            assert not switch_completed.is_set()
+            # Hot-switch should complete even though inference lock is held
+            # This verifies the new behavior: hot-switch kills immediately
+            await task
+            assert switch_completed.is_set()
 
-        # Now lock is released, switch should complete
-        await task
-        assert switch_completed.is_set()
+        # Verify state lock blocking works correctly
+        switch_blocked = asyncio.Event()
+        switch_completed2 = asyncio.Event()
+
+        # Reset for second test
+        manager._dual_port_state.port_a.state = PortState.HEALTHY
+        manager._dual_port_state.port_b.state = PortState.HEALTHY
+
+        async with manager._state_lock:
+            async def do_switch2():
+                switch_blocked.set()
+                with patch.object(manager, "_restart_standby_background", new_callable=AsyncMock):
+                    with patch("src.subprocess_manager.config", mock_config):
+                        await manager._perform_hot_switch()
+                switch_completed2.set()
+
+            task2 = asyncio.create_task(do_switch2())
+            await switch_blocked.wait()
+            await asyncio.sleep(0.01)
+
+            # Should NOT be completed yet (blocked on state lock)
+            assert not switch_completed2.is_set()
+
+        # Now state lock is released, switch should complete
+        await task2
+        assert switch_completed2.is_set()
 
 
 # =============================================================================

@@ -1,17 +1,20 @@
-"""
-Configuration management for Instance Service
-"""
+"""Configuration management for Instance Service."""
 
 import os
 import uuid
 from pathlib import Path
-from typing import Optional
 
 
 class Config:
-    """Instance service configuration"""
+    """Instance service configuration."""
 
     def __init__(self):
+        """Initialize Config with environment-based settings.
+
+        Loads configuration from environment variables with sensible defaults.
+        All settings can be overridden via environment variables prefixed with
+        INSTANCE_ or other documented prefixes.
+        """
         # Instance configuration
         self.instance_id: str = os.getenv("INSTANCE_ID", str(uuid.uuid4()))
         self.instance_port: int = int(os.getenv("INSTANCE_PORT", "8000"))
@@ -25,7 +28,9 @@ class Config:
         self.registry_path: Path = self.dockers_dir / "model_registry.yaml"
 
         # Docker configuration
-        self.docker_network: str = os.getenv("DOCKER_NETWORK", "instance_network")
+        self.docker_network: str = os.getenv(
+            "DOCKER_NETWORK", "instance_network"
+        )
         self.container_name_prefix: str = f"model_{self.instance_id}"
 
         # Logging
@@ -44,41 +49,61 @@ class Config:
         )
 
         # Health check
-        self.health_check_interval: int = int(os.getenv("HEALTH_CHECK_INTERVAL", "10"))
-        self.health_check_timeout: int = int(os.getenv("HEALTH_CHECK_TIMEOUT", "30"))
+        self.health_check_interval: int = int(
+            os.getenv("HEALTH_CHECK_INTERVAL", "10")
+        )
+        self.health_check_timeout: int = int(
+            os.getenv("HEALTH_CHECK_TIMEOUT", "30")
+        )
 
         # Hot-standby configuration
         self.standby_enabled: bool = (
             os.getenv("INSTANCE_STANDBY_ENABLED", "true").lower() == "true"
         )
-        self.standby_port_offset: int = int(os.getenv("INSTANCE_STANDBY_PORT_OFFSET", "1000"))
-        self.hot_standby_max_retries: int = int(os.getenv("INSTANCE_HOT_STANDBY_MAX_RETRIES", "3"))
-        self.hot_standby_initial_delay: float = float(os.getenv("INSTANCE_HOT_STANDBY_INITIAL_DELAY", "5.0"))
-        self.hot_standby_max_delay: float = float(os.getenv("INSTANCE_HOT_STANDBY_MAX_DELAY", "30.0"))
-        self.hot_standby_backoff_multiplier: float = float(os.getenv("INSTANCE_HOT_STANDBY_BACKOFF_MULTIPLIER", "2.0"))
-        self.standby_restart_delay: int = int(os.getenv("INSTANCE_STANDBY_RESTART_DELAY", "30"))
-        self.backup_health_check_timeout: int = int(os.getenv("INSTANCE_BACKUP_HEALTH_TIMEOUT", "600"))
+        self.standby_port_offset: int = int(
+            os.getenv("INSTANCE_STANDBY_PORT_OFFSET", "1000")
+        )
+        self.hot_standby_max_retries: int = int(
+            os.getenv("INSTANCE_HOT_STANDBY_MAX_RETRIES", "3")
+        )
+        self.hot_standby_initial_delay: float = float(
+            os.getenv("INSTANCE_HOT_STANDBY_INITIAL_DELAY", "5.0")
+        )
+        self.hot_standby_max_delay: float = float(
+            os.getenv("INSTANCE_HOT_STANDBY_MAX_DELAY", "30.0")
+        )
+        self.hot_standby_backoff_multiplier: float = float(
+            os.getenv("INSTANCE_HOT_STANDBY_BACKOFF_MULTIPLIER", "2.0")
+        )
+        self.standby_restart_delay: int = int(
+            os.getenv("INSTANCE_STANDBY_RESTART_DELAY", "30")
+        )
+        self.backup_health_check_timeout: int = int(
+            os.getenv("INSTANCE_BACKUP_HEALTH_TIMEOUT", "600")
+        )
         # Traditional restart delay when standby is disabled (used in /task/clear)
-        self.traditional_restart_delay: int = int(os.getenv("INSTANCE_TRADITIONAL_RESTART_DELAY", "30"))
+        self.traditional_restart_delay: int = int(
+            os.getenv("INSTANCE_TRADITIONAL_RESTART_DELAY", "30")
+        )
 
         # Platform information overrides
         # These allow users to specify platform info instead of auto-detection
-        self.platform_software_name: Optional[str] = os.getenv(
+        self.platform_software_name: str | None = os.getenv(
             "INSTANCE_PLATFORM_SOFTWARE_NAME"
         )
-        self.platform_software_version: Optional[str] = os.getenv(
+        self.platform_software_version: str | None = os.getenv(
             "INSTANCE_PLATFORM_SOFTWARE_VERSION"
         )
-        self.platform_hardware_name: Optional[str] = os.getenv(
+        self.platform_hardware_name: str | None = os.getenv(
             "INSTANCE_PLATFORM_HARDWARE_NAME"
         )
 
     def get_model_directory(self, directory_name: str) -> Path:
-        """Get full path to model directory"""
+        """Get full path to model directory."""
         return self.dockers_dir / directory_name
 
     def get_model_container_name(self, model_id: str) -> str:
-        """Generate container name for a model"""
+        """Generate container name for a model."""
         # Replace special characters with underscores
         safe_model_id = model_id.replace("/", "_").replace(":", "_")
         return f"{self.container_name_prefix}_{safe_model_id}"

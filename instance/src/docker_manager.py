@@ -1,17 +1,18 @@
-"""
-Docker container management for model containers
-"""
+"""Docker container management for model containers."""
 
 import asyncio
+import contextlib
 import json
-import os
-import subprocess
 import traceback
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 import httpx
 from loguru import logger
+
+from src.config import config
+from src.model_registry import get_registry
+from src.models import ModelInfo
 
 
 def log_error_with_traceback(
@@ -19,13 +20,12 @@ def log_error_with_traceback(
     context: str,
     additional_info: str = "",
 ) -> None:
-    """
-    Log error with detailed information and traceback.
+    """Log error with detailed information and traceback.
 
     Args:
-        error: The exception that occurred
-        context: Context description of where the error occurred
-        additional_info: Additional context information
+        error: The exception that occurred.
+        context: Context description of where the error occurred.
+        additional_info: Additional context information.
     """
     tb_str = traceback.format_exc()
     if additional_info:
@@ -42,31 +42,30 @@ def log_error_with_traceback(
             f"  Traceback:\n{tb_str}"
         )
 
-from .config import config
-from .model_registry import get_registry
-from .models import ModelInfo
-
 
 class DockerManager:
-    """
-    Manages Docker containers for models.
+    """Manages Docker containers for models.
 
     Handles starting, stopping, and health checking of model containers.
     """
 
     def __init__(self):
-        self.current_model: Optional[ModelInfo] = None
+        """Initialize DockerManager with default state.
+
+        Sets up the async HTTP client for container health checks
+        and initializes model tracking state.
+        """
+        self.current_model: ModelInfo | None = None
         self.http_client = httpx.AsyncClient(timeout=30.0)
 
     async def start_model(
         self,
         model_id: str,
-        parameters: Optional[Dict[str, Any]] = None,
-        standby_enabled: Optional[bool] = None,
-        standby_config: Optional[Dict[str, Any]] = None
+        parameters: dict[str, Any] | None = None,
+        standby_enabled: bool | None = None,
+        standby_config: dict[str, Any] | None = None,
     ) -> ModelInfo:
-        """
-        Start a model container.
+        """Start a model container.
 
         Note: standby_enabled and standby_config parameters are accepted for API
         compatibility with SubprocessManager but are ignored. Docker containers
@@ -134,10 +133,7 @@ class DockerManager:
         # Run Docker container
         try:
             await self._run_docker_container(
-                container_name,
-                image_name,
-                env_vars,
-                config.model_port
+                container_name, image_name, env_vars, config.model_port
             )
             logger.info(f"Docker container started: {container_name}")
         except Exception as e:
@@ -158,27 +154,25 @@ class DockerManager:
                 context=f"start_model({model_id})/health_check",
                 additional_info=f"Container: {container_name}, Port: {config.model_port}",
             )
-            try:
+            with contextlib.suppress(Exception):
                 await self._stop_docker_container(container_name)
-            except Exception:
-                pass
             raise
 
         # Create model info
         from datetime import UTC, datetime
+
         model_info = ModelInfo(
             model_id=model_id,
             started_at=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
             parameters=parameters or {},
-            container_name=container_name
+            container_name=container_name,
         )
 
         self.current_model = model_info
         return model_info
 
-    async def stop_model(self) -> Optional[str]:
-        """
-        Stop the currently running model container.
+    async def stop_model(self) -> str | None:
+        """Stop the currently running model container.
 
         Returns:
             The model_id that was stopped, or None if no model was running
@@ -218,9 +212,8 @@ class DockerManager:
         self.current_model = None
         return model_id
 
-    async def restart_model(self, force: bool = True) -> Optional[str]:
-        """
-        Restart the currently running model container.
+    async def restart_model(self, force: bool = True) -> str | None:
+        """Restart the currently running model container.
 
         This will stop and restart the same model with the same parameters.
 
@@ -271,17 +264,16 @@ class DockerManager:
             self.current_model = None
             raise RuntimeError(f"Failed to restart container: {e}")
 
-    async def get_current_model(self) -> Optional[ModelInfo]:
-        """Get information about the currently running model"""
+    async def get_current_model(self) -> ModelInfo | None:
+        """Get information about the currently running model."""
         return self.current_model
 
     async def is_model_running(self) -> bool:
-        """Check if a model is currently running"""
+        """Check if a model is currently running."""
         return self.current_model is not None
 
     async def check_model_health(self) -> bool:
-        """
-        Check if the current model container is healthy.
+        """Check if the current model container is healthy.
 
         Returns:
             True if healthy, False otherwise
@@ -306,11 +298,9 @@ class DockerManager:
             return False
 
     async def invoke_inference(
-        self,
-        task_input: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """
-        Invoke inference on the current model.
+        self, task_input: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Invoke inference on the current model.
 
         Args:
             task_input: Input data for the model
@@ -329,7 +319,7 @@ class DockerManager:
             response = await self.http_client.post(
                 url,
                 json=task_input,
-                timeout=600.0  # 10 minutes timeout for inference
+                timeout=600.0,  # 10 minutes timeout for inference
             )
 
             if response.status_code == 200:
@@ -344,8 +334,7 @@ class DockerManager:
             raise RuntimeError(f"Inference request failed: {e}")
 
     def _get_image_name(self, model_id: str) -> str:
-        """
-        Generate Docker image name from model_id.
+        """Generate Docker image name from model_id.
 
         Args:
             model_id: The model identifier
@@ -358,12 +347,9 @@ class DockerManager:
         return f"{safe_name}:latest"
 
     def _build_env_vars(
-        self,
-        model_id: str,
-        parameters: Dict[str, Any]
-    ) -> Dict[str, str]:
-        """
-        Build environment variables for the container.
+        self, model_id: str, parameters: dict[str, Any]
+    ) -> dict[str, str]:
+        """Build environment variables for the container.
 
         Converts parameters to environment variables with MODEL_ prefix.
         """
@@ -383,13 +369,8 @@ class DockerManager:
 
         return env_vars
 
-    async def _build_docker_image(
-        self,
-        model_dir: Path,
-        image_name: str
-    ):
-        """
-        Build Docker image from Dockerfile.
+    async def _build_docker_image(self, model_dir: Path, image_name: str):
+        """Build Docker image from Dockerfile.
 
         Args:
             model_dir: Directory containing the Dockerfile
@@ -400,19 +381,13 @@ class DockerManager:
         """
         logger.info(f"Building Docker image: {image_name} from {model_dir}")
 
-        cmd = [
-            "docker", "build",
-            "-t", image_name,
-            str(model_dir)
-        ]
+        cmd = ["docker", "build", "-t", image_name, str(model_dir)]
 
         process = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
+            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
         )
 
-        stdout, stderr = await process.communicate()
+        _stdout, stderr = await process.communicate()
 
         if process.returncode != 0:
             error_msg = stderr.decode().strip() if stderr else "Unknown error"
@@ -425,11 +400,10 @@ class DockerManager:
         self,
         container_name: str,
         image_name: str,
-        env_vars: Dict[str, str],
-        port: int
+        env_vars: dict[str, str],
+        port: int,
     ):
-        """
-        Run Docker container with specified configuration.
+        """Run Docker container with specified configuration.
 
         Args:
             container_name: Name for the container
@@ -444,16 +418,24 @@ class DockerManager:
 
         # Build docker run command
         cmd = [
-            "docker", "run",
-            "--name", container_name,
-            "--publish", f"{port}:8000",
+            "docker",
+            "run",
+            "--name",
+            container_name,
+            "--publish",
+            f"{port}:8000",
             "--detach",
             # Add healthcheck configuration
-            "--health-cmd", "wget -q --spider http://127.0.0.1:8000/health || exit 1",
-            "--health-interval", "10s",
-            "--health-timeout", "5s",
-            "--health-retries", "3",
-            "--health-start-period", "10s",
+            "--health-cmd",
+            "wget -q --spider http://127.0.0.1:8000/health || exit 1",
+            "--health-interval",
+            "10s",
+            "--health-timeout",
+            "5s",
+            "--health-retries",
+            "3",
+            "--health-start-period",
+            "10s",
         ]
 
         # Add environment variables
@@ -466,12 +448,10 @@ class DockerManager:
         logger.debug(f"Docker run command: {' '.join(cmd)}")
 
         process = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
+            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
         )
 
-        stdout, stderr = await process.communicate()
+        _stdout, stderr = await process.communicate()
 
         if process.returncode != 0:
             error_msg = stderr.decode().strip() if stderr else "Unknown error"
@@ -481,8 +461,7 @@ class DockerManager:
         logger.info(f"Docker container started: {container_name}")
 
     async def _stop_docker_container(self, container_name: str):
-        """
-        Stop and remove a Docker container.
+        """Stop and remove a Docker container.
 
         Args:
             container_name: Name of the container to stop
@@ -497,15 +476,17 @@ class DockerManager:
         process = await asyncio.create_subprocess_exec(
             *stop_cmd,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
+            stderr=asyncio.subprocess.PIPE,
         )
-        stdout, stderr = await process.communicate()
+        _stdout, stderr = await process.communicate()
 
         if process.returncode != 0:
             error_msg = stderr.decode().strip() if stderr else "Unknown error"
             if "No such container" not in error_msg:
                 logger.error(f"Docker stop failed: {error_msg}")
-                raise RuntimeError(f"Failed to stop Docker container: {error_msg}")
+                raise RuntimeError(
+                    f"Failed to stop Docker container: {error_msg}"
+                )
             else:
                 logger.warning(f"Container {container_name} does not exist")
 
@@ -514,26 +495,24 @@ class DockerManager:
         process = await asyncio.create_subprocess_exec(
             *rm_cmd,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
+            stderr=asyncio.subprocess.PIPE,
         )
-        stdout, stderr = await process.communicate()
+        _stdout, stderr = await process.communicate()
 
         if process.returncode != 0:
             error_msg = stderr.decode().strip() if stderr else "Unknown error"
             if "No such container" not in error_msg:
                 logger.error(f"Docker rm failed: {error_msg}")
-                raise RuntimeError(f"Failed to remove Docker container: {error_msg}")
+                raise RuntimeError(
+                    f"Failed to remove Docker container: {error_msg}"
+                )
 
         logger.info(f"Docker container stopped and removed: {container_name}")
 
     async def _wait_for_health(
-        self,
-        port: int,
-        timeout: int = 30,
-        interval: int = 2
+        self, port: int, timeout: int = 30, interval: int = 2
     ):
-        """
-        Wait for the model container to become healthy.
+        """Wait for the model container to become healthy.
 
         Args:
             port: Port to check
@@ -565,8 +544,7 @@ class DockerManager:
         )
 
     async def _force_remove_container(self, container_name: str):
-        """
-        Force remove a Docker container.
+        """Force remove a Docker container.
 
         Args:
             container_name: Name of the container to remove
@@ -581,7 +559,7 @@ class DockerManager:
         process = await asyncio.create_subprocess_exec(
             *stop_cmd,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
+            stderr=asyncio.subprocess.PIPE,
         )
         await process.communicate()
 
@@ -590,10 +568,10 @@ class DockerManager:
         process = await asyncio.create_subprocess_exec(
             *rm_cmd,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
+            stderr=asyncio.subprocess.PIPE,
         )
 
-        stdout, stderr = await process.communicate()
+        _stdout, stderr = await process.communicate()
 
         if process.returncode != 0:
             error_msg = stderr.decode().strip() if stderr else "Unknown error"
@@ -604,16 +582,16 @@ class DockerManager:
                 logger.info(f"Container {container_name} does not exist")
 
     async def close(self):
-        """Clean up resources"""
+        """Clean up resources."""
         await self.http_client.aclose()
 
 
 # Global docker manager instance
-_docker_manager: Optional[DockerManager] = None
+_docker_manager: DockerManager | None = None
 
 
 def get_docker_manager() -> DockerManager:
-    """Get or create the global docker manager instance"""
+    """Get or create the global docker manager instance."""
     global _docker_manager
     if _docker_manager is None:
         _docker_manager = DockerManager()

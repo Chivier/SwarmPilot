@@ -24,9 +24,13 @@ class TestTaskStatus:
 
     def test_task_status_membership(self):
         """Test that all expected statuses are members of the enum"""
-        expected_statuses = ["queued", "running", "completed", "failed"]
+        expected_statuses = ["queued", "running", "completed", "failed", "fetched"]
         actual_statuses = [status.value for status in TaskStatus]
         assert set(actual_statuses) == set(expected_statuses)
+
+    def test_fetched_status(self):
+        """Test that FETCHED status exists for work-stealing support"""
+        assert TaskStatus.FETCHED == "fetched"
 
 
 @pytest.mark.unit
@@ -524,3 +528,102 @@ class TestRestartOperation:
         assert op_dict["new_parameters"] == {"temp": 0.7}
         assert op_dict["new_scheduler_url"] == "http://scheduler:8000"
         assert op_dict["status"] == "pending"
+
+
+@pytest.mark.unit
+class TestRuntimeStandbyConfig:
+    """Test suite for RuntimeStandbyConfig dataclass"""
+
+    def test_runtime_standby_config_defaults(self):
+        """Test RuntimeStandbyConfig with default values"""
+        from src.models import RuntimeStandbyConfig
+
+        config = RuntimeStandbyConfig()
+
+        assert config.enabled is True  # Default is True
+        assert config.port_offset == 1000
+        assert config.max_retries == 3
+        assert config.initial_delay == 5.0
+        assert config.max_delay == 30.0
+        assert config.backoff_multiplier == 2.0
+        assert config.restart_delay == 30
+        assert config.health_check_timeout == 600
+        assert config.traditional_restart_delay == 30  # Default is 30
+
+    def test_runtime_standby_config_custom_values(self):
+        """Test RuntimeStandbyConfig with custom values"""
+        from src.models import RuntimeStandbyConfig
+
+        config = RuntimeStandbyConfig(
+            enabled=True,
+            port_offset=2000,
+            max_retries=5,
+            initial_delay=10.0,
+            max_delay=60.0,
+            backoff_multiplier=3.0,
+            restart_delay=45,
+            health_check_timeout=900,
+            traditional_restart_delay=120
+        )
+
+        assert config.enabled is True
+        assert config.port_offset == 2000
+        assert config.max_retries == 5
+        assert config.initial_delay == 10.0
+        assert config.max_delay == 60.0
+        assert config.backoff_multiplier == 3.0
+        assert config.restart_delay == 45
+        assert config.health_check_timeout == 900
+        assert config.traditional_restart_delay == 120
+
+    def test_from_config_and_overrides_no_overrides(self, mock_config):
+        """Test from_config_and_overrides with no overrides"""
+        from src.models import RuntimeStandbyConfig
+
+        result = RuntimeStandbyConfig.from_config_and_overrides(mock_config)
+
+        assert result.enabled == mock_config.standby_enabled
+        assert result.port_offset == mock_config.standby_port_offset
+        assert result.max_retries == mock_config.hot_standby_max_retries
+
+    def test_from_config_and_overrides_standby_enabled(self, mock_config):
+        """Test from_config_and_overrides with standby_enabled override"""
+        from src.models import RuntimeStandbyConfig
+
+        result = RuntimeStandbyConfig.from_config_and_overrides(
+            mock_config,
+            standby_enabled=True
+        )
+
+        assert result.enabled is True
+
+    def test_from_config_and_overrides_all_overrides(self, mock_config):
+        """Test from_config_and_overrides with all overrides"""
+        from src.models import RuntimeStandbyConfig
+
+        overrides = {
+            "port_offset": 5000,
+            "max_retries": 10,
+            "initial_delay": 15.0,
+            "max_delay": 120.0,
+            "backoff_multiplier": 4.0,
+            "restart_delay": 90,
+            "health_check_timeout": 1800,
+            "traditional_restart_delay": 180
+        }
+
+        result = RuntimeStandbyConfig.from_config_and_overrides(
+            mock_config,
+            standby_enabled=True,
+            overrides=overrides
+        )
+
+        assert result.enabled is True
+        assert result.port_offset == 5000
+        assert result.max_retries == 10
+        assert result.initial_delay == 15.0
+        assert result.max_delay == 120.0
+        assert result.backoff_multiplier == 4.0
+        assert result.restart_delay == 90
+        assert result.health_check_timeout == 1800
+        assert result.traditional_restart_delay == 180

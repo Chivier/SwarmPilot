@@ -1,16 +1,13 @@
-"""
-Model Registry management
-"""
+"""Model Registry management."""
 
 import traceback
-import yaml
 from pathlib import Path
-from typing import Dict, Optional
 
+import yaml
 from loguru import logger
 
-from .config import config
-from .models import ModelRegistryEntry
+from src.config import config
+from src.models import ModelRegistryEntry
 
 
 def log_error_with_traceback(
@@ -18,8 +15,7 @@ def log_error_with_traceback(
     context: str,
     additional_info: str = "",
 ) -> None:
-    """
-    Log error with detailed information and traceback.
+    """Log error with detailed information and traceback.
 
     Args:
         error: The exception that occurred
@@ -43,19 +39,28 @@ def log_error_with_traceback(
 
 
 class ModelRegistry:
-    """
-    Manages the model registry configuration.
+    """Manages the model registry configuration.
 
     Loads and provides access to model metadata from the registry file.
     """
 
-    def __init__(self, registry_path: Optional[Path] = None):
+    def __init__(self, registry_path: Path | None = None):
+        """Initialize ModelRegistry and load model definitions.
+
+        Args:
+            registry_path: Optional path to the registry YAML file.
+                          Defaults to config.registry_path if not provided.
+
+        Raises:
+            FileNotFoundError: If the registry file does not exist.
+            yaml.YAMLError: If the registry file contains invalid YAML.
+        """
         self.registry_path = registry_path or config.registry_path
-        self.models: Dict[str, ModelRegistryEntry] = {}
+        self.models: dict[str, ModelRegistryEntry] = {}
         self._load_registry()
 
     def _load_registry(self):
-        """Load model registry from YAML file"""
+        """Load model registry from YAML file."""
         if not self.registry_path.exists():
             error_msg = f"Model registry not found at: {self.registry_path}"
             logger.error(
@@ -66,7 +71,7 @@ class ModelRegistry:
             raise FileNotFoundError(error_msg)
 
         try:
-            with open(self.registry_path, "r") as f:
+            with open(self.registry_path) as f:
                 data = yaml.safe_load(f)
         except Exception as e:
             log_error_with_traceback(
@@ -98,37 +103,37 @@ class ModelRegistry:
                 )
                 raise
 
-    def get_model(self, model_id: str) -> Optional[ModelRegistryEntry]:
-        """Get model entry by ID"""
+    def get_model(self, model_id: str) -> ModelRegistryEntry | None:
+        """Get model entry by ID."""
         return self.models.get(model_id)
 
-    def list_models(self) -> Dict[str, ModelRegistryEntry]:
-        """List all registered models"""
+    def list_models(self) -> dict[str, ModelRegistryEntry]:
+        """List all registered models."""
         return self.models.copy()
 
     def model_exists(self, model_id: str) -> bool:
-        """Check if a model is registered"""
+        """Check if a model is registered."""
         return model_id in self.models
 
-    def get_model_directory(self, model_id: str) -> Optional[Path]:
-        """Get full path to model directory"""
+    def get_model_directory(self, model_id: str) -> Path | None:
+        """Get full path to model directory."""
         entry = self.get_model(model_id)
         if entry:
             return config.get_model_directory(entry.directory)
         return None
 
     def reload(self):
-        """Reload registry from file"""
+        """Reload registry from file."""
         self.models.clear()
         self._load_registry()
 
 
 # Global registry instance
-_registry: Optional[ModelRegistry] = None
+_registry: ModelRegistry | None = None
 
 
 def get_registry() -> ModelRegistry:
-    """Get or create the global registry instance"""
+    """Get or create the global registry instance."""
     global _registry
     if _registry is None:
         _registry = ModelRegistry()

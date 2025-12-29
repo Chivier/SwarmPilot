@@ -1,5 +1,4 @@
-"""
-Subprocess management for model execution with hot-standby support.
+"""Subprocess management for model execution with hot-standby support.
 
 This module provides subprocess-based model management with a hot-standby
 port system for zero-downtime restarts. When enabled, two model processes
@@ -9,17 +8,29 @@ primary in the background.
 """
 
 import asyncio
+import contextlib
 import json
 import os
 import signal
-import subprocess
 import traceback
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 import httpx
 from loguru import logger
+
+from src.config import config
+from src.model_registry import get_registry
+from src.models import (
+    DualPortState,
+    ModelInfo,
+    PortInfo,
+    PortRole,
+    PortState,
+    RuntimeStandbyConfig,
+)
+from src.port_utils import calculate_backoff_delay
 
 
 def log_error_with_traceback(
@@ -27,34 +38,28 @@ def log_error_with_traceback(
     context: str,
     additional_info: str = "",
 ) -> None:
-    """
-    Log error with detailed information and traceback.
+    """Log error with detailed information and traceback.
 
     Args:
-        error: The exception that occurred
-        context: Context description of where the error occurred
-        additional_info: Additional context information
+        error: The exception that occurred.
+        context: Context description of where the error occurred.
+        additional_info: Additional context information.
     """
     tb_str = traceback.format_exc()
     logger.error(
         f"[SubprocessManager] [{context}] Error occurred:\n"
         f"  Internal error: {type(error).__name__}: {error}\n"
         f"  {additional_info}\n"
-        f"  Traceback:\n{tb_str}" if additional_info else
-        f"[SubprocessManager] [{context}] Error occurred:\n"
+        f"  Traceback:\n{tb_str}"
+        if additional_info
+        else f"[SubprocessManager] [{context}] Error occurred:\n"
         f"  Internal error: {type(error).__name__}: {error}\n"
         f"  Traceback:\n{tb_str}"
     )
 
-from .config import config
-from .model_registry import get_registry
-from .models import ModelInfo, PortRole, PortState, PortInfo, DualPortState, RuntimeStandbyConfig
-from .port_utils import find_available_port, calculate_backoff_delay
-
 
 class SubprocessManager:
-    """
-    Manages subprocesses for model execution with hot-standby support.
+    """Manages subprocesses for model execution with hot-standby support.
 
     Made for TX server, which does not support docker-in-docker.
 
@@ -67,29 +72,34 @@ class SubprocessManager:
     """
 
     def __init__(self):
-        self.current_model: Optional[ModelInfo] = None
+        """Initialize SubprocessManager with hot-standby support.
+
+        Sets up the async HTTP client, process tracking, dual-port state
+        management, and synchronization locks for thread-safe hot-switching.
+        """
+        self.current_model: ModelInfo | None = None
         self.http_client = httpx.AsyncClient(timeout=30.0)
 
         # Legacy process reference (for backward compatibility)
-        self._legacy_uv_run_process: Optional[asyncio.subprocess.Process] = None
+        self._legacy_uv_run_process: asyncio.subprocess.Process | None = None
 
         # Hot-standby dual-port state management
-        self._dual_port_state: Optional[DualPortState] = None
+        self._dual_port_state: DualPortState | None = None
 
         # Runtime standby configuration (set during start_model, used for restart)
-        self._standby_config: Optional[RuntimeStandbyConfig] = None
+        self._standby_config: RuntimeStandbyConfig | None = None
 
         # Locks for thread safety during hot-switch
         self._state_lock = asyncio.Lock()
         self._inference_lock = asyncio.Lock()
 
         # Background task tracking
-        self._standby_startup_task: Optional[asyncio.Task] = None
-        self._standby_restart_task: Optional[asyncio.Task] = None
+        self._standby_startup_task: asyncio.Task | None = None
+        self._standby_restart_task: asyncio.Task | None = None
 
         # Model startup context (saved for standby startup)
-        self._model_dir: Optional[Path] = None
-        self._env_vars: Optional[Dict[str, str]] = None
+        self._model_dir: Path | None = None
+        self._env_vars: dict[str, str] | None = None
 
     # =========================================================================
     # Port Management Properties
@@ -97,8 +107,7 @@ class SubprocessManager:
 
     @property
     def active_port(self) -> int:
-        """
-        Get the currently active port for inference.
+        """Get the currently active port for inference.
 
         This property abstracts away the dual-port system.
         External code should use this instead of config.model_port.
@@ -111,9 +120,8 @@ class SubprocessManager:
         return config.model_port
 
     @property
-    def uv_run_process(self) -> Optional[asyncio.subprocess.Process]:
-        """
-        Backward compatibility: return the primary port's process.
+    def uv_run_process(self) -> asyncio.subprocess.Process | None:
+        """Backward compatibility: return the primary port's process.
 
         Deprecated: Use _dual_port_state.primary.process instead for new code.
         """
@@ -122,15 +130,14 @@ class SubprocessManager:
         return self._legacy_uv_run_process
 
     @uv_run_process.setter
-    def uv_run_process(self, value: Optional[asyncio.subprocess.Process]):
+    def uv_run_process(self, value: asyncio.subprocess.Process | None):
         """Setter for backward compatibility."""
         if self._dual_port_state is not None:
             self._dual_port_state.primary.process = value
         self._legacy_uv_run_process = value
 
     def _initialize_dual_port_state(self) -> DualPortState:
-        """
-        Initialize the dual port state structure.
+        """Initialize the dual port state structure.
 
         Called during first model start. Sets up both port info objects
         with correct port numbers and initial roles.
@@ -142,28 +149,38 @@ class SubprocessManager:
         """
         # Use runtime standby config if available, otherwise fall back to global config
         standby_cfg = self._standby_config
-        port_offset = standby_cfg.port_offset if standby_cfg else config.standby_port_offset
-        max_retries = standby_cfg.max_retries if standby_cfg else config.hot_standby_max_retries
+        port_offset = (
+            standby_cfg.port_offset
+            if standby_cfg
+            else config.standby_port_offset
+        )
+        max_retries = (
+            standby_cfg.max_retries
+            if standby_cfg
+            else config.hot_standby_max_retries
+        )
 
         primary_port = config.model_port
         standby_port = config.model_port + port_offset
 
-        logger.info(f"Initializing dual-port state: primary={primary_port}, standby={standby_port}")
+        logger.info(
+            f"Initializing dual-port state: primary={primary_port}, standby={standby_port}"
+        )
 
         return DualPortState(
             port_a=PortInfo(
                 port=primary_port,
                 role=PortRole.PRIMARY,
                 state=PortState.UNINITIALIZED,
-                max_startup_attempts=max_retries
+                max_startup_attempts=max_retries,
             ),
             port_b=PortInfo(
                 port=standby_port,
                 role=PortRole.STANDBY,
                 state=PortState.UNINITIALIZED,
-                max_startup_attempts=max_retries
+                max_startup_attempts=max_retries,
             ),
-            _primary_port_name="port_a"
+            _primary_port_name="port_a",
         )
 
     def is_standby_ready(self) -> bool:
@@ -181,10 +198,9 @@ class SubprocessManager:
         port_info: PortInfo,
         model_id: str,
         model_dir: Path,
-        env_vars: Dict[str, str]
+        env_vars: dict[str, str],
     ) -> asyncio.subprocess.Process:
-        """
-        Start a model subprocess on a specific port.
+        """Start a model subprocess on a specific port.
 
         This is the low-level method for spawning a subprocess on a given port.
         It updates the PortInfo state throughout the lifecycle.
@@ -204,11 +220,15 @@ class SubprocessManager:
         port = port_info.port
         role = port_info.role.value
 
-        logger.info(f"[{role}] Starting process on port {port} for model {model_id}")
+        logger.info(
+            f"[{role}] Starting process on port {port} for model {model_id}"
+        )
 
         # Update state to STARTING
         port_info.state = PortState.STARTING
-        port_info.started_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+        port_info.started_at = (
+            datetime.now(UTC).isoformat().replace("+00:00", "Z")
+        )
         port_info.error_message = None
 
         # Override port in environment
@@ -218,12 +238,16 @@ class SubprocessManager:
         try:
             # Start the subprocess
             process = await asyncio.create_subprocess_exec(
-                "uv", "run", "main.py", "--port", str(port),
+                "uv",
+                "run",
+                "main.py",
+                "--port",
+                str(port),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 env=port_env,
                 cwd=str(model_dir),
-                start_new_session=True  # Create new process group for proper cleanup
+                start_new_session=True,  # Create new process group for proper cleanup
             )
 
             port_info.process = process
@@ -231,35 +255,41 @@ class SubprocessManager:
             # Start background tasks to stream output
             asyncio.create_task(
                 self._stream_subprocess_output(
-                    process.stdout,
-                    "stdout",
-                    f"{model_id}:{port}"
+                    process.stdout, "stdout", f"{model_id}:{port}"
                 )
             )
             asyncio.create_task(
                 self._stream_subprocess_output(
-                    process.stderr,
-                    "stderr",
-                    f"{model_id}:{port}"
+                    process.stderr, "stderr", f"{model_id}:{port}"
                 )
             )
 
-            logger.info(f"[{role}] Process started (PID: {process.pid}), waiting for health...")
+            logger.info(
+                f"[{role}] Process started (PID: {process.pid}), waiting for health..."
+            )
 
             # Wait for health check - use runtime config for standby timeout
             if port_info.role == PortRole.STANDBY:
                 standby_cfg = self._standby_config
-                timeout = standby_cfg.health_check_timeout if standby_cfg else config.backup_health_check_timeout
+                timeout = (
+                    standby_cfg.health_check_timeout
+                    if standby_cfg
+                    else config.backup_health_check_timeout
+                )
             else:
                 timeout = 600
             await self._wait_for_health(port, timeout=timeout, interval=2)
 
             # Update state to HEALTHY
             port_info.state = PortState.HEALTHY
-            port_info.last_health_check = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+            port_info.last_health_check = (
+                datetime.now(UTC).isoformat().replace("+00:00", "Z")
+            )
             port_info.health_check_failures = 0
 
-            logger.info(f"[{role}] Process healthy on port {port} (PID: {process.pid})")
+            logger.info(
+                f"[{role}] Process healthy on port {port} (PID: {process.pid})"
+            )
 
             return process
 
@@ -280,19 +310,19 @@ class SubprocessManager:
                 try:
                     await self._stop_subprocess(port_info.process)
                 except Exception as stop_error:
-                    logger.warning(f"[{role}] Error cleaning up failed process: {stop_error}")
+                    logger.warning(
+                        f"[{role}] Error cleaning up failed process: {stop_error}"
+                    )
                 port_info.process = None
 
-            raise RuntimeError(f"Failed to start {role} process on port {port}: {error_msg}")
+            raise RuntimeError(
+                f"Failed to start {role} process on port {port}: {error_msg}"
+            )
 
     async def _start_standby_async(
-        self,
-        model_id: str,
-        model_dir: Path,
-        env_vars: Dict[str, str]
+        self, model_id: str, model_dir: Path, env_vars: dict[str, str]
     ) -> None:
-        """
-        Start the standby process in the background with retry logic.
+        """Start the standby process in the background with retry logic.
 
         This method is designed to run as a background task. It attempts to
         start the standby process with exponential backoff retry on failure.
@@ -303,12 +333,16 @@ class SubprocessManager:
             env_vars: Environment variables for the subprocess
         """
         if self._dual_port_state is None:
-            logger.error("Cannot start standby: dual port state not initialized")
+            logger.error(
+                "Cannot start standby: dual port state not initialized"
+            )
             return
 
         standby = self._dual_port_state.standby
 
-        logger.info(f"[standby] Background startup initiated for port {standby.port}")
+        logger.info(
+            f"[standby] Background startup initiated for port {standby.port}"
+        )
 
         while standby.startup_attempts < standby.max_startup_attempts:
             attempt = standby.startup_attempts + 1
@@ -326,10 +360,12 @@ class SubprocessManager:
                     port_info=standby,
                     model_id=model_id,
                     model_dir=model_dir,
-                    env_vars=env_vars
+                    env_vars=env_vars,
                 )
 
-                logger.info(f"[standby] Successfully started on port {standby.port}")
+                logger.info(
+                    f"[standby] Successfully started on port {standby.port}"
+                )
                 return  # Success!
 
             except Exception as e:
@@ -347,24 +383,31 @@ class SubprocessManager:
                         f"Standby will not be available for hot-switch."
                     )
                     standby.state = PortState.FAILED
-                    standby.error_message = f"All startup attempts failed. Last error: {e}"
+                    standby.error_message = (
+                        f"All startup attempts failed. Last error: {e}"
+                    )
                     return
 
                 # Calculate backoff delay using runtime config
                 standby_cfg = self._standby_config
                 delay = calculate_backoff_delay(
                     attempt=standby.startup_attempts - 1,  # 0-indexed
-                    initial_delay=standby_cfg.initial_delay if standby_cfg else config.hot_standby_initial_delay,
-                    max_delay=standby_cfg.max_delay if standby_cfg else config.hot_standby_max_delay,
-                    multiplier=standby_cfg.backoff_multiplier if standby_cfg else config.hot_standby_backoff_multiplier
+                    initial_delay=standby_cfg.initial_delay
+                    if standby_cfg
+                    else config.hot_standby_initial_delay,
+                    max_delay=standby_cfg.max_delay
+                    if standby_cfg
+                    else config.hot_standby_max_delay,
+                    multiplier=standby_cfg.backoff_multiplier
+                    if standby_cfg
+                    else config.hot_standby_backoff_multiplier,
                 )
 
                 logger.info(f"[standby] Retrying in {delay:.1f} seconds...")
                 await asyncio.sleep(delay)
 
     async def _stop_port_process(self, port_info: PortInfo) -> None:
-        """
-        Stop a process associated with a PortInfo.
+        """Stop a process associated with a PortInfo.
 
         Updates the PortInfo state throughout the shutdown lifecycle.
 
@@ -372,7 +415,9 @@ class SubprocessManager:
             port_info: The PortInfo whose process should be stopped
         """
         if port_info.process is None:
-            logger.debug(f"[{port_info.role.value}] No process to stop on port {port_info.port}")
+            logger.debug(
+                f"[{port_info.role.value}] No process to stop on port {port_info.port}"
+            )
             port_info.state = PortState.STOPPED
             return
 
@@ -403,12 +448,11 @@ class SubprocessManager:
     async def start_model(
         self,
         model_id: str,
-        parameters: Optional[Dict[str, Any]] = None,
-        standby_enabled: Optional[bool] = None,
-        standby_config: Optional[Dict[str, Any]] = None
+        parameters: dict[str, Any] | None = None,
+        standby_enabled: bool | None = None,
+        standby_config: dict[str, Any] | None = None,
     ) -> ModelInfo:
-        """
-        Start a model subprocess with hot-standby support.
+        """Start a model subprocess with hot-standby support.
 
         This method:
         1. Validates the model and prepares environment
@@ -434,7 +478,7 @@ class SubprocessManager:
         self._standby_config = RuntimeStandbyConfig.from_config_and_overrides(
             config=config,
             standby_enabled=standby_enabled,
-            overrides=standby_config
+            overrides=standby_config,
         )
         # Validate model exists in registry
         registry = get_registry()
@@ -452,13 +496,19 @@ class SubprocessManager:
         entry_file = model_dir / "main.py"
 
         if not pyproject_file.exists() or not entry_file.exists():
-            raise ValueError(f"A vaild model should contain at least a main.py and pyproject.toml")
+            raise ValueError(
+                "A vaild model should contain at least a main.py and pyproject.toml"
+            )
 
         # Build environment variables
         env_vars = self._build_env_vars(model_id, parameters or {})
 
-        standby_status = "enabled" if self._standby_config.enabled else "disabled"
-        logger.info(f"Starting model with subprocess (standby {standby_status}): {model_id}")
+        standby_status = (
+            "enabled" if self._standby_config.enabled else "disabled"
+        )
+        logger.info(
+            f"Starting model with subprocess (standby {standby_status}): {model_id}"
+        )
         logger.info(f"Model directory: {model_dir}")
         logger.info(f"Primary port: {config.model_port}")
         if self._standby_config.enabled:
@@ -467,13 +517,14 @@ class SubprocessManager:
 
         # Run uv sync first
         uv_sync_process = await asyncio.create_subprocess_exec(
-            "uv", "sync",
+            "uv",
+            "sync",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             env=env_vars,
-            cwd=str(model_dir)
+            cwd=str(model_dir),
         )
-        stdout, stderr = await uv_sync_process.communicate()
+        _stdout, stderr = await uv_sync_process.communicate()
         if uv_sync_process.returncode != 0:
             error_msg = stderr.decode().strip() if stderr else "Unknown error"
             raise RuntimeError(f"Failed to run uv sync: {error_msg}")
@@ -487,7 +538,7 @@ class SubprocessManager:
             model_id=model_id,
             started_at=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
             parameters=parameters or {},
-            container_name=f"model_instance_{model_id}"
+            container_name=f"model_instance_{model_id}",
         )
 
         # Initialize dual-port state
@@ -501,9 +552,11 @@ class SubprocessManager:
                 port_info=primary,
                 model_id=model_id,
                 model_dir=model_dir,
-                env_vars=env_vars
+                env_vars=env_vars,
             )
-            logger.info(f"[primary] Model subprocess is healthy on port {primary.port}")
+            logger.info(
+                f"[primary] Model subprocess is healthy on port {primary.port}"
+            )
 
         except Exception as e:
             log_error_with_traceback(
@@ -526,19 +579,18 @@ class SubprocessManager:
             logger.info("[standby] Scheduling background startup...")
             self._standby_startup_task = asyncio.create_task(
                 self._start_standby_async(
-                    model_id=model_id,
-                    model_dir=model_dir,
-                    env_vars=env_vars
+                    model_id=model_id, model_dir=model_dir, env_vars=env_vars
                 )
             )
         else:
-            logger.info("[standby] Standby mode is disabled, skipping standby startup")
+            logger.info(
+                "[standby] Standby mode is disabled, skipping standby startup"
+            )
 
         return model_info
 
-    async def stop_model(self) -> Optional[str]:
-        """
-        Stop the currently running model subprocess.
+    async def stop_model(self) -> str | None:
+        """Stop the currently running model subprocess.
 
         Stops both primary and standby ports if dual-port mode is active.
 
@@ -560,19 +612,15 @@ class SubprocessManager:
         if self._standby_startup_task and not self._standby_startup_task.done():
             logger.info("Cancelling standby startup task...")
             self._standby_startup_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._standby_startup_task
-            except asyncio.CancelledError:
-                pass
             self._standby_startup_task = None
 
         if self._standby_restart_task and not self._standby_restart_task.done():
             logger.info("Cancelling standby restart task...")
             self._standby_restart_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._standby_restart_task
-            except asyncio.CancelledError:
-                pass
             self._standby_restart_task = None
 
         # Stop dual-port processes if active
@@ -614,9 +662,8 @@ class SubprocessManager:
         self.current_model = None
         return model_id
 
-    async def restart_model(self, force: bool = True) -> Optional[str]:
-        """
-        Restart the currently running model subprocess.
+    async def restart_model(self, force: bool = True) -> str | None:
+        """Restart the currently running model subprocess.
 
         Args:
             force: If True (default), force kill the primary process immediately
@@ -644,16 +691,22 @@ class SubprocessManager:
         model_id = self.current_model.model_id
         container_name = self.current_model.container_name
 
-        logger.info(f"Restarting model subprocess: {container_name} (force={force})")
+        logger.info(
+            f"Restarting model subprocess: {container_name} (force={force})"
+        )
 
         # Check if we can do hot-switch
         if self._dual_port_state is not None and self.is_standby_ready():
             if force:
                 # Default: force hot-switch (kill primary immediately)
-                logger.info("[hot-switch] Killing primary and switching to standby...")
+                logger.info(
+                    "[hot-switch] Killing primary and switching to standby..."
+                )
                 try:
                     await self._perform_hot_switch()
-                    logger.info(f"[hot-switch] Model restarted via hot-switch: {container_name}")
+                    logger.info(
+                        f"[hot-switch] Model restarted via hot-switch: {container_name}"
+                    )
                     return model_id
                 except Exception as e:
                     tb_str = traceback.format_exc()
@@ -664,10 +717,14 @@ class SubprocessManager:
                     )
                     # Fall through to traditional restart
             else:
-                logger.info("[hot-switch] Standby is ready, performing graceful hot-switch...")
+                logger.info(
+                    "[hot-switch] Standby is ready, performing graceful hot-switch..."
+                )
                 try:
                     await self._perform_graceful_hot_switch()
-                    logger.info(f"[hot-switch] Model restarted via graceful hot-switch: {container_name}")
+                    logger.info(
+                        f"[hot-switch] Model restarted via graceful hot-switch: {container_name}"
+                    )
                     return model_id
                 except Exception as e:
                     tb_str = traceback.format_exc()
@@ -684,7 +741,9 @@ class SubprocessManager:
         if standby_cfg and not standby_cfg.enabled:
             restart_delay = standby_cfg.traditional_restart_delay
         else:
-            restart_delay = 5  # Quick restart when standby was supposed to be available
+            restart_delay = (
+                5  # Quick restart when standby was supposed to be available
+            )
         logger.info(
             f"Performing traditional restart (standby not available), "
             f"delay: {restart_delay}s..."
@@ -716,8 +775,7 @@ class SubprocessManager:
     # =========================================================================
 
     async def _perform_hot_switch(self) -> None:
-        """
-        Perform hot-switch: kill primary immediately and switch to standby.
+        """Perform hot-switch: kill primary immediately and switch to standby.
 
         This is the default hot-switch behavior:
         1. Acquires state lock to prevent concurrent modifications
@@ -731,10 +789,14 @@ class SubprocessManager:
             RuntimeError: If hot-switch fails or standby not ready
         """
         if self._dual_port_state is None:
-            raise RuntimeError("Hot-switch not available: dual port state not initialized")
+            raise RuntimeError(
+                "Hot-switch not available: dual port state not initialized"
+            )
 
         if not self.is_standby_ready():
-            raise RuntimeError("Hot-switch not available: standby is not healthy")
+            raise RuntimeError(
+                "Hot-switch not available: standby is not healthy"
+            )
 
         async with self._state_lock:
             old_primary = self._dual_port_state.primary
@@ -745,12 +807,16 @@ class SubprocessManager:
             )
 
             # Force kill the old primary process immediately (don't wait for inference)
-            logger.info(f"[hot-switch] Killing primary process on port {old_primary.port}...")
+            logger.info(
+                f"[hot-switch] Killing primary process on port {old_primary.port}..."
+            )
             try:
                 await self._stop_port_process(old_primary)
-                logger.info(f"[hot-switch] Primary process killed")
+                logger.info("[hot-switch] Primary process killed")
             except Exception as e:
-                logger.warning(f"[hot-switch] Error killing primary process: {e}")
+                logger.warning(
+                    f"[hot-switch] Error killing primary process: {e}"
+                )
                 # Continue anyway - process might already be dead
 
             # Atomic role swap
@@ -761,14 +827,15 @@ class SubprocessManager:
             )
 
         # Schedule background restart of old primary (now standby)
-        logger.info("[hot-switch] Scheduling background restart of old primary...")
+        logger.info(
+            "[hot-switch] Scheduling background restart of old primary..."
+        )
         self._standby_restart_task = asyncio.create_task(
             self._restart_standby_background()
         )
 
     async def _perform_graceful_hot_switch(self) -> None:
-        """
-        Perform graceful hot-switch: wait for inference to complete before switching.
+        """Perform graceful hot-switch: wait for inference to complete before switching.
 
         Unlike the default _perform_hot_switch, this method:
         1. Waits for any in-flight inference to complete
@@ -784,10 +851,14 @@ class SubprocessManager:
             RuntimeError: If graceful hot-switch fails or standby not ready
         """
         if self._dual_port_state is None:
-            raise RuntimeError("Graceful hot-switch not available: dual port state not initialized")
+            raise RuntimeError(
+                "Graceful hot-switch not available: dual port state not initialized"
+            )
 
         if not self.is_standby_ready():
-            raise RuntimeError("Graceful hot-switch not available: standby is not healthy")
+            raise RuntimeError(
+                "Graceful hot-switch not available: standby is not healthy"
+            )
 
         async with self._state_lock:
             old_primary = self._dual_port_state.primary
@@ -808,14 +879,15 @@ class SubprocessManager:
                 )
 
         # Schedule background restart of old primary (now standby)
-        logger.info("[graceful-hot-switch] Scheduling background restart of old primary...")
+        logger.info(
+            "[graceful-hot-switch] Scheduling background restart of old primary..."
+        )
         self._standby_restart_task = asyncio.create_task(
             self._restart_standby_background()
         )
 
     async def _restart_standby_background(self) -> None:
-        """
-        Restart the standby port in the background.
+        """Restart the standby port in the background.
 
         Called after hot-switch to restart the old primary (now standby).
         Includes configurable delay before restart (30+ seconds).
@@ -826,7 +898,9 @@ class SubprocessManager:
         3. Starts a new process on the standby port with retry logic
         """
         if self._dual_port_state is None:
-            logger.error("Cannot restart standby: dual port state not initialized")
+            logger.error(
+                "Cannot restart standby: dual port state not initialized"
+            )
             return
 
         if self.current_model is None:
@@ -838,7 +912,11 @@ class SubprocessManager:
 
         # Use runtime config for restart delay
         standby_cfg = self._standby_config
-        restart_delay = standby_cfg.restart_delay if standby_cfg else config.standby_restart_delay
+        restart_delay = (
+            standby_cfg.restart_delay
+            if standby_cfg
+            else config.standby_restart_delay
+        )
 
         logger.info(
             f"[standby-restart] Starting background restart for port {standby.port} "
@@ -850,7 +928,9 @@ class SubprocessManager:
         await asyncio.sleep(restart_delay)
 
         # Stop the old process
-        logger.info(f"[standby-restart] Stopping old process on port {standby.port}...")
+        logger.info(
+            f"[standby-restart] Stopping old process on port {standby.port}..."
+        )
         try:
             await self._stop_port_process(standby)
         except Exception as e:
@@ -867,29 +947,32 @@ class SubprocessManager:
 
         # Start new process using saved context
         if self._model_dir is None or self._env_vars is None:
-            logger.error("[standby-restart] Cannot restart: model context not available")
+            logger.error(
+                "[standby-restart] Cannot restart: model context not available"
+            )
             standby.state = PortState.FAILED
             standby.error_message = "Model context not available for restart"
             return
 
-        logger.info(f"[standby-restart] Starting new process on port {standby.port}...")
+        logger.info(
+            f"[standby-restart] Starting new process on port {standby.port}..."
+        )
         await self._start_standby_async(
             model_id=model_id,
             model_dir=self._model_dir,
-            env_vars=self._env_vars
+            env_vars=self._env_vars,
         )
 
-    async def get_current_model(self) -> Optional[ModelInfo]:
-        """Get information about the currently running model"""
+    async def get_current_model(self) -> ModelInfo | None:
+        """Get information about the currently running model."""
         return self.current_model
 
     async def is_model_running(self) -> bool:
-        """Check if a model is currently running"""
+        """Check if a model is currently running."""
         return self.current_model is not None
 
     async def check_model_health(self) -> bool:
-        """
-        Check if the current model subprocess is healthy.
+        """Check if the current model subprocess is healthy.
 
         Uses active_port to check the currently active process.
 
@@ -916,11 +999,9 @@ class SubprocessManager:
             return False
 
     async def invoke_inference(
-        self,
-        task_input: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """
-        Invoke inference on the current model.
+        self, task_input: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Invoke inference on the current model.
 
         Uses active_port to call the currently active process.
         Acquires inference_lock to prevent port switches during inference.
@@ -944,7 +1025,7 @@ class SubprocessManager:
                 response = await self.http_client.post(
                     url,
                     json=task_input,
-                    timeout=2400.0  # 40min timeout for inference
+                    timeout=2400.0,  # 40min timeout for inference
                 )
 
                 if response.status_code == 200:
@@ -959,8 +1040,7 @@ class SubprocessManager:
                 raise RuntimeError(f"Inference request failed: {e}")
 
     def _get_image_name(self, model_id: str) -> str:
-        """
-        Generate Docker image name from model_id.
+        """Generate Docker image name from model_id.
 
         Args:
             model_id: The model identifier
@@ -973,12 +1053,9 @@ class SubprocessManager:
         return f"{safe_name}:latest"
 
     def _build_env_vars(
-        self,
-        model_id: str,
-        parameters: Dict[str, Any]
-    ) -> Dict[str, str]:
-        """
-        Build environment variables for the subprocess.
+        self, model_id: str, parameters: dict[str, Any]
+    ) -> dict[str, str]:
+        """Build environment variables for the subprocess.
 
         Converts parameters to environment variables with MODEL_ prefix.
         For subprocesses, we need to inherit parent environment variables.
@@ -1006,15 +1083,10 @@ class SubprocessManager:
         env_vars.update(os.environ)
         return env_vars
 
-
     async def _stream_subprocess_output(
-        self,
-        stream: asyncio.StreamReader,
-        stream_name: str,
-        model_id: str
+        self, stream: asyncio.StreamReader, stream_name: str, model_id: str
     ):
-        """
-        Continuously read from subprocess stream and log to loguru.
+        """Continuously read from subprocess stream and log to loguru.
 
         Args:
             stream: The stream reader (stdout or stderr)
@@ -1036,12 +1108,8 @@ class SubprocessManager:
         except Exception as e:
             logger.warning(f"Error streaming {stream_name} for {model_id}: {e}")
 
-    async def _stop_subprocess(
-        self,
-        process: asyncio.subprocess.Process
-    ):
-        """
-        Stop a subprocess and all its children using SIGKILL (signal 9).
+    async def _stop_subprocess(self, process: asyncio.subprocess.Process):
+        """Stop a subprocess and all its children using SIGKILL (signal 9).
 
         Since uv spawns child processes (Python interpreter), we need to kill
         the entire process group to ensure all related processes are terminated.
@@ -1056,11 +1124,15 @@ class SubprocessManager:
             return
 
         pid = process.pid
-        logger.info(f"Stopping subprocess and its children with SIGKILL (PID: {pid})")
+        logger.info(
+            f"Stopping subprocess and its children with SIGKILL (PID: {pid})"
+        )
 
         # Check if process is still running
         if process.returncode is not None:
-            logger.debug(f"Subprocess already finished with return code: {process.returncode}")
+            logger.debug(
+                f"Subprocess already finished with return code: {process.returncode}"
+            )
             return
 
         try:
@@ -1071,11 +1143,15 @@ class SubprocessManager:
                 logger.info(f"Sent SIGKILL to process group (PGID: {pid})")
             except ProcessLookupError:
                 # Process group already gone, try killing just the process
-                logger.debug(f"Process group not found, trying single process kill (PID: {pid})")
+                logger.debug(
+                    f"Process group not found, trying single process kill (PID: {pid})"
+                )
                 process.kill()
 
             await process.wait()
-            logger.info(f"Subprocess and children killed with SIGKILL (PID: {pid})")
+            logger.info(
+                f"Subprocess and children killed with SIGKILL (PID: {pid})"
+            )
 
         except ProcessLookupError:
             # Process already finished
@@ -1088,13 +1164,9 @@ class SubprocessManager:
             raise RuntimeError(f"Failed to stop subprocess: {e}")
 
     async def _wait_for_health(
-        self,
-        port: int,
-        timeout: int = 30,
-        interval: int = 2
+        self, port: int, timeout: int = 30, interval: int = 2
     ):
-        """
-        Wait for the model subprocess to become healthy.
+        """Wait for the model subprocess to become healthy.
 
         Args:
             port: Port to check
@@ -1125,18 +1197,17 @@ class SubprocessManager:
             f"Model subprocess did not become healthy within {timeout} seconds"
         )
 
-
     async def close(self):
-        """Clean up resources"""
+        """Clean up resources."""
         await self.http_client.aclose()
 
 
 # Global subprocess manager instance
-_subprocess_manager: Optional[SubprocessManager] = None
+_subprocess_manager: SubprocessManager | None = None
 
 
 def get_subprocess_manager() -> SubprocessManager:
-    """Get or create the global subprocess manager instance"""
+    """Get or create the global subprocess manager instance."""
     global _subprocess_manager
     if _subprocess_manager is None:
         _subprocess_manager = SubprocessManager()
@@ -1144,18 +1215,17 @@ def get_subprocess_manager() -> SubprocessManager:
 
 
 # Backward compatibility alias for easy migration from DockerManager
-# Users can replace `from .docker_manager import get_docker_manager` 
-# with `from .subprocess_manager import get_docker_manager` for drop-in replacement
+# Users can replace `from src.docker_manager import get_docker_manager`
+# with `from src.subprocess_manager import get_docker_manager` for drop-in replacement
 def get_docker_manager() -> SubprocessManager:
-    """
-    Backward compatibility alias for get_subprocess_manager().
-    
+    """Backward compatibility alias for get_subprocess_manager().
+
     This allows easy migration from DockerManager to SubprocessManager
     by simply changing the import:
-    
-    Before: from .docker_manager import get_docker_manager
-    After:  from .subprocess_manager import get_docker_manager
-    
+
+    Before: from src.docker_manager import get_docker_manager
+    After:  from src.subprocess_manager import get_docker_manager
+
     The interface is identical, so no code changes are needed.
     """
     return get_subprocess_manager()

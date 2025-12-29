@@ -345,6 +345,7 @@ class TestTaskManagementEndpoints:
             "queued": 0,
             "completed": 0,
             "failed": 0,
+            "fetched": 0,
             "total": 0
         }
 
@@ -355,7 +356,7 @@ class TestTaskManagementEndpoints:
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert data["success"] is True
-        assert data["message"] == "Successfully cleared 0 task(s)"
+        assert data["message"] == "Successfully cleared 0 task(s) and restarted subprocess"
         assert data["cleared_count"]["total"] == 0
         # Verify Docker restart was not called (no model running)
         mock_docker_manager.restart_model.assert_not_called()
@@ -369,6 +370,7 @@ class TestTaskManagementEndpoints:
             "queued": 5,
             "completed": 10,
             "failed": 2,
+            "fetched": 0,
             "total": 17
         }
 
@@ -379,7 +381,7 @@ class TestTaskManagementEndpoints:
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert data["success"] is True
-        assert data["message"] == "Successfully cleared 17 task(s)"
+        assert data["message"] == "Successfully cleared 17 task(s) and restarted subprocess"
         assert data["cleared_count"]["queued"] == 5
         assert data["cleared_count"]["completed"] == 10
         assert data["cleared_count"]["failed"] == 2
@@ -387,8 +389,8 @@ class TestTaskManagementEndpoints:
         # Verify Docker restart was called
         mock_docker_manager.restart_model.assert_called_once()
 
-    def test_clear_tasks_docker_restart_failure(self, api_client, mock_task_queue, mock_docker_manager):
-        """Test POST /task/clear - fails when Docker restart fails"""
+    def test_clear_tasks_subprocess_restart_failure(self, api_client, mock_task_queue, mock_docker_manager):
+        """Test POST /task/clear - fails when subprocess restart fails"""
         # Setup mocks
         mock_docker_manager.is_model_running.return_value = True
         mock_docker_manager.restart_model.side_effect = RuntimeError("Failed to restart container")
@@ -398,41 +400,44 @@ class TestTaskManagementEndpoints:
 
         # Verify response
         assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
-        assert "Failed to restart Docker container" in response.json()["detail"]
+        assert "Failed to restart subprocess" in response.json()["detail"]
 
-    def test_clear_tasks_with_running_task(self, api_client, mock_task_queue, mock_docker_manager):
-        """Test POST /task/clear - fails when tasks are running"""
-        # Setup mocks
+    def test_clear_tasks_force_clears_running_tasks(self, api_client, mock_task_queue, mock_docker_manager):
+        """Test POST /task/clear - forcefully clears running tasks"""
+        # Setup mocks - simulate queue with running tasks
         mock_docker_manager.is_model_running.return_value = True
         mock_docker_manager.restart_model.return_value = "test-model"
-        mock_task_queue.clear_all_tasks.side_effect = RuntimeError(
-            "Cannot clear tasks while 1 task(s) are running. "
-            "Wait for running tasks to complete or stop processing first."
-        )
+        mock_task_queue.clear_all_tasks.return_value = {
+            "queued": 2,
+            "completed": 0,
+            "failed": 0,
+            "fetched": 0,
+            "total": 3  # Includes 1 that was running
+        }
+
+        # Make request - should succeed even with running tasks (force=True default)
+        response = api_client.post("/task/clear")
+
+        # Verify response - force clear succeeds
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["success"] is True
+        assert data["message"] == "Successfully cleared 3 task(s) and restarted subprocess"
+        # Verify subprocess restart was called
+        mock_docker_manager.restart_model.assert_called_once()
+
+    def test_clear_tasks_general_error(self, api_client, mock_task_queue, mock_docker_manager):
+        """Test POST /task/clear - handles unexpected errors"""
+        # Setup mocks
+        mock_docker_manager.is_model_running.return_value = False
+        mock_task_queue.clear_all_tasks.side_effect = RuntimeError("Unexpected database error")
 
         # Make request
         response = api_client.post("/task/clear")
 
         # Verify response
-        assert response.status_code == status.HTTP_400_BAD_REQUEST
-        assert "Cannot clear tasks while 1 task(s) are running" in response.json()["detail"]
-
-    def test_clear_tasks_with_multiple_running_tasks(self, api_client, mock_task_queue, mock_docker_manager):
-        """Test POST /task/clear - fails when multiple tasks are running"""
-        # Setup mocks
-        mock_docker_manager.is_model_running.return_value = True
-        mock_docker_manager.restart_model.return_value = "test-model"
-        mock_task_queue.clear_all_tasks.side_effect = RuntimeError(
-            "Cannot clear tasks while 3 task(s) are running. "
-            "Wait for running tasks to complete or stop processing first."
-        )
-
-        # Make request
-        response = api_client.post("/task/clear")
-
-        # Verify response
-        assert response.status_code == status.HTTP_400_BAD_REQUEST
-        assert "Cannot clear tasks while 3 task(s) are running" in response.json()["detail"]
+        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        assert "Failed to clear tasks" in response.json()["detail"]
 
 
 @pytest.mark.integration
@@ -887,7 +892,10 @@ class TestSchedulerIntegration:
         assert mock_scheduler_client.scheduler_url == new_scheduler_url
 
         # Verify both model parameters and scheduler update worked
-        mock_docker_manager.start_model.assert_called_once_with("test-model", model_params)
+        mock_docker_manager.start_model.assert_called_once_with(
+            "test-model", model_params,
+            standby_enabled=None, standby_config=None
+        )
         mock_scheduler_client.register_instance.assert_called_once_with(model_id="test-model")
 
     def test_start_model_with_scheduler_url_registration_fails(
