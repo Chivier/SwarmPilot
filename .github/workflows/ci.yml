@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: ["**"]
 
+env:
+  PYTHONUNBUFFERED: "1"
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -35,11 +38,8 @@ jobs:
         with:
           path: .venv
           key: venv-${{ runner.os }}-py${{ matrix.python-version }}-${{ hashFiles('uv.lock') }}
-          restore-keys: |
-            venv-${{ runner.os }}-py${{ matrix.python-version }}-
 
       - name: Install dependencies
-        if: steps.cache-venv.outputs.cache-hit != 'true'
         run: uv sync --all-extras --dev
 
       - name: Verify installation
@@ -57,7 +57,7 @@ jobs:
         run: uv run pytest planner/tests/ -v --tb=short
         continue-on-error: false
 
-      - name: Run predictor tests (if exists)
+      - name: Run predictor tests
         run: |
           if [ -d "predictor/tests" ]; then
             uv run pytest predictor/tests/ -v --tb=short
@@ -89,15 +89,17 @@ jobs:
         with:
           path: .venv
           key: venv-${{ runner.os }}-py3.11-${{ hashFiles('uv.lock') }}
-          restore-keys: |
-            venv-${{ runner.os }}-py3.11-
 
       - name: Install dependencies
-        if: steps.cache-venv.outputs.cache-hit != 'true'
         run: uv sync --all-extras --dev
 
       - name: Verify installation
         run: uv pip list
 
       - name: Check Python syntax
-        run: uv run python -m py_compile $(find . -name "*.py" -not -path "./.venv/*" -not -path "./experiments/*")
+        run: |
+          find . -name "*.py" \
+            -not -path "./.venv/*" \
+            -not -path "./experiments/*" \
+            -not -path "./.git/*" \
+            -print0 | xargs -0 -n 50 uv run python -m py_compile
