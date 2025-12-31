@@ -194,7 +194,9 @@ class SemanticPredictor(BasePreprocessor):
         """Load the model from the checkpoint file."""
         model_specific_config = self.model_config["model"]
         self.model = create_model_from_config(model_specific_config)
-        checkpoint = torch.load(self.model_path, map_location="cpu")
+        checkpoint = torch.load(
+            self.model_path, map_location="cpu", weights_only=False
+        )
         if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
             self.model.load_state_dict(checkpoint["model_state_dict"])
         else:
