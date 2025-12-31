@@ -24,7 +24,14 @@ def setup_and_teardown():
 
     # Reconfigure app's storage to use test directory
     from src import api
-    api.storage = api.ModelStorage(storage_dir=TEST_STORAGE_DIR)
+    from src.api import dependencies
+
+    test_storage = api.ModelStorage(storage_dir=TEST_STORAGE_DIR)
+    api.storage = test_storage
+    dependencies.storage = test_storage
+
+    # Clear model cache
+    api.model_cache.clear()
 
     yield
 
