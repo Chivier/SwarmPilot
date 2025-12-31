@@ -108,4 +108,4 @@ logs_*
 output_*
 
 # Experiment raw results
-experiments/07.Exp2.Deep_Research_Migration_Test/raw_results_*
+experiments/07.Exp2.Deep_Research_Migration_Test/raw_results_*experiments/13.workflow_benchmark/scripts/grid_search_results/
