@@ -17,7 +17,7 @@ from src.task_queue import get_task_queue
 from src.models import Task
 
 
-    async def main():
+async def main():
     """Run subprocess management tests"""
     print("=" * 60)
     print("Subprocess Manager Test")
