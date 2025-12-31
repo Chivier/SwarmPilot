@@ -2,7 +2,21 @@
 Tests for API endpoints.
 """
 
+from pathlib import Path
+
 import pytest
+
+
+# Path to semantic model for preprocessor tests
+PREDICTOR_DIR = Path(__file__).parent.parent
+MODEL_PATH = PREDICTOR_DIR / "preprocessors" / "sematic_35M" / "model_35M.pt"
+CONFIG_PATH = PREDICTOR_DIR / "preprocessors" / "sematic_35M" / "model_35M.yaml"
+
+# Skip condition for tests requiring the semantic model
+requires_semantic_model = pytest.mark.skipif(
+    not (MODEL_PATH.exists() and CONFIG_PATH.exists()),
+    reason="Semantic model checkpoint not available (CI environment)",
+)
 
 
 def generate_training_data(n_samples=20, include_sentence=False):
@@ -189,7 +203,8 @@ class TestTrainEndpoint:
         # Should still have only one model
         list_response = client.get("/list")
         assert len(list_response.json()['models']) == 1
-    
+
+    @requires_semantic_model
     def test_train_with_preprocessor(self, client):
         """Should successfully train with preprocessor."""
         request = {
