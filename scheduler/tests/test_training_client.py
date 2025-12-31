@@ -84,7 +84,7 @@ class TestInitialization:
 class TestAddSample:
     """Tests for adding training samples."""
 
-    @patch("src.training_client.datetime")
+    @patch("src.clients.training_client.datetime")
     def test_add_single_sample(
         self, mock_datetime, training_client, platform_info, features
     ):
@@ -109,7 +109,7 @@ class TestAddSample:
         assert sample.actual_runtime_ms == 1234.56
         assert sample.timestamp == "2024-01-01T00:00:00"
 
-    @patch("src.training_client.datetime")
+    @patch("src.clients.training_client.datetime")
     def test_add_multiple_samples(
         self, mock_datetime, training_client, platform_info, features
     ):
@@ -133,7 +133,7 @@ class TestAddSample:
             assert sample.model_id == f"model-{i}"
             assert sample.actual_runtime_ms == float(i * 100)
 
-    @patch("src.training_client.datetime")
+    @patch("src.clients.training_client.datetime")
     def test_add_sample_different_platforms(
         self, mock_datetime, training_client, features
     ):

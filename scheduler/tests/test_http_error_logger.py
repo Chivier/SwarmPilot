@@ -143,7 +143,7 @@ class TestTruncateBody:
 class TestLogHttpError:
     """Tests for the main logging function."""
 
-    @patch("src.http_error_logger.logger")
+    @patch("src.utils.http_error_logger.logger")
     def test_logs_generic_exception(self, mock_logger):
         """Test logging a generic exception."""
         error = Exception("Test error")
@@ -163,7 +163,7 @@ class TestLogHttpError:
         assert "POST" in log_message
         assert "http://example.com/api" in log_message
 
-    @patch("src.http_error_logger.logger")
+    @patch("src.utils.http_error_logger.logger")
     def test_logs_http_status_error(self, mock_logger):
         """Test logging an httpx.HTTPStatusError."""
         request = MagicMock(spec=httpx.Request)
@@ -195,7 +195,7 @@ class TestLogHttpError:
         assert "[REDACTED]" in log_message  # Authorization should be redacted
         assert "Internal server error" in log_message
 
-    @patch("src.http_error_logger.logger")
+    @patch("src.utils.http_error_logger.logger")
     def test_logs_timeout_exception(self, mock_logger):
         """Test logging an httpx.TimeoutException."""
         request = MagicMock(spec=httpx.Request)
@@ -214,7 +214,7 @@ class TestLogHttpError:
         assert "timeout test" in log_message
         assert "http://example.com/slow" in log_message
 
-    @patch("src.http_error_logger.logger")
+    @patch("src.utils.http_error_logger.logger")
     def test_logs_with_extra_context(self, mock_logger):
         """Test logging with extra context dictionary."""
         error = Exception("Test error")
@@ -232,7 +232,7 @@ class TestLogHttpError:
         assert "instance_id" in log_message
         assert "abc" in log_message
 
-    @patch("src.http_error_logger.logger")
+    @patch("src.utils.http_error_logger.logger")
     def test_logs_with_request_body(self, mock_logger):
         """Test logging with request body included."""
         error = Exception("Test error")
@@ -253,7 +253,7 @@ class TestLogHttpError:
         assert "gpt-4" in log_message
         assert "Request Body" in log_message
 
-    @patch("src.http_error_logger.logger")
+    @patch("src.utils.http_error_logger.logger")
     def test_logs_without_context(self, mock_logger):
         """Test logging without context shows 'unknown'."""
         error = Exception("Test error")
@@ -264,7 +264,7 @@ class TestLogHttpError:
 
         assert "[unknown]" in log_message
 
-    @patch("src.http_error_logger.logger")
+    @patch("src.utils.http_error_logger.logger")
     def test_handles_response_text_error(self, mock_logger):
         """Test handling when response.text raises an error."""
         request = MagicMock(spec=httpx.Request)
@@ -291,7 +291,7 @@ class TestLogHttpError:
 
         assert "unable to read response body" in log_message
 
-    @patch("src.http_error_logger.logger")
+    @patch("src.utils.http_error_logger.logger")
     def test_extracts_info_from_http_status_error(self, mock_logger):
         """Test that request info is extracted from HTTPStatusError automatically."""
         request = MagicMock(spec=httpx.Request)
@@ -318,7 +318,7 @@ class TestLogHttpError:
         assert "DELETE" in log_message
         assert "404" in log_message
 
-    @patch("src.http_error_logger.logger")
+    @patch("src.utils.http_error_logger.logger")
     def test_connection_error_without_response(self, mock_logger):
         """Test logging connection error without response object."""
         error = ConnectionError("Connection refused")
@@ -341,7 +341,7 @@ class TestLogHttpError:
         # Should not have response section
         assert "Response Status" not in log_message
 
-    @patch("src.http_error_logger.logger")
+    @patch("src.utils.http_error_logger.logger")
     def test_http_status_error_request_property_raises_runtime_error(
         self, mock_logger
     ):
@@ -373,7 +373,7 @@ class TestLogHttpError:
         log_message = mock_logger.error.call_args[0][0]
         assert "runtime error test" in log_message
 
-    @patch("src.http_error_logger.logger")
+    @patch("src.utils.http_error_logger.logger")
     def test_http_status_error_response_property_raises_runtime_error(
         self, mock_logger
     ):

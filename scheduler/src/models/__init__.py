@@ -1,37 +1,33 @@
-"""Data models for the scheduler API.
+"""Data models package.
 
-This module provides backward compatibility by re-exporting all
-models from the src.models package.
-
-For new code, prefer importing directly from src.models:
-    from src.models import Task, TaskStatus, Instance
+This package contains all Pydantic models and enums for the scheduler.
+Models are organized by domain for maintainability.
 """
 
-# Re-export all models from the models package
-from src.models import (
-    # Status enums
-    InstanceStatus,
-    StrategyType,
-    TaskStatus,
-    WSMessageType,
-    # Core models
-    Instance,
-    InstanceStats,
-    Task,
-    TaskTimestamps,
-    # Queue models
+# Re-export all models from submodules
+from src.models.core import Instance, InstanceStats, Task, TaskTimestamps
+from src.models.queue import (
     InstanceQueueBase,
     InstanceQueueExpectError,
     InstanceQueueProbabilistic,
-    # Common responses
-    ErrorResponse,
-    SuccessResponse,
-    # Instance requests
+)
+from src.models.requests import (
     InstanceDrainRequest,
     InstanceRedeployRequest,
     InstanceRegisterRequest,
     InstanceRemoveRequest,
-    # Instance responses
+    StrategySetRequest,
+    TaskMetadataUpdate,
+    TaskResubmitRequest,
+    TaskResultCallbackRequest,
+    TaskSubmitRequest,
+    TaskUpdateMetadataRequest,
+)
+from src.models.responses import (
+    ErrorResponse,
+    HealthErrorResponse,
+    HealthResponse,
+    HealthStats,
     InstanceDrainResponse,
     InstanceDrainStatusResponse,
     InstanceInfoResponse,
@@ -39,12 +35,10 @@ from src.models import (
     InstanceRedeployResponse,
     InstanceRegisterResponse,
     InstanceRemoveResponse,
-    # Task requests
-    TaskMetadataUpdate,
-    TaskResubmitRequest,
-    TaskSubmitRequest,
-    TaskUpdateMetadataRequest,
-    # Task responses
+    StrategyGetResponse,
+    StrategyInfo,
+    StrategySetResponse,
+    SuccessResponse,
     TaskClearResponse,
     TaskDetailInfo,
     TaskDetailResponse,
@@ -52,25 +46,16 @@ from src.models import (
     TaskListResponse,
     TaskRepredictResponse,
     TaskResubmitResponse,
+    TaskResultCallbackResponse,
     TaskScheduleInfo,
     TaskScheduleInfoResponse,
     TaskSubmitResponse,
     TaskSummary,
     TaskUpdateMetadataResponse,
     TaskUpdateMetadataResult,
-    # Health models
-    HealthErrorResponse,
-    HealthResponse,
-    HealthStats,
-    # Strategy models
-    StrategyGetResponse,
-    StrategyInfo,
-    StrategySetRequest,
-    StrategySetResponse,
-    # Callback models
-    TaskResultCallbackRequest,
-    TaskResultCallbackResponse,
-    # WebSocket models
+)
+from src.models.status import InstanceStatus, StrategyType, TaskStatus, WSMessageType
+from src.models.websocket import (
     WSAckMessage,
     WSErrorMessage,
     WSPingMessage,

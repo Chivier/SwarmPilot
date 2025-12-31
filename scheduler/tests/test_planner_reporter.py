@@ -107,7 +107,7 @@ class TestPlannerReporterStart:
         """Test start when already running logs warning."""
         await reporter.start()
 
-        with patch("src.planner_reporter.logger") as mock_logger:
+        with patch("src.utils.planner_reporter.logger") as mock_logger:
             await reporter.start()
             mock_logger.warning.assert_called_with(
                 "Planner reporter already running"
@@ -283,7 +283,7 @@ class TestPlannerReporterReportToPlanner:
         reporter._http_client.post = AsyncMock(side_effect=error)
 
         # Should not raise
-        with patch("src.planner_reporter.log_http_error"):
+        with patch("src.utils.planner_reporter.log_http_error"):
             await reporter._report_to_planner()
 
     @pytest.mark.asyncio
@@ -295,7 +295,7 @@ class TestPlannerReporterReportToPlanner:
         )
 
         # Should not raise
-        with patch("src.planner_reporter.log_http_error"):
+        with patch("src.utils.planner_reporter.log_http_error"):
             await reporter._report_to_planner()
 
     @pytest.mark.asyncio

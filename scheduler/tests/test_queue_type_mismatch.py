@@ -67,7 +67,7 @@ class TestQueueTypeMismatch:
         )
 
         # Try to update queue - this should trigger the mismatch warning and skip update
-        with patch("src.scheduler.logger") as mock_logger:
+        with patch("src.algorithms.min_expected_time.logger") as mock_logger:
             await strategy.update_queue("test-instance-1", prediction)
 
             # Verify that warning was logged
@@ -129,7 +129,7 @@ class TestQueueTypeMismatch:
         )
 
         # Try to update queue - this should trigger the mismatch warning and skip update
-        with patch("src.scheduler.logger") as mock_logger:
+        with patch("src.algorithms.probabilistic.logger") as mock_logger:
             await strategy.update_queue("test-instance-2", prediction)
 
             # Verify that warning was logged
@@ -221,7 +221,7 @@ class TestQueueTypeMismatch:
         ]
 
         # Update queues - should work without warnings
-        with patch("src.scheduler.logger") as mock_logger:
+        with patch("src.algorithms.min_expected_time.logger") as mock_logger:
             for prediction in predictions:
                 await strategy.update_queue(prediction.instance_id, prediction)
 
@@ -371,7 +371,7 @@ class TestQueueTypeMismatch:
         ]
 
         # Update queues - should work without warnings
-        with patch("src.scheduler.logger") as mock_logger:
+        with patch("src.algorithms.min_expected_time.logger") as mock_logger:
             for pred in predictions:
                 await strategy.update_queue(pred.instance_id, pred)
 

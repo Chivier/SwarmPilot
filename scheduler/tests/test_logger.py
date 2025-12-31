@@ -81,7 +81,7 @@ class TestSetupLogger:
         mock_config.logging.enable_json_logs = True
 
         # Patch the config in the logger module
-        monkeypatch.setattr("src.logger.config", mock_config)
+        monkeypatch.setattr("src.utils.logger.config", mock_config)
 
         # Remove existing handlers
         logger.remove()
@@ -112,7 +112,7 @@ class TestSetupLogger:
         mock_config.logging.enable_json_logs = False
 
         # Patch the config in the logger module
-        monkeypatch.setattr("src.logger.config", mock_config)
+        monkeypatch.setattr("src.utils.logger.config", mock_config)
 
         # Remove existing handlers
         logger.remove()

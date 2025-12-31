@@ -341,7 +341,7 @@ class TestCentralQueueStart:
         await central_queue.start()
 
         # Second start should warn
-        with patch("src.central_queue.logger") as mock_logger:
+        with patch("src.services.central_queue.logger") as mock_logger:
             await central_queue.start()
             mock_logger.warning.assert_called_with("Dispatcher already running")
 
@@ -482,7 +482,7 @@ class TestCentralQueueTryDispatch:
     @pytest.mark.asyncio
     async def test_try_dispatch_without_strategy_warns(self, central_queue):
         """Test _try_dispatch_tasks warns when strategy not set."""
-        with patch("src.central_queue.logger") as mock_logger:
+        with patch("src.services.central_queue.logger") as mock_logger:
             await central_queue._try_dispatch_tasks()
             mock_logger.warning.assert_called_with(
                 "Scheduling strategy or task dispatcher not set"
@@ -493,7 +493,7 @@ class TestCentralQueueTryDispatch:
         """Test _try_dispatch_tasks warns when dispatcher not set."""
         central_queue.set_scheduling_strategy(MagicMock())
 
-        with patch("src.central_queue.logger") as mock_logger:
+        with patch("src.services.central_queue.logger") as mock_logger:
             await central_queue._try_dispatch_tasks()
             mock_logger.warning.assert_called_with(
                 "Scheduling strategy or task dispatcher not set"
