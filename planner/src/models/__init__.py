@@ -1,50 +1,53 @@
 """Data models for the Planner service.
 
-This module provides backward compatibility by re-exporting all models
-from the models package.
+This package provides domain-specific Pydantic models organized by function.
+All models are re-exported here for backward compatibility.
 """
 
-from .models import (
-    DeploymentInput,
-    DeploymentOutput,
-    DeploymentStatus,
+from .base import InstanceStatus
+from .deployment import DeploymentInput, DeploymentOutput, DeploymentStatus
+from .instance import InstanceInfo, InstanceRegisterRequest, InstanceRegisterResponse
+from .migration import MigrationOutput, MigrationStatus
+from .planner import PlannerInput, PlannerOutput
+from .scheduler_compat import (
     InstanceDrainRequest,
     InstanceDrainResponse,
     InstanceDrainStatusResponse,
-    InstanceInfo,
-    InstanceRegisterRequest,
-    InstanceRegisterResponse,
     InstanceRemoveRequest,
     InstanceRemoveResponse,
-    InstanceStatus,
-    MigrationOutput,
-    MigrationStatus,
-    PlannerInput,
-    PlannerOutput,
+    TaskResubmitRequest,
+    TaskResubmitResponse,
+)
+from .target import (
     SubmitTargetRequest,
     SubmitTargetResponse,
     SubmitThroughputRequest,
     SubmitThroughputResponse,
-    TaskResubmitRequest,
-    TaskResubmitResponse,
 )
 
 __all__ = [
+    # Base
     "InstanceStatus",
+    # Planner
     "PlannerInput",
     "PlannerOutput",
+    # Instance
     "InstanceInfo",
-    "DeploymentInput",
-    "DeploymentStatus",
-    "MigrationStatus",
-    "DeploymentOutput",
-    "MigrationOutput",
     "InstanceRegisterRequest",
     "InstanceRegisterResponse",
+    # Deployment
+    "DeploymentInput",
+    "DeploymentOutput",
+    "DeploymentStatus",
+    # Migration
+    "MigrationStatus",
+    "MigrationOutput",
+    # Target
     "SubmitTargetRequest",
     "SubmitTargetResponse",
     "SubmitThroughputRequest",
     "SubmitThroughputResponse",
+    # Scheduler Compat
     "InstanceDrainRequest",
     "InstanceDrainResponse",
     "InstanceDrainStatusResponse",
