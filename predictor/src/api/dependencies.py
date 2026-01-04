@@ -1,16 +1,22 @@
-"""Shared dependencies and utilities for API endpoints."""
+"""Shared dependencies and utilities for API endpoints.
+
+This module provides shared instances for the HTTP API layer:
+- predictor_core: High-level API with accumulator pattern
+- predictor_api: Low-level API for direct model control
+- storage, model_cache: Legacy references for backwards compatibility
+"""
 
 from __future__ import annotations
 
 import traceback
 from typing import Any
 
+from src.api.cache import ModelCache
+from src.api.core import PredictorCore, PredictorLowLevel
 from src.config import get_config
 from src.preprocessor.preprocessors_registry import PreprocessorsRegistry
 from src.storage.model_storage import ModelStorage
 from src.utils.logging import get_logger
-
-from src.api.cache import ModelCache
 
 logger = get_logger()
 
@@ -54,7 +60,23 @@ def get_storage() -> ModelStorage:
     return ModelStorage(storage_dir=config.storage_dir)
 
 
-# Global instances
-storage = get_storage()
-preprocessors_registry = PreprocessorsRegistry()
-model_cache = ModelCache(max_size=100)
+# =============================================================================
+# Library API Instances (Recommended)
+# =============================================================================
+
+# High-level API with accumulator pattern (collect -> train -> predict)
+predictor_core = PredictorCore()
+
+# Low-level API for direct model control (train_predictor, save_model, etc.)
+predictor_api = predictor_core._low_level
+
+
+# =============================================================================
+# Legacy Instances (Backwards Compatibility)
+# =============================================================================
+
+# These are kept for backwards compatibility with existing code.
+# New code should use predictor_core or predictor_api instead.
+storage = predictor_api._storage
+preprocessors_registry = predictor_api._preprocessors_registry
+model_cache = predictor_api._cache

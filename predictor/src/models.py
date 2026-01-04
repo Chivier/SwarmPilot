@@ -121,8 +121,9 @@ class TrainingRequest(BaseModel):
         prediction_type: Type of prediction to use.
         features_list: List of training samples with features.
         training_config: Optional training configuration.
-        enable_preprocessors: List of preprocessors to enable.
-        preprocessor_mappings: Feature to preprocessor mappings.
+        preprocess_config: Per-feature preprocessor chains (recommended).
+        enable_preprocessors: [DEPRECATED] List of preprocessors to enable.
+        preprocessor_mappings: [DEPRECATED] Feature to preprocessor mappings.
     """
 
     model_id: str = Field(
@@ -149,13 +150,24 @@ class TrainingRequest(BaseModel):
             "data_augmentation, log_transform, residual_calibration"
         ),
     )
+    preprocess_config: dict[str, list[str]] | None = Field(
+        None,
+        description=(
+            "Per-feature preprocessor chains. Format: "
+            '{"feature_name": ["preprocessor_0", "preprocessor_1", ...]}. '
+            "Each feature is processed by its chain in order."
+        ),
+    )
+    # DEPRECATED: Use preprocess_config instead
     enable_preprocessors: list[str] | None = Field(
         None,
-        description="List of preprocessors to enable",
+        description="[DEPRECATED] Use preprocess_config instead",
+        json_schema_extra={"deprecated": True},
     )
     preprocessor_mappings: dict[str, list[str]] | None = Field(
         None,
-        description="Which features need preprocessing by which preprocessor",
+        description="[DEPRECATED] Use preprocess_config instead",
+        json_schema_extra={"deprecated": True},
     )
 
     @field_validator('prediction_type')
@@ -235,8 +247,9 @@ class PredictionRequest(BaseModel):
         prediction_type: Type of prediction to use.
         features: Feature values for prediction.
         quantiles: Custom quantiles for prediction (experiment mode only).
-        enable_preprocessors: List of preprocessors to enable.
-        preprocessor_mappings: Feature to preprocessor mappings.
+        preprocess_config: Per-feature preprocessor chains (recommended).
+        enable_preprocessors: [DEPRECATED] List of preprocessors to enable.
+        preprocessor_mappings: [DEPRECATED] Feature to preprocessor mappings.
     """
 
     model_id: str = Field(
@@ -259,13 +272,24 @@ class PredictionRequest(BaseModel):
         None,
         description="Custom quantiles for prediction (experiment mode only)",
     )
+    preprocess_config: dict[str, list[str]] | None = Field(
+        None,
+        description=(
+            "Per-feature preprocessor chains. Format: "
+            '{"feature_name": ["preprocessor_0", "preprocessor_1", ...]}. '
+            "Each feature is processed by its chain in order."
+        ),
+    )
+    # DEPRECATED: Use preprocess_config instead
     enable_preprocessors: list[str] | None = Field(
         None,
-        description="List of preprocessors to enable",
+        description="[DEPRECATED] Use preprocess_config instead",
+        json_schema_extra={"deprecated": True},
     )
     preprocessor_mappings: dict[str, list[str]] | None = Field(
         None,
-        description="Which features need preprocessing by which preprocessor",
+        description="[DEPRECATED] Use preprocess_config instead",
+        json_schema_extra={"deprecated": True},
     )
 
     @field_validator('prediction_type')
@@ -549,4 +573,444 @@ class CollectedSample(BaseModel):
     collected_at: str = Field(
         default_factory=lambda: datetime.now().isoformat(),
         description="ISO 8601 timestamp when sample was collected",
+    )
+
+
+# =============================================================================
+# HTTP API Request/Response Models (New Endpoints)
+# =============================================================================
+
+
+class CollectRequest(BaseModel):
+    """Request model for /collect endpoint.
+
+    Use this to collect individual training samples for later batch training.
+    Samples are accumulated until /train is called.
+
+    Attributes:
+        model_id: Unique identifier for the model.
+        platform_info: Platform information.
+        prediction_type: Type of prediction to use.
+        features: Feature dictionary for this sample.
+        runtime_ms: Measured runtime in milliseconds.
+    """
+
+    model_id: str = Field(
+        ...,
+        description="Unique identifier for the model",
+    )
+    platform_info: PlatformInfo = Field(
+        ...,
+        description="Platform information",
+    )
+    prediction_type: str = Field(
+        ...,
+        description="Type of prediction: 'expect_error' or 'quantile'",
+    )
+    features: dict[str, Any] = Field(
+        ...,
+        description="Feature dictionary for this sample",
+    )
+    runtime_ms: float = Field(
+        ...,
+        description="Measured runtime in milliseconds",
+        gt=0,
+    )
+
+    @field_validator('prediction_type')
+    @classmethod
+    def validate_prediction_type(cls, v: str) -> str:
+        """Validate that prediction_type is one of the allowed values."""
+        allowed_types = {
+            'expect_error',
+            'quantile',
+            'linear_regression',
+            'decision_tree',
+        }
+        if v not in allowed_types:
+            raise ValueError(
+                f"prediction_type must be one of {allowed_types}, got '{v}'"
+            )
+        return v
+
+
+class CollectResponse(BaseModel):
+    """Response model for /collect endpoint.
+
+    Attributes:
+        status: Status of the operation ('success' or 'error').
+        samples_collected: Total number of samples collected for this model.
+        message: Optional message with additional details.
+    """
+
+    status: str = Field(
+        ...,
+        description="Status of the operation: 'success' or 'error'",
+    )
+    samples_collected: int = Field(
+        ...,
+        description="Total number of samples collected for this model",
+    )
+    message: str | None = Field(
+        None,
+        description="Optional message with additional details",
+    )
+
+
+# =============================================================================
+# V2 API Models (Preprocessing Chain Support)
+# =============================================================================
+
+
+class PreprocessorStepConfigV2(BaseModel):
+    """Configuration for a single preprocessor in a V2 chain.
+
+    Attributes:
+        name: Name of the preprocessor in the registry (e.g., "multiply", "remove").
+        params: Parameters to pass to the preprocessor factory.
+    """
+
+    name: str = Field(
+        ...,
+        description="Registered preprocessor name: 'multiply', 'remove', 'token_length'",
+    )
+    params: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Preprocessor-specific parameters",
+    )
+
+
+class ChainConfigV2(BaseModel):
+    """Configuration for a V2 preprocessing chain.
+
+    The chain is executed in order: steps[0] runs first, then steps[1], etc.
+
+    Attributes:
+        steps: Ordered list of preprocessor configurations.
+    """
+
+    steps: list[PreprocessorStepConfigV2] = Field(
+        default_factory=list,
+        description="Ordered list of preprocessor steps",
+    )
+
+
+class CollectRequestV2(BaseModel):
+    """Request model for /v2/collect endpoint.
+
+    Collects a training sample with optional preprocessing.
+
+    Attributes:
+        model_id: Unique identifier for the model.
+        platform_info: Platform information.
+        prediction_type: Type of prediction to use.
+        features: Feature dictionary for this sample.
+        runtime_ms: Measured runtime in milliseconds.
+        preprocess_chain: Optional chain to preprocess before storing.
+    """
+
+    model_id: str = Field(
+        ...,
+        description="Unique identifier for the model",
+    )
+    platform_info: PlatformInfo = Field(
+        ...,
+        description="Platform information",
+    )
+    prediction_type: str = Field(
+        ...,
+        description="Type of prediction: 'expect_error', 'quantile', etc.",
+    )
+    features: dict[str, Any] = Field(
+        ...,
+        description="Feature dictionary for this sample",
+    )
+    runtime_ms: float = Field(
+        ...,
+        description="Measured runtime in milliseconds",
+        gt=0,
+    )
+    preprocess_chain: ChainConfigV2 | None = Field(
+        None,
+        description="Optional chain to preprocess features before storing",
+    )
+
+    @field_validator('prediction_type')
+    @classmethod
+    def validate_prediction_type(cls, v: str) -> str:
+        """Validate that prediction_type is one of the allowed values."""
+        allowed_types = {
+            'expect_error',
+            'quantile',
+            'linear_regression',
+            'decision_tree',
+        }
+        if v not in allowed_types:
+            raise ValueError(
+                f"prediction_type must be one of {allowed_types}, got '{v}'"
+            )
+        return v
+
+
+class CollectResponseV2(BaseModel):
+    """Response model for /v2/collect endpoint.
+
+    Attributes:
+        status: Status of the operation ('success' or 'error').
+        samples_collected: Total number of samples collected for this model.
+        message: Optional message with additional details.
+    """
+
+    status: str = Field(
+        ...,
+        description="Status of the operation: 'success' or 'error'",
+    )
+    samples_collected: int = Field(
+        ...,
+        description="Total number of samples collected for this model",
+    )
+    message: str | None = Field(
+        None,
+        description="Optional message with additional details",
+    )
+
+
+class TrainingRequestV2(BaseModel):
+    """Request model for /v2/train endpoint.
+
+    Train a model with an optional preprocessing chain. The chain is stored
+    with the model and automatically used during prediction.
+
+    Chain Resolution:
+    - Chain provided → use provided chain
+    - No chain + existing model → use model's stored chain
+    - No chain + new model → no preprocessing
+
+    Attributes:
+        model_id: Unique identifier for the model.
+        platform_info: Platform information.
+        prediction_type: Type of prediction to use.
+        features_list: Optional list of training samples (combined with collected).
+        training_config: Optional training configuration.
+        preprocess_chain: Optional preprocessing chain to use and store.
+    """
+
+    model_id: str = Field(
+        ...,
+        description="Unique identifier for the model",
+    )
+    platform_info: PlatformInfo = Field(
+        ...,
+        description="Platform information",
+    )
+    prediction_type: str = Field(
+        ...,
+        description="Type of prediction: 'expect_error', 'quantile', etc.",
+    )
+    features_list: list[dict[str, Any]] | None = Field(
+        None,
+        description="Optional list of training samples to combine with collected data",
+    )
+    training_config: dict[str, Any] | None = Field(
+        None,
+        description="Optional training configuration",
+    )
+    preprocess_chain: ChainConfigV2 | None = Field(
+        None,
+        description="Optional preprocessing chain to use and store with model",
+    )
+
+    @field_validator('prediction_type')
+    @classmethod
+    def validate_prediction_type(cls, v: str) -> str:
+        """Validate that prediction_type is one of the allowed values."""
+        allowed_types = {
+            'expect_error',
+            'quantile',
+            'linear_regression',
+            'decision_tree',
+        }
+        if v not in allowed_types:
+            raise ValueError(
+                f"prediction_type must be one of {allowed_types}, got '{v}'"
+            )
+        return v
+
+    @field_validator('features_list')
+    @classmethod
+    def validate_features_list(
+        cls,
+        v: list[dict[str, Any]] | None,
+    ) -> list[dict[str, Any]] | None:
+        """Validate that all samples have runtime_ms field if provided."""
+        if v is None:
+            return v
+
+        for idx, sample in enumerate(v):
+            if 'runtime_ms' not in sample:
+                raise ValueError(
+                    f"Sample at index {idx} missing required field 'runtime_ms'"
+                )
+
+            if not isinstance(sample['runtime_ms'], (int, float)):
+                raise ValueError(
+                    f"Sample at index {idx}: 'runtime_ms' must be numeric"
+                )
+
+        return v
+
+
+class TrainingResponseV2(BaseModel):
+    """Response model for /v2/train endpoint.
+
+    Attributes:
+        status: Status of training ('success' or 'error').
+        message: Detailed message about the training result.
+        model_key: Unique key for the trained model.
+        samples_trained: Number of samples used for training.
+        chain_stored: Whether a preprocessing chain was stored with the model.
+    """
+
+    status: str = Field(
+        ...,
+        description="Status of training: 'success' or 'error'",
+    )
+    message: str = Field(
+        ...,
+        description="Detailed message about the training result",
+    )
+    model_key: str = Field(
+        ...,
+        description="Unique key for the trained model",
+    )
+    samples_trained: int = Field(
+        ...,
+        description="Number of samples used for training",
+    )
+    chain_stored: bool = Field(
+        False,
+        description="Whether a preprocessing chain was stored with the model",
+    )
+
+
+class PredictionRequestV2(BaseModel):
+    """Request model for /v2/predict endpoint.
+
+    NOTE: This request does NOT accept a preprocess_chain. The V2 API
+    automatically uses the chain stored with the model during training.
+
+    Attributes:
+        model_id: Unique identifier for the model.
+        platform_info: Platform information.
+        prediction_type: Type of prediction to use.
+        features: Feature values for prediction.
+        quantiles: Custom quantiles for prediction (quantile predictor only).
+    """
+
+    model_id: str = Field(
+        ...,
+        description="Unique identifier for the model",
+    )
+    platform_info: PlatformInfo = Field(
+        ...,
+        description="Platform information",
+    )
+    prediction_type: str = Field(
+        ...,
+        description="Type of prediction: 'expect_error', 'quantile', etc.",
+    )
+    features: dict[str, Any] = Field(
+        ...,
+        description="Feature values for prediction",
+    )
+    quantiles: list[float] | None = Field(
+        None,
+        description="Custom quantiles for prediction (quantile predictor only)",
+    )
+
+    @field_validator('prediction_type')
+    @classmethod
+    def validate_prediction_type(cls, v: str) -> str:
+        """Validate that prediction_type is one of the allowed values."""
+        allowed_types = {
+            'expect_error',
+            'quantile',
+            'linear_regression',
+            'decision_tree',
+        }
+        if v not in allowed_types:
+            raise ValueError(
+                f"prediction_type must be one of {allowed_types}, got '{v}'"
+            )
+        return v
+
+    @field_validator('quantiles')
+    @classmethod
+    def validate_quantiles(
+        cls,
+        v: list[float] | None,
+    ) -> list[float] | None:
+        """Validate that quantiles are between 0 and 1."""
+        if v is not None:
+            for q in v:
+                if not isinstance(q, (int, float)) or not (0 < q < 1):
+                    raise ValueError(
+                        f"All quantiles must be between 0 and 1, got {q}"
+                    )
+        return v
+
+
+class PredictionResponseV2(BaseModel):
+    """Response model for /v2/predict endpoint.
+
+    Attributes:
+        model_id: Model identifier used for prediction.
+        platform_info: Platform information.
+        prediction_type: Type of prediction used.
+        result: Prediction result (format varies by prediction_type).
+        chain_applied: Whether preprocessing chain was applied.
+    """
+
+    model_id: str = Field(
+        ...,
+        description="Model identifier used for prediction",
+    )
+    platform_info: PlatformInfo = Field(
+        ...,
+        description="Platform information",
+    )
+    prediction_type: str = Field(
+        ...,
+        description="Type of prediction used",
+    )
+    result: dict[str, Any] = Field(
+        ...,
+        description="Prediction result (format varies by prediction_type)",
+    )
+    chain_applied: bool = Field(
+        False,
+        description="Whether preprocessing chain was applied",
+    )
+
+
+class ChainValidationErrorV2(BaseModel):
+    """Error details when chain validation fails.
+
+    Attributes:
+        step_index: Index of the step that failed.
+        preprocessor_name: Name of the preprocessor that failed.
+        error: Detailed error message.
+    """
+
+    step_index: int = Field(
+        ...,
+        description="Index of the step that failed (0-based)",
+    )
+    preprocessor_name: str = Field(
+        ...,
+        description="Name of the preprocessor that failed",
+    )
+    error: str = Field(
+        ...,
+        description="Detailed error message",
     )

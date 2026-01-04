@@ -20,15 +20,28 @@ def setup_and_teardown():
     Path(TEST_STORAGE_DIR).mkdir(exist_ok=True)
 
     # Reconfigure storage to use test directory
-    # Need to update both src.api and src.api.dependencies for compatibility
+    # Need to update module-level refs AND internal API storage for full isolation
     from src import api
     from src.api import dependencies
-    test_storage = api.ModelStorage(storage_dir=TEST_STORAGE_DIR)
+    from src.storage.model_storage import ModelStorage
+
+    test_storage = ModelStorage(storage_dir=TEST_STORAGE_DIR)
+
+    # Update module-level references
     api.storage = test_storage
     dependencies.storage = test_storage
 
+    # Update internal API storage (critical for proper isolation)
+    dependencies.predictor_api._storage = test_storage
+    dependencies.predictor_core._low_level._storage = test_storage
+
     # Also reset the model cache for each test
     api.model_cache.clear()
+    dependencies.predictor_api._cache.clear()
+
+    # Reset predictor_core accumulator state for V2 tests
+    dependencies.predictor_core._accumulated.clear()
+    dependencies.predictor_core._feature_schemas.clear()
 
     yield
 

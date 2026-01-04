@@ -38,6 +38,8 @@ from src.api.core import ValidationError
 from src.api.dependencies import _log_error
 from src.api.dependencies import get_storage
 from src.api.dependencies import model_cache
+from src.api.dependencies import predictor_api
+from src.api.dependencies import predictor_core
 from src.api.dependencies import preprocessors_registry
 from src.api.dependencies import storage
 
@@ -46,6 +48,8 @@ from src.storage.model_storage import ModelStorage
 
 # Re-export library API result types from models
 from src.models import CollectedSample
+from src.models import CollectRequest
+from src.models import CollectResponse
 from src.models import ModelInfo
 from src.models import PredictionResult
 from src.models import PredictionType
@@ -62,6 +66,9 @@ __all__ = [
     # Library API - Core Classes
     "PredictorCore",
     "PredictorLowLevel",
+    # Library API - Shared Instances
+    "predictor_core",
+    "predictor_api",
     # Library API - Exceptions
     "PredictorError",
     "ModelNotFoundError",
@@ -74,6 +81,9 @@ __all__ = [
     "ModelInfo",
     "CollectedSample",
     "PredictionType",
+    # HTTP API - Request/Response Models
+    "CollectRequest",
+    "CollectResponse",
     # Dependencies
     "ModelStorage",
     "_log_error",

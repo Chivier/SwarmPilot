@@ -39,6 +39,8 @@ from src.api.cache import ModelCache
 from src.config import PredictorConfig
 from src.config import get_config
 from src.models import CollectedSample
+from src.preprocessor.chain_v2 import PreprocessorChainV2
+from src.preprocessor.preprocessors_registry import PreprocessorsRegistry
 from src.models import ModelInfo
 from src.models import PlatformInfo
 from src.models import PredictionResult
@@ -146,6 +148,7 @@ class PredictorLowLevel:
         storage_path = storage_dir or self._config.storage_dir
         self._storage = ModelStorage(storage_dir=storage_path)
         self._cache = ModelCache(max_size=cache_size)
+        self._preprocessors_registry = PreprocessorsRegistry()
         self._lock = threading.RLock()
 
     # -------------------------------------------------------------------------
@@ -207,6 +210,8 @@ class PredictorLowLevel:
         platform_info: PlatformInfo,
         prediction_type: str,
         predictor: BasePredictor,
+        samples_count: int | None = None,
+        extra_metadata: dict[str, Any] | None = None,
     ) -> None:
         """Save a predictor to storage.
 
@@ -215,21 +220,33 @@ class PredictorLowLevel:
             platform_info: Platform information.
             prediction_type: Type of prediction.
             predictor: Trained predictor instance.
+            samples_count: Number of samples used for training (optional).
+                If not provided, attempts to get from predictor state.
+            extra_metadata: Additional metadata to store with the model.
         """
         model_key = self.generate_model_key(model_id, platform_info, prediction_type)
 
         # Get predictor state
         predictor_state = predictor.get_model_state()
 
+        # Determine samples count - prefer explicit parameter, fall back to predictor state
+        actual_samples_count = samples_count
+        if actual_samples_count is None:
+            actual_samples_count = predictor_state.get("samples_count", 0)
+
         # Prepare metadata
         metadata = {
             "model_id": model_id,
             "platform_info": platform_info.model_dump(),
             "prediction_type": prediction_type,
-            "samples_count": predictor_state.get("samples_count", 0),
+            "samples_count": actual_samples_count,
             "feature_names": predictor_state.get("feature_names", []),
             "saved_at": datetime.now().isoformat(),
         }
+
+        # Merge extra metadata if provided
+        if extra_metadata:
+            metadata.update(extra_metadata)
 
         # Save to storage
         with self._lock:
@@ -538,6 +555,246 @@ class PredictorLowLevel:
             platform_info=platform_info.model_dump(),
             prediction_type=prediction_type,
         )
+
+    # -------------------------------------------------------------------------
+    # Inference Pipeline API
+    # -------------------------------------------------------------------------
+
+    def apply_preprocess_pipeline(
+        self,
+        features: dict[str, Any],
+        preprocess_config: dict[str, list[str]],
+    ) -> dict[str, Any]:
+        """Apply per-feature preprocessing chain.
+
+        Each feature in the config is processed by its corresponding chain
+        of preprocessors in order. Features not in the config are passed
+        through unchanged.
+
+        Args:
+            features: Raw feature dictionary.
+            preprocess_config: Maps feature_name to ordered list of preprocessor names.
+                Format: {"feature_name": ["preprocessor_0", "preprocessor_1", ...]}
+
+        Returns:
+            Processed features dictionary.
+
+        Example:
+            >>> processed = low.apply_preprocess_pipeline(
+            ...     features={"text": "hello", "num": 42},
+            ...     preprocess_config={
+            ...         "text": ["normalize", "tokenize", "embed"],  # Applied in order
+            ...         # "num" not in config - kept as-is
+            ...     },
+            ... )
+        """
+        if not preprocess_config:
+            return features.copy()
+
+        processed = features.copy()
+
+        for feature_name, preprocessor_chain in preprocess_config.items():
+            if feature_name not in processed:
+                # Skip features not in input
+                continue
+
+            value = processed[feature_name]
+
+            for preprocessor_name in preprocessor_chain:
+                preprocessor = self._preprocessors_registry.get_preprocessor(
+                    preprocessor_name
+                )
+
+                # Apply preprocessor - returns (output_dict, should_remove_original)
+                result, should_remove = preprocessor([value])
+
+                # Handle remove_origin flag
+                if should_remove and feature_name in processed:
+                    del processed[feature_name]
+
+                # Merge preprocessor output into processed features
+                processed.update(result)
+
+                # Update value for next preprocessor in chain
+                # (first output feature becomes input to next)
+                if result:
+                    value = next(iter(result.values()))
+
+        return processed
+
+    def train_predictor_with_pipeline(
+        self,
+        features_list: list[dict[str, Any]],
+        prediction_type: str,
+        config: dict[str, Any] | None = None,
+        preprocess_config: dict[str, list[str]] | None = None,
+    ) -> BasePredictor:
+        """Train predictor with preprocessing pipeline.
+
+        Applies the preprocessing pipeline to each training sample before
+        training the predictor.
+
+        Args:
+            features_list: Training data with runtime_ms field.
+            prediction_type: Type of predictor to train.
+            config: Optional training configuration.
+            preprocess_config: Per-feature preprocessor chains.
+                Format: {"feature_name": ["preprocessor_0", "preprocessor_1", ...]}
+
+        Returns:
+            Trained predictor instance.
+
+        Raises:
+            ValidationError: If training data is invalid or insufficient.
+            TrainingError: If training fails.
+        """
+        if not preprocess_config:
+            return self.train_predictor(features_list, prediction_type, config)
+
+        # Apply preprocessing to each sample
+        processed_list = []
+        for sample in features_list:
+            # Separate runtime_ms from features
+            runtime_ms = sample.get("runtime_ms")
+            features = {k: v for k, v in sample.items() if k != "runtime_ms"}
+
+            # Apply preprocessing pipeline
+            processed_features = self.apply_preprocess_pipeline(
+                features, preprocess_config
+            )
+
+            # Recombine with runtime_ms
+            processed_sample = {**processed_features, "runtime_ms": runtime_ms}
+            processed_list.append(processed_sample)
+
+        return self.train_predictor(processed_list, prediction_type, config)
+
+    def predict_with_pipeline(
+        self,
+        predictor: BasePredictor,
+        features: dict[str, Any],
+        preprocess_config: dict[str, list[str]] | None = None,
+    ) -> dict[str, Any]:
+        """Make prediction with preprocessing pipeline.
+
+        Applies the preprocessing pipeline to features before making
+        a prediction with the predictor.
+
+        Args:
+            predictor: Trained predictor instance.
+            features: Raw feature dictionary.
+            preprocess_config: Per-feature preprocessor chains.
+                Format: {"feature_name": ["preprocessor_0", "preprocessor_1", ...]}
+
+        Returns:
+            Prediction result dictionary.
+
+        Raises:
+            ValidationError: If required features are missing after preprocessing.
+            PredictionError: If prediction fails.
+        """
+        if preprocess_config:
+            features = self.apply_preprocess_pipeline(features, preprocess_config)
+
+        return self.predict_with_predictor(predictor, features)
+
+    # -------------------------------------------------------------------------
+    # V2 Preprocessing Pipeline API
+    # -------------------------------------------------------------------------
+
+    def apply_preprocess_pipeline_v2(
+        self,
+        features: dict[str, Any],
+        chain: PreprocessorChainV2 | None,
+    ) -> dict[str, Any]:
+        """Apply V2 preprocessing chain to features.
+
+        Args:
+            features: Raw feature dictionary.
+            chain: V2 preprocessing chain. If None, returns features unchanged.
+
+        Returns:
+            Processed features dictionary.
+
+        Example:
+            >>> chain = (PreprocessorChainV2(name="pipeline")
+            ...     .add(MultiplyPreprocessor("w", "h", "pixels"))
+            ...     .add(RemoveFeaturePreprocessor(["w", "h"])))
+            >>> result = low.apply_preprocess_pipeline_v2(
+            ...     {"w": 10, "h": 20}, chain)
+        """
+        if chain is None:
+            return features.copy()
+
+        return chain.transform(features)
+
+    def train_predictor_with_pipeline_v2(
+        self,
+        features_list: list[dict[str, Any]],
+        prediction_type: str,
+        config: dict[str, Any] | None = None,
+        chain: PreprocessorChainV2 | None = None,
+    ) -> BasePredictor:
+        """Train predictor with V2 preprocessing chain.
+
+        Applies the V2 chain to each training sample before training.
+
+        Args:
+            features_list: Training data with runtime_ms field.
+            prediction_type: Type of predictor to train.
+            config: Optional training configuration.
+            chain: V2 preprocessing chain. If None, trains without preprocessing.
+
+        Returns:
+            Trained predictor instance.
+
+        Raises:
+            ValidationError: If training data is invalid or insufficient.
+            TrainingError: If training fails.
+        """
+        if chain is None:
+            return self.train_predictor(features_list, prediction_type, config)
+
+        # Apply V2 chain to each sample
+        processed_list = []
+        for sample in features_list:
+            # Separate runtime_ms from features
+            runtime_ms = sample.get("runtime_ms")
+            features = {k: v for k, v in sample.items() if k != "runtime_ms"}
+
+            # Apply V2 chain
+            processed_features = chain.transform(features)
+
+            # Recombine with runtime_ms
+            processed_sample = {**processed_features, "runtime_ms": runtime_ms}
+            processed_list.append(processed_sample)
+
+        return self.train_predictor(processed_list, prediction_type, config)
+
+    def predict_with_pipeline_v2(
+        self,
+        predictor: BasePredictor,
+        features: dict[str, Any],
+        chain: PreprocessorChainV2 | None = None,
+    ) -> dict[str, Any]:
+        """Make prediction with V2 preprocessing chain.
+
+        Args:
+            predictor: Trained predictor instance.
+            features: Raw feature dictionary.
+            chain: V2 preprocessing chain. If None, predicts without preprocessing.
+
+        Returns:
+            Prediction result dictionary.
+
+        Raises:
+            ValidationError: If required features are missing after preprocessing.
+            PredictionError: If prediction fails.
+        """
+        if chain is not None:
+            features = chain.transform(features)
+
+        return self.predict_with_predictor(predictor, features)
 
 
 # =============================================================================
@@ -889,15 +1146,131 @@ class PredictorCore:
         return results
 
     # -------------------------------------------------------------------------
-    # Inference Pipeline (TODO)
+    # Inference Pipeline
     # -------------------------------------------------------------------------
 
-    def inference_pipeline(self, *args: Any, **kwargs: Any) -> Any:
-        """Define an inference pipeline.
+    def inference_pipeline(
+        self,
+        model_id: str,
+        platform_info: PlatformInfo,
+        prediction_type: str,
+        features: dict[str, Any],
+        preprocess_config: dict[str, list[str]] | None = None,
+    ) -> PredictionResult:
+        """Define and execute an inference pipeline.
 
-        TODO: Implement inference pipeline functionality.
+        Combines model loading, preprocessing, and prediction into a single
+        operation. Use this for streamlined inference workflows.
+
+        Args:
+            model_id: Model identifier.
+            platform_info: Platform information.
+            prediction_type: Type of prediction.
+            features: Raw feature dictionary.
+            preprocess_config: Per-feature preprocessor chains.
+                Format: {"feature_name": ["preprocessor_0", "preprocessor_1", ...]}
+                Each feature is processed by its chain in order.
+
+        Returns:
+            PredictionResult with prediction values.
+
+        Raises:
+            ModelNotFoundError: If model does not exist.
+            ValidationError: If features are invalid.
+            PredictionError: If prediction fails.
+
+        Example:
+            >>> result = core.inference_pipeline(
+            ...     model_id="my_model",
+            ...     platform_info=platform,
+            ...     prediction_type="quantile",
+            ...     features={"sentence": "Hello world", "batch_size": 32},
+            ...     preprocess_config={
+            ...         "sentence": ["tokenizer", "semantic_encoder"],
+            ...         # batch_size has no preprocessors - passed through as-is
+            ...     },
+            ... )
         """
-        raise NotImplementedError("inference_pipeline is not yet implemented")
+        # Load predictor
+        predictor = self._low_level.load_model(
+            model_id=model_id,
+            platform_info=platform_info,
+            prediction_type=prediction_type,
+        )
+
+        # Make prediction with pipeline preprocessing
+        result = self._low_level.predict_with_pipeline(
+            predictor=predictor,
+            features=features,
+            preprocess_config=preprocess_config,
+        )
+
+        return PredictionResult(
+            model_id=model_id,
+            platform_info=platform_info,
+            prediction_type=prediction_type,
+            result=result,
+        )
+
+    def inference_pipeline_v2(
+        self,
+        model_id: str,
+        platform_info: PlatformInfo,
+        prediction_type: str,
+        features: dict[str, Any],
+        chain: PreprocessorChainV2 | None = None,
+    ) -> PredictionResult:
+        """Execute inference pipeline with V2 preprocessing chain.
+
+        Loads model, applies V2 chain, and makes prediction in a single
+        operation. Use this for streamlined V2 inference workflows.
+
+        Args:
+            model_id: Model identifier.
+            platform_info: Platform information.
+            prediction_type: Type of prediction.
+            features: Raw feature dictionary.
+            chain: V2 preprocessing chain. If None, predicts without preprocessing.
+
+        Returns:
+            PredictionResult with prediction values.
+
+        Raises:
+            ModelNotFoundError: If model does not exist.
+            ValidationError: If features are invalid.
+            PredictionError: If prediction fails.
+
+        Example:
+            >>> chain = (PreprocessorChainV2(name="pipeline")
+            ...     .add(MultiplyPreprocessor("w", "h", "pixels")))
+            >>> result = core.inference_pipeline_v2(
+            ...     model_id="my_model",
+            ...     platform_info=platform,
+            ...     prediction_type="quantile",
+            ...     features={"w": 10, "h": 20, "batch_size": 32},
+            ...     chain=chain,
+            ... )
+        """
+        # Load predictor
+        predictor = self._low_level.load_model(
+            model_id=model_id,
+            platform_info=platform_info,
+            prediction_type=prediction_type,
+        )
+
+        # Make prediction with V2 pipeline preprocessing
+        result = self._low_level.predict_with_pipeline_v2(
+            predictor=predictor,
+            features=features,
+            chain=chain,
+        )
+
+        return PredictionResult(
+            model_id=model_id,
+            platform_info=platform_info,
+            prediction_type=prediction_type,
+            result=result,
+        )
 
     # -------------------------------------------------------------------------
     # Internal Methods

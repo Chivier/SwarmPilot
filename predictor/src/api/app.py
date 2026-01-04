@@ -68,15 +68,21 @@ def _register_routes(application: FastAPI) -> None:
     from src.api.routes import health
     from src.api.routes import models
     from src.api.routes import prediction
+    from src.api.routes import prediction_v2
     from src.api.routes import training
+    from src.api.routes import training_v2
     from src.api.routes import websocket
 
-    # Include routers
+    # Include routers - V1 endpoints
     application.include_router(health.router)
     application.include_router(cache.router, prefix="/cache")
     application.include_router(models.router)
     application.include_router(training.router)
     application.include_router(prediction.router)
+
+    # Include routers - V2 endpoints (with /v2 prefix built-in)
+    application.include_router(training_v2.router)
+    application.include_router(prediction_v2.router)
 
     # Add WebSocket endpoint
     application.add_api_websocket_route("/ws/predict", websocket.websocket_predict)

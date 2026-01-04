@@ -1,20 +1,22 @@
-"""Training endpoint for model training."""
+"""Training endpoint for model training.
+
+Provides endpoints for:
+- /collect: Collect individual training samples
+- /train: Train model using collected + request data
+"""
 
 from __future__ import annotations
 
-import traceback
-
 from fastapi import APIRouter
 from fastapi import HTTPException
-from fastapi import status
 
 from src.api import dependencies
+from src.api.core import ValidationError
+from src.api.routes.helpers import handle_library_exception
+from src.models import CollectRequest
+from src.models import CollectResponse
 from src.models import TrainingRequest
 from src.models import TrainingResponse
-from src.predictor.decision_tree import DecisionTreePredictor
-from src.predictor.expect_error import ExpectErrorPredictor
-from src.predictor.linear_regression import LinearRegressionPredictor
-from src.predictor.quantile import QuantilePredictor
 from src.utils.logging import get_logger
 
 logger = get_logger()
@@ -22,12 +24,64 @@ logger = get_logger()
 router = APIRouter()
 
 
+# =============================================================================
+# /collect - Collect Training Samples
+# =============================================================================
+
+
+@router.post("/collect", response_model=CollectResponse, tags=["Training"])
+async def collect_sample(request: CollectRequest):
+    """Collect a single training sample for later training.
+
+    Samples are accumulated until /train is called. This endpoint
+    allows incremental data collection without immediate training.
+
+    Args:
+        request: CollectRequest with model_id, features, and runtime_ms.
+
+    Returns:
+        CollectResponse with the total number of samples collected.
+
+    Raises:
+        HTTPException: If validation fails.
+    """
+    try:
+        dependencies.predictor_core.collect(
+            model_id=request.model_id,
+            platform_info=request.platform_info,
+            prediction_type=request.prediction_type,
+            features=request.features,
+            runtime_ms=request.runtime_ms,
+        )
+
+        count = dependencies.predictor_core.get_collected_count(
+            request.model_id, request.platform_info, request.prediction_type
+        )
+
+        return CollectResponse(
+            status="success",
+            samples_collected=count,
+            message=f"Sample collected. Total: {count} samples.",
+        )
+
+    except ValidationError as e:
+        raise handle_library_exception(e, f"collect model_id={request.model_id}")
+    except Exception as e:
+        raise handle_library_exception(e, f"collect model_id={request.model_id}")
+
+
+# =============================================================================
+# /train - Train Model
+# =============================================================================
+
+
 @router.post("/train", response_model=TrainingResponse, tags=["Training"])
 async def train_model(request: TrainingRequest):
     """Train or update a model.
 
-    Trains an MLP model on the provided features and runtime data.
-    Supports both expect_error and quantile prediction types.
+    Combines collected samples (from /collect) with features_list from request
+    and trains a model. If preprocess_config is provided, applies per-feature
+    preprocessing chains.
 
     Args:
         request: TrainingRequest with model_id, features, and config.
@@ -38,235 +92,85 @@ async def train_model(request: TrainingRequest):
     Raises:
         HTTPException: If validation fails or training errors occur.
     """
+    from src.api.core import TrainingError, ValidationError
+
     try:
-        # Validate minimum samples
-        if len(request.features_list) < 10:
-            error_detail = {
-                "error": "Insufficient training data",
-                "message": (
-                    f"Need at least 10 samples, got {len(request.features_list)}"
-                ),
-                "samples_provided": len(request.features_list),
-                "minimum_required": 10,
-            }
-            dependencies._log_error(
-                error_context=(
-                    f"Training validation failed for model_id={request.model_id}"
-                ),
-                error_detail=error_detail,
-                include_traceback=False,
-            )
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=error_detail,
-            )
+        # Combine collected samples with request data
+        all_features = list(request.features_list) if request.features_list else []
 
-        # Create appropriate predictor
-        if request.prediction_type == "expect_error":
-            predictor = ExpectErrorPredictor()
-        elif request.prediction_type == "quantile":
-            predictor = QuantilePredictor()
-        elif request.prediction_type == "linear_regression":
-            predictor = LinearRegressionPredictor()
-        elif request.prediction_type == "decision_tree":
-            predictor = DecisionTreePredictor()
-        else:
-            error_detail = {
-                "error": "Invalid prediction type",
-                "message": (
-                    f"prediction_type must be 'expect_error', 'quantile', "
-                    f"'linear_regression', or 'decision_tree', "
-                    f"got '{request.prediction_type}'"
-                ),
-            }
-            dependencies._log_error(
-                error_context=(
-                    f"Training failed - invalid prediction_type "
-                    f"for model_id={request.model_id}"
-                ),
-                error_detail=error_detail,
-                include_traceback=False,
-            )
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=error_detail,
-            )
-
-        try:
-            processed_features_list = []
-            if request.enable_preprocessors:
-                # Process each sample
-                for features in request.features_list:
-                    # Make a copy to avoid modifying the original
-                    processed_features_dict = dict(features)
-
-                    # Apply each preprocessor
-                    for preprocessor_name in request.enable_preprocessors:
-                        preprocessor = (
-                            dependencies.preprocessors_registry.get_preprocessor(
-                                preprocessor_name
-                            )
-                        )
-                        target_feature_keys = request.preprocessor_mappings[
-                            preprocessor_name
-                        ]
-
-                        # Validate all required features exist
-                        assert all(
-                            key in processed_features_dict
-                            for key in target_feature_keys
-                        ), f"Feature keys {target_feature_keys} not all found in features"
-
-                        # Extract target feature values
-                        target_feature_values = [
-                            processed_features_dict[key]
-                            for key in target_feature_keys
-                        ]
-
-                        # Apply preprocessor
-                        processed_features, remove_origin = preprocessor(
-                            target_feature_values
-                        )
-
-                        # Add processed features to the dict
-                        for k, v in processed_features.items():
-                            processed_features_dict[k] = v
-
-                        # Remove original features if requested
-                        if remove_origin:
-                            for key in target_feature_keys:
-                                del processed_features_dict[key]
-
-                    processed_features_list.append(processed_features_dict)
-            else:
-                processed_features_list = request.features_list
-
-        except Exception as e:
-            error_detail = {
-                "error": "Preprocessor error",
-                "message": str(e),
-                "traceback": traceback.format_exc(),
-            }
-            dependencies._log_error(
-                error_context=(
-                    f"Preprocessing failed for model_id={request.model_id}"
-                ),
-                error_detail=error_detail,
-                exception=e,
-            )
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=error_detail,
-            )
-
-        # Train the model
-        try:
-            training_metadata = predictor.train(
-                features_list=processed_features_list,
-                config=request.training_config or {},
-            )
-        except ValueError as e:
-            error_detail = {
-                "error": "Training validation error",
-                "message": str(e),
-                "traceback": traceback.format_exc(),
-            }
-            dependencies._log_error(
-                error_context=(
-                    f"Training validation error for model_id={request.model_id}"
-                ),
-                error_detail=error_detail,
-                exception=e,
-            )
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=error_detail,
-            )
-        except Exception as e:
-            error_detail = {
-                "error": "Training failed",
-                "message": str(e),
-                "traceback": traceback.format_exc(),
-            }
-            dependencies._log_error(
-                error_context=f"Training failed for model_id={request.model_id}",
-                error_detail=error_detail,
-                exception=e,
-            )
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=error_detail,
-            )
-
-        # Generate model key with prediction_type
-        model_key = dependencies.storage.generate_model_key(
-            model_id=request.model_id,
-            platform_info=request.platform_info.model_dump(),
-            prediction_type=request.prediction_type,
+        # Get collected samples from accumulator
+        collected_count = dependencies.predictor_core.get_collected_count(
+            request.model_id, request.platform_info, request.prediction_type
         )
 
-        # Save model
-        try:
-            predictor_state = predictor.get_model_state()
-            metadata = {
-                "model_id": request.model_id,
-                "platform_info": request.platform_info.model_dump(),
-                "prediction_type": request.prediction_type,
-                "samples_count": len(request.features_list),
-                "training_config": request.training_config,
-            }
-            dependencies.storage.save_model(model_key, predictor_state, metadata)
-
-            # Invalidate cache for this model (it has been retrained)
-            dependencies.model_cache.invalidate(model_key)
-            logger.info(f"Invalidated cache for retrained model: {model_key}")
-
-        except Exception as e:
-            error_detail = {
-                "error": "Model save failed",
-                "message": str(e),
-                "traceback": traceback.format_exc(),
-            }
-            dependencies._log_error(
-                error_context=(
-                    f"Model save failed for model_id={request.model_id}, "
-                    f"model_key={model_key}"
-                ),
-                error_detail=error_detail,
-                exception=e,
+        if collected_count > 0:
+            # Get accumulated samples and convert to features_list format
+            key = dependencies.predictor_core._make_accumulator_key(
+                request.model_id, request.platform_info, request.prediction_type
             )
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=error_detail,
+            collected_samples = dependencies.predictor_core._accumulated.get(key, [])
+            for sample in collected_samples:
+                all_features.append({
+                    **sample.features,
+                    "runtime_ms": sample.runtime_ms,
+                })
+
+            # Clear collected after adding to training
+            dependencies.predictor_core.clear_collected(
+                request.model_id, request.platform_info, request.prediction_type
             )
+
+        # Determine preprocessor config to use
+        # Support both new preprocess_config and deprecated fields
+        preprocess_config = request.preprocess_config
+        if preprocess_config is None and request.enable_preprocessors:
+            # Convert deprecated format to new format (backwards compatibility)
+            # Old format: enable_preprocessors=["semantic"], preprocessor_mappings={"semantic": ["sentence"]}
+            # Maps to: preprocess_config={"sentence": ["semantic"]}
+            if request.preprocessor_mappings:
+                preprocess_config = {}
+                for prep_name, feature_keys in request.preprocessor_mappings.items():
+                    for feature_key in feature_keys:
+                        if feature_key not in preprocess_config:
+                            preprocess_config[feature_key] = []
+                        preprocess_config[feature_key].append(prep_name)
+
+        # Train using library API with pipeline preprocessing
+        predictor = dependencies.predictor_api.train_predictor_with_pipeline(
+            features_list=all_features,
+            prediction_type=request.prediction_type,
+            config=request.training_config,
+            preprocess_config=preprocess_config,
+        )
+
+        # Save using library API
+        dependencies.predictor_api.save_model(
+            model_id=request.model_id,
+            platform_info=request.platform_info,
+            prediction_type=request.prediction_type,
+            predictor=predictor,
+            samples_count=len(all_features),
+        )
+
+        model_key = dependencies.predictor_api.generate_model_key(
+            request.model_id, request.platform_info, request.prediction_type
+        )
 
         return TrainingResponse(
             status="success",
             message=(
-                f"Model trained successfully with "
-                f"{len(request.features_list)} samples"
+                f"Model trained with {len(all_features)} samples "
+                f"({collected_count} collected + {len(request.features_list)} from request)"
             ),
             model_key=model_key,
-            samples_trained=len(request.features_list),
+            samples_trained=len(all_features),
         )
 
+    except ValidationError as e:
+        raise handle_library_exception(e, f"train model_id={request.model_id}")
+    except TrainingError as e:
+        raise handle_library_exception(e, f"train model_id={request.model_id}")
     except HTTPException:
         raise
     except Exception as e:
-        error_detail = {
-            "error": "Unexpected error",
-            "message": str(e),
-            "traceback": traceback.format_exc(),
-        }
-        dependencies._log_error(
-            error_context=(
-                f"Unexpected error in /train endpoint "
-                f"for model_id={request.model_id}"
-            ),
-            error_detail=error_detail,
-            exception=e,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=error_detail,
-        )
+        raise handle_library_exception(e, f"train model_id={request.model_id}")

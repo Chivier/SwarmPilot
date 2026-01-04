@@ -1034,3 +1034,667 @@ class TestPredictorIntegration:
         )
 
         assert result is not None
+
+
+# =============================================================================
+# Inference Pipeline API Tests
+# =============================================================================
+
+
+class MockPreprocessor:
+    """Mock preprocessor for testing pipeline API."""
+
+    def __init__(
+        self,
+        output_key: str = "processed",
+        remove_origin: bool = False,
+        output_value_fn: callable = None,
+    ):
+        """Initialize mock preprocessor.
+
+        Args:
+            output_key: Key for output dictionary.
+            remove_origin: Whether to remove original feature.
+            output_value_fn: Function to transform input value. Defaults to identity.
+        """
+        self.output_key = output_key
+        self.remove_origin = remove_origin
+        self.output_value_fn = output_value_fn or (lambda x: x)
+        self.call_count = 0
+
+    def __call__(self, input_text: list[str]) -> tuple[dict[str, Any], bool]:
+        """Process input and return output dict with remove flag.
+
+        Args:
+            input_text: List of input values (usually strings).
+
+        Returns:
+            Tuple of (output_dict, remove_origin_flag).
+        """
+        self.call_count += 1
+        # Apply transformation to first input
+        value = input_text[0] if input_text else None
+        output = {self.output_key: self.output_value_fn(value)}
+        return output, self.remove_origin
+
+
+class TestInferencePipelineAPI:
+    """Tests for inference pipeline API with per-feature preprocessing."""
+
+    # -------------------------------------------------------------------------
+    # apply_preprocess_pipeline Tests
+    # -------------------------------------------------------------------------
+
+    def test_apply_preprocess_pipeline_single_preprocessor(
+        self,
+        temp_storage_dir: Path,
+    ) -> None:
+        """Single preprocessor should be applied to specified feature."""
+        from src.api.core import PredictorLowLevel
+
+        low = PredictorLowLevel(storage_dir=str(temp_storage_dir))
+
+        # Register mock preprocessor
+        mock_prep = MockPreprocessor(output_key="text_encoded", remove_origin=False)
+        low._preprocessors_registry._preprocessors["mock_encoder"] = mock_prep
+
+        features = {"text": "hello world", "batch_size": 32}
+        preprocess_config = {"text": ["mock_encoder"]}
+
+        result = low.apply_preprocess_pipeline(features, preprocess_config)
+
+        assert "text_encoded" in result
+        assert result["text_encoded"] == "hello world"
+        assert result["text"] == "hello world"  # Original preserved
+        assert result["batch_size"] == 32  # Unprocessed feature preserved
+        assert mock_prep.call_count == 1
+
+    def test_apply_preprocess_pipeline_preserves_unprocessed_features(
+        self,
+        temp_storage_dir: Path,
+    ) -> None:
+        """Features not in config should be passed through unchanged."""
+        from src.api.core import PredictorLowLevel
+
+        low = PredictorLowLevel(storage_dir=str(temp_storage_dir))
+
+        mock_prep = MockPreprocessor(output_key="processed_text")
+        low._preprocessors_registry._preprocessors["text_processor"] = mock_prep
+
+        features = {
+            "text": "input",
+            "batch_size": 32,
+            "image_size": 224,
+            "other_param": "value",
+        }
+        preprocess_config = {"text": ["text_processor"]}
+
+        result = low.apply_preprocess_pipeline(features, preprocess_config)
+
+        # All original features should be present
+        assert result["batch_size"] == 32
+        assert result["image_size"] == 224
+        assert result["other_param"] == "value"
+        # Plus processed output
+        assert "processed_text" in result
+
+    def test_apply_preprocess_pipeline_chain_multiple_preprocessors(
+        self,
+        temp_storage_dir: Path,
+    ) -> None:
+        """Multiple preprocessors should be applied in order."""
+        from src.api.core import PredictorLowLevel
+
+        low = PredictorLowLevel(storage_dir=str(temp_storage_dir))
+
+        # Create chain: normalize -> tokenize -> encode
+        # Each takes output of previous
+        prep1 = MockPreprocessor(
+            output_key="normalized",
+            remove_origin=True,
+            output_value_fn=lambda x: x.lower() if x else x,
+        )
+        prep2 = MockPreprocessor(
+            output_key="tokenized",
+            remove_origin=True,
+            output_value_fn=lambda x: x.split() if x else x,
+        )
+        prep3 = MockPreprocessor(
+            output_key="encoded",
+            remove_origin=True,
+            output_value_fn=lambda x: len(x) if isinstance(x, list) else 0,
+        )
+
+        low._preprocessors_registry._preprocessors["normalize"] = prep1
+        low._preprocessors_registry._preprocessors["tokenize"] = prep2
+        low._preprocessors_registry._preprocessors["encode"] = prep3
+
+        features = {"text": "Hello World Test"}
+        preprocess_config = {"text": ["normalize", "tokenize", "encode"]}
+
+        result = low.apply_preprocess_pipeline(features, preprocess_config)
+
+        # Final output should be the encoded result
+        assert "encoded" in result
+        assert result["encoded"] == 3  # "hello world test" -> ["hello", "world", "test"] -> 3
+
+    def test_apply_preprocess_pipeline_remove_origin_flag(
+        self,
+        temp_storage_dir: Path,
+    ) -> None:
+        """remove_origin=True should remove original feature."""
+        from src.api.core import PredictorLowLevel
+
+        low = PredictorLowLevel(storage_dir=str(temp_storage_dir))
+
+        mock_prep = MockPreprocessor(output_key="processed", remove_origin=True)
+        low._preprocessors_registry._preprocessors["remover"] = mock_prep
+
+        features = {"text": "original", "batch_size": 32}
+        preprocess_config = {"text": ["remover"]}
+
+        result = low.apply_preprocess_pipeline(features, preprocess_config)
+
+        assert "text" not in result  # Original removed
+        assert "processed" in result  # Output present
+        assert result["batch_size"] == 32  # Other features preserved
+
+    def test_apply_preprocess_pipeline_skips_missing_features(
+        self,
+        temp_storage_dir: Path,
+    ) -> None:
+        """Features in config but not in input should be skipped."""
+        from src.api.core import PredictorLowLevel
+
+        low = PredictorLowLevel(storage_dir=str(temp_storage_dir))
+
+        mock_prep = MockPreprocessor(output_key="processed")
+        low._preprocessors_registry._preprocessors["processor"] = mock_prep
+
+        features = {"batch_size": 32}  # No "text" feature
+        preprocess_config = {"text": ["processor"]}  # Config expects "text"
+
+        # Should not raise - just skip missing feature
+        result = low.apply_preprocess_pipeline(features, preprocess_config)
+
+        assert result["batch_size"] == 32
+        assert mock_prep.call_count == 0  # Not called
+
+    def test_apply_preprocess_pipeline_empty_config(
+        self,
+        temp_storage_dir: Path,
+    ) -> None:
+        """Empty config should return features unchanged."""
+        from src.api.core import PredictorLowLevel
+
+        low = PredictorLowLevel(storage_dir=str(temp_storage_dir))
+
+        features = {"batch_size": 32, "image_size": 224}
+        preprocess_config = {}
+
+        result = low.apply_preprocess_pipeline(features, preprocess_config)
+
+        assert result == features
+
+    # -------------------------------------------------------------------------
+    # train_predictor_with_pipeline Tests
+    # -------------------------------------------------------------------------
+
+    def test_train_predictor_with_pipeline_applies_preprocessing(
+        self,
+        training_data: list[dict[str, Any]],
+        temp_storage_dir: Path,
+    ) -> None:
+        """Training should apply preprocessing to each sample."""
+        from src.api.core import PredictorLowLevel
+
+        low = PredictorLowLevel(storage_dir=str(temp_storage_dir))
+
+        # Mock preprocessor that doubles batch_size
+        mock_prep = MockPreprocessor(
+            output_key="batch_size_doubled",
+            remove_origin=False,
+            output_value_fn=lambda x: x * 2 if x else x,
+        )
+        low._preprocessors_registry._preprocessors["doubler"] = mock_prep
+
+        preprocess_config = {"batch_size": ["doubler"]}
+
+        predictor = low.train_predictor_with_pipeline(
+            features_list=training_data,
+            prediction_type="expect_error",
+            preprocess_config=preprocess_config,
+        )
+
+        assert predictor is not None
+        # Predictor should have new feature from preprocessing
+        assert "batch_size_doubled" in predictor.feature_names
+
+    def test_train_predictor_with_pipeline_no_config(
+        self,
+        training_data: list[dict[str, Any]],
+        temp_storage_dir: Path,
+    ) -> None:
+        """No preprocess_config should behave like train_predictor."""
+        from src.api.core import PredictorLowLevel
+
+        low = PredictorLowLevel(storage_dir=str(temp_storage_dir))
+
+        predictor = low.train_predictor_with_pipeline(
+            features_list=training_data,
+            prediction_type="expect_error",
+            preprocess_config=None,
+        )
+
+        assert predictor is not None
+        assert set(predictor.feature_names) == {"batch_size", "image_size"}
+
+    # -------------------------------------------------------------------------
+    # predict_with_pipeline Tests
+    # -------------------------------------------------------------------------
+
+    def test_predict_with_pipeline_applies_preprocessing(
+        self,
+        training_data: list[dict[str, Any]],
+        temp_storage_dir: Path,
+    ) -> None:
+        """Prediction should apply preprocessing to features."""
+        from src.api.core import PredictorLowLevel
+
+        low = PredictorLowLevel(storage_dir=str(temp_storage_dir))
+
+        # Train without preprocessing
+        predictor = low.train_predictor(
+            features_list=training_data,
+            prediction_type="expect_error",
+        )
+
+        # Mock preprocessor that passes through
+        mock_prep = MockPreprocessor(output_key="batch_size", remove_origin=True)
+        low._preprocessors_registry._preprocessors["passthrough"] = mock_prep
+
+        features = {"raw_batch": 32, "image_size": 224}
+        preprocess_config = {"raw_batch": ["passthrough"]}
+
+        # Should preprocess "raw_batch" -> "batch_size" before prediction
+        result = low.predict_with_pipeline(
+            predictor=predictor,
+            features=features,
+            preprocess_config=preprocess_config,
+        )
+
+        assert "expected_runtime_ms" in result
+
+    def test_predict_with_pipeline_no_config(
+        self,
+        training_data: list[dict[str, Any]],
+        sample_features: dict[str, Any],
+        temp_storage_dir: Path,
+    ) -> None:
+        """No preprocess_config should behave like predict_with_predictor."""
+        from src.api.core import PredictorLowLevel
+
+        low = PredictorLowLevel(storage_dir=str(temp_storage_dir))
+
+        predictor = low.train_predictor(
+            features_list=training_data,
+            prediction_type="expect_error",
+        )
+
+        result = low.predict_with_pipeline(
+            predictor=predictor,
+            features=sample_features,
+            preprocess_config=None,
+        )
+
+        assert "expected_runtime_ms" in result
+
+    # -------------------------------------------------------------------------
+    # inference_pipeline Tests (PredictorCore high-level API)
+    # -------------------------------------------------------------------------
+
+    def test_inference_pipeline_full_workflow(
+        self,
+        platform_info: PlatformInfo,
+        training_data: list[dict[str, Any]],
+        temp_storage_dir: Path,
+    ) -> None:
+        """inference_pipeline should load model, preprocess, and predict."""
+        from src.api.core import PredictorCore, PredictorLowLevel
+
+        low = PredictorLowLevel(storage_dir=str(temp_storage_dir))
+        core = PredictorCore(low_level=low)
+
+        # Train and save model first
+        predictor = low.train_predictor(
+            features_list=training_data,
+            prediction_type="expect_error",
+        )
+        low.save_model("pipeline_test", platform_info, "expect_error", predictor)
+
+        # Use inference pipeline
+        result = core.inference_pipeline(
+            model_id="pipeline_test",
+            platform_info=platform_info,
+            prediction_type="expect_error",
+            features={"batch_size": 32, "image_size": 224},
+            preprocess_config=None,  # No preprocessing
+        )
+
+        assert result is not None
+        assert result.model_id == "pipeline_test"
+        assert "expected_runtime_ms" in result.result
+
+    def test_inference_pipeline_with_preprocessing(
+        self,
+        platform_info: PlatformInfo,
+        training_data: list[dict[str, Any]],
+        temp_storage_dir: Path,
+    ) -> None:
+        """inference_pipeline should apply preprocessing before prediction."""
+        from src.api.core import PredictorCore, PredictorLowLevel
+
+        low = PredictorLowLevel(storage_dir=str(temp_storage_dir))
+        core = PredictorCore(low_level=low)
+
+        # Register mock preprocessor
+        mock_prep = MockPreprocessor(output_key="batch_size", remove_origin=True)
+        low._preprocessors_registry._preprocessors["rename"] = mock_prep
+
+        # Train and save model
+        predictor = low.train_predictor(
+            features_list=training_data,
+            prediction_type="expect_error",
+        )
+        low.save_model("preprocess_test", platform_info, "expect_error", predictor)
+
+        # Use inference pipeline with preprocessing
+        result = core.inference_pipeline(
+            model_id="preprocess_test",
+            platform_info=platform_info,
+            prediction_type="expect_error",
+            features={"input_batch": 32, "image_size": 224},  # input_batch -> batch_size
+            preprocess_config={"input_batch": ["rename"]},
+        )
+
+        assert result is not None
+        assert mock_prep.call_count == 1
+
+    def test_inference_pipeline_model_not_found(
+        self,
+        platform_info: PlatformInfo,
+        temp_storage_dir: Path,
+    ) -> None:
+        """inference_pipeline should raise ModelNotFoundError for missing model."""
+        from src.api.core import PredictorCore, ModelNotFoundError
+
+        core = PredictorCore(storage_dir=str(temp_storage_dir))
+
+        with pytest.raises(ModelNotFoundError):
+            core.inference_pipeline(
+                model_id="nonexistent",
+                platform_info=platform_info,
+                prediction_type="expect_error",
+                features={"batch_size": 32, "image_size": 224},
+            )
+
+
+# =============================================================================
+# V2 Preprocessing Pipeline Tests
+# =============================================================================
+
+
+class TestPreprocessorV2Integration:
+    """Tests for V2 preprocessing integration with library API."""
+
+    # -------------------------------------------------------------------------
+    # apply_preprocess_pipeline_v2 Tests
+    # -------------------------------------------------------------------------
+
+    def test_apply_preprocess_pipeline_v2_with_chain(
+        self,
+        temp_storage_dir: Path,
+    ) -> None:
+        """Should apply V2 chain to features."""
+        from src.api.core import PredictorLowLevel
+        from src.preprocessor.chain_v2 import PreprocessorChainV2
+        from src.preprocessor.preprocessors_v2 import MultiplyPreprocessor
+
+        low = PredictorLowLevel(storage_dir=str(temp_storage_dir))
+
+        chain = PreprocessorChainV2(name="test_chain").add(
+            MultiplyPreprocessor("width", "height", "pixels")
+        )
+
+        features = {"width": 100, "height": 200, "extra": 999}
+        result = low.apply_preprocess_pipeline_v2(features, chain)
+
+        assert result["width"] == 100
+        assert result["height"] == 200
+        assert result["pixels"] == 20000
+        assert result["extra"] == 999
+
+    def test_apply_preprocess_pipeline_v2_none_chain(
+        self,
+        temp_storage_dir: Path,
+    ) -> None:
+        """None chain should return features unchanged."""
+        from src.api.core import PredictorLowLevel
+
+        low = PredictorLowLevel(storage_dir=str(temp_storage_dir))
+
+        features = {"width": 100, "height": 200}
+        result = low.apply_preprocess_pipeline_v2(features, None)
+
+        assert result == features
+
+    def test_apply_preprocess_pipeline_v2_complex_chain(
+        self,
+        temp_storage_dir: Path,
+    ) -> None:
+        """Should handle complex chain with multiple preprocessors."""
+        from src.api.core import PredictorLowLevel
+        from src.preprocessor.chain_v2 import PreprocessorChainV2
+        from src.preprocessor.preprocessors_v2 import (
+            MultiplyPreprocessor,
+            RemoveFeaturePreprocessor,
+            TokenLengthPreprocessor,
+        )
+
+        low = PredictorLowLevel(storage_dir=str(temp_storage_dir))
+
+        chain = (
+            PreprocessorChainV2(name="complex")
+            .add(MultiplyPreprocessor("w", "h", "pixels"))
+            .add(RemoveFeaturePreprocessor(["w", "h"]))
+            .add(TokenLengthPreprocessor("text", "text_len"))
+        )
+
+        features = {"w": 10, "h": 20, "text": "hello world", "keep": 42}
+        result = low.apply_preprocess_pipeline_v2(features, chain)
+
+        assert "w" not in result
+        assert "h" not in result
+        assert result["pixels"] == 200
+        assert result["text"] == "hello world"  # Not removed
+        assert result["text_len"] == 2
+        assert result["keep"] == 42
+
+    # -------------------------------------------------------------------------
+    # train_predictor_with_pipeline_v2 Tests
+    # -------------------------------------------------------------------------
+
+    def test_train_predictor_with_pipeline_v2(
+        self,
+        training_data: list[dict[str, Any]],
+        temp_storage_dir: Path,
+    ) -> None:
+        """Should train predictor with V2 chain preprocessing."""
+        from src.api.core import PredictorLowLevel
+        from src.preprocessor.chain_v2 import PreprocessorChainV2
+        from src.preprocessor.preprocessors_v2 import MultiplyPreprocessor
+
+        low = PredictorLowLevel(storage_dir=str(temp_storage_dir))
+
+        # Create chain that adds batch_size * image_size as new feature
+        chain = PreprocessorChainV2(name="train_chain").add(
+            MultiplyPreprocessor("batch_size", "image_size", "total_pixels")
+        )
+
+        predictor = low.train_predictor_with_pipeline_v2(
+            features_list=training_data,
+            prediction_type="expect_error",
+            chain=chain,
+        )
+
+        assert predictor is not None
+        # Should have original features plus new one
+        assert "total_pixels" in predictor.feature_names
+        assert "batch_size" in predictor.feature_names
+        assert "image_size" in predictor.feature_names
+
+    def test_train_predictor_with_pipeline_v2_none_chain(
+        self,
+        training_data: list[dict[str, Any]],
+        temp_storage_dir: Path,
+    ) -> None:
+        """None chain should behave like train_predictor."""
+        from src.api.core import PredictorLowLevel
+
+        low = PredictorLowLevel(storage_dir=str(temp_storage_dir))
+
+        predictor = low.train_predictor_with_pipeline_v2(
+            features_list=training_data,
+            prediction_type="expect_error",
+            chain=None,
+        )
+
+        assert predictor is not None
+        assert set(predictor.feature_names) == {"batch_size", "image_size"}
+
+    # -------------------------------------------------------------------------
+    # predict_with_pipeline_v2 Tests
+    # -------------------------------------------------------------------------
+
+    def test_predict_with_pipeline_v2(
+        self,
+        training_data: list[dict[str, Any]],
+        temp_storage_dir: Path,
+    ) -> None:
+        """Should preprocess features with V2 chain before prediction."""
+        from src.api.core import PredictorLowLevel
+        from src.preprocessor.chain_v2 import PreprocessorChainV2
+        from src.preprocessor.preprocessors_v2 import MultiplyPreprocessor
+
+        low = PredictorLowLevel(storage_dir=str(temp_storage_dir))
+
+        # Train with preprocessed features
+        chain = PreprocessorChainV2(name="pred_chain").add(
+            MultiplyPreprocessor("batch_size", "image_size", "total_pixels")
+        )
+
+        predictor = low.train_predictor_with_pipeline_v2(
+            features_list=training_data,
+            prediction_type="expect_error",
+            chain=chain,
+        )
+
+        # Predict with same chain
+        features = {"batch_size": 32, "image_size": 224}
+        result = low.predict_with_pipeline_v2(predictor, features, chain)
+
+        assert "expected_runtime_ms" in result
+
+    def test_predict_with_pipeline_v2_none_chain(
+        self,
+        training_data: list[dict[str, Any]],
+        sample_features: dict[str, Any],
+        temp_storage_dir: Path,
+    ) -> None:
+        """None chain should behave like predict_with_predictor."""
+        from src.api.core import PredictorLowLevel
+
+        low = PredictorLowLevel(storage_dir=str(temp_storage_dir))
+
+        predictor = low.train_predictor(
+            features_list=training_data,
+            prediction_type="expect_error",
+        )
+
+        result = low.predict_with_pipeline_v2(predictor, sample_features, None)
+
+        assert "expected_runtime_ms" in result
+
+    # -------------------------------------------------------------------------
+    # inference_pipeline_v2 Tests
+    # -------------------------------------------------------------------------
+
+    def test_inference_pipeline_v2_full_workflow(
+        self,
+        platform_info: PlatformInfo,
+        training_data: list[dict[str, Any]],
+        temp_storage_dir: Path,
+    ) -> None:
+        """inference_pipeline_v2 should use V2 chain for preprocessing."""
+        from src.api.core import PredictorCore, PredictorLowLevel
+        from src.preprocessor.chain_v2 import PreprocessorChainV2
+        from src.preprocessor.preprocessors_v2 import MultiplyPreprocessor
+
+        low = PredictorLowLevel(storage_dir=str(temp_storage_dir))
+        core = PredictorCore(low_level=low)
+
+        # Create chain
+        chain = PreprocessorChainV2(name="v2_pipeline").add(
+            MultiplyPreprocessor("batch_size", "image_size", "total_pixels")
+        )
+
+        # Train and save model with chain
+        predictor = low.train_predictor_with_pipeline_v2(
+            features_list=training_data,
+            prediction_type="expect_error",
+            chain=chain,
+        )
+        low.save_model("v2_test", platform_info, "expect_error", predictor)
+
+        # Use V2 inference pipeline
+        result = core.inference_pipeline_v2(
+            model_id="v2_test",
+            platform_info=platform_info,
+            prediction_type="expect_error",
+            features={"batch_size": 32, "image_size": 224},
+            chain=chain,
+        )
+
+        assert result is not None
+        assert result.model_id == "v2_test"
+        assert "expected_runtime_ms" in result.result
+
+    def test_inference_pipeline_v2_none_chain(
+        self,
+        platform_info: PlatformInfo,
+        training_data: list[dict[str, Any]],
+        temp_storage_dir: Path,
+    ) -> None:
+        """inference_pipeline_v2 with None chain should work without preprocessing."""
+        from src.api.core import PredictorCore, PredictorLowLevel
+
+        low = PredictorLowLevel(storage_dir=str(temp_storage_dir))
+        core = PredictorCore(low_level=low)
+
+        # Train without preprocessing
+        predictor = low.train_predictor(
+            features_list=training_data,
+            prediction_type="expect_error",
+        )
+        low.save_model("no_chain_test", platform_info, "expect_error", predictor)
+
+        result = core.inference_pipeline_v2(
+            model_id="no_chain_test",
+            platform_info=platform_info,
+            prediction_type="expect_error",
+            features={"batch_size": 32, "image_size": 224},
+            chain=None,
+        )
+
+        assert result is not None
+        assert "expected_runtime_ms" in result.result
