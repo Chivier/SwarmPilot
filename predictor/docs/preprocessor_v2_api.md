@@ -27,9 +27,8 @@ modification, addition, and removal.
 3. **Chain validation**: Before training begins, the chain is validated on the first
    sample. If validation fails, training is rejected with a detailed error.
 
-4. **Chain change detection**: If the chain changes between training runs:
-   - Same chain → incremental training (add new samples)
-   - Different chain → retrain from scratch (discard old model)
+4. **Fail-fast error handling**: Errors are raised immediately with detailed
+   information about which preprocessor failed and why.
 
 ---
 
@@ -132,6 +131,12 @@ exists = context.has("x")         # Returns True
 
 # Access final state
 final = context.features          # {"x": 10, "z": 3}
+
+# Tracking attributes
+context.added_features            # {"z"}
+context.modified_features         # {"x"}
+context.removed_features          # {"y"}
+context.original_features         # {"x": 1, "y": 2} (immutable copy)
 ```
 
 ### BasePreprocessorV2
@@ -165,6 +170,12 @@ class MyPreprocessor(BasePreprocessorV2):
         context.set(self._output, value * 2)
 ```
 
+**OperationType enum:**
+- `MODIFY` - Modifies existing features in place
+- `ADD` - Adds new computed features
+- `REMOVE` - Removes specified features
+- `TRANSFORM` - General transformation (default)
+
 ### Built-in Preprocessors
 
 #### MultiplyPreprocessor
@@ -183,11 +194,16 @@ prep = MultiplyPreprocessor(
 
 # Input:  {"width": 100, "height": 200, "other": 1}
 # Output: {"width": 100, "height": 200, "other": 1, "pixels": 20000}
+
+# With remove_inputs=True
+prep = MultiplyPreprocessor("width", "height", "pixels", remove_inputs=True)
+# Input:  {"width": 100, "height": 200, "other": 1}
+# Output: {"other": 1, "pixels": 20000}
 ```
 
 #### RemoveFeaturePreprocessor
 
-Removes specified features from the context.
+Removes specified features from the context. Does not raise error if feature is missing.
 
 ```python
 from src.preprocessor.preprocessors_v2 import RemoveFeaturePreprocessor
@@ -196,6 +212,10 @@ prep = RemoveFeaturePreprocessor(features_to_remove=["temp1", "temp2"])
 
 # Input:  {"x": 1, "temp1": "a", "temp2": "b"}
 # Output: {"x": 1}
+
+# Missing features are silently ignored
+# Input:  {"x": 1, "temp1": "a"}  # temp2 missing
+# Output: {"x": 1}  # No error
 ```
 
 #### TokenLengthPreprocessor
@@ -220,6 +240,11 @@ prep = TokenLengthPreprocessor(
     input_feature="text",
     tokenizer=lambda s: list(s),  # Character-level
 )
+
+# With remove_input=True
+prep = TokenLengthPreprocessor("prompt", "input_length", remove_input=True)
+# Input:  {"prompt": "Hello world", "x": 1}
+# Output: {"x": 1, "input_length": 2}
 ```
 
 ### PreprocessorChainV2
@@ -257,6 +282,11 @@ result = chain.transform({"w": 10, "h": 20, "prompt": "Hi"})
 
 # Callable interface
 result = chain({"w": 10, "h": 20, "prompt": "Hi"})
+
+# Access chain properties
+chain.name                # "image_pipeline"
+chain.preprocessors       # List of preprocessors in order
+len(chain.preprocessors)  # Number of preprocessors
 ```
 
 ### PreprocessorsRegistryV2
@@ -273,7 +303,7 @@ registry = PreprocessorsRegistryV2()
 # Get preprocessor by name with parameters
 prep = registry.get("multiply", feature_a="w", feature_b="h", output_feature="p")
 
-# Register custom preprocessor
+# Register custom preprocessor instance
 registry.register("custom", my_preprocessor_instance)
 
 # Register factory function
@@ -310,7 +340,7 @@ v1_preprocessor = SemanticPredictor(model_path="...", config_path="...")
 adapter = V1PreprocessorAdapter(
     v1_preprocessor=v1_preprocessor,
     input_feature="prompt",
-    name="semantic",
+    name="semantic",  # Optional custom name
 )
 
 # Use in V2 chain
@@ -320,6 +350,11 @@ chain = (
     .add(RemoveFeaturePreprocessor(["prompt"]))
 )
 ```
+
+**Adapter behavior:**
+- Calls `v1_preprocessor([input_value])` and merges returned dict into context
+- Respects V1 preprocessor's `remove_origin` flag
+- Tracks added/removed features in context
 
 ---
 
@@ -378,6 +413,7 @@ Collect a training sample with optional preprocessing.
     "software_version": "2.0",
     "hardware_name": "NVIDIA A100"
   },
+  "prediction_type": "quantile",
   "features": {
     "width": 100,
     "height": 200,
@@ -401,7 +437,7 @@ Collect a training sample with optional preprocessing.
 
 ### POST /v2/train
 
-Train a model with a preprocessing chain. The chain is validated and stored.
+Train a model with a preprocessing chain. The chain is validated and stored with the model.
 
 **Request:**
 ```json
@@ -433,20 +469,16 @@ Train a model with a preprocessing chain. The chain is validated and stored.
   "status": "success",
   "message": "Model trained with 20 samples (10 collected + 10 from request)",
   "model_key": "my_model__PyTorch-2.0__NVIDIA_A100__quantile",
-  "samples_trained": 20
+  "samples_trained": 20,
+  "chain_stored": true
 }
 ```
 
-**Response (chain validation error):**
+**Response (chain validation error - HTTP 400):**
 ```json
 {
-  "status": "error",
-  "message": "Chain validation failed",
-  "details": {
-    "step_index": 0,
-    "preprocessor_name": "multiply",
-    "error": "Missing required feature 'width' - available: ['height', 'prompt']"
-  }
+  "error": "Chain validation failed",
+  "message": "Preprocessor 'multiply' missing required features: ['width']. Available features: ['height', 'prompt']"
 }
 ```
 
@@ -490,9 +522,38 @@ The chain stored with the model during training is applied automatically.
     "quantile_0.5": 45.2,
     "quantile_0.9": 78.3,
     "quantile_0.99": 102.1
-  }
+  },
+  "chain_applied": true
 }
 ```
+
+---
+
+## Pydantic Models Reference
+
+### Request Models
+
+| Model | Endpoint | Description |
+|-------|----------|-------------|
+| `CollectRequestV2` | `/v2/collect` | Collect sample with optional chain |
+| `TrainingRequestV2` | `/v2/train` | Train with optional chain |
+| `PredictionRequestV2` | `/v2/predict` | Predict (no chain accepted) |
+
+### Response Models
+
+| Model | Endpoint | Key Fields |
+|-------|----------|------------|
+| `CollectResponseV2` | `/v2/collect` | `status`, `samples_collected`, `message` |
+| `TrainingResponseV2` | `/v2/train` | `status`, `message`, `model_key`, `samples_trained`, `chain_stored` |
+| `PredictionResponseV2` | `/v2/predict` | `model_id`, `platform_info`, `prediction_type`, `result`, `chain_applied` |
+
+### Configuration Models
+
+| Model | Description |
+|-------|-------------|
+| `PreprocessorStepConfigV2` | Single step: `name`, `params` |
+| `ChainConfigV2` | Chain config: `steps` (list of steps) |
+| `ChainValidationErrorV2` | Error details: `step_index`, `preprocessor_name`, `error` |
 
 ---
 
@@ -566,7 +627,51 @@ if errors:
 # Use chain...
 ```
 
-### Example 3: Adapting V1 Preprocessors
+### Example 3: HTTP API Workflow
+
+```python
+import requests
+
+BASE_URL = "http://localhost:8000"
+
+# 1. Collect training samples
+for sample in training_data:
+    response = requests.post(f"{BASE_URL}/v2/collect", json={
+        "model_id": "my_model",
+        "platform_info": {"software_name": "PyTorch", "software_version": "2.0", "hardware_name": "GPU"},
+        "prediction_type": "quantile",
+        "features": sample["features"],
+        "runtime_ms": sample["runtime_ms"],
+    })
+    print(f"Collected: {response.json()['samples_collected']} samples")
+
+# 2. Train with preprocessing chain
+chain_config = {
+    "steps": [
+        {"name": "multiply", "params": {"feature_a": "width", "feature_b": "height", "output_feature": "pixels"}},
+        {"name": "remove", "params": {"features_to_remove": ["width", "height"]}},
+    ]
+}
+
+response = requests.post(f"{BASE_URL}/v2/train", json={
+    "model_id": "my_model",
+    "platform_info": {"software_name": "PyTorch", "software_version": "2.0", "hardware_name": "GPU"},
+    "prediction_type": "quantile",
+    "preprocess_chain": chain_config,
+})
+print(f"Trained: {response.json()['samples_trained']} samples, chain_stored: {response.json()['chain_stored']}")
+
+# 3. Predict (chain applied automatically)
+response = requests.post(f"{BASE_URL}/v2/predict", json={
+    "model_id": "my_model",
+    "platform_info": {"software_name": "PyTorch", "software_version": "2.0", "hardware_name": "GPU"},
+    "prediction_type": "quantile",
+    "features": {"width": 100, "height": 200, "channels": 3},
+})
+print(f"Prediction: {response.json()['result']}, chain_applied: {response.json()['chain_applied']}")
+```
+
+### Example 4: Adapting V1 Preprocessors
 
 ```python
 from src.preprocessor.adapters import V1PreprocessorAdapter
@@ -603,9 +708,10 @@ detailed information.
 
 ### Common Errors
 
-1. **Missing input feature**:
+1. **Missing input feature** (raised during chain execution):
    ```
-   ValidationError: Preprocessor 'multiply' requires feature 'width' which is not available
+   ValueError: Preprocessor 'multiply' requires feature 'width' which is not available.
+   Available features: ['height', 'prompt']
    ```
 
 2. **Unknown preprocessor in registry**:
@@ -613,12 +719,19 @@ detailed information.
    ValueError: Unknown preprocessor 'unknown'. Available: ['multiply', 'remove', 'token_length']
    ```
 
-3. **Chain validation failure**:
-   ```
+3. **Chain validation failure** (HTTP 400):
+   ```json
    {
-     "step_index": 0,
-     "preprocessor_name": "multiply",
-     "error": "Missing required feature 'width'"
+     "error": "Chain validation failed",
+     "message": "Preprocessor 'multiply' missing required features: ['width']. Available features: ['height', 'prompt']"
+   }
+   ```
+
+4. **Model not found** (HTTP 404):
+   ```json
+   {
+     "error": "Model not found",
+     "message": "Model not found: my_model__PyTorch-2.0__GPU__quantile"
    }
    ```
 
@@ -631,15 +744,22 @@ detailed information.
 **V1:**
 ```python
 preprocess_config = {
-    "prompt": ["tokenizer", "semantic"],
+    "prompt": ["semantic"],
 }
 ```
 
 **V2:**
 ```python
 config = [
-    {"name": "token_length", "params": {"input_feature": "prompt"}},
-    {"name": "semantic", "params": {"input_feature": "prompt"}},  # if using adapter
+    {"name": "semantic", "params": {"input_feature": "prompt"}},  # Using V1 adapter
+]
+```
+
+Or using built-in preprocessors:
+```python
+config = [
+    {"name": "token_length", "params": {"input_feature": "prompt", "output_feature": "input_length"}},
+    {"name": "remove", "params": {"features_to_remove": ["prompt"]}},
 ]
 ```
 
@@ -652,6 +772,10 @@ Replace `/train` with `/v2/train` and `/predict` with `/v2/predict`.
 The V2 predict endpoint uses the stored chain automatically. Remove any
 `preprocess_config` or `preprocess_chain` from prediction requests.
 
+### Step 4: Test thoroughly
+
+Run both V1 and V2 workflows to ensure backward compatibility.
+
 ---
 
 ## Best Practices
@@ -660,7 +784,7 @@ The V2 predict endpoint uses the stored chain automatically. Remove any
    errors early.
 
 2. **Use the registry for configuration-driven chains**: The registry makes it easy
-   to build chains from external configuration.
+   to build chains from external configuration (JSON, YAML, database).
 
 3. **Store chain config in version control**: Since chains affect model behavior,
    track chain configurations alongside model versions.
@@ -669,3 +793,34 @@ The V2 predict endpoint uses the stored chain automatically. Remove any
    logic before integrating with training.
 
 5. **Use meaningful chain names**: Names help with debugging and logging.
+
+6. **Check `chain_applied` in responses**: The prediction response includes
+   `chain_applied: true/false` to confirm preprocessing was applied.
+
+7. **Handle missing features gracefully**: Use `RemoveFeaturePreprocessor` which
+   silently ignores missing features, or validate inputs before calling chains.
+
+---
+
+## File Structure
+
+```
+src/preprocessor/
+├── base_preprocessor.py          # V1 base (unchanged)
+├── base_preprocessor_v2.py       # V2: FeatureContext, BasePreprocessorV2, OperationType
+├── preprocessors_v2.py           # V2: Multiply, Remove, TokenLength
+├── chain_v2.py                   # V2: PreprocessorChainV2
+├── registry_v2.py                # V2: PreprocessorsRegistryV2
+├── adapters.py                   # V1PreprocessorAdapter
+├── semantic_predictor.py         # V1 semantic (unchanged)
+└── preprocessors_registry.py     # V1 registry (unchanged)
+
+src/api/routes/
+├── training.py                   # V1: /train, /collect
+├── training_v2.py                # V2: /v2/train, /v2/collect
+├── prediction.py                 # V1: /predict
+├── prediction_v2.py              # V2: /v2/predict
+└── helpers.py                    # Shared exception handling
+
+src/models.py                     # V2 Pydantic models (added)
+```
