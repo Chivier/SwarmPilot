@@ -75,8 +75,12 @@ async def predict_v2(request: PredictionRequestV2):
             request.model_id, request.platform_info, request.prediction_type
         )
 
-        # Load model data to get metadata
-        model_data = dependencies.predictor_api._storage.load_model(model_key)
+        # Load model data to get metadata (use versioned loading)
+        model_data, version = dependencies.predictor_api._storage.load_model_versioned(
+            model_id=request.model_id,
+            platform_info=request.platform_info.model_dump(),
+            prediction_type=request.prediction_type,
+        )
         if model_data is None:
             raise ModelNotFoundError(f"Model not found: {model_key}")
 

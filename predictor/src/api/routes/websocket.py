@@ -1,4 +1,7 @@
-"""WebSocket prediction endpoint."""
+"""WebSocket prediction endpoint.
+
+Provides real-time prediction via WebSocket connections.
+"""
 
 from __future__ import annotations
 
@@ -9,12 +12,9 @@ from fastapi import WebSocket
 from fastapi import WebSocketDisconnect
 
 from src.api import dependencies
+from src.api.core import ModelNotFoundError, PredictionError, ValidationError
 from src.models import PredictionRequest
 from src.models import PredictionResponse
-from src.predictor.decision_tree import DecisionTreePredictor
-from src.predictor.expect_error import ExpectErrorPredictor
-from src.predictor.linear_regression import LinearRegressionPredictor
-from src.predictor.quantile import QuantilePredictor
 from src.utils.experiment import generate_experiment_prediction
 from src.utils.experiment import is_experiment_mode
 from src.utils.logging import get_logger
@@ -88,217 +88,82 @@ async def websocket_predict(websocket: WebSocket):
                 if is_experiment_mode(
                     request.features, request.platform_info.model_dump()
                 ):
-                    # Generate synthetic prediction
-                    logger.debug("request is experiment request")
-                    try:
-                        # Pass custom quantiles to experiment mode if provided
-                        config = {}
-                        if request.quantiles is not None:
-                            config["quantiles"] = request.quantiles
+                    response = _handle_experiment_mode(request)
+                    await websocket.send_json(response.model_dump())
+                    continue
 
-                        result = generate_experiment_prediction(
-                            prediction_type=request.prediction_type,
-                            features=request.features,
-                            config=config,
-                        )
+                # Normal mode: use library API for prediction
+                # Append hardware info to features
+                features = request.features.copy()
+                hardware_features = request.platform_info.extract_gpu_specs()
+                if hardware_features:
+                    features.update(hardware_features)
 
-                        response = PredictionResponse(
-                            model_id=request.model_id,
-                            platform_info=request.platform_info,
-                            prediction_type=request.prediction_type,
-                            result=result,
-                        )
+                # Determine preprocessor config to use
+                preprocess_config = request.preprocess_config
+                if preprocess_config is None and request.enable_preprocessors:
+                    if request.preprocessor_mappings:
+                        preprocess_config = {}
+                        for prep_name, feature_keys in request.preprocessor_mappings.items():
+                            for feature_key in feature_keys:
+                                if feature_key not in preprocess_config:
+                                    preprocess_config[feature_key] = []
+                                preprocess_config[feature_key].append(prep_name)
 
-                        await websocket.send_json(response.model_dump())
-                        continue
-
-                    except ValueError as e:
-                        error_detail = {
-                            "error": "Experiment mode error",
-                            "message": str(e),
-                            "traceback": traceback.format_exc(),
-                        }
-                        dependencies._log_error(
-                            error_context=(
-                                f"WebSocket - experiment mode error "
-                                f"for model_id={request.model_id}"
-                            ),
-                            error_detail=error_detail,
-                            exception=e,
-                        )
-                        await websocket.send_json(error_detail)
-                        continue
-
-                # Normal mode: load model and predict
-                model_key = dependencies.storage.generate_model_key(
+                # Use inference_pipeline for combined load + preprocess + predict
+                result = dependencies.predictor_core.inference_pipeline(
                     model_id=request.model_id,
-                    platform_info=request.platform_info.model_dump(),
+                    platform_info=request.platform_info,
                     prediction_type=request.prediction_type,
+                    features=features,
+                    preprocess_config=preprocess_config,
                 )
 
-                # Try to get predictor from cache
-                cached_result = dependencies.model_cache.get(model_key)
+                response = PredictionResponse(
+                    model_id=result.model_id,
+                    platform_info=result.platform_info,
+                    prediction_type=result.prediction_type,
+                    result=result.result,
+                )
 
-                if cached_result is not None:
-                    # Cache hit - use cached predictor
-                    predictor, stored_prediction_type = cached_result
+                await websocket.send_json(response.model_dump())
 
-                    # Validate prediction type matches
-                    if stored_prediction_type != request.prediction_type:
-                        error_detail = {
-                            "error": "Prediction type mismatch",
-                            "message": (
-                                f"Model was trained with prediction_type="
-                                f"'{stored_prediction_type}', but request has "
-                                f"'{request.prediction_type}'"
-                            ),
-                            "model_prediction_type": stored_prediction_type,
-                            "request_prediction_type": request.prediction_type,
-                        }
-                        dependencies._log_error(
-                            error_context=(
-                                f"WebSocket - prediction type mismatch (cached) "
-                                f"for model_id={request.model_id}"
-                            ),
-                            error_detail=error_detail,
-                            include_traceback=False,
-                        )
-                        await websocket.send_json(error_detail)
-                        continue
-                else:
-                    # Cache miss - load model from storage
-                    model_data = dependencies.storage.load_model(model_key)
-                    if model_data is None:
-                        error_detail = {
-                            "error": "Model not found",
-                            "message": (
-                                f"No trained model found for "
-                                f"model_id='{request.model_id}' "
-                                f"with given platform_info"
-                            ),
-                            "model_id": request.model_id,
-                            "platform_info": request.platform_info.model_dump(),
-                            "model_key": model_key,
-                        }
-                        dependencies._log_error(
-                            error_context=(
-                                f"WebSocket - model not found "
-                                f"for model_id={request.model_id}"
-                            ),
-                            error_detail=error_detail,
-                            include_traceback=False,
-                        )
-                        await websocket.send_json(error_detail)
-                        continue
-
-                    # Validate prediction type matches
-                    stored_prediction_type = model_data["metadata"].get(
-                        "prediction_type"
-                    )
-                    if stored_prediction_type != request.prediction_type:
-                        error_detail = {
-                            "error": "Prediction type mismatch",
-                            "message": (
-                                f"Model was trained with prediction_type="
-                                f"'{stored_prediction_type}', but request has "
-                                f"'{request.prediction_type}'"
-                            ),
-                            "model_prediction_type": stored_prediction_type,
-                            "request_prediction_type": request.prediction_type,
-                        }
-                        dependencies._log_error(
-                            error_context=(
-                                f"WebSocket - prediction type mismatch (storage) "
-                                f"for model_id={request.model_id}"
-                            ),
-                            error_detail=error_detail,
-                            include_traceback=False,
-                        )
-                        await websocket.send_json(error_detail)
-                        continue
-
-                    # Create predictor and load state
-                    if request.prediction_type == "expect_error":
-                        predictor = ExpectErrorPredictor()
-                    elif request.prediction_type == "quantile":
-                        predictor = QuantilePredictor()
-                    elif request.prediction_type == "linear_regression":
-                        predictor = LinearRegressionPredictor()
-                    elif request.prediction_type == "decision_tree":
-                        predictor = DecisionTreePredictor()
-                    else:
-                        error_detail = {
-                            "error": "Invalid prediction type",
-                            "message": (
-                                f"prediction_type must be 'expect_error', "
-                                f"'quantile', 'linear_regression', or "
-                                f"'decision_tree', got '{request.prediction_type}'"
-                            ),
-                        }
-                        dependencies._log_error(
-                            error_context=(
-                                f"WebSocket - invalid prediction_type "
-                                f"for model_id={request.model_id}"
-                            ),
-                            error_detail=error_detail,
-                            include_traceback=False,
-                        )
-                        await websocket.send_json(error_detail)
-                        continue
-
-                    predictor.load_model_state(model_data["predictor_state"])
-
-                    # Cache the loaded predictor
-                    dependencies.model_cache.put(
-                        model_key, predictor, stored_prediction_type
-                    )
-                    logger.info(f"Loaded and cached model (WebSocket): {model_key}")
-
-                # Make prediction
-                try:
-                    result = predictor.predict(request.features)
-
-                    response = PredictionResponse(
-                        model_id=request.model_id,
-                        platform_info=request.platform_info,
-                        prediction_type=request.prediction_type,
-                        result=result,
-                    )
-
-                    await websocket.send_json(response.model_dump())
-
-                except ValueError as e:
-                    # Feature validation errors
-                    error_detail = {
-                        "error": "Invalid features",
-                        "message": str(e),
-                        "traceback": traceback.format_exc(),
-                    }
-                    dependencies._log_error(
-                        error_context=(
-                            f"WebSocket - feature validation error "
-                            f"for model_id={request.model_id}"
-                        ),
-                        error_detail=error_detail,
-                        exception=e,
-                    )
-                    await websocket.send_json(error_detail)
-                except Exception as e:
-                    error_detail = {
-                        "error": "Prediction failed",
-                        "message": str(e),
-                        "traceback": traceback.format_exc(),
-                    }
-                    dependencies._log_error(
-                        error_context=(
-                            f"WebSocket - prediction failed "
-                            f"for model_id={request.model_id}"
-                        ),
-                        error_detail=error_detail,
-                        exception=e,
-                    )
-                    await websocket.send_json(error_detail)
-
+            except ModelNotFoundError as e:
+                error_detail = {
+                    "error": "Model not found",
+                    "message": str(e),
+                    "model_id": request.model_id,
+                    "platform_info": request.platform_info.model_dump(),
+                }
+                dependencies._log_error(
+                    error_context=f"WebSocket - model not found for model_id={request.model_id}",
+                    error_detail=error_detail,
+                    include_traceback=False,
+                )
+                await websocket.send_json(error_detail)
+            except ValidationError as e:
+                error_detail = {
+                    "error": "Validation error",
+                    "message": str(e),
+                }
+                dependencies._log_error(
+                    error_context=f"WebSocket - validation error for model_id={request.model_id}",
+                    error_detail=error_detail,
+                    include_traceback=False,
+                )
+                await websocket.send_json(error_detail)
+            except PredictionError as e:
+                error_detail = {
+                    "error": "Prediction failed",
+                    "message": str(e),
+                    "traceback": traceback.format_exc(),
+                }
+                dependencies._log_error(
+                    error_context=f"WebSocket - prediction failed for model_id={request.model_id}",
+                    error_detail=error_detail,
+                    exception=e,
+                )
+                await websocket.send_json(error_detail)
             except Exception as e:
                 error_detail = {
                     "error": "Unexpected error",
@@ -334,3 +199,36 @@ async def websocket_predict(websocket: WebSocket):
             pass
         finally:
             await websocket.close()
+
+
+def _handle_experiment_mode(request: PredictionRequest) -> PredictionResponse:
+    """Handle experiment mode prediction (synthetic data).
+
+    Args:
+        request: PredictionRequest with experiment mode features.
+
+    Returns:
+        PredictionResponse with synthetic prediction.
+
+    Raises:
+        ValueError: If experiment mode prediction fails.
+    """
+    logger.debug("request is experiment request")
+
+    # Pass custom quantiles to experiment mode if provided
+    config = {}
+    if request.quantiles is not None:
+        config["quantiles"] = request.quantiles
+
+    result = generate_experiment_prediction(
+        prediction_type=request.prediction_type,
+        features=request.features,
+        config=config,
+    )
+
+    return PredictionResponse(
+        model_id=request.model_id,
+        platform_info=request.platform_info,
+        prediction_type=request.prediction_type,
+        result=result,
+    )

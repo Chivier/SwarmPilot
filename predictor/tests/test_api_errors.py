@@ -48,17 +48,21 @@ class TestCacheEndpointErrors:
 
     def test_cache_stats_exception(self, client):
         """Should handle exception in cache stats."""
-        with patch('src.api.dependencies.model_cache') as mock_cache:
-            mock_cache.get_stats.side_effect = Exception("Cache error")
-
+        with patch.object(
+            __import__('src.api.dependencies', fromlist=['predictor_api']).predictor_api,
+            'get_cache_stats',
+            side_effect=Exception("Cache error")
+        ):
             response = client.get("/cache/stats")
             assert response.status_code == 500
 
     def test_cache_clear_exception(self, client):
         """Should handle exception in cache clear."""
-        with patch('src.api.dependencies.model_cache') as mock_cache:
-            mock_cache.clear.side_effect = Exception("Cache clear error")
-
+        with patch.object(
+            __import__('src.api.dependencies', fromlist=['predictor_api']).predictor_api,
+            'clear_cache',
+            side_effect=Exception("Cache clear error")
+        ):
             response = client.post("/cache/clear")
             assert response.status_code == 500
 
@@ -68,9 +72,11 @@ class TestListModelsErrors:
 
     def test_list_models_storage_error(self, client):
         """Should handle storage error in list models."""
-        with patch('src.api.dependencies.storage') as mock_storage:
-            mock_storage.list_models.side_effect = Exception("Storage list error")
-
+        with patch.object(
+            __import__('src.api.dependencies', fromlist=['predictor_api']).predictor_api,
+            'list_models',
+            side_effect=Exception("Storage list error")
+        ):
             response = client.get("/list")
             assert response.status_code == 500
 
@@ -80,11 +86,12 @@ class TestTrainEndpointErrors:
 
     def test_train_storage_save_error(self, client):
         """Should handle storage save error."""
-        with patch('src.api.dependencies.storage') as mock_storage:
-            mock_storage.save_model.side_effect = Exception("Save error")
-            # Let other methods work normally
-            mock_storage.generate_model_key.return_value = "test-key"
-
+        # Mock the save_model method on predictor_api which calls storage internally
+        with patch.object(
+            __import__('src.api.dependencies', fromlist=['predictor_api']).predictor_api,
+            'save_model',
+            side_effect=Exception("Save error")
+        ):
             request = {
                 'model_id': 'error-model',
                 'platform_info': {
@@ -134,27 +141,28 @@ class TestPredictEndpointErrors:
         }
         client.post("/train", json=train_request)
 
-        # Then patch storage to fail on load
-        with patch('src.api.dependencies.model_cache') as mock_cache:
-            mock_cache.get.return_value = None
+        # Clear cache to force storage load, then mock load_model to fail
+        client.post("/cache/clear")
 
-            with patch('src.api.dependencies.storage') as mock_storage:
-                mock_storage.load_model.side_effect = Exception("Load error")
-                mock_storage.generate_model_key.return_value = "test-key"
+        # Mock the load_model method on predictor_api which calls storage internally
+        with patch.object(
+            __import__('src.api.dependencies', fromlist=['predictor_api']).predictor_api,
+            'load_model',
+            side_effect=Exception("Load error")
+        ):
+            predict_request = {
+                'model_id': 'pred-error-model',
+                'platform_info': {
+                    'software_name': 'pytorch',
+                    'software_version': '2.0',
+                    'hardware_name': 'cpu'
+                },
+                'prediction_type': 'expect_error',
+                'features': {'batch_size': 25, 'sequence_length': 128}
+            }
 
-                predict_request = {
-                    'model_id': 'pred-error-model',
-                    'platform_info': {
-                        'software_name': 'pytorch',
-                        'software_version': '2.0',
-                        'hardware_name': 'cpu'
-                    },
-                    'prediction_type': 'expect_error',
-                    'features': {'batch_size': 25, 'sequence_length': 128}
-                }
-
-                response = client.post("/predict", json=predict_request)
-                assert response.status_code == 500
+            response = client.post("/predict", json=predict_request)
+            assert response.status_code == 500
 
     def test_predict_missing_required_feature(self, client):
         """Should handle missing required features for trained model."""

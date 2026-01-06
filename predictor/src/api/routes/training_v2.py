@@ -277,18 +277,23 @@ async def train_model_v2(request: TrainingRequestV2):
             "chain_hash": chain_hash,
         }
 
-        # Save model with metadata
+        # Save model with versioning
         model_key = dependencies.predictor_api.generate_model_key(
             request.model_id, request.platform_info, request.prediction_type
         )
 
-        dependencies.predictor_api._storage.save_model(
-            model_key, predictor_state, metadata
+        # Use versioned save to get version timestamp
+        version = dependencies.predictor_api._storage.save_model_versioned(
+            model_id=request.model_id,
+            platform_info=request.platform_info.model_dump(),
+            prediction_type=request.prediction_type,
+            predictor_state=predictor_state,
+            metadata=metadata,
         )
         dependencies.predictor_api._cache.invalidate(model_key)
 
         logger.info(
-            f"V2 trained model: {model_key}, samples={len(all_features)}, "
+            f"V2 trained model: {model_key} version {version}, samples={len(all_features)}, "
             f"chain_stored={chain is not None}"
         )
 
@@ -296,7 +301,8 @@ async def train_model_v2(request: TrainingRequestV2):
             status="success",
             message=(
                 f"Model trained with {len(all_features)} samples "
-                f"({collected_count} collected + {len(request.features_list or [])} from request)"
+                f"({collected_count} collected + {len(request.features_list or [])} from request), "
+                f"version {version}"
             ),
             model_key=model_key,
             samples_trained=len(all_features),

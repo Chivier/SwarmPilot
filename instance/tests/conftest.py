@@ -322,13 +322,13 @@ def mock_httpx_client():
 def api_client(mock_docker_manager, mock_task_queue, mock_model_registry, mock_scheduler_client, monkeypatch):
     """Fixture providing a FastAPI TestClient with mocked dependencies."""
     # Mock the global instances
-    monkeypatch.setattr("src.api.get_docker_manager", lambda: mock_docker_manager)
-    monkeypatch.setattr("src.api.get_task_queue", lambda: mock_task_queue)
-    monkeypatch.setattr("src.api.get_registry", lambda: mock_model_registry)
-    monkeypatch.setattr("src.api.get_scheduler_client", lambda: mock_scheduler_client)
+    monkeypatch.setattr("src.server.get_docker_manager", lambda: mock_docker_manager)
+    monkeypatch.setattr("src.server.get_task_queue", lambda: mock_task_queue)
+    monkeypatch.setattr("src.server.get_registry", lambda: mock_model_registry)
+    monkeypatch.setattr("src.server.get_scheduler_client", lambda: mock_scheduler_client)
 
     # Import API after mocking
-    from src.api import app
+    from src.server import app
 
     return TestClient(app)
 
@@ -421,7 +421,7 @@ def reset_singletons():
     import src.model_registry
     import src.task_queue
     import src.subprocess_manager
-    import src.api
+    import src.server
 
     # Reset module-level singleton variables
     src.model_registry._registry_instance = None
@@ -429,12 +429,12 @@ def reset_singletons():
     src.subprocess_manager._subprocess_manager = None
 
     # Reset API-level restart operations
-    if hasattr(src.api, '_restart_operations'):
-        src.api._restart_operations.clear()
+    if hasattr(src.server, '_restart_operations'):
+        src.server._restart_operations.clear()
 
     # Reset API-level deregister operations
-    if hasattr(src.api, '_deregister_operations'):
-        src.api._deregister_operations.clear()
+    if hasattr(src.server, '_deregister_operations'):
+        src.server._deregister_operations.clear()
 
     yield
 
@@ -444,9 +444,9 @@ def reset_singletons():
     src.subprocess_manager._subprocess_manager = None
 
     # Clear restart operations
-    if hasattr(src.api, '_restart_operations'):
-        src.api._restart_operations.clear()
+    if hasattr(src.server, '_restart_operations'):
+        src.server._restart_operations.clear()
 
     # Clear deregister operations
-    if hasattr(src.api, '_deregister_operations'):
-        src.api._deregister_operations.clear()
+    if hasattr(src.server, '_deregister_operations'):
+        src.server._deregister_operations.clear()

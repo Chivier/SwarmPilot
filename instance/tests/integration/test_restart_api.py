@@ -123,7 +123,7 @@ class TestRestartAPIEndpoints:
             # Do nothing - operation will stay in DRAINING state
             pass
 
-        monkeypatch.setattr("src.api._perform_restart_operation", mock_perform_restart)
+        monkeypatch.setattr("src.server._perform_restart_operation", mock_perform_restart)
 
         # First request - should succeed
         response1 = api_client.post(
@@ -245,13 +245,13 @@ class TestRestartBackgroundOperation:
         }
 
         # Patch global functions
-        monkeypatch.setattr("src.api.get_docker_manager", lambda: mock_docker_manager)
-        monkeypatch.setattr("src.api.get_task_queue", lambda: mock_task_queue)
-        monkeypatch.setattr("src.api.get_registry", lambda: mock_model_registry)
-        monkeypatch.setattr("src.api.get_scheduler_client", lambda: mock_scheduler_client)
+        monkeypatch.setattr("src.server.get_docker_manager", lambda: mock_docker_manager)
+        monkeypatch.setattr("src.server.get_task_queue", lambda: mock_task_queue)
+        monkeypatch.setattr("src.server.get_registry", lambda: mock_model_registry)
+        monkeypatch.setattr("src.server.get_scheduler_client", lambda: mock_scheduler_client)
 
         # Import after patching
-        from src.api import _perform_restart_operation, _restart_operations, RestartOperation
+        from src.server import _perform_restart_operation, _restart_operations, RestartOperation
         from src.models import RestartStatus
 
         # Create operation
@@ -333,13 +333,13 @@ class TestRestartBackgroundOperation:
         mock_task_queue.current_task_id = None  # No running tasks
 
         # Patch global functions
-        monkeypatch.setattr("src.api.get_docker_manager", lambda: mock_docker_manager)
-        monkeypatch.setattr("src.api.get_task_queue", lambda: mock_task_queue)
-        monkeypatch.setattr("src.api.get_registry", lambda: mock_model_registry)
-        monkeypatch.setattr("src.api.get_scheduler_client", lambda: mock_scheduler_client)
+        monkeypatch.setattr("src.server.get_docker_manager", lambda: mock_docker_manager)
+        monkeypatch.setattr("src.server.get_task_queue", lambda: mock_task_queue)
+        monkeypatch.setattr("src.server.get_registry", lambda: mock_model_registry)
+        monkeypatch.setattr("src.server.get_scheduler_client", lambda: mock_scheduler_client)
 
         # Import after patching
-        from src.api import _perform_restart_operation, _restart_operations, RestartOperation
+        from src.server import _perform_restart_operation, _restart_operations, RestartOperation
         from src.models import RestartStatus
 
         # Create operation
@@ -401,13 +401,13 @@ class TestRestartBackgroundOperation:
         }
 
         # Patch global functions
-        monkeypatch.setattr("src.api.get_docker_manager", lambda: mock_docker_manager)
-        monkeypatch.setattr("src.api.get_task_queue", lambda: mock_task_queue)
-        monkeypatch.setattr("src.api.get_registry", lambda: mock_model_registry)
-        monkeypatch.setattr("src.api.get_scheduler_client", lambda: mock_scheduler_client)
+        monkeypatch.setattr("src.server.get_docker_manager", lambda: mock_docker_manager)
+        monkeypatch.setattr("src.server.get_task_queue", lambda: mock_task_queue)
+        monkeypatch.setattr("src.server.get_registry", lambda: mock_model_registry)
+        monkeypatch.setattr("src.server.get_scheduler_client", lambda: mock_scheduler_client)
 
         # Import after patching
-        from src.api import _perform_restart_operation, _restart_operations, RestartOperation
+        from src.server import _perform_restart_operation, _restart_operations, RestartOperation
         from src.models import RestartStatus
 
         # Create operation
@@ -459,13 +459,13 @@ class TestRestartBackgroundOperation:
         mock_task_queue.current_task_id = "running-task-id"
 
         # Patch global functions
-        monkeypatch.setattr("src.api.get_docker_manager", lambda: mock_docker_manager)
-        monkeypatch.setattr("src.api.get_task_queue", lambda: mock_task_queue)
-        monkeypatch.setattr("src.api.get_registry", lambda: mock_model_registry)
-        monkeypatch.setattr("src.api.get_scheduler_client", lambda: mock_scheduler_client)
+        monkeypatch.setattr("src.server.get_docker_manager", lambda: mock_docker_manager)
+        monkeypatch.setattr("src.server.get_task_queue", lambda: mock_task_queue)
+        monkeypatch.setattr("src.server.get_registry", lambda: mock_model_registry)
+        monkeypatch.setattr("src.server.get_scheduler_client", lambda: mock_scheduler_client)
 
         # Import after patching
-        from src.api import _perform_restart_operation, _restart_operations, RestartOperation
+        from src.server import _perform_restart_operation, _restart_operations, RestartOperation
         from src.models import RestartStatus
 
         # Create operation
@@ -480,7 +480,7 @@ class TestRestartBackgroundOperation:
         _restart_operations[operation_id] = operation
 
         # Execute restart operation with short timeout by patching max_wait_time
-        with patch('src.api.time.time') as mock_time:
+        with patch('src.server.time.time') as mock_time:
             # Simulate immediate timeout
             mock_time.side_effect = [0, 0, 301]  # Start, poll check, timeout check
             await _perform_restart_operation(operation_id)
@@ -524,13 +524,13 @@ class TestRestartBackgroundOperation:
         }
 
         # Patch global functions
-        monkeypatch.setattr("src.api.get_docker_manager", lambda: mock_docker_manager)
-        monkeypatch.setattr("src.api.get_task_queue", lambda: mock_task_queue)
-        monkeypatch.setattr("src.api.get_registry", lambda: mock_model_registry)
-        monkeypatch.setattr("src.api.get_scheduler_client", lambda: mock_scheduler_client)
+        monkeypatch.setattr("src.server.get_docker_manager", lambda: mock_docker_manager)
+        monkeypatch.setattr("src.server.get_task_queue", lambda: mock_task_queue)
+        monkeypatch.setattr("src.server.get_registry", lambda: mock_model_registry)
+        monkeypatch.setattr("src.server.get_scheduler_client", lambda: mock_scheduler_client)
 
         # Import after patching
-        from src.api import _perform_restart_operation, _restart_operations, RestartOperation
+        from src.server import _perform_restart_operation, _restart_operations, RestartOperation
         from src.models import RestartStatus
 
         # Create operation

@@ -100,6 +100,32 @@ class ModelCache:
                 del self._cache[model_key]
                 logger.debug(f"Invalidated model_key={model_key} from cache")
 
+    def invalidate_prefix(self, prefix: str) -> int:
+        """Remove all models from cache whose keys start with prefix.
+
+        This is useful for invalidating all versions of a model when the
+        cache keys include version suffixes like '__v{timestamp}'.
+
+        Args:
+            prefix: The model key prefix to match.
+
+        Returns:
+            Number of entries removed from cache.
+        """
+        with self._lock:
+            # Find all keys matching prefix
+            keys_to_remove = [
+                key for key in self._cache.keys()
+                if key.startswith(prefix)
+            ]
+            for key in keys_to_remove:
+                del self._cache[key]
+            if keys_to_remove:
+                logger.debug(
+                    f"Invalidated {len(keys_to_remove)} entries with prefix={prefix}"
+                )
+            return len(keys_to_remove)
+
     def clear(self) -> None:
         """Clear all cached models."""
         with self._lock:

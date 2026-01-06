@@ -1,4 +1,4 @@
-from src.api import construct_websocket_url
+from src.server import construct_websocket_url
 
 def test_construct_websocket_url():
   endpoint = "http://1.1.1.1:8000"

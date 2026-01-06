@@ -218,6 +218,8 @@ class TrainingResponse(BaseModel):
         message: Detailed message about the training result.
         model_key: Unique key for the trained model.
         samples_trained: Number of samples used for training.
+        version: Unix timestamp version of the saved model.
+        version_iso: ISO 8601 formatted version timestamp.
     """
 
     status: str = Field(
@@ -235,6 +237,14 @@ class TrainingResponse(BaseModel):
     samples_trained: int = Field(
         ...,
         description="Number of samples used for training",
+    )
+    version: int | None = Field(
+        None,
+        description="Unix timestamp version of the saved model",
+    )
+    version_iso: str | None = Field(
+        None,
+        description="ISO 8601 formatted version timestamp",
     )
 
 
@@ -1013,4 +1023,101 @@ class ChainValidationErrorV2(BaseModel):
     error: str = Field(
         ...,
         description="Detailed error message",
+    )
+
+
+# =============================================================================
+# Version Management Models
+# =============================================================================
+
+
+class VersionCheckRequest(BaseModel):
+    """Request model for /version/check endpoint.
+
+    Use this to check model version information without loading the model
+    or making predictions.
+
+    Attributes:
+        model_id: Unique identifier for the model.
+        platform_info: Platform information.
+        prediction_type: Type of prediction.
+    """
+
+    model_id: str = Field(
+        ...,
+        description="Unique identifier for the model",
+    )
+    platform_info: PlatformInfo = Field(
+        ...,
+        description="Platform information",
+    )
+    prediction_type: str = Field(
+        ...,
+        description="Type of prediction: 'expect_error', 'quantile', etc.",
+    )
+
+    @field_validator('prediction_type')
+    @classmethod
+    def validate_prediction_type(cls, v: str) -> str:
+        """Validate that prediction_type is one of the allowed values."""
+        allowed_types = {
+            'expect_error',
+            'quantile',
+            'linear_regression',
+            'decision_tree',
+        }
+        if v not in allowed_types:
+            raise ValueError(
+                f"prediction_type must be one of {allowed_types}, got '{v}'"
+            )
+        return v
+
+
+class VersionCheckResponse(BaseModel):
+    """Response model for /version/check endpoint.
+
+    Provides comprehensive version information for a model configuration.
+
+    Attributes:
+        model_id: Model identifier.
+        platform_info: Platform information.
+        prediction_type: Type of prediction.
+        exists: Whether any version of this model exists.
+        latest_version: Unix timestamp of latest version (None if no versions).
+        latest_version_iso: ISO 8601 timestamp of latest version.
+        available_versions: All available version timestamps (descending order).
+        version_count: Total number of available versions.
+    """
+
+    model_id: str = Field(
+        ...,
+        description="Model identifier",
+    )
+    platform_info: PlatformInfo = Field(
+        ...,
+        description="Platform information",
+    )
+    prediction_type: str = Field(
+        ...,
+        description="Type of prediction",
+    )
+    exists: bool = Field(
+        ...,
+        description="Whether any version of this model exists",
+    )
+    latest_version: int | None = Field(
+        None,
+        description="Unix timestamp of latest version (None if no versions)",
+    )
+    latest_version_iso: str | None = Field(
+        None,
+        description="ISO 8601 timestamp of latest version",
+    )
+    available_versions: list[int] = Field(
+        default_factory=list,
+        description="All available version timestamps (descending order)",
+    )
+    version_count: int = Field(
+        0,
+        description="Total number of available versions",
     )

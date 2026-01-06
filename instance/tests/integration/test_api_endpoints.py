@@ -610,7 +610,7 @@ class TestSchedulerIntegration:
         mock_scheduler_client.is_enabled = True
         mock_scheduler_client.register_instance = AsyncMock(return_value=True)
 
-        with patch("src.api.get_scheduler_client", return_value=mock_scheduler_client):
+        with patch("src.server.get_scheduler_client", return_value=mock_scheduler_client):
             # Make request
             response = api_client.post(
                 "/model/start",
@@ -642,7 +642,7 @@ class TestSchedulerIntegration:
         mock_scheduler_client.is_enabled = True
         mock_scheduler_client.register_instance = AsyncMock(side_effect=Exception("Network error"))
 
-        with patch("src.api.get_scheduler_client", return_value=mock_scheduler_client):
+        with patch("src.server.get_scheduler_client", return_value=mock_scheduler_client):
             # Make request - should still succeed even if scheduler fails
             response = api_client.post(
                 "/model/start",
@@ -673,7 +673,7 @@ class TestSchedulerIntegration:
         mock_scheduler_client = AsyncMock()
         mock_scheduler_client.is_enabled = False
 
-        with patch("src.api.get_scheduler_client", return_value=mock_scheduler_client):
+        with patch("src.server.get_scheduler_client", return_value=mock_scheduler_client):
             # Make request
             response = api_client.post(
                 "/model/start",
@@ -700,7 +700,7 @@ class TestSchedulerIntegration:
         mock_scheduler_client.is_enabled = True
         mock_scheduler_client.deregister_instance = AsyncMock(return_value=True)
 
-        with patch("src.api.get_scheduler_client", return_value=mock_scheduler_client):
+        with patch("src.server.get_scheduler_client", return_value=mock_scheduler_client):
             # Make request
             response = api_client.get("/model/stop")
 
@@ -721,7 +721,7 @@ class TestSchedulerIntegration:
         mock_scheduler_client.is_enabled = True
         mock_scheduler_client.deregister_instance = AsyncMock(side_effect=Exception("Network error"))
 
-        with patch("src.api.get_scheduler_client", return_value=mock_scheduler_client):
+        with patch("src.server.get_scheduler_client", return_value=mock_scheduler_client):
             # Make request - should still succeed even if scheduler fails
             response = api_client.get("/model/stop")
 
@@ -749,7 +749,7 @@ class TestSchedulerIntegration:
         mock_scheduler_client._registered = True
         mock_scheduler_client.register_instance = AsyncMock(return_value=True)
 
-        with patch("src.api.get_scheduler_client", return_value=mock_scheduler_client):
+        with patch("src.server.get_scheduler_client", return_value=mock_scheduler_client):
             # Make request with new scheduler_url
             new_scheduler_url = "http://new-scheduler:8100"
             response = api_client.post(
@@ -793,7 +793,7 @@ class TestSchedulerIntegration:
         mock_scheduler_client._registered = False
         mock_scheduler_client.register_instance = AsyncMock(return_value=True)
 
-        with patch("src.api.get_scheduler_client", return_value=mock_scheduler_client):
+        with patch("src.server.get_scheduler_client", return_value=mock_scheduler_client):
             # Make request with scheduler_url
             new_scheduler_url = "http://new-scheduler:8100"
             response = api_client.post(
@@ -832,7 +832,7 @@ class TestSchedulerIntegration:
         mock_scheduler_client._registered = False
         mock_scheduler_client.register_instance = AsyncMock(return_value=True)
 
-        with patch("src.api.get_scheduler_client", return_value=mock_scheduler_client):
+        with patch("src.server.get_scheduler_client", return_value=mock_scheduler_client):
             # Make request WITH scheduler_url parameter (same as existing)
             response = api_client.post(
                 "/model/start",
@@ -872,7 +872,7 @@ class TestSchedulerIntegration:
         mock_scheduler_client._registered = True
         mock_scheduler_client.register_instance = AsyncMock(return_value=True)
 
-        with patch("src.api.get_scheduler_client", return_value=mock_scheduler_client):
+        with patch("src.server.get_scheduler_client", return_value=mock_scheduler_client):
             # Make request with both scheduler_url and parameters
             new_scheduler_url = "http://new-scheduler:8100"
             response = api_client.post(
@@ -920,7 +920,7 @@ class TestSchedulerIntegration:
             side_effect=Exception("Network error - new scheduler unreachable")
         )
 
-        with patch("src.api.get_scheduler_client", return_value=mock_scheduler_client):
+        with patch("src.server.get_scheduler_client", return_value=mock_scheduler_client):
             # Make request with new scheduler_url
             new_scheduler_url = "http://new-scheduler:8100"
             response = api_client.post(

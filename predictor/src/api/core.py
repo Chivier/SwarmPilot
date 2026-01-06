@@ -212,8 +212,11 @@ class PredictorLowLevel:
         predictor: BasePredictor,
         samples_count: int | None = None,
         extra_metadata: dict[str, Any] | None = None,
-    ) -> None:
-        """Save a predictor to storage.
+        version: int | None = None,
+    ) -> int:
+        """Save a predictor to storage with versioning.
+
+        Creates a new versioned model file. Does not overwrite existing versions.
 
         Args:
             model_id: Model identifier.
@@ -223,9 +226,11 @@ class PredictorLowLevel:
             samples_count: Number of samples used for training (optional).
                 If not provided, attempts to get from predictor state.
             extra_metadata: Additional metadata to store with the model.
-        """
-        model_key = self.generate_model_key(model_id, platform_info, prediction_type)
+            version: Unix timestamp version. If None, uses current time.
 
+        Returns:
+            The version timestamp used for saving.
+        """
         # Get predictor state
         predictor_state = predictor.get_model_state()
 
@@ -234,7 +239,7 @@ class PredictorLowLevel:
         if actual_samples_count is None:
             actual_samples_count = predictor_state.get("samples_count", 0)
 
-        # Prepare metadata
+        # Prepare metadata (version will be added by storage layer)
         metadata = {
             "model_id": model_id,
             "platform_info": platform_info.model_dump(),
@@ -248,20 +253,30 @@ class PredictorLowLevel:
         if extra_metadata:
             metadata.update(extra_metadata)
 
-        # Save to storage
+        # Save to versioned storage
         with self._lock:
-            self._storage.save_model(model_key, predictor_state, metadata)
+            saved_version = self._storage.save_model_versioned(
+                model_id=model_id,
+                platform_info=platform_info.model_dump(),
+                prediction_type=prediction_type,
+                predictor_state=predictor_state,
+                metadata=metadata,
+                version=version,
+            )
 
-            # Invalidate cache entry if exists
-            self._cache.invalidate(model_key)
+            # Invalidate all cached versions for this model
+            base_key = self.generate_model_key(model_id, platform_info, prediction_type)
+            self._cache.invalidate_prefix(base_key)
 
-        logger.info(f"Saved model: {model_key}")
+        logger.info(f"Saved model {model_id} version {saved_version}")
+        return saved_version
 
     def load_model(
         self,
         model_id: str,
         platform_info: PlatformInfo,
         prediction_type: str,
+        version: int | None = None,
     ) -> BasePredictor:
         """Load a predictor from storage.
 
@@ -269,6 +284,7 @@ class PredictorLowLevel:
             model_id: Model identifier.
             platform_info: Platform information.
             prediction_type: Type of prediction.
+            version: Specific version to load. If None, loads latest version.
 
         Returns:
             Loaded predictor instance.
@@ -276,20 +292,36 @@ class PredictorLowLevel:
         Raises:
             ModelNotFoundError: If model does not exist.
         """
-        model_key = self.generate_model_key(model_id, platform_info, prediction_type)
+        base_key = self.generate_model_key(model_id, platform_info, prediction_type)
 
         with self._lock:
+            # Determine which version to load
+            if version is None:
+                version = self._storage.get_latest_version(
+                    model_id, platform_info.model_dump(), prediction_type
+                )
+                if version is None:
+                    raise ModelNotFoundError(f"Model not found: {base_key}")
+
+            # Create cache key with version
+            cache_key = f"{base_key}__v{version}"
+
             # Check cache first
-            cached = self._cache.get(model_key)
+            cached = self._cache.get(cache_key)
             if cached is not None:
                 predictor, _ = cached
-                logger.debug(f"Cache hit for model: {model_key}")
+                logger.debug(f"Cache hit for model: {cache_key}")
                 return predictor
 
-            # Load from storage
-            model_data = self._storage.load_model(model_key)
+            # Load from versioned storage
+            model_data, loaded_version = self._storage.load_model_versioned(
+                model_id=model_id,
+                platform_info=platform_info.model_dump(),
+                prediction_type=prediction_type,
+                version=version,
+            )
             if model_data is None:
-                raise ModelNotFoundError(f"Model not found: {model_key}")
+                raise ModelNotFoundError(f"Model version {version} not found: {base_key}")
 
             # Create predictor instance
             if prediction_type not in PREDICTOR_CLASSES:
@@ -299,10 +331,10 @@ class PredictorLowLevel:
             predictor = predictor_class()
             predictor.load_model_state(model_data["predictor_state"])
 
-            # Cache it
-            self._cache.put(model_key, predictor, prediction_type)
+            # Cache it with version-specific key
+            self._cache.put(cache_key, predictor, prediction_type)
 
-            logger.debug(f"Loaded model from storage: {model_key}")
+            logger.debug(f"Loaded model version {loaded_version}: {cache_key}")
             return predictor
 
     def delete_model(
@@ -311,7 +343,7 @@ class PredictorLowLevel:
         platform_info: PlatformInfo,
         prediction_type: str,
     ) -> bool:
-        """Delete a model from storage.
+        """Delete all versions of a model from storage.
 
         Args:
             model_id: Model identifier.
@@ -319,20 +351,38 @@ class PredictorLowLevel:
             prediction_type: Type of prediction.
 
         Returns:
-            True if deleted, False if not found.
+            True if any version was deleted, False if none found.
         """
-        model_key = self.generate_model_key(model_id, platform_info, prediction_type)
+        base_key = self.generate_model_key(model_id, platform_info, prediction_type)
 
         with self._lock:
-            # Invalidate cache
-            self._cache.invalidate(model_key)
+            # Get all versions
+            versions = self._storage.list_versions(
+                model_id=model_id,
+                platform_info=platform_info.model_dump(),
+                prediction_type=prediction_type,
+            )
 
-            # Delete from storage
-            result = self._storage.delete_model(model_key)
+            if not versions:
+                return False
 
-        if result:
-            logger.info(f"Deleted model: {model_key}")
-        return result
+            # Delete each version and invalidate cache
+            for version in versions:
+                cache_key = f"{base_key}__v{version}"
+                self._cache.invalidate(cache_key)
+
+                self._storage.delete_version(
+                    model_id=model_id,
+                    platform_info=platform_info.model_dump(),
+                    prediction_type=prediction_type,
+                    version=version,
+                )
+
+            # Also invalidate base key cache (legacy)
+            self._cache.invalidate(base_key)
+
+        logger.info(f"Deleted model {model_id} ({len(versions)} versions)")
+        return True
 
     def list_models(
         self,
@@ -389,6 +439,7 @@ class PredictorLowLevel:
         model_id: str,
         platform_info: PlatformInfo,
         prediction_type: str,
+        version: int | None = None,
     ) -> ModelInfo | None:
         """Get detailed information about a model.
 
@@ -396,12 +447,18 @@ class PredictorLowLevel:
             model_id: Model identifier.
             platform_info: Platform information.
             prediction_type: Type of prediction.
+            version: Specific version to get info for. If None, gets latest.
 
         Returns:
             ModelInfo if found, None otherwise.
         """
-        model_key = self.generate_model_key(model_id, platform_info, prediction_type)
-        model_data = self._storage.load_model(model_key)
+        # Use versioned loading
+        model_data, loaded_version = self._storage.load_model_versioned(
+            model_id=model_id,
+            platform_info=platform_info.model_dump(),
+            prediction_type=prediction_type,
+            version=version,
+        )
 
         if model_data is None:
             return None
@@ -424,7 +481,7 @@ class PredictorLowLevel:
         platform_info: PlatformInfo,
         prediction_type: str,
     ) -> bool:
-        """Check if a model exists.
+        """Check if a model exists (any version).
 
         Args:
             model_id: Model identifier.
@@ -432,10 +489,15 @@ class PredictorLowLevel:
             prediction_type: Type of prediction.
 
         Returns:
-            True if model exists, False otherwise.
+            True if at least one version exists, False otherwise.
         """
-        model_key = self.generate_model_key(model_id, platform_info, prediction_type)
-        return self._storage.model_exists(model_key)
+        # Check if any version exists (versioned or legacy)
+        latest = self._storage.get_latest_version(
+            model_id=model_id,
+            platform_info=platform_info.model_dump(),
+            prediction_type=prediction_type,
+        )
+        return latest is not None
 
     # -------------------------------------------------------------------------
     # Prediction
@@ -505,14 +567,18 @@ class PredictorLowLevel:
     ) -> None:
         """Invalidate a specific model in the cache.
 
+        Removes all cached versions of the model (versioned keys like
+        '{base_key}__v{timestamp}').
+
         Args:
             model_id: Model identifier.
             platform_info: Platform information.
             prediction_type: Type of prediction.
         """
-        model_key = self.generate_model_key(model_id, platform_info, prediction_type)
+        base_key = self.generate_model_key(model_id, platform_info, prediction_type)
         with self._lock:
-            self._cache.invalidate(model_key)
+            # Use prefix invalidation to remove all versioned cache entries
+            self._cache.invalidate_prefix(base_key)
 
     def get_cache_stats(self) -> dict[str, Any]:
         """Get cache statistics.
@@ -555,6 +621,115 @@ class PredictorLowLevel:
             platform_info=platform_info.model_dump(),
             prediction_type=prediction_type,
         )
+
+    # -------------------------------------------------------------------------
+    # Version Management
+    # -------------------------------------------------------------------------
+
+    def get_model_versions(
+        self,
+        model_id: str,
+        platform_info: PlatformInfo,
+        prediction_type: str,
+    ) -> list[int]:
+        """Get all available versions for a model configuration.
+
+        Args:
+            model_id: Model identifier.
+            platform_info: Platform information.
+            prediction_type: Type of prediction.
+
+        Returns:
+            List of unix timestamps (versions), sorted descending (newest first).
+        """
+        return self._storage.list_versions(
+            model_id=model_id,
+            platform_info=platform_info.model_dump(),
+            prediction_type=prediction_type,
+        )
+
+    def get_latest_version(
+        self,
+        model_id: str,
+        platform_info: PlatformInfo,
+        prediction_type: str,
+    ) -> int | None:
+        """Get the latest version timestamp for a model configuration.
+
+        Args:
+            model_id: Model identifier.
+            platform_info: Platform information.
+            prediction_type: Type of prediction.
+
+        Returns:
+            Unix timestamp of latest version, or None if no versions exist.
+        """
+        return self._storage.get_latest_version(
+            model_id=model_id,
+            platform_info=platform_info.model_dump(),
+            prediction_type=prediction_type,
+        )
+
+    def get_version_info(
+        self,
+        model_id: str,
+        platform_info: PlatformInfo,
+        prediction_type: str,
+    ) -> dict[str, Any]:
+        """Get comprehensive version information for a model configuration.
+
+        Args:
+            model_id: Model identifier.
+            platform_info: Platform information.
+            prediction_type: Type of prediction.
+
+        Returns:
+            Dict with version information:
+            - model_id: str
+            - platform_info: dict
+            - prediction_type: str
+            - latest_version: int | None
+            - latest_version_iso: str | None
+            - available_versions: list[int]
+            - version_count: int
+        """
+        return self._storage.get_version_info(
+            model_id=model_id,
+            platform_info=platform_info.model_dump(),
+            prediction_type=prediction_type,
+        )
+
+    def delete_model_version(
+        self,
+        model_id: str,
+        platform_info: PlatformInfo,
+        prediction_type: str,
+        version: int,
+    ) -> bool:
+        """Delete a specific version of a model.
+
+        Args:
+            model_id: Model identifier.
+            platform_info: Platform information.
+            prediction_type: Type of prediction.
+            version: Version to delete.
+
+        Returns:
+            True if deleted, False if not found.
+        """
+        with self._lock:
+            # Invalidate cache for this version
+            base_key = self.generate_model_key(model_id, platform_info, prediction_type)
+            cache_key = f"{base_key}__v{version}"
+            self._cache.invalidate(cache_key)
+
+            # Delete from storage
+            return self._storage.delete_version(
+                model_id=model_id,
+                platform_info=platform_info.model_dump(),
+                prediction_type=prediction_type,
+                version=version,
+            )
 
     # -------------------------------------------------------------------------
     # Inference Pipeline API
@@ -1002,8 +1177,8 @@ class PredictorCore:
                 config=config,
             )
 
-            # Save model
-            self._low_level.save_model(
+            # Save model and get version
+            version = self._low_level.save_model(
                 model_id=model_id,
                 platform_info=platform_info,
                 prediction_type=prediction_type,
@@ -1015,14 +1190,22 @@ class PredictorCore:
                 self._accumulated.pop(key, None)
                 self._feature_schemas.pop(key, None)
 
+            # Get version ISO string
+            from datetime import timezone
+            version_iso = datetime.fromtimestamp(version, tz=timezone.utc).isoformat()
+
             return TrainingResult(
                 success=True,
                 model_id=model_id,
                 platform_info=platform_info,
                 prediction_type=prediction_type,
                 samples_trained=len(features_list),
-                training_metadata=predictor.get_model_state(),
-                message=f"Successfully trained model with {len(features_list)} samples",
+                training_metadata={
+                    **predictor.get_model_state(),
+                    "version": version,
+                    "version_iso": version_iso,
+                },
+                message=f"Successfully trained model with {len(features_list)} samples (version {version})",
             )
 
         except (ValidationError, TrainingError):

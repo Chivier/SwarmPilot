@@ -143,8 +143,8 @@ async def train_model(request: TrainingRequest):
             preprocess_config=preprocess_config,
         )
 
-        # Save using library API
-        dependencies.predictor_api.save_model(
+        # Save using library API and get version
+        version = dependencies.predictor_api.save_model(
             model_id=request.model_id,
             platform_info=request.platform_info,
             prediction_type=request.prediction_type,
@@ -156,6 +156,10 @@ async def train_model(request: TrainingRequest):
             request.model_id, request.platform_info, request.prediction_type
         )
 
+        # Get version ISO string
+        from datetime import datetime, timezone
+        version_iso = datetime.fromtimestamp(version, tz=timezone.utc).isoformat()
+
         return TrainingResponse(
             status="success",
             message=(
@@ -164,6 +168,8 @@ async def train_model(request: TrainingRequest):
             ),
             model_key=model_key,
             samples_trained=len(all_features),
+            version=version,
+            version_iso=version_iso,
         )
 
     except ValidationError as e:

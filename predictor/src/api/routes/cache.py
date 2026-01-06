@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import traceback
-
 from fastapi import APIRouter
-from fastapi import HTTPException
 from fastapi import status
 from fastapi.responses import JSONResponse
 
 from src.api import dependencies
+from src.api.routes.helpers import handle_library_exception
 
 router = APIRouter()
 
@@ -25,7 +23,8 @@ async def get_cache_stats():
         JSONResponse with cache statistics.
     """
     try:
-        stats = dependencies.model_cache.get_stats()
+        # Use library API for cache stats
+        stats = dependencies.predictor_api.get_cache_stats()
         return JSONResponse(
             status_code=status.HTTP_200_OK,
             content={
@@ -34,20 +33,7 @@ async def get_cache_stats():
             },
         )
     except Exception as e:
-        error_detail = {
-            "error": "Failed to get cache stats",
-            "message": str(e),
-            "traceback": traceback.format_exc(),
-        }
-        dependencies._log_error(
-            error_context="Cache stats retrieval failed",
-            error_detail=error_detail,
-            exception=e,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=error_detail,
-        )
+        raise handle_library_exception(e, "get cache stats")
 
 
 @router.post("/clear", tags=["Cache"])
@@ -61,7 +47,8 @@ async def clear_cache():
         JSONResponse confirming cache cleared.
     """
     try:
-        dependencies.model_cache.clear()
+        # Use library API for cache clear
+        dependencies.predictor_api.clear_cache()
         return JSONResponse(
             status_code=status.HTTP_200_OK,
             content={
@@ -70,17 +57,4 @@ async def clear_cache():
             },
         )
     except Exception as e:
-        error_detail = {
-            "error": "Failed to clear cache",
-            "message": str(e),
-            "traceback": traceback.format_exc(),
-        }
-        dependencies._log_error(
-            error_context="Cache clear operation failed",
-            error_detail=error_detail,
-            exception=e,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=error_detail,
-        )
+        raise handle_library_exception(e, "clear cache")

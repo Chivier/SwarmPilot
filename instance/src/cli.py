@@ -123,7 +123,7 @@ def start(
     # Start the FastAPI application with uvicorn
     # Note: We don't pass log_level to uvicorn because loguru intercepts all logs
     uvicorn.run(
-        "src.api:app",
+        "src.server:app",
         host=host,
         port=service_port,
         log_config=None,  # Disable uvicorn's default logging config

@@ -71,6 +71,7 @@ def _register_routes(application: FastAPI) -> None:
     from src.api.routes import prediction_v2
     from src.api.routes import training
     from src.api.routes import training_v2
+    from src.api.routes import version
     from src.api.routes import websocket
 
     # Include routers - V1 endpoints
@@ -79,6 +80,7 @@ def _register_routes(application: FastAPI) -> None:
     application.include_router(models.router)
     application.include_router(training.router)
     application.include_router(prediction.router)
+    application.include_router(version.router)
 
     # Include routers - V2 endpoints (with /v2 prefix built-in)
     application.include_router(training_v2.router)

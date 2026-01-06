@@ -2553,9 +2553,10 @@ class TestRemainingErrorHandling:
 
     def test_set_strategy_exception(self, client):
         """Test set strategy with exception during initialization."""
-        # Mock get_strategy to raise exception
+        # Mock get_strategy to raise exception (patched in routes/strategy.py)
         with patch(
-            "src.api.get_strategy", side_effect=Exception("Strategy init error")
+            "src.routes.strategy.get_strategy",
+            side_effect=Exception("Strategy init error"),
         ):
             response = client.post(
                 "/strategy/set", json={"strategy_name": "min_time"}
@@ -2565,7 +2566,7 @@ class TestRemainingErrorHandling:
 
     def test_health_check_with_exception(self, client):
         """Test health check when registry has errors."""
-        # Mock to raise exception
+        # Mock the instance_registry's method directly via the api module
         with patch(
             "src.api.instance_registry.get_total_count",
             side_effect=Exception("Registry error"),

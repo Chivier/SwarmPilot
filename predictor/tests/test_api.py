@@ -200,9 +200,14 @@ class TestTrainEndpoint:
         data = response2.json()
         assert data['samples_trained'] == 30
 
-        # Should still have only one model
+        # With versioning enabled, both versions are preserved
         list_response = client.get("/list")
-        assert len(list_response.json()['models']) == 1
+        models = list_response.json()['models']
+        assert len(models) == 2  # Both versions are kept
+
+        # Both should be the same base model with different timestamps
+        model_ids = {m['model_id'] for m in models}
+        assert model_ids == {'update-model'}
 
     @requires_semantic_model
     def test_train_with_preprocessor(self, client):
