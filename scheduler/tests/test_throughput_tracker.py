@@ -6,7 +6,7 @@ Tests sliding window behavior, average calculations, and thread safety.
 
 import pytest
 
-from src.throughput_tracker import InstanceThroughputData, ThroughputTracker
+from src.utils.throughput_tracker import InstanceThroughputData, ThroughputTracker
 
 
 class TestInstanceThroughputData:

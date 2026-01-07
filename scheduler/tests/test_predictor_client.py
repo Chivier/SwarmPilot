@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from src.model import Instance
-from src.predictor_client import Prediction, PredictorClient
+from src.clients.predictor_client import Prediction, PredictorClient
 
 # ============================================================================
 # Prediction Dataclass Tests

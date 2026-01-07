@@ -11,8 +11,8 @@ from typing import Any
 
 from loguru import logger
 
-from src.instance_registry import InstanceRegistry
-from src.task_registry import TaskRegistry
+from src.registry.instance_registry import InstanceRegistry
+from src.registry.task_registry import TaskRegistry
 
 
 class QueuedTask:

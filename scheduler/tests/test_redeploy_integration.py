@@ -23,7 +23,7 @@ def reset_registries():
     """Reset registries before each test."""
     import src.api as api_module
     from src.api import predictor_client
-    from src.scheduler import get_strategy
+    from src.algorithms import get_strategy
 
     # Clear registries
     instance_registry._instances.clear()

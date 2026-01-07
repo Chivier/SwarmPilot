@@ -8,8 +8,8 @@ from unittest.mock import MagicMock
 import pytest
 
 from src.model import InstanceQueueExpectError, InstanceQueueProbabilistic
-from src.predictor_client import Prediction
-from src.scheduler import (
+from src.clients.predictor_client import Prediction
+from src.algorithms import (
     MinimumExpectedTimeStrategy,
     ProbabilisticSchedulingStrategy,
     RoundRobinStrategy,
@@ -1169,7 +1169,7 @@ class TestPowerOfTwoStrategy:
         self, mock_predictor_client, instance_registry
     ):
         """Test select_instance with empty predictions."""
-        from src.scheduler import PowerOfTwoStrategy
+        from src.algorithms import PowerOfTwoStrategy
 
         strategy = PowerOfTwoStrategy(mock_predictor_client, instance_registry)
 
@@ -1180,7 +1180,7 @@ class TestPowerOfTwoStrategy:
         self, mock_predictor_client, instance_registry
     ):
         """Test select_instance with queue info."""
-        from src.scheduler import PowerOfTwoStrategy
+        from src.algorithms import PowerOfTwoStrategy
 
         strategy = PowerOfTwoStrategy(mock_predictor_client, instance_registry)
 
@@ -1216,7 +1216,7 @@ class TestPowerOfTwoStrategy:
         self, mock_predictor_client, instance_registry
     ):
         """Test select_instance without queue info (fallback)."""
-        from src.scheduler import PowerOfTwoStrategy
+        from src.algorithms import PowerOfTwoStrategy
 
         strategy = PowerOfTwoStrategy(mock_predictor_client, instance_registry)
 
@@ -1233,7 +1233,7 @@ class TestPowerOfTwoStrategy:
         import math
 
         from src.model import Instance
-        from src.scheduler import PowerOfTwoStrategy
+        from src.algorithms import PowerOfTwoStrategy
 
         strategy = PowerOfTwoStrategy(mock_predictor_client, instance_registry)
 
@@ -1284,7 +1284,7 @@ class TestMinimumExpectedTimeServerlessStrategy:
         self, mock_predictor_client, instance_registry
     ):
         """Test select_instance with empty predictions."""
-        from src.scheduler import MinimumExpectedTimeServerlessStrategy
+        from src.algorithms import MinimumExpectedTimeServerlessStrategy
 
         strategy = MinimumExpectedTimeServerlessStrategy(
             mock_predictor_client, instance_registry
@@ -1297,7 +1297,7 @@ class TestMinimumExpectedTimeServerlessStrategy:
         self, mock_predictor_client, instance_registry
     ):
         """Test select_instance with queue info."""
-        from src.scheduler import MinimumExpectedTimeServerlessStrategy
+        from src.algorithms import MinimumExpectedTimeServerlessStrategy
 
         strategy = MinimumExpectedTimeServerlessStrategy(
             mock_predictor_client, instance_registry
@@ -1338,7 +1338,7 @@ class TestMinimumExpectedTimeServerlessStrategy:
         self, mock_predictor_client, instance_registry
     ):
         """Test select_instance without queue info (fallback)."""
-        from src.scheduler import MinimumExpectedTimeServerlessStrategy
+        from src.algorithms import MinimumExpectedTimeServerlessStrategy
 
         strategy = MinimumExpectedTimeServerlessStrategy(
             mock_predictor_client, instance_registry
@@ -1359,7 +1359,7 @@ class TestMinimumExpectedTimeServerlessStrategy:
         import math
 
         from src.model import Instance
-        from src.scheduler import MinimumExpectedTimeServerlessStrategy
+        from src.algorithms import MinimumExpectedTimeServerlessStrategy
 
         strategy = MinimumExpectedTimeServerlessStrategy(
             mock_predictor_client, instance_registry
@@ -1404,7 +1404,7 @@ class TestMinimumExpectedTimeServerlessStrategy:
     ):
         """Test update_queue skips when queue type is wrong (line 929-936)."""
         from src.model import Instance
-        from src.scheduler import MinimumExpectedTimeServerlessStrategy
+        from src.algorithms import MinimumExpectedTimeServerlessStrategy
 
         strategy = MinimumExpectedTimeServerlessStrategy(
             mock_predictor_client, instance_registry
@@ -1452,7 +1452,7 @@ class TestMinimumExpectedTimeLRStrategy:
         self, mock_predictor_client, instance_registry
     ):
         """Test get_prediction_type returns correct type."""
-        from src.scheduler import MinimumExpectedTimeLRStrategy
+        from src.algorithms import MinimumExpectedTimeLRStrategy
 
         strategy = MinimumExpectedTimeLRStrategy(
             mock_predictor_client, instance_registry
@@ -1473,7 +1473,7 @@ class TestMinimumExpectedTimeDTStrategy:
         self, mock_predictor_client, instance_registry
     ):
         """Test get_prediction_type returns correct type."""
-        from src.scheduler import MinimumExpectedTimeDTStrategy
+        from src.algorithms import MinimumExpectedTimeDTStrategy
 
         strategy = MinimumExpectedTimeDTStrategy(
             mock_predictor_client, instance_registry
@@ -1494,7 +1494,7 @@ class TestGetStrategyAdditional:
         self, mock_predictor_client, instance_registry
     ):
         """Test get_strategy returns MinimumExpectedTimeLRStrategy."""
-        from src.scheduler import MinimumExpectedTimeLRStrategy
+        from src.algorithms import MinimumExpectedTimeLRStrategy
 
         strategy = get_strategy(
             "min_time_lr", mock_predictor_client, instance_registry
@@ -1506,7 +1506,7 @@ class TestGetStrategyAdditional:
         self, mock_predictor_client, instance_registry
     ):
         """Test get_strategy returns MinimumExpectedTimeDTStrategy."""
-        from src.scheduler import MinimumExpectedTimeDTStrategy
+        from src.algorithms import MinimumExpectedTimeDTStrategy
 
         strategy = get_strategy(
             "min_time_dt", mock_predictor_client, instance_registry
@@ -1518,7 +1518,7 @@ class TestGetStrategyAdditional:
         self, mock_predictor_client, instance_registry
     ):
         """Test get_strategy returns RandomStrategy."""
-        from src.scheduler import RandomStrategy
+        from src.algorithms import RandomStrategy
 
         strategy = get_strategy(
             "random", mock_predictor_client, instance_registry
@@ -1530,7 +1530,7 @@ class TestGetStrategyAdditional:
         self, mock_predictor_client, instance_registry
     ):
         """Test get_strategy returns PowerOfTwoStrategy."""
-        from src.scheduler import PowerOfTwoStrategy
+        from src.algorithms import PowerOfTwoStrategy
 
         strategy = get_strategy("po2", mock_predictor_client, instance_registry)
 
@@ -1540,7 +1540,7 @@ class TestGetStrategyAdditional:
         self, mock_predictor_client, instance_registry
     ):
         """Test get_strategy returns MinimumExpectedTimeServerlessStrategy."""
-        from src.scheduler import MinimumExpectedTimeServerlessStrategy
+        from src.algorithms import MinimumExpectedTimeServerlessStrategy
 
         strategy = get_strategy(
             "severless", mock_predictor_client, instance_registry

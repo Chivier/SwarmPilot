@@ -13,10 +13,10 @@ from typing import TYPE_CHECKING, Any
 import httpx
 from loguru import logger
 
-from src.http_error_logger import log_http_error
+from src.utils.http_error_logger import log_http_error
 
 if TYPE_CHECKING:
-    from .model import Instance
+    from src.model import Instance
 
 
 @dataclass

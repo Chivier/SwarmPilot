@@ -10,7 +10,7 @@ import httpx
 import pytest
 
 from src.model import TaskStatus
-from src.planner_reporter import PlannerReporter
+from src.utils.planner_reporter import PlannerReporter
 
 
 class TestPlannerReporterInit:

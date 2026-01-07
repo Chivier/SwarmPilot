@@ -14,7 +14,7 @@ import pytest
 from src.model import (
     TaskStatus,
 )
-from src.predictor_client import Prediction
+from src.clients.predictor_client import Prediction
 
 # ============================================================================
 # Fixtures for repredict tests

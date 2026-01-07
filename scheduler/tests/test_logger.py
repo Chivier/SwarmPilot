@@ -12,7 +12,7 @@ class TestInterceptHandler:
 
     def test_emit_with_invalid_level_name(self):
         """Test emit() when level name is invalid (lines 34-35)."""
-        from src.logger import InterceptHandler
+        from src.utils.logger import InterceptHandler
 
         handler = InterceptHandler()
 
@@ -35,7 +35,7 @@ class TestInterceptHandler:
         """Test emit() with deep call stack (lines 40-41)."""
         import sys
 
-        from src.logger import InterceptHandler
+        from src.utils.logger import InterceptHandler
 
         handler = InterceptHandler()
 
@@ -87,7 +87,7 @@ class TestSetupLogger:
         logger.remove()
 
         # Import and call setup_logger
-        from src.logger import setup_logger
+        from src.utils.logger import setup_logger
 
         # This should add JSON file handler (line 86)
         setup_logger()
@@ -118,7 +118,7 @@ class TestSetupLogger:
         logger.remove()
 
         # Import and call setup_logger
-        from src.logger import setup_logger
+        from src.utils.logger import setup_logger
 
         # This should NOT add JSON file handler
         setup_logger()

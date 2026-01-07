@@ -11,12 +11,12 @@ import numpy as np
 from loguru import logger
 
 from src.algorithms.base import SchedulingStrategy
-from src.predictor_client import Prediction
+from src.clients.predictor_client import Prediction
 
 if TYPE_CHECKING:
-    from src.instance_registry import InstanceRegistry
+    from src.registry.instance_registry import InstanceRegistry
     from src.model import InstanceQueueBase
-    from src.predictor_client import PredictorClient
+    from src.clients.predictor_client import PredictorClient
 
 
 class ProbabilisticSchedulingStrategy(SchedulingStrategy):

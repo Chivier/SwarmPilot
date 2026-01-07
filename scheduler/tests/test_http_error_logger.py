@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import httpx
 
-from src.http_error_logger import (
+from src.utils.http_error_logger import (
     MAX_BODY_LENGTH,
     _sanitize_headers,
     _truncate_body,

@@ -9,10 +9,10 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from src.background_scheduler import BackgroundScheduler
+from src.services.background_scheduler import BackgroundScheduler
 from src.model import Instance, TaskStatus
-from src.predictor_client import Prediction
-from src.scheduler import ScheduleResult
+from src.clients.predictor_client import Prediction
+from src.algorithms import ScheduleResult
 
 # ============================================================================
 # Fixtures

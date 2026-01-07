@@ -12,11 +12,11 @@ from typing import TYPE_CHECKING, Optional
 import httpx
 from loguru import logger
 
-from src.http_error_logger import log_http_error
+from src.utils.http_error_logger import log_http_error
 
 if TYPE_CHECKING:
-    from .task_registry import TaskRegistry
-    from .throughput_tracker import ThroughputTracker
+    from src.registry.task_registry import TaskRegistry
+    from src.utils.throughput_tracker import ThroughputTracker
 
 from src.model import TaskStatus
 

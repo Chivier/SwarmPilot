@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.central_queue import CentralTaskQueue
+from src.services.central_queue import CentralTaskQueue
 
 # ============================================================================
 # CentralTaskQueue.clear() Tests

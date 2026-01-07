@@ -9,7 +9,7 @@ import httpx
 import pytest
 
 from src.model import TaskStatus
-from src.task_dispatcher import TaskDispatcher
+from src.services.task_dispatcher import TaskDispatcher
 
 # ============================================================================
 # Initialization Tests

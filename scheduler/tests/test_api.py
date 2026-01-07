@@ -21,7 +21,7 @@ def reset_registries():
     """Reset registries before each test."""
     import src.api as api_module
     from src.api import config, predictor_client
-    from src.scheduler import get_strategy
+    from src.algorithms import get_strategy
 
     # Clear registries
     instance_registry._instances.clear()
@@ -603,7 +603,7 @@ class TestTaskResubmit:
 
     def test_resubmit_task_success(self, client):
         """Test successful task resubmission with original submission time preserved."""
-        from src.predictor_client import Prediction
+        from src.clients.predictor_client import Prediction
 
         # Register instance
         client.post(
@@ -671,7 +671,7 @@ class TestTaskResubmit:
         import asyncio
 
         from src import api
-        from src.predictor_client import Prediction
+        from src.clients.predictor_client import Prediction
 
         # Register instance
         client.post(
@@ -771,7 +771,7 @@ class TestTaskResubmit:
         import asyncio
 
         from src import api
-        from src.predictor_client import Prediction
+        from src.clients.predictor_client import Prediction
 
         # Register instance
         client.post(
@@ -833,7 +833,7 @@ class TestTaskResubmit:
         import asyncio
 
         from src import api
-        from src.predictor_client import Prediction
+        from src.clients.predictor_client import Prediction
 
         # Register instance
         client.post(
@@ -890,7 +890,7 @@ class TestTaskResubmit:
 
     def test_resubmit_task_original_instance_not_found(self, client):
         """Test resubmitting with non-existent original instance returns 404."""
-        from src.predictor_client import Prediction
+        from src.clients.predictor_client import Prediction
 
         # Register instance
         client.post(
@@ -945,7 +945,7 @@ class TestTaskResubmit:
 
     def test_resubmit_task_decrements_pending_count(self, client):
         """Test that resubmit decrements pending count on original instance."""
-        from src.predictor_client import Prediction
+        from src.clients.predictor_client import Prediction
 
         # Register instance
         client.post(
@@ -1006,7 +1006,7 @@ class TestTaskResubmit:
         import asyncio
 
         from src import api
-        from src.predictor_client import Prediction
+        from src.clients.predictor_client import Prediction
 
         # Register instance
         client.post(
@@ -1066,7 +1066,7 @@ class TestTaskResubmit:
 
     def test_resubmit_task_reset_for_resubmit_error(self, client):
         """Test resubmit when reset_for_resubmit raises KeyError."""
-        from src.predictor_client import Prediction
+        from src.clients.predictor_client import Prediction
 
         # Register instance
         client.post(
@@ -1120,7 +1120,7 @@ class TestTaskResubmit:
 
     def test_resubmit_task_with_metadata(self, client):
         """Test resubmitting task preserves metadata."""
-        from src.predictor_client import Prediction
+        from src.clients.predictor_client import Prediction
 
         # Register instance
         client.post(
@@ -1353,7 +1353,7 @@ class TestStrategyManagement:
 
     def test_set_strategy_clears_tasks(self, client):
         """Test that setting strategy clears all tasks."""
-        from src.predictor_client import Prediction
+        from src.clients.predictor_client import Prediction
 
         # Register instance first
         client.post(
@@ -1446,7 +1446,7 @@ class TestStrategyManagement:
 
     async def test_set_strategy_rejects_when_tasks_running(self, client):
         """Test that setting strategy is rejected when tasks are running."""
-        from src.predictor_client import Prediction
+        from src.clients.predictor_client import Prediction
 
         # Register instance
         client.post(
@@ -1702,7 +1702,7 @@ class TestTaskResultCallback:
 
     def test_callback_task_result_success(self, client):
         """Test successful task result callback."""
-        from src.predictor_client import Prediction
+        from src.clients.predictor_client import Prediction
 
         # Register instance
         client.post(
@@ -1775,7 +1775,7 @@ class TestTaskResultCallback:
 
     def test_callback_task_result_invalid_status(self, client):
         """Test callback with invalid status."""
-        from src.predictor_client import Prediction
+        from src.clients.predictor_client import Prediction
 
         # Register instance and submit task
         client.post(
@@ -1828,7 +1828,7 @@ class TestTaskResultCallback:
 
     def test_callback_task_result_failed(self, client):
         """Test callback for failed task."""
-        from src.predictor_client import Prediction
+        from src.clients.predictor_client import Prediction
 
         # Register instance and submit task
         client.post(
@@ -2091,7 +2091,7 @@ class TestDrainEdgeCases:
 
     def test_drain_instance_with_expect_error_queue(self, client):
         """Test draining with expect_error queue type."""
-        from src.predictor_client import Prediction
+        from src.clients.predictor_client import Prediction
 
         # Register instance first
         client.post(
@@ -2156,7 +2156,7 @@ class TestDrainEdgeCases:
 
     def test_drain_instance_probabilistic_with_median(self, client):
         """Test draining with probabilistic queue that has median."""
-        from src.predictor_client import Prediction
+        from src.clients.predictor_client import Prediction
 
         # Register instance
         client.post(
@@ -2222,7 +2222,7 @@ class TestWebSocketEndpoint:
 
     def test_websocket_subscribe_and_receive_result(self, client):
         """Test WebSocket subscribe and receive task result."""
-        from src.predictor_client import Prediction
+        from src.clients.predictor_client import Prediction
 
         # Register instance and submit task
         client.post(
@@ -2365,7 +2365,7 @@ class TestWebSocketEndpoint:
 
     def test_websocket_exception_handling(self, client):
         """Test WebSocket exception handling."""
-        from src.predictor_client import Prediction
+        from src.clients.predictor_client import Prediction
 
         # Register instance and submit task
         client.post(
@@ -2504,7 +2504,7 @@ class TestRemainingErrorHandling:
 
     def test_task_registry_create_error(self, client):
         """Test task submission with task registry error."""
-        from src.predictor_client import Prediction
+        from src.clients.predictor_client import Prediction
 
         # Register instance
         client.post(
@@ -2525,7 +2525,7 @@ class TestRemainingErrorHandling:
             instance_id="inst-1", predicted_time_ms=100.0
         )
 
-        from src.scheduler import ScheduleResult
+        from src.algorithms import ScheduleResult
 
         with patch(
             "src.api.scheduling_strategy.schedule_task",
@@ -2615,7 +2615,7 @@ class TestRemainingErrorHandling:
 
     def test_drain_instance_no_median_quantile(self, client):
         """Test drain when quantile distribution has no 0.5."""
-        from src.predictor_client import Prediction
+        from src.clients.predictor_client import Prediction
 
         # Register instance
         client.post(
@@ -2917,7 +2917,7 @@ class TestAdditionalCoveragePaths:
     async def test_websocket_subscribe_to_completed_task(self, client):
         """Test subscribing to a task that is already completed."""
         from src import api
-        from src.predictor_client import Prediction
+        from src.clients.predictor_client import Prediction
 
         # Register instance
         client.post(
@@ -3026,7 +3026,7 @@ class TestAdditionalCoveragePaths:
 
     def test_drain_instance_median_fallback(self, client):
         """Test drain when median quantile needs fallback."""
-        from src.predictor_client import Prediction
+        from src.clients.predictor_client import Prediction
 
         # Register instance
         client.post(

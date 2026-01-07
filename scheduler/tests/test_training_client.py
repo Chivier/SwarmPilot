@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from src.training_client import TrainingClient, TrainingSample
+from src.clients.training_client import TrainingClient, TrainingSample
 
 
 @pytest.fixture

@@ -10,20 +10,20 @@ from typing import TYPE_CHECKING, Any, Optional
 import httpx
 from loguru import logger
 
-from src.http_error_logger import log_http_error
-from src.instance_registry import InstanceRegistry
+from src.utils.http_error_logger import log_http_error
+from src.registry.instance_registry import InstanceRegistry
 from src.model import (
     InstanceQueueExpectError,
     InstanceQueueProbabilistic,
     TaskStatus,
 )
-from src.task_registry import TaskRegistry
-from src.websocket_manager import ConnectionManager
+from src.registry.task_registry import TaskRegistry
+from src.services.websocket_manager import ConnectionManager
 
 if TYPE_CHECKING:
     from .central_queue import CentralTaskQueue
-    from .throughput_tracker import ThroughputTracker
-    from .training_client import TrainingClient
+    from src.utils.throughput_tracker import ThroughputTracker
+    from src.clients.training_client import TrainingClient
 
 # Default retry configuration for transient connection errors
 DEFAULT_DISPATCH_RETRIES = 3

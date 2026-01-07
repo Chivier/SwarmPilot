@@ -8,9 +8,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.central_queue import CentralTaskQueue, QueuedTask
-from src.instance_registry import InstanceRegistry
-from src.task_registry import TaskRegistry
+from src.services.central_queue import CentralTaskQueue, QueuedTask
+from src.registry.instance_registry import InstanceRegistry
+from src.registry.task_registry import TaskRegistry
 
 
 class TestQueuedTask:

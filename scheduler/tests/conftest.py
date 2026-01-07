@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 # Import components
-from src.instance_registry import InstanceRegistry
+from src.registry.instance_registry import InstanceRegistry
 
 # Import models
 from src.model import (
@@ -20,10 +20,10 @@ from src.model import (
     InstanceQueueProbabilistic,
     Task,
 )
-from src.predictor_client import Prediction, PredictorClient
-from src.task_dispatcher import TaskDispatcher
-from src.task_registry import TaskRegistry
-from src.websocket_manager import ConnectionManager
+from src.clients.predictor_client import Prediction, PredictorClient
+from src.services.task_dispatcher import TaskDispatcher
+from src.registry.task_registry import TaskRegistry
+from src.services.websocket_manager import ConnectionManager
 
 # ============================================================================
 # Sample Data Fixtures
@@ -380,14 +380,14 @@ def freeze_time(monkeypatch):
         def now():
             return fixed_time
 
-    monkeypatch.setattr("src.task_registry.datetime", MockDatetime)
+    monkeypatch.setattr("src.registry.task_registry.datetime", MockDatetime)
     return fixed_time
 
 
 @pytest.fixture(autouse=True)
 def reset_round_robin_counter():
     """Reset the round-robin counter before each test."""
-    from src.scheduler import RoundRobinStrategy
+    from src.algorithms import RoundRobinStrategy
 
     # Reset the class-level counter if it exists
     if hasattr(RoundRobinStrategy, "_counter"):

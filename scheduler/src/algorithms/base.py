@@ -12,13 +12,14 @@ from typing import TYPE_CHECKING, Any
 import httpx
 from loguru import logger
 
-from src.http_error_logger import log_http_error
-from src.predictor_client import Prediction
+from src.utils.http_error_logger import log_http_error
+from src.clients.predictor_client import Prediction
 
 if TYPE_CHECKING:
-    from src.instance_registry import InstanceRegistry
+    from src.registry.instance_registry import InstanceRegistry
     from src.model import Instance, InstanceQueueBase
-    from src.predictor_client import PredictorClient
+    from src.clients.predictor_client import PredictorClient
+    from src.services.worker_queue_manager import WorkerQueueManager
 
 
 random.seed(42)
@@ -48,6 +49,39 @@ class SchedulingStrategy(ABC):
         """
         self.predictor_client = predictor_client
         self.instance_registry = instance_registry
+        self._worker_queue_manager: "WorkerQueueManager | None" = None
+
+    def set_worker_queue_manager(
+        self,
+        manager: "WorkerQueueManager",
+    ) -> None:
+        """Set the worker queue manager for queue state queries.
+
+        This allows strategies to access scheduler-side queue depth
+        if needed. Most strategies will receive queue_info as a
+        parameter and don't need to call this directly.
+
+        Args:
+            manager: WorkerQueueManager instance
+        """
+        self._worker_queue_manager = manager
+
+    def get_scheduler_queue_depth(self, instance_id: str) -> int:
+        """Get scheduler-side queue depth for an instance.
+
+        This helper method provides direct access to queue depth from
+        the WorkerQueueManager, which can be useful for strategies that
+        need real-time queue information.
+
+        Args:
+            instance_id: Instance to query
+
+        Returns:
+            Queue depth (0 if manager not set or instance not found)
+        """
+        if self._worker_queue_manager is None:
+            return 0
+        return self._worker_queue_manager.get_queue_depth(instance_id)
 
     async def schedule_task(
         self,

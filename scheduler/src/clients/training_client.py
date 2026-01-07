@@ -11,7 +11,7 @@ from typing import Any
 import httpx
 from loguru import logger
 
-from src.http_error_logger import log_http_error
+from src.utils.http_error_logger import log_http_error
 
 
 @dataclass

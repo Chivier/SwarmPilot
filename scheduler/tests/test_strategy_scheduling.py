@@ -11,15 +11,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.instance_registry import InstanceRegistry
+from src.registry.instance_registry import InstanceRegistry
 from src.model import (
     Instance,
     InstanceQueueExpectError,
     InstanceQueueProbabilistic,
     InstanceStatus,
 )
-from src.predictor_client import Prediction, PredictorClient
-from src.scheduler import (
+from src.clients.predictor_client import Prediction, PredictorClient
+from src.algorithms import (
     MinimumExpectedTimeStrategy,
     ProbabilisticSchedulingStrategy,
     RoundRobinStrategy,

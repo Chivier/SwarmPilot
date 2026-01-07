@@ -16,8 +16,8 @@ from src.algorithms.serverless import MinimumExpectedTimeServerlessStrategy
 
 if TYPE_CHECKING:
     from src.algorithms.base import SchedulingStrategy
-    from src.instance_registry import InstanceRegistry
-    from src.predictor_client import PredictorClient
+    from src.registry.instance_registry import InstanceRegistry
+    from src.clients.predictor_client import PredictorClient
 
 
 def get_strategy(

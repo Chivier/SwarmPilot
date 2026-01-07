@@ -28,12 +28,12 @@ from pyinstrument.renderers.html import HTMLRenderer
 from pyinstrument.renderers.speedscope import SpeedscopeRenderer
 
 # Import logger configuration to initialize loguru
-from . import logger as logger_module  # noqa: F401
-from .background_scheduler import BackgroundScheduler
-from .central_queue import CentralTaskQueue
+from .utils.logger import setup_logger  # noqa: F401
+from .services.background_scheduler import BackgroundScheduler
+from .services.central_queue import CentralTaskQueue
 from .config import config
-from .http_error_logger import log_http_error
-from .instance_registry import InstanceRegistry
+from .utils.http_error_logger import log_http_error
+from .registry.instance_registry import InstanceRegistry
 from .model import (
     # Health models
     HealthResponse,
@@ -87,14 +87,14 @@ from .model import (
     WSPongMessage,
     WSTaskResultMessage,
 )
-from .planner_reporter import PlannerReporter
-from .predictor_client import PredictorClient
-from .scheduler import get_strategy
-from .task_dispatcher import TaskDispatcher
-from .task_registry import TaskRegistry
-from .throughput_tracker import ThroughputTracker
-from .training_client import TrainingClient
-from .websocket_manager import ConnectionManager
+from .utils.planner_reporter import PlannerReporter
+from .clients.predictor_client import PredictorClient
+from .algorithms import get_strategy
+from .services.task_dispatcher import TaskDispatcher
+from .registry.task_registry import TaskRegistry
+from .utils.throughput_tracker import ThroughputTracker
+from .clients.training_client import TrainingClient
+from .services.websocket_manager import ConnectionManager
 
 random.seed(42)
 # ============================================================================

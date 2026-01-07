@@ -20,9 +20,9 @@ def client():
     from src import api
 
     # Reset global registries for clean state
-    from src.instance_registry import InstanceRegistry
-    from src.task_registry import TaskRegistry
-    from src.websocket_manager import ConnectionManager
+    from src.registry.instance_registry import InstanceRegistry
+    from src.registry.task_registry import TaskRegistry
+    from src.services.websocket_manager import ConnectionManager
 
     api.instance_registry = InstanceRegistry()
     api.task_registry = TaskRegistry()
@@ -307,7 +307,7 @@ class TestTaskAssignmentWithDraining:
     def setup_mocks(self):
         """Setup mocks for task submission dependencies."""
         from src import api
-        from src.predictor_client import Prediction
+        from src.clients.predictor_client import Prediction
 
         # Mock the predict method on background_scheduler's scheduling_strategy's predictor_client
         # This is necessary because background_scheduler uses scheduling_strategy
