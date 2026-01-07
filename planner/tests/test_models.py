@@ -7,9 +7,6 @@ from src.models import (
     PlannerInput,
     PlannerOutput,
     InstanceInfo,
-    DeploymentInput,
-    DeploymentStatus,
-    DeploymentOutput,
 )
 
 
@@ -173,86 +170,3 @@ class TestInstanceInfo:
         )
         assert info.endpoint == "http://localhost:8080"
         assert info.current_model == "model_0"
-
-
-class TestDeploymentInput:
-    """Tests for DeploymentInput model."""
-
-    def test_valid_deployment_input(self, sample_deployment_input):
-        """Test creation with valid data."""
-        dep_input = DeploymentInput(**sample_deployment_input)
-        assert len(dep_input.instances) == 4
-        assert dep_input.planner_input.M == 4
-
-    def test_instances_count_mismatch(self, sample_deployment_input):
-        """Test validation fails when instances count != M."""
-        sample_deployment_input["instances"] = sample_deployment_input["instances"][:2]
-        with pytest.raises(ValidationError) as exc_info:
-            DeploymentInput(**sample_deployment_input)
-        assert "Number of instances" in str(exc_info.value)
-
-
-class TestDeploymentStatus:
-    """Tests for DeploymentStatus model."""
-
-    def test_valid_success_status(self):
-        """Test creation for successful deployment."""
-        status = DeploymentStatus(
-            instance_index=0,
-            endpoint="http://localhost:8080",
-            target_model="model_1",
-            previous_model="model_0",
-            success=True,
-            error_message=None,
-            deployment_time=2.34
-        )
-        assert status.success is True
-        assert status.error_message is None
-
-    def test_valid_failure_status(self):
-        """Test creation for failed deployment."""
-        status = DeploymentStatus(
-            instance_index=0,
-            endpoint="http://localhost:8080",
-            target_model="model_1",
-            previous_model="model_0",
-            success=False,
-            error_message="Connection timeout",
-            deployment_time=30.0
-        )
-        assert status.success is False
-        assert status.error_message == "Connection timeout"
-
-
-class TestDeploymentOutput:
-    """Tests for DeploymentOutput model."""
-
-    def test_valid_deployment_output(self):
-        """Test creation with valid data."""
-        statuses = [
-            DeploymentStatus(
-                instance_index=i,
-                endpoint=f"http://instance-{i}:8080",
-                target_model=f"model_{i}",
-                previous_model=f"model_{i}",
-                success=True,
-                error_message=None,
-                deployment_time=0.0
-            )
-            for i in range(4)
-        ]
-
-        output = DeploymentOutput(
-            deployment=[0, 1, 1, 2],
-            score=0.0667,
-            stats={"algorithm": "simulated_annealing"},
-            service_capacity=[10.0, 16.0, 12.0],
-            changes_count=1,
-            deployment_status=statuses,
-            success=True,
-            failed_instances=[]
-        )
-
-        assert output.success is True
-        assert len(output.failed_instances) == 0
-        assert len(output.deployment_status) == 4

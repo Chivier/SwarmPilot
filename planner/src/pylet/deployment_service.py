@@ -104,8 +104,11 @@ class PyLetDeploymentService:
         scheduler_url: str,
         default_backend: str = "vllm",
         default_gpu_count: int = 1,
+        default_cpu_count: int = 1,
         deploy_timeout: float = 300.0,
         drain_timeout: float = 30.0,
+        custom_command: str | None = None,
+        reuse_cluster: bool = False,
     ):
         """Initialize PyLet deployment service.
 
@@ -114,14 +117,23 @@ class PyLetDeploymentService:
             scheduler_url: URL of scheduler.
             default_backend: Default model backend.
             default_gpu_count: Default GPUs per instance.
+            default_cpu_count: Default CPU cores per instance.
             deploy_timeout: Timeout for instance deployment.
             drain_timeout: Timeout for instance drain.
+            custom_command: Optional custom command template (overrides backend).
+            reuse_cluster: If True, reuse existing PyLet connection.
         """
-        self._instance_manager = InstanceManager(pylet_head_url, scheduler_url)
+        self._instance_manager = InstanceManager(
+            pylet_head_url=pylet_head_url,
+            scheduler_url=scheduler_url,
+            custom_command=custom_command,
+            reuse_cluster=reuse_cluster,
+        )
         self._deployment_executor: DeploymentExecutor | None = None
         self._migration_executor: MigrationExecutor | None = None
         self._default_backend = default_backend
         self._default_gpu_count = default_gpu_count
+        self._default_cpu_count = default_cpu_count
         self._deploy_timeout = deploy_timeout
         self._drain_timeout = drain_timeout
         self._initialized = False
@@ -427,8 +439,11 @@ def create_pylet_service(
     scheduler_url: str,
     default_backend: str = "vllm",
     default_gpu_count: int = 1,
+    default_cpu_count: int = 1,
     deploy_timeout: float = 300.0,
     drain_timeout: float = 30.0,
+    custom_command: str | None = None,
+    reuse_cluster: bool = False,
 ) -> PyLetDeploymentService:
     """Create and initialize the global PyLet deployment service.
 
@@ -437,8 +452,11 @@ def create_pylet_service(
         scheduler_url: URL of scheduler.
         default_backend: Default model backend.
         default_gpu_count: Default GPUs per instance.
+        default_cpu_count: Default CPU cores per instance.
         deploy_timeout: Timeout for instance deployment.
         drain_timeout: Timeout for instance drain.
+        custom_command: Optional custom command template (overrides backend).
+        reuse_cluster: If True, reuse existing PyLet connection.
 
     Returns:
         Initialized PyLetDeploymentService.
@@ -450,8 +468,11 @@ def create_pylet_service(
         scheduler_url=scheduler_url,
         default_backend=default_backend,
         default_gpu_count=default_gpu_count,
+        default_cpu_count=default_cpu_count,
         deploy_timeout=deploy_timeout,
         drain_timeout=drain_timeout,
+        custom_command=custom_command,
+        reuse_cluster=reuse_cluster,
     )
     _pylet_service.init()
     return _pylet_service

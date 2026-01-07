@@ -115,9 +115,7 @@ class DeploymentPlan:
                         instances_by_model[model_id],
                         key=lambda i: i.created_at,
                     )
-                    pylet_ids = [
-                        c.pylet_id for c in candidates[:remove_count]
-                    ]
+                    pylet_ids = [c.pylet_id for c in candidates[:remove_count]]
 
                 actions.append(
                     DeploymentAction(
@@ -221,9 +219,7 @@ class DeploymentExecutor:
                     instances_by_model[instance.model_id] = []
                 instances_by_model[instance.model_id].append(instance)
 
-        return DeploymentPlan.from_diff(
-            current_state, target_state, instances_by_model
-        )
+        return DeploymentPlan.from_diff(current_state, target_state, instances_by_model)
 
     def execute_plan(
         self,
@@ -232,6 +228,8 @@ class DeploymentExecutor:
         ready_timeout: float = 300.0,
     ) -> ExecutionResult:
         """Execute a deployment plan.
+
+        Uses PyLet's batch deployment (replicas) for efficient instance creation.
 
         Args:
             plan: DeploymentPlan to execute.
@@ -256,37 +254,29 @@ class DeploymentExecutor:
             if action.action_type == "remove":
                 for pylet_id in action.pylet_ids:
                     try:
-                        success = self.instance_manager.terminate_instance(
-                            pylet_id
-                        )
+                        success = self.instance_manager.terminate_instance(pylet_id)
                         if success:
                             removed_instances.append(pylet_id)
                         else:
-                            failed_removes.append(
-                                (pylet_id, "Termination failed")
-                            )
+                            failed_removes.append((pylet_id, "Termination failed"))
                     except Exception as e:
                         failed_removes.append((pylet_id, str(e)))
                         logger.error(f"Failed to remove {pylet_id}: {e}")
 
-        # Execute add actions
+        # Execute add actions using batch deployment (replicas)
         pending_instances: list[ManagedInstance] = []
         for action in plan.actions:
-            if action.action_type == "add":
-                for _ in range(action.count):
-                    try:
-                        instance = self.instance_manager.deploy_instance(
-                            model_id=action.model_id,
-                            backend=self.default_backend,
-                            gpu_count=self.default_gpu_count,
-                            target_worker=action.target_worker,
-                        )
-                        pending_instances.append(instance)
-                    except Exception as e:
-                        failed_adds.append((action.model_id, str(e)))
-                        logger.error(
-                            f"Failed to deploy {action.model_id}: {e}"
-                        )
+            if action.action_type == "add" and action.count > 0:
+                # Use deploy_instances with replicas for batch deployment
+                result = self.instance_manager.deploy_instances(
+                    model_id=action.model_id,
+                    count=action.count,
+                    backend=self.default_backend,
+                    gpu_count=self.default_gpu_count,
+                    target_worker=action.target_worker,
+                )
+                pending_instances.extend(result.deployed)
+                failed_adds.extend(result.failed)
 
         # Wait for pending instances to be ready
         if wait_for_ready and pending_instances:
@@ -298,9 +288,7 @@ class DeploymentExecutor:
                 if instance.status == ManagedInstanceStatus.ACTIVE:
                     added_instances.append(instance)
                 else:
-                    failed_adds.append(
-                        (instance.model_id, instance.error or "Failed")
-                    )
+                    failed_adds.append((instance.model_id, instance.error or "Failed"))
         else:
             added_instances.extend(pending_instances)
 
@@ -369,13 +357,9 @@ class DeploymentExecutor:
             model_id = instance.model_id
             current_state[model_id] = current_state.get(model_id, 0) + 1
 
-        logger.info(
-            f"Reconciling: current={current_state}, target={target_state}"
-        )
+        logger.info(f"Reconciling: current={current_state}, target={target_state}")
 
-        return self.execute(
-            current_state, target_state, wait_for_ready=wait_for_ready
-        )
+        return self.execute(current_state, target_state, wait_for_ready=wait_for_ready)
 
     def scale_model(
         self,
@@ -394,13 +378,9 @@ class DeploymentExecutor:
             ExecutionResult with success/failure details.
         """
         # Get current count for this model
-        current_count = len(
-            self.instance_manager.get_instances_by_model(model_id)
-        )
+        current_count = len(self.instance_manager.get_instances_by_model(model_id))
 
-        logger.info(
-            f"Scaling {model_id}: {current_count} -> {target_count}"
-        )
+        logger.info(f"Scaling {model_id}: {current_count} -> {target_count}")
 
         return self.execute(
             {model_id: current_count},

@@ -5,6 +5,8 @@
 ### 1.1 Purpose
 The **Swarm Planner** is an optimization service that computes optimal model deployment strategies across multiple instance servers. It uses mathematical optimization algorithms (Simulated Annealing or Integer Programming) to determine which models should run on which instances to minimize resource usage while satisfying computational requirements.
 
+The planner integrates with **PyLet** for cluster management, providing deploy, scale, migrate, and optimize operations through a unified API.
+
 ### 1.2 Technology Stack
 ```
 Framework:          FastAPI (async REST API)
@@ -13,15 +15,16 @@ CLI:                Typer
 Optimization:       PuLP (Integer Programming), NumPy (Simulated Annealing)
 HTTP Client:        httpx (async)
 Data Validation:    Pydantic v2
+Cluster Management: PyLet integration
 Testing:            pytest, pytest-asyncio
 Package Manager:    uv
 Python Version:     3.13 (minimum 3.11)
 ```
 
 ### 1.3 Architecture
-- **Type**: Standalone HTTP microservice
+- **Type**: Standalone HTTP microservice with PyLet integration
 - **State**: Stateless (no database, no persistent storage)
-- **Communication**: HTTP/REST with instance services
+- **Communication**: HTTP/REST with PyLet head service
 - **Port**: 8000 (default)
 - **Host**: 0.0.0.0 (binds to all interfaces)
 
@@ -52,14 +55,14 @@ uv run splanner start --host 127.0.0.1 --port 9000
 # Start with debug logging
 uv run splanner start --log-level debug
 
-# Start in background
-uv run splanner start &
+# Start with PyLet integration
+PYLET_ENABLED=true PYLET_HEAD_URL=http://pylet-head:8000 uv run splanner start
 ```
 
 ### 2.3 Health Check
 ```bash
 curl http://localhost:8000/health
-# Response: {"status": "healthy"}
+# Response: {"status": "healthy", "timestamp": "..."}
 ```
 
 ---
@@ -67,20 +70,25 @@ curl http://localhost:8000/health
 ## 3. ENVIRONMENT & CONFIGURATION
 
 ### 3.1 Environment Variables
-The service supports optional environment variables for configuration:
 
+#### Basic Configuration
 ```bash
-# Scheduler Configuration
-SCHEDULER_URL=http://localhost:8100    # Default scheduler URL for instance registration
+PLANNER_HOST=0.0.0.0        # Host to bind to
+PLANNER_PORT=8000            # Port to bind to
+SCHEDULER_URL=http://localhost:8100    # Scheduler URL for instance registration
+INSTANCE_TIMEOUT=30          # HTTP request timeout (seconds)
+INSTANCE_MAX_RETRIES=3       # Max retry attempts for failed requests
+INSTANCE_RETRY_DELAY=1.0     # Initial retry delay (exponential backoff)
+```
 
-# Instance Deployment Configuration
-INSTANCE_TIMEOUT=30                     # HTTP request timeout (seconds)
-INSTANCE_MAX_RETRIES=3                  # Max retry attempts for failed requests
-INSTANCE_RETRY_DELAY=1.0                # Initial retry delay (exponential backoff)
-
-# Planner Service Configuration
-PLANNER_HOST=0.0.0.0                    # Host to bind to
-PLANNER_PORT=8000                       # Port to bind to
+#### PyLet Configuration
+```bash
+PYLET_ENABLED=false          # Enable PyLet integration
+PYLET_HEAD_URL=              # PyLet head service URL (required if enabled)
+PYLET_BACKEND=vllm           # Default backend (vllm or sglang)
+PYLET_GPU_COUNT=1            # Default GPU count per instance
+PYLET_DEPLOY_TIMEOUT=300.0   # Deployment timeout (seconds)
+PYLET_DRAIN_TIMEOUT=60.0     # Drain timeout (seconds)
 ```
 
 All environment variables are **OPTIONAL**. The service will use sensible defaults if not provided.
@@ -94,17 +102,6 @@ All environment variables are **OPTIONAL**. The service will use sensible defaul
 --reload            Enable auto-reload (development only)
 ```
 
-### 3.3 Default Settings
-```json
-{
-  "host": "0.0.0.0",
-  "port": 8000,
-  "log_level": "info",
-  "optimization_timeout": 300,
-  "instance_request_timeout": 10.0
-}
-```
-
 ---
 
 ## 4. API ENDPOINTS REFERENCE
@@ -113,24 +110,11 @@ All environment variables are **OPTIONAL**. The service will use sensible defaul
 
 **Purpose**: Health check endpoint to verify service availability.
 
-**Request**: None
-
 **Response Schema**:
 ```json
 {
-  "status": "healthy"
-}
-```
-
-**Example**:
-```bash
-curl http://localhost:8000/health
-```
-
-**Response**: `200 OK`
-```json
-{
-  "status": "healthy"
+  "status": "healthy",
+  "timestamp": "2025-01-07T12:00:00Z"
 }
 ```
 
@@ -140,30 +124,14 @@ curl http://localhost:8000/health
 
 **Purpose**: Returns service metadata including version and available optimization algorithms.
 
-**Request**: None
-
 **Response Schema**:
 ```json
 {
-  "service": "string",           // Service name
-  "version": "string",           // Semantic version (e.g., "0.1.0")
-  "optimization_methods": [      // List of available algorithms
-    "string"
-  ]
-}
-```
-
-**Example**:
-```bash
-curl http://localhost:8000/info
-```
-
-**Response**: `200 OK`
-```json
-{
-  "service": "swarm-planner",
+  "service": "planner",
   "version": "0.1.0",
-  "optimization_methods": ["simulated_annealing", "integer_programming"]
+  "algorithms": ["simulated_annealing", "integer_programming"],
+  "objective_methods": ["relative_error", "ratio_difference", "weighted_squared"],
+  "description": "Model deployment optimization service"
 }
 ```
 
@@ -171,654 +139,419 @@ curl http://localhost:8000/info
 
 ### 4.3 POST /plan
 
-**Purpose**: Compute optimal deployment plan WITHOUT executing it. Returns the recommended model-to-instance mapping.
+**Purpose**: Compute optimal deployment plan WITHOUT executing it.
 
-**Request Schema**:
+**Request Schema (PlannerInput)**:
 ```json
 {
-  "tasks": [                              // REQUIRED: List of computation tasks
-    {
-      "model_id": "string",               // REQUIRED: Unique model identifier
-      "required_vram_gb": "number",       // REQUIRED: GPU memory needed (GB)
-      "required_flops_tflops": "number"   // REQUIRED: Compute power needed (TFLOPS)
-    }
-  ],
-  "instances": [                          // REQUIRED: List of available instances
-    {
-      "instance_id": "string",            // REQUIRED: Unique instance identifier
-      "base_url": "string",               // REQUIRED: HTTP URL (e.g., "http://192.168.1.10:8001")
-      "total_vram_gb": "number",          // REQUIRED: Total GPU memory (GB)
-      "total_flops_tflops": "number"      // REQUIRED: Total compute power (TFLOPS)
-    }
-  ],
-  "optimization_method": "string"         // OPTIONAL: "simulated_annealing" or "integer_programming"
-                                          // Default: "simulated_annealing"
+  "M": 4,                                    // Number of instances (> 0)
+  "N": 3,                                    // Number of model types (> 0)
+  "B": [[10, 5, 0], [8, 6, 4], ...],         // Batch capacity matrix [M×N]
+  "initial": [0, 1, 2, 2],                   // Initial deployment [M], -1 = no model
+  "a": 0.5,                                  // Change constraint (0 < a ≤ 1)
+  "target": [20, 30, 25],                    // Target request distribution [N]
+  "algorithm": "simulated_annealing",        // Algorithm selection
+  "objective_method": "relative_error",      // Objective function
+  "verbose": true                            // Enable logging
 }
 ```
 
-**Response Schema**:
+**Response Schema (PlannerOutput)**:
 ```json
 {
-  "deployment": {                         // Computed optimal mapping
-    "model_id_1": "instance_id_A",        // Maps each model to an instance
-    "model_id_2": "instance_id_A",
-    "model_id_3": "instance_id_B"
+  "deployment": [0, 1, 1, 2],               // Optimized assignment [M]
+  "score": 0.0667,                          // Objective value (lower = better)
+  "stats": {                                // Algorithm statistics
+    "algorithm": "simulated_annealing",
+    "iterations": 5000,
+    "acceptance_rate": 0.247
   },
-  "method_used": "string",                // Algorithm that was used
-  "total_instances_used": "integer",      // Number of instances required
-  "executed": false                       // Always false for /plan endpoint
+  "service_capacity": [10.0, 16.0, 12.0],   // Capacity per model [N]
+  "changes_count": 1                        // Changes from initial state
 }
 ```
 
-**Example Request**:
+**Example**:
 ```bash
 curl -X POST http://localhost:8000/plan \
   -H "Content-Type: application/json" \
   -d '{
-    "tasks": [
-      {
-        "model_id": "llama-7b",
-        "required_vram_gb": 14.0,
-        "required_flops_tflops": 50.0
-      },
-      {
-        "model_id": "gpt-neo-2.7b",
-        "required_vram_gb": 6.0,
-        "required_flops_tflops": 20.0
-      }
-    ],
-    "instances": [
-      {
-        "instance_id": "gpu-server-1",
-        "base_url": "http://192.168.1.10:8001",
-        "total_vram_gb": 24.0,
-        "total_flops_tflops": 80.0
-      },
-      {
-        "instance_id": "gpu-server-2",
-        "base_url": "http://192.168.1.11:8001",
-        "total_vram_gb": 16.0,
-        "total_flops_tflops": 60.0
-      }
-    ],
-    "optimization_method": "integer_programming"
+    "M": 4, "N": 3,
+    "B": [[10, 5, 0], [8, 6, 4], [0, 10, 8], [6, 0, 12]],
+    "initial": [0, 1, 2, 2],
+    "a": 0.5,
+    "target": [20, 30, 25]
   }'
 ```
 
-**Response**: `200 OK`
-```json
-{
-  "deployment": {
-    "llama-7b": "gpu-server-1",
-    "gpt-neo-2.7b": "gpu-server-1"
-  },
-  "method_used": "integer_programming",
-  "total_instances_used": 1,
-  "executed": false
-}
-```
-
-**Error Responses**:
-- `422 Unprocessable Entity`: Invalid request schema
-- `500 Internal Server Error`: Optimization failed or no feasible solution
-
 ---
 
-### 4.4 POST /deploy
+### 4.4 POST /instance/register
 
-**Purpose**: Compute optimal deployment plan AND execute it by communicating with instance services to start/stop models.
-
-**Request Schema**: Similar to `/plan` endpoint with additional scheduler configuration
-```json
-{
-  "instances": [                          // REQUIRED: List of instance information
-    {
-      "endpoint": "string",               // REQUIRED: Instance endpoint URL
-      "current_model": "string"           // REQUIRED: Currently deployed model name
-    }
-  ],
-  "planner_input": {                      // REQUIRED: Optimization parameters
-    "M": "integer",                       // REQUIRED: Number of instances
-    "N": "integer",                       // REQUIRED: Number of model types
-    "B": [[]],                            // REQUIRED: Benefit matrix
-    "initial": [],                        // REQUIRED: Initial deployment (auto-computed from instances)
-    "a": "number",                        // REQUIRED: Service capacity weight
-    "target": [],                         // REQUIRED: Target service capacity
-    "algorithm": "string",                // OPTIONAL: "simulated_annealing" or "integer_programming"
-    "objective_method": "string"          // OPTIONAL: Objective function method
-  },
-  "scheduler_url": "string"               // OPTIONAL: Scheduler URL for instance registration
-                                          // Overrides SCHEDULER_URL environment variable if provided
-}
-```
-
-**Response Schema**:
-```json
-{
-  "deployment": {                         // Computed optimal mapping
-    "model_id_1": "instance_id_A",
-    "model_id_2": "instance_id_B"
-  },
-  "method_used": "string",                // Algorithm used
-  "total_instances_used": "integer",      // Number of instances used
-  "executed": true,                       // Always true for /deploy endpoint
-  "execution_details": {                  // Detailed execution results
-    "instance_id_A": {
-      "stopped_models": ["old-model-1"],  // Models stopped on this instance
-      "started_models": ["model_id_1"],   // Models started on this instance
-      "errors": []                        // Any errors encountered
-    },
-    "instance_id_B": {
-      "stopped_models": [],
-      "started_models": ["model_id_2"],
-      "errors": []
-    }
-  }
-}
-```
-
-**Example Request**:
-```bash
-curl -X POST http://localhost:8000/deploy \
-  -H "Content-Type: application/json" \
-  -d '{
-    "tasks": [
-      {
-        "model_id": "llama-7b",
-        "required_vram_gb": 14.0,
-        "required_flops_tflops": 50.0
-      }
-    ],
-    "instances": [
-      {
-        "instance_id": "gpu-server-1",
-        "base_url": "http://192.168.1.10:8001",
-        "total_vram_gb": 24.0,
-        "total_flops_tflops": 80.0
-      }
-    ],
-    "optimization_method": "simulated_annealing"
-  }'
-```
-
-**Response**: `200 OK`
-```json
-{
-  "deployment": {
-    "llama-7b": "gpu-server-1"
-  },
-  "method_used": "simulated_annealing",
-  "total_instances_used": 1,
-  "executed": true,
-  "execution_details": {
-    "gpu-server-1": {
-      "stopped_models": ["old-model-xyz"],
-      "started_models": ["llama-7b"],
-      "errors": []
-    }
-  }
-}
-```
-
-**Error Responses**:
-- `422 Unprocessable Entity`: Invalid request schema
-- `500 Internal Server Error`: Optimization or deployment execution failed
-
----
-
-## 5. EXTERNAL COMPONENT INTERACTIONS
-
-### 5.1 Instance Service Communication
-
-The planner communicates with instance services via HTTP to:
-1. **Query current state** (which models are running)
-2. **Stop running models** (free up resources)
-3. **Start new models** (deploy according to plan)
-
-### 5.2 Instance Service API Contract
-
-Instance services MUST implement the following endpoints:
-
-#### 5.2.1 GET /info
-**Purpose**: Query current instance state
-
-**Response Schema**:
-```json
-{
-  "instance_id": "string",
-  "running_models": [
-    {
-      "model_id": "string",
-      "vram_usage_gb": "number",
-      "flops_usage_tflops": "number"
-    }
-  ],
-  "available_vram_gb": "number",
-  "available_flops_tflops": "number"
-}
-```
-
-**Example**:
-```bash
-# Planner calls this to check instance state
-GET http://192.168.1.10:8001/info
-```
-
-#### 5.2.2 GET /model/stop
-**Purpose**: Stop the currently running model
-
-**Request**: None (no request body)
-
-**Response Schema**:
-```json
-{
-  "success": "boolean",
-  "message": "string",
-  "model_id": "string"
-}
-```
-
-**Example**:
-```bash
-# Planner calls this to stop the current model
-GET http://192.168.1.10:8001/model/stop
-```
-
-**Note**: This endpoint stops whatever model is currently running on the instance. The planner queries `/info` first to determine which model is running.
-
-#### 5.2.3 POST /model/start
-**Purpose**: Start a new model
+**Purpose**: Register an instance with the planner for tracking.
 
 **Request Schema**:
 ```json
 {
-  "model_id": "string",
-  "parameters": {},                     // Optional model-specific parameters
-  "scheduler_url": "string"             // REQUIRED: Scheduler URL for instance registration
+  "instance_id": "inst-123",
+  "model_id": "model_a",
+  "endpoint": "http://instance:8080",
+  "platform_info": {
+    "software_name": "vllm",
+    "software_version": "0.3.0",
+    "hardware_name": "nvidia-a100"
+  }
 }
 ```
 
 **Response Schema**:
 ```json
 {
-  "success": "boolean",
-  "message": "string",
-  "model_id": "string",
-  "status": "string"
+  "success": true,
+  "message": "Instance inst-123 registered successfully for model model_a"
 }
 ```
 
-**Example**:
-```bash
-# Planner calls this to start a model
-POST http://192.168.1.10:8001/model/start
-Content-Type: application/json
+---
 
+## 5. PYLET API ENDPOINTS
+
+PyLet endpoints provide cluster management for deploying and managing model instances.
+
+### 5.1 GET /pylet/status
+
+**Purpose**: Get PyLet service status and active instances.
+
+**Response Schema**:
+```json
 {
-  "model_id": "llama-7b",
-  "parameters": {},
-  "scheduler_url": "http://scheduler:8100"
+  "enabled": true,
+  "initialized": true,
+  "current_state": {"model-a": 2, "model-b": 1},
+  "total_instances": 3,
+  "active_instances": [
+    {
+      "pylet_id": "p1",
+      "instance_id": "i1",
+      "model_id": "model-a",
+      "endpoint": "http://localhost:8001",
+      "status": "active",
+      "error": null
+    }
+  ]
 }
 ```
 
-**Note**: The `scheduler_url` parameter is required and tells the instance where to register itself after starting the model.
+---
 
-#### 5.2.4 POST /model/restart
-**Purpose**: Gracefully restart to a new model (drain tasks, then switch)
+### 5.2 POST /pylet/deploy
+
+**Purpose**: Deploy instances to target state via PyLet.
 
 **Request Schema**:
 ```json
 {
-  "model_id": "string",
-  "parameters": {},                     // Optional model-specific parameters
-  "scheduler_url": "string"             // OPTIONAL: Scheduler URL for instance registration
+  "target_state": {"model-a": 2, "model-b": 1},
+  "wait_for_ready": true,
+  "register_with_scheduler": true
 }
 ```
 
 **Response Schema**:
 ```json
 {
-  "success": "boolean",
-  "message": "string",
-  "operation_id": "string"              // ID to track restart progress
+  "success": true,
+  "added_count": 2,
+  "removed_count": 0,
+  "active_instances": [...],
+  "failed_adds": [],
+  "failed_removes": [],
+  "error": null
 }
 ```
-
-**Example**:
-```bash
-# Initiate graceful restart
-POST http://192.168.1.10:8001/model/restart
-Content-Type: application/json
-
-{
-  "model_id": "llama-7b",
-  "parameters": {},
-  "scheduler_url": "http://scheduler:8100"
-}
-```
-
-**Note**: This endpoint performs a graceful restart that:
-1. Drains the current scheduler (stops accepting new tasks)
-2. Waits for pending tasks to complete
-3. Stops the current model
-4. Starts the new model
-5. Registers with the scheduler
-
-#### 5.2.5 GET /model/restart/status
-**Purpose**: Check status of a restart operation
-
-**Request**: Query parameter `operation_id`
-
-**Response Schema**:
-```json
-{
-  "operation_id": "string",
-  "status": "string",                   // "pending", "in_progress", "completed", "failed"
-  "current_phase": "string",            // "draining", "stopping", "starting", "registering"
-  "message": "string"
-}
-```
-
-**Example**:
-```bash
-# Check restart status
-GET http://192.168.1.10:8001/model/restart/status?operation_id=abc123
-```
-
-### 5.3 Communication Flow Diagram
-
-```
-┌─────────────┐                    ┌──────────────────┐
-│   Client    │                    │ Swarm Planner    │
-│             │                    │  (this service)  │
-└──────┬──────┘                    └────────┬─────────┘
-       │                                    │
-       │  POST /deploy                      │
-       │  (tasks + instances)               │
-       ├───────────────────────────────────>│
-       │                                    │
-       │                                    │ 1. Optimize
-       │                                    │    (compute mapping)
-       │                                    │
-       │                              ┌─────┴─────┐
-       │                              │           │
-       │                              │  GET /info (each instance)
-       │                              │  - Query current state
-       │                              │
-       │                              │  POST /model/stop (as needed)
-       │                              │  - Free resources
-       │                              │
-       │                              │  POST /model/start (new models)
-       │                              │  - Deploy models
-       │                              │
-       │                              └─────┬─────┘
-       │                                    │
-       │  Deployment Result                 │
-       │  (mapping + execution details)     │
-       │<───────────────────────────────────┤
-       │                                    │
-```
-
-### 5.4 Retry Logic and Error Handling
-
-The planner includes robust retry logic for transient failures:
-
-**Retry Configuration**:
-- Max retries: 3 (configurable via `INSTANCE_MAX_RETRIES`)
-- Initial delay: 1.0 seconds (configurable via `INSTANCE_RETRY_DELAY`)
-- Backoff strategy: Exponential (delay = initial × 2^attempt)
-
-**Retryable Errors**:
-- Connection errors (httpx.ConnectError)
-- Timeout errors (httpx.TimeoutException)
-- HTTP 5xx errors (except 501 Not Implemented)
-
-**Non-Retryable Errors**:
-- HTTP 4xx errors (client errors)
-- HTTP 501 Not Implemented
-- Validation errors
-
-**Error Response Extraction**:
-The planner attempts to extract detailed error messages from instance responses:
-1. Try to parse JSON error response
-2. Extract "error" or "detail" field
-3. Fall back to response text
-4. Fall back to HTTP status code
-
-**Example Retry Flow**:
-```
-Attempt 1: Connection refused → Wait 1s → Retry
-Attempt 2: Timeout → Wait 2s → Retry
-Attempt 3: 503 Service Unavailable → Wait 4s → Retry
-Attempt 4: Fail (max retries exceeded)
-```
-
-### 5.5 No External Dependencies
-
-This service does NOT require:
-- Database (stateless design)
-- Message queue
-- Cache server (Redis, Memcached)
-- Service mesh / discovery
-- Authentication service (no auth implemented)
 
 ---
 
-## 6. CORE ALGORITHMS
+### 5.3 POST /pylet/scale
 
-### 6.1 Algorithm Selection
+**Purpose**: Scale a specific model to target count.
 
-Two optimization algorithms are available:
+**Request Schema**:
+```json
+{
+  "model_id": "model-a",
+  "target_count": 3,
+  "wait_for_ready": true
+}
+```
 
-| Algorithm               | Use Case                          | Speed      | Quality    |
-|-------------------------|-----------------------------------|------------|------------|
-| `simulated_annealing`   | General purpose, quick results    | Fast       | Good       |
-| `integer_programming`   | Optimal solution guaranteed       | Slower     | Optimal    |
+**Response Schema**:
+```json
+{
+  "success": true,
+  "model_id": "model-a",
+  "previous_count": 2,
+  "current_count": 3,
+  "added": 1,
+  "removed": 0,
+  "active_instances": [...],
+  "error": null
+}
+```
 
-### 6.2 Simulated Annealing
+---
+
+### 5.4 POST /pylet/migrate
+
+**Purpose**: Migrate an instance to a different model.
+
+**Request Schema**:
+```json
+{
+  "pylet_id": "p1",
+  "target_model_id": "model-b"
+}
+```
+
+**Response Schema**:
+```json
+{
+  "success": true,
+  "old_pylet_id": "p1",
+  "new_pylet_id": "p2",
+  "model_id": "model-b",
+  "endpoint": "http://localhost:8002",
+  "error": null
+}
+```
+
+---
+
+### 5.5 POST /pylet/optimize
+
+**Purpose**: Run optimizer and deploy result via PyLet.
+
+**Request Schema**:
+```json
+{
+  "target": [0.5, 0.3, 0.2],
+  "model_ids": ["model-a", "model-b", "model-c"],
+  "B": [[1.0, 0.8, 0.6], [0.9, 1.0, 0.7]],
+  "a": 0.3,
+  "objective_method": "ratio_difference",
+  "algorithm": "simulated_annealing",
+  "wait_for_ready": true
+}
+```
+
+**Response Schema**:
+```json
+{
+  "deployment": [0, 1],
+  "objective_value": 0.05,
+  "service_capacity": [1.0, 1.0, 0.0],
+  "changes": 1,
+  "optimization_stats": {...},
+  "deployment_success": true,
+  "added_count": 2,
+  "removed_count": 0,
+  "active_instances": [...],
+  "error": null
+}
+```
+
+---
+
+### 5.6 POST /pylet/terminate-all
+
+**Purpose**: Terminate all PyLet-managed instances.
+
+**Query Parameters**:
+- `wait_for_drain` (bool, default: false): Wait for instances to drain before termination
+
+**Response Schema**:
+```json
+{
+  "success": true,
+  "total": 3,
+  "succeeded": 3,
+  "failed": 0,
+  "details": {"p1": true, "p2": true, "p3": true}
+}
+```
+
+---
+
+## 6. SCHEDULER COMPATIBILITY ENDPOINTS
+
+These endpoints provide compatibility with the scheduler interface.
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/instance/drain` | POST | Signal instance to start draining |
+| `/instance/drain/status` | GET | Check if instance can be safely removed |
+| `/instance/remove` | POST | Remove instance from tracking |
+| `/task/resubmit` | POST | Resubmit task from failed instance |
+| `/timeline` | GET | Get timeline entries |
+| `/timeline/clear` | POST | Clear timeline entries |
+
+---
+
+## 7. CORE ALGORITHMS
+
+### 7.1 Algorithm Selection
+
+| Algorithm | Best For | Trade-off | Key Parameters |
+|-----------|----------|-----------|----------------|
+| **Simulated Annealing** | Large search spaces, fast approximation | Speed vs Optimality | Temperature schedule, iterations |
+| **Integer Programming** | Guaranteed optimal, smaller problems | Optimality vs Time | Solver, time limit |
+
+### 7.2 Objective Functions
+
+| Method | Formula Focus | Use Case |
+|--------|---------------|----------|
+| `relative_error` | Relative deviation | Balanced general optimization |
+| `ratio_difference` | Ratio mismatch | Proportional fairness |
+| `weighted_squared` | Squared errors | Penalize large deviations |
+
+### 7.3 Simulated Annealing
 
 **File**: `src/core/swarm_optimizer.py:SimulatedAnnealingOptimizer`
 
-**Algorithm Overview**:
-1. Start with random model-to-instance assignment
-2. Iteratively swap assignments to reduce total instances used
-3. Accept worse solutions probabilistically (temperature-based)
-4. Cool down temperature over iterations
-5. Return best solution found
-
 **Parameters**:
 ```python
-max_iterations = 10000
-initial_temperature = 100.0
-cooling_rate = 0.95
-min_temperature = 0.01
+initial_temp = 100.0      # Starting temperature
+final_temp = 0.01         # Ending temperature
+cooling_rate = 0.95       # Temperature decay
+max_iterations = 5000     # Max iterations
+iterations_per_temp = 100 # Iterations per temperature
 ```
-
-**Time Complexity**: O(n × m × k) where:
-- n = number of models
-- m = number of instances
-- k = number of iterations
 
 **When to Use**:
 - Fast optimization needed (< 1 second)
 - Approximate solution acceptable
-- Large problem sizes (100+ models)
+- Large problem sizes (100+ instances)
 
-### 6.3 Integer Programming
+### 7.4 Integer Programming
 
 **File**: `src/core/swarm_optimizer.py:IntegerProgrammingOptimizer`
 
-**Algorithm Overview**:
-1. Formulate as Mixed Integer Linear Programming (MILP) problem
-2. Binary variables: x[model][instance] ∈ {0, 1}
-3. Objective: Minimize number of instances used
-4. Constraints:
-   - Each model assigned to exactly one instance
-   - VRAM capacity not exceeded per instance
-   - FLOPS capacity not exceeded per instance
-5. Solve using PuLP (CBC solver backend)
-
-**Formulation**:
+**Parameters**:
+```python
+solver_name = "PULP_CBC_CMD"  # Solver backend
+time_limit = 300              # Timeout (seconds)
 ```
-Minimize: Σ y[i]  (sum of instance usage indicators)
-
-Subject to:
-  - Σ x[m][i] = 1  for all models m  (each model assigned once)
-  - Σ (x[m][i] × vram[m]) ≤ capacity_vram[i] × y[i]  (VRAM constraint)
-  - Σ (x[m][i] × flops[m]) ≤ capacity_flops[i] × y[i]  (FLOPS constraint)
-  - x[m][i] ∈ {0, 1}  (binary assignment)
-  - y[i] ∈ {0, 1}  (instance used indicator)
-```
-
-**Time Complexity**: O(2^(n×m)) worst case, but typically much faster with branch-and-bound
 
 **When to Use**:
 - Optimal solution required
-- Problem size manageable (< 50 models)
-- Execution time not critical (may take 10+ seconds)
+- Problem size manageable (< 50 instances)
+- Execution time not critical
 
 ---
 
-## 7. DATA MODELS
+## 8. DATA MODELS
 
-### 7.1 Request Models
+### 8.1 Core Models
 
-#### ComputationalTask
+#### PlannerInput
 ```python
 {
-  "model_id": str,                    # Unique identifier for the model
-                                      # Example: "llama-7b", "gpt-neo-2.7b"
+  "M": int,                    # Number of instances (> 0)
+  "N": int,                    # Number of model types (> 0)
+  "B": List[List[float]],      # Batch capacity matrix [M×N]
+  "initial": List[int],        # Initial deployment [M], -1 = no model
+  "a": float,                  # Change constraint (0 < a ≤ 1)
+  "target": List[float],       # Target request distribution [N]
+  "algorithm": str,            # "simulated_annealing" or "integer_programming"
+  "objective_method": str,     # Objective function method
+  "verbose": bool              # Enable logging
+}
+```
 
-  "required_vram_gb": float,          # GPU memory required in gigabytes
-                                      # Must be > 0
-                                      # Example: 14.0, 6.5, 24.0
-
-  "required_flops_tflops": float      # Compute power required in teraflops
-                                      # Must be > 0
-                                      # Example: 50.0, 20.0, 100.0
+#### PlannerOutput
+```python
+{
+  "deployment": List[int],     # Optimized assignment [M]
+  "score": float,              # Objective value
+  "stats": dict,               # Algorithm statistics
+  "service_capacity": List[float],  # Capacity per model [N]
+  "changes_count": int         # Changes from initial state
 }
 ```
 
 #### InstanceInfo
 ```python
 {
-  "instance_id": str,                 # Unique identifier for the instance
-                                      # Example: "gpu-server-1", "node-a"
-
-  "base_url": str,                    # HTTP base URL for instance API
-                                      # Must be valid HTTP/HTTPS URL
-                                      # Example: "http://192.168.1.10:8001"
-
-  "total_vram_gb": float,             # Total GPU memory available (GB)
-                                      # Must be > 0
-                                      # Example: 24.0, 80.0
-
-  "total_flops_tflops": float         # Total compute power available (TFLOPS)
-                                      # Must be > 0
-                                      # Example: 80.0, 150.0
+  "endpoint": str,             # Instance API endpoint
+  "current_model": str         # Current model name
 }
 ```
 
-#### OptimizationRequest
+### 8.2 PyLet Models
+
+#### PyLetDeploymentInput
 ```python
 {
-  "tasks": List[ComputationalTask],   # REQUIRED: List of models to deploy
-                                      # Must have at least 1 task
-
-  "instances": List[InstanceInfo],    # REQUIRED: List of available instances
-                                      # Must have at least 1 instance
-
-  "optimization_method": str          # OPTIONAL: Algorithm selection
-                                      # Default: "simulated_annealing"
-                                      # Options: "simulated_annealing", "integer_programming"
+  "target_state": Dict[str, int],      # Model ID -> count mapping
+  "wait_for_ready": bool,              # Wait for instances to be ready
+  "register_with_scheduler": bool      # Register with scheduler after deploy
 }
 ```
 
-### 7.2 Response Models
-
-#### DeploymentPlan
+#### PyLetScaleInput
 ```python
 {
-  "deployment": Dict[str, str],       # Maps model_id -> instance_id
-                                      # Example: {"llama-7b": "gpu-server-1"}
-
-  "method_used": str,                 # Algorithm that was used
-                                      # Example: "simulated_annealing"
-
-  "total_instances_used": int,        # Count of instances in the solution
-                                      # Example: 3
-
-  "executed": bool                    # Whether deployment was executed
-                                      # False for /plan, True for /deploy
+  "model_id": str,                     # Model to scale
+  "target_count": int,                 # Target instance count
+  "wait_for_ready": bool               # Wait for instances to be ready
 }
 ```
 
-#### DeploymentResult (extends DeploymentPlan)
+#### PyLetMigrateInput
 ```python
 {
-  # All fields from DeploymentPlan, plus:
-
-  "execution_details": Dict[str, InstanceExecutionDetail]
-                                      # Maps instance_id -> execution results
-                                      # Only present when executed=True
-}
-```
-
-#### InstanceExecutionDetail
-```python
-{
-  "stopped_models": List[str],        # Model IDs that were stopped
-                                      # Example: ["old-model-1", "old-model-2"]
-
-  "started_models": List[str],        # Model IDs that were started
-                                      # Example: ["llama-7b"]
-
-  "errors": List[str]                 # Any error messages encountered
-                                      # Example: ["Failed to stop model xyz"]
-}
-```
-
-#### HealthResponse
-```python
-{
-  "status": str                       # Always "healthy" if service is up
-}
-```
-
-#### InfoResponse
-```python
-{
-  "service": str,                     # Service name: "swarm-planner"
-  "version": str,                     # Semantic version: "0.1.0"
-  "optimization_methods": List[str]   # ["simulated_annealing", "integer_programming"]
+  "pylet_id": str,                     # PyLet instance to migrate
+  "target_model_id": str               # Target model ID
 }
 ```
 
 ---
 
-## 8. DEVELOPMENT & TESTING
+## 9. DEVELOPMENT & TESTING
 
-### 8.1 Project Structure
+### 9.1 Project Structure
 ```
 planner/
 ├── src/
 │   ├── api.py                      # FastAPI application & endpoints
-│   ├── models.py                   # Pydantic data models
-│   ├── deployment_service.py       # Deployment orchestration
 │   ├── cli.py                      # Typer CLI commands
-│   └── core/
-│       ├── swarm_optimizer.py      # Optimization algorithms
-│       └── base_optimizer.py       # Abstract optimizer interface
+│   ├── logging_config.py           # Logging configuration
+│   ├── core/
+│   │   ├── swarm_optimizer.py      # Optimization algorithms
+│   │   └── base_optimizer.py       # Abstract optimizer interface
+│   ├── models/
+│   │   ├── base.py                 # Base models
+│   │   ├── instance.py             # Instance models
+│   │   ├── planner.py              # Planner I/O models
+│   │   ├── pylet.py                # PyLet models
+│   │   └── scheduler_compat.py     # Scheduler compatibility models
+│   └── pylet/
+│       ├── client.py               # PyLet HTTP client
+│       └── service.py              # PyLet service layer
 ├── tests/
+│   ├── conftest.py                 # Test fixtures
 │   ├── test_api.py                 # API endpoint tests
-│   ├── test_deployment_service.py  # Service logic tests
-│   └── test_optimizers.py          # Algorithm tests
+│   ├── test_models.py              # Model validation tests
+│   ├── test_e2e_api_behavior.py    # E2E behavior tests
+│   ├── test_optimizers.py          # Algorithm tests
+│   └── test_pylet/                 # PyLet integration tests
+├── docs/
+│   └── 1.API_REFERENCE.md          # API documentation
 ├── pyproject.toml                  # Project metadata & dependencies
-├── uv.lock                         # Locked dependency versions
-└── README.md                       # Human-readable documentation
+└── uv.lock                         # Locked dependency versions
 ```
 
-### 8.2 Running Tests
+### 9.2 Running Tests
 ```bash
 # Run all tests
 uv run pytest
@@ -832,303 +565,187 @@ uv run pytest tests/test_api.py
 # Run with coverage
 uv run pytest --cov=src
 
-# Run in quiet mode (minimal output)
-uv run pytest -q
+# Run PyLet tests only
+uv run pytest tests/test_pylet/
 ```
 
-### 8.3 Key Module Responsibilities
+### 9.3 Key Module Responsibilities
 
-| Module                     | Responsibility                                          |
-|----------------------------|---------------------------------------------------------|
-| `api.py`                   | HTTP endpoints, request validation, response formatting |
-| `models.py`                | Data schemas, validation rules, type definitions        |
-| `deployment_service.py`    | Orchestrates instance communication & deployment        |
-| `cli.py`                   | Command-line interface, server startup                  |
-| `swarm_optimizer.py`       | Optimization algorithms (SA and IP)                     |
-| `base_optimizer.py`        | Abstract base class for optimizers                      |
-
-### 8.4 Adding New Optimization Algorithm
-
-1. Create new class inheriting from `BaseOptimizer`:
-```python
-# src/core/my_optimizer.py
-from .base_optimizer import BaseOptimizer
-
-class MyOptimizer(BaseOptimizer):
-    def optimize(
-        self,
-        tasks: List[ComputationalTask],
-        instances: List[InstanceInfo]
-    ) -> Dict[str, str]:
-        # Implement your algorithm
-        return deployment_mapping
-```
-
-2. Register in `swarm_optimizer.py`:
-```python
-OPTIMIZERS = {
-    "simulated_annealing": SimulatedAnnealingOptimizer,
-    "integer_programming": IntegerProgrammingOptimizer,
-    "my_algorithm": MyOptimizer,  # Add here
-}
-```
-
-3. Add tests in `tests/test_optimizers.py`
+| Module | Responsibility |
+|--------|----------------|
+| `api.py` | HTTP endpoints, request validation, response formatting |
+| `models/` | Data schemas, validation rules, type definitions |
+| `core/swarm_optimizer.py` | Optimization algorithms (SA and IP) |
+| `pylet/service.py` | PyLet cluster management operations |
+| `pylet/client.py` | HTTP communication with PyLet head |
+| `cli.py` | Command-line interface, server startup |
 
 ---
 
-## 9. ERROR HANDLING
+## 10. ERROR HANDLING
 
-### 9.1 Common Error Scenarios
+### 10.1 Common Error Scenarios
 
-| Error                               | Cause                                      | Resolution                              |
-|-------------------------------------|--------------------------------------------|-----------------------------------------|
-| No feasible solution                | Tasks exceed total instance capacity       | Add more instances or reduce task sizes |
-| Instance unreachable                | base_url incorrect or service down         | Verify instance URL and availability    |
-| Model start/stop failed             | Instance API error                         | Check instance logs and API contract    |
-| 422 Unprocessable Entity            | Invalid request schema                     | Validate request against schemas        |
-| Optimization timeout                | Problem too large for algorithm            | Use simpler algorithm or reduce problem |
+| Error | Cause | Resolution |
+|-------|-------|------------|
+| No feasible solution | Constraints cannot be satisfied | Adjust target or increase instances |
+| PyLet not enabled | PYLET_ENABLED=false | Set environment variable |
+| PyLet head unreachable | PYLET_HEAD_URL incorrect | Verify URL and service availability |
+| Validation error (422) | Invalid request schema | Check request against schemas |
+| Optimization timeout | Problem too large | Use simpler algorithm or reduce size |
 
-### 9.2 Error Response Format
+### 10.2 Error Response Format
 ```json
 {
   "detail": "Error message describing what went wrong"
 }
 ```
 
-**Example**:
-```json
-{
-  "detail": "No feasible deployment found: total required VRAM (100 GB) exceeds total available (80 GB)"
-}
-```
-
 ---
 
-## 10. OPERATIONAL CONSIDERATIONS
+## 11. OPERATIONAL CONSIDERATIONS
 
-### 10.1 Performance Characteristics
+### 11.1 Performance Characteristics
 
-| Metric                    | Value                                    |
-|---------------------------|------------------------------------------|
-| Request processing time   | 10ms - 30s (depends on algorithm & size) |
-| Concurrent requests       | Limited by uvicorn workers (default: 1)  |
-| Memory usage              | ~100MB base + O(n×m) for optimization    |
-| CPU usage                 | High during optimization, idle otherwise |
+| Metric | Value |
+|--------|-------|
+| Request processing time | 10ms - 30s (depends on algorithm & size) |
+| Concurrent requests | Limited by uvicorn workers (default: 1) |
+| Memory usage | ~100MB base + O(n×m) for optimization |
+| CPU usage | High during optimization, idle otherwise |
 
-### 10.2 Scaling Recommendations
+### 11.2 Scaling Recommendations
 
 - **Horizontal scaling**: Run multiple planner instances behind load balancer
 - **Vertical scaling**: Increase CPU cores for faster integer programming
-- **Optimization**: Use simulated annealing for large problems (>50 models)
+- **Optimization**: Use simulated annealing for large problems (>50 instances)
 
-### 10.3 Monitoring
-
-Key metrics to monitor:
-- `/health` endpoint response time
-- Optimization request duration (from logs)
-- Instance communication failures (from execution_details.errors)
-- HTTP 500 error rate
-
-### 10.4 Security Considerations
+### 11.3 Security Considerations
 
 **IMPORTANT**: This service has NO authentication or authorization.
 
 Recommendations for production:
 - Deploy behind API gateway with auth
-- Use HTTPS for instance communication
+- Use HTTPS for PyLet communication
 - Implement rate limiting
-- Validate instance URLs (prevent SSRF)
 - Add request size limits
-
----
-
-## 11. TROUBLESHOOTING
-
-### 11.1 Service Won't Start
-
-**Symptom**: `splanner start` fails
-
-**Checks**:
-```bash
-# 1. Verify uv installation
-uv --version
-
-# 2. Verify dependencies
-uv sync
-
-# 3. Check port availability
-lsof -i :8000
-
-# 4. Try with explicit host/port
-uv run splanner start --host 127.0.0.1 --port 9000
-```
-
-### 11.2 Optimization Fails
-
-**Symptom**: POST /plan or /deploy returns 500 error
-
-**Checks**:
-1. Verify request schema is correct
-2. Check that total capacity ≥ total requirements
-3. Try different optimization method
-4. Check logs for detailed error messages
-
-### 11.3 Deployment Execution Fails
-
-**Symptom**: /deploy returns success but execution_details shows errors
-
-**Checks**:
-1. Verify instance base_url is accessible
-2. Test instance endpoints manually:
-   ```bash
-   curl http://<instance-url>/info
-   ```
-3. Check instance service logs
-4. Verify instance API contract compliance
 
 ---
 
 ## 12. INTEGRATION EXAMPLES
 
-### 12.1 Python Client Example
+### 12.1 Python Client - Planning Only
 ```python
 import httpx
 
-async def deploy_models():
+async def compute_plan():
     async with httpx.AsyncClient() as client:
-        # Prepare request
         request = {
-            "tasks": [
-                {
-                    "model_id": "llama-7b",
-                    "required_vram_gb": 14.0,
-                    "required_flops_tflops": 50.0
-                }
-            ],
-            "instances": [
-                {
-                    "instance_id": "gpu-1",
-                    "base_url": "http://192.168.1.10:8001",
-                    "total_vram_gb": 24.0,
-                    "total_flops_tflops": 80.0
-                }
-            ],
-            "optimization_method": "integer_programming"
+            "M": 4, "N": 3,
+            "B": [[10, 5, 0], [8, 6, 4], [0, 10, 8], [6, 0, 12]],
+            "initial": [0, 1, 2, 2],
+            "a": 0.5,
+            "target": [20, 30, 25],
+            "algorithm": "simulated_annealing"
         }
 
-        # Call planner
         response = await client.post(
-            "http://localhost:8000/deploy",
+            "http://localhost:8000/plan",
             json=request
         )
 
         result = response.json()
         print(f"Deployment: {result['deployment']}")
-        print(f"Instances used: {result['total_instances_used']}")
-
+        print(f"Score: {result['score']}")
         return result
 ```
 
-### 12.2 cURL Example
+### 12.2 Python Client - PyLet Deployment
+```python
+import httpx
+
+async def deploy_via_pylet():
+    async with httpx.AsyncClient() as client:
+        # Deploy specific model counts
+        deploy_request = {
+            "target_state": {"model-a": 2, "model-b": 1},
+            "wait_for_ready": True,
+            "register_with_scheduler": True
+        }
+
+        response = await client.post(
+            "http://localhost:8000/pylet/deploy",
+            json=deploy_request
+        )
+
+        result = response.json()
+        print(f"Success: {result['success']}")
+        print(f"Added: {result['added_count']}")
+        return result
+```
+
+### 12.3 cURL Examples
 ```bash
-# Plan deployment (dry-run)
+# Compute deployment plan
 curl -X POST http://localhost:8000/plan \
   -H "Content-Type: application/json" \
   -d '{
-    "tasks": [
-      {"model_id": "model-a", "required_vram_gb": 10, "required_flops_tflops": 30},
-      {"model_id": "model-b", "required_vram_gb": 8, "required_flops_tflops": 25}
-    ],
-    "instances": [
-      {"instance_id": "gpu-1", "base_url": "http://192.168.1.10:8001", "total_vram_gb": 24, "total_flops_tflops": 80}
-    ]
+    "M": 4, "N": 3,
+    "B": [[10, 5, 0], [8, 6, 4], [0, 10, 8], [6, 0, 12]],
+    "initial": [0, 1, 2, 2],
+    "a": 0.5,
+    "target": [20, 30, 25]
   }'
 
-# Execute deployment
-curl -X POST http://localhost:8000/deploy \
+# Deploy via PyLet
+curl -X POST http://localhost:8000/pylet/deploy \
   -H "Content-Type: application/json" \
-  -d @deployment_request.json
-```
+  -d '{
+    "target_state": {"model-a": 2, "model-b": 1},
+    "wait_for_ready": true
+  }'
 
-### 12.3 JavaScript/TypeScript Example
-```typescript
-interface DeploymentRequest {
-  tasks: {
-    model_id: string;
-    required_vram_gb: number;
-    required_flops_tflops: number;
-  }[];
-  instances: {
-    instance_id: string;
-    base_url: string;
-    total_vram_gb: number;
-    total_flops_tflops: number;
-  }[];
-  optimization_method?: "simulated_annealing" | "integer_programming";
-}
+# Scale a model
+curl -X POST http://localhost:8000/pylet/scale \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model_id": "model-a",
+    "target_count": 3
+  }'
 
-async function deployModels(request: DeploymentRequest) {
-  const response = await fetch("http://localhost:8000/deploy", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(request),
-  });
-
-  const result = await response.json();
-  console.log("Deployment result:", result);
-  return result;
-}
+# Check PyLet status
+curl http://localhost:8000/pylet/status
 ```
 
 ---
 
-## 13. CHANGELOG & VERSION HISTORY
+## 13. FAQ
 
-### Version 0.1.0 (Current)
-- Initial release
-- Two optimization algorithms: Simulated Annealing and Integer Programming
-- Four REST API endpoints: /health, /info, /plan, /deploy
-- Async HTTP communication with instance services
-- Comprehensive test coverage
-- Zero-configuration design
+### Q1: What's the difference between /plan and /pylet/optimize?
+**A**: `/plan` only computes an optimal deployment without executing it. `/pylet/optimize` computes the plan AND deploys it via PyLet.
 
----
+### Q2: Can I use this service without PyLet?
+**A**: Yes, the `/plan` endpoint works standalone. PyLet integration is optional and controlled by `PYLET_ENABLED`.
 
-## 14. FREQUENTLY ASKED QUESTIONS (FAQ)
-
-### Q1: Can I use this service without instance services?
-**A**: Yes, the `/plan` endpoint works standalone and doesn't communicate with instances. It only computes the optimal mapping. The `/deploy` endpoint requires instance services to execute the deployment.
-
-### Q2: What happens if an instance is unreachable during deployment?
-**A**: The deployment will attempt to continue with other instances. Errors will be recorded in `execution_details[instance_id].errors`. The overall request will still return 200 OK with partial results.
-
-### Q3: Can I add custom optimization algorithms?
-**A**: Yes, see section 8.4 "Adding New Optimization Algorithm" for instructions.
+### Q3: How do I choose between algorithms?
+**A**: Use `simulated_annealing` for speed (sub-second results) and `integer_programming` for guaranteed optimal solutions.
 
 ### Q4: Does this service persist deployment state?
-**A**: No, this service is completely stateless. It doesn't remember previous deployments. State is managed by the instance services themselves.
-
-### Q5: How do I choose between simulated_annealing and integer_programming?
-**A**: Use `simulated_annealing` for speed (sub-second results) and `integer_programming` for guaranteed optimal solutions (may take 10+ seconds for large problems).
-
-### Q6: Can I run multiple planner instances?
-**A**: Yes, the service is stateless so you can run multiple instances behind a load balancer for high availability.
-
-### Q7: What if no feasible solution exists?
-**A**: The API will return a 500 error with details about why no solution could be found (typically insufficient total resources).
+**A**: No, this service is completely stateless. State is managed by PyLet or the instance services themselves.
 
 ---
 
-## 15. CONTACT & SUPPORT
+## 14. VERSION HISTORY
 
-- **Repository**: `/chivier-disk/yanweiye/Projects/swarmpilot-refresh/planner`
-- **Documentation**: This file (`README_FOR_LLM.md`)
-- **Tests**: Run `uv run pytest` to verify functionality
-- **Version**: 0.1.0
+### Version 0.1.0 (Current)
+- Two optimization algorithms: Simulated Annealing and Integer Programming
+- Three objective methods: relative_error, ratio_difference, weighted_squared
+- PyLet integration for cluster management
+- REST API endpoints: /health, /info, /plan, /pylet/*
+- Comprehensive test coverage
 
 ---
 
-**Document Version**: 1.0
-**Last Updated**: 2025-11-02
+**Document Version**: 2.0
+**Last Updated**: 2025-01-07
 **Target Audience**: LLM agents, automated systems, integration developers

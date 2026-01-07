@@ -385,9 +385,22 @@ class TestPyLetConfigValidation:
         config.pylet_enabled = True
         config.pylet_head_url = "http://localhost:8000"
         config.pylet_backend = "vllm"
-        config.pylet_gpu_count = 0
+        config.pylet_gpu_count = -1  # Negative GPU count is invalid
 
-        with pytest.raises(ValueError, match="PYLET_GPU_COUNT must be positive"):
+        with pytest.raises(ValueError, match="PYLET_GPU_COUNT must be non-negative"):
+            config.validate()
+
+    def test_pylet_invalid_cpu_count(self):
+        """Test that invalid CPU count raises error."""
+        from src.config import PlannerConfig
+
+        config = PlannerConfig()
+        config.pylet_enabled = True
+        config.pylet_head_url = "http://localhost:8000"
+        config.pylet_backend = "vllm"
+        config.pylet_cpu_count = 0  # CPU count must be positive
+
+        with pytest.raises(ValueError, match="PYLET_CPU_COUNT must be positive"):
             config.validate()
 
     def test_pylet_valid_config(self):

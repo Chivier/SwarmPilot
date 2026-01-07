@@ -142,14 +142,22 @@ class InstanceManager:
         self,
         pylet_head_url: str,
         scheduler_url: str,
+        custom_command: str | None = None,
+        reuse_cluster: bool = False,
     ):
         """Initialize instance manager.
 
         Args:
             pylet_head_url: URL of PyLet head node.
             scheduler_url: URL of scheduler.
+            custom_command: Optional custom command template for PyLet.
+            reuse_cluster: If True, reuse existing PyLet connection.
         """
-        self.pylet_client = PyLetClient(pylet_head_url)
+        self.pylet_client = PyLetClient(
+            head_url=pylet_head_url,
+            custom_command=custom_command,
+            reuse_cluster=reuse_cluster,
+        )
         self.scheduler_client = SchedulerClient(scheduler_url)
         self._instances: dict[str, ManagedInstance] = {}
         self._initialized = False
@@ -169,8 +177,7 @@ class InstanceManager:
         # Verify scheduler is available
         if not self.scheduler_client.health_check():
             raise RuntimeError(
-                f"Scheduler not available at "
-                f"{self.scheduler_client.scheduler_url}"
+                f"Scheduler not available at " f"{self.scheduler_client.scheduler_url}"
             )
 
         self._initialized = True
@@ -217,7 +224,7 @@ class InstanceManager:
         """
         self._ensure_initialized()
 
-        # Deploy via PyLet
+        # Deploy via PyLet (single replica)
         info = self.pylet_client.deploy_model(
             model_id=model_id,
             backend=backend,
@@ -225,6 +232,7 @@ class InstanceManager:
             env=env,
             labels=labels,
             target_worker=target_worker,
+            replicas=1,
         )
 
         # Use PyLet ID as scheduler instance ID if not provided
@@ -256,7 +264,10 @@ class InstanceManager:
         gpu_count: int = 1,
         target_worker: str | None = None,
     ) -> DeploymentResult:
-        """Deploy multiple model instances.
+        """Deploy multiple model instances using PyLet's replicas feature.
+
+        Uses PyLet's native batch deployment for efficiency instead of
+        deploying one instance at a time.
 
         Args:
             model_id: Model identifier.
@@ -268,21 +279,52 @@ class InstanceManager:
         Returns:
             DeploymentResult with deployed and failed instances.
         """
+        if count <= 0:
+            return DeploymentResult(
+                model_id=model_id,
+                requested_count=count,
+                deployed=[],
+                failed=[],
+            )
+
         deployed = []
         failed = []
 
-        for i in range(count):
-            try:
-                instance = self.deploy_instance(
+        try:
+            # Use PyLet's replicas feature for batch deployment
+            result = self.pylet_client.deploy_model(
+                model_id=model_id,
+                backend=backend,
+                gpu_count=gpu_count,
+                target_worker=target_worker,
+                replicas=count,
+            )
+
+            # Handle both single instance and list return types
+            infos = result if isinstance(result, list) else [result]
+
+            for info in infos:
+                managed = ManagedInstance(
+                    pylet_id=info.pylet_id,
+                    instance_id=info.pylet_id,
                     model_id=model_id,
                     backend=backend,
                     gpu_count=gpu_count,
-                    target_worker=target_worker,
+                    status=ManagedInstanceStatus.DEPLOYING,
                 )
-                deployed.append(instance)
-            except Exception as e:
+                self._instances[info.pylet_id] = managed
+                deployed.append(managed)
+
+            logger.info(
+                f"Deployed {len(deployed)} instances for {model_id} "
+                f"using replicas={count}"
+            )
+
+        except Exception as e:
+            # If batch deployment fails entirely, record all as failed
+            for i in range(count):
                 failed.append((f"instance-{i}", str(e)))
-                logger.error(f"Failed to deploy instance {i}: {e}")
+            logger.error(f"Batch deployment failed for {model_id}: {e}")
 
         return DeploymentResult(
             model_id=model_id,
@@ -321,9 +363,7 @@ class InstanceManager:
         try:
             # Wait for PyLet instance to be running
             managed.status = ManagedInstanceStatus.WAITING_HEALTH
-            info = self.pylet_client.wait_instance_running(
-                pylet_id, timeout=timeout
-            )
+            info = self.pylet_client.wait_instance_running(pylet_id, timeout=timeout)
 
             managed.endpoint = info.endpoint
             logger.info(f"Instance {pylet_id} running at {info.endpoint}")
@@ -340,9 +380,7 @@ class InstanceManager:
 
                 if result.success:
                     managed.status = ManagedInstanceStatus.ACTIVE
-                    logger.info(
-                        f"Instance {managed.instance_id} registered and active"
-                    )
+                    logger.info(f"Instance {managed.instance_id} registered and active")
                 else:
                     managed.status = ManagedInstanceStatus.FAILED
                     managed.error = result.message
@@ -501,7 +539,8 @@ class InstanceManager:
             List of active ManagedInstances.
         """
         instances = [
-            i for i in self._instances.values()
+            i
+            for i in self._instances.values()
             if i.status == ManagedInstanceStatus.ACTIVE
         ]
 
@@ -510,9 +549,7 @@ class InstanceManager:
 
         return instances
 
-    def get_instances_by_model(
-        self, model_id: str
-    ) -> list[ManagedInstance]:
+    def get_instances_by_model(self, model_id: str) -> list[ManagedInstance]:
         """Get all instances for a model.
 
         Args:
@@ -521,10 +558,7 @@ class InstanceManager:
         Returns:
             List of ManagedInstances for the model.
         """
-        return [
-            i for i in self._instances.values()
-            if i.model_id == model_id
-        ]
+        return [i for i in self._instances.values() if i.model_id == model_id]
 
     def refresh_instance(self, pylet_id: str) -> ManagedInstance | None:
         """Refresh instance state from PyLet.
@@ -556,9 +590,7 @@ class InstanceManager:
     def _ensure_initialized(self) -> None:
         """Ensure manager is initialized."""
         if not self._initialized:
-            raise RuntimeError(
-                "InstanceManager not initialized. Call init() first."
-            )
+            raise RuntimeError("InstanceManager not initialized. Call init() first.")
 
 
 # Global manager singleton
@@ -596,7 +628,6 @@ def get_instance_manager() -> InstanceManager:
     """
     if _instance_manager is None:
         raise RuntimeError(
-            "InstanceManager not created. "
-            "Call create_instance_manager() first."
+            "InstanceManager not created. " "Call create_instance_manager() first."
         )
     return _instance_manager

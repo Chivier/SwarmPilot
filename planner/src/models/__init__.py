@@ -5,13 +5,11 @@ All models are re-exported here for backward compatibility.
 """
 
 from .base import InstanceStatus
-from .deployment import DeploymentInput, DeploymentOutput, DeploymentStatus
 from .instance import (
     InstanceInfo,
     InstanceRegisterRequest,
     InstanceRegisterResponse,
 )
-from .migration import MigrationOutput, MigrationStatus
 from .planner import PlannerInput, PlannerOutput
 from .pylet import (
     PyLetDeploymentInput,
@@ -34,12 +32,6 @@ from .scheduler_compat import (
     TaskResubmitRequest,
     TaskResubmitResponse,
 )
-from .target import (
-    SubmitTargetRequest,
-    SubmitTargetResponse,
-    SubmitThroughputRequest,
-    SubmitThroughputResponse,
-)
 
 __all__ = [
     # Base
@@ -51,18 +43,6 @@ __all__ = [
     "InstanceInfo",
     "InstanceRegisterRequest",
     "InstanceRegisterResponse",
-    # Deployment
-    "DeploymentInput",
-    "DeploymentOutput",
-    "DeploymentStatus",
-    # Migration
-    "MigrationStatus",
-    "MigrationOutput",
-    # Target
-    "SubmitTargetRequest",
-    "SubmitTargetResponse",
-    "SubmitThroughputRequest",
-    "SubmitThroughputResponse",
     # Scheduler Compat
     "InstanceDrainRequest",
     "InstanceDrainResponse",

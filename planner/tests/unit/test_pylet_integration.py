@@ -281,15 +281,26 @@ class TestDeploymentExecutor:
         assert plan.total_removes == 0
 
     def test_scale_model(self):
-        """Test scaling a specific model."""
+        """Test scaling a specific model using batch deployment."""
+        from src.pylet.instance_manager import DeploymentResult
+
         mock_manager = MagicMock()
         mock_manager.instances = {}
         mock_manager.get_instances_by_model.return_value = []
-        mock_manager.deploy_instance.return_value = ManagedInstance(
+        mock_manager.get_active_instances.return_value = []
+
+        # Mock deploy_instances to return a DeploymentResult with deployed instances
+        deployed_instance = ManagedInstance(
             pylet_id="new-id",
             instance_id="new-inst",
             model_id="model-a",
             status=ManagedInstanceStatus.DEPLOYING,
+        )
+        mock_manager.deploy_instances.return_value = DeploymentResult(
+            model_id="model-a",
+            requested_count=1,
+            deployed=[deployed_instance],
+            failed=[],
         )
         mock_manager.wait_instances_ready.return_value = [
             ManagedInstance(
@@ -305,6 +316,8 @@ class TestDeploymentExecutor:
 
         assert result.success
         assert result.added_count == 1
+        # Verify batch deployment was used
+        mock_manager.deploy_instances.assert_called_once()
 
 
 class TestMigrationExecutor:

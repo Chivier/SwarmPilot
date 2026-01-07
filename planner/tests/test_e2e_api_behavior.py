@@ -106,27 +106,6 @@ class TestAPIBehaviorConsistency:
         data = response.json()
         assert "detail" in data
 
-    def test_deploy_endpoint_validation(self, client):
-        """Test that /deploy endpoint validates input correctly."""
-        # Invalid input: instances count doesn't match M
-        request_data = {
-            "instances": [
-                {"endpoint": "http://localhost:8001", "current_model": "model_a"}
-            ],
-            "planner_input": {
-                "M": 2,  # Mismatch!
-                "N": 2,
-                "B": [[10, 5], [8, 6]],
-                "initial": [0, 1],
-                "a": 0.5,
-                "target": [20, 30],
-            },
-        }
-
-        response = client.post("/deploy", json=request_data)
-
-        assert response.status_code == 422  # Validation error
-
     def test_exception_handling_produces_500(self, client):
         """Test that unhandled exceptions produce 500 errors."""
         # Intentionally malformed request that will cause internal error

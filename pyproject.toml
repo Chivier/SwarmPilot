@@ -64,6 +64,7 @@ members = [
     "instance",
     "predictor",
     "planner",
+    "scripts",
     "instance/dockers/sleep_model", "graph", "instance/dockers/llm_service_large_model",
 ]
 

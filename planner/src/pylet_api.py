@@ -349,10 +349,10 @@ async def pylet_optimize(input_data: PyLetOptimizeInput):
 
         return PyLetOptimizeOutput(
             deployment=deployment.tolist(),
-            objective_value=float(score),
+            score=float(score),
             service_capacity=service_capacity.tolist(),
-            changes=int(changes_count),
-            optimization_stats=stats,
+            changes_count=int(changes_count),
+            stats=stats,
             deployment_success=deploy_result.success,
             added_count=deploy_result.total_added,
             removed_count=deploy_result.total_removed,
