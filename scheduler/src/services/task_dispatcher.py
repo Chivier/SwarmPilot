@@ -231,6 +231,13 @@ class TaskDispatcher:
         # Get instance for stats update
         instance = await self.instance_registry.get(task.assigned_instance)
 
+        # Log callback received
+        logger.info(
+            f"[CALLBACK_RECEIVED] task_id={task_id} status={status} "
+            f"execution_time_ms={execution_time_ms or 'N/A'} "
+            f"instance_id={instance.instance_id if instance else 'N/A'}"
+        )
+
         # Update task based on status
         if status == "completed":
             await self.task_registry.update_status(
@@ -260,6 +267,13 @@ class TaskDispatcher:
                     predicted_error_margin_ms=task.predicted_error_margin_ms,
                     predicted_quantiles=task.predicted_quantiles,
                 )
+                # Log queue update
+                logger.debug(
+                    f"[CALLBACK_QUEUE_UPDATE] task_id={task_id} "
+                    f"instance_id={instance.instance_id} "
+                    f"predicted_ms={task.predicted_time_ms:.2f} "
+                    f"actual_ms={execution_time_ms:.2f}"
+                )
 
             # Collect training data if enabled
             if self.training_client and instance and execution_time_ms:
@@ -271,6 +285,11 @@ class TaskDispatcher:
                 )
                 # Try to flush if buffer is full
                 await self.training_client.flush_if_ready()
+                # Log training data collection
+                logger.debug(
+                    f"[CALLBACK_TRAINING] task_id={task_id} model_id={task.model_id} "
+                    f"actual_runtime_ms={execution_time_ms:.2f}"
+                )
 
             # Record throughput for planner reporting
             if self.throughput_tracker and instance and execution_time_ms:
@@ -502,8 +521,10 @@ class TaskDispatcher:
         Raises:
             httpx.HTTPError: If HTTP request fails after all retries
         """
+        # Log dispatch send
         logger.info(
-            f"Submitting task {task_id} to instance {instance.instance_id} via HTTP"
+            f"[DISPATCH_SEND] task_id={task_id} instance_id={instance.instance_id} "
+            f"endpoint={instance.endpoint} model_id={model_id}"
         )
 
         # Prepare callback URL for result notification
@@ -538,8 +559,10 @@ class TaskDispatcher:
                         f"Instance rejected task: {submit_result.get('message', 'Unknown error')}"
                     )
 
-                logger.info(
-                    f"Task {task_id} accepted by instance {instance.instance_id} via HTTP"
+                # Log dispatch sent
+                logger.debug(
+                    f"[DISPATCH_SENT] task_id={task_id} instance_id={instance.instance_id} "
+                    f"response_status={response.status_code}"
                 )
                 return  # Success - exit the retry loop
 

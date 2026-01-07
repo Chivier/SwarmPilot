@@ -239,19 +239,29 @@ class DeploymentExecutor:
         Returns:
             ExecutionResult with success/failure details.
         """
+        import time
+
+        start_time = time.time()
+
         added_instances: list[ManagedInstance] = []
         removed_instances: list[str] = []
         failed_adds: list[tuple[str, str]] = []
         failed_removes: list[tuple[str, str]] = []
 
+        # Log deployment start
         logger.info(
-            f"Executing deployment plan: "
-            f"+{plan.total_adds} / -{plan.total_removes} instances"
+            f"[DEPLOY_START] plan_adds={plan.total_adds} plan_removes={plan.total_removes} "
+            f"actions={len(plan.actions)}"
         )
 
         # Execute remove actions first (free up resources)
         for action in plan.actions:
             if action.action_type == "remove":
+                # Log remove action
+                logger.info(
+                    f"[DEPLOY_ACTION] action=remove model_id={action.model_id} "
+                    f"count={action.count} pylet_ids={action.pylet_ids}"
+                )
                 for pylet_id in action.pylet_ids:
                     try:
                         success = self.instance_manager.terminate_instance(pylet_id)
@@ -267,6 +277,11 @@ class DeploymentExecutor:
         pending_instances: list[ManagedInstance] = []
         for action in plan.actions:
             if action.action_type == "add" and action.count > 0:
+                # Log add action
+                logger.info(
+                    f"[DEPLOY_ACTION] action=add model_id={action.model_id} "
+                    f"count={action.count}"
+                )
                 # Use deploy_instances with replicas for batch deployment
                 result = self.instance_manager.deploy_instances(
                     model_id=action.model_id,
@@ -293,11 +308,14 @@ class DeploymentExecutor:
             added_instances.extend(pending_instances)
 
         success = len(failed_adds) == 0 and len(failed_removes) == 0
+        elapsed_time = time.time() - start_time
 
+        # Log deployment end
         logger.info(
-            f"Deployment complete: "
-            f"added={len(added_instances)}, removed={len(removed_instances)}, "
-            f"failed={len(failed_adds) + len(failed_removes)}"
+            f"[DEPLOY_END] success={success} "
+            f"added={len(added_instances)} removed={len(removed_instances)} "
+            f"failed={len(failed_adds) + len(failed_removes)} "
+            f"elapsed_time={elapsed_time:.2f}s"
         )
 
         return ExecutionResult(

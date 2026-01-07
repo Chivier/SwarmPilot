@@ -287,6 +287,12 @@ class InstanceManager:
                 failed=[],
             )
 
+        # Log instance deployment start
+        logger.info(
+            f"[INSTANCE_DEPLOY] model_id={model_id} count={count} "
+            f"backend={backend} gpu_count={gpu_count}"
+        )
+
         deployed = []
         failed = []
 
@@ -315,9 +321,10 @@ class InstanceManager:
                 self._instances[info.pylet_id] = managed
                 deployed.append(managed)
 
-            logger.info(
-                f"Deployed {len(deployed)} instances for {model_id} "
-                f"using replicas={count}"
+            # Log PyLet response
+            logger.debug(
+                f"[INSTANCE_PYLET_RESPONSE] model_id={model_id} "
+                f"pylet_ids={[i.pylet_id for i in deployed]} count={len(deployed)}"
             )
 
         except Exception as e:
@@ -362,11 +369,20 @@ class InstanceManager:
 
         try:
             # Wait for PyLet instance to be running
+            old_status = managed.status
             managed.status = ManagedInstanceStatus.WAITING_HEALTH
+            logger.debug(
+                f"[INSTANCE_STATUS] pylet_id={pylet_id} "
+                f"old_status={old_status} new_status={managed.status}"
+            )
+
             info = self.pylet_client.wait_instance_running(pylet_id, timeout=timeout)
 
             managed.endpoint = info.endpoint
-            logger.info(f"Instance {pylet_id} running at {info.endpoint}")
+            logger.debug(
+                f"[INSTANCE_HEALTH] pylet_id={pylet_id} "
+                f"status=running endpoint={info.endpoint}"
+            )
 
             # Register with scheduler if requested
             if register and managed.endpoint:
@@ -379,14 +395,27 @@ class InstanceManager:
                 )
 
                 if result.success:
+                    old_status = managed.status
                     managed.status = ManagedInstanceStatus.ACTIVE
-                    logger.info(f"Instance {managed.instance_id} registered and active")
+                    # Log registration success
+                    logger.info(
+                        f"[INSTANCE_REGISTER] pylet_id={pylet_id} "
+                        f"instance_id={managed.instance_id} model_id={managed.model_id} "
+                        f"endpoint={managed.endpoint} registered=true"
+                    )
+                    logger.debug(
+                        f"[INSTANCE_STATUS] pylet_id={pylet_id} "
+                        f"old_status={old_status} new_status={managed.status}"
+                    )
                 else:
+                    old_status = managed.status
                     managed.status = ManagedInstanceStatus.FAILED
                     managed.error = result.message
-                    logger.error(
-                        f"Failed to register instance {managed.instance_id}: "
-                        f"{result.message}"
+                    # Log registration failure
+                    logger.warning(
+                        f"[INSTANCE_REGISTER] pylet_id={pylet_id} "
+                        f"instance_id={managed.instance_id} registered=false "
+                        f"error={result.message}"
                     )
             else:
                 managed.status = ManagedInstanceStatus.ACTIVE
@@ -457,8 +486,20 @@ class InstanceManager:
 
         managed = self._instances[pylet_id]
 
+        # Log termination start
+        logger.info(
+            f"[INSTANCE_TERMINATE] pylet_id={pylet_id} "
+            f"instance_id={managed.instance_id} model_id={managed.model_id} "
+            f"action=start"
+        )
+
         try:
+            old_status = managed.status
             managed.status = ManagedInstanceStatus.DRAINING
+            logger.debug(
+                f"[INSTANCE_STATUS] pylet_id={pylet_id} "
+                f"old_status={old_status} new_status={managed.status}"
+            )
 
             # Deregister from scheduler (drain + remove)
             self.scheduler_client.deregister_instance(
@@ -467,17 +508,31 @@ class InstanceManager:
                 drain_timeout=drain_timeout,
             )
 
+            old_status = managed.status
             managed.status = ManagedInstanceStatus.TERMINATING
+            logger.debug(
+                f"[INSTANCE_STATUS] pylet_id={pylet_id} "
+                f"old_status={old_status} new_status={managed.status}"
+            )
 
             # Cancel PyLet instance
             self.pylet_client.cancel_instance(pylet_id, delete=True)
 
+            old_status = managed.status
             managed.status = ManagedInstanceStatus.TERMINATED
-            logger.info(f"Instance {pylet_id} terminated")
+
+            # Log termination complete
+            logger.info(
+                f"[INSTANCE_TERMINATE] pylet_id={pylet_id} action=complete success=true"
+            )
             return True
 
         except Exception as e:
-            logger.error(f"Failed to terminate instance {pylet_id}: {e}")
+            # Log termination failure
+            logger.warning(
+                f"[INSTANCE_TERMINATE] pylet_id={pylet_id} "
+                f"action=complete success=false error={str(e)}"
+            )
             managed.error = str(e)
             return False
 

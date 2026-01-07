@@ -276,9 +276,12 @@ async def pylet_optimize(input_data: PyLetOptimizeInput):
     """
     service = _ensure_pylet_enabled()
 
+    # Log planning request
     logger.info(
-        f"PyLet optimize request: {len(input_data.model_ids)} models, "
-        f"algorithm={input_data.algorithm}"
+        f"[PLAN_REQUEST] endpoint=/pylet/optimize "
+        f"model_ids={input_data.model_ids} target={input_data.target} "
+        f"algorithm={input_data.algorithm} objective={input_data.objective_method} "
+        f"change_factor={input_data.a}"
     )
 
     try:

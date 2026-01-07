@@ -1645,6 +1645,14 @@ async def submit_task(request: TaskSubmitRequest):
             status_code=400, detail={"success": False, "error": error_msg}
         ) from e
 
+    # Log task submission
+    logger.info(
+        f"[TASK_SUBMIT] task_id={request.task_id} model_id={request.model_id} "
+        f"metadata_keys={list(request.metadata.keys())} "
+        f"input_keys={list(request.task_input.keys())} "
+        f"available_instances={len(available_instances)}"
+    )
+
     # 4. Enqueue task to central queue (non-blocking)
     # Central queue will:
     # - Queue task for dispatch

@@ -187,9 +187,11 @@ async def plan_deployment(input_data: PlannerInput):
         HTTPException: If optimization fails or parameters are invalid
     """
     try:
+        # Log planning request
         logger.info(
-            f"Received /plan request: M={input_data.M}, N={input_data.N}, "
-            f"algorithm={input_data.algorithm}"
+            f"[PLAN_REQUEST] endpoint=/plan M={input_data.M} N={input_data.N} "
+            f"algorithm={input_data.algorithm} objective={input_data.objective_method} "
+            f"change_factor={input_data.a} target={input_data.target}"
         )
 
         # Convert inputs to numpy arrays

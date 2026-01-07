@@ -165,7 +165,10 @@ class CentralTaskQueue:
             self._queue.append(queued_task)
             position = len(self._queue)
 
-        logger.debug(f"Task {task_id} enqueued at position {position}")
+        logger.info(
+            f"[QUEUE_ENQUEUE] task_id={task_id} model_id={model_id} "
+            f"position={position} queue_size={len(self._queue)}"
+        )
 
         # Signal dispatcher to try dispatching
         self._dispatch_event.set()
@@ -433,8 +436,13 @@ class CentralTaskQueue:
                 # Dispatch task to instance (fire and forget)
                 self._task_dispatcher.dispatch_task_async(task.task_id)
 
-                logger.debug(
-                    f"Dispatched task {task.task_id} to instance {selected_instance.instance_id}"
+                # Calculate wait time in queue
+                wait_time_ms = (time.time() - task.enqueue_time) * 1000
+
+                logger.info(
+                    f"[QUEUE_DISPATCH] task_id={task.task_id} model_id={task.model_id} "
+                    f"selected_instance={selected_instance.instance_id} "
+                    f"wait_time_ms={wait_time_ms:.2f}"
                 )
                 return True
 

@@ -110,6 +110,14 @@ class SchedulingStrategy(ABC):
             ConnectionError: Predictor service unavailable
             TimeoutError: Request timeout
         """
+        # Log scheduling input
+        logger.debug(
+            f"[SCHEDULE_INPUT] model_id={model_id} "
+            f"strategy={self.__class__.__name__} "
+            f"available_instances={[i.instance_id for i in available_instances]} "
+            f"metadata_keys={list(metadata.keys())}"
+        )
+
         # Step 1: Get predictions
         predictions = await self.get_predictions(
             model_id=model_id,
@@ -119,6 +127,16 @@ class SchedulingStrategy(ABC):
 
         # Step 2: Collect queue information
         queue_info = await self.collect_queue_info(available_instances)
+
+        # Log predictions and queue info
+        logger.debug(
+            f"[SCHEDULE_PREDICTIONS] model_id={model_id} "
+            f"predictions=[{', '.join(f'{p.instance_id}:{p.predicted_time_ms:.2f}ms' for p in predictions)}]"
+        )
+        logger.debug(
+            f"[SCHEDULE_QUEUE_INFO] model_id={model_id} "
+            f"queue_info={{{', '.join(f'{k}:{v}' for k, v in queue_info.items())}}}"
+        )
 
         # Step 3: Select best instance
         selected_instance_id = self.select_instance(predictions, queue_info)
@@ -146,6 +164,14 @@ class SchedulingStrategy(ABC):
                 f"predictions: {predictions}"
                 f"selected_instance_id: {selected_instance_id}"
             )
+
+        # Log final scheduling result
+        logger.info(
+            f"[SCHEDULE_RESULT] model_id={model_id} "
+            f"strategy={self.__class__.__name__} "
+            f"selected_instance={selected_instance_id} "
+            f"predicted_time_ms={selected_prediction.predicted_time_ms if selected_prediction else 'N/A'}"
+        )
 
         return ScheduleResult(
             selected_instance_id=selected_instance_id,

@@ -313,6 +313,17 @@ class SimulatedAnnealingOptimizer(SwarmOptimizer):
         Returns:
             Tuple of (optimal_deployment, optimal_objective_value, statistics).
         """
+        import time
+
+        start_time = time.time()
+
+        # Log optimization input
+        logger.info(
+            f"[OPTIMIZE_INPUT] algorithm=SimulatedAnnealing "
+            f"M={self.M} N={self.N} max_changes={self.max_changes} "
+            f"target={self.target.tolist()}"
+        )
+
         # Generate valid initial deployment if initial state contains -1
         if -1 in self.initial:
             logger.info(
@@ -390,10 +401,11 @@ class SimulatedAnnealingOptimizer(SwarmOptimizer):
                     if iterations_per_temp > 0
                     else 0
                 )
-                logger.info(
-                    f"Temp: {temperature:.4f}, current score: "
-                    f"{current_score:.6f}, best score: {best_score:.6f}, "
-                    f"acceptance rate: {acceptance_rate:.3f}"
+                # Log optimization iteration
+                logger.debug(
+                    f"[OPTIMIZE_ITER] iteration={iterations} temp={temperature:.4f} "
+                    f"current_score={current_score:.6f} best_score={best_score:.6f} "
+                    f"acceptance_rate={acceptance_rate:.3f}"
                 )
 
         stats = {
@@ -414,13 +426,16 @@ class SimulatedAnnealingOptimizer(SwarmOptimizer):
             "final_score": best_score,
         }
 
-        if verbose:
-            logger.info(
-                f"Simulated annealing completed, total iterations: "
-                f"{iterations}, acceptance rate: "
-                f"{stats['acceptance_rate']:.3f}, "
-                f"final score: {best_score:.6f}"
-            )
+        elapsed_time = time.time() - start_time
+        changes_count = self.compute_changes(best_deployment)
+
+        # Log optimization result
+        logger.info(
+            f"[OPTIMIZE_RESULT] algorithm=SimulatedAnnealing "
+            f"deployment={best_deployment.tolist()} score={best_score:.6f} "
+            f"changes={changes_count} iterations={iterations} "
+            f"elapsed_time={elapsed_time:.2f}s"
+        )
 
         return best_deployment, best_score, stats
 
@@ -509,11 +524,16 @@ class IntegerProgrammingOptimizer(SwarmOptimizer):
         Returns:
             Tuple of (optimal_deployment, optimal_objective_value, statistics).
         """
-        if verbose:
-            logger.info(
-                f"Starting integer programming optimization, "
-                f"solver: {solver_name}"
-            )
+        import time
+
+        start_time = time.time()
+
+        # Log optimization input
+        logger.info(
+            f"[OPTIMIZE_INPUT] algorithm=IntegerProgramming "
+            f"M={self.M} N={self.N} max_changes={self.max_changes} "
+            f"target={self.target.tolist()} solver={solver_name}"
+        )
 
         # Create problem instance
         prob = pulp.LpProblem("SwarmPilot_Optimization", pulp.LpMinimize)
@@ -651,19 +671,27 @@ class IntegerProgrammingOptimizer(SwarmOptimizer):
                     "final_score": final_score,
                 }
 
-                if verbose:
-                    logger.info(
-                        f"Integer programming solved successfully, "
-                        f"status: {status}, final score: {final_score:.6f}"
-                    )
+                elapsed_time = time.time() - start_time
+                changes_count = self.compute_changes(deployment)
+
+                # Log optimization result
+                logger.info(
+                    f"[OPTIMIZE_RESULT] algorithm=IntegerProgramming "
+                    f"deployment={deployment.tolist()} score={final_score:.6f} "
+                    f"changes={changes_count} status={status} "
+                    f"elapsed_time={elapsed_time:.2f}s"
+                )
 
                 return deployment, final_score, stats
 
             else:
-                if verbose:
-                    logger.warning(
-                        f"Integer programming solve failed, status: {status}"
-                    )
+                elapsed_time = time.time() - start_time
+
+                # Log optimization result (failed)
+                logger.warning(
+                    f"[OPTIMIZE_RESULT] algorithm=IntegerProgramming "
+                    f"status={status} failed=true elapsed_time={elapsed_time:.2f}s"
+                )
 
                 # Return initial solution
                 initial_score = self.objective_function(
