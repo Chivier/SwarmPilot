@@ -6,9 +6,25 @@ All models are re-exported here for backward compatibility.
 
 from .base import InstanceStatus
 from .deployment import DeploymentInput, DeploymentOutput, DeploymentStatus
-from .instance import InstanceInfo, InstanceRegisterRequest, InstanceRegisterResponse
+from .instance import (
+    InstanceInfo,
+    InstanceRegisterRequest,
+    InstanceRegisterResponse,
+)
 from .migration import MigrationOutput, MigrationStatus
 from .planner import PlannerInput, PlannerOutput
+from .pylet import (
+    PyLetDeploymentInput,
+    PyLetDeploymentOutput,
+    PyLetInstanceStatus,
+    PyLetMigrateInput,
+    PyLetMigrateOutput,
+    PyLetOptimizeInput,
+    PyLetOptimizeOutput,
+    PyLetScaleInput,
+    PyLetScaleOutput,
+    PyLetStatusOutput,
+)
 from .scheduler_compat import (
     InstanceDrainRequest,
     InstanceDrainResponse,
@@ -55,4 +71,15 @@ __all__ = [
     "InstanceRemoveResponse",
     "TaskResubmitRequest",
     "TaskResubmitResponse",
+    # PyLet
+    "PyLetDeploymentInput",
+    "PyLetDeploymentOutput",
+    "PyLetInstanceStatus",
+    "PyLetMigrateInput",
+    "PyLetMigrateOutput",
+    "PyLetOptimizeInput",
+    "PyLetOptimizeOutput",
+    "PyLetScaleInput",
+    "PyLetScaleOutput",
+    "PyLetStatusOutput",
 ]

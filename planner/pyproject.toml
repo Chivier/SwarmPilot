@@ -15,6 +15,7 @@ dependencies = [
     "numpy>=2.3.4",
     "pulp>=3.3.0",
     "pydantic>=2.12.3",
+    "pylet @ file:///home/yanweiye/Projects/pylet",
     "typer>=0.20.0",
     "uvicorn>=0.38.0",
 ]
@@ -26,11 +27,15 @@ splanner = "cli:app"
 dev = [
     "pytest>=8.4.2",
     "pytest-asyncio>=1.2.0",
+    "respx>=0.22.0",
     "ruff>=0.8.0",
 ]
 
 [tool.uv]
 package = true
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["src"]

@@ -54,6 +54,11 @@ from .models import (
     TaskResubmitRequest,
     TaskResubmitResponse,
 )
+from .pylet.deployment_service import (
+    create_pylet_service,
+    get_pylet_service_optional,
+)
+from .pylet_api import router as pylet_router
 
 np.random.seed(42)
 random.seed(42)
@@ -755,7 +760,30 @@ async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown events."""
     global _auto_optimize_task
 
-    # Startup
+    # Startup: Initialize PyLet if enabled
+    pylet_service = None
+    if config.pylet_enabled:
+        try:
+            logger.info(
+                f"Initializing PyLet service (head={config.pylet_head_url}, "
+                f"backend={config.pylet_backend})"
+            )
+            pylet_service = create_pylet_service(
+                pylet_head_url=config.pylet_head_url,
+                scheduler_url=config.scheduler_url or "http://localhost:8001",
+                default_backend=config.pylet_backend,
+                default_gpu_count=config.pylet_gpu_count,
+                deploy_timeout=config.pylet_deploy_timeout,
+                drain_timeout=config.pylet_drain_timeout,
+            )
+            logger.info("PyLet service initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize PyLet service: {e}")
+            logger.warning("Continuing without PyLet - endpoints will be unavailable")
+    else:
+        logger.info("PyLet is disabled")
+
+    # Startup: Start auto-optimization loop if enabled
     if config.auto_optimize_enabled:
         logger.info(
             f"Starting auto-optimization loop (interval={config.auto_optimize_interval}s)"
@@ -766,7 +794,7 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # Shutdown
+    # Shutdown: Stop auto-optimization loop
     if _auto_optimize_task is not None:
         logger.info("Stopping auto-optimization loop")
         _auto_optimize_task.cancel()
@@ -775,6 +803,12 @@ async def lifespan(app: FastAPI):
         except asyncio.CancelledError:
             pass
         logger.info("Auto-optimization loop stopped")
+
+    # Shutdown: Close PyLet service
+    if pylet_service is not None:
+        logger.info("Closing PyLet service")
+        pylet_service.close()
+        logger.info("PyLet service closed")
 
 
 # Create FastAPI app
@@ -786,6 +820,9 @@ app = FastAPI(
     redoc_url="/redoc",
     lifespan=lifespan,
 )
+
+# Include PyLet router
+app.include_router(pylet_router)
 
 
 @app.exception_handler(Exception)
@@ -818,6 +855,18 @@ async def service_info():
     Returns:
         Service metadata including version and supported algorithms
     """
+    # Get PyLet status
+    pylet_service = get_pylet_service_optional()
+    pylet_status = {
+        "enabled": config.pylet_enabled,
+        "initialized": pylet_service is not None and pylet_service.initialized,
+    }
+    if pylet_service and pylet_service.initialized:
+        pylet_status["active_instances"] = len(
+            pylet_service.get_active_instances()
+        )
+        pylet_status["current_state"] = pylet_service.get_current_state()
+
     return {
         "service": "planner",
         "version": __version__,
@@ -829,6 +878,7 @@ async def service_info():
         ],
         "description": "Model deployment optimization service",
         "available_instances": get_available_instance_store().available_instances,
+        "pylet": pylet_status,
     }
 
 

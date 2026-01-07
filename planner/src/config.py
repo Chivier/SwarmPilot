@@ -34,6 +34,20 @@ class PlannerConfig:
             os.getenv("AUTO_OPTIMIZE_INTERVAL", "60.0")
         )
 
+        # PyLet configuration
+        self.pylet_enabled: bool = os.getenv(
+            "PYLET_ENABLED", "false"
+        ).lower() in ("true", "1", "yes")
+        self.pylet_head_url: str | None = os.getenv("PYLET_HEAD_URL")
+        self.pylet_backend: str = os.getenv("PYLET_BACKEND", "vllm")
+        self.pylet_gpu_count: int = int(os.getenv("PYLET_GPU_COUNT", "1"))
+        self.pylet_deploy_timeout: float = float(
+            os.getenv("PYLET_DEPLOY_TIMEOUT", "300.0")
+        )
+        self.pylet_drain_timeout: float = float(
+            os.getenv("PYLET_DRAIN_TIMEOUT", "30.0")
+        )
+
     def get_scheduler_url(self, override: str | None = None) -> str | None:
         """Get scheduler URL with optional override.
 
@@ -75,6 +89,28 @@ class PlannerConfig:
             error_msg = f"AUTO_OPTIMIZE_INTERVAL must be positive, got {self.auto_optimize_interval}"
             logger.error(f"Configuration validation failed: {error_msg}")
             raise ValueError(error_msg)
+
+        # PyLet validation
+        if self.pylet_enabled:
+            if not self.pylet_head_url:
+                error_msg = "PYLET_HEAD_URL is required when PYLET_ENABLED=true"
+                logger.error(f"Configuration validation failed: {error_msg}")
+                raise ValueError(error_msg)
+
+            if self.pylet_backend not in ("vllm", "sglang"):
+                error_msg = f"PYLET_BACKEND must be 'vllm' or 'sglang', got {self.pylet_backend}"
+                logger.error(f"Configuration validation failed: {error_msg}")
+                raise ValueError(error_msg)
+
+            if self.pylet_gpu_count <= 0:
+                error_msg = f"PYLET_GPU_COUNT must be positive, got {self.pylet_gpu_count}"
+                logger.error(f"Configuration validation failed: {error_msg}")
+                raise ValueError(error_msg)
+
+            if self.pylet_deploy_timeout <= 0:
+                error_msg = f"PYLET_DEPLOY_TIMEOUT must be positive, got {self.pylet_deploy_timeout}"
+                logger.error(f"Configuration validation failed: {error_msg}")
+                raise ValueError(error_msg)
 
 
 # Global configuration instance

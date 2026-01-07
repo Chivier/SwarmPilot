@@ -12,10 +12,14 @@ class AvailableInstance(BaseModel):
     Attributes:
         model_id: The model ID this instance is running.
         endpoint: The HTTP endpoint URL of the instance.
+        pylet_id: Optional PyLet instance UUID for PyLet-managed instances.
+        instance_id: Optional scheduler instance ID.
     """
 
     model_id: str
     endpoint: str
+    pylet_id: str | None = None
+    instance_id: str | None = None
 
 
 class AvailableInstanceStore:
@@ -115,6 +119,73 @@ class AvailableInstanceStore:
                 )
                 return None
             return self.available_instances[model_id].pop(0)
+
+    async def get_instance_by_pylet_id(
+        self, pylet_id: str
+    ) -> AvailableInstance | None:
+        """Get an instance by its PyLet ID.
+
+        Args:
+            pylet_id: The PyLet instance UUID.
+
+        Returns:
+            The instance if found, None otherwise.
+        """
+        async with self.lock:
+            for instances in self.available_instances.values():
+                for instance in instances:
+                    if instance.pylet_id == pylet_id:
+                        return instance
+            return None
+
+    async def remove_instance_by_pylet_id(self, pylet_id: str) -> bool:
+        """Remove an instance by its PyLet ID.
+
+        Args:
+            pylet_id: The PyLet instance UUID.
+
+        Returns:
+            True if instance was removed, False if not found.
+        """
+        async with self.lock:
+            for model_id, instances in self.available_instances.items():
+                for i, instance in enumerate(instances):
+                    if instance.pylet_id == pylet_id:
+                        self.available_instances[model_id].pop(i)
+                        logger.info(
+                            f"Removed instance with pylet_id={pylet_id} "
+                            f"from model {model_id}"
+                        )
+                        return True
+            logger.warning(f"Instance with pylet_id={pylet_id} not found")
+            return False
+
+    async def get_pylet_ids_by_model(self, model_id: str) -> list[str]:
+        """Get all PyLet IDs for instances of a specific model.
+
+        Args:
+            model_id: The model ID to query.
+
+        Returns:
+            List of PyLet IDs for the model's instances.
+        """
+        async with self.lock:
+            instances = self.available_instances.get(model_id, [])
+            return [i.pylet_id for i in instances if i.pylet_id is not None]
+
+    async def get_all_pylet_ids(self) -> list[str]:
+        """Get all PyLet IDs across all models.
+
+        Returns:
+            Flat list of all PyLet IDs.
+        """
+        async with self.lock:
+            return [
+                instance.pylet_id
+                for instances in self.available_instances.values()
+                for instance in instances
+                if instance.pylet_id is not None
+            ]
 
 
 _available_model_store: AvailableInstanceStore | None = None
