@@ -120,16 +120,16 @@ quantiles = [0.9, 0.92, 0.94, 0.96, 0.98, 0.99]
 
 ### Code Changes
 
-1. **Model Update** (`src/models.py`):
+1. **Model Update** (`predictor/src/models.py`):
    - Added optional `quantiles: Optional[List[float]]` field to `PredictionRequest`
    - Added validation to ensure quantiles are between 0 and 1
 
-2. **API Updates** (`src/api.py`):
+2. **API Updates** (`predictor/src/api/app.py`):
    - REST endpoint `/predict` passes custom quantiles to experiment mode
    - WebSocket endpoint `/ws/predict` passes custom quantiles to experiment mode
    - Normal mode predictions ignore the custom quantiles parameter
 
-3. **Experiment Mode** (`src/utils/experiment.py`):
+3. **Experiment Mode** (`predictor/src/utils/experiment.py`):
    - `generate_quantile_prediction()` accepts optional quantiles parameter
    - Uses provided quantiles or defaults to `[0.5, 0.9, 0.95, 0.99]`
 
