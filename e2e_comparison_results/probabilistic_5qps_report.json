@@ -1,0 +1,84 @@
+{
+  "test_config": {
+    "total_qps": 5.0,
+    "duration_seconds": 100.0,
+    "model_ids": [
+      "llm_fast",
+      "llm_medium",
+      "llm_slow"
+    ],
+    "runtime_ratios": [
+      1.0,
+      5.0,
+      20.0
+    ],
+    "qps_ratios": [
+      5.0,
+      1.0,
+      3.0
+    ]
+  },
+  "cluster_config": {
+    "num_workers": 8,
+    "gpu_per_worker": 1
+  },
+  "deployment": {
+    "model_distribution": {
+      "llm_fast": 1,
+      "llm_medium": 1,
+      "llm_slow": 6
+    },
+    "target_state": {
+      "llm_fast": 1,
+      "llm_medium": 1,
+      "llm_slow": 6
+    },
+    "capacity_units": {
+      "llm_fast": 5.0,
+      "llm_medium": 5.0,
+      "llm_slow": 60.0
+    }
+  },
+  "workload": {
+    "tasks_submitted": 501,
+    "tasks_successful_submit": 501,
+    "tasks_failed_submit": 0,
+    "actual_qps": 5.009756207146778,
+    "tasks_by_model": {
+      "llm_fast": 291,
+      "llm_slow": 154,
+      "llm_medium": 56
+    }
+  },
+  "execution": {
+    "tasks_completed": 501,
+    "tasks_failed": 0,
+    "tasks_timeout": 0,
+    "success_rate": 1.0,
+    "execution_stats": {
+      "llm_fast": {
+        "count": 291,
+        "p50_ms": 74.65672492980957,
+        "p90_ms": 264.0190124511719,
+        "p99_ms": 301.253080368042,
+        "avg_ms": 99.22443878200046
+      },
+      "llm_medium": {
+        "count": 56,
+        "p50_ms": 458.4212303161621,
+        "p90_ms": 687.9913806915283,
+        "p99_ms": 846.9069004058838,
+        "avg_ms": 461.9556495121547
+      },
+      "llm_slow": {
+        "count": 154,
+        "p50_ms": 1993.2868480682373,
+        "p90_ms": 3420.1252460479736,
+        "p99_ms": 5485.4896068573,
+        "avg_ms": 2154.1746142622715
+      }
+    }
+  },
+  "timestamp": "2026-01-16 12:33:21",
+  "scheduling_strategy": "probabilistic"
+}

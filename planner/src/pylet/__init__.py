@@ -6,6 +6,8 @@ model instances via the PyLet cluster management system.
 
 from src.pylet.client import (
     InstanceInfo,
+    PartialDeploymentError,
+    PartialDeploymentResult,
     PyLetClient,
     create_pylet_client,
     get_pylet_client,
@@ -48,6 +50,8 @@ from src.pylet.scheduler_client import (
 __all__ = [
     # PyLet client
     "InstanceInfo",
+    "PartialDeploymentError",
+    "PartialDeploymentResult",
     "PyLetClient",
     "create_pylet_client",
     "get_pylet_client",

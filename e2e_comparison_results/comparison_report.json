@@ -1,0 +1,98 @@
+{
+  "experiment_summary": {
+    "description": "Comparison of Probabilistic vs Round-Robin scheduling algorithms",
+    "test_date": "2026-01-16",
+    "cluster_config": {
+      "num_workers": 8,
+      "gpu_per_worker": 1,
+      "deployment": {
+        "llm_fast": 1,
+        "llm_medium": 1,
+        "llm_slow": 6
+      }
+    },
+    "model_runtimes": {
+      "llm_fast": "~100ms (exponential distribution)",
+      "llm_medium": "~500ms (log-normal distribution)",
+      "llm_slow": "~2000ms (gamma distribution)"
+    },
+    "qps_ratios": {
+      "llm_fast": 5,
+      "llm_medium": 1,
+      "llm_slow": 3
+    }
+  },
+  "low_load_comparison": {
+    "config": {
+      "total_qps": 5.0,
+      "duration_seconds": 100,
+      "expected_tasks": 500
+    },
+    "probabilistic": {
+      "tasks_submitted": 501,
+      "tasks_completed": 501,
+      "success_rate": 1.0,
+      "latency_ms": {
+        "llm_fast": {"avg": 99.22, "p50": 74.66, "p90": 264.02, "p99": 301.25},
+        "llm_medium": {"avg": 461.96, "p50": 458.42, "p90": 687.99, "p99": 846.91},
+        "llm_slow": {"avg": 2154.17, "p50": 1993.29, "p90": 3420.13, "p99": 5485.49}
+      },
+      "overall_avg_ms": 800.32
+    },
+    "round_robin": {
+      "tasks_submitted": 501,
+      "tasks_completed": 501,
+      "success_rate": 1.0,
+      "latency_ms": {
+        "llm_fast": {"avg": 96.15, "p50": 64.66, "p90": 236.92, "p99": 318.14},
+        "llm_medium": {"avg": 483.05, "p50": 461.41, "p90": 709.93, "p99": 933.48},
+        "llm_slow": {"avg": 2059.47, "p50": 1750.19, "p90": 3639.58, "p99": 6000.91}
+      },
+      "overall_avg_ms": 790.58
+    },
+    "comparison": {
+      "winner": "tie (both algorithms perform similarly at low load)",
+      "latency_difference_pct": 1.23,
+      "note": "At low load (5 QPS), both algorithms achieve 100% success with similar latency"
+    }
+  },
+  "high_load_comparison": {
+    "config": {
+      "total_qps": 20.0,
+      "duration_seconds": 50,
+      "expected_tasks": 1000
+    },
+    "probabilistic": {
+      "tasks_submitted": 1001,
+      "tasks_completed": 1001,
+      "success_rate": 1.0,
+      "latency_ms": {
+        "llm_fast": {"avg": 106.83, "p50": 83.58, "p90": 253.04, "p99": 336.98},
+        "llm_medium": {"avg": 492.63, "p50": 470.98, "p90": 712.79, "p99": 890.94},
+        "llm_slow": {"avg": 1971.61, "p50": 1756.67, "p90": 3434.44, "p99": 6000.40}
+      },
+      "overall_avg_ms": 874.23
+    },
+    "round_robin": {
+      "status": "FAILED",
+      "reason": "Queue congestion - algorithm doesn't consider queue depth or instance load",
+      "notes": [
+        "Round-robin distributes requests evenly regardless of instance state",
+        "At 20 QPS with 1:5:20 runtime ratios, slow model queues build up exponentially",
+        "Test times out after 600 seconds with tasks stuck in queue"
+      ]
+    },
+    "comparison": {
+      "winner": "probabilistic",
+      "reason": "Round-robin fails completely at high load while probabilistic maintains 100% success",
+      "key_insight": "Probabilistic scheduling considers queue depth and predicted latency for load balancing"
+    }
+  },
+  "conclusions": [
+    "Probabilistic scheduling is significantly more robust under high load",
+    "Round-robin works adequately at low load but fails at capacity limits",
+    "The 4x load increase (5 QPS -> 20 QPS) exposes round-robin's weakness",
+    "Probabilistic scheduling maintains consistent latency even at high load",
+    "For production use with variable load, probabilistic scheduling is recommended"
+  ]
+}

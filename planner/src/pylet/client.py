@@ -48,7 +48,7 @@ class InstanceInfo:
     labels: dict[str, str] = field(default_factory=dict)
 
     @classmethod
-    def from_pylet_instance(cls, instance: Instance) -> InstanceInfo:
+    def from_pylet_instance(cls, instance: Instance) -> "InstanceInfo":
         """Create InstanceInfo from a PyLet Instance object.
 
         Args:
@@ -65,6 +65,34 @@ class InstanceInfo:
             status=instance.status,
             backend=labels.get("backend", "vllm"),
             labels=labels,
+        )
+
+
+@dataclass
+class PartialDeploymentResult:
+    """Result when some deployments succeed and some fail.
+
+    Attributes:
+        succeeded: List of successfully deployed instances.
+        failed: List of (replica_index, error_message) tuples for failures.
+    """
+
+    succeeded: list[InstanceInfo]
+    failed: list[tuple[int, str]]
+
+
+class PartialDeploymentError(Exception):
+    """Raised when some but not all deployments fail.
+
+    Attributes:
+        result: PartialDeploymentResult with details of succeeded and failed.
+    """
+
+    def __init__(self, result: PartialDeploymentResult):
+        self.result = result
+        super().__init__(
+            f"Partial deployment: {len(result.succeeded)} succeeded, "
+            f"{len(result.failed)} failed"
         )
 
 
@@ -171,32 +199,37 @@ class PyLetClient:
         env: dict[str, str] | None = None,
         labels: dict[str, str] | None = None,
         target_worker: str | None = None,
-        replicas: int = 1,
-    ) -> InstanceInfo | list[InstanceInfo]:
+        count: int = 1,
+    ) -> list[InstanceInfo]:
         """Deploy model instance(s) via PyLet.
+
+        Deploys instances sequentially by calling pylet.submit() for each instance.
+        PyLet no longer supports the replicas parameter, so the planner manages
+        replica creation by looping.
 
         Args:
             model_id: Model identifier (e.g., "Qwen/Qwen3-0.6B").
             backend: Model backend, one of "vllm" or "sglang" (ignored if custom_command set).
             gpu_count: Number of GPUs to allocate per instance.
             cpu_count: Number of CPU cores to allocate per instance.
-            name: Optional instance name (base name for replicas).
+            name: Optional base instance name (suffix appended for count > 1).
             env: Additional environment variables.
             labels: Additional instance labels.
             target_worker: Target specific worker for placement.
-            replicas: Number of replicas to deploy (default 1).
+            count: Number of instances to deploy (default 1).
 
         Returns:
-            InstanceInfo when replicas=1, list[InstanceInfo] when replicas>1.
+            List of InstanceInfo for all successfully deployed instances.
 
         Raises:
-            ValueError: If backend is not supported (when no custom_command) or replicas < 1.
-            PyletError: If deployment fails.
+            ValueError: If backend is not supported (when no custom_command) or count < 1.
+            PyletError: If all deployments fail.
+            PartialDeploymentError: If some but not all deployments fail.
         """
         self._ensure_initialized()
 
-        if replicas < 1:
-            raise ValueError(f"replicas must be >= 1, got {replicas}")
+        if count < 1:
+            raise ValueError(f"count must be >= 1, got {count}")
 
         # Build command - use custom_command if set, otherwise use backend template
         if self.custom_command:
@@ -210,15 +243,6 @@ class PyLetClient:
                 )
             command_template = MODEL_COMMANDS[backend]
             command = command_template.format(model_id=model_id)
-
-        # Generate instance name if not provided
-        # Use UUID suffix to avoid name collisions when scaling up
-        import uuid
-
-        if name is None:
-            safe_model_id = model_id.replace("/", "-")
-            short_uuid = uuid.uuid4().hex[:8]
-            name = f"{safe_model_id}-{backend}-{short_uuid}"
 
         # Build labels with SwarmPilot metadata
         instance_labels = {
@@ -236,35 +260,67 @@ class PyLetClient:
 
         logger.info(
             f"Deploying model: {model_id} (backend={backend}, gpu={gpu_count}, "
-            f"replicas={replicas})"
+            f"count={count})"
         )
 
-        # Build submit kwargs
-        submit_kwargs: dict = {
-            "cpu": cpu_count,
-            "gpu": gpu_count,
-            "name": name,
-            "labels": instance_labels,
-            "env": instance_env,
-            "replicas": replicas,
-        }
-        if target_worker is not None:
-            submit_kwargs["target_worker"] = target_worker
+        # Generate base name with UUID for uniqueness
+        import uuid
 
-        result = pylet.submit(command, **submit_kwargs)
+        safe_model_id = model_id.replace("/", "-")
+        short_uuid = uuid.uuid4().hex[:8]
+        base_name = name if name else f"{safe_model_id}-{backend}-{short_uuid}"
 
-        # pylet.submit returns Instance when replicas=1, List[Instance] otherwise
-        if replicas == 1:
-            instance = result
-            logger.info(f"Instance submitted: pylet_id={instance.id}, name={name}")
-            return InstanceInfo.from_pylet_instance(instance)
-        else:
-            instances = result
-            logger.info(
-                f"Submitted {len(instances)} instances: "
-                f"pylet_ids={[i.id for i in instances]}"
+        # Deploy instances one at a time (PyLet no longer supports replicas)
+        succeeded: list[InstanceInfo] = []
+        failed: list[tuple[int, str]] = []
+
+        for i in range(count):
+            # Generate unique instance name for each replica
+            instance_name = f"{base_name}-{i}" if count > 1 else base_name
+
+            # Build submit kwargs
+            submit_kwargs: dict = {
+                "cpu": cpu_count,
+                "gpu": gpu_count,
+                "name": instance_name,
+                "labels": instance_labels,
+                "env": instance_env,
+            }
+            if target_worker is not None:
+                submit_kwargs["target_worker"] = target_worker
+
+            try:
+                instance = pylet.submit(command, **submit_kwargs)
+                logger.info(
+                    f"Instance {i + 1}/{count} submitted: "
+                    f"pylet_id={instance.id}, name={instance_name}"
+                )
+                succeeded.append(InstanceInfo.from_pylet_instance(instance))
+            except Exception as e:
+                failed.append((i, str(e)))
+                logger.warning(f"Failed to submit replica {i}: {e}")
+
+        # Handle results based on success/failure
+        if not succeeded and failed:
+            # All deployments failed
+            raise PyletError(f"All {count} deployments failed: {failed}")
+
+        if failed:
+            # Some deployments failed - raise partial error with results
+            logger.warning(
+                f"Partial deployment: {len(succeeded)} succeeded, "
+                f"{len(failed)} failed"
             )
-            return [InstanceInfo.from_pylet_instance(i) for i in instances]
+            raise PartialDeploymentError(
+                PartialDeploymentResult(succeeded=succeeded, failed=failed)
+            )
+
+        # All succeeded
+        logger.info(
+            f"Deployed {len(succeeded)} instance(s): "
+            f"pylet_ids={[i.pylet_id for i in succeeded]}"
+        )
+        return succeeded
 
     def get_instance(self, pylet_id: str) -> InstanceInfo | None:
         """Get instance info by PyLet ID.

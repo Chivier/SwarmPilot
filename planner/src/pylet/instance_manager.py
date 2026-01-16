@@ -35,7 +35,7 @@ from enum import Enum
 
 from loguru import logger
 
-from src.pylet.client import PyLetClient
+from src.pylet.client import PartialDeploymentError, PyLetClient
 from src.pylet.scheduler_client import SchedulerClient
 
 
@@ -224,16 +224,18 @@ class InstanceManager:
         """
         self._ensure_initialized()
 
-        # Deploy via PyLet (single replica)
-        info = self.pylet_client.deploy_model(
+        # Deploy via PyLet (single instance)
+        # deploy_model always returns a list now
+        infos = self.pylet_client.deploy_model(
             model_id=model_id,
             backend=backend,
             gpu_count=gpu_count,
             env=env,
             labels=labels,
             target_worker=target_worker,
-            replicas=1,
+            count=1,
         )
+        info = infos[0]  # Get the single deployed instance
 
         # Use PyLet ID as scheduler instance ID if not provided
         scheduler_instance_id = instance_id or info.pylet_id
@@ -264,10 +266,9 @@ class InstanceManager:
         gpu_count: int = 1,
         target_worker: str | None = None,
     ) -> DeploymentResult:
-        """Deploy multiple model instances using PyLet's replicas feature.
+        """Deploy multiple model instances.
 
-        Uses PyLet's native batch deployment for efficiency instead of
-        deploying one instance at a time.
+        Deploys instances one at a time via PyLet's submit API.
 
         Args:
             model_id: Model identifier.
@@ -297,18 +298,16 @@ class InstanceManager:
         failed = []
 
         try:
-            # Use PyLet's replicas feature for batch deployment
-            result = self.pylet_client.deploy_model(
+            # Deploy multiple instances (planner manages replicas now)
+            infos = self.pylet_client.deploy_model(
                 model_id=model_id,
                 backend=backend,
                 gpu_count=gpu_count,
                 target_worker=target_worker,
-                replicas=count,
+                count=count,
             )
 
-            # Handle both single instance and list return types
-            infos = result if isinstance(result, list) else [result]
-
+            # deploy_model always returns list now
             for info in infos:
                 managed = ManagedInstance(
                     pylet_id=info.pylet_id,
@@ -327,11 +326,33 @@ class InstanceManager:
                 f"pylet_ids={[i.pylet_id for i in deployed]} count={len(deployed)}"
             )
 
+        except PartialDeploymentError as e:
+            # Handle partial success - some instances deployed, some failed
+            for info in e.result.succeeded:
+                managed = ManagedInstance(
+                    pylet_id=info.pylet_id,
+                    instance_id=info.pylet_id,
+                    model_id=model_id,
+                    backend=backend,
+                    gpu_count=gpu_count,
+                    status=ManagedInstanceStatus.DEPLOYING,
+                )
+                self._instances[info.pylet_id] = managed
+                deployed.append(managed)
+
+            for idx, error in e.result.failed:
+                failed.append((f"{model_id}-{idx}", error))
+
+            logger.warning(
+                f"[INSTANCE_DEPLOY] partial success for {model_id}: "
+                f"{len(deployed)} deployed, {len(failed)} failed"
+            )
+
         except Exception as e:
-            # If batch deployment fails entirely, record all as failed
+            # If all deployments failed, record all as failed
             for i in range(count):
-                failed.append((f"instance-{i}", str(e)))
-            logger.error(f"Batch deployment failed for {model_id}: {e}")
+                failed.append((f"{model_id}-{i}", str(e)))
+            logger.error(f"All deployments failed for {model_id}: {e}")
 
         return DeploymentResult(
             model_id=model_id,

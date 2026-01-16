@@ -229,7 +229,7 @@ class DeploymentExecutor:
     ) -> ExecutionResult:
         """Execute a deployment plan.
 
-        Uses PyLet's batch deployment (replicas) for efficient instance creation.
+        Deploys instances via PyLet's submit API.
 
         Args:
             plan: DeploymentPlan to execute.
@@ -273,7 +273,7 @@ class DeploymentExecutor:
                         failed_removes.append((pylet_id, str(e)))
                         logger.error(f"Failed to remove {pylet_id}: {e}")
 
-        # Execute add actions using batch deployment (replicas)
+        # Execute add actions
         pending_instances: list[ManagedInstance] = []
         for action in plan.actions:
             if action.action_type == "add" and action.count > 0:
@@ -282,7 +282,7 @@ class DeploymentExecutor:
                     f"[DEPLOY_ACTION] action=add model_id={action.model_id} "
                     f"count={action.count}"
                 )
-                # Use deploy_instances with replicas for batch deployment
+                # Deploy instances via PyLet
                 result = self.instance_manager.deploy_instances(
                     model_id=action.model_id,
                     count=action.count,
