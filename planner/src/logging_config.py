@@ -128,17 +128,3 @@ def setup_logging() -> None:
         logging_logger.propagate = False
 
     logger.info(f"Logging configured: level={log_level}, log_dir={log_dir}")
-
-
-def get_logger(name: str = None):
-    """Get a loguru logger instance.
-
-    Args:
-        name: Optional name for the logger context
-
-    Returns:
-        A loguru logger instance bound to the specified name
-    """
-    if name:
-        return logger.bind(name=name)
-    return logger
