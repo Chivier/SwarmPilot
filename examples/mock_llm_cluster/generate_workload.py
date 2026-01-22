@@ -188,7 +188,8 @@ async def poll_task_status(
         )
         if response.status_code == 200:
             data = response.json()
-            return data.get("status", "unknown"), data.get("error")
+            task = data.get("task", {})
+            return task.get("status", "unknown"), task.get("error")
         return "unknown", None
     except Exception:
         return "unknown", None
@@ -212,6 +213,9 @@ async def run_workload(
     stats = WorkloadStats()
     stats.start_time = time.time()
 
+    # Generate unique run prefix based on timestamp
+    run_prefix = f"run{int(time.time()) % 100000}"
+
     # Calculate tasks per model based on 1:5 ratio
     # 1 part for 7B, 5 parts for 32B = 6 total parts
     tasks_7b = total_tasks // 6
@@ -225,13 +229,13 @@ async def run_workload(
     for i in range(total_tasks):
         # Every 6th task goes to 7B (1:5 ratio)
         if i % 6 == 0 and idx_7b < tasks_7b:
-            task_queue.append((f"task-{i:04d}", "llm-7b"))
+            task_queue.append((f"{run_prefix}-{i:04d}", "llm-7b"))
             idx_7b += 1
         elif idx_32b < tasks_32b:
-            task_queue.append((f"task-{i:04d}", "llm-32b"))
+            task_queue.append((f"{run_prefix}-{i:04d}", "llm-32b"))
             idx_32b += 1
         elif idx_7b < tasks_7b:
-            task_queue.append((f"task-{i:04d}", "llm-7b"))
+            task_queue.append((f"{run_prefix}-{i:04d}", "llm-7b"))
             idx_7b += 1
 
     console.print(

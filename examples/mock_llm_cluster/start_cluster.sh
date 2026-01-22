@@ -124,8 +124,10 @@ cd "$PROJECT_ROOT/planner"
 
 # Build custom command for mock LLM server
 # MODEL_ID is passed via {model_id} placeholder, PORT is set by PyLet
+# Use venv Python to ensure dependencies are available
 MOCK_SERVER_PATH="$PROJECT_ROOT/examples/mock_llm_cluster/mock_llm_server.py"
-CUSTOM_CMD="MODEL_ID={model_id} $(which python3 || which python) $MOCK_SERVER_PATH"
+VENV_PYTHON="$PROJECT_ROOT/.venv/bin/python"
+CUSTOM_CMD="MODEL_ID={model_id} $VENV_PYTHON $MOCK_SERVER_PATH"
 
 PLANNER_PORT=$PLANNER_PORT \
     SCHEDULER_URL="http://localhost:$SCHEDULER_PORT" \
