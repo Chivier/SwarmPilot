@@ -1,9 +1,10 @@
 #!/bin/bash
-# Mock LLM Cluster - Deploy Models via Optimizer
+# Mock LLM Cluster - Deploy Models via Planner
 # Usage: ./examples/mock_llm_cluster/deploy_models.sh [total_instances]
 #
-# Deploys mock LLM models (7B and 32B) using the Planner's optimizer.
-# The optimizer calculates optimal instance allocation based on:
+# Deploys mock LLM models (7B and 32B) using the Planner's /deploy endpoint.
+# The /deploy endpoint runs the optimization algorithm and deploys via PyLet.
+# Allocation is calculated based on:
 # - Traffic ratio (1:5 - 32B gets 5x more requests)
 # - Model throughput (7B: ~5 req/s, 32B: ~1 req/s due to latency)
 #
@@ -46,7 +47,7 @@ echo -e "${GREEN}✓ Planner is healthy${NC}"
 
 # Check PyLet status
 echo "Checking PyLet status..."
-PYLET_STATUS=$(curl -s "http://localhost:$PLANNER_PORT/pylet/status" 2>/dev/null)
+PYLET_STATUS=$(curl -s "http://localhost:$PLANNER_PORT/status" 2>/dev/null)
 if echo "$PYLET_STATUS" | grep -q '"initialized": false' 2>/dev/null; then
     echo -e "${RED}Error: PyLet not initialized${NC}"
     echo "Ensure PyLet cluster is running and restart the Planner."
@@ -55,7 +56,7 @@ fi
 echo -e "${GREEN}✓ PyLet is initialized${NC}"
 echo ""
 
-# Calculate optimal deployment using /pylet/optimize
+# Calculate optimal deployment using /deploy
 #
 # Traffic ratio 1:5 means:
 #   7B: 16.67% of traffic (1/6)
@@ -63,12 +64,11 @@ echo ""
 #
 # Capacity matrix B (throughput per instance):
 #   B[i][j] = throughput of instance i when running model j
-#   For our case: B = [[5, 0], [0, 1]]  (diagonal - each instance runs one model)
-#   7B instance: 5 req/s, 32B instance: 1 req/s
+#   Each instance can run either model: [5.0, 1.0] (5 req/s for 7B, 1 req/s for 32B)
 #
-# The optimizer will find allocation that matches traffic ratio given capacities.
+# The /deploy endpoint runs the optimizer and deploys the result via PyLet.
 
-echo -e "${BLUE}Calling optimizer to calculate optimal allocation...${NC}"
+echo -e "${BLUE}Calling /deploy to optimize and deploy instances...${NC}"
 echo ""
 
 # Build capacity matrix for $TOTAL_INSTANCES instances
@@ -86,12 +86,14 @@ B_MATRIX+="]"
 # 1:5 ratio -> [1/6, 5/6] * 100 for percentage-like values
 TARGET="[16.67, 83.33]"
 
-OPTIMIZE_REQUEST=$(cat <<EOF
+DEPLOY_REQUEST=$(cat <<EOF
 {
-    "target": $TARGET,
-    "model_ids": ["llm-7b", "llm-32b"],
+    "M": $TOTAL_INSTANCES,
+    "N": 2,
     "B": $B_MATRIX,
+    "target": $TARGET,
     "a": 1.0,
+    "model_ids": ["llm-7b", "llm-32b"],
     "algorithm": "simulated_annealing",
     "objective_method": "ratio_difference",
     "wait_for_ready": true
@@ -99,17 +101,17 @@ OPTIMIZE_REQUEST=$(cat <<EOF
 EOF
 )
 
-echo -e "${CYAN}Optimizer request:${NC}"
+echo -e "${CYAN}Deploy request:${NC}"
 echo "  Models: llm-7b, llm-32b"
 echo "  Target ratio: 1:5 (16.67% : 83.33%)"
 echo "  Instances: $TOTAL_INSTANCES"
 echo "  Algorithm: simulated_annealing"
 echo ""
 
-# Call optimizer
-RESPONSE=$(curl -s -X POST "http://localhost:$PLANNER_PORT/pylet/optimize" \
+# Call /deploy (runs optimizer then deploys via PyLet)
+RESPONSE=$(curl -s -X POST "http://localhost:$PLANNER_PORT/deploy" \
     -H "Content-Type: application/json" \
-    -d "$OPTIMIZE_REQUEST")
+    -d "$DEPLOY_REQUEST")
 
 # Parse response
 SUCCESS=$(echo "$RESPONSE" | python3 -c "import sys, json; print(json.load(sys.stdin).get('deployment_success', False))" 2>/dev/null || echo "false")
