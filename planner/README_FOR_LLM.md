@@ -218,7 +218,7 @@ curl -X POST http://localhost:8000/plan \
 
 PyLet endpoints provide cluster management for deploying and managing model instances.
 
-### 5.1 GET /pylet/status
+### 5.1 GET /status
 
 **Purpose**: Get PyLet service status and active instances.
 
@@ -244,16 +244,52 @@ PyLet endpoints provide cluster management for deploying and managing model inst
 
 ---
 
-### 5.2 POST /pylet/deploy
+### 5.2 POST /deploy
 
-**Purpose**: Deploy instances to target state via PyLet.
+**Purpose**: Run optimization algorithm and deploy result via PyLet. Accepts same parameters as `/plan` plus `model_ids` mapping.
+
+**Request Schema**:
+```json
+{
+  "M": 4,                    // Number of instances
+  "N": 2,                    // Number of model types
+  "B": [[10, 8], [10, 8], [10, 8], [10, 8]],  // Capacity matrix [M×N]
+  "target": [0.6, 0.4],      // Target distribution (normalized)
+  "a": 0.5,                  // Change constraint (0 < a ≤ 1)
+  "model_ids": ["model-a", "model-b"],  // Maps indices to model names
+  "algorithm": "simulated_annealing",   // Optional, default: simulated_annealing
+  "objective_method": "relative_error", // Optional, default: relative_error
+  "wait_for_ready": true     // Optional, default: true
+}
+```
+
+**Response Schema**:
+```json
+{
+  "deployment": [0, 0, 1, 1],
+  "score": 0.0,
+  "service_capacity": [20.0, 16.0],
+  "changes_count": 4,
+  "stats": {...},
+  "deployment_success": true,
+  "added_count": 4,
+  "removed_count": 0,
+  "active_instances": [...],
+  "error": null
+}
+```
+
+---
+
+### 5.3 POST /deploy_manually
+
+**Purpose**: Deploy instances to explicit target state via PyLet (without running optimizer).
 
 **Request Schema**:
 ```json
 {
   "target_state": {"model-a": 2, "model-b": 1},
-  "wait_for_ready": true,
-  "register_with_scheduler": true
+  "wait_for_ready": true
 }
 ```
 
@@ -272,7 +308,7 @@ PyLet endpoints provide cluster management for deploying and managing model inst
 
 ---
 
-### 5.3 POST /pylet/scale
+### 5.4 POST /scale
 
 **Purpose**: Scale a specific model to target count.
 
@@ -301,7 +337,7 @@ PyLet endpoints provide cluster management for deploying and managing model inst
 
 ---
 
-### 5.4 POST /pylet/migrate
+### 5.5 POST /migrate
 
 **Purpose**: Migrate an instance to a different model.
 
@@ -327,7 +363,7 @@ PyLet endpoints provide cluster management for deploying and managing model inst
 
 ---
 
-### 5.5 POST /pylet/optimize
+### 5.6 POST /optimize
 
 **Purpose**: Run optimizer and deploy result via PyLet.
 
@@ -362,7 +398,7 @@ PyLet endpoints provide cluster management for deploying and managing model inst
 
 ---
 
-### 5.6 POST /pylet/terminate-all
+### 5.7 POST /terminate-all
 
 **Purpose**: Terminate all PyLet-managed instances.
 
@@ -674,7 +710,7 @@ async def deploy_via_pylet():
         }
 
         response = await client.post(
-            "http://localhost:8000/pylet/deploy",
+            "http://localhost:8000/deploy",
             json=deploy_request
         )
 
@@ -698,7 +734,7 @@ curl -X POST http://localhost:8000/plan \
   }'
 
 # Deploy via PyLet
-curl -X POST http://localhost:8000/pylet/deploy \
+curl -X POST http://localhost:8000/deploy \
   -H "Content-Type: application/json" \
   -d '{
     "target_state": {"model-a": 2, "model-b": 1},
@@ -706,7 +742,7 @@ curl -X POST http://localhost:8000/pylet/deploy \
   }'
 
 # Scale a model
-curl -X POST http://localhost:8000/pylet/scale \
+curl -X POST http://localhost:8000/scale \
   -H "Content-Type: application/json" \
   -d '{
     "model_id": "model-a",
@@ -714,15 +750,15 @@ curl -X POST http://localhost:8000/pylet/scale \
   }'
 
 # Check PyLet status
-curl http://localhost:8000/pylet/status
+curl http://localhost:8000/status
 ```
 
 ---
 
 ## 13. FAQ
 
-### Q1: What's the difference between /plan and /pylet/optimize?
-**A**: `/plan` only computes an optimal deployment without executing it. `/pylet/optimize` computes the plan AND deploys it via PyLet.
+### Q1: What's the difference between /plan and /optimize?
+**A**: `/plan` only computes an optimal deployment without executing it. `/optimize` computes the plan AND deploys it via PyLet.
 
 ### Q2: Can I use this service without PyLet?
 **A**: Yes, the `/plan` endpoint works standalone. PyLet integration is optional and controlled by `PYLET_ENABLED`.
@@ -741,7 +777,7 @@ curl http://localhost:8000/pylet/status
 - Two optimization algorithms: Simulated Annealing and Integer Programming
 - Three objective methods: relative_error, ratio_difference, weighted_squared
 - PyLet integration for cluster management
-- REST API endpoints: /health, /info, /plan, /pylet/*
+- REST API endpoints: /health, /info, /plan, /deploy, /scale, /migrate, /optimize, /status, /terminate-all
 - Comprehensive test coverage
 
 ---

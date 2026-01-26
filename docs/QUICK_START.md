@@ -209,9 +209,25 @@ uv run python -m src.cli start --port 8002
 
 ### Deploy Instances via PyLet
 
+The `/deploy` endpoint runs the optimization algorithm to compute optimal instance allocation,
+then deploys the result via PyLet.
+
 ```bash
-# Deploy 2 instances of sleep_model
-curl -X POST http://localhost:8002/pylet/deploy \
+# Deploy with planner optimization (2 instances, 1 model type)
+curl -X POST http://localhost:8002/deploy \
+  -H "Content-Type: application/json" \
+  -d '{
+    "M": 2,
+    "N": 1,
+    "B": [[1.0], [1.0]],
+    "target": [1.0],
+    "a": 0.5,
+    "model_ids": ["sleep_model"],
+    "wait_for_ready": true
+  }'
+
+# Or deploy manually with explicit target state
+curl -X POST http://localhost:8002/deploy_manually \
   -H "Content-Type: application/json" \
   -d '{
     "target_state": {"sleep_model": 2},
@@ -219,7 +235,7 @@ curl -X POST http://localhost:8002/pylet/deploy \
   }'
 
 # Check deployment status
-curl http://localhost:8002/pylet/status
+curl http://localhost:8002/status
 ```
 
 ### Deploy LLM Instances
@@ -229,11 +245,16 @@ curl http://localhost:8002/pylet/status
 export PYLET_BACKEND=vllm
 export PYLET_GPU_COUNT=1
 
-# Deploy Llama 3.1 8B
-curl -X POST http://localhost:8002/pylet/deploy \
+# Deploy 2 Llama instances with planner optimization
+curl -X POST http://localhost:8002/deploy \
   -H "Content-Type: application/json" \
   -d '{
-    "target_state": {"meta-llama/Llama-3.1-8B-Instruct": 2},
+    "M": 2,
+    "N": 1,
+    "B": [[1.0], [1.0]],
+    "target": [1.0],
+    "a": 0.5,
+    "model_ids": ["meta-llama/Llama-3.1-8B-Instruct"],
     "wait_for_ready": true
   }'
 ```

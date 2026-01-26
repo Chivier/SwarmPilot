@@ -83,7 +83,7 @@ PYLET_HEAD_PORT=5100
 
 ### deploy_models.sh
 
-Uses the Planner's `/pylet/optimize` endpoint to calculate and deploy optimal instance allocation.
+Uses the Planner's `/optimize` endpoint to calculate and deploy optimal instance allocation.
 
 ```bash
 # Deploy default 16 instances
@@ -128,10 +128,11 @@ Terminates all PyLet instances and stops services.
 
 | Endpoint | Description |
 |----------|-------------|
-| `GET /pylet/status` | Get PyLet service status |
-| `POST /pylet/deploy` | Deploy instances to target state |
-| `POST /pylet/optimize` | Run optimizer and deploy result |
-| `POST /pylet/terminate-all` | Terminate all instances |
+| `GET /status` | Get PyLet service status |
+| `POST /deploy` | Run optimizer and deploy result (accepts /plan input + model_ids) |
+| `POST /deploy_manually` | Deploy instances to explicit target state |
+| `POST /optimize` | Run optimizer and deploy result (simplified input) |
+| `POST /terminate-all` | Terminate all instances |
 
 ### Scheduler APIs
 
@@ -143,7 +144,7 @@ Terminates all PyLet instances and stops services.
 
 ## Understanding the Optimizer
 
-The optimizer (`/pylet/optimize`) uses:
+The optimizer (`/optimize`) uses:
 
 1. **Target Distribution**: Normalized QPS targets `[16.67, 83.33]` for 1:5 ratio
 2. **Capacity Matrix (B)**: Each instance can serve either model

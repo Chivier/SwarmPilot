@@ -71,9 +71,7 @@ class ServiceConfig:
     predictor_port: int = 8002
     planner_port: int = 8003
     instance_port_start: int = 8100
-    log_dir: Path = field(
-        default_factory=lambda: Path("/tmp/e2e_llm_cluster_logs")
-    )
+    log_dir: Path = field(default_factory=lambda: Path("/tmp/e2e_llm_cluster_logs"))
 
 
 @dataclass
@@ -90,19 +88,13 @@ class TestConfig:
     )
 
     # Runtime ratio 1:5:20 - used for capacity calculation
-    runtime_ratios: list[float] = field(
-        default_factory=lambda: [1.0, 5.0, 20.0]
-    )
+    runtime_ratios: list[float] = field(default_factory=lambda: [1.0, 5.0, 20.0])
 
     # QPS ratio 5:1:3
-    qps_ratios: list[float] = field(
-        default_factory=lambda: [5.0, 1.0, 3.0]
-    )
+    qps_ratios: list[float] = field(default_factory=lambda: [5.0, 1.0, 3.0])
 
     task_completion_timeout: float = 600.0
-    output_dir: Path = field(
-        default_factory=lambda: Path("./e2e_llm_cluster_results")
-    )
+    output_dir: Path = field(default_factory=lambda: Path("./e2e_llm_cluster_results"))
 
     def get_capacity_matrix(self, num_workers: int) -> list[list[float]]:
         """Build capacity matrix B for optimizer.
@@ -235,13 +227,13 @@ class E2ELLMClusterOrchestrator:
                         logger.debug(f"Could not remove {subdir}: {e}")
 
         # Python code to start PyLet head
-        head_code = f'''
+        head_code = f"""
 import pylet
 import sys
 print("Starting PyLet head on port {self.cluster_config.pylet_head_port}...")
 sys.stdout.flush()
 pylet.start(port={self.cluster_config.pylet_head_port}, block=True)
-'''
+"""
         head_log = open(self.service_config.log_dir / "pylet_head.log", "w")
         head_proc = subprocess.Popen(
             [sys.executable, "-c", head_code],
@@ -262,12 +254,14 @@ pylet.start(port={self.cluster_config.pylet_head_port}, block=True)
         # Start workers with 200-port gap for instance ports
         WORKER_PORT_GAP = 200
         for i in range(self.cluster_config.num_workers):
-            worker_http_port = self.cluster_config.pylet_worker_port_start + i * WORKER_PORT_GAP
+            worker_http_port = (
+                self.cluster_config.pylet_worker_port_start + i * WORKER_PORT_GAP
+            )
             instance_port_start = worker_http_port + 1
             instance_port_end = worker_http_port + 100
 
             # Python code to start PyLet worker
-            worker_code = f'''
+            worker_code = f"""
 import pylet
 import time
 import sys
@@ -282,7 +276,7 @@ pylet.start(
     memory=1024,
     block=True
 )
-'''
+"""
             worker_env = {
                 **os.environ,
                 "PYTHONUNBUFFERED": "1",
@@ -308,9 +302,7 @@ pylet.start(
             if i < self.cluster_config.num_workers - 1:
                 await asyncio.sleep(0.3)
 
-        logger.success(
-            f"Started {self.cluster_config.num_workers} PyLet workers"
-        )
+        logger.success(f"Started {self.cluster_config.num_workers} PyLet workers")
 
         # Wait for workers to register
         await asyncio.sleep(5)
@@ -356,11 +348,16 @@ pylet.start(
 
         proc = subprocess.Popen(
             [
-                sys.executable, "-m", "uvicorn",
+                sys.executable,
+                "-m",
+                "uvicorn",
                 "tests.integration.e2e_pylet_benchmark.mock_predictor_server:app",
-                "--host", "0.0.0.0",
-                "--port", str(self.service_config.predictor_port),
-                "--log-level", "info",
+                "--host",
+                "0.0.0.0",
+                "--port",
+                str(self.service_config.predictor_port),
+                "--log-level",
+                "info",
             ],
             stdout=predictor_log,
             stderr=subprocess.STDOUT,
@@ -402,11 +399,16 @@ pylet.start(
 
         proc = subprocess.Popen(
             [
-                sys.executable, "-m", "uvicorn",
+                sys.executable,
+                "-m",
+                "uvicorn",
                 "src.api:app",
-                "--host", "0.0.0.0",
-                "--port", str(self.service_config.scheduler_port),
-                "--log-level", "info",
+                "--host",
+                "0.0.0.0",
+                "--port",
+                str(self.service_config.scheduler_port),
+                "--log-level",
+                "info",
             ],
             stdout=scheduler_log,
             stderr=subprocess.STDOUT,
@@ -456,11 +458,16 @@ pylet.start(
 
         proc = subprocess.Popen(
             [
-                sys.executable, "-m", "uvicorn",
+                sys.executable,
+                "-m",
+                "uvicorn",
                 "src.api:app",
-                "--host", "0.0.0.0",
-                "--port", str(self.service_config.planner_port),
-                "--log-level", "info",
+                "--host",
+                "0.0.0.0",
+                "--port",
+                str(self.service_config.planner_port),
+                "--log-level",
+                "info",
             ],
             stdout=planner_log,
             stderr=subprocess.STDOUT,
@@ -482,8 +489,14 @@ pylet.start(
 
         # Services with standard /health endpoint
         services = [
-            ("predictor", f"http://localhost:{self.service_config.predictor_port}/health"),
-            ("scheduler", f"http://localhost:{self.service_config.scheduler_port}/health"),
+            (
+                "predictor",
+                f"http://localhost:{self.service_config.predictor_port}/health",
+            ),
+            (
+                "scheduler",
+                f"http://localhost:{self.service_config.scheduler_port}/health",
+            ),
             ("planner", f"http://localhost:{self.service_config.planner_port}/health"),
         ]
 
@@ -504,13 +517,17 @@ pylet.start(
                     await asyncio.sleep(1)
 
             # PyLet head uses /workers endpoint instead of /health
-            pylet_url = f"http://localhost:{self.cluster_config.pylet_head_port}/workers"
+            pylet_url = (
+                f"http://localhost:{self.cluster_config.pylet_head_port}/workers"
+            )
             for attempt in range(30):
                 try:
                     response = await client.get(pylet_url)
                     if response.status_code == 200:
                         workers = response.json()
-                        logger.success(f"pylet_head is healthy ({len(workers)} workers)")
+                        logger.success(
+                            f"pylet_head is healthy ({len(workers)} workers)"
+                        )
                         break
                 except Exception:
                     pass
@@ -521,79 +538,42 @@ pylet.start(
                 await asyncio.sleep(1)
 
     async def _compute_and_deploy(self) -> dict[str, Any]:
-        """Compute instance distribution and deploy via planner.
+        """Compute optimal instance distribution and deploy via planner.
 
-        Uses the /pylet/deploy endpoint with a pre-calculated distribution:
-        - instance_count = QPS_ratio * runtime_ratio (normalized to fit workers)
+        Uses the /deploy endpoint which runs the optimization algorithm
+        to compute optimal instance allocation, then deploys via PyLet.
 
-        For QPS ratio 5:1:3 and runtime ratio 1:5:20:
-        - llm_fast: 5 * 1 = 5 units
-        - llm_medium: 1 * 5 = 5 units
-        - llm_slow: 3 * 20 = 60 units
-        Total: 70 units -> distribute N workers proportionally
+        The optimizer uses:
+        - Capacity matrix B from test_config.get_capacity_matrix()
+        - Target distribution from test_config.get_target_distribution()
         """
-        logger.info("Computing instance distribution...")
+        logger.info("Deploying with planner optimization...")
 
-        # Calculate capacity-weighted distribution
-        # capacity_needed = QPS_ratio * runtime_ratio
-        capacity_units = [
-            qps * runtime
-            for qps, runtime in zip(
-                self.test_config.qps_ratios,
-                self.test_config.runtime_ratios
-            )
-        ]
-        total_units = sum(capacity_units)
-
-        # Distribute workers proportionally (ensure at least 1 per model)
         n_workers = self.cluster_config.num_workers
         n_models = len(self.test_config.model_ids)
 
-        # First pass: proportional allocation
-        raw_allocation = [
-            (units / total_units) * n_workers
-            for units in capacity_units
-        ]
-
-        # Second pass: ensure minimum of 1 per model and round
-        target_state: dict[str, int] = {}
-        allocated = 0
-        for i, model_id in enumerate(self.test_config.model_ids):
-            count = max(1, int(round(raw_allocation[i])))
-            target_state[model_id] = count
-            allocated += count
-
-        # Adjust if over-allocated
-        while allocated > n_workers:
-            # Remove from the model with most instances
-            max_model = max(target_state, key=lambda m: target_state[m])
-            if target_state[max_model] > 1:
-                target_state[max_model] -= 1
-                allocated -= 1
-
-        # Adjust if under-allocated
-        while allocated < n_workers:
-            # Add to the model with highest capacity need
-            max_idx = capacity_units.index(max(capacity_units))
-            max_model = self.test_config.model_ids[max_idx]
-            target_state[max_model] += 1
-            allocated += 1
-
-        logger.info(f"Target distribution: {target_state}")
-        logger.info(f"Capacity units: {dict(zip(self.test_config.model_ids, capacity_units))}")
-
-        # Deploy using /pylet/deploy endpoint
-        planner_url = f"http://localhost:{self.service_config.planner_port}"
-
+        # Build deploy request using planner algorithm
         deploy_request = {
-            "target_state": target_state,
+            "M": n_workers,
+            "N": n_models,
+            "B": self.test_config.get_capacity_matrix(n_workers),
+            "target": self.test_config.get_target_distribution(),
+            "a": 0.5,  # Change constraint factor
+            "model_ids": self.test_config.model_ids,
+            "algorithm": "simulated_annealing",
+            "objective_method": "relative_error",
             "wait_for_ready": True,
-            "register_with_scheduler": True,
         }
+
+        logger.info(f"Target distribution: {deploy_request['target']}")
+        logger.info(f"Model IDs: {deploy_request['model_ids']}")
+
+        # Deploy using /deploy endpoint (runs optimizer then deploys)
+        planner_url = f"http://localhost:{self.service_config.planner_port}"
 
         async with httpx.AsyncClient(timeout=600.0) as client:
             response = await client.post(
-                f"{planner_url}/pylet/deploy",
+                f"{planner_url}/deploy",
                 json=deploy_request,
             )
 
@@ -604,8 +584,14 @@ pylet.start(
 
             result = response.json()
 
-        if not result.get("success"):
+        if not result.get("deployment_success"):
             raise RuntimeError(f"Deployment failed: {result.get('error')}")
+
+        # Log optimization results
+        logger.info(f"Optimization score: {result.get('score', 'N/A')}")
+        logger.info(f"Deployment array: {result.get('deployment', [])}")
+        logger.info(f"Service capacity: {result.get('service_capacity', [])}")
+        logger.info(f"Changes count: {result.get('changes_count', 0)}")
 
         # Log deployment summary
         active_instances = result.get("active_instances", [])
@@ -619,8 +605,10 @@ pylet.start(
             logger.info(f"  {model_id}: {count} instances")
 
         return {
-            "target_state": target_state,
-            "capacity_units": dict(zip(self.test_config.model_ids, capacity_units)),
+            "target_distribution": deploy_request["target"],
+            "deployment": result.get("deployment", []),
+            "score": result.get("score"),
+            "service_capacity": result.get("service_capacity", []),
             "active_instances": active_instances,
             "model_distribution": model_counts,
         }
@@ -663,8 +651,7 @@ pylet.start(
         async with httpx.AsyncClient(timeout=5.0) as client:
             while time.time() - start_time < timeout:
                 pending = [
-                    (iid, ep) for iid, ep in endpoints
-                    if iid not in ready_instances
+                    (iid, ep) for iid, ep in endpoints if iid not in ready_instances
                 ]
 
                 if not pending:
@@ -695,9 +682,7 @@ pylet.start(
         # Log results
         elapsed = time.time() - start_time
         if len(ready_instances) == len(endpoints):
-            logger.success(
-                f"All {len(endpoints)} instances ready in {elapsed:.1f}s"
-            )
+            logger.success(f"All {len(endpoints)} instances ready in {elapsed:.1f}s")
         else:
             not_ready = [iid for iid, _ in endpoints if iid not in ready_instances]
             logger.warning(
@@ -734,9 +719,7 @@ pylet.start(
 
     async def _wait_for_completion(self, workload_result) -> dict[str, dict[str, Any]]:
         """Wait for all tasks to complete."""
-        task_ids = [
-            r.task_id for r in workload_result.submission_results if r.success
-        ]
+        task_ids = [r.task_id for r in workload_result.submission_results if r.success]
 
         if not task_ids:
             logger.warning("No successful task submissions to wait for")
@@ -761,17 +744,10 @@ pylet.start(
 
         # Calculate statistics
         completed = sum(
-            1 for r in task_results.values()
-            if r.get("status") == "completed"
+            1 for r in task_results.values() if r.get("status") == "completed"
         )
-        failed = sum(
-            1 for r in task_results.values()
-            if r.get("status") == "failed"
-        )
-        timeout = sum(
-            1 for r in task_results.values()
-            if r.get("status") == "timeout"
-        )
+        failed = sum(1 for r in task_results.values() if r.get("status") == "failed")
+        timeout = sum(1 for r in task_results.values() if r.get("status") == "timeout")
 
         # Task distribution by model
         tasks_by_model = workload_result.tasks_by_model()
@@ -881,7 +857,7 @@ pylet.start(
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 await client.post(
-                    f"http://localhost:{self.service_config.planner_port}/pylet/terminate-all"
+                    f"http://localhost:{self.service_config.planner_port}/terminate-all"
                 )
         except Exception:
             pass
@@ -920,23 +896,33 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
-        "--total-qps", type=float, default=10.0,
+        "--total-qps",
+        type=float,
+        default=10.0,
         help="Total queries per second across all models",
     )
     parser.add_argument(
-        "--duration", type=float, default=60.0,
+        "--duration",
+        type=float,
+        default=60.0,
         help="Test duration in seconds",
     )
     parser.add_argument(
-        "--workers", type=int, default=32,
+        "--workers",
+        type=int,
+        default=32,
         help="Number of PyLet workers",
     )
     parser.add_argument(
-        "--output-dir", type=str, default="./e2e_llm_cluster_results",
+        "--output-dir",
+        type=str,
+        default="./e2e_llm_cluster_results",
         help="Output directory for reports",
     )
     parser.add_argument(
-        "--log-dir", type=str, default="/tmp/e2e_llm_cluster_logs",
+        "--log-dir",
+        type=str,
+        default="/tmp/e2e_llm_cluster_logs",
         help="Directory for log files",
     )
 

@@ -58,12 +58,13 @@ planner/src/
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/pylet/status` | GET | PyLet service status |
-| `/pylet/deploy` | POST | Deploy to target state |
-| `/pylet/scale` | POST | Scale specific model |
-| `/pylet/migrate` | POST | Migrate instance |
-| `/pylet/optimize` | POST | Optimize and deploy |
-| `/pylet/terminate-all` | POST | Terminate all instances |
+| `/status` | GET | PyLet service status |
+| `/deploy` | POST | Run optimizer and deploy result |
+| `/deploy_manually` | POST | Deploy to manual target state |
+| `/scale` | POST | Scale specific model |
+| `/migrate` | POST | Migrate instance |
+| `/optimize` | POST | Optimize and deploy (simplified) |
+| `/terminate-all` | POST | Terminate all instances |
 
 ### Scheduler Compatibility
 
@@ -103,13 +104,27 @@ planner/src/
 }
 ```
 
-### PyLet Deploy
+### PyLet Deploy (with Planner Algorithm)
 ```json
-// POST /pylet/deploy
+// POST /deploy - runs optimizer then deploys
+{
+  "M": 4,                    // Number of instances
+  "N": 2,                    // Number of model types
+  "B": [[10, 8], [10, 8], [10, 8], [10, 8]],  // Capacity matrix
+  "target": [0.6, 0.4],      // Target distribution (normalized)
+  "a": 0.5,                  // Change constraint
+  "model_ids": ["model-a", "model-b"],  // Model ID mapping
+  "algorithm": "simulated_annealing",
+  "wait_for_ready": true
+}
+```
+
+### PyLet Deploy Manually
+```json
+// POST /deploy_manually - deploy to explicit target state
 {
   "target_state": {"model-a": 2, "model-b": 1},
-  "wait_for_ready": true,
-  "register_with_scheduler": true
+  "wait_for_ready": true
 }
 ```
 
