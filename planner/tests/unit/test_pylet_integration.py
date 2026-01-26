@@ -12,7 +12,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.pylet.client import InstanceInfo, PyLetClient
+from src.pylet.client import (
+    InstanceInfo,
+    PartialDeploymentError,
+    PartialDeploymentResult,
+    PyLetClient,
+)
 from src.pylet.deployment_executor import (
     DeploymentExecutor,
     DeploymentPlan,
@@ -81,7 +86,7 @@ class TestPyLetClient:
 
     @patch("src.pylet.client.pylet")
     def test_deploy_model_success(self, mock_pylet):
-        """Test successful model deployment."""
+        """Test successful model deployment returns list."""
         mock_instance = MagicMock()
         mock_instance.id = "instance-123"
         mock_instance.endpoint = None
@@ -96,15 +101,78 @@ class TestPyLetClient:
         client = PyLetClient("http://localhost:8000")
         client.init()
 
-        info = client.deploy_model(
+        # deploy_model now always returns list[InstanceInfo]
+        infos = client.deploy_model(
             model_id="Qwen/Qwen3-0.6B",
             backend="vllm",
             gpu_count=1,
         )
 
-        assert info.pylet_id == "instance-123"
-        assert info.model_id == "Qwen/Qwen3-0.6B"
+        assert isinstance(infos, list)
+        assert len(infos) == 1
+        assert infos[0].pylet_id == "instance-123"
+        assert infos[0].model_id == "Qwen/Qwen3-0.6B"
         mock_pylet.submit.assert_called_once()
+
+    @patch("src.pylet.client.pylet")
+    def test_deploy_model_multiple(self, mock_pylet):
+        """Test deploying multiple instances."""
+        mock_instances = []
+        for i in range(3):
+            mock_inst = MagicMock()
+            mock_inst.id = f"instance-{i}"
+            mock_inst.endpoint = None
+            mock_inst.status = "PENDING"
+            mock_inst.labels = {
+                "model_id": "model-a",
+                "backend": "vllm",
+                "managed_by": "swarmpilot",
+            }
+            mock_instances.append(mock_inst)
+
+        mock_pylet.submit.side_effect = mock_instances
+
+        client = PyLetClient("http://localhost:8000")
+        client.init()
+
+        infos = client.deploy_model("model-a", count=3)
+
+        assert len(infos) == 3
+        assert mock_pylet.submit.call_count == 3
+        for i, info in enumerate(infos):
+            assert info.pylet_id == f"instance-{i}"
+
+    @patch("src.pylet.client.pylet")
+    def test_deploy_model_partial_failure(self, mock_pylet):
+        """Test that partial failures raise PartialDeploymentError."""
+        from pylet.errors import PyletError as PyletSDKError
+
+        mock_instance = MagicMock()
+        mock_instance.id = "instance-0"
+        mock_instance.endpoint = None
+        mock_instance.status = "PENDING"
+        mock_instance.labels = {
+            "model_id": "model-a",
+            "backend": "vllm",
+            "managed_by": "swarmpilot",
+        }
+
+        # First succeeds, second fails, third succeeds
+        mock_pylet.submit.side_effect = [
+            mock_instance,
+            PyletSDKError("Worker unavailable"),
+            mock_instance,
+        ]
+
+        client = PyLetClient("http://localhost:8000")
+        client.init()
+
+        with pytest.raises(PartialDeploymentError) as exc_info:
+            client.deploy_model("model-a", count=3)
+
+        assert len(exc_info.value.result.succeeded) == 2
+        assert len(exc_info.value.result.failed) == 1
+        assert exc_info.value.result.failed[0][0] == 1  # Index 1 failed
 
 
 class TestSchedulerClient:

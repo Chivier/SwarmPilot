@@ -165,32 +165,32 @@ class TestPyLetOptimizerE2E:
         # Verify total count
         assert sum(target_state.values()) == 5, "Should deploy to all 5 workers"
 
-        # Deploy dummy servers via PyLet using batch deployment (replicas)
+        # Deploy dummy servers via PyLet (one at a time, replicas no longer supported)
         for model_id, count in target_state.items():
             throughput = {"model-a": 10.0, "model-b": 5.0, "model-c": 6.67}.get(
                 model_id, 1.0
             )
 
-            # Use replicas parameter for efficient batch deployment
-            result = pylet.submit(
-                f"{PYTHON_EXECUTABLE} {dummy_script_path}",
-                cpu=1,
-                gpu=0,
-                env={
-                    "MODEL_ID": model_id,
-                    "THROUGHPUT": str(throughput),
-                },
-                labels={
-                    "model_id": model_id,
-                    "managed_by": "swarmpilot",
-                    "test": "optimize_and_deploy",
-                },
-                replicas=count,
-            )
-            # Handle both single instance and list return types
-            instances = result if isinstance(result, list) else [result]
-            deployed_instances.extend(instances)
-            print(f"[TEST] Submitted {count} {model_id} instance(s) using replicas")
+            # PyLet no longer supports replicas - submit instances one at a time
+            for i in range(count):
+                inst = pylet.submit(
+                    f"{PYTHON_EXECUTABLE} {dummy_script_path}",
+                    cpu=1,
+                    gpu=0,
+                    name=f"{model_id}-{i}",
+                    env={
+                        "MODEL_ID": model_id,
+                        "THROUGHPUT": str(throughput),
+                    },
+                    labels={
+                        "model_id": model_id,
+                        "managed_by": "swarmpilot",
+                        "test": "optimize_and_deploy",
+                        "replica_index": str(i),
+                    },
+                )
+                deployed_instances.append(inst)
+            print(f"[TEST] Submitted {count} {model_id} instance(s)")
 
         # Wait for all instances to be running
         print(f"[TEST] Waiting for {len(deployed_instances)} instances to start...")
@@ -360,24 +360,24 @@ class TestPyLetOptimizerE2E:
 
         print(f"[TEST] IP target state: {target_state}")
 
-        # Deploy instances using batch deployment (replicas)
+        # Deploy instances one at a time (PyLet no longer supports replicas)
         for model_id, count in target_state.items():
-            result = pylet.submit(
-                f"{PYTHON_EXECUTABLE} {dummy_script_path}",
-                cpu=1,
-                gpu=0,
-                env={"MODEL_ID": model_id, "THROUGHPUT": "1.0"},
-                labels={
-                    "model_id": model_id,
-                    "managed_by": "swarmpilot",
-                    "test": "optimize_with_ip",
-                },
-                replicas=count,
-            )
-            # Handle both single instance and list return types
-            instances = result if isinstance(result, list) else [result]
-            deployed_instances.extend(instances)
-            print(f"[TEST] Submitted {count} {model_id} instance(s) using replicas")
+            for i in range(count):
+                inst = pylet.submit(
+                    f"{PYTHON_EXECUTABLE} {dummy_script_path}",
+                    cpu=1,
+                    gpu=0,
+                    name=f"{model_id}-ip-{i}",
+                    env={"MODEL_ID": model_id, "THROUGHPUT": "1.0"},
+                    labels={
+                        "model_id": model_id,
+                        "managed_by": "swarmpilot",
+                        "test": "optimize_with_ip",
+                        "replica_index": str(i),
+                    },
+                )
+                deployed_instances.append(inst)
+            print(f"[TEST] Submitted {count} {model_id} instance(s)")
 
         # Wait and verify
         for inst in deployed_instances:
@@ -542,9 +542,7 @@ class TestPlannerDeployAPI:
 
         for inst in active_instances:
             endpoint = inst["endpoint"]
-            assert (
-                endpoint is not None
-            ), f"Instance {inst['pylet_id']} has no endpoint"
+            assert endpoint is not None, f"Instance {inst['pylet_id']} has no endpoint"
 
             health_data = await verify_endpoint_health(endpoint)
             assert health_data["status"] == "healthy"
