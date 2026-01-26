@@ -2,7 +2,7 @@
 
 from pydantic import BaseModel, Field
 
-from .planner import PlannerOutput
+from .planner import PlannerInput, PlannerOutput
 
 
 class PyLetInstanceStatus(BaseModel):
@@ -22,9 +22,7 @@ class PyLetDeploymentInput(BaseModel):
     target_state: dict[str, int] = Field(
         ..., description="Target model counts {model_id: count}"
     )
-    wait_for_ready: bool = Field(
-        True, description="Wait for instances to be ready"
-    )
+    wait_for_ready: bool = Field(True, description="Wait for instances to be ready")
     register_with_scheduler: bool = Field(
         True, description="Register instances with scheduler"
     )
@@ -54,9 +52,7 @@ class PyLetScaleInput(BaseModel):
 
     model_id: str = Field(..., description="Model to scale")
     target_count: int = Field(..., ge=0, description="Target instance count")
-    wait_for_ready: bool = Field(
-        True, description="Wait for instances to be ready"
-    )
+    wait_for_ready: bool = Field(True, description="Wait for instances to be ready")
 
 
 class PyLetScaleOutput(BaseModel):
@@ -99,9 +95,7 @@ class PyLetStatusOutput(BaseModel):
 
     enabled: bool = Field(..., description="Whether PyLet is enabled")
     initialized: bool = Field(..., description="Whether PyLet is initialized")
-    current_state: dict[str, int] = Field(
-        ..., description="Current model counts"
-    )
+    current_state: dict[str, int] = Field(..., description="Current model counts")
     total_instances: int = Field(..., description="Total managed instances")
     active_instances: list[PyLetInstanceStatus] = Field(
         ..., description="All active instances"
@@ -115,9 +109,7 @@ class PyLetOptimizeInput(BaseModel):
     model_ids: list[str] = Field(..., description="Model IDs in order")
     B: list[list[float]] = Field(..., description="Capacity matrix")
     a: float = Field(0.3, ge=0, le=1, description="Change penalty factor")
-    objective_method: str = Field(
-        "ratio_difference", description="Objective function"
-    )
+    objective_method: str = Field("ratio_difference", description="Objective function")
     algorithm: str = Field("simulated_annealing", description="Optimization algorithm")
     wait_for_ready: bool = Field(True, description="Wait for instances")
 
@@ -132,3 +124,18 @@ class PyLetOptimizeOutput(PlannerOutput):
         ..., description="Active instances"
     )
     error: str | None = Field(None, description="Error if failed")
+
+
+class PyLetDeployWithPlanInput(PlannerInput):
+    """Input for /deploy endpoint - combines planning with PyLet deployment.
+
+    Extends PlannerInput with model_ids mapping and PyLet deployment options.
+    The optimizer runs first to compute optimal deployment, then PyLet deploys it.
+    """
+
+    model_ids: list[str] = Field(
+        ..., description="Model IDs in order (maps indices 0..N-1 to model names)"
+    )
+    wait_for_ready: bool = Field(
+        True, description="Wait for instances to be ready after deployment"
+    )

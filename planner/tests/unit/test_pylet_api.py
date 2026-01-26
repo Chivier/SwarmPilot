@@ -2,7 +2,7 @@
 
 Tests for:
 - PyLetDeploymentService
-- PyLet API endpoints (/pylet/*)
+- PyLet API endpoints (/status, /deploy, /scale, /migrate, /optimize)
 - PyLet models
 """
 
@@ -248,7 +248,7 @@ class TestPyLetAPIEndpoints:
             yield mock
 
     def test_pylet_status_disabled(self, mock_config):
-        """Test /pylet/status when PyLet is disabled."""
+        """Test /status when PyLet is disabled."""
         with patch("src.pylet_api.get_pylet_service_optional") as mock_get:
             mock_get.return_value = None
 
@@ -260,7 +260,7 @@ class TestPyLetAPIEndpoints:
             app.include_router(router)
             client = TestClient(app)
 
-            response = client.get("/pylet/status")
+            response = client.get("/status")
 
             assert response.status_code == 200
             data = response.json()
@@ -268,7 +268,7 @@ class TestPyLetAPIEndpoints:
             assert data["initialized"] is False
 
     def test_pylet_status_enabled(self, mock_config_enabled):
-        """Test /pylet/status when PyLet is enabled."""
+        """Test /status when PyLet is enabled."""
         mock_service = MagicMock()
         mock_service.initialized = True
         mock_service.get_current_state.return_value = {"model-a": 2}
@@ -293,7 +293,7 @@ class TestPyLetAPIEndpoints:
             app.include_router(router)
             client = TestClient(app)
 
-            response = client.get("/pylet/status")
+            response = client.get("/status")
 
             assert response.status_code == 200
             data = response.json()
@@ -302,8 +302,8 @@ class TestPyLetAPIEndpoints:
             assert data["current_state"]["model-a"] == 2
             assert len(data["active_instances"]) == 1
 
-    def test_pylet_deploy_disabled(self, mock_config):
-        """Test /pylet/deploy returns 503 when PyLet is disabled."""
+    def test_pylet_deploy_manually_disabled(self, mock_config):
+        """Test /deploy_manually returns 503 when PyLet is disabled."""
         with patch("src.pylet_api.get_pylet_service_optional") as mock_get:
             mock_get.return_value = None
 
@@ -316,14 +316,14 @@ class TestPyLetAPIEndpoints:
             client = TestClient(app)
 
             response = client.post(
-                "/pylet/deploy",
+                "/deploy_manually",
                 json={"target_state": {"model-a": 2}},
             )
 
             assert response.status_code == 503
 
     def test_pylet_scale_disabled(self, mock_config):
-        """Test /pylet/scale returns 503 when PyLet is disabled."""
+        """Test /scale returns 503 when PyLet is disabled."""
         with patch("src.pylet_api.get_pylet_service_optional") as mock_get:
             mock_get.return_value = None
 
@@ -336,7 +336,7 @@ class TestPyLetAPIEndpoints:
             client = TestClient(app)
 
             response = client.post(
-                "/pylet/scale",
+                "/scale",
                 json={"model_id": "model-a", "target_count": 3},
             )
 

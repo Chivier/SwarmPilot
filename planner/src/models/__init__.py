@@ -14,6 +14,7 @@ from .planner import PlannerInput, PlannerOutput
 from .pylet import (
     PyLetDeploymentInput,
     PyLetDeploymentOutput,
+    PyLetDeployWithPlanInput,
     PyLetInstanceStatus,
     PyLetMigrateInput,
     PyLetMigrateOutput,
@@ -54,6 +55,7 @@ __all__ = [
     # PyLet
     "PyLetDeploymentInput",
     "PyLetDeploymentOutput",
+    "PyLetDeployWithPlanInput",
     "PyLetInstanceStatus",
     "PyLetMigrateInput",
     "PyLetMigrateOutput",
