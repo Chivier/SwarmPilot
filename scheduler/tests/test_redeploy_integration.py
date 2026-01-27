@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from src.api import app, background_scheduler, instance_registry, task_registry
+from src.api import app, instance_registry, task_registry
 from src.model import InstanceStatus
 
 # ============================================================================
@@ -108,12 +108,21 @@ def test_redeploy_start_endpoint_success(client):
         mock_response.raise_for_status = MagicMock()
         mock_post.return_value = mock_response
 
-        # Mock BackgroundScheduler.reassign_task to return success
-        with patch.object(
-            background_scheduler, "reassign_task", new_callable=AsyncMock
-        ) as mock_reassign:
-            mock_reassign.return_value = True
+        # Mock scheduling_strategy.schedule_task + worker_queue_manager
+        from src.algorithms import ScheduleResult
 
+        mock_result = ScheduleResult(
+            selected_instance_id="instance-2",
+            selected_prediction=None,
+        )
+        with patch(
+            "src.api.scheduling_strategy.schedule_task",
+            new_callable=AsyncMock,
+            return_value=mock_result,
+        ), patch(
+            "src.api.worker_queue_manager.enqueue_task",
+            return_value=1,
+        ):
             # Start redeployment on instance-1
             redeploy_request = {
                 "instance_id": "instance-1",
@@ -311,17 +320,27 @@ def test_redeploy_task_redistribution_preserves_priority(client):
         mock_response.raise_for_status = MagicMock()
         mock_post.return_value = mock_response
 
-        # Track the enqueue_times passed to reassign_task
-        enqueue_times = []
+        # Track the tasks enqueued to worker_queue_manager
+        enqueued_tasks = []
 
-        async def mock_reassign(
-            task_id, model_id, task_input, enqueue_time=None, **kwargs
-        ):
-            enqueue_times.append(enqueue_time)
-            return True
+        def mock_enqueue_task(worker_id, task):
+            enqueued_tasks.append(task)
+            return 1
 
-        with patch.object(
-            background_scheduler, "reassign_task", side_effect=mock_reassign
+        from src.algorithms import ScheduleResult
+
+        mock_result = ScheduleResult(
+            selected_instance_id="instance-2",
+            selected_prediction=None,
+        )
+
+        with patch(
+            "src.api.scheduling_strategy.schedule_task",
+            new_callable=AsyncMock,
+            return_value=mock_result,
+        ), patch(
+            "src.api.worker_queue_manager.enqueue_task",
+            side_effect=mock_enqueue_task,
         ):
             # Start redeployment
             redeploy_request = {
@@ -334,4 +353,6 @@ def test_redeploy_task_redistribution_preserves_priority(client):
 
             assert response.status_code == 200
             # Verify enqueue_times were preserved
-            assert enqueue_times == [1000.0, 2000.0]
+            assert len(enqueued_tasks) == 2
+            assert enqueued_tasks[0].enqueue_time == 1000.0
+            assert enqueued_tasks[1].enqueue_time == 2000.0

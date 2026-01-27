@@ -39,16 +39,6 @@ class SchedulingConfig:
 
 
 @dataclass
-class QueueConfig:
-    """Configuration for central task queue."""
-
-    # Maximum concurrent dispatch operations
-    max_concurrent_dispatch: int = int(
-        os.getenv("QUEUE_MAX_CONCURRENT_DISPATCH", "50")
-    )
-
-
-@dataclass
 class TrainingConfig:
     """Configuration for model training pipeline."""
 
@@ -157,7 +147,6 @@ class Config:
 
     predictor: PredictorConfig
     scheduling: SchedulingConfig
-    queue: QueueConfig
     training: TrainingConfig
     logging: LoggingConfig
     server: ServerConfig
@@ -174,7 +163,6 @@ class Config:
         return cls(
             predictor=PredictorConfig(),
             scheduling=SchedulingConfig(),
-            queue=QueueConfig(),
             training=TrainingConfig(),
             logging=LoggingConfig(),
             server=ServerConfig(),

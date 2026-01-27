@@ -648,7 +648,7 @@ class TestUpdateMetadataRollback:
             },
         )
 
-        # Submit task - need to patch both central_queue scheduling and predictor
+        # Submit task - need to patch predictor for scheduling
         old_pred = Prediction(
             instance_id="inst-rollback",
             predicted_time_ms=100.0,

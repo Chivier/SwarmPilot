@@ -8,6 +8,7 @@ import asyncio
 import json
 import math
 import random
+import time
 from collections.abc import Callable
 from contextlib import asynccontextmanager, suppress
 from datetime import datetime
@@ -29,8 +30,6 @@ from pyinstrument.renderers.speedscope import SpeedscopeRenderer
 
 # Import logger configuration to initialize loguru
 from .utils.logger import setup_logger  # noqa: F401
-from .services.background_scheduler import BackgroundScheduler
-from .services.central_queue import CentralTaskQueue
 from .config import config
 from .utils.http_error_logger import log_http_error
 from .registry.instance_registry import InstanceRegistry
@@ -90,9 +89,9 @@ from .model import (
 from .utils.planner_reporter import PlannerReporter
 from .clients.predictor_client import PredictorClient
 from .algorithms import get_strategy
-from .services.task_dispatcher import TaskDispatcher
 from .services.task_result_callback import TaskResultCallback
 from .services.worker_queue_manager import WorkerQueueManager
+from .services.worker_queue_thread import QueuedTask
 from .registry.task_registry import TaskRegistry
 from .utils.throughput_tracker import ThroughputTracker
 from .clients.training_client import TrainingClient
@@ -134,10 +133,6 @@ async def lifespan(app: FastAPI):
         logger.info("Proxy router wired to WorkerQueueManager")
     scheduling_strategy.set_worker_queue_manager(worker_queue_manager)
 
-    # Start central queue dispatcher
-    await central_queue.start()
-    logger.info("Central queue dispatcher started")
-
     # Start planner reporter (if configured)
     if planner_reporter:
         await planner_reporter.start()
@@ -160,18 +155,7 @@ async def lifespan(app: FastAPI):
         worker_queue_manager.shutdown()
         logger.debug("WorkerQueueManager shutdown complete")
 
-    # Shutdown central queue (wait for pending dispatches)
-    await central_queue.shutdown()
-    logger.debug("Central queue shutdown complete")
-
-    # Shutdown background scheduler (wait for active tasks to complete)
-    await background_scheduler.shutdown()
-    logger.debug("Background scheduler shutdown complete")
-
     # Close HTTP clients
-    await task_dispatcher.close()
-    logger.debug("Task dispatcher closed")
-
     if training_client:
         await training_client.close()
         logger.debug("Training client closed")
@@ -269,21 +253,6 @@ training_client = (
     else None
 )
 
-# Initialize task dispatcher
-# Construct callback base URL from config
-callback_base_url = f"http://{config.server.host}:{config.server.port}"
-if config.server.host == "0.0.0.0":
-    # For 0.0.0.0, use localhost for callbacks
-    callback_base_url = f"http://localhost:{config.server.port}"
-
-task_dispatcher = TaskDispatcher(
-    task_registry=task_registry,
-    instance_registry=instance_registry,
-    websocket_manager=websocket_manager,
-    training_client=training_client,
-    callback_base_url=callback_base_url,
-)
-
 # Initialize scheduling strategy from configuration
 # Note: strategy now receives predictor_client and instance_registry dependencies
 scheduling_strategy = get_strategy(
@@ -292,33 +261,6 @@ scheduling_strategy = get_strategy(
     instance_registry=instance_registry,
     target_quantile=config.scheduling.probabilistic_quantile,
 )
-
-# Initialize background scheduler for non-blocking task scheduling
-background_scheduler = BackgroundScheduler(
-    scheduling_strategy=scheduling_strategy,
-    task_registry=task_registry,
-    instance_registry=instance_registry,
-    task_dispatcher=task_dispatcher,
-    max_concurrent_scheduling=50,  # Limit concurrent scheduling operations
-)
-
-logger.info("Background scheduler initialized with max_concurrent=50")
-
-# Initialize central task queue
-central_queue = CentralTaskQueue(
-    task_registry=task_registry,
-    instance_registry=instance_registry,
-    max_concurrent_dispatch=config.queue.max_concurrent_dispatch,
-)
-
-# Set up component references
-central_queue.set_scheduling_strategy(scheduling_strategy)
-central_queue.set_task_dispatcher(task_dispatcher)
-task_dispatcher.set_central_queue(central_queue)
-
-# Task clearing state - prevents new task submissions during clear operation
-_clearing_in_progress = False
-_clearing_lock = asyncio.Lock()
 
 # Background tasks set - keeps references to fire-and-forget tasks
 _background_tasks: set[asyncio.Task] = set()
@@ -334,9 +276,6 @@ if config.planner_report.url and config.planner_report.interval > 0:
     logger.info(
         f"Throughput tracker initialized with window_size={config.planner_report.throughput_window_size}"
     )
-
-    # Wire throughput tracker to task dispatcher
-    task_dispatcher.throughput_tracker = throughput_tracker
 
     # Create planner reporter with throughput tracker
     planner_reporter = PlannerReporter(
@@ -1391,16 +1330,33 @@ async def start_instance_redeploy(request: InstanceRedeployRequest):
                 enqueue_time = task_data.get("enqueue_time")
                 metadata = task_data.get("metadata", {})
 
-                # Use background scheduler to reassign task
-                # The scheduler will use the current strategy to select the best instance
-                success = await background_scheduler.reassign_task(
-                    task_id=task_id,
-                    model_id=model_id,
-                    task_input=task_input,
-                    enqueue_time=enqueue_time,
-                    metadata=metadata,
-                    exclude_instance_id=request.instance_id,  # Don't assign back to redeploying instance
+                # Use scheduling strategy + worker queue to reassign task
+                available = await instance_registry.list_active(
+                    model_id=model_id
                 )
+                available = [
+                    i
+                    for i in available
+                    if i.instance_id != request.instance_id
+                ]
+                success = False
+                if available and worker_queue_manager:
+                    result = await scheduling_strategy.schedule_task(
+                        model_id=model_id,
+                        metadata=metadata,
+                        available_instances=available,
+                    )
+                    queued = QueuedTask(
+                        task_id=task_id,
+                        model_id=model_id,
+                        task_input=task_input,
+                        metadata=metadata,
+                        enqueue_time=enqueue_time or time.time(),
+                    )
+                    worker_queue_manager.enqueue_task(
+                        result.selected_instance_id, queued
+                    )
+                    success = True
 
                 if success:
                     redistributed_tasks.append(task_id)
@@ -1650,15 +1606,6 @@ async def submit_task(request: TaskSubmitRequest):
         HTTPException 400: If task with this ID already exists
         HTTPException 503: If task clear operation is in progress
     """
-    # 0. Check if clear operation is in progress
-    if _clearing_in_progress:
-        error_msg = "Task clear operation in progress. Please retry."
-        logger.error(f"[submit_task] {error_msg} | task_id={request.task_id}")
-        raise HTTPException(
-            status_code=503,
-            detail={"success": False, "error": error_msg},
-        )
-
     # 1. Validate that task doesn't already exist
     if await task_registry.get(request.task_id):
         error_msg = "Task with this ID already exists"
@@ -1710,21 +1657,31 @@ async def submit_task(request: TaskSubmitRequest):
         f"available_instances={len(available_instances)}"
     )
 
-    # 4. Enqueue task to central queue (non-blocking)
-    # Central queue will:
-    # - Queue task for dispatch
-    # - When instance capacity available:
-    #   - Get predictions from predictor service
-    #   - Select optimal instance
-    #   - Update queue info (Monte Carlo sampling)
-    #   - Assign instance to task
-    #   - Dispatch task to instance
-    queue_position = await central_queue.enqueue(
-        task_id=request.task_id,
-        model_id=request.model_id,
-        task_input=request.task_input,
-        metadata=request.metadata,
-    )
+    # 4. Schedule task to a worker queue (if instances available)
+    queue_position = 0
+    if available_instances and worker_queue_manager:
+        try:
+            schedule_result = await scheduling_strategy.schedule_task(
+                model_id=request.model_id,
+                metadata=request.metadata,
+                available_instances=available_instances,
+            )
+            selected_id = schedule_result.selected_instance_id
+            queued_task = QueuedTask(
+                task_id=request.task_id,
+                model_id=request.model_id,
+                task_input=request.task_input,
+                metadata=request.metadata,
+                enqueue_time=time.time(),
+            )
+            queue_position = worker_queue_manager.enqueue_task(
+                selected_id, queued_task
+            )
+        except Exception as e:
+            logger.warning(
+                f"[submit_task] Scheduling failed for task {request.task_id}: {e}. "
+                f"Task remains in PENDING status."
+            )
 
     # 5. Return immediately with PENDING status
     task_info = TaskInfo(
@@ -1736,7 +1693,7 @@ async def submit_task(request: TaskSubmitRequest):
 
     return TaskSubmitResponse(
         success=True,
-        message=f"Task queued at position {queue_position} and is being scheduled",
+        message=f"Task scheduled (queue position {queue_position})",
         task=task_info,
     )
 
@@ -1853,27 +1810,10 @@ async def clear_tasks():
     Returns:
         TaskClearResponse with count of cleared tasks from scheduler
     """
-    global _clearing_in_progress
-
-    # Set clearing flag to prevent new task submissions
-    async with _clearing_lock:
-        if _clearing_in_progress:
-            error_msg = "Clear operation already in progress"
-            logger.error(f"[clear_tasks] {error_msg}")
-            raise HTTPException(
-                status_code=409,
-                detail={"success": False, "error": error_msg},
-            )
-        _clearing_in_progress = True
-
     try:
         logger.warning("Starting task clear operation")
 
-        # 1. Clear central queue first to prevent new dispatches
-        queue_cleared = await central_queue.clear()
-        logger.warning(f"Cleared {queue_cleared} tasks from central queue")
-
-        # 2. Clear all tasks from scheduler registry
+        # 1. Clear all tasks from scheduler registry
         cleared_count = await task_registry.clear_all()
         logger.warning(f"Cleared {cleared_count} tasks from scheduler registry")
 
@@ -1940,21 +1880,18 @@ async def clear_tasks():
             r.get("cleared", 0) for r in instance_clear_results if r["success"]
         )
         logger.warning(
-            f"Task clear operation complete: scheduler={cleared_count}, queue={queue_cleared}, "
+            f"Task clear operation complete: scheduler={cleared_count}, "
             f"instances={successful_clears}/{len(all_instances)} ({total_instance_tasks} tasks)"
         )
 
         return TaskClearResponse(
             success=True,
             message=f"Successfully cleared {cleared_count} scheduler task(s), "
-            f"{queue_cleared} queued task(s), and tasks from "
+            f"0 queued task(s), and tasks from "
             f"{successful_clears}/{len(all_instances)} instance(s)",
             cleared_count=cleared_count,
         )
     finally:
-        # Clear the clearing flag to allow new task submissions
-        async with _clearing_lock:
-            _clearing_in_progress = False
         logger.info("Task clear operation finished, accepting new submissions")
 
 
@@ -2050,32 +1987,49 @@ async def resubmit_task(request: TaskResubmitRequest):
             detail={"success": False, "error": error_msg},
         ) from e
 
-    # 7. Resubmit task to central queue with original submission time
+    # 7. Resubmit task via scheduling strategy + worker queue
     # Parse ISO format string to datetime, then convert to timestamp for queue ordering
-    enqueue_time = None
+    enqueue_time = time.time()
     if task.submitted_at:
-        from datetime import datetime
-
         dt = datetime.fromisoformat(task.submitted_at.replace("Z", "+00:00"))
         enqueue_time = dt.timestamp()
 
-    queue_position = await central_queue.enqueue(
-        task_id=request.task_id,
-        model_id=task.model_id,
-        task_input=task.task_input,
-        metadata=task.metadata or {},
-        enqueue_time=enqueue_time,
+    queue_position = 0
+    available_instances = await instance_registry.list_active(
+        model_id=task.model_id
     )
+    if available_instances and worker_queue_manager:
+        try:
+            schedule_result = await scheduling_strategy.schedule_task(
+                model_id=task.model_id,
+                metadata=task.metadata or {},
+                available_instances=available_instances,
+            )
+            queued_task = QueuedTask(
+                task_id=request.task_id,
+                model_id=task.model_id,
+                task_input=task.task_input,
+                metadata=task.metadata or {},
+                enqueue_time=enqueue_time,
+            )
+            queue_position = worker_queue_manager.enqueue_task(
+                schedule_result.selected_instance_id, queued_task
+            )
+        except Exception as e:
+            logger.warning(
+                f"[resubmit_task] Scheduling failed for task {request.task_id}: {e}. "
+                f"Task remains in PENDING status."
+            )
 
     logger.info(
-        f"Successfully resubmitted task {request.task_id} to queue at position {queue_position} "
+        f"Successfully resubmitted task {request.task_id} (queue position {queue_position}) "
         f"(previous status: {previous_status}, previous instance: {previous_instance}, "
         f"original submission time preserved)"
     )
 
     return TaskResubmitResponse(
         success=True,
-        message=f"Task {request.task_id} resubmitted successfully for rescheduling",
+        message=f"Task {request.task_id} resubmitted successfully (queue position {queue_position})",
     )
 
 
@@ -2632,12 +2586,6 @@ async def callback_task_result(request: TaskResultCallbackRequest):
     # Validate task exists
     task = await task_registry.get(request.task_id)
 
-    # TODO: Resotre it after experiment
-    if (
-        background_scheduler.scheduling_strategy.__class__.__name__
-        == "PowerOfTwoStrategy"
-    ):
-        request.execution_time_ms = 1.0
     if not task:
         error_msg = "Task not found"
         logger.error(
@@ -2664,14 +2612,18 @@ async def callback_task_result(request: TaskResultCallbackRequest):
             },
         )
 
-    # Handle task result via task dispatcher
-    await task_dispatcher.handle_task_result(
+    # Handle task result via task result callback
+    from .services.worker_queue_thread import TaskResult
+
+    task_result = TaskResult(
         task_id=request.task_id,
+        worker_id=task.assigned_instance,
         status=request.status,
         result=request.result,
         error=request.error,
-        execution_time_ms=request.execution_time_ms,
+        execution_time_ms=request.execution_time_ms or 0.0,
     )
+    await task_result_callback.handle_result(task_result)
 
     return TaskResultCallbackResponse(
         success=True,
@@ -3098,11 +3050,6 @@ async def set_strategy_endpoint(request: StrategySetRequest):
 
     # Update global scheduling strategy
     scheduling_strategy = new_strategy
-
-    # Update BackgroundScheduler to use the new strategy
-    background_scheduler.scheduling_strategy = new_strategy
-
-    central_queue.set_scheduling_strategy(new_strategy)
 
     # Update config (in-memory only, not persisted)
     config.scheduling.default_strategy = request.strategy_name.value

@@ -309,8 +309,7 @@ class TestTaskAssignmentWithDraining:
         from src import api
         from src.clients.predictor_client import Prediction
 
-        # Mock the predict method on background_scheduler's scheduling_strategy's predictor_client
-        # This is necessary because background_scheduler uses scheduling_strategy
+        # Mock the predict method on the scheduling_strategy's predictor_client
         async def mock_predict(
             model_id, metadata, instances, prediction_type="quantile"
         ):
@@ -331,7 +330,7 @@ class TestTaskAssignmentWithDraining:
             ]
 
         with patch.object(
-            api.background_scheduler.scheduling_strategy.predictor_client,
+            api.scheduling_strategy.predictor_client,
             "predict",
             side_effect=mock_predict,
         ):
@@ -339,13 +338,14 @@ class TestTaskAssignmentWithDraining:
 
     @pytest.fixture
     def mock_task_dispatcher(self):
-        """Mock task dispatcher to avoid actual task dispatch."""
+        """Mock worker_queue_manager to avoid actual task dispatch."""
         from src import api
 
         with patch.object(
-            api.background_scheduler.task_dispatcher, "dispatch_task_async"
-        ) as mock_dispatch:
-            yield mock_dispatch
+            api, "worker_queue_manager"
+        ) as mock_wqm:
+            mock_wqm.enqueue_task = lambda *a, **kw: 1
+            yield mock_wqm
 
     async def test_task_not_assigned_to_draining_instance(
         self, client, register_test_instance, mock_task_dispatcher
@@ -520,9 +520,7 @@ class TestCompleteRemovalWorkflow:
         """Setup mocks."""
         with patch("src.api.predictor_client") as mock_predictor:
             mock_predictor.predict = AsyncMock(return_value=[])
-            with patch("src.api.task_dispatcher") as mock_dispatcher:
-                mock_dispatcher.dispatch_task = AsyncMock()
-                yield
+            yield
 
     async def test_complete_workflow(self, client, register_test_instance):
         """Test complete workflow from registration to safe removal.

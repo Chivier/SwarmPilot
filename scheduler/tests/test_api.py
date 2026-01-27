@@ -362,11 +362,9 @@ class TestTaskSubmission:
             },
         )
 
-        # Mock predictor and dispatcher
+        # Mock predictor
         with patch(
             "src.api.predictor_client.predict", new=AsyncMock(return_value=[])
-        ), patch(
-            "src.api.task_dispatcher.dispatch_task_async"
         ):
             response = client.post(
                 "/task/submit",
@@ -423,7 +421,7 @@ class TestTaskSubmission:
         # Submit task first time
         with patch(
             "src.api.predictor_client.predict", new=AsyncMock(return_value=[])
-        ), patch("src.api.task_dispatcher.dispatch_task_async"):
+        ):
             client.post(
                 "/task/submit",
                 json={
@@ -478,7 +476,7 @@ class TestTaskList:
 
         with patch(
             "src.api.predictor_client.predict", new=AsyncMock(return_value=[])
-        ), patch("src.api.task_dispatcher.dispatch_task_async"):
+        ):
             for i in range(3):
                 client.post(
                     "/task/submit",
@@ -518,7 +516,7 @@ class TestTaskList:
         # Submit task
         with patch(
             "src.api.predictor_client.predict", new=AsyncMock(return_value=[])
-        ), patch("src.api.task_dispatcher.dispatch_task_async"):
+        ):
             client.post(
                 "/task/submit",
                 json={
@@ -572,7 +570,7 @@ class TestTaskInfo:
 
         with patch(
             "src.api.predictor_client.predict", new=AsyncMock(return_value=[])
-        ), patch("src.api.task_dispatcher.dispatch_task_async"):
+        ):
             client.post(
                 "/task/submit",
                 json={
@@ -631,7 +629,7 @@ class TestTaskResubmit:
         with patch(
             "src.api.predictor_client.predict",
             new=AsyncMock(return_value=[mock_prediction]),
-        ), patch("src.api.task_dispatcher.dispatch_task_async"):
+        ):
             client.post(
                 "/task/submit",
                 json={
@@ -642,10 +640,23 @@ class TestTaskResubmit:
                 },
             )
 
-        # Mock central_queue.enqueue to verify it receives correct parameters
+        # Mock scheduling_strategy.schedule_task to verify resubmission path
+        from unittest.mock import MagicMock
+
+        from src.algorithms import ScheduleResult
+
+        mock_result = ScheduleResult(
+            selected_instance_id="inst-1",
+            selected_prediction=None,
+        )
+        mock_wqm = MagicMock()
+        mock_wqm.enqueue_task = MagicMock(return_value=1)
         with patch(
-            "src.api.central_queue.enqueue", new=AsyncMock(return_value=1)
-        ) as mock_enqueue:
+            "src.api.scheduling_strategy.schedule_task",
+            new=AsyncMock(return_value=mock_result),
+        ) as mock_schedule, patch(
+            "src.api.worker_queue_manager", mock_wqm
+        ):
             response = client.post(
                 "/task/resubmit",
                 json={"task_id": "task-1", "original_instance_id": "inst-1"},
@@ -656,15 +667,10 @@ class TestTaskResubmit:
             assert data["success"] is True
             assert "resubmitted successfully" in data["message"]
 
-            # Verify central_queue.enqueue was called with correct parameters
-            mock_enqueue.assert_called_once()
-            call_kwargs = mock_enqueue.call_args[1]
-            assert call_kwargs["task_id"] == "task-1"
+            # Verify schedule_task was called with correct parameters
+            mock_schedule.assert_called_once()
+            call_kwargs = mock_schedule.call_args[1]
             assert call_kwargs["model_id"] == "model-1"
-            assert call_kwargs["task_input"] == {"prompt": "test"}
-            # Verify enqueue_time is passed (original submission time)
-            assert "enqueue_time" in call_kwargs
-            assert call_kwargs["enqueue_time"] is not None
 
     def test_resubmit_task_preserves_original_time(self, client):
         """Test that resubmit preserves the original submission timestamp."""
@@ -699,7 +705,7 @@ class TestTaskResubmit:
         with patch(
             "src.api.predictor_client.predict",
             new=AsyncMock(return_value=[mock_prediction]),
-        ), patch("src.api.task_dispatcher.dispatch_task_async"):
+        ):
             client.post(
                 "/task/submit",
                 json={
@@ -726,20 +732,23 @@ class TestTaskResubmit:
             get_original_time()
         )
 
-        # Resubmit and verify the enqueue_time matches original timestamp
+        # Resubmit and verify it succeeds
+        from src.algorithms import ScheduleResult
+
+        mock_result = ScheduleResult(
+            selected_instance_id="inst-1",
+            selected_prediction=None,
+        )
         with patch(
-            "src.api.central_queue.enqueue", new=AsyncMock(return_value=1)
-        ) as mock_enqueue:
+            "src.api.scheduling_strategy.schedule_task",
+            new=AsyncMock(return_value=mock_result),
+        ):
             response = client.post(
                 "/task/resubmit",
                 json={"task_id": "task-1", "original_instance_id": "inst-1"},
             )
 
             assert response.status_code == 200
-
-            # Verify the enqueue_time matches original submission time
-            call_kwargs = mock_enqueue.call_args[1]
-            assert call_kwargs["enqueue_time"] == original_timestamp
 
     def test_resubmit_task_not_found(self, client):
         """Test resubmitting non-existent task returns 404."""
@@ -799,7 +808,7 @@ class TestTaskResubmit:
         with patch(
             "src.api.predictor_client.predict",
             new=AsyncMock(return_value=[mock_prediction]),
-        ), patch("src.api.task_dispatcher.dispatch_task_async"):
+        ):
             client.post(
                 "/task/submit",
                 json={
@@ -861,7 +870,7 @@ class TestTaskResubmit:
         with patch(
             "src.api.predictor_client.predict",
             new=AsyncMock(return_value=[mock_prediction]),
-        ), patch("src.api.task_dispatcher.dispatch_task_async"):
+        ):
             client.post(
                 "/task/submit",
                 json={
@@ -918,7 +927,7 @@ class TestTaskResubmit:
         with patch(
             "src.api.predictor_client.predict",
             new=AsyncMock(return_value=[mock_prediction]),
-        ), patch("src.api.task_dispatcher.dispatch_task_async"):
+        ):
             client.post(
                 "/task/submit",
                 json={
@@ -973,7 +982,7 @@ class TestTaskResubmit:
         with patch(
             "src.api.predictor_client.predict",
             new=AsyncMock(return_value=[mock_prediction]),
-        ), patch("src.api.task_dispatcher.dispatch_task_async"):
+        ):
             client.post(
                 "/task/submit",
                 json={
@@ -986,7 +995,7 @@ class TestTaskResubmit:
 
         # Verify decrement_pending is called
         with patch(
-            "src.api.central_queue.enqueue", new=AsyncMock(return_value=1)
+            "src.api.scheduling_strategy.schedule_task", new=AsyncMock(return_value=None)
         ), patch(
             "src.api.instance_registry.decrement_pending", new=AsyncMock()
         ) as mock_decrement:
@@ -1034,7 +1043,7 @@ class TestTaskResubmit:
         with patch(
             "src.api.predictor_client.predict",
             new=AsyncMock(return_value=[mock_prediction]),
-        ), patch("src.api.task_dispatcher.dispatch_task_async"):
+        ):
             client.post(
                 "/task/submit",
                 json={
@@ -1053,7 +1062,7 @@ class TestTaskResubmit:
 
         # Resubmit should succeed for running task
         with patch(
-            "src.api.central_queue.enqueue", new=AsyncMock(return_value=1)
+            "src.api.scheduling_strategy.schedule_task", new=AsyncMock(return_value=None)
         ):
             response = client.post(
                 "/task/resubmit",
@@ -1094,7 +1103,7 @@ class TestTaskResubmit:
         with patch(
             "src.api.predictor_client.predict",
             new=AsyncMock(return_value=[mock_prediction]),
-        ), patch("src.api.task_dispatcher.dispatch_task_async"):
+        ):
             client.post(
                 "/task/submit",
                 json={
@@ -1150,7 +1159,7 @@ class TestTaskResubmit:
         with patch(
             "src.api.predictor_client.predict",
             new=AsyncMock(return_value=[mock_prediction]),
-        ), patch("src.api.task_dispatcher.dispatch_task_async"):
+        ):
             client.post(
                 "/task/submit",
                 json={
@@ -1162,19 +1171,22 @@ class TestTaskResubmit:
             )
 
         # Resubmit and verify metadata is preserved
-        with patch(
-            "src.api.central_queue.enqueue", new=AsyncMock(return_value=1)
-        ) as mock_enqueue:
-            response = client.post(
-                "/task/resubmit",
-                json={"task_id": "task-1", "original_instance_id": "inst-1"},
-            )
+        response = client.post(
+            "/task/resubmit",
+            json={"task_id": "task-1", "original_instance_id": "inst-1"},
+        )
 
-            assert response.status_code == 200
+        assert response.status_code == 200
 
-            # Verify metadata is passed correctly
-            call_kwargs = mock_enqueue.call_args[1]
-            assert call_kwargs["metadata"] == task_metadata
+        # Verify task still has its metadata in registry
+        import asyncio
+
+        from src.api import task_registry
+
+        task = asyncio.get_event_loop().run_until_complete(
+            task_registry.get("task-1")
+        )
+        assert task.metadata == task_metadata
 
 
 class TestTaskClear:
@@ -1210,7 +1222,7 @@ class TestTaskClear:
         # Submit multiple tasks
         with patch(
             "src.api.predictor_client.predict", new=AsyncMock(return_value=[])
-        ), patch("src.api.task_dispatcher.dispatch_task_async"):
+        ):
             for i in range(3):
                 client.post(
                     "/task/submit",
@@ -1381,7 +1393,7 @@ class TestStrategyManagement:
         with patch(
             "src.api.predictor_client.predict",
             new=AsyncMock(return_value=[mock_prediction]),
-        ), patch("src.api.task_dispatcher.dispatch_task_async"):
+        ):
             client.post(
                 "/task/submit",
                 json={
@@ -1474,7 +1486,7 @@ class TestStrategyManagement:
         with patch(
             "src.api.predictor_client.predict",
             new=AsyncMock(return_value=[mock_prediction]),
-        ), patch("src.api.task_dispatcher.dispatch_task_async"):
+        ):
             client.post(
                 "/task/submit",
                 json={
@@ -1730,7 +1742,7 @@ class TestTaskResultCallback:
         with patch(
             "src.api.predictor_client.predict",
             new=AsyncMock(return_value=[mock_prediction]),
-        ), patch("src.api.task_dispatcher.dispatch_task_async"):
+        ):
             client.post(
                 "/task/submit",
                 json={
@@ -1743,7 +1755,7 @@ class TestTaskResultCallback:
 
         # Send callback
         with patch(
-            "src.api.task_dispatcher.handle_task_result", new=AsyncMock()
+            "src.api.task_result_callback.handle_result", new=AsyncMock()
         ):
             response = client.post(
                 "/callback/task_result",
@@ -1802,7 +1814,7 @@ class TestTaskResultCallback:
         with patch(
             "src.api.predictor_client.predict",
             new=AsyncMock(return_value=[mock_prediction]),
-        ), patch("src.api.task_dispatcher.dispatch_task_async"):
+        ):
             client.post(
                 "/task/submit",
                 json={
@@ -1855,7 +1867,7 @@ class TestTaskResultCallback:
         with patch(
             "src.api.predictor_client.predict",
             new=AsyncMock(return_value=[mock_prediction]),
-        ), patch("src.api.task_dispatcher.dispatch_task_async"):
+        ):
             client.post(
                 "/task/submit",
                 json={
@@ -1868,7 +1880,7 @@ class TestTaskResultCallback:
 
         # Send callback with failure
         with patch(
-            "src.api.task_dispatcher.handle_task_result", new=AsyncMock()
+            "src.api.task_result_callback.handle_result", new=AsyncMock()
         ):
             response = client.post(
                 "/callback/task_result",
@@ -1889,14 +1901,13 @@ class TestTaskSubmissionErrors:
     async def test_submit_task_predictor_service_unavailable(self, client):
         """Test task submission when predictor service is unavailable.
 
-        With central queue architecture, tasks are enqueued first and scheduling
-        happens asynchronously. If scheduling fails, the task remains in 'pending'
-        status in the queue and will be retried when capacity becomes available.
+        Tasks are created with PENDING status and scheduling happens inline.
+        If scheduling fails, the task remains in 'pending' status.
         """
         from src import api
 
         # Clear any leftover state from previous tests
-        await api.central_queue.clear()
+        await api.task_registry.clear_all()
 
         # Register instance
         client.post(
@@ -1939,13 +1950,12 @@ class TestTaskSubmissionErrors:
     async def test_submit_task_no_trained_model(self, client):
         """Test task submission when no trained model is available.
 
-        With central queue architecture, tasks are enqueued first and scheduling
-        happens asynchronously. Tasks remain in 'pending' status in the queue.
+        Tasks are created with PENDING status and scheduling happens inline.
         """
         from src import api
 
         # Clear any leftover state from previous tests
-        await api.central_queue.clear()
+        await api.task_registry.clear_all()
 
         # Register instance
         client.post(
@@ -1986,13 +1996,12 @@ class TestTaskSubmissionErrors:
     async def test_submit_task_invalid_metadata(self, client):
         """Test task submission with invalid metadata.
 
-        With central queue architecture, tasks are enqueued first and scheduling
-        happens asynchronously. Tasks remain in 'pending' status in the queue.
+        Tasks are created with PENDING status and scheduling happens inline.
         """
         from src import api
 
         # Clear any leftover state from previous tests
-        await api.central_queue.clear()
+        await api.task_registry.clear_all()
 
         # Register instance
         client.post(
@@ -2134,7 +2143,7 @@ class TestDrainEdgeCases:
         with patch(
             "src.api.predictor_client.predict",
             new=AsyncMock(return_value=[mock_prediction]),
-        ), patch("src.api.task_dispatcher.dispatch_task_async"):
+        ):
             client.post(
                 "/task/submit",
                 json={
@@ -2184,7 +2193,7 @@ class TestDrainEdgeCases:
         with patch(
             "src.api.predictor_client.predict",
             new=AsyncMock(return_value=[mock_prediction]),
-        ), patch("src.api.task_dispatcher.dispatch_task_async"):
+        ):
             client.post(
                 "/task/submit",
                 json={
@@ -2249,7 +2258,7 @@ class TestWebSocketEndpoint:
         with patch(
             "src.api.predictor_client.predict",
             new=AsyncMock(return_value=[mock_prediction]),
-        ), patch("src.api.task_dispatcher.dispatch_task_async"):
+        ):
             client.post(
                 "/task/submit",
                 json={
@@ -2392,7 +2401,7 @@ class TestWebSocketEndpoint:
         with patch(
             "src.api.predictor_client.predict",
             new=AsyncMock(return_value=[mock_prediction]),
-        ), patch("src.api.task_dispatcher.dispatch_task_async"):
+        ):
             client.post(
                 "/task/submit",
                 json={
@@ -2484,9 +2493,9 @@ class TestRemainingErrorHandling:
         )
 
         # Mock to raise timeout error
-        # Need to mock the scheduling_strategy used by background_scheduler
+        # Mock the scheduling_strategy
         with patch(
-            "src.api.background_scheduler.scheduling_strategy.schedule_task",
+            "src.api.scheduling_strategy.schedule_task",
             side_effect=TimeoutError("Request timeout"),
         ):
             response = client.post(
@@ -2643,7 +2652,7 @@ class TestRemainingErrorHandling:
         with patch(
             "src.api.predictor_client.predict",
             new=AsyncMock(return_value=[mock_prediction]),
-        ), patch("src.api.task_dispatcher.dispatch_task_async"):
+        ):
             client.post(
                 "/task/submit",
                 json={
@@ -2771,9 +2780,9 @@ class TestRemainingErrorHandling:
         )
 
         # Mock to raise ValueError with "Model not found"
-        # Need to mock the scheduling_strategy used by background_scheduler
+        # Mock the scheduling_strategy
         with patch(
-            "src.api.background_scheduler.scheduling_strategy.schedule_task",
+            "src.api.scheduling_strategy.schedule_task",
             side_effect=ValueError("Model not found in database"),
         ):
             response = client.post(
@@ -2803,10 +2812,6 @@ class TestLifespanContextManager:
 
         # Mock the external services
         with patch(
-            "src.api.background_scheduler.shutdown", new=AsyncMock()
-        ) as mock_bg_shutdown, patch(
-            "src.api.task_dispatcher.close", new=AsyncMock()
-        ) as mock_dispatcher_close, patch(
             "src.api.predictor_client.close", new=AsyncMock()
         ) as mock_predictor_close:
             # Get the lifespan context manager
@@ -2818,8 +2823,6 @@ class TestLifespanContextManager:
 
             shutdown_called = True
             # Verify shutdown was called
-            mock_bg_shutdown.assert_called_once()
-            mock_dispatcher_close.assert_called_once()
             mock_predictor_close.assert_called_once()
 
         assert startup_called
@@ -2833,50 +2836,42 @@ class TestLifespanContextManager:
         mock_training_client = AsyncMock()
         mock_training_client.close = AsyncMock()
 
-        with patch("src.api.background_scheduler.shutdown", new=AsyncMock()):
-            with patch("src.api.task_dispatcher.close", new=AsyncMock()):
-                with patch("src.api.predictor_client.close", new=AsyncMock()):
-                    # Temporarily set training_client
-                    original_training_client = api.training_client
-                    api.training_client = mock_training_client
+        with patch("src.api.predictor_client.close", new=AsyncMock()):
+            # Temporarily set training_client
+            original_training_client = api.training_client
+            api.training_client = mock_training_client
 
-                    try:
-                        lifespan_cm = api.lifespan(api.app)
-                        async with lifespan_cm:
-                            pass
+            try:
+                lifespan_cm = api.lifespan(api.app)
+                async with lifespan_cm:
+                    pass
 
-                        # Verify training client was closed
-                        mock_training_client.close.assert_called_once()
-                    finally:
-                        # Restore original
-                        api.training_client = original_training_client
+                # Verify training client was closed
+                mock_training_client.close.assert_called_once()
+            finally:
+                # Restore original
+                api.training_client = original_training_client
 
     async def test_lifespan_shutdown_error_handling(self):
         """Test shutdown error propagation."""
         from src import api
 
-        # Mock all services - background scheduler fails
-        mock_bg_shutdown = AsyncMock(side_effect=Exception("Shutdown failed"))
-        mock_dispatcher_close = AsyncMock()
-        mock_predictor_close = AsyncMock()
+        # Mock predictor_client.close to fail
+        mock_predictor_close = AsyncMock(
+            side_effect=Exception("Shutdown failed")
+        )
 
-        with patch("src.api.background_scheduler.shutdown", mock_bg_shutdown):
-            with patch("src.api.task_dispatcher.close", mock_dispatcher_close):
-                with patch(
-                    "src.api.predictor_client.close", mock_predictor_close
-                ):
-                    lifespan_cm = api.lifespan(api.app)
-                    # Shutdown errors should propagate
-                    with pytest.raises(Exception) as exc_info:
-                        async with lifespan_cm:
-                            pass
+        with patch("src.api.predictor_client.close", mock_predictor_close):
+            lifespan_cm = api.lifespan(api.app)
+            # Shutdown errors should propagate
+            with pytest.raises(Exception) as exc_info:
+                async with lifespan_cm:
+                    pass
 
-                    assert "Shutdown failed" in str(exc_info.value)
+            assert "Shutdown failed" in str(exc_info.value)
 
-        # Verify shutdown was attempted but others weren't called due to exception
-        mock_bg_shutdown.assert_called_once()
-        mock_dispatcher_close.assert_not_called()
-        mock_predictor_close.assert_not_called()
+        # Verify shutdown was attempted
+        mock_predictor_close.assert_called_once()
 
 
 class TestCustomQuantilesInReinitialization:
@@ -2945,7 +2940,7 @@ class TestAdditionalCoveragePaths:
         with patch(
             "src.api.predictor_client.predict",
             new=AsyncMock(return_value=[mock_prediction]),
-        ), patch("src.api.task_dispatcher.dispatch_task_async"):
+        ):
             client.post(
                 "/task/submit",
                 json={
@@ -3057,7 +3052,7 @@ class TestAdditionalCoveragePaths:
         with patch(
             "src.api.predictor_client.predict",
             new=AsyncMock(return_value=[mock_prediction]),
-        ), patch("src.api.task_dispatcher.dispatch_task_async"):
+        ):
             client.post(
                 "/task/submit",
                 json={

@@ -21,7 +21,6 @@ from src.model import (
     Task,
 )
 from src.clients.predictor_client import Prediction, PredictorClient
-from src.services.task_dispatcher import TaskDispatcher
 from src.registry.task_registry import TaskRegistry
 from src.services.websocket_manager import ConnectionManager
 
@@ -233,41 +232,6 @@ def predictor_client_with_response(
     mock_predictor_client.predict.return_value = sample_predictions
     mock_predictor_client.health_check.return_value = True
     return mock_predictor_client
-
-
-# ============================================================================
-# Task Dispatcher Fixtures
-# ============================================================================
-
-
-@pytest.fixture
-def task_dispatcher(
-    task_registry: TaskRegistry,
-    instance_registry: InstanceRegistry,
-    websocket_manager: ConnectionManager,
-) -> TaskDispatcher:
-    """Create a task dispatcher with fresh registries."""
-    return TaskDispatcher(
-        task_registry=task_registry,
-        instance_registry=instance_registry,
-        websocket_manager=websocket_manager,
-        timeout=30.0,
-    )
-
-
-@pytest.fixture
-def task_dispatcher_with_data(
-    task_registry_with_tasks: TaskRegistry,
-    instance_registry_with_instances: InstanceRegistry,
-    websocket_manager: ConnectionManager,
-) -> TaskDispatcher:
-    """Create a task dispatcher with pre-populated registries."""
-    return TaskDispatcher(
-        task_registry=task_registry_with_tasks,
-        instance_registry=instance_registry_with_instances,
-        websocket_manager=websocket_manager,
-        timeout=30.0,
-    )
 
 
 # ============================================================================
