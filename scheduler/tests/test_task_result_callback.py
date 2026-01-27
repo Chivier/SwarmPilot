@@ -505,3 +505,159 @@ class TestWithoutThroughputTracker:
 
         # Other operations should still work
         mock_task_registry.update_status.assert_called_once()
+
+
+# ============================================================================
+# Future Pool Tests
+# ============================================================================
+
+
+class TestFuturePool:
+    """Tests for per-task Future pool in TaskResultCallback."""
+
+    @pytest.mark.asyncio
+    async def test_register_future_creates_future(self, callback_handler):
+        """Test register_future() creates and returns an asyncio.Future."""
+        future = callback_handler.register_future("task-42")
+
+        assert isinstance(future, asyncio.Future)
+        assert not future.done()
+
+    @pytest.mark.asyncio
+    async def test_register_future_duplicate_raises(self, callback_handler):
+        """Test register_future() raises if task_id already has a Future."""
+        callback_handler.register_future("task-42")
+
+        with pytest.raises(ValueError, match="already registered"):
+            callback_handler.register_future("task-42")
+
+    @pytest.mark.asyncio
+    async def test_handle_result_resolves_future(
+        self,
+        callback_handler,
+        mock_task_registry,
+        sample_task_record,
+        sample_instance,
+    ):
+        """Test handle_result() resolves the registered Future with TaskResult."""
+        mock_task_registry.get.return_value = sample_task_record
+        callback_handler.instance_registry.get.return_value = sample_instance
+
+        future = callback_handler.register_future("task-1")
+
+        result = TaskResult(
+            task_id="task-1",
+            worker_id="worker-1",
+            status="completed",
+            result={"choices": [{"text": "hello"}]},
+            execution_time_ms=100.0,
+            http_status_code=200,
+            response_headers={"content-type": "application/json"},
+        )
+
+        await callback_handler.handle_result(result)
+
+        assert future.done()
+        resolved = future.result()
+        assert resolved.task_id == "task-1"
+        assert resolved.http_status_code == 200
+        assert resolved.response_headers == {"content-type": "application/json"}
+
+    @pytest.mark.asyncio
+    async def test_handle_result_resolves_future_on_failure(
+        self,
+        callback_handler,
+        mock_task_registry,
+        sample_task_record,
+        sample_instance,
+    ):
+        """Test handle_result() resolves the Future even on failure."""
+        mock_task_registry.get.return_value = sample_task_record
+        callback_handler.instance_registry.get.return_value = sample_instance
+
+        future = callback_handler.register_future("task-1")
+
+        result = TaskResult(
+            task_id="task-1",
+            worker_id="worker-1",
+            status="failed",
+            error="timeout",
+            execution_time_ms=5000.0,
+            http_status_code=504,
+        )
+
+        await callback_handler.handle_result(result)
+
+        assert future.done()
+        resolved = future.result()
+        assert resolved.status == "failed"
+        assert resolved.http_status_code == 504
+
+    @pytest.mark.asyncio
+    async def test_handle_result_without_future_still_works(
+        self,
+        callback_handler,
+        mock_task_registry,
+        sample_task_record,
+        sample_instance,
+        success_result,
+    ):
+        """Test handle_result() still works when no Future is registered."""
+        mock_task_registry.get.return_value = sample_task_record
+        callback_handler.instance_registry.get.return_value = sample_instance
+
+        # No future registered - should not raise
+        await callback_handler.handle_result(success_result)
+
+        mock_task_registry.update_status.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_cleanup_future_removes_unresolved(self, callback_handler):
+        """Test cleanup_future() removes and cancels an unresolved Future."""
+        future = callback_handler.register_future("task-42")
+
+        callback_handler.cleanup_future("task-42")
+
+        assert future.cancelled()
+        # Should not be in the pool anymore
+        assert not callback_handler.has_future("task-42")
+
+    @pytest.mark.asyncio
+    async def test_cleanup_future_noop_for_missing(self, callback_handler):
+        """Test cleanup_future() is a no-op for non-existent task_id."""
+        # Should not raise
+        callback_handler.cleanup_future("nonexistent")
+
+    @pytest.mark.asyncio
+    async def test_has_future(self, callback_handler):
+        """Test has_future() returns correct state."""
+        assert not callback_handler.has_future("task-42")
+        callback_handler.register_future("task-42")
+        assert callback_handler.has_future("task-42")
+
+    @pytest.mark.asyncio
+    async def test_future_resolved_and_removed_after_handle(
+        self,
+        callback_handler,
+        mock_task_registry,
+        sample_task_record,
+        sample_instance,
+    ):
+        """Test Future is removed from pool after handle_result resolves it."""
+        mock_task_registry.get.return_value = sample_task_record
+        callback_handler.instance_registry.get.return_value = sample_instance
+
+        callback_handler.register_future("task-1")
+
+        result = TaskResult(
+            task_id="task-1",
+            worker_id="worker-1",
+            status="completed",
+            result={"output": "done"},
+            execution_time_ms=50.0,
+        )
+
+        await callback_handler.handle_result(result)
+
+        # Future should be removed from pool after resolution
+        assert not callback_handler.has_future("task-1")

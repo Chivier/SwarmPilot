@@ -20,6 +20,7 @@ from src.models.requests import (
     TaskMetadataUpdate,
     TaskResubmitRequest,
     TaskResultCallbackRequest,
+    ProxyTaskSubmitRequest,
     TaskSubmitRequest,
     TaskUpdateMetadataRequest,
 )
@@ -98,6 +99,7 @@ __all__ = [
     "InstanceRedeployResponse",
     # Task requests
     "TaskSubmitRequest",
+    "ProxyTaskSubmitRequest",
     "TaskResubmitRequest",
     "TaskMetadataUpdate",
     "TaskUpdateMetadataRequest",

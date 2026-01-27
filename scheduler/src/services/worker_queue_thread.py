@@ -61,6 +61,8 @@ class TaskResult:
     result: dict[str, Any] | None = None
     error: str | None = None
     execution_time_ms: float = 0.0
+    http_status_code: int = 0
+    response_headers: dict[str, str] = field(default_factory=dict)
 
 
 class WorkerQueueThread:
@@ -294,7 +296,7 @@ class WorkerQueueThread:
         logger.info(f"Worker {self.worker_id} executing task {task.task_id}")
 
         try:
-            result = self._call_worker_api(task)
+            body, status_code, headers = self._call_worker_api(task)
             execution_time_ms = (time.time() - self._current_task_started) * 1000
 
             logger.info(
@@ -306,8 +308,38 @@ class WorkerQueueThread:
                     task_id=task.task_id,
                     worker_id=self.worker_id,
                     status="completed",
-                    result=result,
+                    result=body,
                     execution_time_ms=execution_time_ms,
+                    http_status_code=status_code,
+                    response_headers=headers,
+                )
+            )
+
+        except httpx.HTTPStatusError as e:
+            execution_time_ms = (time.time() - self._current_task_started) * 1000
+            # Propagate the upstream HTTP status and body
+            status_code = e.response.status_code
+            try:
+                error_body = e.response.json()
+            except Exception:
+                error_body = {"error": e.response.text}
+            resp_headers = dict(e.response.headers)
+
+            logger.warning(
+                f"Task {task.task_id} upstream error {status_code} "
+                f"after {execution_time_ms:.2f}ms"
+            )
+
+            self._callback(
+                TaskResult(
+                    task_id=task.task_id,
+                    worker_id=self.worker_id,
+                    status="failed",
+                    result=error_body,
+                    error=str(e),
+                    execution_time_ms=execution_time_ms,
+                    http_status_code=status_code,
+                    response_headers=resp_headers,
                 )
             )
 
@@ -332,14 +364,16 @@ class WorkerQueueThread:
             self._current_task = None
             self._current_task_started = None
 
-    def _call_worker_api(self, task: QueuedTask) -> dict[str, Any]:
+    def _call_worker_api(
+        self, task: QueuedTask
+    ) -> tuple[dict[str, Any], int, dict[str, str]]:
         """Make HTTP call to worker's model API with retry logic.
 
         Args:
             task: Task containing input for the model.
 
         Returns:
-            Response from the model API.
+            Tuple of (response_body, http_status_code, response_headers).
 
         Raises:
             httpx.HTTPError: If request fails after all retries.
@@ -349,13 +383,25 @@ class WorkerQueueThread:
         url = f"{self.worker_endpoint}/{path}"
         payload = task.task_input
 
+        # Use method from metadata if available, otherwise default to POST
+        method = task.metadata.get("method", "POST").upper()
+
+        # Use request headers from metadata if available
+        request_headers = task.metadata.get("headers", {})
+
         last_error: Exception | None = None
 
         for attempt in range(self._max_retries):
             try:
-                response = self._http_client.post(url, json=payload)
+                response = self._http_client.request(
+                    method, url, json=payload, headers=request_headers
+                )
                 response.raise_for_status()
-                return response.json()
+                return (
+                    response.json(),
+                    response.status_code,
+                    dict(response.headers),
+                )
 
             except httpx.HTTPStatusError:
                 # 4xx/5xx errors - don't retry (client/server error)

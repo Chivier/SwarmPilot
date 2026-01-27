@@ -91,6 +91,8 @@ from .utils.planner_reporter import PlannerReporter
 from .clients.predictor_client import PredictorClient
 from .algorithms import get_strategy
 from .services.task_dispatcher import TaskDispatcher
+from .services.task_result_callback import TaskResultCallback
+from .services.worker_queue_manager import WorkerQueueManager
 from .registry.task_registry import TaskRegistry
 from .utils.throughput_tracker import ThroughputTracker
 from .clients.training_client import TrainingClient
@@ -116,6 +118,22 @@ async def lifespan(app: FastAPI):
     # TODO: Load persisted state if needed
     # TODO: Connect to external services
 
+    # Initialize WorkerQueueManager with event loop reference
+    global worker_queue_manager
+    loop = asyncio.get_running_loop()
+    task_result_callback.create_thread_callback(loop)
+    worker_queue_manager = WorkerQueueManager(
+        callback=task_result_callback.create_thread_callback(loop),
+        http_timeout=config.proxy.worker_http_timeout,
+    )
+    logger.info("WorkerQueueManager initialized")
+
+    # Wire WorkerQueueManager into proxy router and scheduling strategy
+    if proxy_router_instance:
+        proxy_router_instance._queue_manager = worker_queue_manager
+        logger.info("Proxy router wired to WorkerQueueManager")
+    scheduling_strategy.set_worker_queue_manager(worker_queue_manager)
+
     # Start central queue dispatcher
     await central_queue.start()
     logger.info("Central queue dispatcher started")
@@ -136,6 +154,11 @@ async def lifespan(app: FastAPI):
     if planner_reporter:
         await planner_reporter.shutdown()
         logger.debug("Planner reporter shutdown complete")
+
+    # Shutdown worker queue manager
+    if worker_queue_manager:
+        worker_queue_manager.shutdown()
+        logger.debug("WorkerQueueManager shutdown complete")
 
     # Shutdown central queue (wait for pending dispatches)
     await central_queue.shutdown()
@@ -331,6 +354,18 @@ else:
     logger.debug(
         "Planner reporter disabled (PLANNER_URL not set or SCHEDULER_AUTO_REPORT=0)"
     )
+
+# Initialize task result callback handler (for worker queue threads)
+task_result_callback = TaskResultCallback(
+    task_registry=task_registry,
+    instance_registry=instance_registry,
+    websocket_manager=websocket_manager,
+    throughput_tracker=throughput_tracker,
+)
+
+# WorkerQueueManager is initialized in lifespan (needs event loop)
+worker_queue_manager: WorkerQueueManager | None = None
+
 
 # ============================================================================
 # Task Redistribution Helper
@@ -969,6 +1004,19 @@ async def register_instance(request: InstanceRegisterRequest):
             f"on {request.platform_info['hardware_name']} (status=INITIALIZING)"
         )
 
+        # Register worker queue thread for this instance
+        if worker_queue_manager and not worker_queue_manager.has_worker(
+            request.instance_id
+        ):
+            worker_queue_manager.register_worker(
+                worker_id=request.instance_id,
+                worker_endpoint=request.endpoint,
+                model_id=request.model_id,
+            )
+            logger.info(
+                f"Registered worker queue thread for instance {request.instance_id}"
+            )
+
         # Set model_id for planner reporter (only first registration takes effect)
         if planner_reporter:
             planner_reporter.set_model_id(request.model_id)
@@ -1026,6 +1074,15 @@ async def remove_instance(request: InstanceRemoveRequest):
         pending = stats.pending_tasks if stats else 0
 
         await instance_registry.remove(request.instance_id)
+
+        # Deregister worker queue thread for this instance
+        if worker_queue_manager and worker_queue_manager.has_worker(
+            request.instance_id
+        ):
+            worker_queue_manager.deregister_worker(request.instance_id)
+            logger.info(
+                f"Deregistered worker queue thread for instance {request.instance_id}"
+            )
 
         if pending > 0:
             logger.warning(
@@ -3133,6 +3190,32 @@ async def health_check():
                 "timestamp": datetime.now().isoformat() + "Z",
             },
         ) from e
+
+
+# ============================================================================
+# Transparent Proxy Router (catch-all, must be mounted LAST)
+# ============================================================================
+
+if config.proxy.enabled:
+    from .proxy.router import ProxyRouter
+
+    # Note: proxy_router_instance is created at module load time with
+    # placeholder worker_queue_manager=None. The lifespan will update it.
+    proxy_router_instance = ProxyRouter(
+        scheduling_strategy=scheduling_strategy,
+        instance_registry=instance_registry,
+        task_registry=task_registry,
+        task_result_callback=task_result_callback,
+        worker_queue_manager=None,  # Set in lifespan
+        proxy_timeout=config.proxy.timeout,
+    )
+    app.include_router(proxy_router_instance.router)
+    logger.info(
+        f"Proxy router mounted (timeout={config.proxy.timeout}s)"
+    )
+else:
+    proxy_router_instance = None
+    logger.info("Proxy router disabled (PROXY_ENABLED=false)")
 
 
 # ============================================================================

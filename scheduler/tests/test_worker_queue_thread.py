@@ -220,7 +220,11 @@ class TestWorkerQueueThreadExecution:
         """Test basic enqueue and process flow with successful execution."""
         # Mock HTTP response
         with patch.object(worker_thread, "_call_worker_api") as mock_api:
-            mock_api.return_value = {"output": "test response"}
+            mock_api.return_value = (
+                {"output": "test response"},
+                200,
+                {"content-type": "application/json"},
+            )
 
             worker_thread.start()
 
@@ -351,7 +355,7 @@ class TestWorkerQueueThreadRetry:
         """
         call_count = 0
 
-        def mock_post(*args, **kwargs):
+        def mock_request(*args, **kwargs):
             nonlocal call_count
             call_count += 1
             if call_count < 3:
@@ -359,6 +363,8 @@ class TestWorkerQueueThreadRetry:
             # Return a mock response
             response = MagicMock()
             response.json.return_value = {"output": "success after retry"}
+            response.status_code = 200
+            response.headers = {"content-type": "application/json"}
             response.raise_for_status = MagicMock()
             return response
 
@@ -367,9 +373,9 @@ class TestWorkerQueueThreadRetry:
         # Wait for thread to create HTTP client
         time.sleep(0.2)
 
-        # Patch the HTTP client's post method
+        # Patch the HTTP client's request method
         with patch.object(
-            worker_thread._http_client, "post", side_effect=mock_post
+            worker_thread._http_client, "request", side_effect=mock_request
         ):
             task = QueuedTask(
                 task_id="task-1",

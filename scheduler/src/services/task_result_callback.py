@@ -85,6 +85,54 @@ class TaskResultCallback:
         # Event loop reference (set when creating thread callback)
         self._loop: asyncio.AbstractEventLoop | None = None
 
+        # Per-task Future pool: task_id -> asyncio.Future[TaskResult]
+        self._futures: dict[str, asyncio.Future] = {}
+
+    def register_future(self, task_id: str) -> asyncio.Future:
+        """Register a Future for a task, to be resolved when the result arrives.
+
+        Args:
+            task_id: Task identifier to register.
+
+        Returns:
+            An asyncio.Future that will be resolved with the TaskResult.
+
+        Raises:
+            ValueError: If a Future is already registered for this task_id.
+        """
+        if task_id in self._futures:
+            raise ValueError(
+                f"Future already registered for task {task_id}"
+            )
+
+        loop = self._loop or asyncio.get_running_loop()
+        future: asyncio.Future = loop.create_future()
+        self._futures[task_id] = future
+        logger.debug(f"Registered future for task {task_id}")
+        return future
+
+    def has_future(self, task_id: str) -> bool:
+        """Check if a Future is registered for a task.
+
+        Args:
+            task_id: Task identifier.
+
+        Returns:
+            True if a Future exists for this task_id.
+        """
+        return task_id in self._futures
+
+    def cleanup_future(self, task_id: str) -> None:
+        """Remove and cancel an unresolved Future.
+
+        Args:
+            task_id: Task identifier to clean up.
+        """
+        future = self._futures.pop(task_id, None)
+        if future is not None and not future.done():
+            future.cancel()
+            logger.debug(f"Cleaned up future for task {task_id}")
+
     def create_thread_callback(
         self,
         loop: asyncio.AbstractEventLoop,
@@ -148,11 +196,32 @@ class TaskResultCallback:
             # Notify WebSocket subscribers
             await self._notify_subscribers(task_id, result)
 
+            # Resolve Future if registered (for synchronous proxy)
+            self._resolve_future(task_id, result)
+
         except Exception as e:
             logger.error(
                 f"Error handling result for task {task_id}: {e}",
                 exc_info=True,
             )
+            # Still try to resolve the future on error so proxy doesn't hang
+            self._resolve_future(task_id, result)
+
+    def _resolve_future(
+        self,
+        task_id: str,
+        result: "TaskResult",
+    ) -> None:
+        """Resolve the Future for a task if one is registered.
+
+        Args:
+            task_id: Task identifier.
+            result: Task result to set on the Future.
+        """
+        future = self._futures.pop(task_id, None)
+        if future is not None and not future.done():
+            future.set_result(result)
+            logger.debug(f"Resolved future for task {task_id}")
 
     async def _handle_success(
         self,

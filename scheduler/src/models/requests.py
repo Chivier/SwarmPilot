@@ -64,6 +64,27 @@ class TaskSubmitRequest(BaseModel):
     metadata: dict[str, Any]
 
 
+class ProxyTaskSubmitRequest(BaseModel):
+    """Request model for async task submission via proxy path.
+
+    This is the new format used by the transparent proxy pipeline.
+    The task flows through: algorithm → WorkerQueueManager → instance.
+    """
+
+    path: str = Field(
+        ..., description="Backend API path to forward to (e.g., '/v1/chat/completions')"
+    )
+    body: dict[str, Any] = Field(
+        default_factory=dict, description="Request body to forward"
+    )
+    method: str = Field(
+        "POST", description="HTTP method to use"
+    )
+    headers: dict[str, str] = Field(
+        default_factory=dict, description="Additional request headers"
+    )
+
+
 class TaskResubmitRequest(BaseModel):
     """Request model for task resubmission during instance migration."""
 

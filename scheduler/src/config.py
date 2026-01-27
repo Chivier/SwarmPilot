@@ -136,6 +136,22 @@ class PlannerReportConfig:
 
 
 @dataclass
+class ProxyConfig:
+    """Configuration for catch-all proxy behavior."""
+
+    # Enable the transparent proxy router
+    enabled: bool = os.getenv("PROXY_ENABLED", "true").lower() == "true"
+
+    # Timeout for proxy requests in seconds
+    timeout: float = float(os.getenv("PROXY_TIMEOUT", "300.0"))
+
+    # HTTP timeout for worker queue threads
+    worker_http_timeout: float = float(
+        os.getenv("WORKER_HTTP_TIMEOUT", "300.0")
+    )
+
+
+@dataclass
 class Config:
     """Main configuration object combining all settings."""
 
@@ -146,6 +162,7 @@ class Config:
     logging: LoggingConfig
     server: ServerConfig
     planner_report: PlannerReportConfig
+    proxy: ProxyConfig
 
     @classmethod
     def load(cls) -> "Config":
@@ -162,6 +179,7 @@ class Config:
             logging=LoggingConfig(),
             server=ServerConfig(),
             planner_report=PlannerReportConfig(),
+            proxy=ProxyConfig(),
         )
 
     def __repr__(self) -> str:
