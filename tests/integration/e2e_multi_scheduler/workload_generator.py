@@ -340,11 +340,21 @@ class MultiSchedulerWorkloadGenerator:
             )
 
             # Build request payload
+            # Note: exp_runtime triggers experiment mode in the scheduler,
+            # which bypasses the trained model requirement for scheduling.
+            # exp_runtime is in milliseconds.
+            # path: Custom endpoint path for the sleep model instance
+            # (scheduler defaults to /v1/completions for vLLM, we use /inference
+            # which accepts just {"sleep_time": X} matching what the scheduler sends)
             payload = {
                 "task_id": task_id,
                 "model_id": model_id,
                 "task_input": {"sleep_time": sleep_time},
-                "metadata": {"sleep_time": sleep_time},
+                "metadata": {
+                    "sleep_time": sleep_time,
+                    "exp_runtime": sleep_time * 1000,  # Convert to ms
+                    "path": "inference",  # Route to sleep model inference endpoint
+                },
             }
 
             submit_start = time.time()

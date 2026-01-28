@@ -25,11 +25,16 @@ import asyncio
 import os
 import subprocess
 import sys
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import Any
 
 import httpx
 from loguru import logger
+
+# Default scheduler port used by planner for health check during PyLet init
+DEFAULT_SCHEDULER_PORT = 8001
 
 # Project root for imports
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
@@ -71,6 +76,8 @@ class MultiSchedulerOrchestrator:
         self.processes: dict[str, subprocess.Popen] = {}
         self._cleanup_done = False
         self._log_files: dict[str, Any] = {}
+        self._dummy_health_server: HTTPServer | None = None
+        self._dummy_health_thread: threading.Thread | None = None
 
     async def run(self) -> dict[str, Any]:
         """Run the complete experiment.
@@ -83,8 +90,18 @@ class MultiSchedulerOrchestrator:
             self._setup_logging()
             self._setup_directories()
 
+            # Start dummy health server for planner PyLet init health check.
+            # The planner's PyLet service requires a scheduler health check
+            # during initialization, but real schedulers start after planner.
+            self._start_dummy_health_server()
+
             # Start services
             await self._start_planner()
+
+            # Stop dummy server - no longer needed after planner initialized
+            self._stop_dummy_health_server()
+
+            # Start real schedulers (they register with planner)
             await self._start_schedulers()
             await self._wait_for_services()
 
@@ -153,6 +170,51 @@ class MultiSchedulerOrchestrator:
         logger.info(f"Log directory: {self.config.log_dir}")
         logger.info(f"Output directory: {self.config.output_dir}")
 
+    def _start_dummy_health_server(self) -> None:
+        """Start a dummy HTTP server for health checks during planner init.
+
+        The planner's PyLet service requires a scheduler health check during
+        initialization. In multi-scheduler mode, real schedulers start AFTER
+        the planner, creating a chicken-and-egg problem. This dummy server
+        responds to /health to satisfy the init check.
+        """
+        logger.info(f"Starting dummy health server on port {DEFAULT_SCHEDULER_PORT}...")
+
+        class HealthHandler(BaseHTTPRequestHandler):
+            """Minimal handler that responds 200 to /health."""
+
+            def do_GET(self) -> None:
+                if self.path == "/health":
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(b'{"status": "ok"}')
+                else:
+                    self.send_response(404)
+                    self.end_headers()
+
+            def log_message(self, format: str, *args: Any) -> None:
+                # Suppress request logging
+                pass
+
+        self._dummy_health_server = HTTPServer(
+            ("localhost", DEFAULT_SCHEDULER_PORT), HealthHandler
+        )
+        self._dummy_health_thread = threading.Thread(
+            target=self._dummy_health_server.serve_forever, daemon=True
+        )
+        self._dummy_health_thread.start()
+        logger.info(f"Dummy health server started on port {DEFAULT_SCHEDULER_PORT}")
+
+    def _stop_dummy_health_server(self) -> None:
+        """Stop the dummy health server."""
+        if self._dummy_health_server:
+            logger.info("Stopping dummy health server...")
+            self._dummy_health_server.shutdown()
+            self._dummy_health_server = None
+            self._dummy_health_thread = None
+            logger.info("Dummy health server stopped")
+
     async def _start_planner(self) -> None:
         """Start planner service with PyLet integration."""
         logger.info("Starting planner service...")
@@ -174,7 +236,7 @@ class MultiSchedulerOrchestrator:
             "PYTHONPATH": pythonpath,
             "PLANNER_PORT": str(self.config.planner.port),
             "PYLET_ENABLED": "true",
-            "PYLET_HEAD_URL": f"localhost:{self.config.cluster.pylet_head_port}",
+            "PYLET_HEAD_URL": f"http://localhost:{self.config.cluster.pylet_head_port}",
             "PYLET_BACKEND": self.config.planner.pylet_backend,
             "PYLET_GPU_COUNT": str(self.config.cluster.gpu_per_worker),
             "PYLET_CPU_COUNT": str(self.config.cluster.cpu_per_worker),
@@ -183,6 +245,8 @@ class MultiSchedulerOrchestrator:
             "PYLET_REUSE_CLUSTER": (
                 "true" if self.config.cluster.reuse_cluster else "false"
             ),
+            # Point to dummy health server for PyLet init health check
+            "SCHEDULER_URL": f"http://localhost:{DEFAULT_SCHEDULER_PORT}",
             "PLANNER_LOGURU_LEVEL": "INFO",
             "PYTHONUNBUFFERED": "1",
         }
@@ -546,6 +610,9 @@ class MultiSchedulerOrchestrator:
 
         self._cleanup_done = True
         logger.info("Cleaning up processes...")
+
+        # Stop dummy health server if still running (e.g., early failure)
+        self._stop_dummy_health_server()
 
         # Stop processes in reverse order (instances first, then schedulers, then planner)
         process_names = list(self.processes.keys())[::-1]
