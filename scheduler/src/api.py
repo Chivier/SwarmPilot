@@ -95,6 +95,7 @@ from .services.worker_queue_thread import QueuedTask
 from .registry.task_registry import TaskRegistry
 from .utils.throughput_tracker import ThroughputTracker
 from .clients.training_client import TrainingClient
+from .services.planner_registrar import PlannerRegistrar
 from .services.websocket_manager import ConnectionManager
 
 random.seed(42)
@@ -138,12 +139,24 @@ async def lifespan(app: FastAPI):
         await planner_reporter.start()
         logger.info("Planner reporter started")
 
+    # Register with planner (if configured) - PYLET-024
+    planner_registrar = None
+    if config.planner_registration.enabled:
+        planner_registrar = PlannerRegistrar(config.planner_registration)
+        await planner_registrar.start()  # Raises RuntimeError on failure
+        logger.info("Planner registration successful")
+
     logger.success("Scheduler service started successfully")
 
     yield
 
     # Shutdown
     logger.info("Scheduler service shutting down...")
+
+    # Deregister from planner first (if registered) - PYLET-024
+    if planner_registrar:
+        await planner_registrar.stop()
+        logger.debug("Planner deregistration complete")
 
     # Shutdown planner reporter first (if configured)
     if planner_reporter:
@@ -234,24 +247,45 @@ websocket_manager = (
     ConnectionManager()
 )  # Client WebSocket for task result notifications
 
-predictor_client = PredictorClient(
-    predictor_url=config.predictor.url,
-    timeout=config.predictor.timeout,
-    max_retries=config.predictor.max_retries,
-    retry_delay=config.predictor.retry_delay,
-)
+# Initialize predictor and training clients based on mode
+if config.predictor.mode == "library":
+    from src.clients.predictor_library_client import LibraryPredictorClient
+    from src.clients.training_library_client import LibraryTrainingClient
 
-# Initialize training client
-training_client = (
-    TrainingClient(
-        predictor_url=config.predictor.url,
-        batch_size=config.training.batch_size,
-        min_samples=config.training.min_samples,
-        prediction_types=config.training.prediction_types,
+    predictor_client = LibraryPredictorClient(
+        storage_dir=config.predictor.storage_dir,
+        cache_max_size=config.predictor.cache_max_size,
     )
-    if config.training.enable_auto_training
-    else None
-)
+    training_client = (
+        LibraryTrainingClient(
+            storage=predictor_client._storage,
+            cache=predictor_client._cache,
+            batch_size=config.training.batch_size,
+            min_samples=config.training.min_samples,
+            prediction_types=config.training.prediction_types,
+        )
+        if config.training.enable_auto_training
+        else None
+    )
+    logger.info("Using library-based predictor client")
+else:
+    predictor_client = PredictorClient(
+        predictor_url=config.predictor.url,
+        timeout=config.predictor.timeout,
+        max_retries=config.predictor.max_retries,
+        retry_delay=config.predictor.retry_delay,
+    )
+    training_client = (
+        TrainingClient(
+            predictor_url=config.predictor.url,
+            batch_size=config.training.batch_size,
+            min_samples=config.training.min_samples,
+            prediction_types=config.training.prediction_types,
+        )
+        if config.training.enable_auto_training
+        else None
+    )
+    logger.info("Using HTTP-based predictor client")
 
 # Initialize scheduling strategy from configuration
 # Note: strategy now receives predictor_client and instance_registry dependencies

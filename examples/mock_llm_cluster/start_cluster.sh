@@ -1,17 +1,19 @@
 #!/bin/bash
-# Mock LLM Cluster - Start Services
+# Mock LLM Cluster - Start Services (Multi-Scheduler)
 # Usage: ./examples/mock_llm_cluster/start_cluster.sh
 #
-# Starts Mock Predictor, Scheduler, and Planner (PyLet-enabled) for the mock LLM cluster example.
+# Starts Mock Predictor, two per-model Schedulers, and Planner (PyLet-enabled)
+# for the mock LLM cluster example.
 # PyLet cluster must be running separately (see scripts/start_pylet_test_cluster.sh)
 #
-# PYLET-022: Mock LLM Cluster Example
+# PYLET-024: Multi-Scheduler Architecture
 
 set -e
 
 # Configuration
 PREDICTOR_PORT=${PREDICTOR_PORT:-8001}
-SCHEDULER_PORT=${SCHEDULER_PORT:-8000}
+SCHEDULER_7B_PORT=${SCHEDULER_7B_PORT:-8010}
+SCHEDULER_32B_PORT=${SCHEDULER_32B_PORT:-8020}
 PLANNER_PORT=${PLANNER_PORT:-8002}
 PYLET_HEAD_PORT=${PYLET_HEAD_PORT:-5100}
 LOG_DIR="/tmp/mock_llm_cluster"
@@ -28,7 +30,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
 
 echo -e "${BLUE}╔════════════════════════════════════════════════════════╗${NC}"
-echo -e "${BLUE}║          Mock LLM Cluster - Service Startup            ║${NC}"
+echo -e "${BLUE}║     Mock LLM Cluster - Multi-Scheduler Startup        ║${NC}"
 echo -e "${BLUE}╚════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
@@ -53,7 +55,8 @@ check_port() {
 
 echo "Checking ports..."
 check_port $PREDICTOR_PORT "Mock Predictor" || exit 1
-check_port $SCHEDULER_PORT "Scheduler" || exit 1
+check_port $SCHEDULER_7B_PORT "Scheduler (llm-7b)" || exit 1
+check_port $SCHEDULER_32B_PORT "Scheduler (llm-32b)" || exit 1
 check_port $PLANNER_PORT "Planner" || exit 1
 echo -e "${GREEN}✓ Service ports available${NC}"
 echo ""
@@ -87,7 +90,7 @@ echo -e "${GREEN}✓ Dependencies ready${NC}"
 echo ""
 
 # Start Mock Predictor
-echo -e "${BLUE}[1/3] Starting Mock Predictor on port $PREDICTOR_PORT...${NC}"
+echo -e "${BLUE}[1/4] Starting Mock Predictor on port $PREDICTOR_PORT...${NC}"
 cd "$PROJECT_ROOT"
 PREDICTOR_PORT=$PREDICTOR_PORT \
     uv run python -m tests.integration.e2e_pylet_benchmark.mock_predictor_server > "$LOG_DIR/predictor.log" 2>&1 &
@@ -102,35 +105,16 @@ if ! kill -0 $PREDICTOR_PID 2>/dev/null; then
 fi
 echo -e "${GREEN}✓ Mock Predictor started (PID: $PREDICTOR_PID)${NC}"
 
-# Start Scheduler
-echo -e "${BLUE}[2/3] Starting Scheduler on port $SCHEDULER_PORT...${NC}"
-cd "$PROJECT_ROOT/scheduler"
-PREDICTOR_URL="http://localhost:$PREDICTOR_PORT" \
-    uv run python -m src.cli start --port $SCHEDULER_PORT > "$LOG_DIR/scheduler.log" 2>&1 &
-SCHEDULER_PID=$!
-echo $SCHEDULER_PID > "$LOG_DIR/scheduler.pid"
-
-# Wait for Scheduler to be ready
-sleep 2
-if ! kill -0 $SCHEDULER_PID 2>/dev/null; then
-    echo -e "${RED}Error: Scheduler failed to start. Check $LOG_DIR/scheduler.log${NC}"
-    exit 1
-fi
-echo -e "${GREEN}✓ Scheduler started (PID: $SCHEDULER_PID)${NC}"
-
-# Start Planner with PyLet enabled
-echo -e "${BLUE}[3/3] Starting Planner on port $PLANNER_PORT...${NC}"
+# Start Planner first (schedulers need it for registration)
+echo -e "${BLUE}[2/4] Starting Planner on port $PLANNER_PORT...${NC}"
 cd "$PROJECT_ROOT/planner"
 
 # Build custom command for mock LLM server
-# MODEL_ID is passed via {model_id} placeholder, PORT is set by PyLet
-# Use venv Python to ensure dependencies are available
 MOCK_SERVER_PATH="$PROJECT_ROOT/examples/mock_llm_cluster/mock_llm_server.py"
 VENV_PYTHON="$PROJECT_ROOT/.venv/bin/python"
 CUSTOM_CMD="MODEL_ID={model_id} $VENV_PYTHON $MOCK_SERVER_PATH"
 
 PLANNER_PORT=$PLANNER_PORT \
-    SCHEDULER_URL="http://localhost:$SCHEDULER_PORT" \
     PYLET_ENABLED=true \
     PYLET_HEAD_URL="http://localhost:$PYLET_HEAD_PORT" \
     PYLET_REUSE_CLUSTER=true \
@@ -149,6 +133,44 @@ if ! kill -0 $PLANNER_PID 2>/dev/null; then
 fi
 echo -e "${GREEN}✓ Planner started (PID: $PLANNER_PID)${NC}"
 
+# Start Scheduler for llm-7b
+echo -e "${BLUE}[3/4] Starting Scheduler (llm-7b) on port $SCHEDULER_7B_PORT...${NC}"
+cd "$PROJECT_ROOT/scheduler"
+PREDICTOR_URL="http://localhost:$PREDICTOR_PORT" \
+    SCHEDULER_MODEL_ID="llm-7b" \
+    PLANNER_REGISTRATION_URL="http://localhost:$PLANNER_PORT" \
+    SCHEDULER_SELF_URL="http://localhost:$SCHEDULER_7B_PORT" \
+    uv run python -m src.cli start --port $SCHEDULER_7B_PORT > "$LOG_DIR/scheduler-7b.log" 2>&1 &
+SCHEDULER_7B_PID=$!
+echo $SCHEDULER_7B_PID > "$LOG_DIR/scheduler-7b.pid"
+
+# Wait for Scheduler 7b to be ready
+sleep 3
+if ! kill -0 $SCHEDULER_7B_PID 2>/dev/null; then
+    echo -e "${RED}Error: Scheduler (llm-7b) failed to start. Check $LOG_DIR/scheduler-7b.log${NC}"
+    exit 1
+fi
+echo -e "${GREEN}✓ Scheduler (llm-7b) started (PID: $SCHEDULER_7B_PID)${NC}"
+
+# Start Scheduler for llm-32b
+echo -e "${BLUE}[4/4] Starting Scheduler (llm-32b) on port $SCHEDULER_32B_PORT...${NC}"
+cd "$PROJECT_ROOT/scheduler"
+PREDICTOR_URL="http://localhost:$PREDICTOR_PORT" \
+    SCHEDULER_MODEL_ID="llm-32b" \
+    PLANNER_REGISTRATION_URL="http://localhost:$PLANNER_PORT" \
+    SCHEDULER_SELF_URL="http://localhost:$SCHEDULER_32B_PORT" \
+    uv run python -m src.cli start --port $SCHEDULER_32B_PORT > "$LOG_DIR/scheduler-32b.log" 2>&1 &
+SCHEDULER_32B_PID=$!
+echo $SCHEDULER_32B_PID > "$LOG_DIR/scheduler-32b.pid"
+
+# Wait for Scheduler 32b to be ready
+sleep 3
+if ! kill -0 $SCHEDULER_32B_PID 2>/dev/null; then
+    echo -e "${RED}Error: Scheduler (llm-32b) failed to start. Check $LOG_DIR/scheduler-32b.log${NC}"
+    exit 1
+fi
+echo -e "${GREEN}✓ Scheduler (llm-32b) started (PID: $SCHEDULER_32B_PID)${NC}"
+
 # Health checks
 echo ""
 echo "Running health checks..."
@@ -166,19 +188,40 @@ health_check() {
 }
 
 health_check "http://localhost:$PREDICTOR_PORT/health" "Predictor"
-health_check "http://localhost:$SCHEDULER_PORT/health" "Scheduler"
+health_check "http://localhost:$SCHEDULER_7B_PORT/health" "Scheduler (llm-7b)"
+health_check "http://localhost:$SCHEDULER_32B_PORT/health" "Scheduler (llm-32b)"
 health_check "http://localhost:$PLANNER_PORT/health" "Planner"
+
+# Verify scheduler registration
+echo ""
+echo "Verifying scheduler registration..."
+REGISTERED=$(curl -s "http://localhost:$PLANNER_PORT/scheduler/list" 2>/dev/null)
+REG_COUNT=$(echo "$REGISTERED" | python3 -c "import sys, json; print(json.load(sys.stdin).get('total', 0))" 2>/dev/null || echo "0")
+
+if [ "$REG_COUNT" -ge 2 ]; then
+    echo -e "${GREEN}✓ $REG_COUNT schedulers registered with planner${NC}"
+    echo "$REGISTERED" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+for s in data.get('schedulers', []):
+    print(f\"  {s['model_id']}: {s['scheduler_url']}\")
+" 2>/dev/null
+else
+    echo -e "${YELLOW}! Only $REG_COUNT scheduler(s) registered (expected 2)${NC}"
+    echo "  Check scheduler logs for registration errors."
+fi
 
 echo ""
 echo -e "${GREEN}╔════════════════════════════════════════════════════════╗${NC}"
-echo -e "${GREEN}║          Mock LLM Cluster Services Ready!              ║${NC}"
+echo -e "${GREEN}║     Mock LLM Cluster Services Ready!                  ║${NC}"
 echo -e "${GREEN}╚════════════════════════════════════════════════════════╝${NC}"
 echo ""
 echo "Services:"
-echo "  Predictor: http://localhost:$PREDICTOR_PORT"
-echo "  Scheduler: http://localhost:$SCHEDULER_PORT"
-echo "  Planner:   http://localhost:$PLANNER_PORT"
-echo "  PyLet:     http://localhost:$PYLET_HEAD_PORT"
+echo "  Predictor:          http://localhost:$PREDICTOR_PORT"
+echo "  Scheduler (llm-7b): http://localhost:$SCHEDULER_7B_PORT"
+echo "  Scheduler (llm-32b):http://localhost:$SCHEDULER_32B_PORT"
+echo "  Planner:            http://localhost:$PLANNER_PORT"
+echo "  PyLet:              http://localhost:$PYLET_HEAD_PORT"
 echo ""
 echo "Logs: $LOG_DIR/"
 echo ""

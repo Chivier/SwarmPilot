@@ -14,7 +14,8 @@ set -e
 
 # Configuration
 PLANNER_PORT=${PLANNER_PORT:-8002}
-SCHEDULER_PORT=${SCHEDULER_PORT:-8000}
+SCHEDULER_7B_PORT=${SCHEDULER_7B_PORT:-8010}
+SCHEDULER_32B_PORT=${SCHEDULER_32B_PORT:-8020}
 TOTAL_INSTANCES=${1:-16}
 
 # Colors for output
@@ -54,6 +55,24 @@ if echo "$PYLET_STATUS" | grep -q '"initialized": false' 2>/dev/null; then
     exit 1
 fi
 echo -e "${GREEN}✓ PyLet is initialized${NC}"
+
+# Check scheduler registration
+echo "Checking scheduler registration..."
+REGISTERED=$(curl -s "http://localhost:$PLANNER_PORT/scheduler/list" 2>/dev/null)
+REG_COUNT=$(echo "$REGISTERED" | python3 -c "import sys, json; print(json.load(sys.stdin).get('total', 0))" 2>/dev/null || echo "0")
+
+if [ "$REG_COUNT" -ge 2 ]; then
+    echo -e "${GREEN}✓ $REG_COUNT schedulers registered${NC}"
+    echo "$REGISTERED" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+for s in data.get('schedulers', []):
+    print(f\"  {s['model_id']}: {s['scheduler_url']}\")
+" 2>/dev/null
+else
+    echo -e "${YELLOW}Warning: Only $REG_COUNT scheduler(s) registered (expected 2)${NC}"
+    echo "  Instances may not be routed to the correct scheduler."
+fi
 echo ""
 
 # Calculate optimal deployment using /deploy
@@ -147,11 +166,15 @@ echo "  llm-32b: $COUNT_32B instances (~1 req/s each)"
 echo "  Total:   $((COUNT_7B + COUNT_32B)) instances"
 echo ""
 
-# Verify via scheduler
-echo -e "${BLUE}Verifying instances in scheduler...${NC}"
-INSTANCES=$(curl -s "http://localhost:$SCHEDULER_PORT/instance/list" 2>/dev/null)
-TOTAL=$(echo "$INSTANCES" | python3 -c "import sys, json; print(len(json.load(sys.stdin).get('instances', [])))" 2>/dev/null || echo "?")
-echo -e "${GREEN}✓ Scheduler reports $TOTAL registered instances${NC}"
+# Verify via per-model schedulers
+echo -e "${BLUE}Verifying instances in schedulers...${NC}"
+INSTANCES_7B=$(curl -s "http://localhost:$SCHEDULER_7B_PORT/instance/list" 2>/dev/null)
+TOTAL_7B=$(echo "$INSTANCES_7B" | python3 -c "import sys, json; print(len(json.load(sys.stdin).get('instances', [])))" 2>/dev/null || echo "?")
+echo -e "${GREEN}✓ Scheduler (llm-7b) reports $TOTAL_7B instances${NC}"
+
+INSTANCES_32B=$(curl -s "http://localhost:$SCHEDULER_32B_PORT/instance/list" 2>/dev/null)
+TOTAL_32B=$(echo "$INSTANCES_32B" | python3 -c "import sys, json; print(len(json.load(sys.stdin).get('instances', [])))" 2>/dev/null || echo "?")
+echo -e "${GREEN}✓ Scheduler (llm-32b) reports $TOTAL_32B instances${NC}"
 echo ""
 
 echo -e "${YELLOW}Next step:${NC}"

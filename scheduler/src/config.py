@@ -12,16 +12,17 @@ from dataclasses import dataclass
 class PredictorConfig:
     """Configuration for predictor service integration."""
 
-    # Predictor service URL
+    # Mode: "library" (direct import) or "http" (HTTP API)
+    mode: str = os.getenv("PREDICTOR_MODE", "library")
+
+    # Library mode settings
+    storage_dir: str = os.getenv("PREDICTOR_STORAGE_DIR", "models")
+    cache_max_size: int = int(os.getenv("PREDICTOR_CACHE_MAX_SIZE", "100"))
+
+    # HTTP mode settings (only used when mode="http")
     url: str = os.getenv("PREDICTOR_URL", "http://localhost:8001")
-
-    # Request timeout in seconds
     timeout: float = float(os.getenv("PREDICTOR_TIMEOUT", "5.0"))
-
-    # Maximum retry attempts for transient failures
     max_retries: int = int(os.getenv("PREDICTOR_MAX_RETRIES", "3"))
-
-    # Initial retry delay in seconds (exponential backoff)
     retry_delay: float = float(os.getenv("PREDICTOR_RETRY_DELAY", "1.0"))
 
 
@@ -142,6 +143,45 @@ class ProxyConfig:
 
 
 @dataclass
+class PlannerRegistrationConfig:
+    """Configuration for registering with the planner service.
+
+    When planner_url is set, the scheduler will register itself with
+    the planner on startup and deregister on shutdown. If registration
+    fails, the scheduler will exit (fail-hard).
+    """
+
+    # Planner URL for registration (empty string disables registration)
+    planner_url: str = os.getenv("PLANNER_REGISTRATION_URL", "")
+
+    # Model ID this scheduler handles
+    model_id: str = os.getenv("SCHEDULER_MODEL_ID", "")
+
+    # Advertised URL for this scheduler (how planner reaches us)
+    self_url: str = os.getenv("SCHEDULER_SELF_URL", "")
+
+    # Request timeout for registration calls
+    timeout: float = float(
+        os.getenv("PLANNER_REGISTRATION_TIMEOUT", "10.0")
+    )
+
+    # Max retries for registration
+    max_retries: int = int(
+        os.getenv("PLANNER_REGISTRATION_MAX_RETRIES", "3")
+    )
+
+    # Delay between retries in seconds
+    retry_delay: float = float(
+        os.getenv("PLANNER_REGISTRATION_RETRY_DELAY", "5.0")
+    )
+
+    @property
+    def enabled(self) -> bool:
+        """Check if planner registration is enabled."""
+        return bool(self.planner_url and self.model_id and self.self_url)
+
+
+@dataclass
 class Config:
     """Main configuration object combining all settings."""
 
@@ -152,6 +192,7 @@ class Config:
     server: ServerConfig
     planner_report: PlannerReportConfig
     proxy: ProxyConfig
+    planner_registration: PlannerRegistrationConfig
 
     @classmethod
     def load(cls) -> "Config":
@@ -168,13 +209,14 @@ class Config:
             server=ServerConfig(),
             planner_report=PlannerReportConfig(),
             proxy=ProxyConfig(),
+            planner_registration=PlannerRegistrationConfig(),
         )
 
     def __repr__(self) -> str:
         """Return string representation hiding sensitive info."""
         return (
             f"Config(\n"
-            f"  predictor=PredictorConfig(url='{self.predictor.url}', ...),\n"
+            f"  predictor=PredictorConfig(mode='{self.predictor.mode}', ...),\n"
             f"  scheduling=SchedulingConfig(strategy='{self.scheduling.default_strategy}'),\n"
             f"  training=TrainingConfig(auto={self.training.enable_auto_training}),\n"
             f"  logging=LoggingConfig(level='{self.logging.level}'),\n"

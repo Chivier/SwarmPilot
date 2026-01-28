@@ -35,9 +35,15 @@ from .models import (
     InstanceStatus,
     PlannerInput,
     PlannerOutput,
+    SchedulerDeregisterRequest,
+    SchedulerDeregisterResponse,
+    SchedulerListResponse,
+    SchedulerRegisterRequest,
+    SchedulerRegisterResponse,
     TaskResubmitRequest,
     TaskResubmitResponse,
 )
+from .scheduler_registry import get_scheduler_registry
 from .pylet.deployment_service import (
     create_pylet_service,
     get_pylet_service_optional,
@@ -155,6 +161,13 @@ async def service_info():
         pylet_status["active_instances"] = len(pylet_service.get_active_instances())
         pylet_status["current_state"] = pylet_service.get_current_state()
 
+    # Get scheduler registry info
+    registry = get_scheduler_registry()
+    scheduler_registry_info = {
+        "total": len(registry),
+        "models": registry.get_registered_models(),
+    }
+
     return {
         "service": "planner",
         "version": __version__,
@@ -167,6 +180,7 @@ async def service_info():
         "description": "Model deployment optimization service",
         "available_instances": get_available_instance_store().available_instances,
         "pylet": pylet_status,
+        "scheduler_registry": scheduler_registry_info,
     }
 
 
@@ -291,8 +305,112 @@ async def plan_deployment(input_data: PlannerInput):
         )
 
 
+# ============================================================================
+# Scheduler Registry Endpoints (PYLET-024)
+# These endpoints allow schedulers to register/deregister with the planner,
+# enabling per-model scheduler routing.
+# ============================================================================
+
+
+@app.post("/scheduler/register", response_model=SchedulerRegisterResponse)
+async def register_scheduler(request: SchedulerRegisterRequest):
+    """Register a scheduler for a specific model.
+
+    Schedulers call this on startup to advertise their URL and the model
+    they handle. If a scheduler for the same model was already registered,
+    it is replaced.
+
+    Args:
+        request: Scheduler registration details.
+
+    Returns:
+        SchedulerRegisterResponse with registration status.
+    """
+    registry = get_scheduler_registry()
+    replaced = registry.register(
+        model_id=request.model_id,
+        scheduler_url=request.scheduler_url,
+        metadata=request.metadata,
+    )
+
+    return SchedulerRegisterResponse(
+        success=True,
+        message=(
+            f"Scheduler for {request.model_id} registered at "
+            f"{request.scheduler_url}"
+        ),
+        replaced_previous=replaced,
+    )
+
+
+@app.post(
+    "/scheduler/deregister", response_model=SchedulerDeregisterResponse
+)
+async def deregister_scheduler(request: SchedulerDeregisterRequest):
+    """Deregister a scheduler for a specific model.
+
+    Schedulers call this on graceful shutdown.
+
+    Args:
+        request: Scheduler deregistration details.
+
+    Returns:
+        SchedulerDeregisterResponse with deregistration status.
+    """
+    registry = get_scheduler_registry()
+    found = registry.deregister(request.model_id)
+
+    if found:
+        return SchedulerDeregisterResponse(
+            success=True,
+            message=f"Scheduler for {request.model_id} deregistered",
+        )
+    else:
+        return SchedulerDeregisterResponse(
+            success=False,
+            message=f"No scheduler registered for {request.model_id}",
+        )
+
+
+@app.get("/scheduler/list", response_model=SchedulerListResponse)
+async def list_schedulers():
+    """List all registered schedulers.
+
+    Returns:
+        SchedulerListResponse with all registered schedulers.
+    """
+    registry = get_scheduler_registry()
+    schedulers = registry.list_all()
+    return SchedulerListResponse(
+        schedulers=schedulers,
+        total=len(schedulers),
+    )
+
+
+@app.get("/scheduler/{model_id}")
+async def get_scheduler(model_id: str):
+    """Get the scheduler registered for a specific model.
+
+    Args:
+        model_id: Model identifier.
+
+    Returns:
+        Scheduler info or 404 if not registered.
+    """
+    registry = get_scheduler_registry()
+    info = registry.get_scheduler_info(model_id)
+
+    if info is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No scheduler registered for model: {model_id}",
+        )
+
+    return info
+
+
 # Legacy /deploy and /deploy/migration endpoints have been removed.
-# Use the PyLet endpoints (/pylet/deploy, /pylet/optimize) for deployment.
+# Use the PyLet endpoints (/deploy, /optimize) for deployment.
 
 
 @app.post("/instance/register", response_model=InstanceRegisterResponse)
@@ -350,11 +468,11 @@ async def register_available_instance(request: InstanceRegisterRequest):
 
 # ============================================================================
 # Legacy endpoints removed. Use PyLet API instead:
-# - /pylet/status - Get cluster status and active instances
-# - /pylet/deploy - Deploy instances to target state
-# - /pylet/scale - Scale a specific model
-# - /pylet/migrate - Migrate an instance
-# - /pylet/optimize - Run optimizer and deploy via PyLet
+# - /status - Get cluster status and active instances
+# - /deploy - Deploy instances to target state
+# - /scale - Scale a specific model
+# - /migrate - Migrate an instance
+# - /optimize - Run optimizer and deploy via PyLet
 # ============================================================================
 
 

@@ -24,6 +24,14 @@ from .pylet import (
     PyLetScaleOutput,
     PyLetStatusOutput,
 )
+from .scheduler import (
+    SchedulerDeregisterRequest,
+    SchedulerDeregisterResponse,
+    SchedulerInfo,
+    SchedulerListResponse,
+    SchedulerRegisterRequest,
+    SchedulerRegisterResponse,
+)
 from .scheduler_compat import (
     InstanceDrainRequest,
     InstanceDrainResponse,
@@ -52,6 +60,13 @@ __all__ = [
     "InstanceRemoveResponse",
     "TaskResubmitRequest",
     "TaskResubmitResponse",
+    # Scheduler Registry
+    "SchedulerRegisterRequest",
+    "SchedulerRegisterResponse",
+    "SchedulerDeregisterRequest",
+    "SchedulerDeregisterResponse",
+    "SchedulerInfo",
+    "SchedulerListResponse",
     # PyLet
     "PyLetDeploymentInput",
     "PyLetDeploymentOutput",

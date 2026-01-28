@@ -38,6 +38,8 @@ from .models import (
     PyLetStatusOutput,
 )
 from .pylet.deployment_service import get_pylet_service_optional
+from .scheduler_registry import get_scheduler_registry
+from .services.model_validation import ModelValidationService
 
 # Create router for PyLet endpoints (top-level API)
 router = APIRouter(tags=["pylet"])
@@ -183,6 +185,15 @@ async def pylet_deploy(input_data: PyLetDeployWithPlanInput):
         f"algorithm={input_data.algorithm} objective={input_data.objective_method} "
         f"change_factor={input_data.a} target={input_data.target}"
     )
+
+    # Validate model_ids against scheduler registry (PYLET-024)
+    validator = ModelValidationService(get_scheduler_registry())
+    validation = validator.validate_models(input_data.model_ids)
+    if not validation.valid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=validation.message,
+        )
 
     try:
         # Convert inputs to numpy arrays

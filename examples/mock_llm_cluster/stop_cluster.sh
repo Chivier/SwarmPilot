@@ -1,10 +1,10 @@
 #!/bin/bash
-# Mock LLM Cluster - Stop Services
+# Mock LLM Cluster - Stop Services (Multi-Scheduler)
 # Usage: ./examples/mock_llm_cluster/stop_cluster.sh
 #
 # Stops all services started by start_cluster.sh and terminates PyLet instances.
 #
-# PYLET-022: Mock LLM Cluster Example
+# PYLET-024: Multi-Scheduler Architecture
 
 set -e
 
@@ -25,9 +25,9 @@ echo -e "${BLUE}╚════════════════════�
 echo ""
 
 # First, terminate all PyLet instances via Planner API
-echo -e "${BLUE}[1/4] Terminating PyLet instances...${NC}"
+echo -e "${BLUE}[1/6] Terminating PyLet instances...${NC}"
 if curl -s "http://localhost:$PLANNER_PORT/health" > /dev/null 2>&1; then
-    RESULT=$(curl -s -X POST "http://localhost:$PLANNER_PORT/pylet/terminate-all" 2>/dev/null || echo '{"error": "failed"}')
+    RESULT=$(curl -s -X POST "http://localhost:$PLANNER_PORT/terminate-all" 2>/dev/null || echo '{"error": "failed"}')
     if echo "$RESULT" | grep -q '"success": true' 2>/dev/null; then
         TERMINATED=$(echo "$RESULT" | python3 -c "import sys, json; print(json.load(sys.stdin).get('total', 0))" 2>/dev/null || echo "?")
         echo -e "${GREEN}✓ Terminated $TERMINATED PyLet instances${NC}"
@@ -68,13 +68,20 @@ stop_process() {
     fi
 }
 
-echo -e "${BLUE}[2/4] Stopping Planner...${NC}"
+echo -e "${BLUE}[2/6] Stopping Scheduler (llm-7b)...${NC}"
+stop_process "Scheduler (llm-7b)" "scheduler-7b"
+
+echo -e "${BLUE}[3/6] Stopping Scheduler (llm-32b)...${NC}"
+stop_process "Scheduler (llm-32b)" "scheduler-32b"
+
+echo -e "${BLUE}[4/6] Stopping Planner...${NC}"
 stop_process "Planner" "planner"
 
-echo -e "${BLUE}[3/4] Stopping Scheduler...${NC}"
-stop_process "Scheduler" "scheduler"
+# Also stop legacy single scheduler if it exists
+echo -e "${BLUE}[5/6] Stopping legacy Scheduler (if any)...${NC}"
+stop_process "Scheduler (legacy)" "scheduler"
 
-echo -e "${BLUE}[4/4] Stopping Predictor...${NC}"
+echo -e "${BLUE}[6/6] Stopping Predictor...${NC}"
 stop_process "Predictor" "predictor"
 
 echo ""

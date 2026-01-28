@@ -37,6 +37,7 @@ from loguru import logger
 
 from src.pylet.client import PartialDeploymentError, PyLetClient
 from src.pylet.scheduler_client import SchedulerClient
+from src.scheduler_registry import get_scheduler_registry
 
 
 class ManagedInstanceStatus(str, Enum):
@@ -149,7 +150,7 @@ class InstanceManager:
 
         Args:
             pylet_head_url: URL of PyLet head node.
-            scheduler_url: URL of scheduler.
+            scheduler_url: URL of default scheduler (fallback).
             custom_command: Optional custom command template for PyLet.
             reuse_cluster: If True, reuse existing PyLet connection.
         """
@@ -158,7 +159,9 @@ class InstanceManager:
             custom_command=custom_command,
             reuse_cluster=reuse_cluster,
         )
+        self._default_scheduler_url = scheduler_url
         self.scheduler_client = SchedulerClient(scheduler_url)
+        self._scheduler_clients: dict[str, SchedulerClient] = {}
         self._instances: dict[str, ManagedInstance] = {}
         self._initialized = False
 
@@ -166,7 +169,8 @@ class InstanceManager:
         """Initialize connections to PyLet and scheduler.
 
         Raises:
-            RuntimeError: If PyLet or scheduler is unavailable.
+            RuntimeError: If PyLet is unavailable. Default scheduler health
+                check is skipped if scheduler registry has entries (PYLET-024).
         """
         if self._initialized:
             return
@@ -174,18 +178,60 @@ class InstanceManager:
         # Initialize PyLet client
         self.pylet_client.init()
 
-        # Verify scheduler is available
-        if not self.scheduler_client.health_check():
-            raise RuntimeError(
-                f"Scheduler not available at " f"{self.scheduler_client.scheduler_url}"
+        # Verify default scheduler is available (only if no registry entries)
+        registry = get_scheduler_registry()
+        if len(registry) == 0:
+            if not self.scheduler_client.health_check():
+                raise RuntimeError(
+                    f"Scheduler not available at "
+                    f"{self.scheduler_client.scheduler_url}"
+                )
+        else:
+            logger.info(
+                f"Scheduler registry has {len(registry)} entries, "
+                f"skipping default scheduler health check"
             )
 
         self._initialized = True
         logger.info("InstanceManager initialized")
 
+    def _get_scheduler_client(self, model_id: str) -> SchedulerClient:
+        """Get the scheduler client for a specific model.
+
+        Looks up the scheduler URL from the registry. Falls back to the
+        default scheduler client if no registry entry exists.
+
+        Args:
+            model_id: Model identifier.
+
+        Returns:
+            SchedulerClient for the model's scheduler.
+        """
+        registry = get_scheduler_registry()
+        scheduler_url = registry.get_scheduler_url(model_id)
+
+        if scheduler_url is None:
+            # No registry entry, use default
+            return self.scheduler_client
+
+        # Use cached client or create new one
+        if scheduler_url not in self._scheduler_clients:
+            logger.info(
+                f"Creating scheduler client for {model_id} "
+                f"at {scheduler_url}"
+            )
+            self._scheduler_clients[scheduler_url] = SchedulerClient(
+                scheduler_url
+            )
+
+        return self._scheduler_clients[scheduler_url]
+
     def close(self) -> None:
         """Close client connections."""
         self.scheduler_client.close()
+        for client in self._scheduler_clients.values():
+            client.close()
+        self._scheduler_clients.clear()
 
     @property
     def instances(self) -> dict[str, ManagedInstance]:
@@ -408,7 +454,8 @@ class InstanceManager:
             # Register with scheduler if requested
             if register and managed.endpoint:
                 managed.status = ManagedInstanceStatus.REGISTERING
-                result = self.scheduler_client.register_instance(
+                scheduler = self._get_scheduler_client(managed.model_id)
+                result = scheduler.register_instance(
                     instance_id=managed.instance_id,
                     model_id=managed.model_id,
                     endpoint=managed.endpoint,
@@ -523,7 +570,8 @@ class InstanceManager:
             )
 
             # Deregister from scheduler (drain + remove)
-            self.scheduler_client.deregister_instance(
+            scheduler = self._get_scheduler_client(managed.model_id)
+            scheduler.deregister_instance(
                 instance_id=managed.instance_id,
                 wait_for_drain=wait_for_drain,
                 drain_timeout=drain_timeout,
