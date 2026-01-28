@@ -633,6 +633,74 @@ async def _process_task_and_callback(
                 pass
 
 
+class InferenceRequest(BaseModel):
+    """Simple inference request format for scheduler dispatch.
+
+    The scheduler sends task_input content directly to the configured path.
+    This endpoint accepts flexible input to match what the scheduler sends.
+    """
+    sleep_time: float | None = None
+    messages: list[dict] | None = None
+
+    class Config:
+        extra = "allow"
+
+
+class InferenceResponse(BaseModel):
+    """Simple inference response."""
+    success: bool
+    model_id: str
+    instance_id: str
+    latency_ms: float
+    message: str = ""
+
+
+@app.post("/inference", response_model=InferenceResponse)
+async def inference(request: InferenceRequest) -> InferenceResponse:
+    """Simple inference endpoint for scheduler dispatch.
+
+    This endpoint accepts what the scheduler sends (task_input content)
+    and simulates LLM inference using the model's latency distribution.
+    """
+    global _stats
+    _stats["requests_received"] += 1
+
+    try:
+        start_time = time.time()
+
+        # Get simulated latency from model distribution
+        latency_s = get_model_latency()
+        latency_ms = latency_s * 1000
+
+        # Sleep to simulate inference
+        await asyncio.sleep(latency_s)
+
+        execution_time = time.time() - start_time
+        _stats["requests_completed"] += 1
+        _stats["total_latency_ms"] += execution_time * 1000
+
+        logger.debug(
+            f"Inference completed: model={MODEL_ID}, latency={execution_time*1000:.2f}ms"
+        )
+
+        return InferenceResponse(
+            success=True,
+            model_id=MODEL_ID,
+            instance_id=INSTANCE_ID,
+            latency_ms=execution_time * 1000,
+            message=f"Mock inference from {MODEL_ID} completed in {latency_ms:.2f}ms",
+        )
+
+    except asyncio.CancelledError:
+        _stats["requests_failed"] += 1
+        raise HTTPException(status_code=499, detail="Request cancelled")
+
+    except Exception as e:
+        _stats["requests_failed"] += 1
+        logger.error(f"Inference failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/task/submit", response_model=TaskSubmitResponse)
 async def task_submit(request: TaskSubmitRequest) -> TaskSubmitResponse:
     """Handle task submission from scheduler.
