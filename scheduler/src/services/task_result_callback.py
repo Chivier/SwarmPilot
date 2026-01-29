@@ -23,6 +23,7 @@ from src.registry.task_registry import TaskRegistry
 from src.services.websocket_manager import ConnectionManager
 
 if TYPE_CHECKING:
+    from src.clients.training_library_client import TrainingClient
     from src.services.worker_queue_thread import TaskResult
     from src.utils.throughput_tracker import ThroughputTracker
 
@@ -69,6 +70,7 @@ class TaskResultCallback:
         instance_registry: InstanceRegistry,
         websocket_manager: ConnectionManager,
         throughput_tracker: "ThroughputTracker | None" = None,
+        training_client: "TrainingClient | None" = None,
     ):
         """Initialize callback handler.
 
@@ -77,11 +79,13 @@ class TaskResultCallback:
             instance_registry: Registry for instance statistics.
             websocket_manager: Manager for WebSocket notifications.
             throughput_tracker: Optional tracker for planner reporting.
+            training_client: Optional training client for auto-training.
         """
         self.task_registry = task_registry
         self.instance_registry = instance_registry
         self.websocket_manager = websocket_manager
         self.throughput_tracker = throughput_tracker
+        self.training_client = training_client
 
         # Event loop reference (set when creating thread callback)
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -164,6 +168,50 @@ class TaskResultCallback:
                 )
 
         return thread_safe_callback
+
+    def create_thread_start_callback(
+        self,
+        loop: asyncio.AbstractEventLoop,
+    ) -> Callable[[str], None]:
+        """Create a callback for when a task starts executing.
+
+        Returns a closure that safely schedules the async
+        _handle_task_started coroutine on the main event loop.
+
+        Args:
+            loop: The main asyncio event loop.
+
+        Returns:
+            A synchronous callback accepting a task_id string.
+        """
+
+        def thread_safe_start_callback(task_id: str) -> None:
+            """Callback for task start, safe to call from any thread."""
+            try:
+                asyncio.run_coroutine_threadsafe(
+                    self._handle_task_started(task_id),
+                    loop,
+                )
+            except Exception as e:
+                logger.error(
+                    f"Failed to schedule start callback for task {task_id}: {e}"
+                )
+
+        return thread_safe_start_callback
+
+    async def _handle_task_started(self, task_id: str) -> None:
+        """Handle task execution start by setting RUNNING status.
+
+        Args:
+            task_id: Task that started executing.
+        """
+        try:
+            await self.task_registry.update_status(task_id, TaskStatus.RUNNING)
+            logger.debug(f"Task {task_id} status set to RUNNING")
+        except KeyError:
+            logger.warning(f"Task {task_id} not found when setting RUNNING")
+        except Exception as e:
+            logger.error(f"Error setting task {task_id} to RUNNING: {e}")
 
     async def handle_result(self, result: "TaskResult") -> None:
         """Handle task completion result.
@@ -258,6 +306,21 @@ class TaskResultCallback:
                 instance_endpoint=instance.endpoint,
                 execution_time_ms=result.execution_time_ms,
             )
+
+        # Record training sample for auto-training
+        if self.training_client and instance and task:
+            try:
+                self.training_client.add_sample(
+                    model_id=task.model_id,
+                    platform_info=instance.platform_info,
+                    features=task.metadata,
+                    actual_runtime_ms=result.execution_time_ms,
+                )
+                await self.training_client.flush_if_ready()
+            except Exception as e:
+                logger.warning(
+                    f"Training sample recording failed for task {task_id}: {e}"
+                )
 
         logger.info(
             f"Task {task_id} completed on {result.worker_id} "

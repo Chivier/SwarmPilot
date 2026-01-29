@@ -72,11 +72,22 @@ def callback_handler(
 
 
 @pytest.fixture
+def mock_training_client():
+    """Create a mock training client."""
+    client = MagicMock()
+    client.add_sample = MagicMock()
+    client.flush_if_ready = AsyncMock(return_value=False)
+    return client
+
+
+@pytest.fixture
 def sample_task_record():
     """Create a sample task record."""
     task = MagicMock()
     task.task_id = "task-1"
     task.status = TaskStatus.RUNNING
+    task.model_id = "test-model"
+    task.metadata = {"batch_size": 32}
     task.set_execution_time = MagicMock()
     task.get_timestamps = MagicMock(
         return_value={"submitted_at": "2024-01-01T00:00:00Z"}
@@ -90,6 +101,7 @@ def sample_instance():
     instance = MagicMock()
     instance.instance_id = "worker-1"
     instance.endpoint = "http://localhost:8001"
+    instance.platform_info = {"gpu": "A100", "driver": "535"}
     return instance
 
 
@@ -658,3 +670,194 @@ class TestFuturePool:
 
         # Future should be removed from pool after resolution
         assert not callback_handler.has_future("task-1")
+
+
+# ============================================================================
+# Training Integration Tests (Issue 3)
+# ============================================================================
+
+
+class TestTrainingIntegration:
+    """Tests for training client integration in task completion."""
+
+    @pytest.fixture
+    def callback_with_training(
+        self,
+        mock_task_registry,
+        mock_instance_registry,
+        mock_websocket_manager,
+        mock_throughput_tracker,
+        mock_training_client,
+    ):
+        """Create a TaskResultCallback with training client."""
+        return TaskResultCallback(
+            task_registry=mock_task_registry,
+            instance_registry=mock_instance_registry,
+            websocket_manager=mock_websocket_manager,
+            throughput_tracker=mock_throughput_tracker,
+            training_client=mock_training_client,
+        )
+
+    @pytest.mark.asyncio
+    async def test_adds_training_sample_on_success(
+        self,
+        callback_with_training,
+        mock_task_registry,
+        mock_training_client,
+        sample_task_record,
+        sample_instance,
+        success_result,
+    ):
+        """Test training sample added on successful task completion."""
+        mock_task_registry.get.return_value = sample_task_record
+        callback_with_training.instance_registry.get.return_value = sample_instance
+
+        await callback_with_training.handle_result(success_result)
+
+        mock_training_client.add_sample.assert_called_once_with(
+            model_id="test-model",
+            platform_info={"gpu": "A100", "driver": "535"},
+            features={"batch_size": 32},
+            actual_runtime_ms=150.0,
+        )
+
+    @pytest.mark.asyncio
+    async def test_flush_if_ready_called_on_success(
+        self,
+        callback_with_training,
+        mock_task_registry,
+        mock_training_client,
+        sample_task_record,
+        sample_instance,
+        success_result,
+    ):
+        """Test flush_if_ready called after adding sample."""
+        mock_task_registry.get.return_value = sample_task_record
+        callback_with_training.instance_registry.get.return_value = sample_instance
+
+        await callback_with_training.handle_result(success_result)
+
+        mock_training_client.flush_if_ready.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_no_training_sample_on_failure(
+        self,
+        callback_with_training,
+        mock_task_registry,
+        mock_training_client,
+        sample_task_record,
+        sample_instance,
+        failure_result,
+    ):
+        """Test no training sample added on failure."""
+        mock_task_registry.get.return_value = sample_task_record
+        callback_with_training.instance_registry.get.return_value = sample_instance
+
+        await callback_with_training.handle_result(failure_result)
+
+        mock_training_client.add_sample.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_training_error_does_not_break_callback(
+        self,
+        callback_with_training,
+        mock_task_registry,
+        mock_training_client,
+        sample_task_record,
+        sample_instance,
+        success_result,
+    ):
+        """Test training errors don't break task completion."""
+        mock_task_registry.get.return_value = sample_task_record
+        callback_with_training.instance_registry.get.return_value = sample_instance
+        mock_training_client.add_sample.side_effect = RuntimeError("Training error")
+
+        # Should not raise
+        await callback_with_training.handle_result(success_result)
+
+        # Task status should still be updated
+        mock_task_registry.update_status.assert_called_once_with(
+            "task-1", TaskStatus.COMPLETED
+        )
+
+    @pytest.mark.asyncio
+    async def test_none_training_client_is_safe(
+        self,
+        mock_task_registry,
+        mock_instance_registry,
+        mock_websocket_manager,
+        sample_task_record,
+        sample_instance,
+        success_result,
+    ):
+        """Test callback works when training_client is None."""
+        callback = TaskResultCallback(
+            task_registry=mock_task_registry,
+            instance_registry=mock_instance_registry,
+            websocket_manager=mock_websocket_manager,
+            training_client=None,
+        )
+        mock_task_registry.get.return_value = sample_task_record
+        mock_instance_registry.get.return_value = sample_instance
+
+        # Should not raise
+        await callback.handle_result(success_result)
+        mock_task_registry.update_status.assert_called_once()
+
+
+# ============================================================================
+# Task Started Callback Tests (Issue 2)
+# ============================================================================
+
+
+class TestTaskStartedCallback:
+    """Tests for _handle_task_started and create_thread_start_callback."""
+
+    @pytest.mark.asyncio
+    async def test_handle_task_started_sets_running(
+        self,
+        callback_handler,
+        mock_task_registry,
+    ):
+        """Test _handle_task_started sets RUNNING status."""
+        await callback_handler._handle_task_started("task-1")
+
+        mock_task_registry.update_status.assert_called_once_with(
+            "task-1", TaskStatus.RUNNING
+        )
+
+    @pytest.mark.asyncio
+    async def test_handle_task_started_missing_task(
+        self,
+        callback_handler,
+        mock_task_registry,
+    ):
+        """Test _handle_task_started handles missing task gracefully."""
+        mock_task_registry.update_status.side_effect = KeyError("not found")
+
+        # Should not raise
+        await callback_handler._handle_task_started("nonexistent")
+
+    def test_create_thread_start_callback(self, callback_handler):
+        """Test thread-safe start callback creation."""
+        loop = asyncio.new_event_loop()
+        try:
+            start_callback = callback_handler.create_thread_start_callback(loop)
+            assert callable(start_callback)
+        finally:
+            loop.close()
+
+    @pytest.mark.asyncio
+    async def test_thread_start_callback_schedules_on_loop(self, callback_handler):
+        """Test start callback from thread schedules on event loop."""
+        loop = asyncio.get_running_loop()
+        start_callback = callback_handler.create_thread_start_callback(loop)
+
+        with patch.object(
+            callback_handler,
+            "_handle_task_started",
+            new_callable=AsyncMock,
+        ) as mock_started:
+            start_callback("task-42")
+            await asyncio.sleep(0.1)
+            mock_started.assert_called_once_with("task-42")

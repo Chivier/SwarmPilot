@@ -60,6 +60,7 @@ class WorkerQueueManager:
         http_timeout: float = 300.0,
         max_retries: int = 3,
         retry_delay: float = 1.0,
+        on_task_started: Callable[[str], None] | None = None,
     ):
         """Initialize worker queue manager.
 
@@ -68,11 +69,13 @@ class WorkerQueueManager:
             http_timeout: HTTP timeout for worker requests.
             max_retries: Max retries for transient errors.
             retry_delay: Initial retry delay (exponential backoff).
+            on_task_started: Optional callback when task begins execution.
         """
         self._callback = callback
         self._http_timeout = http_timeout
         self._max_retries = max_retries
         self._retry_delay = retry_delay
+        self._on_task_started = on_task_started
 
         # Worker ID -> WorkerQueueThread mapping
         self._workers: dict[str, WorkerQueueThread] = {}
@@ -106,6 +109,7 @@ class WorkerQueueManager:
                 http_timeout=self._http_timeout,
                 max_retries=self._max_retries,
                 retry_delay=self._retry_delay,
+                on_task_started=self._on_task_started,
             )
             thread.start()
             self._workers[worker_id] = thread

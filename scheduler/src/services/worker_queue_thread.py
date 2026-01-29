@@ -113,6 +113,7 @@ class WorkerQueueThread:
         http_timeout: float = 300.0,
         max_retries: int = 3,
         retry_delay: float = 1.0,
+        on_task_started: Callable[[str], None] | None = None,
     ):
         """Initialize worker queue thread.
 
@@ -124,6 +125,7 @@ class WorkerQueueThread:
             http_timeout: Timeout for HTTP requests in seconds.
             max_retries: Maximum retry attempts for transient errors.
             retry_delay: Initial delay between retries (uses exponential backoff).
+            on_task_started: Optional callback when task begins execution.
         """
         self.worker_id = worker_id
         self.worker_endpoint = worker_endpoint
@@ -132,6 +134,7 @@ class WorkerQueueThread:
         self._http_timeout = http_timeout
         self._max_retries = max_retries
         self._retry_delay = retry_delay
+        self._on_task_started = on_task_started
 
         # Thread-safe FIFO queue
         self._queue: Queue[QueuedTask] = Queue()
@@ -291,6 +294,12 @@ class WorkerQueueThread:
         """
         self._current_task = task
         self._current_task_started = time.time()
+
+        if self._on_task_started:
+            try:
+                self._on_task_started(task.task_id)
+            except Exception as e:
+                logger.error(f"on_task_started callback failed for {task.task_id}: {e}")
 
         logger.info(f"Worker {self.worker_id} executing task {task.task_id}")
 

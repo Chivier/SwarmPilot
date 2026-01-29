@@ -118,10 +118,12 @@ async def lifespan(app: FastAPI):
     # Initialize WorkerQueueManager with event loop reference
     global worker_queue_manager
     loop = asyncio.get_running_loop()
-    task_result_callback.create_thread_callback(loop)
+    thread_callback = task_result_callback.create_thread_callback(loop)
+    start_callback = task_result_callback.create_thread_start_callback(loop)
     worker_queue_manager = WorkerQueueManager(
-        callback=task_result_callback.create_thread_callback(loop),
+        callback=thread_callback,
         http_timeout=config.proxy.worker_http_timeout,
+        on_task_started=start_callback,
     )
     logger.info("WorkerQueueManager initialized")
 
@@ -312,6 +314,7 @@ task_result_callback = TaskResultCallback(
     instance_registry=instance_registry,
     websocket_manager=websocket_manager,
     throughput_tracker=throughput_tracker,
+    training_client=training_client,
 )
 
 # WorkerQueueManager is initialized in lifespan (needs event loop)
@@ -733,94 +736,69 @@ async def _redistribute_tasks_on_registration(
                 "failed_resubmissions": [],
             }
 
-        # Step 4: Resubmit tasks to new instance
+        # Step 4: Enqueue tasks to new instance via worker queue
         resubmitted_count = 0
         failed_resubmissions = []
-        # Use scheduler's callback URL for the resubmitted tasks
-        redistribution_callback_url = f"{callback_base_url}/callback/task_result"
 
-        async with httpx.AsyncClient(timeout=60.0, verify=False) as client:
+        if worker_queue_manager:
             for task_data in fetched_tasks:
+                task_id = task_data["task_id"]
                 try:
-                    # Prepare submission payload with preserved metadata
-                    payload = {
-                        "task_id": task_data["task_id"],
-                        "model_id": task_data["model_id"] or new_instance.model_id,
-                        "task_input": task_data["task_input"] or {},
-                        "callback_url": redistribution_callback_url,  # Rewritten to scheduler's callback
-                    }
+                    # Recover metadata from task_registry (not in fetch response)
+                    task_record = await task_registry.get(task_id)
+                    metadata = task_record.metadata if task_record else {}
 
-                    # Preserve enqueue_time for priority ordering if available
-                    if task_data.get("enqueue_time") is not None:
-                        payload["enqueue_time"] = task_data["enqueue_time"]
-
-                    # Submit to new instance
-                    response = await client.post(
-                        f"{new_instance.endpoint}/task/submit", json=payload
+                    queued_task = QueuedTask(
+                        task_id=task_id,
+                        model_id=task_data["model_id"] or new_instance.model_id,
+                        task_input=task_data["task_input"] or {},
+                        metadata=metadata,
+                        enqueue_time=task_data.get("enqueue_time") or time.time(),
                     )
-                    response.raise_for_status()
+                    worker_queue_manager.enqueue_task(
+                        new_instance.instance_id, queued_task
+                    )
 
-                    submit_result = response.json()
-                    if submit_result.get("success"):
-                        # Increment new instance's pending count
-                        await instance_registry.increment_pending(
-                            new_instance.instance_id
+                    await instance_registry.increment_pending(new_instance.instance_id)
+                    resubmitted_count += 1
+
+                    # Update new instance's queue info
+                    predicted_time_ms = task_data.get("predicted_time_ms")
+                    if predicted_time_ms is not None:
+                        await _add_task_to_queue_info(
+                            instance_id=new_instance.instance_id,
+                            predicted_time_ms=predicted_time_ms,
+                            predicted_error_margin_ms=task_data.get(
+                                "predicted_error_margin_ms"
+                            ),
+                            predicted_quantiles=task_data.get("predicted_quantiles"),
                         )
-                        resubmitted_count += 1
-
-                        # Update new instance's queue info by adding the stolen task's time
-                        predicted_time_ms = task_data.get("predicted_time_ms")
-                        if predicted_time_ms is not None:
-                            await _add_task_to_queue_info(
-                                instance_id=new_instance.instance_id,
-                                predicted_time_ms=predicted_time_ms,
-                                predicted_error_margin_ms=task_data.get(
-                                    "predicted_error_margin_ms"
-                                ),
-                                predicted_quantiles=task_data.get(
-                                    "predicted_quantiles"
-                                ),
-                            )
-                            logger.debug(
-                                f"Updated new instance {new_instance.instance_id} queue_info "
-                                f"after task steal (added {predicted_time_ms:.2f}ms)"
-                            )
-
-                        # Update task_registry to reflect new assigned instance
-                        await task_registry.update_assigned_instance(
-                            task_data["task_id"], new_instance.instance_id
-                        )
-
                         logger.debug(
-                            f"Resubmitted task {task_data['task_id']} "
-                            f"from {task_data['donor_instance_id']} to {new_instance.instance_id}"
+                            f"Updated new instance {new_instance.instance_id} queue_info "
+                            f"after task steal (added {predicted_time_ms:.2f}ms)"
                         )
-                    else:
-                        logger.warning(
-                            f"New instance rejected task {task_data['task_id']}: "
-                            f"{submit_result.get('message', 'Unknown error')}"
-                        )
-                        failed_resubmissions.append(task_data["task_id"])
 
-                except httpx.HTTPStatusError as e:
-                    log_http_error(
-                        e,
-                        request_url=f"{new_instance.endpoint}/task/submit",
-                        request_method="POST",
-                        request_body=payload,
-                        context="task redistribution submit",
-                        extra={
-                            "task_id": task_data["task_id"],
-                            "new_instance_id": new_instance.instance_id,
-                        },
+                    await task_registry.update_assigned_instance(
+                        task_id, new_instance.instance_id
                     )
-                    failed_resubmissions.append(task_data["task_id"])
+
+                    logger.debug(
+                        f"Enqueued stolen task {task_id} "
+                        f"from {task_data['donor_instance_id']} to {new_instance.instance_id}"
+                    )
+
                 except Exception as e:
                     logger.error(
-                        f"Failed to resubmit task {task_data['task_id']} "
+                        f"Failed to enqueue stolen task {task_id} "
                         f"to {new_instance.instance_id}: {type(e).__name__}: {e}"
                     )
-                    failed_resubmissions.append(task_data["task_id"])
+                    failed_resubmissions.append(task_id)
+        else:
+            logger.error(
+                "[WorkStealing] WorkerQueueManager not initialized, "
+                "cannot enqueue stolen tasks"
+            )
+            failed_resubmissions = [t["task_id"] for t in fetched_tasks]
 
         # Log work stealing summary
         stolen_from = {}
@@ -863,7 +841,7 @@ async def _redistribute_tasks_on_registration(
 # ============================================================================
 
 
-@app.post("/instance/register", response_model=InstanceRegisterResponse)
+@app.post("/v1/instance/register", response_model=InstanceRegisterResponse)
 async def register_instance(request: InstanceRegisterRequest):
     """Register a new instance to the scheduler.
 
@@ -972,7 +950,7 @@ async def register_instance(request: InstanceRegisterRequest):
     )
 
 
-@app.post("/instance/remove", response_model=InstanceRemoveResponse)
+@app.post("/v1/instance/remove", response_model=InstanceRemoveResponse)
 async def remove_instance(request: InstanceRemoveRequest):
     """Remove an instance from the scheduler.
 
@@ -1029,7 +1007,7 @@ async def remove_instance(request: InstanceRemoveRequest):
     )
 
 
-@app.post("/instance/drain", response_model=InstanceDrainResponse)
+@app.post("/v1/instance/drain", response_model=InstanceDrainResponse)
 async def drain_instance(request: InstanceDrainRequest):
     """Start draining an instance - stop assigning new tasks.
 
@@ -1105,7 +1083,7 @@ async def drain_instance(request: InstanceDrainRequest):
         ) from e
 
 
-@app.get("/instance/drain/status", response_model=InstanceDrainStatusResponse)
+@app.get("/v1/instance/drain/status", response_model=InstanceDrainStatusResponse)
 async def get_drain_status(
     instance_id: str = Query(..., description="ID of the instance to check"),
 ):
@@ -1153,7 +1131,7 @@ async def get_drain_status(
         ) from e
 
 
-@app.post("/instance/redeploy/start", response_model=InstanceRedeployResponse)
+@app.post("/v1/instance/redeploy/start", response_model=InstanceRedeployResponse)
 async def start_instance_redeploy(request: InstanceRedeployRequest):
     """Start redeploying an instance.
 
@@ -1370,7 +1348,7 @@ async def start_instance_redeploy(request: InstanceRedeployRequest):
     )
 
 
-@app.post("/instance/redeploy/complete", response_model=InstanceRegisterResponse)
+@app.post("/v1/instance/redeploy/complete", response_model=InstanceRegisterResponse)
 async def complete_instance_redeploy(request: InstanceRegisterRequest):
     """Complete instance redeployment and return to ACTIVE status.
 
@@ -1470,7 +1448,7 @@ async def complete_instance_redeploy(request: InstanceRegisterRequest):
     )
 
 
-@app.get("/instance/list", response_model=InstanceListResponse)
+@app.get("/v1/instance/list", response_model=InstanceListResponse)
 async def list_instances(model_id: str | None = Query(None)):
     """List all registered instances with optional filtering.
 
@@ -1490,7 +1468,7 @@ async def list_instances(model_id: str | None = Query(None)):
     )
 
 
-@app.get("/instance/info", response_model=InstanceInfoResponse)
+@app.get("/v1/instance/info", response_model=InstanceInfoResponse)
 async def get_instance_info(instance_id: str = Query(...)):
     """Get detailed information about a specific instance.
 
@@ -1548,7 +1526,7 @@ async def get_instance_info(instance_id: str = Query(...)):
 # ============================================================================
 
 
-@app.post("/task/submit", response_model=TaskSubmitResponse)
+@app.post("/v1/task/submit", response_model=TaskSubmitResponse)
 async def submit_task(request: TaskSubmitRequest):
     """Submit a new task for execution.
 
@@ -1657,7 +1635,7 @@ async def submit_task(request: TaskSubmitRequest):
     )
 
 
-@app.get("/task/list", response_model=TaskListResponse)
+@app.get("/v1/task/list", response_model=TaskListResponse)
 async def list_tasks(
     status: TaskStatus | None = Query(None),
     model_id: str | None = Query(None),
@@ -1709,7 +1687,7 @@ async def list_tasks(
     )
 
 
-@app.get("/task/info", response_model=TaskDetailResponse)
+@app.get("/v1/task/info", response_model=TaskDetailResponse)
 async def get_task_info(task_id: str = Query(...)):
     """Get detailed information about a specific task.
 
@@ -1752,7 +1730,7 @@ async def get_task_info(task_id: str = Query(...)):
     )
 
 
-@app.post("/task/clear", response_model=TaskClearResponse)
+@app.post("/v1/task/clear", response_model=TaskClearResponse)
 async def clear_tasks():
     """Clear all tasks from the scheduler and all registered instances.
 
@@ -1847,7 +1825,7 @@ async def clear_tasks():
         logger.info("Task clear operation finished, accepting new submissions")
 
 
-@app.post("/task/resubmit", response_model=TaskResubmitResponse)
+@app.post("/v1/task/resubmit", response_model=TaskResubmitResponse)
 async def resubmit_task(request: TaskResubmitRequest):
     """Resubmit a task for rescheduling during instance migration.
 
@@ -1981,7 +1959,7 @@ async def resubmit_task(request: TaskResubmitRequest):
     )
 
 
-@app.post("/task/update_metadata", response_model=TaskUpdateMetadataResponse)
+@app.post("/v1/task/update_metadata", response_model=TaskUpdateMetadataResponse)
 async def update_task_metadata(request: TaskUpdateMetadataRequest):
     """Update metadata for multiple tasks and re-predict if tasks are in queue.
 
@@ -2245,7 +2223,7 @@ async def _update_single_task_metadata(
         )
 
 
-@app.post("/task/repredict", response_model=TaskRepredictResponse)
+@app.post("/v1/task/repredict", response_model=TaskRepredictResponse)
 async def repredict_all_tasks():
     """Re-predict all pending/running tasks and update queue information.
 
@@ -2441,7 +2419,7 @@ async def _repredict_single_task(task) -> bool:
         return False
 
 
-@app.get("/task/schedule_info", response_model=TaskScheduleInfoResponse)
+@app.get("/v1/task/schedule_info", response_model=TaskScheduleInfoResponse)
 async def get_task_schedule_info(
     model_id: str | None = Query(None, description="Filter by model ID"),
     instance_id: str | None = Query(None, description="Filter by instance ID"),
@@ -2509,7 +2487,7 @@ async def get_task_schedule_info(
     )
 
 
-@app.post("/callback/task_result", response_model=TaskResultCallbackResponse)
+@app.post("/v1/callback/task_result", response_model=TaskResultCallbackResponse)
 async def callback_task_result(request: TaskResultCallbackRequest):
     """Callback endpoint for instances to report task completion.
 
@@ -2571,7 +2549,7 @@ async def callback_task_result(request: TaskResultCallbackRequest):
     )
 
 
-@app.websocket("/task/get_result")
+@app.websocket("/v1/task/get_result")
 async def websocket_get_result(websocket: WebSocket):
     """WebSocket endpoint for real-time task result delivery.
 
@@ -2869,7 +2847,7 @@ def get_current_strategy_info() -> StrategyInfo:
 # ============================================================================
 
 
-@app.get("/strategy/get", response_model=StrategyGetResponse)
+@app.get("/v1/strategy/get", response_model=StrategyGetResponse)
 async def get_strategy_endpoint():
     """Get the current scheduling strategy and its parameters.
 
@@ -2884,7 +2862,7 @@ async def get_strategy_endpoint():
     )
 
 
-@app.post("/strategy/set", response_model=StrategySetResponse)
+@app.post("/v1/strategy/set", response_model=StrategySetResponse)
 async def set_strategy_endpoint(request: StrategySetRequest):
     """Set the scheduling strategy for the scheduler.
 
@@ -2994,7 +2972,7 @@ async def set_strategy_endpoint(request: StrategySetRequest):
 # ============================================================================
 
 
-@app.get("/health", response_model=HealthResponse)
+@app.get("/v1/health", response_model=HealthResponse)
 async def health_check():
     """Health check endpoint to verify scheduler status.
 

@@ -557,3 +557,142 @@ class TestWorkerQueueThreadFIFO:
 
             # Tasks should be processed in enqueue order
             assert processed_order == [f"task-{i}" for i in range(5)]
+
+
+# ============================================================================
+# on_task_started Callback Tests (Issue 2)
+# ============================================================================
+
+
+class TestOnTaskStartedCallback:
+    """Tests for the on_task_started callback in _execute_task."""
+
+    @pytest.fixture
+    def start_callback(self) -> MagicMock:
+        """Create a mock start callback."""
+        return MagicMock()
+
+    @pytest.fixture
+    def results(self) -> list[TaskResult]:
+        """Storage for callback results."""
+        return []
+
+    @pytest.fixture
+    def callback(self, results: list[TaskResult]) -> callable:
+        """Create a callback that stores results."""
+
+        def _callback(result: TaskResult) -> None:
+            results.append(result)
+
+        return _callback
+
+    @pytest.fixture
+    def worker_thread(
+        self, callback: callable, start_callback: MagicMock
+    ) -> WorkerQueueThread:
+        """Create a WorkerQueueThread with on_task_started."""
+        return WorkerQueueThread(
+            worker_id="test-worker",
+            worker_endpoint="http://localhost:8001",
+            model_id="test-model",
+            callback=callback,
+            http_timeout=5.0,
+            on_task_started=start_callback,
+        )
+
+    def test_on_task_started_called(
+        self,
+        worker_thread: WorkerQueueThread,
+        start_callback: MagicMock,
+    ) -> None:
+        """Test on_task_started is called when task begins execution."""
+        with patch.object(worker_thread, "_call_worker_api") as mock_api:
+            mock_api.return_value = (
+                {"output": "ok"},
+                200,
+                {"content-type": "application/json"},
+            )
+
+            worker_thread.start()
+            task = QueuedTask(
+                task_id="task-1",
+                model_id="test-model",
+                task_input={"prompt": "hello"},
+                metadata={},
+                enqueue_time=time.time(),
+            )
+            worker_thread.enqueue(task)
+            time.sleep(0.5)
+            worker_thread.stop()
+
+            start_callback.assert_called_once_with("task-1")
+
+    def test_on_task_started_error_does_not_break_execution(
+        self,
+        worker_thread: WorkerQueueThread,
+        start_callback: MagicMock,
+        results: list[TaskResult],
+    ) -> None:
+        """Test on_task_started error doesn't prevent task execution."""
+        start_callback.side_effect = RuntimeError("callback error")
+
+        with patch.object(worker_thread, "_call_worker_api") as mock_api:
+            mock_api.return_value = (
+                {"output": "ok"},
+                200,
+                {"content-type": "application/json"},
+            )
+
+            worker_thread.start()
+            task = QueuedTask(
+                task_id="task-1",
+                model_id="test-model",
+                task_input={"prompt": "hello"},
+                metadata={},
+                enqueue_time=time.time(),
+            )
+            worker_thread.enqueue(task)
+            time.sleep(0.5)
+            worker_thread.stop()
+
+            # Task should still complete despite callback error
+            assert len(results) == 1
+            assert results[0].status == "completed"
+
+    def test_none_on_task_started_is_safe(self) -> None:
+        """Test WorkerQueueThread works when on_task_started is None."""
+        results: list[TaskResult] = []
+
+        def _callback(result: TaskResult) -> None:
+            results.append(result)
+
+        thread = WorkerQueueThread(
+            worker_id="test-worker",
+            worker_endpoint="http://localhost:8001",
+            model_id="test-model",
+            callback=_callback,
+            http_timeout=5.0,
+            on_task_started=None,
+        )
+
+        with patch.object(thread, "_call_worker_api") as mock_api:
+            mock_api.return_value = (
+                {"output": "ok"},
+                200,
+                {"content-type": "application/json"},
+            )
+
+            thread.start()
+            task = QueuedTask(
+                task_id="task-1",
+                model_id="test-model",
+                task_input={"prompt": "hello"},
+                metadata={},
+                enqueue_time=time.time(),
+            )
+            thread.enqueue(task)
+            time.sleep(0.5)
+            thread.stop()
+
+            assert len(results) == 1
+            assert results[0].status == "completed"

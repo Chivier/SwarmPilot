@@ -471,3 +471,58 @@ class TestStatistics:
         assert stats["total_workers"] == 0
         assert stats["total_queue_depth"] == 0
         assert stats["workers"] == {}
+
+
+# ============================================================================
+# on_task_started Propagation Tests (Issue 2)
+# ============================================================================
+
+
+class TestOnTaskStartedPropagation:
+    """Tests for on_task_started propagation to worker threads."""
+
+    def test_on_task_started_stored(self, mock_callback):
+        """Test on_task_started is stored on manager."""
+        start_cb = MagicMock()
+        mgr = WorkerQueueManager(
+            callback=mock_callback,
+            on_task_started=start_cb,
+        )
+        assert mgr._on_task_started is start_cb
+
+    def test_on_task_started_propagated_to_thread(self, mock_callback):
+        """Test on_task_started passed to registered WorkerQueueThread."""
+        start_cb = MagicMock()
+        mgr = WorkerQueueManager(
+            callback=mock_callback,
+            on_task_started=start_cb,
+        )
+
+        mgr.register_worker(
+            worker_id="worker-1",
+            worker_endpoint="http://localhost:8001",
+            model_id="test-model",
+        )
+
+        thread = mgr.get_worker("worker-1")
+        assert thread._on_task_started is start_cb
+
+        mgr.shutdown()
+
+    def test_none_on_task_started_propagated(self, mock_callback):
+        """Test None on_task_started propagated correctly."""
+        mgr = WorkerQueueManager(
+            callback=mock_callback,
+            on_task_started=None,
+        )
+
+        mgr.register_worker(
+            worker_id="worker-1",
+            worker_endpoint="http://localhost:8001",
+            model_id="test-model",
+        )
+
+        thread = mgr.get_worker("worker-1")
+        assert thread._on_task_started is None
+
+        mgr.shutdown()
