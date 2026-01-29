@@ -591,17 +591,13 @@ class TestCountOperations:
 
         assert await task_registry.get_count_by_status(TaskStatus.PENDING) == 1
         assert await task_registry.get_count_by_status(TaskStatus.RUNNING) == 2
-        assert (
-            await task_registry.get_count_by_status(TaskStatus.COMPLETED) == 2
-        )
+        assert await task_registry.get_count_by_status(TaskStatus.COMPLETED) == 2
         assert await task_registry.get_count_by_status(TaskStatus.FAILED) == 0
 
     async def test_get_count_by_status_empty(self, task_registry):
         """Test counting by status when no tasks exist."""
         assert await task_registry.get_count_by_status(TaskStatus.PENDING) == 0
-        assert (
-            await task_registry.get_count_by_status(TaskStatus.COMPLETED) == 0
-        )
+        assert await task_registry.get_count_by_status(TaskStatus.COMPLETED) == 0
 
 
 # ============================================================================

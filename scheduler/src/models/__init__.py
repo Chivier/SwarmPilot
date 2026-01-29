@@ -16,11 +16,11 @@ from src.models.requests import (
     InstanceRedeployRequest,
     InstanceRegisterRequest,
     InstanceRemoveRequest,
+    ProxyTaskSubmitRequest,
     StrategySetRequest,
     TaskMetadataUpdate,
     TaskResubmitRequest,
     TaskResultCallbackRequest,
-    ProxyTaskSubmitRequest,
     TaskSubmitRequest,
     TaskUpdateMetadataRequest,
 )
@@ -55,7 +55,12 @@ from src.models.responses import (
     TaskUpdateMetadataResponse,
     TaskUpdateMetadataResult,
 )
-from src.models.status import InstanceStatus, StrategyType, TaskStatus, WSMessageType
+from src.models.status import (
+    InstanceStatus,
+    StrategyType,
+    TaskStatus,
+    WSMessageType,
+)
 from src.models.websocket import (
     WSAckMessage,
     WSErrorMessage,

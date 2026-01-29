@@ -5,8 +5,6 @@ These tests define the expected behavior before implementation.
 """
 
 import time
-from queue import Empty
-from threading import Event
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -18,7 +16,6 @@ from src.services.worker_queue_thread import (
     TaskResult,
     WorkerQueueThread,
 )
-
 
 # ============================================================================
 # QueuedTask Dataclass Tests
@@ -133,9 +130,7 @@ class TestWorkerQueueThreadBasic:
         assert worker_thread.queue_size() == 0
         assert not worker_thread.has_running_task()
 
-    def test_start_and_stop_empty_queue(
-        self, worker_thread: WorkerQueueThread
-    ) -> None:
+    def test_start_and_stop_empty_queue(self, worker_thread: WorkerQueueThread) -> None:
         """Test starting and stopping with empty queue."""
         worker_thread.start()
 
@@ -155,9 +150,7 @@ class TestWorkerQueueThreadBasic:
         finally:
             worker_thread.stop()
 
-    def test_enqueue_returns_queue_size(
-        self, worker_thread: WorkerQueueThread
-    ) -> None:
+    def test_enqueue_returns_queue_size(self, worker_thread: WorkerQueueThread) -> None:
         """Test that enqueue returns current queue size."""
         task1 = QueuedTask(
             task_id="task-1",

@@ -164,11 +164,11 @@ class TestLoadConfigFile:
             # Mock the import to raise ImportError
             with patch(
                 "builtins.__import__",
-                side_effect=lambda name, *args, **kwargs: (_ for _ in ()).throw(
-                    ImportError(f"No module named '{name}'")
-                )
-                if name == "yaml"
-                else __import__(name, *args, **kwargs),
+                side_effect=lambda name, *args, **kwargs: (
+                    (_ for _ in ()).throw(ImportError(f"No module named '{name}'"))
+                    if name == "yaml"
+                    else __import__(name, *args, **kwargs)
+                ),
             ):
                 with pytest.raises(Exception) as exc_info:
                     load_config_file(yaml_file)
@@ -192,8 +192,6 @@ class TestApplyConfig:
         env_vars = [
             "SCHEDULER_HOST",
             "SCHEDULER_PORT",
-            "PREDICTOR_URL",
-            "PREDICTOR_TIMEOUT",
             "SCHEDULING_STRATEGY",
             "TRAINING_ENABLE_AUTO",
             "TRAINING_BATCH_SIZE",
@@ -204,7 +202,6 @@ class TestApplyConfig:
 
         config = {
             "server": {"host": "0.0.0.0", "port": 8080},
-            "predictor": {"url": "http://predictor:8000", "timeout": 30.0},
             "scheduling": {"strategy": "probabilistic"},
             "training": {"enable_auto": True, "batch_size": 100},
             "logging": {"level": "INFO"},
@@ -216,8 +213,6 @@ class TestApplyConfig:
 
         assert os.environ["SCHEDULER_HOST"] == "0.0.0.0"
         assert os.environ["SCHEDULER_PORT"] == "8080"
-        assert os.environ["PREDICTOR_URL"] == "http://predictor:8000"
-        assert os.environ["PREDICTOR_TIMEOUT"] == "30.0"
         assert os.environ["SCHEDULING_STRATEGY"] == "probabilistic"
         assert os.environ["TRAINING_ENABLE_AUTO"] == "True"
         assert os.environ["TRAINING_BATCH_SIZE"] == "100"
@@ -225,15 +220,15 @@ class TestApplyConfig:
 
     def test_nested_config_navigation(self, monkeypatch):
         """Test navigation through nested configuration dictionaries."""
-        monkeypatch.delenv("PREDICTOR_URL", raising=False)
+        monkeypatch.delenv("SCHEDULING_STRATEGY", raising=False)
 
-        config = {"predictor": {"url": "http://custom:9000"}}
+        config = {"scheduling": {"strategy": "round_robin"}}
 
         apply_config(config, None, None)
 
         import os
 
-        assert os.environ["PREDICTOR_URL"] == "http://custom:9000"
+        assert os.environ["SCHEDULING_STRATEGY"] == "round_robin"
 
     def test_command_line_overrides_config(self, monkeypatch):
         """Test that command-line arguments override config file values."""
@@ -252,9 +247,9 @@ class TestApplyConfig:
 
     def test_skip_missing_keys(self, monkeypatch):
         """Test that missing configuration keys are skipped gracefully."""
-        monkeypatch.delenv("PREDICTOR_URL", raising=False)
+        monkeypatch.delenv("SCHEDULING_STRATEGY", raising=False)
 
-        # Config missing predictor.url
+        # Config missing scheduling.strategy
         config = {"server": {"host": "0.0.0.0"}}
 
         apply_config(config, None, None)
@@ -262,7 +257,7 @@ class TestApplyConfig:
         import os
 
         # Should not raise an error, just skip the missing key
-        assert "PREDICTOR_URL" not in os.environ
+        assert "SCHEDULING_STRATEGY" not in os.environ
         assert os.environ["SCHEDULER_HOST"] == "0.0.0.0"
 
     def test_environment_already_set(self, monkeypatch):
@@ -311,9 +306,7 @@ class TestStartCommand:
             assert call_args[1]["port"]  # Some port value
             assert "src.api:app" in call_args[0]
 
-    def test_start_with_config_file(
-        self, runner, temp_config_files, monkeypatch
-    ):
+    def test_start_with_config_file(self, runner, temp_config_files, monkeypatch):
         """Test starting with configuration file."""
         with patch("src.cli.uvicorn.run") as mock_run:
             result = runner.invoke(

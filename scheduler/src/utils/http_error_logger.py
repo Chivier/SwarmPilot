@@ -76,10 +76,7 @@ def _truncate_body(body: str | bytes | dict[str, Any] | None) -> str:
         body_str = str(body)
 
     if len(body_str) > MAX_BODY_LENGTH:
-        return (
-            body_str[:MAX_BODY_LENGTH]
-            + f"... [truncated, {len(body_str)} total]"
-        )
+        return body_str[:MAX_BODY_LENGTH] + f"... [truncated, {len(body_str)} total]"
 
     return body_str
 
@@ -161,9 +158,7 @@ def log_http_error(
 
     # Request details
     if request_method or request_url:
-        parts.append(
-            f"\n  Request: {request_method or '?'} {request_url or '?'}"
-        )
+        parts.append(f"\n  Request: {request_method or '?'} {request_url or '?'}")
 
     # Sanitized headers
     if request_headers:

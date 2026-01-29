@@ -109,9 +109,7 @@ class TestPlannerReporterStart:
 
         with patch("src.utils.planner_reporter.logger") as mock_logger:
             await reporter.start()
-            mock_logger.warning.assert_called_with(
-                "Planner reporter already running"
-            )
+            mock_logger.warning.assert_called_with("Planner reporter already running")
 
         # Cleanup
         await reporter.shutdown()
@@ -215,9 +213,7 @@ class TestPlannerReporterReportLoop:
                 raise Exception("Test error")
             # Second call succeeds silently
 
-        with patch.object(
-            reporter, "_report_to_planner", side_effect=side_effect
-        ):
+        with patch.object(reporter, "_report_to_planner", side_effect=side_effect):
             await reporter.start()
             await asyncio.sleep(0.15)  # Let it run a couple cycles
             await reporter.shutdown()
@@ -265,9 +261,7 @@ class TestPlannerReporterReportToPlanner:
         assert call_args[1]["json"]["value"] == 10.0  # 5 pending + 5 running
 
     @pytest.mark.asyncio
-    async def test_report_to_planner_http_status_error(
-        self, reporter, mock_registry
-    ):
+    async def test_report_to_planner_http_status_error(self, reporter, mock_registry):
         """Test handling of HTTP status error."""
         mock_response = MagicMock()
         mock_response.status_code = 500
@@ -410,9 +404,7 @@ class TestPlannerReporterReportThroughput:
         assert all("/submit_throughput" in url for url in urls)
 
     @pytest.mark.asyncio
-    async def test_report_throughput_http_error_continues(
-        self, reporter, mock_tracker
-    ):
+    async def test_report_throughput_http_error_continues(self, reporter, mock_tracker):
         """Test throughput reporting continues after HTTP error."""
         call_count = 0
 

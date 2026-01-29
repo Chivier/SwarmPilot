@@ -10,20 +10,13 @@ from dataclasses import dataclass
 
 @dataclass
 class PredictorConfig:
-    """Configuration for predictor service integration."""
+    """Configuration for predictor service integration (library mode)."""
 
-    # Mode: "library" (direct import) or "http" (HTTP API)
-    mode: str = os.getenv("PREDICTOR_MODE", "library")
-
-    # Library mode settings
+    # Model storage directory
     storage_dir: str = os.getenv("PREDICTOR_STORAGE_DIR", "models")
-    cache_max_size: int = int(os.getenv("PREDICTOR_CACHE_MAX_SIZE", "100"))
 
-    # HTTP mode settings (only used when mode="http")
-    url: str = os.getenv("PREDICTOR_URL", "http://localhost:8001")
-    timeout: float = float(os.getenv("PREDICTOR_TIMEOUT", "5.0"))
-    max_retries: int = int(os.getenv("PREDICTOR_MAX_RETRIES", "3"))
-    retry_delay: float = float(os.getenv("PREDICTOR_RETRY_DELAY", "1.0"))
+    # Maximum number of models to cache in memory
+    cache_max_size: int = int(os.getenv("PREDICTOR_CACHE_MAX_SIZE", "100"))
 
 
 @dataclass
@@ -52,9 +45,7 @@ class TrainingConfig:
     batch_size: int = int(os.getenv("TRAINING_BATCH_SIZE", "100"))
 
     # Training frequency in seconds
-    frequency_seconds: int = int(
-        os.getenv("TRAINING_FREQUENCY", "3600")
-    )  # 1 hour
+    frequency_seconds: int = int(os.getenv("TRAINING_FREQUENCY", "3600"))  # 1 hour
 
     # Minimum samples required before training
     min_samples: int = int(os.getenv("TRAINING_MIN_SAMPLES", "10"))
@@ -66,9 +57,7 @@ class TrainingConfig:
     def __post_init__(self):
         """Parse prediction_types from environment variable."""
         if self.prediction_types is None:
-            env_types = os.getenv(
-                "TRAINING_PREDICTION_TYPES", "expect_error,quantile"
-            )
+            env_types = os.getenv("TRAINING_PREDICTION_TYPES", "expect_error,quantile")
             self.prediction_types = [
                 t.strip() for t in env_types.split(",") if t.strip()
             ]
@@ -101,9 +90,7 @@ class ServerConfig:
     port: int = int(os.getenv("SCHEDULER_PORT", "8000"))
 
     # Enable CORS
-    enable_cors: bool = (
-        os.getenv("SCHEDULER_ENABLE_CORS", "true").lower() == "true"
-    )
+    enable_cors: bool = os.getenv("SCHEDULER_ENABLE_CORS", "true").lower() == "true"
 
     # API version
     version: str = "1.0.0"
@@ -137,9 +124,7 @@ class ProxyConfig:
     timeout: float = float(os.getenv("PROXY_TIMEOUT", "300.0"))
 
     # HTTP timeout for worker queue threads
-    worker_http_timeout: float = float(
-        os.getenv("WORKER_HTTP_TIMEOUT", "300.0")
-    )
+    worker_http_timeout: float = float(os.getenv("WORKER_HTTP_TIMEOUT", "300.0"))
 
 
 @dataclass
@@ -161,19 +146,13 @@ class PlannerRegistrationConfig:
     self_url: str = os.getenv("SCHEDULER_SELF_URL", "")
 
     # Request timeout for registration calls
-    timeout: float = float(
-        os.getenv("PLANNER_REGISTRATION_TIMEOUT", "10.0")
-    )
+    timeout: float = float(os.getenv("PLANNER_REGISTRATION_TIMEOUT", "10.0"))
 
     # Max retries for registration
-    max_retries: int = int(
-        os.getenv("PLANNER_REGISTRATION_MAX_RETRIES", "3")
-    )
+    max_retries: int = int(os.getenv("PLANNER_REGISTRATION_MAX_RETRIES", "3"))
 
     # Delay between retries in seconds
-    retry_delay: float = float(
-        os.getenv("PLANNER_REGISTRATION_RETRY_DELAY", "5.0")
-    )
+    retry_delay: float = float(os.getenv("PLANNER_REGISTRATION_RETRY_DELAY", "5.0"))
 
     @property
     def enabled(self) -> bool:
@@ -216,7 +195,7 @@ class Config:
         """Return string representation hiding sensitive info."""
         return (
             f"Config(\n"
-            f"  predictor=PredictorConfig(mode='{self.predictor.mode}', ...),\n"
+            f"  predictor=PredictorConfig(storage_dir='{self.predictor.storage_dir}'),\n"
             f"  scheduling=SchedulingConfig(strategy='{self.scheduling.default_strategy}'),\n"
             f"  training=TrainingConfig(auto={self.training.enable_auto_training}),\n"
             f"  logging=LoggingConfig(level='{self.logging.level}'),\n"

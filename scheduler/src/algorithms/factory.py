@@ -16,8 +16,8 @@ from src.algorithms.serverless import MinimumExpectedTimeServerlessStrategy
 
 if TYPE_CHECKING:
     from src.algorithms.base import SchedulingStrategy
+    from src.clients.predictor_library_client import PredictorClient
     from src.registry.instance_registry import InstanceRegistry
-    from src.clients.predictor_client import PredictorClient
 
 
 def get_strategy(
@@ -43,13 +43,9 @@ def get_strategy(
     if strategy_name == "min_time":
         return MinimumExpectedTimeStrategy(predictor_client, instance_registry)
     elif strategy_name == "min_time_lr":
-        return MinimumExpectedTimeLRStrategy(
-            predictor_client, instance_registry
-        )
+        return MinimumExpectedTimeLRStrategy(predictor_client, instance_registry)
     elif strategy_name == "min_time_dt":
-        return MinimumExpectedTimeDTStrategy(
-            predictor_client, instance_registry
-        )
+        return MinimumExpectedTimeDTStrategy(predictor_client, instance_registry)
     elif strategy_name == "probabilistic":
         return ProbabilisticSchedulingStrategy(
             predictor_client, instance_registry, target_quantile=target_quantile

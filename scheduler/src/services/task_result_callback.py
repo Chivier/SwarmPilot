@@ -12,7 +12,8 @@ Key features:
 """
 
 import asyncio
-from typing import TYPE_CHECKING, Callable
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 from loguru import logger
 
@@ -101,9 +102,7 @@ class TaskResultCallback:
             ValueError: If a Future is already registered for this task_id.
         """
         if task_id in self._futures:
-            raise ValueError(
-                f"Future already registered for task {task_id}"
-            )
+            raise ValueError(f"Future already registered for task {task_id}")
 
         loop = self._loop or asyncio.get_running_loop()
         future: asyncio.Future = loop.create_future()
@@ -251,9 +250,7 @@ class TaskResultCallback:
 
         # Update instance statistics
         if instance:
-            await self.instance_registry.increment_completed(
-                instance.instance_id
-            )
+            await self.instance_registry.increment_completed(instance.instance_id)
 
         # Record throughput for planner
         if self.throughput_tracker and instance:

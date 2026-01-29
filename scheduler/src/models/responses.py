@@ -8,9 +8,11 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from src.models.core import Instance, InstanceStats, TaskTimestamps
-from src.models.queue import InstanceQueueExpectError, InstanceQueueProbabilistic
+from src.models.queue import (
+    InstanceQueueExpectError,
+    InstanceQueueProbabilistic,
+)
 from src.models.status import InstanceStatus, TaskStatus
-
 
 # ============================================================================
 # Common Response Models
@@ -217,9 +219,7 @@ class TaskUpdateMetadataResult(BaseModel):
 class TaskUpdateMetadataResponse(BaseModel):
     """Response model for batch task metadata update."""
 
-    success: bool = Field(
-        ..., description="Overall success (true if no failures)"
-    )
+    success: bool = Field(..., description="Overall success (true if no failures)")
     message: str = Field(..., description="Summary message")
     total: int = Field(..., description="Total number of updates requested")
     succeeded: int = Field(..., description="Number of successful updates")
@@ -236,9 +236,7 @@ class TaskUpdateMetadataResponse(BaseModel):
 class TaskRepredictResponse(BaseModel):
     """Response model for batch task re-prediction (summary only, no per-task details)."""
 
-    success: bool = Field(
-        ..., description="Overall success (true if no failures)"
-    )
+    success: bool = Field(..., description="Overall success (true if no failures)")
     message: str = Field(..., description="Summary message")
     total_tasks: int = Field(..., description="Total tasks in registry")
     eligible_tasks: int = Field(
@@ -248,9 +246,7 @@ class TaskRepredictResponse(BaseModel):
     repredicted: int = Field(
         ..., description="Number of successfully re-predicted tasks"
     )
-    failed: int = Field(
-        ..., description="Number of tasks that failed re-prediction"
-    )
+    failed: int = Field(..., description="Number of tasks that failed re-prediction")
     skipped: int = Field(
         ...,
         description="Number of skipped tasks (COMPLETED/FAILED/not in queue)",
@@ -261,16 +257,12 @@ class TaskScheduleInfo(BaseModel):
     """Schedule information for a single task."""
 
     task_id: str = Field(..., description="Unique task identifier")
-    model_id: str = Field(
-        ..., description="Model ID the task is associated with"
-    )
+    model_id: str = Field(..., description="Model ID the task is associated with")
     status: TaskStatus = Field(..., description="Current task status")
     assigned_instance: str = Field(
         ..., description="Instance ID the task was scheduled to"
     )
-    submitted_at: str = Field(
-        ..., description="ISO timestamp when task was submitted"
-    )
+    submitted_at: str = Field(..., description="ISO timestamp when task was submitted")
 
 
 class TaskScheduleInfoResponse(BaseModel):
@@ -280,9 +272,7 @@ class TaskScheduleInfoResponse(BaseModel):
         default=True, description="Whether the request was successful"
     )
     count: int = Field(..., description="Number of tasks in this response")
-    total: int = Field(
-        ..., description="Total number of tasks matching the filter"
-    )
+    total: int = Field(..., description="Total number of tasks matching the filter")
     tasks: list[TaskScheduleInfo] = Field(
         default_factory=list, description="List of task scheduling information"
     )

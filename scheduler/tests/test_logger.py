@@ -70,7 +70,6 @@ class TestSetupLogger:
         """Test setup_logger with JSON logs enabled (line 86)."""
         from loguru import logger
 
-
         # Create a temporary log directory
         log_dir = tmp_path / "logs"
 

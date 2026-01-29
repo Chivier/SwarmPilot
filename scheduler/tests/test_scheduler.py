@@ -3,18 +3,17 @@
 Tests all scheduling strategies and the factory function.
 """
 
-from unittest.mock import MagicMock
 
 import pytest
 
-from src.model import InstanceQueueExpectError, InstanceQueueProbabilistic
-from src.clients.predictor_client import Prediction
 from src.algorithms import (
     MinimumExpectedTimeStrategy,
     ProbabilisticSchedulingStrategy,
     RoundRobinStrategy,
     get_strategy,
 )
+from src.clients.models import Prediction
+from src.model import InstanceQueueExpectError, InstanceQueueProbabilistic
 
 # ============================================================================
 # MinimumExpectedTimeStrategy Tests
@@ -28,9 +27,7 @@ class TestMinimumExpectedTimeStrategy:
         self, mock_predictor_client, instance_registry
     ):
         """Test selecting instance with minimum predicted time (no queue)."""
-        strategy = MinimumExpectedTimeStrategy(
-            mock_predictor_client, instance_registry
-        )
+        strategy = MinimumExpectedTimeStrategy(mock_predictor_client, instance_registry)
 
         predictions = [
             Prediction(
@@ -69,9 +66,7 @@ class TestMinimumExpectedTimeStrategy:
         self, mock_predictor_client, instance_registry
     ):
         """Test selecting instance considering queue state."""
-        strategy = MinimumExpectedTimeStrategy(
-            mock_predictor_client, instance_registry
-        )
+        strategy = MinimumExpectedTimeStrategy(mock_predictor_client, instance_registry)
 
         predictions = [
             Prediction(
@@ -118,9 +113,7 @@ class TestMinimumExpectedTimeStrategy:
         self, mock_predictor_client, instance_registry
     ):
         """Test selection with empty predictions list."""
-        strategy = MinimumExpectedTimeStrategy(
-            mock_predictor_client, instance_registry
-        )
+        strategy = MinimumExpectedTimeStrategy(mock_predictor_client, instance_registry)
 
         selected = strategy.select_instance([], {})
         assert selected is None
@@ -129,9 +122,7 @@ class TestMinimumExpectedTimeStrategy:
         self, mock_predictor_client, instance_registry
     ):
         """Test selection with single prediction."""
-        strategy = MinimumExpectedTimeStrategy(
-            mock_predictor_client, instance_registry
-        )
+        strategy = MinimumExpectedTimeStrategy(mock_predictor_client, instance_registry)
 
         predictions = [
             Prediction(
@@ -203,9 +194,7 @@ class TestProbabilisticSchedulingStrategy:
         selected = strategy.select_instance(predictions, {})
         assert selected in ["inst-1", "inst-2", "inst-3"]
 
-    async def test_select_empty_list(
-        self, mock_predictor_client, instance_registry
-    ):
+    async def test_select_empty_list(self, mock_predictor_client, instance_registry):
         """Test selection with empty predictions list."""
         strategy = ProbabilisticSchedulingStrategy(
             mock_predictor_client, instance_registry
@@ -214,9 +203,7 @@ class TestProbabilisticSchedulingStrategy:
         selected = strategy.select_instance([], {})
         assert selected is None
 
-    async def test_fallback_to_min_time(
-        self, mock_predictor_client, instance_registry
-    ):
+    async def test_fallback_to_min_time(self, mock_predictor_client, instance_registry):
         """Test fallback to minimum expected time when quantile not available."""
         strategy = ProbabilisticSchedulingStrategy(
             mock_predictor_client, instance_registry
@@ -263,9 +250,7 @@ class TestProbabilisticSchedulingStrategy:
         selected = strategy.select_instance(predictions, {})
         assert selected in ["inst-1", "inst-2", "inst-3"]
 
-    async def test_quantile_not_in_dict(
-        self, mock_predictor_client, instance_registry
-    ):
+    async def test_quantile_not_in_dict(self, mock_predictor_client, instance_registry):
         """Test when quantiles exist but target quantile not in them."""
         strategy = ProbabilisticSchedulingStrategy(
             mock_predictor_client, instance_registry
@@ -380,9 +365,7 @@ class TestProbabilisticSchedulingStrategy:
 class TestRoundRobinStrategy:
     """Tests for RoundRobinStrategy."""
 
-    async def test_round_robin_cycling(
-        self, mock_predictor_client, instance_registry
-    ):
+    async def test_round_robin_cycling(self, mock_predictor_client, instance_registry):
         """Test that strategy cycles through instances."""
         strategy = RoundRobinStrategy(mock_predictor_client, instance_registry)
 
@@ -464,12 +447,8 @@ class TestRoundRobinStrategy:
             Prediction(instance_id="inst-3", predicted_time_ms=100.0),
         ]
 
-        strategy.select_instance(
-            predictions_3, {}
-        )  # counter = 0, select inst-1
-        strategy.select_instance(
-            predictions_3, {}
-        )  # counter = 1, select inst-2
+        strategy.select_instance(predictions_3, {})  # counter = 0, select inst-1
+        strategy.select_instance(predictions_3, {})  # counter = 1, select inst-2
 
         # Now use 2 instances
         predictions_2 = [
@@ -494,9 +473,7 @@ class TestGetStrategy:
         self, mock_predictor_client, instance_registry
     ):
         """Test getting MinimumExpectedTimeStrategy."""
-        strategy = get_strategy(
-            "min_time", mock_predictor_client, instance_registry
-        )
+        strategy = get_strategy("min_time", mock_predictor_client, instance_registry)
         assert isinstance(strategy, MinimumExpectedTimeStrategy)
 
     async def test_get_probabilistic_strategy(
@@ -512,9 +489,7 @@ class TestGetStrategy:
         self, mock_predictor_client, instance_registry
     ):
         """Test getting RoundRobinStrategy."""
-        strategy = get_strategy(
-            "round_robin", mock_predictor_client, instance_registry
-        )
+        strategy = get_strategy("round_robin", mock_predictor_client, instance_registry)
         assert isinstance(strategy, RoundRobinStrategy)
 
     async def test_unknown_strategy_defaults_to_probabilistic(
@@ -526,14 +501,10 @@ class TestGetStrategy:
         )
         assert isinstance(strategy, ProbabilisticSchedulingStrategy)
 
-    async def test_case_sensitivity(
-        self, mock_predictor_client, instance_registry
-    ):
+    async def test_case_sensitivity(self, mock_predictor_client, instance_registry):
         """Test that strategy names are case-sensitive."""
         # "MIN_TIME" should not match "min_time"
-        strategy = get_strategy(
-            "MIN_TIME", mock_predictor_client, instance_registry
-        )
+        strategy = get_strategy("MIN_TIME", mock_predictor_client, instance_registry)
         # Should default to probabilistic
         assert isinstance(strategy, ProbabilisticSchedulingStrategy)
 
@@ -546,15 +517,11 @@ class TestGetStrategy:
 class TestMinimumExpectedTimeStrategyUpdate:
     """Additional tests for MinimumExpectedTimeStrategy update_queue."""
 
-    async def test_update_queue_success(
-        self, mock_predictor_client, instance_registry
-    ):
+    async def test_update_queue_success(self, mock_predictor_client, instance_registry):
         """Test successful queue update with error accumulation."""
         from src.model import Instance, InstanceQueueExpectError
 
-        strategy = MinimumExpectedTimeStrategy(
-            mock_predictor_client, instance_registry
-        )
+        strategy = MinimumExpectedTimeStrategy(mock_predictor_client, instance_registry)
 
         # Register an instance with initial queue state
         instance = Instance(
@@ -600,9 +567,7 @@ class TestMinimumExpectedTimeStrategyUpdate:
             Instance,
         )
 
-        strategy = MinimumExpectedTimeStrategy(
-            mock_predictor_client, instance_registry
-        )
+        strategy = MinimumExpectedTimeStrategy(mock_predictor_client, instance_registry)
 
         # Register instance with probabilistic queue (wrong type)
         instance = Instance(
@@ -690,8 +655,7 @@ class TestProbabilisticStrategyUpdate:
         assert isinstance(updated_queue, InstanceQueueProbabilistic)
         # Values should be sum of queue + task samples
         assert all(
-            v > initial_queue.values[i]
-            for i, v in enumerate(updated_queue.values)
+            v > initial_queue.values[i] for i, v in enumerate(updated_queue.values)
         )
 
     async def test_update_queue_without_quantiles(
@@ -881,26 +845,24 @@ class TestProbabilisticStrategyUpdate:
 
 
 class TestSchedulingStrategyErrors:
-    """Tests for error handling in scheduling strategies."""
+    """Tests for error handling in scheduling strategies.
 
-    async def test_get_predictions_http_404_error(
+    The library predictor client raises standard Python exceptions
+    (ValueError, ConnectionError, TimeoutError) directly. These
+    propagate through get_predictions() without conversion.
+    """
+
+    async def test_get_predictions_model_not_found(
         self, mock_predictor_client, instance_registry
     ):
-        """Test get_predictions with HTTP 404 error (model not found)."""
-        import httpx
-
+        """Test get_predictions when model is not found."""
         from src.model import Instance
 
-        strategy = MinimumExpectedTimeStrategy(
-            mock_predictor_client, instance_registry
-        )
+        strategy = MinimumExpectedTimeStrategy(mock_predictor_client, instance_registry)
 
-        # Mock predictor to raise HTTP 404 error
-        response_mock = MagicMock()
-        response_mock.status_code = 404
-        response_mock.text = "Model not found"
-        mock_predictor_client.predict.side_effect = httpx.HTTPStatusError(
-            "404 Not Found", request=MagicMock(), response=response_mock
+        # Library client raises ValueError for model not found
+        mock_predictor_client.predict.side_effect = ValueError(
+            "No trained model for model-1"
         )
 
         instances = [
@@ -916,28 +878,20 @@ class TestSchedulingStrategyErrors:
             )
         ]
 
-        # Should raise ValueError
         with pytest.raises(ValueError, match="No trained model"):
             await strategy.get_predictions("model-1", {}, instances)
 
-    async def test_get_predictions_http_400_error(
+    async def test_get_predictions_invalid_metadata(
         self, mock_predictor_client, instance_registry
     ):
-        """Test get_predictions with HTTP 400 error (invalid metadata)."""
-        import httpx
-
+        """Test get_predictions with invalid metadata."""
         from src.model import Instance
 
-        strategy = MinimumExpectedTimeStrategy(
-            mock_predictor_client, instance_registry
-        )
+        strategy = MinimumExpectedTimeStrategy(mock_predictor_client, instance_registry)
 
-        # Mock predictor to raise HTTP 400 error
-        response_mock = MagicMock()
-        response_mock.status_code = 400
-        response_mock.text = "Invalid metadata"
-        mock_predictor_client.predict.side_effect = httpx.HTTPStatusError(
-            "400 Bad Request", request=MagicMock(), response=response_mock
+        # Library client raises ValueError for invalid features
+        mock_predictor_client.predict.side_effect = ValueError(
+            "Invalid task metadata: missing required features"
         )
 
         instances = [
@@ -953,126 +907,14 @@ class TestSchedulingStrategyErrors:
             )
         ]
 
-        # Should raise ValueError
         with pytest.raises(ValueError, match="Invalid task metadata"):
-            await strategy.get_predictions("model-1", {}, instances)
-
-    async def test_get_predictions_http_500_error(
-        self, mock_predictor_client, instance_registry
-    ):
-        """Test get_predictions with HTTP 500 error (server error)."""
-        import httpx
-
-        from src.model import Instance
-
-        strategy = MinimumExpectedTimeStrategy(
-            mock_predictor_client, instance_registry
-        )
-
-        # Mock predictor to raise HTTP 500 error
-        response_mock = MagicMock()
-        response_mock.status_code = 500
-        response_mock.text = "Internal server error"
-        mock_predictor_client.predict.side_effect = httpx.HTTPStatusError(
-            "500 Internal Server Error",
-            request=MagicMock(),
-            response=response_mock,
-        )
-
-        instances = [
-            Instance(
-                instance_id="inst-1",
-                model_id="model-1",
-                endpoint="http://localhost:8001",
-                platform_info={
-                    "software_name": "docker",
-                    "software_version": "20.10",
-                    "hardware_name": "test",
-                },
-            )
-        ]
-
-        # Should raise ConnectionError
-        with pytest.raises(ConnectionError, match="Predictor service error"):
-            await strategy.get_predictions("model-1", {}, instances)
-
-    async def test_get_predictions_timeout_error(
-        self, mock_predictor_client, instance_registry
-    ):
-        """Test get_predictions with timeout error."""
-        import httpx
-
-        from src.model import Instance
-
-        strategy = MinimumExpectedTimeStrategy(
-            mock_predictor_client, instance_registry
-        )
-
-        # Mock predictor to raise timeout
-        mock_predictor_client.predict.side_effect = httpx.TimeoutException(
-            "Request timeout"
-        )
-
-        instances = [
-            Instance(
-                instance_id="inst-1",
-                model_id="model-1",
-                endpoint="http://localhost:8001",
-                platform_info={
-                    "software_name": "docker",
-                    "software_version": "20.10",
-                    "hardware_name": "test",
-                },
-            )
-        ]
-
-        # Should raise TimeoutError
-        with pytest.raises(TimeoutError, match="Predictor service timeout"):
-            await strategy.get_predictions("model-1", {}, instances)
-
-    async def test_get_predictions_connection_error(
-        self, mock_predictor_client, instance_registry
-    ):
-        """Test get_predictions with connection error."""
-        import httpx
-
-        from src.model import Instance
-
-        strategy = MinimumExpectedTimeStrategy(
-            mock_predictor_client, instance_registry
-        )
-
-        # Mock predictor to raise connection error
-        mock_predictor_client.predict.side_effect = httpx.ConnectError(
-            "Connection refused"
-        )
-
-        instances = [
-            Instance(
-                instance_id="inst-1",
-                model_id="model-1",
-                endpoint="http://localhost:8001",
-                platform_info={
-                    "software_name": "docker",
-                    "software_version": "20.10",
-                    "hardware_name": "test",
-                },
-            )
-        ]
-
-        # Should raise ConnectionError
-        with pytest.raises(
-            ConnectionError, match="Predictor service unavailable"
-        ):
             await strategy.get_predictions("model-1", {}, instances)
 
 
 class TestRoundRobinStrategyUpdate:
     """Additional tests for RoundRobinStrategy."""
 
-    async def test_update_queue_noop(
-        self, mock_predictor_client, instance_registry
-    ):
+    async def test_update_queue_noop(self, mock_predictor_client, instance_registry):
         """Test that RoundRobinStrategy update_queue is a no-op."""
         from src.model import Instance
 
@@ -1128,9 +970,7 @@ class TestRoundRobinStrategySelect:
         """Test select_instance with single prediction."""
         strategy = RoundRobinStrategy(mock_predictor_client, instance_registry)
 
-        predictions = [
-            Prediction(instance_id="inst-1", predicted_time_ms=100.0)
-        ]
+        predictions = [Prediction(instance_id="inst-1", predicted_time_ms=100.0)]
 
         selected = strategy.select_instance(predictions, {})
         assert selected == "inst-1"
@@ -1232,8 +1072,8 @@ class TestPowerOfTwoStrategy:
         """Test update_queue updates queue with error accumulation."""
         import math
 
-        from src.model import Instance
         from src.algorithms import PowerOfTwoStrategy
+        from src.model import Instance
 
         strategy = PowerOfTwoStrategy(mock_predictor_client, instance_registry)
 
@@ -1358,8 +1198,8 @@ class TestMinimumExpectedTimeServerlessStrategy:
         """Test update_queue updates queue with error accumulation."""
         import math
 
-        from src.model import Instance
         from src.algorithms import MinimumExpectedTimeServerlessStrategy
+        from src.model import Instance
 
         strategy = MinimumExpectedTimeServerlessStrategy(
             mock_predictor_client, instance_registry
@@ -1403,8 +1243,8 @@ class TestMinimumExpectedTimeServerlessStrategy:
         self, mock_predictor_client, instance_registry
     ):
         """Test update_queue skips when queue type is wrong (line 929-936)."""
-        from src.model import Instance
         from src.algorithms import MinimumExpectedTimeServerlessStrategy
+        from src.model import Instance
 
         strategy = MinimumExpectedTimeServerlessStrategy(
             mock_predictor_client, instance_registry
@@ -1448,9 +1288,7 @@ class TestMinimumExpectedTimeServerlessStrategy:
 class TestMinimumExpectedTimeLRStrategy:
     """Tests for MinimumExpectedTimeLRStrategy."""
 
-    async def test_get_prediction_type(
-        self, mock_predictor_client, instance_registry
-    ):
+    async def test_get_prediction_type(self, mock_predictor_client, instance_registry):
         """Test get_prediction_type returns correct type."""
         from src.algorithms import MinimumExpectedTimeLRStrategy
 
@@ -1469,9 +1307,7 @@ class TestMinimumExpectedTimeLRStrategy:
 class TestMinimumExpectedTimeDTStrategy:
     """Tests for MinimumExpectedTimeDTStrategy."""
 
-    async def test_get_prediction_type(
-        self, mock_predictor_client, instance_registry
-    ):
+    async def test_get_prediction_type(self, mock_predictor_client, instance_registry):
         """Test get_prediction_type returns correct type."""
         from src.algorithms import MinimumExpectedTimeDTStrategy
 
@@ -1496,9 +1332,7 @@ class TestGetStrategyAdditional:
         """Test get_strategy returns MinimumExpectedTimeLRStrategy."""
         from src.algorithms import MinimumExpectedTimeLRStrategy
 
-        strategy = get_strategy(
-            "min_time_lr", mock_predictor_client, instance_registry
-        )
+        strategy = get_strategy("min_time_lr", mock_predictor_client, instance_registry)
 
         assert isinstance(strategy, MinimumExpectedTimeLRStrategy)
 
@@ -1508,27 +1342,19 @@ class TestGetStrategyAdditional:
         """Test get_strategy returns MinimumExpectedTimeDTStrategy."""
         from src.algorithms import MinimumExpectedTimeDTStrategy
 
-        strategy = get_strategy(
-            "min_time_dt", mock_predictor_client, instance_registry
-        )
+        strategy = get_strategy("min_time_dt", mock_predictor_client, instance_registry)
 
         assert isinstance(strategy, MinimumExpectedTimeDTStrategy)
 
-    async def test_get_random_strategy(
-        self, mock_predictor_client, instance_registry
-    ):
+    async def test_get_random_strategy(self, mock_predictor_client, instance_registry):
         """Test get_strategy returns RandomStrategy."""
         from src.algorithms import RandomStrategy
 
-        strategy = get_strategy(
-            "random", mock_predictor_client, instance_registry
-        )
+        strategy = get_strategy("random", mock_predictor_client, instance_registry)
 
         assert isinstance(strategy, RandomStrategy)
 
-    async def test_get_po2_strategy(
-        self, mock_predictor_client, instance_registry
-    ):
+    async def test_get_po2_strategy(self, mock_predictor_client, instance_registry):
         """Test get_strategy returns PowerOfTwoStrategy."""
         from src.algorithms import PowerOfTwoStrategy
 
@@ -1542,8 +1368,6 @@ class TestGetStrategyAdditional:
         """Test get_strategy returns MinimumExpectedTimeServerlessStrategy."""
         from src.algorithms import MinimumExpectedTimeServerlessStrategy
 
-        strategy = get_strategy(
-            "severless", mock_predictor_client, instance_registry
-        )
+        strategy = get_strategy("severless", mock_predictor_client, instance_registry)
 
         assert isinstance(strategy, MinimumExpectedTimeServerlessStrategy)

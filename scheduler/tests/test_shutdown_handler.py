@@ -4,7 +4,8 @@ Tests the shutdown handler that manages graceful shutdown of worker queues
 and task handling during scheduler shutdown.
 """
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 
 from src.services.shutdown_handler import (

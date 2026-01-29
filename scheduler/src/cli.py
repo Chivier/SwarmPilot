@@ -84,9 +84,6 @@ def apply_config(config_dict: dict, host: str | None, port: int | None) -> None:
     env_mappings = {
         "server.host": "SCHEDULER_HOST",
         "server.port": "SCHEDULER_PORT",
-        "predictor.url": "PREDICTOR_URL",
-        "predictor.timeout": "PREDICTOR_TIMEOUT",
-        "predictor.max_retries": "PREDICTOR_MAX_RETRIES",
         "scheduling.strategy": "SCHEDULING_STRATEGY",
         "training.enable_auto": "TRAINING_ENABLE_AUTO",
         "training.batch_size": "TRAINING_BATCH_SIZE",

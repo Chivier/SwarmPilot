@@ -28,11 +28,8 @@ from pyinstrument import Profiler
 from pyinstrument.renderers.html import HTMLRenderer
 from pyinstrument.renderers.speedscope import SpeedscopeRenderer
 
-# Import logger configuration to initialize loguru
-from .utils.logger import setup_logger  # noqa: F401
+from .algorithms import get_strategy
 from .config import config
-from .utils.http_error_logger import log_http_error
-from .registry.instance_registry import InstanceRegistry
 from .model import (
     # Health models
     HealthResponse,
@@ -86,17 +83,19 @@ from .model import (
     WSPongMessage,
     WSTaskResultMessage,
 )
-from .utils.planner_reporter import PlannerReporter
-from .clients.predictor_client import PredictorClient
-from .algorithms import get_strategy
+from .registry.instance_registry import InstanceRegistry
+from .registry.task_registry import TaskRegistry
+from .services.planner_registrar import PlannerRegistrar
 from .services.task_result_callback import TaskResultCallback
+from .services.websocket_manager import ConnectionManager
 from .services.worker_queue_manager import WorkerQueueManager
 from .services.worker_queue_thread import QueuedTask
-from .registry.task_registry import TaskRegistry
+from .utils.http_error_logger import log_http_error
+
+# Import logger configuration to initialize loguru
+from .utils.logger import setup_logger  # noqa: F401
+from .utils.planner_reporter import PlannerReporter
 from .utils.throughput_tracker import ThroughputTracker
-from .clients.training_client import TrainingClient
-from .services.planner_registrar import PlannerRegistrar
-from .services.websocket_manager import ConnectionManager
 
 random.seed(42)
 # ============================================================================
@@ -111,9 +110,7 @@ async def lifespan(app: FastAPI):
     logger.info("Scheduler service starting up...")
     logger.info(f"Configuration: {config}")
     logger.info(f"Scheduling strategy: {config.scheduling.default_strategy}")
-    logger.info(
-        f"Auto-training enabled: {config.training.enable_auto_training}"
-    )
+    logger.info(f"Auto-training enabled: {config.training.enable_auto_training}")
 
     # TODO: Load persisted state if needed
     # TODO: Connect to external services
@@ -247,45 +244,26 @@ websocket_manager = (
     ConnectionManager()
 )  # Client WebSocket for task result notifications
 
-# Initialize predictor and training clients based on mode
-if config.predictor.mode == "library":
-    from src.clients.predictor_library_client import LibraryPredictorClient
-    from src.clients.training_library_client import LibraryTrainingClient
+# Initialize predictor and training clients (library mode)
+from src.clients.predictor_library_client import PredictorClient
+from src.clients.training_library_client import TrainingClient
 
-    predictor_client = LibraryPredictorClient(
-        storage_dir=config.predictor.storage_dir,
-        cache_max_size=config.predictor.cache_max_size,
+predictor_client = PredictorClient(
+    storage_dir=config.predictor.storage_dir,
+    cache_max_size=config.predictor.cache_max_size,
+)
+training_client = (
+    TrainingClient(
+        storage=predictor_client._storage,
+        cache=predictor_client._cache,
+        batch_size=config.training.batch_size,
+        min_samples=config.training.min_samples,
+        prediction_types=config.training.prediction_types,
     )
-    training_client = (
-        LibraryTrainingClient(
-            storage=predictor_client._storage,
-            cache=predictor_client._cache,
-            batch_size=config.training.batch_size,
-            min_samples=config.training.min_samples,
-            prediction_types=config.training.prediction_types,
-        )
-        if config.training.enable_auto_training
-        else None
-    )
-    logger.info("Using library-based predictor client")
-else:
-    predictor_client = PredictorClient(
-        predictor_url=config.predictor.url,
-        timeout=config.predictor.timeout,
-        max_retries=config.predictor.max_retries,
-        retry_delay=config.predictor.retry_delay,
-    )
-    training_client = (
-        TrainingClient(
-            predictor_url=config.predictor.url,
-            batch_size=config.training.batch_size,
-            min_samples=config.training.min_samples,
-            prediction_types=config.training.prediction_types,
-        )
-        if config.training.enable_auto_training
-        else None
-    )
-    logger.info("Using HTTP-based predictor client")
+    if config.training.enable_auto_training
+    else None
+)
+logger.info("Predictor client initialized (library mode)")
 
 # Initialize scheduling strategy from configuration
 # Note: strategy now receives predictor_client and instance_registry dependencies
@@ -371,9 +349,7 @@ async def _subtract_task_from_queue_info(
 
     if isinstance(current_queue, InstanceQueueExpectError):
         # Subtract expected time, keep error margin unchanged
-        new_expected = max(
-            0.0, current_queue.expected_time_ms - predicted_time_ms
-        )
+        new_expected = max(0.0, current_queue.expected_time_ms - predicted_time_ms)
         updated_queue = InstanceQueueExpectError(
             instance_id=instance_id,
             expected_time_ms=new_expected,
@@ -401,9 +377,7 @@ async def _subtract_task_from_queue_info(
             # Sample from predicted task distribution
             task_quantiles = sorted(predicted_quantiles.keys())
             task_values = [predicted_quantiles[q] for q in task_quantiles]
-            task_samples = np.interp(
-                random_percentiles, task_quantiles, task_values
-            )
+            task_samples = np.interp(random_percentiles, task_quantiles, task_values)
 
             # Subtract task time from queue
             updated_samples = np.maximum(queue_samples - task_samples, 0.0)
@@ -491,9 +465,7 @@ async def _add_task_to_queue_info(
             # Sample from predicted task distribution
             task_quantiles = sorted(predicted_quantiles.keys())
             task_values = [predicted_quantiles[q] for q in task_quantiles]
-            task_samples = np.interp(
-                random_percentiles, task_quantiles, task_values
-            )
+            task_samples = np.interp(random_percentiles, task_quantiles, task_values)
 
             # Add task time to queue
             updated_samples = queue_samples + task_samples
@@ -505,9 +477,7 @@ async def _add_task_to_queue_info(
             ]
         else:
             # Fallback: simple addition for all quantiles
-            updated_values = [
-                v + predicted_time_ms for v in current_queue.values
-            ]
+            updated_values = [v + predicted_time_ms for v in current_queue.values]
 
         updated_queue = InstanceQueueProbabilistic(
             instance_id=instance_id,
@@ -555,9 +525,7 @@ async def _redistribute_tasks_on_registration(
     # Get the new instance from registry
     new_instance = await instance_registry.get(instance_id)
     if not new_instance:
-        logger.error(
-            f"[WorkStealing] Instance {instance_id} not found in registry"
-        )
+        logger.error(f"[WorkStealing] Instance {instance_id} not found in registry")
         return {
             "donors_selected": 0,
             "tasks_fetched": 0,
@@ -602,18 +570,10 @@ async def _redistribute_tasks_on_registration(
 
         # Step 2: Calculate how many donors to select based on total active tasks in scheduler
         # Active tasks = PENDING + RUNNING (not COMPLETED or FAILED)
-        pending_count = await task_registry.get_count_by_status(
-            TaskStatus.PENDING
-        )
-        running_count = await task_registry.get_count_by_status(
-            TaskStatus.RUNNING
-        )
-        completed_count = await task_registry.get_count_by_status(
-            TaskStatus.COMPLETED
-        )
-        failed_count = await task_registry.get_count_by_status(
-            TaskStatus.FAILED
-        )
+        pending_count = await task_registry.get_count_by_status(TaskStatus.PENDING)
+        running_count = await task_registry.get_count_by_status(TaskStatus.RUNNING)
+        completed_count = await task_registry.get_count_by_status(TaskStatus.COMPLETED)
+        failed_count = await task_registry.get_count_by_status(TaskStatus.FAILED)
         total_tasks = await task_registry.get_total_count()
         total_active_tasks = pending_count + running_count
 
@@ -697,9 +657,7 @@ async def _redistribute_tasks_on_registration(
                         "donor": donor,
                     }
                 else:
-                    logger.debug(
-                        f"Donor {donor.instance_id} had no fetchable tasks"
-                    )
+                    logger.debug(f"Donor {donor.instance_id} had no fetchable tasks")
                     return {"success": False, "has_task": False, "donor": donor}
 
             except httpx.HTTPStatusError as e:
@@ -753,9 +711,7 @@ async def _redistribute_tasks_on_registration(
                             predicted_error_margin_ms=task_data.get(
                                 "predicted_error_margin_ms"
                             ),
-                            predicted_quantiles=task_data.get(
-                                "predicted_quantiles"
-                            ),
+                            predicted_quantiles=task_data.get("predicted_quantiles"),
                         )
                         logger.debug(
                             f"Updated donor {donor.instance_id} queue_info after task steal "
@@ -781,9 +737,7 @@ async def _redistribute_tasks_on_registration(
         resubmitted_count = 0
         failed_resubmissions = []
         # Use scheduler's callback URL for the resubmitted tasks
-        redistribution_callback_url = (
-            f"{callback_base_url}/callback/task_result"
-        )
+        redistribution_callback_url = f"{callback_base_url}/callback/task_result"
 
         async with httpx.AsyncClient(timeout=60.0, verify=False) as client:
             for task_data in fetched_tasks:
@@ -791,8 +745,7 @@ async def _redistribute_tasks_on_registration(
                     # Prepare submission payload with preserved metadata
                     payload = {
                         "task_id": task_data["task_id"],
-                        "model_id": task_data["model_id"]
-                        or new_instance.model_id,
+                        "model_id": task_data["model_id"] or new_instance.model_id,
                         "task_input": task_data["task_input"] or {},
                         "callback_url": redistribution_callback_url,  # Rewritten to scheduler's callback
                     }
@@ -875,9 +828,7 @@ async def _redistribute_tasks_on_registration(
             donor_id = task_data["donor_instance_id"]
             stolen_from[donor_id] = stolen_from.get(donor_id, 0) + 1
 
-        summary_parts = [
-            f"{donor}({count})" for donor, count in stolen_from.items()
-        ]
+        summary_parts = [f"{donor}({count})" for donor, count in stolen_from.items()]
         logger.info(
             f"[WorkStealing] Summary for {instance_id}: "
             f"fetched={len(fetched_tasks)}, resubmitted={resubmitted_count}, "
@@ -897,9 +848,7 @@ async def _redistribute_tasks_on_registration(
         # Step 5: Always update instance status to ACTIVE when redistribution completes
         # (whether successful or not - the instance should become active)
         try:
-            await instance_registry.update_status(
-                instance_id, InstanceStatus.ACTIVE
-            )
+            await instance_registry.update_status(instance_id, InstanceStatus.ACTIVE)
             logger.info(
                 f"[WorkStealing] Instance {instance_id} status → ACTIVE (work stealing complete)"
             )
@@ -1004,9 +953,7 @@ async def register_instance(request: InstanceRegisterRequest):
         # Store reference to prevent garbage collection; auto-discard on completion
         _background_tasks.add(task)
         task.add_done_callback(_background_tasks.discard)
-        logger.debug(
-            f"Started async work stealing for instance {request.instance_id}"
-        )
+        logger.debug(f"Started async work stealing for instance {request.instance_id}")
 
     except ValueError as e:
         error_msg = str(e)
@@ -1111,9 +1058,7 @@ async def drain_instance(request: InstanceDrainRequest):
 
     try:
         instance = await instance_registry.start_draining(request.instance_id)
-        drain_status = await instance_registry.get_drain_status(
-            request.instance_id
-        )
+        drain_status = await instance_registry.get_drain_status(request.instance_id)
 
         # Estimate completion time based on queue info
         queue_info = await instance_registry.get_queue_info(request.instance_id)
@@ -1132,9 +1077,7 @@ async def drain_instance(request: InstanceDrainRequest):
                     estimated_time = queue_info.values[median_idx]
                 except (ValueError, IndexError):
                     # Fall back to first value if 0.5 quantile not available
-                    estimated_time = (
-                        queue_info.values[0] if queue_info.values else None
-                    )
+                    estimated_time = queue_info.values[0] if queue_info.values else None
 
         logger.info(
             f"Started draining instance {request.instance_id} "
@@ -1244,7 +1187,9 @@ async def start_instance_redeploy(request: InstanceRedeployRequest):
         )
 
     if instance.status != InstanceStatus.ACTIVE:
-        error_msg = f"Instance must be in ACTIVE state, current state: {instance.status}"
+        error_msg = (
+            f"Instance must be in ACTIVE state, current state: {instance.status}"
+        )
         logger.error(
             f"[start_instance_redeploy] {error_msg} | instance_id={request.instance_id}"
         )
@@ -1289,9 +1234,7 @@ async def start_instance_redeploy(request: InstanceRedeployRequest):
             redeploy_data = response.json()
             returned_tasks = redeploy_data.get("returned_tasks", [])
             current_task = redeploy_data.get("current_task")
-            estimated_redeploy_time_ms = redeploy_data.get(
-                "estimated_completion_ms"
-            )
+            estimated_redeploy_time_ms = redeploy_data.get("estimated_completion_ms")
 
             logger.info(
                 f"Instance {request.instance_id} returned {len(returned_tasks)} pending tasks, "
@@ -1302,8 +1245,7 @@ async def start_instance_redeploy(request: InstanceRedeployRequest):
         log_http_error(
             e,
             request_body={
-                "reason": request.redeploy_reason
-                or "Scheduler-initiated redeployment",
+                "reason": request.redeploy_reason or "Scheduler-initiated redeployment",
                 "target_model_id": request.target_model_id,
             },
             context="instance redeploy start",
@@ -1327,8 +1269,7 @@ async def start_instance_redeploy(request: InstanceRedeployRequest):
             request_url=f"{instance.endpoint}/redeploy/start",
             request_method="POST",
             request_body={
-                "reason": request.redeploy_reason
-                or "Scheduler-initiated redeployment",
+                "reason": request.redeploy_reason or "Scheduler-initiated redeployment",
                 "target_model_id": request.target_model_id,
             },
             context="instance redeploy communication error",
@@ -1365,13 +1306,9 @@ async def start_instance_redeploy(request: InstanceRedeployRequest):
                 metadata = task_data.get("metadata", {})
 
                 # Use scheduling strategy + worker queue to reassign task
-                available = await instance_registry.list_active(
-                    model_id=model_id
-                )
+                available = await instance_registry.list_active(model_id=model_id)
                 available = [
-                    i
-                    for i in available
-                    if i.instance_id != request.instance_id
+                    i for i in available if i.instance_id != request.instance_id
                 ]
                 success = False
                 if available and worker_queue_manager:
@@ -1433,9 +1370,7 @@ async def start_instance_redeploy(request: InstanceRedeployRequest):
     )
 
 
-@app.post(
-    "/instance/redeploy/complete", response_model=InstanceRegisterResponse
-)
+@app.post("/instance/redeploy/complete", response_model=InstanceRegisterResponse)
 async def complete_instance_redeploy(request: InstanceRegisterRequest):
     """Complete instance redeployment and return to ACTIVE status.
 
@@ -1572,9 +1507,7 @@ async def get_instance_info(instance_id: str = Query(...)):
     instance = await instance_registry.get(instance_id)
     if not instance:
         error_msg = "Instance not found"
-        logger.error(
-            f"[get_instance_info] {error_msg} | instance_id={instance_id}"
-        )
+        logger.error(f"[get_instance_info] {error_msg} | instance_id={instance_id}")
         raise HTTPException(
             status_code=404,
             detail={"success": False, "error": error_msg},
@@ -1585,9 +1518,7 @@ async def get_instance_info(instance_id: str = Query(...)):
     if not queue_info:
         # Shouldn't happen, but handle gracefully
         error_msg = "Queue info not found"
-        logger.error(
-            f"[get_instance_info] {error_msg} | instance_id={instance_id}"
-        )
+        logger.error(f"[get_instance_info] {error_msg} | instance_id={instance_id}")
         raise HTTPException(
             status_code=500,
             detail={"success": False, "error": error_msg},
@@ -1598,9 +1529,7 @@ async def get_instance_info(instance_id: str = Query(...)):
     if not stats:
         # Shouldn't happen, but handle gracefully
         error_msg = "Statistics not found"
-        logger.error(
-            f"[get_instance_info] {error_msg} | instance_id={instance_id}"
-        )
+        logger.error(f"[get_instance_info] {error_msg} | instance_id={instance_id}")
         raise HTTPException(
             status_code=500,
             detail={"success": False, "error": error_msg},
@@ -1651,9 +1580,7 @@ async def submit_task(request: TaskSubmitRequest):
 
     # 2. Log instance availability (but don't reject if no instances)
     # Tasks will queue and wait for instances to be registered/available
-    available_instances = await instance_registry.list_active(
-        model_id=request.model_id
-    )
+    available_instances = await instance_registry.list_active(model_id=request.model_id)
     if not available_instances:
         logger.warning(
             f"[submit_task] No available instance for model_id: {request.model_id}, "
@@ -1708,9 +1635,7 @@ async def submit_task(request: TaskSubmitRequest):
                 metadata=request.metadata,
                 enqueue_time=time.time(),
             )
-            queue_position = worker_queue_manager.enqueue_task(
-                selected_id, queued_task
-            )
+            queue_position = worker_queue_manager.enqueue_task(selected_id, queued_task)
         except Exception as e:
             logger.warning(
                 f"[submit_task] Scheduling failed for task {request.task_id}: {e}. "
@@ -1893,23 +1818,16 @@ async def clear_tasks():
         async with httpx.AsyncClient(timeout=60.0) as client:
             # Execute all clear requests in parallel
             instance_clear_results = await asyncio.gather(
-                *[
-                    clear_instance_tasks(client, instance)
-                    for instance in all_instances
-                ],
+                *[clear_instance_tasks(client, instance) for instance in all_instances],
                 return_exceptions=False,
             )
 
         # 4. Reset pending_tasks counter for all instances to maintain consistency
         reset_count = await instance_registry.reset_all_pending_tasks()
-        logger.info(
-            f"Reset pending_tasks counter for {reset_count} instance(s)"
-        )
+        logger.info(f"Reset pending_tasks counter for {reset_count} instance(s)")
 
         # Log summary
-        successful_clears = sum(
-            1 for r in instance_clear_results if r["success"]
-        )
+        successful_clears = sum(1 for r in instance_clear_results if r["success"])
         total_instance_tasks = sum(
             r.get("cleared", 0) for r in instance_clear_results if r["success"]
         )
@@ -1981,9 +1899,7 @@ async def resubmit_task(request: TaskResubmitRequest):
         )
 
     # 4. Validate original instance exists (for statistics update)
-    original_instance = await instance_registry.get(
-        request.original_instance_id
-    )
+    original_instance = await instance_registry.get(request.original_instance_id)
     if not original_instance:
         error_msg = "Original instance not found"
         logger.error(
@@ -2029,9 +1945,7 @@ async def resubmit_task(request: TaskResubmitRequest):
         enqueue_time = dt.timestamp()
 
     queue_position = 0
-    available_instances = await instance_registry.list_active(
-        model_id=task.model_id
-    )
+    available_instances = await instance_registry.list_active(model_id=task.model_id)
     if available_instances and worker_queue_manager:
         try:
             schedule_result = await scheduling_strategy.schedule_task(
@@ -2109,9 +2023,7 @@ async def update_task_metadata(request: TaskUpdateMetadataRequest):
                 failed += 1
 
         except Exception as e:
-            logger.error(
-                f"Error updating metadata for task {update.task_id}: {e}"
-            )
+            logger.error(f"Error updating metadata for task {update.task_id}: {e}")
             results.append(
                 TaskUpdateMetadataResult(
                     task_id=update.task_id,
@@ -2472,9 +2384,7 @@ async def _repredict_single_task(task) -> bool:
 
         except Exception as pred_error:
             # Prediction failed - rollback queue
-            logger.error(
-                f"Re-prediction failed for task {task_id}: {pred_error}"
-            )
+            logger.error(f"Re-prediction failed for task {task_id}: {pred_error}")
 
             # Rollback queue (re-add old prediction)
             if old_prediction_ms is not None:
@@ -2622,9 +2532,7 @@ async def callback_task_result(request: TaskResultCallbackRequest):
 
     if not task:
         error_msg = "Task not found"
-        logger.error(
-            f"[callback_task_result] {error_msg} | task_id={request.task_id}"
-        )
+        logger.error(f"[callback_task_result] {error_msg} | task_id={request.task_id}")
         raise HTTPException(
             status_code=404,
             detail={"success": False, "error": error_msg},
@@ -2632,9 +2540,7 @@ async def callback_task_result(request: TaskResultCallbackRequest):
 
     # Validate status
     if request.status not in ("completed", "failed"):
-        error_msg = (
-            f"Invalid status: {request.status}. Must be 'completed' or 'failed'"
-        )
+        error_msg = f"Invalid status: {request.status}. Must be 'completed' or 'failed'"
         logger.error(
             f"[callback_task_result] {error_msg} | task_id={request.task_id} | status={request.status}"
         )
@@ -2690,9 +2596,7 @@ async def websocket_get_result(websocket: WebSocket):
         try:
             while True:
                 await asyncio.sleep(ping_interval)
-                ping_msg = WSPingMessage(
-                    timestamp=asyncio.get_event_loop().time()
-                )
+                ping_msg = WSPingMessage(timestamp=asyncio.get_event_loop().time())
                 await websocket.send_json(ping_msg.model_dump())
                 logger.debug("Sent keepalive ping to WebSocket client")
         except asyncio.CancelledError:
@@ -2733,9 +2637,7 @@ async def websocket_get_result(websocket: WebSocket):
 
             elif message["type"] != "websocket.receive":
                 # Unknown message type
-                logger.warning(
-                    f"Unknown WebSocket message type: {message['type']}"
-                )
+                logger.warning(f"Unknown WebSocket message type: {message['type']}")
                 continue
 
             # Parse JSON data from text message
@@ -2752,20 +2654,14 @@ async def websocket_get_result(websocket: WebSocket):
 
             if message_type == WSMessageType.PONG:
                 # Client responded to our application-level ping, just log and continue
-                logger.debug(
-                    "Received application-level pong from WebSocket client"
-                )
+                logger.debug("Received application-level pong from WebSocket client")
                 continue
 
             elif message_type == WSMessageType.PING:
                 # Client sent application-level ping, respond with pong
-                pong_msg = WSPongMessage(
-                    timestamp=asyncio.get_event_loop().time()
-                )
+                pong_msg = WSPongMessage(timestamp=asyncio.get_event_loop().time())
                 await websocket.send_json(pong_msg.model_dump())
-                logger.debug(
-                    "Sent application-level pong response to WebSocket client"
-                )
+                logger.debug("Sent application-level pong response to WebSocket client")
                 continue
 
             elif message_type == WSMessageType.SUBSCRIBE:
@@ -2801,9 +2697,7 @@ async def websocket_get_result(websocket: WebSocket):
                         await websocket.send_json(result_msg.model_dump())
 
                 # Send acknowledgment
-                subscribed = await websocket_manager.get_subscribed_tasks(
-                    websocket
-                )
+                subscribed = await websocket_manager.get_subscribed_tasks(websocket)
                 ack_msg = WSAckMessage(
                     message=f"Subscribed to {len(task_ids)} tasks",
                     subscribed_tasks=subscribed,
@@ -2825,9 +2719,7 @@ async def websocket_get_result(websocket: WebSocket):
                 await websocket_manager.unsubscribe(websocket, task_ids)
 
                 # Send acknowledgment
-                subscribed = await websocket_manager.get_subscribed_tasks(
-                    websocket
-                )
+                subscribed = await websocket_manager.get_subscribed_tasks(websocket)
                 ack_msg = WSAckMessage(
                     message=f"Unsubscribed from {len(task_ids)} tasks",
                     subscribed_tasks=subscribed,
@@ -2892,9 +2784,7 @@ async def reinitialize_instance_queues(
     elif strategy_name == "probabilistic":
         queue_info_type = "probabilistic"
     else:  # round_robin
-        queue_info_type = (
-            "probabilistic"  # Default to probabilistic for round_robin
-        )
+        queue_info_type = "probabilistic"  # Default to probabilistic for round_robin
 
     # Update the global queue_info_type FIRST to ensure consistency
     # This prevents race conditions where new instances might be registered
@@ -2936,9 +2826,7 @@ async def reinitialize_instance_queues(
             )
 
         # Update the queue info in the registry
-        await instance_registry.update_queue_info(
-            instance.instance_id, new_queue_info
-        )
+        await instance_registry.update_queue_info(instance.instance_id, new_queue_info)
 
     return len(all_instances)
 
@@ -3055,9 +2943,7 @@ async def set_strategy_endpoint(request: StrategySetRequest):
     try:
         # Get target_quantile from request, or use default
         target_quantile = (
-            request.target_quantile
-            if request.target_quantile is not None
-            else 0.9
+            request.target_quantile if request.target_quantile is not None else 0.9
         )
 
         new_strategy = get_strategy(
@@ -3066,9 +2952,7 @@ async def set_strategy_endpoint(request: StrategySetRequest):
             instance_registry=instance_registry,
             target_quantile=target_quantile,
         )
-        logger.info(
-            f"Created new scheduling strategy: {request.strategy_name.value}"
-        )
+        logger.info(f"Created new scheduling strategy: {request.strategy_name.value}")
     except Exception as e:
         logger.error(
             f"Failed to initialize strategy '{request.strategy_name.value}': {e}",
@@ -3094,9 +2978,7 @@ async def set_strategy_endpoint(request: StrategySetRequest):
     random.seed(42)
     np.random.seed(42)
 
-    logger.success(
-        f"Successfully switched to strategy '{request.strategy_name.value}'"
-    )
+    logger.success(f"Successfully switched to strategy '{request.strategy_name.value}'")
 
     return StrategySetResponse(
         success=True,
@@ -3133,18 +3015,12 @@ async def health_check():
             total_instances=await instance_registry.get_total_count(),
             active_instances=await instance_registry.get_active_count(),
             total_tasks=await task_registry.get_total_count(),
-            pending_tasks=await task_registry.get_count_by_status(
-                TaskStatus.PENDING
-            ),
-            running_tasks=await task_registry.get_count_by_status(
-                TaskStatus.RUNNING
-            ),
+            pending_tasks=await task_registry.get_count_by_status(TaskStatus.PENDING),
+            running_tasks=await task_registry.get_count_by_status(TaskStatus.RUNNING),
             completed_tasks=await task_registry.get_count_by_status(
                 TaskStatus.COMPLETED
             ),
-            failed_tasks=await task_registry.get_count_by_status(
-                TaskStatus.FAILED
-            ),
+            failed_tasks=await task_registry.get_count_by_status(TaskStatus.FAILED),
         )
 
         return HealthResponse(
@@ -3191,9 +3067,7 @@ if config.proxy.enabled:
         proxy_timeout=config.proxy.timeout,
     )
     app.include_router(proxy_router_instance.router)
-    logger.info(
-        f"Proxy router mounted (timeout={config.proxy.timeout}s)"
-    )
+    logger.info(f"Proxy router mounted (timeout={config.proxy.timeout}s)")
 else:
     proxy_router_instance = None
     logger.info("Proxy router disabled (PROXY_ENABLED=false)")

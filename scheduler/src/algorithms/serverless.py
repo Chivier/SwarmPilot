@@ -9,12 +9,12 @@ from typing import TYPE_CHECKING
 from loguru import logger
 
 from src.algorithms.base import SchedulingStrategy
-from src.clients.predictor_client import Prediction
+from src.clients.models import Prediction
 
 if TYPE_CHECKING:
-    from src.registry.instance_registry import InstanceRegistry
+    from src.clients.predictor_library_client import PredictorClient
     from src.model import InstanceQueueBase
-    from src.clients.predictor_client import PredictorClient
+    from src.registry.instance_registry import InstanceRegistry
 
 
 class MinimumExpectedTimeServerlessStrategy(SchedulingStrategy):
@@ -122,9 +122,7 @@ class MinimumExpectedTimeServerlessStrategy(SchedulingStrategy):
             error_margin_ms=new_error,
         )
 
-        await self.instance_registry.update_queue_info(
-            instance_id, updated_queue
-        )
+        await self.instance_registry.update_queue_info(instance_id, updated_queue)
         logger.debug(
             f"Updated queue (expect_error) for {instance_id}: "
             f"expected_time_ms={new_expected:.2f}, error_margin_ms={new_error:.2f}"

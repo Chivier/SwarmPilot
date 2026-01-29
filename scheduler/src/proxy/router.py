@@ -90,9 +90,7 @@ class ProxyRouter:
         method = request.method
         task_id = f"proxy-{uuid.uuid4().hex[:12]}"
 
-        logger.debug(
-            f"[PROXY] {method} /{path} -> task_id={task_id}"
-        )
+        logger.debug(f"[PROXY] {method} /{path} -> task_id={task_id}")
 
         # 1. Check for available instances
         # Get all active instances (proxy doesn't filter by model_id)
@@ -152,15 +150,11 @@ class ProxyRouter:
             logger.error(f"[PROXY] Scheduling failed: {e}", exc_info=True)
             # Fallback: pick first instance
             selected_instance_id = all_instances[0].instance_id
-            logger.info(
-                f"[PROXY] Falling back to instance {selected_instance_id}"
-            )
+            logger.info(f"[PROXY] Falling back to instance {selected_instance_id}")
 
         # 5. Verify selected instance has a worker queue
         if not self._queue_manager.has_worker(selected_instance_id):
-            logger.error(
-                f"[PROXY] Instance {selected_instance_id} has no worker queue"
-            )
+            logger.error(f"[PROXY] Instance {selected_instance_id} has no worker queue")
             return JSONResponse(
                 status_code=503,
                 content={
@@ -214,7 +208,7 @@ class ProxyRouter:
                 future,
                 timeout=self._proxy_timeout,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             self._callback.cleanup_future(task_id)
             logger.error(
                 f"[PROXY] Timeout after {self._proxy_timeout}s for "

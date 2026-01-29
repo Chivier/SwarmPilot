@@ -11,13 +11,11 @@ Test categories:
 5. Graceful Shutdown - Proper task handling during shutdown
 """
 
-import asyncio
 import time
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from src.algorithms.base import ScheduleResult
 from src.algorithms.queue_state_adapter import (
     get_all_queue_info_from_manager,
     get_queue_info_from_manager,
@@ -25,15 +23,17 @@ from src.algorithms.queue_state_adapter import (
 from src.instance_sync import (
     InstanceInfo,
     InstanceSyncRequest,
-    handle_instance_addition,
-    handle_instance_removal,
     handle_instance_sync,
 )
 from src.models.queue import InstanceQueueExpectError
-from src.services.shutdown_handler import ShutdownHandler, ShutdownResult
+from src.services.shutdown_handler import ShutdownHandler
 from src.services.task_result_callback import TaskResultCallback
 from src.services.worker_queue_manager import WorkerQueueManager
-from src.services.worker_queue_thread import QueuedTask, TaskResult, WorkerQueueThread
+from src.services.worker_queue_thread import (
+    QueuedTask,
+    TaskResult,
+    WorkerQueueThread,
+)
 
 
 class TestBasicTaskFlow:

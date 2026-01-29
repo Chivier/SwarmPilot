@@ -8,6 +8,6 @@ from src.registry.task_registry import TaskRecord, TaskRegistry
 
 __all__ = [
     "InstanceRegistry",
-    "TaskRegistry",
     "TaskRecord",
+    "TaskRegistry",
 ]

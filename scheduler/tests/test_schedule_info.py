@@ -287,9 +287,7 @@ class TestTaskScheduleInfoEndpoint:
                 metadata={},
                 assigned_instance="inst-1",
             )
-            await task_registry.update_status(
-                "task-running", TaskStatus.RUNNING
-            )
+            await task_registry.update_status("task-running", TaskStatus.RUNNING)
 
             _task_completed = await task_registry.create_task(
                 task_id="task-completed",
@@ -298,9 +296,7 @@ class TestTaskScheduleInfoEndpoint:
                 metadata={},
                 assigned_instance="inst-1",
             )
-            await task_registry.update_status(
-                "task-completed", TaskStatus.COMPLETED
-            )
+            await task_registry.update_status("task-completed", TaskStatus.COMPLETED)
 
         asyncio.run(setup())
 

@@ -446,7 +446,7 @@ async def cleanup_via_planner(planner_client: httpx.AsyncClient):
 
     # Cleanup after test
     try:
-        resp = await planner_client.post("/pylet/terminate-all")
+        resp = await planner_client.post("/terminate-all")
         if resp.status_code == 200:
             data = resp.json()
             print(f"[CLEANUP] Terminated {data.get('succeeded', 0)} instances")

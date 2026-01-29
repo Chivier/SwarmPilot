@@ -12,10 +12,11 @@ Key features:
 """
 
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from queue import Empty, Queue
 from threading import Event, Thread
-from typing import Any, Callable, Literal
+from typing import Any, Literal
 
 import httpx
 from loguru import logger
@@ -188,9 +189,7 @@ class WorkerQueueThread:
 
         self._thread.join(timeout=timeout)
         if self._thread.is_alive():
-            logger.warning(
-                f"Worker {self.worker_id} thread did not stop gracefully"
-            )
+            logger.warning(f"Worker {self.worker_id} thread did not stop gracefully")
 
         self._thread = None
 
@@ -299,9 +298,7 @@ class WorkerQueueThread:
             body, status_code, headers = self._call_worker_api(task)
             execution_time_ms = (time.time() - self._current_task_started) * 1000
 
-            logger.info(
-                f"Task {task.task_id} completed in {execution_time_ms:.2f}ms"
-            )
+            logger.info(f"Task {task.task_id} completed in {execution_time_ms:.2f}ms")
 
             self._callback(
                 TaskResult(

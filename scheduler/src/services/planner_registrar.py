@@ -69,9 +69,7 @@ class PlannerRegistrar:
 
         for attempt in range(1, self._config.max_retries + 1):
             try:
-                async with httpx.AsyncClient(
-                    timeout=self._config.timeout
-                ) as client:
+                async with httpx.AsyncClient(timeout=self._config.timeout) as client:
                     response = await client.post(
                         f"{self._config.planner_url.rstrip('/')}"
                         f"/scheduler/register",
@@ -98,8 +96,7 @@ class PlannerRegistrar:
                         f"- {response.text}"
                     )
                     logger.warning(
-                        f"Attempt {attempt}/{self._config.max_retries}: "
-                        f"{error_msg}"
+                        f"Attempt {attempt}/{self._config.max_retries}: " f"{error_msg}"
                     )
                     last_error = RuntimeError(error_msg)
 
@@ -111,9 +108,7 @@ class PlannerRegistrar:
                 last_error = e
 
             if attempt < self._config.max_retries:
-                logger.info(
-                    f"Retrying in {self._config.retry_delay}s..."
-                )
+                logger.info(f"Retrying in {self._config.retry_delay}s...")
                 await asyncio.sleep(self._config.retry_delay)
 
         raise RuntimeError(
@@ -130,17 +125,12 @@ class PlannerRegistrar:
         if not self._registered:
             return
 
-        logger.info(
-            f"Deregistering from planner: model_id={self._config.model_id}"
-        )
+        logger.info(f"Deregistering from planner: model_id={self._config.model_id}")
 
         try:
-            async with httpx.AsyncClient(
-                timeout=self._config.timeout
-            ) as client:
+            async with httpx.AsyncClient(timeout=self._config.timeout) as client:
                 response = await client.post(
-                    f"{self._config.planner_url.rstrip('/')}"
-                    f"/scheduler/deregister",
+                    f"{self._config.planner_url.rstrip('/')}" f"/scheduler/deregister",
                     json={"model_id": self._config.model_id},
                 )
 

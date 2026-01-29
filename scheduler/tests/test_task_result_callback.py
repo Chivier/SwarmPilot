@@ -13,7 +13,6 @@ from src.model import TaskStatus
 from src.services.task_result_callback import TaskResultCallback
 from src.services.worker_queue_thread import TaskResult
 
-
 # ============================================================================
 # Fixtures
 # ============================================================================
@@ -79,7 +78,9 @@ def sample_task_record():
     task.task_id = "task-1"
     task.status = TaskStatus.RUNNING
     task.set_execution_time = MagicMock()
-    task.get_timestamps = MagicMock(return_value={"submitted_at": "2024-01-01T00:00:00Z"})
+    task.get_timestamps = MagicMock(
+        return_value={"submitted_at": "2024-01-01T00:00:00Z"}
+    )
     return task
 
 
@@ -222,9 +223,7 @@ class TestSuccessHandling:
 
         await callback_handler.handle_result(success_result)
 
-        mock_instance_registry.increment_completed.assert_called_once_with(
-            "worker-1"
-        )
+        mock_instance_registry.increment_completed.assert_called_once_with("worker-1")
 
     @pytest.mark.asyncio
     async def test_records_throughput_on_success(
@@ -310,9 +309,7 @@ class TestFailureHandling:
 
         await callback_handler.handle_result(failure_result)
 
-        mock_instance_registry.increment_failed.assert_called_once_with(
-            "worker-1"
-        )
+        mock_instance_registry.increment_failed.assert_called_once_with("worker-1")
 
 
 # ============================================================================

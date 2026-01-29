@@ -5,13 +5,12 @@ These tests define the expected behavior before implementation.
 """
 
 import time
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
 from src.services.worker_queue_manager import WorkerQueueManager
 from src.services.worker_queue_thread import QueuedTask, WorkerQueueThread
-
 
 # ============================================================================
 # Fixtures
@@ -282,7 +281,9 @@ class TestQueueDepth:
         depths = manager.get_all_queue_depths()
 
         assert len(depths) == 3
-        assert all(worker_id in depths for worker_id in ["worker-0", "worker-1", "worker-2"])
+        assert all(
+            worker_id in depths for worker_id in ["worker-0", "worker-1", "worker-2"]
+        )
         assert all(isinstance(d, int) for d in depths.values())
 
         # Cleanup

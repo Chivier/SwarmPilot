@@ -5,13 +5,11 @@ Tests the queue state adapter that converts scheduler-side queue state
 (InstanceQueueExpectError).
 """
 
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import MagicMock
 
 from src.algorithms.queue_state_adapter import (
-    get_queue_info_from_manager,
     get_all_queue_info_from_manager,
+    get_queue_info_from_manager,
 )
 from src.models.queue import InstanceQueueExpectError
 from src.services.worker_queue_manager import WorkerQueueManager

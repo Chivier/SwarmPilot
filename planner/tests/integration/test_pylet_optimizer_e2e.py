@@ -480,17 +480,17 @@ class TestOptimizerServiceCapacity:
 
 # ==============================================================================
 # Planner API E2E Tests (PYLET-015)
-# These tests use the planner's /pylet/deploy API instead of raw pylet calls
+# These tests use the planner's /deploy API instead of raw pylet calls
 # ==============================================================================
 
 
 class TestPlannerDeployAPI:
-    """E2E tests using planner's /pylet/deploy API.
+    """E2E tests using planner's /deploy API.
 
     These tests validate the complete flow through the planner service:
-    1. POST to /pylet/deploy with target_state
+    1. POST to /deploy with target_state
     2. Planner deploys instances via PyLet
-    3. Verify instances are running via /pylet/status
+    3. Verify instances are running via /status
     4. HTTP verification of deployed services
     """
 
@@ -499,7 +499,7 @@ class TestPlannerDeployAPI:
         planner_client: httpx.AsyncClient,
         cleanup_via_planner,
     ):
-        """Test deployment via planner's /pylet/deploy endpoint.
+        """Test deployment via planner's /deploy endpoint.
 
         Deploys 3 instances using the planner API and verifies they respond.
         """
@@ -510,7 +510,7 @@ class TestPlannerDeployAPI:
 
         # Deploy via planner API
         resp = await planner_client.post(
-            "/pylet/deploy",
+            "/deploy",
             json={
                 "target_state": target_state,
                 "wait_for_ready": True,
@@ -525,8 +525,8 @@ class TestPlannerDeployAPI:
         assert data["success"], f"Deployment failed: {data.get('error')}"
         assert data["added_count"] == 3, f"Expected 3 added, got {data['added_count']}"
 
-        # Verify via /pylet/status
-        status_resp = await planner_client.get("/pylet/status")
+        # Verify via /status
+        status_resp = await planner_client.get("/status")
         assert status_resp.status_code == 200
         status_data = status_resp.json()
 
@@ -555,13 +555,13 @@ class TestPlannerDeployAPI:
         planner_client: httpx.AsyncClient,
         cleanup_via_planner,
     ):
-        """Test scaling via planner's /pylet/scale endpoint.
+        """Test scaling via planner's /scale endpoint.
 
         First deploys, then scales up and down.
         """
         # Initial deploy: 2 model-a
         resp = await planner_client.post(
-            "/pylet/deploy",
+            "/deploy",
             json={"target_state": {"model-a": 2}, "wait_for_ready": True},
         )
         assert resp.status_code == 200
@@ -571,7 +571,7 @@ class TestPlannerDeployAPI:
 
         # Scale up to 4
         resp = await planner_client.post(
-            "/pylet/scale",
+            "/scale",
             json={
                 "model_id": "model-a",
                 "target_count": 4,
@@ -592,7 +592,7 @@ class TestPlannerDeployAPI:
 
         # Scale down to 1
         resp = await planner_client.post(
-            "/pylet/scale",
+            "/scale",
             json={
                 "model_id": "model-a",
                 "target_count": 1,
@@ -618,7 +618,7 @@ class TestPlannerDeployAPI:
         planner_client: httpx.AsyncClient,
         cleanup_via_planner,
     ):
-        """Test optimization via planner's /pylet/optimize endpoint.
+        """Test optimization via planner's /optimize endpoint.
 
         Uses the planner's optimize endpoint to compute optimal deployment
         and deploy in one call.
@@ -634,7 +634,7 @@ class TestPlannerDeployAPI:
         print("\n[TEST] Optimizing via planner API...")
 
         resp = await planner_client.post(
-            "/pylet/optimize",
+            "/optimize",
             json={
                 "model_ids": model_ids,
                 "B": B,
@@ -681,7 +681,7 @@ class TestPlannerDeployAPI:
         """
         # Initial: 3 model-a
         resp = await planner_client.post(
-            "/pylet/deploy",
+            "/deploy",
             json={"target_state": {"model-a": 3}, "wait_for_ready": True},
         )
         assert resp.status_code == 200
@@ -691,7 +691,7 @@ class TestPlannerDeployAPI:
 
         # Change to: 1 model-a, 2 model-b
         resp = await planner_client.post(
-            "/pylet/deploy",
+            "/deploy",
             json={"target_state": {"model-a": 1, "model-b": 2}, "wait_for_ready": True},
         )
         assert resp.status_code == 200
@@ -707,7 +707,7 @@ class TestPlannerDeployAPI:
         assert data["added_count"] == 2
 
         # Verify final state
-        status_resp = await planner_client.get("/pylet/status")
+        status_resp = await planner_client.get("/status")
         status_data = status_resp.json()
 
         expected_state = {"model-a": 1, "model-b": 2}

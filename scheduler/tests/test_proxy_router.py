@@ -5,19 +5,17 @@ to backend instances via WorkerQueueManager.
 """
 
 import asyncio
-import time
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from src.algorithms.base import ScheduleResult
-from src.clients.predictor_client import Prediction
+from src.clients.models import Prediction
 from src.proxy.router import ProxyRouter
 from src.services.task_result_callback import TaskResultCallback
 from src.services.worker_queue_thread import TaskResult
-
 
 # ============================================================================
 # Fixtures
@@ -504,5 +502,7 @@ class TestBackendErrorForwarding:
 
         assert response.status_code == 502
         error_msg = response.json()["error"]["message"]
-        assert "Connection refused" in error_msg or "Backend request failed" in error_msg
+        assert (
+            "Connection refused" in error_msg or "Backend request failed" in error_msg
+        )
         loop.close()

@@ -11,9 +11,7 @@ class InstanceStatus(str, Enum):
 
     INITIALIZING = "initializing"  # Instance registered, work stealing in progress, no new tasks yet
     ACTIVE = "active"  # Normal operation, accepts new tasks
-    DRAINING = (
-        "draining"  # No new tasks, waiting for existing tasks to complete
-    )
+    DRAINING = "draining"  # No new tasks, waiting for existing tasks to complete
     REMOVING = "removing"  # All tasks complete, safe to remove
     REDEPLOYING = "redeploying"  # Instance is being redeployed (no new tasks accepted, pending tasks returned)
 

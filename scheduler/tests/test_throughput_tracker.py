@@ -3,10 +3,12 @@
 Tests sliding window behavior, average calculations, and thread safety.
 """
 
-
 import pytest
 
-from src.utils.throughput_tracker import InstanceThroughputData, ThroughputTracker
+from src.utils.throughput_tracker import (
+    InstanceThroughputData,
+    ThroughputTracker,
+)
 
 
 class TestInstanceThroughputData:
@@ -70,9 +72,7 @@ class TestThroughputTracker:
         await tracker.record_execution_time("http://test:8001", 100.0)
         await tracker.record_execution_time("http://test:8001", 200.0)
 
-        avg = await tracker.get_average_execution_time_seconds(
-            "http://test:8001"
-        )
+        avg = await tracker.get_average_execution_time_seconds("http://test:8001")
         assert avg == 0.15  # 150ms = 0.15s
 
     @pytest.mark.asyncio
@@ -83,12 +83,8 @@ class TestThroughputTracker:
         await tracker.record_execution_time("http://test:8001", 100.0)
         await tracker.record_execution_time("http://test:8002", 200.0)
 
-        avg1 = await tracker.get_average_execution_time_seconds(
-            "http://test:8001"
-        )
-        avg2 = await tracker.get_average_execution_time_seconds(
-            "http://test:8002"
-        )
+        avg1 = await tracker.get_average_execution_time_seconds("http://test:8001")
+        avg2 = await tracker.get_average_execution_time_seconds("http://test:8002")
 
         assert avg1 == 0.1  # 100ms
         assert avg2 == 0.2  # 200ms
@@ -112,9 +108,7 @@ class TestThroughputTracker:
         """Test that unknown instance returns None."""
         tracker = ThroughputTracker(window_size=5)
 
-        avg = await tracker.get_average_execution_time_seconds(
-            "http://unknown:8001"
-        )
+        avg = await tracker.get_average_execution_time_seconds("http://unknown:8001")
         assert avg is None
 
     @pytest.mark.asyncio
@@ -125,9 +119,7 @@ class TestThroughputTracker:
         await tracker.record_execution_time("http://test:8001", 100.0)
         await tracker.remove_instance("http://test:8001")
 
-        avg = await tracker.get_average_execution_time_seconds(
-            "http://test:8001"
-        )
+        avg = await tracker.get_average_execution_time_seconds("http://test:8001")
         assert avg is None
 
     @pytest.mark.asyncio
@@ -151,13 +143,9 @@ class TestThroughputTracker:
 
         await tracker.record_execution_time("http://test:8001", 100.0)
         await tracker.record_execution_time("http://test:8001", 200.0)
-        await tracker.record_execution_time(
-            "http://test:8001", 300.0
-        )  # Drops 100
+        await tracker.record_execution_time("http://test:8001", 300.0)  # Drops 100
 
-        avg = await tracker.get_average_execution_time_seconds(
-            "http://test:8001"
-        )
+        avg = await tracker.get_average_execution_time_seconds("http://test:8001")
         assert avg == 0.25  # (200 + 300) / 2 = 250ms = 0.25s
 
     @pytest.mark.asyncio
@@ -174,14 +162,10 @@ class TestThroughputTracker:
         tracker = ThroughputTracker(window_size=10)
 
         for i in range(5):
-            await tracker.record_execution_time(
-                "http://test:8001", 100.0 * (i + 1)
-            )
+            await tracker.record_execution_time("http://test:8001", 100.0 * (i + 1))
 
         # Average of 100, 200, 300, 400, 500 = 300ms
-        avg = await tracker.get_average_execution_time_seconds(
-            "http://test:8001"
-        )
+        avg = await tracker.get_average_execution_time_seconds("http://test:8001")
         assert avg == 0.3  # 300ms = 0.3s
 
     @pytest.mark.asyncio
@@ -189,20 +173,14 @@ class TestThroughputTracker:
         """Test that milliseconds are correctly converted to seconds."""
         tracker = ThroughputTracker(window_size=5)
 
-        await tracker.record_execution_time(
-            "http://test:8001", 1000.0
-        )  # 1000ms = 1s
+        await tracker.record_execution_time("http://test:8001", 1000.0)  # 1000ms = 1s
 
-        avg = await tracker.get_average_execution_time_seconds(
-            "http://test:8001"
-        )
+        avg = await tracker.get_average_execution_time_seconds("http://test:8001")
         assert avg == 1.0
 
         await tracker.record_execution_time("http://test:8001", 500.0)  # 500ms
         # Average: (1000 + 500) / 2 = 750ms = 0.75s
-        avg = await tracker.get_average_execution_time_seconds(
-            "http://test:8001"
-        )
+        avg = await tracker.get_average_execution_time_seconds("http://test:8001")
         assert avg == 0.75
 
     @pytest.mark.asyncio
@@ -307,7 +285,5 @@ class TestThroughputTracker:
             # Don't add any execution times - window is empty
 
         # Should return None since window is empty
-        avg = await tracker.get_average_execution_time_seconds(
-            "http://test:8001"
-        )
+        avg = await tracker.get_average_execution_time_seconds("http://test:8001")
         assert avg is None

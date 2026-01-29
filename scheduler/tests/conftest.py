@@ -10,8 +10,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-# Import components
-from src.registry.instance_registry import InstanceRegistry
+from src.clients.models import Prediction
+from src.clients.predictor_library_client import PredictorClient
 
 # Import models
 from src.model import (
@@ -20,7 +20,9 @@ from src.model import (
     InstanceQueueProbabilistic,
     Task,
 )
-from src.clients.predictor_client import Prediction, PredictorClient
+
+# Import components
+from src.registry.instance_registry import InstanceRegistry
 from src.registry.task_registry import TaskRegistry
 from src.services.websocket_manager import ConnectionManager
 

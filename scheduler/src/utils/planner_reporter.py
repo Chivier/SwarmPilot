@@ -133,12 +133,8 @@ class PlannerReporter:
         """Report current uncompleted task count to planner."""
         try:
             # Get uncompleted task count (pending + running)
-            pending = await self._task_registry.get_count_by_status(
-                TaskStatus.PENDING
-            )
-            running = await self._task_registry.get_count_by_status(
-                TaskStatus.RUNNING
-            )
+            pending = await self._task_registry.get_count_by_status(TaskStatus.PENDING)
+            running = await self._task_registry.get_count_by_status(TaskStatus.RUNNING)
             total_uncompleted = pending + running
 
             # POST to planner's /submit_target endpoint
@@ -185,9 +181,7 @@ class PlannerReporter:
             )
             logger.warning(f"Planner report HTTP error: {e}")
         except Exception as e:
-            logger.error(
-                f"[planner_reporter] Planner report error: {e}", exc_info=True
-            )
+            logger.error(f"[planner_reporter] Planner report error: {e}", exc_info=True)
 
     async def _report_throughput(self) -> None:
         """Report throughput data for instances with recent data to planner.
@@ -200,7 +194,9 @@ class PlannerReporter:
 
         try:
             # Only get averages for instances with new data since last report
-            averages = await self._throughput_tracker.get_averages_for_recent_instances_seconds()
+            averages = (
+                await self._throughput_tracker.get_averages_for_recent_instances_seconds()
+            )
 
             if not averages:
                 logger.debug(

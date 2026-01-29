@@ -9,7 +9,6 @@ from pydantic import BaseModel, Field
 
 from src.models.status import StrategyType
 
-
 # ============================================================================
 # Instance Management Requests
 # ============================================================================
@@ -42,9 +41,7 @@ class InstanceRedeployRequest(BaseModel):
     """Request model for instance redeployment."""
 
     instance_id: str = Field(..., description="ID of the instance to redeploy")
-    redeploy_reason: str | None = Field(
-        None, description="Reason for redeployment"
-    )
+    redeploy_reason: str | None = Field(None, description="Reason for redeployment")
     target_model_id: str | None = Field(
         None, description="Optional target model ID for redeployment"
     )
@@ -77,9 +74,7 @@ class ProxyTaskSubmitRequest(BaseModel):
     body: dict[str, Any] = Field(
         default_factory=dict, description="Request body to forward"
     )
-    method: str = Field(
-        "POST", description="HTTP method to use"
-    )
+    method: str = Field("POST", description="HTTP method to use")
     headers: dict[str, str] = Field(
         default_factory=dict, description="Additional request headers"
     )

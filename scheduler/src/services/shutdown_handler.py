@@ -24,8 +24,9 @@ Example:
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Callable, Awaitable
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from loguru import logger
 
@@ -64,8 +65,8 @@ class ShutdownHandler:
 
     def __init__(
         self,
-        worker_queue_manager: "WorkerQueueManager",
-        instance_registry: "InstanceRegistry",
+        worker_queue_manager: WorkerQueueManager,
+        instance_registry: InstanceRegistry,
         on_shutdown_complete: Callable[[ShutdownResult], Awaitable[None]] | None = None,
     ):
         """Initialize shutdown handler.

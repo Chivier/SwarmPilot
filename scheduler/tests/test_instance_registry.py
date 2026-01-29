@@ -3,7 +3,6 @@
 Tests instance management, stats tracking, queue info, and thread safety.
 """
 
-
 import pytest
 
 from src.model import (
@@ -23,9 +22,7 @@ from src.model import (
 class TestBasicOperations:
     """Tests for basic registry operations."""
 
-    async def test_register_new_instance(
-        self, instance_registry, sample_instance
-    ):
+    async def test_register_new_instance(self, instance_registry, sample_instance):
         """Test registering a new instance successfully."""
         await instance_registry.register(sample_instance)
 
@@ -44,9 +41,7 @@ class TestBasicOperations:
         with pytest.raises(ValueError, match="already exists"):
             await instance_registry.register(sample_instance)
 
-    async def test_register_initializes_stats(
-        self, instance_registry, sample_instance
-    ):
+    async def test_register_initializes_stats(self, instance_registry, sample_instance):
         """Test that registering instance initializes stats."""
         await instance_registry.register(sample_instance)
 
@@ -62,18 +57,14 @@ class TestBasicOperations:
         """Test that registering instance initializes queue info."""
         await instance_registry.register(sample_instance)
 
-        queue_info = await instance_registry.get_queue_info(
-            sample_instance.instance_id
-        )
+        queue_info = await instance_registry.get_queue_info(sample_instance.instance_id)
         assert queue_info is not None
         assert isinstance(queue_info, InstanceQueueProbabilistic)
         assert queue_info.instance_id == sample_instance.instance_id
         assert len(queue_info.quantiles) == 4
         assert len(queue_info.values) == 4
 
-    async def test_remove_existing_instance(
-        self, instance_registry, sample_instance
-    ):
+    async def test_remove_existing_instance(self, instance_registry, sample_instance):
         """Test removing an existing instance."""
         await instance_registry.register(sample_instance)
 
@@ -82,13 +73,9 @@ class TestBasicOperations:
 
         # Verify instance is gone
         assert await instance_registry.get(sample_instance.instance_id) is None
+        assert await instance_registry.get_stats(sample_instance.instance_id) is None
         assert (
-            await instance_registry.get_stats(sample_instance.instance_id)
-            is None
-        )
-        assert (
-            await instance_registry.get_queue_info(sample_instance.instance_id)
-            is None
+            await instance_registry.get_queue_info(sample_instance.instance_id) is None
         )
 
     async def test_remove_nonexistent_instance(self, instance_registry):
@@ -96,9 +83,7 @@ class TestBasicOperations:
         with pytest.raises(KeyError, match="not found"):
             await instance_registry.remove("nonexistent-id")
 
-    async def test_get_existing_instance(
-        self, instance_registry, sample_instance
-    ):
+    async def test_get_existing_instance(self, instance_registry, sample_instance):
         """Test getting an existing instance."""
         await instance_registry.register(sample_instance)
 
@@ -127,9 +112,7 @@ class TestListOperations:
         instances = await instance_registry.list_all()
         assert instances == []
 
-    async def test_list_all_with_instances(
-        self, instance_registry, sample_instances
-    ):
+    async def test_list_all_with_instances(self, instance_registry, sample_instances):
         """Test listing all instances."""
         for instance in sample_instances:
             await instance_registry.register(instance)
@@ -182,16 +165,12 @@ class TestListOperations:
         assert len(filtered) == 1
         assert filtered[0].model_id == "model-b"
 
-    async def test_list_filtered_no_matches(
-        self, instance_registry, sample_instances
-    ):
+    async def test_list_filtered_no_matches(self, instance_registry, sample_instances):
         """Test filtering with no matching instances."""
         for instance in sample_instances:
             await instance_registry.register(instance)
 
-        filtered = await instance_registry.list_all(
-            model_id="nonexistent-model"
-        )
+        filtered = await instance_registry.list_all(model_id="nonexistent-model")
         assert filtered == []
 
 
@@ -205,15 +184,11 @@ class TestListOperations:
 class TestQueueInfoManagement:
     """Tests for queue information management."""
 
-    async def test_get_queue_info_existing(
-        self, instance_registry, sample_instance
-    ):
+    async def test_get_queue_info_existing(self, instance_registry, sample_instance):
         """Test getting queue info for existing instance."""
         await instance_registry.register(sample_instance)
 
-        queue_info = await instance_registry.get_queue_info(
-            sample_instance.instance_id
-        )
+        queue_info = await instance_registry.get_queue_info(sample_instance.instance_id)
         assert queue_info is not None
         assert queue_info.instance_id == sample_instance.instance_id
 
@@ -222,9 +197,7 @@ class TestQueueInfoManagement:
         queue_info = await instance_registry.get_queue_info("nonexistent-id")
         assert queue_info is None
 
-    async def test_update_queue_info_existing(
-        self, instance_registry, sample_instance
-    ):
+    async def test_update_queue_info_existing(self, instance_registry, sample_instance):
         """Test updating queue info for existing instance."""
         await instance_registry.register(sample_instance)
 
@@ -238,9 +211,7 @@ class TestQueueInfoManagement:
             sample_instance.instance_id, new_queue_info
         )
 
-        retrieved = await instance_registry.get_queue_info(
-            sample_instance.instance_id
-        )
+        retrieved = await instance_registry.get_queue_info(sample_instance.instance_id)
         assert retrieved is not None
         assert len(retrieved.quantiles) == 2
         assert retrieved.values == [50.0, 100.0]
@@ -261,16 +232,12 @@ class TestQueueInfoManagement:
         """Test updating with InstanceQueueBase instead of Probabilistic."""
         await instance_registry.register(sample_instance)
 
-        base_queue_info = InstanceQueueBase(
-            instance_id=sample_instance.instance_id
-        )
+        base_queue_info = InstanceQueueBase(instance_id=sample_instance.instance_id)
         await instance_registry.update_queue_info(
             sample_instance.instance_id, base_queue_info
         )
 
-        retrieved = await instance_registry.get_queue_info(
-            sample_instance.instance_id
-        )
+        retrieved = await instance_registry.get_queue_info(sample_instance.instance_id)
         assert retrieved is not None
         assert isinstance(retrieved, InstanceQueueBase)
 
@@ -333,9 +300,7 @@ class TestStatsManagement:
         stats = await instance_registry.get_stats(sample_instance.instance_id)
         assert stats.pending_tasks == 0
 
-    async def test_increment_completed(
-        self, instance_registry, sample_instance
-    ):
+    async def test_increment_completed(self, instance_registry, sample_instance):
         """Test incrementing completed task count."""
         await instance_registry.register(sample_instance)
 
@@ -355,9 +320,7 @@ class TestStatsManagement:
         stats = await instance_registry.get_stats(sample_instance.instance_id)
         assert stats.failed_tasks == 1
 
-    async def test_stats_operations_on_nonexistent_instance(
-        self, instance_registry
-    ):
+    async def test_stats_operations_on_nonexistent_instance(self, instance_registry):
         """Test that stats operations on non-existent instance don't raise errors."""
         # Should not raise errors
         await instance_registry.increment_pending("nonexistent")
@@ -365,9 +328,7 @@ class TestStatsManagement:
         await instance_registry.increment_completed("nonexistent")
         await instance_registry.increment_failed("nonexistent")
 
-    async def test_combined_stats_operations(
-        self, instance_registry, sample_instance
-    ):
+    async def test_combined_stats_operations(self, instance_registry, sample_instance):
         """Test multiple stats operations together."""
         await instance_registry.register(sample_instance)
 
@@ -383,9 +344,7 @@ class TestStatsManagement:
         assert stats.completed_tasks == 1
         assert stats.failed_tasks == 1
 
-    async def test_get_drain_status_no_stats(
-        self, instance_registry, sample_instance
-    ):
+    async def test_get_drain_status_no_stats(self, instance_registry, sample_instance):
         """Test get_drain_status when stats don't exist (line 264)."""
         await instance_registry.register(sample_instance)
 
@@ -393,9 +352,7 @@ class TestStatsManagement:
         instance_registry._stats.pop(sample_instance.instance_id, None)
 
         # Get drain status - should return default values
-        info = await instance_registry.get_drain_status(
-            sample_instance.instance_id
-        )
+        info = await instance_registry.get_drain_status(sample_instance.instance_id)
         assert info["instance_id"] == sample_instance.instance_id
         assert info["status"] == sample_instance.status
         assert info["pending_tasks"] == 0
@@ -425,9 +382,7 @@ class TestCountOperations:
         for instance in sample_instances:
             await instance_registry.register(instance)
 
-        assert await instance_registry.get_total_count() == len(
-            sample_instances
-        )
+        assert await instance_registry.get_total_count() == len(sample_instances)
 
     async def test_get_total_count_after_removal(
         self, instance_registry, sample_instances
@@ -438,10 +393,7 @@ class TestCountOperations:
 
         await instance_registry.remove(sample_instances[0].instance_id)
 
-        assert (
-            await instance_registry.get_total_count()
-            == len(sample_instances) - 1
-        )
+        assert await instance_registry.get_total_count() == len(sample_instances) - 1
 
     async def test_get_active_count(self, instance_registry, sample_instances):
         """Test active count (currently same as total)."""

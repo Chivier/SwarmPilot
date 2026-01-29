@@ -93,9 +93,9 @@ class InstanceSyncResponse:
 async def handle_instance_sync(
     request: InstanceSyncRequest,
     config_model_id: str,
-    instance_registry: "InstanceRegistry",
-    worker_queue_manager: "WorkerQueueManager",
-    scheduling_strategy: "SchedulingStrategy",
+    instance_registry: InstanceRegistry,
+    worker_queue_manager: WorkerQueueManager,
+    scheduling_strategy: SchedulingStrategy,
 ) -> InstanceSyncResponse:
     """Handle instance sync request.
 
@@ -172,8 +172,8 @@ async def handle_instance_sync(
 
 async def handle_instance_addition(
     instance_info: InstanceInfo,
-    instance_registry: "InstanceRegistry",
-    worker_queue_manager: "WorkerQueueManager",
+    instance_registry: InstanceRegistry,
+    worker_queue_manager: WorkerQueueManager,
 ) -> None:
     """Add a new instance: register and create queue thread.
 
@@ -216,9 +216,9 @@ async def handle_instance_addition(
 
 async def handle_instance_removal(
     instance_id: str,
-    instance_registry: "InstanceRegistry",
-    worker_queue_manager: "WorkerQueueManager",
-    scheduling_strategy: "SchedulingStrategy",
+    instance_registry: InstanceRegistry,
+    worker_queue_manager: WorkerQueueManager,
+    scheduling_strategy: SchedulingStrategy,
 ) -> dict:
     """Remove an instance: stop queue and reschedule pending tasks.
 
@@ -271,11 +271,11 @@ async def handle_instance_removal(
 
 
 async def reschedule_task(
-    task: "QueuedTask",
+    task: QueuedTask,
     exclude_instance: str,
-    instance_registry: "InstanceRegistry",
-    worker_queue_manager: "WorkerQueueManager",
-    scheduling_strategy: "SchedulingStrategy",
+    instance_registry: InstanceRegistry,
+    worker_queue_manager: WorkerQueueManager,
+    scheduling_strategy: SchedulingStrategy,
 ) -> bool:
     """Reschedule a task to another worker.
 

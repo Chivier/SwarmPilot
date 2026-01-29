@@ -9,16 +9,14 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-import httpx
 from loguru import logger
 
-from src.utils.http_error_logger import log_http_error
-from src.clients.predictor_client import Prediction
+from src.clients.models import Prediction
 
 if TYPE_CHECKING:
-    from src.registry.instance_registry import InstanceRegistry
+    from src.clients.predictor_library_client import PredictorClient
     from src.model import Instance, InstanceQueueBase
-    from src.clients.predictor_client import PredictorClient
+    from src.registry.instance_registry import InstanceRegistry
     from src.services.worker_queue_manager import WorkerQueueManager
 
 
@@ -49,7 +47,7 @@ class SchedulingStrategy(ABC):
         """
         self.predictor_client = predictor_client
         self.instance_registry = instance_registry
-        self._worker_queue_manager: "WorkerQueueManager | None" = None
+        self._worker_queue_manager: WorkerQueueManager | None = None
 
     def set_worker_queue_manager(
         self,
@@ -209,75 +207,23 @@ class SchedulingStrategy(ABC):
         if hasattr(self, "quantiles"):
             quantiles = self.quantiles
 
-        try:
-            # Build kwargs for predict call
-            predict_kwargs = {
-                "model_id": model_id,
-                "metadata": metadata,
-                "instances": available_instances,
-                "prediction_type": prediction_type,
-            }
+        # Build kwargs for predict call
+        predict_kwargs = {
+            "model_id": model_id,
+            "metadata": metadata,
+            "instances": available_instances,
+            "prediction_type": prediction_type,
+        }
 
-            # Only add quantiles if not None
-            if quantiles is not None and prediction_type == "quantile":
-                predict_kwargs["quantiles"] = quantiles
+        # Only add quantiles if not None
+        if quantiles is not None and prediction_type == "quantile":
+            predict_kwargs["quantiles"] = quantiles
 
-            predictions = await self.predictor_client.predict(**predict_kwargs)
-            logger.debug(
-                f"sent prediction request model_id: {model_id}, metadata: {metadata}, instances: {available_instances}, prediction_type={prediction_type}, quantiles={quantiles}"
-            )
-            return predictions
-
-        except httpx.HTTPStatusError as e:
-            # Convert HTTP status errors to appropriate Python exceptions
-            log_http_error(
-                e,
-                request_body={
-                    "model_id": model_id,
-                    "instances": [i.instance_id for i in available_instances],
-                    "prediction_type": prediction_type,
-                    "metadata": metadata,
-                },
-                context="scheduler prediction request",
-            )
-            if e.response.status_code == 404:
-                raise ValueError(
-                    "No trained model available for this platform. "
-                    "Please train the model first or use experiment mode."
-                ) from e
-            elif e.response.status_code == 400:
-                raise ValueError(
-                    f"Invalid task metadata: {e.response.text}"
-                ) from e
-            else:
-                raise ConnectionError(
-                    f"Predictor service error: {e.response.status_code}"
-                ) from e
-
-        except httpx.TimeoutException as e:
-            log_http_error(
-                e,
-                request_body={
-                    "model_id": model_id,
-                    "prediction_type": prediction_type,
-                },
-                context="scheduler prediction timeout",
-            )
-            raise TimeoutError(f"Predictor service timeout: {e!s}") from e
-
-        except httpx.HTTPError as e:
-            # Network errors
-            log_http_error(
-                e,
-                request_body={
-                    "model_id": model_id,
-                    "prediction_type": prediction_type,
-                },
-                context="scheduler prediction connection error",
-            )
-            raise ConnectionError(
-                f"Predictor service unavailable: {e!s}"
-            ) from e
+        predictions = await self.predictor_client.predict(**predict_kwargs)
+        logger.debug(
+            f"sent prediction request model_id: {model_id}, metadata: {metadata}, instances: {available_instances}, prediction_type={prediction_type}, quantiles={quantiles}"
+        )
+        return predictions
 
     async def collect_queue_info(
         self,

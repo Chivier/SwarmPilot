@@ -20,8 +20,8 @@ from src.model import TaskStatus
 def reset_registries():
     """Reset registries before each test."""
     import src.api as api_module
-    from src.api import config, predictor_client
     from src.algorithms import get_strategy
+    from src.api import config, predictor_client
 
     # Clear registries
     instance_registry._instances.clear()
@@ -162,15 +162,11 @@ class TestInstanceRemoval:
         )
 
         # Drain the instance first (required for safe removal)
-        drain_response = client.post(
-            "/instance/drain", json={"instance_id": "inst-1"}
-        )
+        drain_response = client.post("/instance/drain", json={"instance_id": "inst-1"})
         assert drain_response.status_code == 200
 
         # Remove it
-        response = client.post(
-            "/instance/remove", json={"instance_id": "inst-1"}
-        )
+        response = client.post("/instance/remove", json={"instance_id": "inst-1"})
 
         assert response.status_code == 200
         data = response.json()
@@ -179,9 +175,7 @@ class TestInstanceRemoval:
 
     def test_remove_nonexistent_instance(self, client):
         """Test removing non-existent instance returns 404."""
-        response = client.post(
-            "/instance/remove", json={"instance_id": "nonexistent"}
-        )
+        response = client.post("/instance/remove", json={"instance_id": "nonexistent"})
 
         assert response.status_code == 404
 
@@ -206,9 +200,7 @@ class TestInstanceRemoval:
         await instance_registry.increment_pending("inst-1")
 
         # Removal is allowed even with pending tasks (logs warning)
-        response = client.post(
-            "/instance/remove", json={"instance_id": "inst-1"}
-        )
+        response = client.post("/instance/remove", json={"instance_id": "inst-1"})
 
         assert response.status_code == 200
         data = response.json()
@@ -363,9 +355,7 @@ class TestTaskSubmission:
         )
 
         # Mock predictor
-        with patch(
-            "src.api.predictor_client.predict", new=AsyncMock(return_value=[])
-        ):
+        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
             response = client.post(
                 "/task/submit",
                 json={
@@ -419,9 +409,7 @@ class TestTaskSubmission:
         )
 
         # Submit task first time
-        with patch(
-            "src.api.predictor_client.predict", new=AsyncMock(return_value=[])
-        ):
+        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
             client.post(
                 "/task/submit",
                 json={
@@ -433,9 +421,7 @@ class TestTaskSubmission:
             )
 
         # Try to submit again
-        with patch(
-            "src.api.predictor_client.predict", new=AsyncMock(return_value=[])
-        ):
+        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
             response = client.post(
                 "/task/submit",
                 json={
@@ -474,9 +460,7 @@ class TestTaskList:
             },
         )
 
-        with patch(
-            "src.api.predictor_client.predict", new=AsyncMock(return_value=[])
-        ):
+        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
             for i in range(3):
                 client.post(
                     "/task/submit",
@@ -514,9 +498,7 @@ class TestTaskList:
         )
 
         # Submit task
-        with patch(
-            "src.api.predictor_client.predict", new=AsyncMock(return_value=[])
-        ):
+        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
             client.post(
                 "/task/submit",
                 json={
@@ -568,9 +550,7 @@ class TestTaskInfo:
             },
         )
 
-        with patch(
-            "src.api.predictor_client.predict", new=AsyncMock(return_value=[])
-        ):
+        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
             client.post(
                 "/task/submit",
                 json={
@@ -601,7 +581,7 @@ class TestTaskResubmit:
 
     def test_resubmit_task_success(self, client):
         """Test successful task resubmission with original submission time preserved."""
-        from src.clients.predictor_client import Prediction
+        from src.clients.models import Prediction
 
         # Register instance
         client.post(
@@ -651,11 +631,12 @@ class TestTaskResubmit:
         )
         mock_wqm = MagicMock()
         mock_wqm.enqueue_task = MagicMock(return_value=1)
-        with patch(
-            "src.api.scheduling_strategy.schedule_task",
-            new=AsyncMock(return_value=mock_result),
-        ) as mock_schedule, patch(
-            "src.api.worker_queue_manager", mock_wqm
+        with (
+            patch(
+                "src.api.scheduling_strategy.schedule_task",
+                new=AsyncMock(return_value=mock_result),
+            ) as mock_schedule,
+            patch("src.api.worker_queue_manager", mock_wqm),
         ):
             response = client.post(
                 "/task/resubmit",
@@ -677,7 +658,7 @@ class TestTaskResubmit:
         import asyncio
 
         from src import api
-        from src.clients.predictor_client import Prediction
+        from src.clients.models import Prediction
 
         # Register instance
         client.post(
@@ -722,9 +703,7 @@ class TestTaskResubmit:
         async def get_original_time():
             task = await api.task_registry.get("task-1")
             if task.submitted_at:
-                dt = dt_module.fromisoformat(
-                    task.submitted_at.replace("Z", "+00:00")
-                )
+                dt = dt_module.fromisoformat(task.submitted_at.replace("Z", "+00:00"))
                 return dt.timestamp()
             return None
 
@@ -780,7 +759,7 @@ class TestTaskResubmit:
         import asyncio
 
         from src import api
-        from src.clients.predictor_client import Prediction
+        from src.clients.models import Prediction
 
         # Register instance
         client.post(
@@ -821,9 +800,7 @@ class TestTaskResubmit:
 
         # Mark task as completed
         async def mark_completed():
-            await api.task_registry.update_status(
-                "task-1", TaskStatus.COMPLETED
-            )
+            await api.task_registry.update_status("task-1", TaskStatus.COMPLETED)
 
         asyncio.get_event_loop().run_until_complete(mark_completed())
 
@@ -842,7 +819,7 @@ class TestTaskResubmit:
         import asyncio
 
         from src import api
-        from src.clients.predictor_client import Prediction
+        from src.clients.models import Prediction
 
         # Register instance
         client.post(
@@ -899,7 +876,7 @@ class TestTaskResubmit:
 
     def test_resubmit_task_original_instance_not_found(self, client):
         """Test resubmitting with non-existent original instance returns 404."""
-        from src.clients.predictor_client import Prediction
+        from src.clients.models import Prediction
 
         # Register instance
         client.post(
@@ -948,13 +925,11 @@ class TestTaskResubmit:
         )
 
         assert response.status_code == 404
-        assert (
-            "Original instance not found" in response.json()["detail"]["error"]
-        )
+        assert "Original instance not found" in response.json()["detail"]["error"]
 
     def test_resubmit_task_decrements_pending_count(self, client):
         """Test that resubmit decrements pending count on original instance."""
-        from src.clients.predictor_client import Prediction
+        from src.clients.models import Prediction
 
         # Register instance
         client.post(
@@ -994,11 +969,15 @@ class TestTaskResubmit:
             )
 
         # Verify decrement_pending is called
-        with patch(
-            "src.api.scheduling_strategy.schedule_task", new=AsyncMock(return_value=None)
-        ), patch(
-            "src.api.instance_registry.decrement_pending", new=AsyncMock()
-        ) as mock_decrement:
+        with (
+            patch(
+                "src.api.scheduling_strategy.schedule_task",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "src.api.instance_registry.decrement_pending", new=AsyncMock()
+            ) as mock_decrement,
+        ):
             response = client.post(
                 "/task/resubmit",
                 json={
@@ -1015,7 +994,7 @@ class TestTaskResubmit:
         import asyncio
 
         from src import api
-        from src.clients.predictor_client import Prediction
+        from src.clients.models import Prediction
 
         # Register instance
         client.post(
@@ -1062,7 +1041,8 @@ class TestTaskResubmit:
 
         # Resubmit should succeed for running task
         with patch(
-            "src.api.scheduling_strategy.schedule_task", new=AsyncMock(return_value=None)
+            "src.api.scheduling_strategy.schedule_task",
+            new=AsyncMock(return_value=None),
         ):
             response = client.post(
                 "/task/resubmit",
@@ -1075,7 +1055,7 @@ class TestTaskResubmit:
 
     def test_resubmit_task_reset_for_resubmit_error(self, client):
         """Test resubmit when reset_for_resubmit raises KeyError."""
-        from src.clients.predictor_client import Prediction
+        from src.clients.models import Prediction
 
         # Register instance
         client.post(
@@ -1129,7 +1109,7 @@ class TestTaskResubmit:
 
     def test_resubmit_task_with_metadata(self, client):
         """Test resubmitting task preserves metadata."""
-        from src.clients.predictor_client import Prediction
+        from src.clients.models import Prediction
 
         # Register instance
         client.post(
@@ -1183,9 +1163,7 @@ class TestTaskResubmit:
 
         from src.api import task_registry
 
-        task = asyncio.get_event_loop().run_until_complete(
-            task_registry.get("task-1")
-        )
+        task = asyncio.get_event_loop().run_until_complete(task_registry.get("task-1"))
         assert task.metadata == task_metadata
 
 
@@ -1220,9 +1198,7 @@ class TestTaskClear:
         )
 
         # Submit multiple tasks
-        with patch(
-            "src.api.predictor_client.predict", new=AsyncMock(return_value=[])
-        ):
+        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
             for i in range(3):
                 client.post(
                     "/task/submit",
@@ -1318,9 +1294,7 @@ class TestStrategyManagement:
 
     def test_set_strategy_to_min_time(self, client):
         """Test switching to min_time strategy."""
-        response = client.post(
-            "/strategy/set", json={"strategy_name": "min_time"}
-        )
+        response = client.post("/strategy/set", json={"strategy_name": "min_time"})
 
         assert response.status_code == 200
         data = response.json()
@@ -1332,9 +1306,7 @@ class TestStrategyManagement:
 
     def test_set_strategy_to_round_robin(self, client):
         """Test switching to round_robin strategy."""
-        response = client.post(
-            "/strategy/set", json={"strategy_name": "round_robin"}
-        )
+        response = client.post("/strategy/set", json={"strategy_name": "round_robin"})
 
         assert response.status_code == 200
         data = response.json()
@@ -1365,7 +1337,7 @@ class TestStrategyManagement:
 
     def test_set_strategy_clears_tasks(self, client):
         """Test that setting strategy clears all tasks."""
-        from src.clients.predictor_client import Prediction
+        from src.clients.models import Prediction
 
         # Register instance first
         client.post(
@@ -1405,9 +1377,7 @@ class TestStrategyManagement:
             )
 
         # Switch strategy
-        response = client.post(
-            "/strategy/set", json={"strategy_name": "min_time"}
-        )
+        response = client.post("/strategy/set", json={"strategy_name": "min_time"})
 
         assert response.status_code == 200
         data = response.json()
@@ -1436,9 +1406,7 @@ class TestStrategyManagement:
             )
 
         # Switch from probabilistic to min_time
-        response = client.post(
-            "/strategy/set", json={"strategy_name": "min_time"}
-        )
+        response = client.post("/strategy/set", json={"strategy_name": "min_time"})
 
         assert response.status_code == 200
         data = response.json()
@@ -1458,7 +1426,7 @@ class TestStrategyManagement:
 
     async def test_set_strategy_rejects_when_tasks_running(self, client):
         """Test that setting strategy is rejected when tasks are running."""
-        from src.clients.predictor_client import Prediction
+        from src.clients.models import Prediction
 
         # Register instance
         client.post(
@@ -1501,9 +1469,7 @@ class TestStrategyManagement:
         await task_registry.update_status("task-1", TaskStatus.RUNNING)
 
         # Try to switch strategy - should fail
-        response = client.post(
-            "/strategy/set", json={"strategy_name": "min_time"}
-        )
+        response = client.post("/strategy/set", json={"strategy_name": "min_time"})
 
         assert response.status_code == 400
         data = response.json()
@@ -1513,29 +1479,21 @@ class TestStrategyManagement:
         """Test switching between all strategies."""
         # Start with probabilistic (default)
         response = client.get("/strategy/get")
-        assert (
-            response.json()["strategy_info"]["strategy_name"] == "probabilistic"
-        )
+        assert response.json()["strategy_info"]["strategy_name"] == "probabilistic"
 
         # Switch to min_time
-        response = client.post(
-            "/strategy/set", json={"strategy_name": "min_time"}
-        )
+        response = client.post("/strategy/set", json={"strategy_name": "min_time"})
         assert response.status_code == 200
 
         response = client.get("/strategy/get")
         assert response.json()["strategy_info"]["strategy_name"] == "min_time"
 
         # Switch to round_robin
-        response = client.post(
-            "/strategy/set", json={"strategy_name": "round_robin"}
-        )
+        response = client.post("/strategy/set", json={"strategy_name": "round_robin"})
         assert response.status_code == 200
 
         response = client.get("/strategy/get")
-        assert (
-            response.json()["strategy_info"]["strategy_name"] == "round_robin"
-        )
+        assert response.json()["strategy_info"]["strategy_name"] == "round_robin"
 
         # Switch back to probabilistic
         response = client.post(
@@ -1616,9 +1574,7 @@ class TestInstanceDrain:
         )
 
         # Drain the instance
-        response = client.post(
-            "/instance/drain", json={"instance_id": "inst-1"}
-        )
+        response = client.post("/instance/drain", json={"instance_id": "inst-1"})
 
         assert response.status_code == 200
         data = response.json()
@@ -1629,9 +1585,7 @@ class TestInstanceDrain:
 
     def test_drain_nonexistent_instance(self, client):
         """Test draining non-existent instance returns 404."""
-        response = client.post(
-            "/instance/drain", json={"instance_id": "nonexistent"}
-        )
+        response = client.post("/instance/drain", json={"instance_id": "nonexistent"})
 
         assert response.status_code == 404
 
@@ -1665,9 +1619,7 @@ class TestInstanceDrain:
         await api.instance_registry.increment_pending("inst-1")
 
         # Now drain the instance
-        response = client.post(
-            "/instance/drain", json={"instance_id": "inst-1"}
-        )
+        response = client.post("/instance/drain", json={"instance_id": "inst-1"})
 
         assert response.status_code == 200
         data = response.json()
@@ -1714,7 +1666,7 @@ class TestTaskResultCallback:
 
     def test_callback_task_result_success(self, client):
         """Test successful task result callback."""
-        from src.clients.predictor_client import Prediction
+        from src.clients.models import Prediction
 
         # Register instance
         client.post(
@@ -1754,9 +1706,7 @@ class TestTaskResultCallback:
             )
 
         # Send callback
-        with patch(
-            "src.api.task_result_callback.handle_result", new=AsyncMock()
-        ):
+        with patch("src.api.task_result_callback.handle_result", new=AsyncMock()):
             response = client.post(
                 "/callback/task_result",
                 json={
@@ -1787,7 +1737,7 @@ class TestTaskResultCallback:
 
     def test_callback_task_result_invalid_status(self, client):
         """Test callback with invalid status."""
-        from src.clients.predictor_client import Prediction
+        from src.clients.models import Prediction
 
         # Register instance and submit task
         client.post(
@@ -1840,7 +1790,7 @@ class TestTaskResultCallback:
 
     def test_callback_task_result_failed(self, client):
         """Test callback for failed task."""
-        from src.clients.predictor_client import Prediction
+        from src.clients.models import Prediction
 
         # Register instance and submit task
         client.post(
@@ -1879,9 +1829,7 @@ class TestTaskResultCallback:
             )
 
         # Send callback with failure
-        with patch(
-            "src.api.task_result_callback.handle_result", new=AsyncMock()
-        ):
+        with patch("src.api.task_result_callback.handle_result", new=AsyncMock()):
             response = client.post(
                 "/callback/task_result",
                 json={
@@ -2100,7 +2048,7 @@ class TestDrainEdgeCases:
 
     def test_drain_instance_with_expect_error_queue(self, client):
         """Test draining with expect_error queue type."""
-        from src.clients.predictor_client import Prediction
+        from src.clients.models import Prediction
 
         # Register instance first
         client.post(
@@ -2155,9 +2103,7 @@ class TestDrainEdgeCases:
             )
 
         # Drain the instance
-        response = client.post(
-            "/instance/drain", json={"instance_id": "inst-2"}
-        )
+        response = client.post("/instance/drain", json={"instance_id": "inst-2"})
 
         assert response.status_code == 200
         data = response.json()
@@ -2165,7 +2111,7 @@ class TestDrainEdgeCases:
 
     def test_drain_instance_probabilistic_with_median(self, client):
         """Test draining with probabilistic queue that has median."""
-        from src.clients.predictor_client import Prediction
+        from src.clients.models import Prediction
 
         # Register instance
         client.post(
@@ -2205,9 +2151,7 @@ class TestDrainEdgeCases:
             )
 
         # Drain the instance
-        response = client.post(
-            "/instance/drain", json={"instance_id": "inst-1"}
-        )
+        response = client.post("/instance/drain", json={"instance_id": "inst-1"})
 
         assert response.status_code == 200
         data = response.json()
@@ -2231,7 +2175,7 @@ class TestWebSocketEndpoint:
 
     def test_websocket_subscribe_and_receive_result(self, client):
         """Test WebSocket subscribe and receive task result."""
-        from src.clients.predictor_client import Prediction
+        from src.clients.models import Prediction
 
         # Register instance and submit task
         client.post(
@@ -2286,9 +2230,7 @@ class TestWebSocketEndpoint:
         """Test WebSocket unsubscribe."""
         with client.websocket_connect("/task/get_result") as websocket:
             # Subscribe first
-            websocket.send_json(
-                {"type": "subscribe", "task_ids": ["task-1", "task-2"]}
-            )
+            websocket.send_json({"type": "subscribe", "task_ids": ["task-1", "task-2"]})
 
             ack1 = websocket.receive_json()
             assert len(ack1["subscribed_tasks"]) == 2
@@ -2374,7 +2316,7 @@ class TestWebSocketEndpoint:
 
     def test_websocket_exception_handling(self, client):
         """Test WebSocket exception handling."""
-        from src.clients.predictor_client import Prediction
+        from src.clients.models import Prediction
 
         # Register instance and submit task
         client.post(
@@ -2469,9 +2411,7 @@ class TestRemainingErrorHandling:
             "src.api.instance_registry.start_draining",
             side_effect=ValueError("Cannot drain"),
         ):
-            response = client.post(
-                "/instance/drain", json={"instance_id": "inst-1"}
-            )
+            response = client.post("/instance/drain", json={"instance_id": "inst-1"})
 
         assert response.status_code == 400
 
@@ -2513,7 +2453,7 @@ class TestRemainingErrorHandling:
 
     def test_task_registry_create_error(self, client):
         """Test task submission with task registry error."""
-        from src.clients.predictor_client import Prediction
+        from src.clients.models import Prediction
 
         # Register instance
         client.post(
@@ -2530,23 +2470,24 @@ class TestRemainingErrorHandling:
             },
         )
 
-        mock_prediction = Prediction(
-            instance_id="inst-1", predicted_time_ms=100.0
-        )
+        mock_prediction = Prediction(instance_id="inst-1", predicted_time_ms=100.0)
 
         from src.algorithms import ScheduleResult
 
-        with patch(
-            "src.api.scheduling_strategy.schedule_task",
-            new=AsyncMock(
-                return_value=ScheduleResult(
-                    selected_instance_id="inst-1",
-                    selected_prediction=mock_prediction,
-                )
+        with (
+            patch(
+                "src.api.scheduling_strategy.schedule_task",
+                new=AsyncMock(
+                    return_value=ScheduleResult(
+                        selected_instance_id="inst-1",
+                        selected_prediction=mock_prediction,
+                    )
+                ),
             ),
-        ), patch(
-            "src.api.task_registry.create_task",
-            side_effect=ValueError("Task creation error"),
+            patch(
+                "src.api.task_registry.create_task",
+                side_effect=ValueError("Task creation error"),
+            ),
         ):
             response = client.post(
                 "/task/submit",
@@ -2566,9 +2507,7 @@ class TestRemainingErrorHandling:
         with patch(
             "src.api.get_strategy", side_effect=Exception("Strategy init error")
         ):
-            response = client.post(
-                "/strategy/set", json={"strategy_name": "min_time"}
-            )
+            response = client.post("/strategy/set", json={"strategy_name": "min_time"})
 
         assert response.status_code == 500
 
@@ -2614,9 +2553,7 @@ class TestRemainingErrorHandling:
         )
 
         # Remove instance - should succeed
-        response = client.post(
-            "/instance/remove", json={"instance_id": "inst-1"}
-        )
+        response = client.post("/instance/remove", json={"instance_id": "inst-1"})
 
         assert response.status_code == 200
         data = response.json()
@@ -2624,7 +2561,7 @@ class TestRemainingErrorHandling:
 
     def test_drain_instance_no_median_quantile(self, client):
         """Test drain when quantile distribution has no 0.5."""
-        from src.clients.predictor_client import Prediction
+        from src.clients.models import Prediction
 
         # Register instance
         client.post(
@@ -2664,9 +2601,7 @@ class TestRemainingErrorHandling:
             )
 
         # Drain should handle missing 0.5 quantile gracefully
-        response = client.post(
-            "/instance/drain", json={"instance_id": "inst-1"}
-        )
+        response = client.post("/instance/drain", json={"instance_id": "inst-1"})
 
         assert response.status_code == 200
 
@@ -2688,9 +2623,7 @@ class TestRemainingErrorHandling:
         )
 
         # Mock get_queue_info to return None
-        with patch(
-            "src.api.instance_registry.get_queue_info", return_value=None
-        ):
+        with patch("src.api.instance_registry.get_queue_info", return_value=None):
             response = client.get("/instance/info?instance_id=inst-1")
 
         assert response.status_code == 500
@@ -2749,16 +2682,12 @@ class TestRemainingErrorHandling:
             )
 
         # Switch to min_time (expect_error queues)
-        response = client.post(
-            "/strategy/set", json={"strategy_name": "min_time"}
-        )
+        response = client.post("/strategy/set", json={"strategy_name": "min_time"})
         assert response.status_code == 200
         assert response.json()["reinitialized_instances"] == 3
 
         # Switch to round_robin (probabilistic queues)
-        response = client.post(
-            "/strategy/set", json={"strategy_name": "round_robin"}
-        )
+        response = client.post("/strategy/set", json={"strategy_name": "round_robin"})
         assert response.status_code == 200
         assert response.json()["reinitialized_instances"] == 3
 
@@ -2857,9 +2786,7 @@ class TestLifespanContextManager:
         from src import api
 
         # Mock predictor_client.close to fail
-        mock_predictor_close = AsyncMock(
-            side_effect=Exception("Shutdown failed")
-        )
+        mock_predictor_close = AsyncMock(side_effect=Exception("Shutdown failed"))
 
         with patch("src.api.predictor_client.close", mock_predictor_close):
             lifespan_cm = api.lifespan(api.app)
@@ -2912,7 +2839,7 @@ class TestAdditionalCoveragePaths:
     async def test_websocket_subscribe_to_completed_task(self, client):
         """Test subscribing to a task that is already completed."""
         from src import api
-        from src.clients.predictor_client import Prediction
+        from src.clients.models import Prediction
 
         # Register instance
         client.post(
@@ -2986,9 +2913,7 @@ class TestAdditionalCoveragePaths:
         """Test unsubscribe with invalid task_ids format."""
         with client.websocket_connect("/task/get_result") as websocket:
             # Send unsubscribe with invalid task_ids (not a list)
-            websocket.send_json(
-                {"type": "unsubscribe", "task_ids": "not-a-list"}
-            )
+            websocket.send_json({"type": "unsubscribe", "task_ids": "not-a-list"})
 
             # Should receive error message
             error = websocket.receive_json()
@@ -3021,7 +2946,7 @@ class TestAdditionalCoveragePaths:
 
     def test_drain_instance_median_fallback(self, client):
         """Test drain when median quantile needs fallback."""
-        from src.clients.predictor_client import Prediction
+        from src.clients.models import Prediction
 
         # Register instance
         client.post(
@@ -3064,9 +2989,7 @@ class TestAdditionalCoveragePaths:
             )
 
         # Drain the instance - should trigger lines 448-450
-        response = client.post(
-            "/instance/drain", json={"instance_id": "inst-1"}
-        )
+        response = client.post("/instance/drain", json={"instance_id": "inst-1"})
 
         assert response.status_code == 200
         data = response.json()

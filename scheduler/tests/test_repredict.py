@@ -11,10 +11,10 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from src.clients.models import Prediction
 from src.model import (
     TaskStatus,
 )
-from src.clients.predictor_client import Prediction
 
 # ============================================================================
 # Fixtures for repredict tests
@@ -45,9 +45,7 @@ def new_prediction():
     )
 
 
-def setup_instance_and_task(
-    test_client, task_id: str, model_id: str = "model-1"
-):
+def setup_instance_and_task(test_client, task_id: str, model_id: str = "model-1"):
     """Helper to register instance and submit a task."""
     # Register instance (idempotent)
     test_client.post(
@@ -65,9 +63,7 @@ def setup_instance_and_task(
     )
 
     # Submit task
-    with patch(
-        "src.api.predictor_client.predict", new=AsyncMock(return_value=[])
-    ):
+    with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
         test_client.post(
             "/task/submit",
             json={

@@ -41,7 +41,7 @@ ERROR_MARGIN_PERCENT = 0.2
 
 
 def get_queue_info_from_manager(
-    worker_queue_manager: "WorkerQueueManager | None",
+    worker_queue_manager: WorkerQueueManager | None,
     instance_id: str,
     avg_exec_time_ms: float,
 ) -> InstanceQueueExpectError:
@@ -105,7 +105,7 @@ def get_queue_info_from_manager(
 
 
 def get_all_queue_info_from_manager(
-    worker_queue_manager: "WorkerQueueManager | None",
+    worker_queue_manager: WorkerQueueManager | None,
     instance_ids: list[str],
     avg_exec_time_ms: float,
 ) -> dict[str, InstanceQueueExpectError]:

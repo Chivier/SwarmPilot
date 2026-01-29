@@ -8,12 +8,12 @@ import random
 from typing import TYPE_CHECKING
 
 from src.algorithms.base import SchedulingStrategy
-from src.clients.predictor_client import Prediction
+from src.clients.models import Prediction
 
 if TYPE_CHECKING:
-    from src.registry.instance_registry import InstanceRegistry
+    from src.clients.predictor_library_client import PredictorClient
     from src.model import InstanceQueueBase
-    from src.clients.predictor_client import PredictorClient
+    from src.registry.instance_registry import InstanceRegistry
 
 
 class RandomStrategy(SchedulingStrategy):

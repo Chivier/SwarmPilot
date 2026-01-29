@@ -22,8 +22,8 @@ from src.model import InstanceStatus
 def reset_registries():
     """Reset registries before each test."""
     import src.api as api_module
-    from src.api import predictor_client
     from src.algorithms import get_strategy
+    from src.api import predictor_client
 
     # Clear registries
     instance_registry._instances.clear()
@@ -115,13 +115,16 @@ def test_redeploy_start_endpoint_success(client):
             selected_instance_id="instance-2",
             selected_prediction=None,
         )
-        with patch(
-            "src.api.scheduling_strategy.schedule_task",
-            new_callable=AsyncMock,
-            return_value=mock_result,
-        ), patch(
-            "src.api.worker_queue_manager.enqueue_task",
-            return_value=1,
+        with (
+            patch(
+                "src.api.scheduling_strategy.schedule_task",
+                new_callable=AsyncMock,
+                return_value=mock_result,
+            ),
+            patch(
+                "src.api.worker_queue_manager.enqueue_task",
+                return_value=1,
+            ),
         ):
             # Start redeployment on instance-1
             redeploy_request = {
@@ -129,9 +132,7 @@ def test_redeploy_start_endpoint_success(client):
                 "redeploy_reason": "Testing redeployment",
                 "target_model_id": "model-b",
             }
-            response = client.post(
-                "/instance/redeploy/start", json=redeploy_request
-            )
+            response = client.post("/instance/redeploy/start", json=redeploy_request)
 
             # Verify response
             assert response.status_code == 200
@@ -177,9 +178,7 @@ def test_redeploy_start_instance_not_active(client):
     client.post("/instance/register", json=instance_data)
 
     # Set instance to DRAINING status
-    asyncio.run(
-        instance_registry.update_status("instance-1", InstanceStatus.DRAINING)
-    )
+    asyncio.run(instance_registry.update_status("instance-1", InstanceStatus.DRAINING))
 
     # Try to start redeployment
     redeploy_request = {
@@ -211,9 +210,7 @@ def test_redeploy_complete_endpoint_success(client):
 
     # Set instance to REDEPLOYING status
     asyncio.run(
-        instance_registry.update_status(
-            "instance-1", InstanceStatus.REDEPLOYING
-        )
+        instance_registry.update_status("instance-1", InstanceStatus.REDEPLOYING)
     )
 
     # Complete redeployment with updated configuration
@@ -334,22 +331,23 @@ def test_redeploy_task_redistribution_preserves_priority(client):
             selected_prediction=None,
         )
 
-        with patch(
-            "src.api.scheduling_strategy.schedule_task",
-            new_callable=AsyncMock,
-            return_value=mock_result,
-        ), patch(
-            "src.api.worker_queue_manager.enqueue_task",
-            side_effect=mock_enqueue_task,
+        with (
+            patch(
+                "src.api.scheduling_strategy.schedule_task",
+                new_callable=AsyncMock,
+                return_value=mock_result,
+            ),
+            patch(
+                "src.api.worker_queue_manager.enqueue_task",
+                side_effect=mock_enqueue_task,
+            ),
         ):
             # Start redeployment
             redeploy_request = {
                 "instance_id": "instance-1",
                 "redeploy_reason": "Testing priority preservation",
             }
-            response = client.post(
-                "/instance/redeploy/start", json=redeploy_request
-            )
+            response = client.post("/instance/redeploy/start", json=redeploy_request)
 
             assert response.status_code == 200
             # Verify enqueue_times were preserved

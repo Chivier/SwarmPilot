@@ -4,15 +4,16 @@ Tests the declarative instance sync endpoint where the Planner submits
 the complete target instance list and the scheduler computes the diff.
 """
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 
 from src.instance_sync import (
     InstanceInfo,
     InstanceSyncRequest,
-    handle_instance_sync,
     handle_instance_addition,
     handle_instance_removal,
+    handle_instance_sync,
     reschedule_task,
 )
 from src.services.worker_queue_thread import QueuedTask
