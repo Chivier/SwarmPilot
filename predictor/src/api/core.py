@@ -39,6 +39,7 @@ from typing import Any
 
 from src.api.cache import ModelCache
 from src.models import CollectedSample
+from src.models import ModelInfo
 from src.models import PlatformInfo
 from src.models import PredictionResult
 from src.models import TrainingResult
@@ -230,7 +231,9 @@ class PredictorLowLevel:
         if extra_metadata:
             metadata.update(extra_metadata)
 
-        model_key = self.generate_model_key(model_id, platform_info, prediction_type)
+        model_key = self.generate_model_key(
+            model_id, platform_info, prediction_type
+        )
 
         with self._lock:
             self._storage.save_model(model_key, predictor_state, metadata)
@@ -257,7 +260,9 @@ class PredictorLowLevel:
         Raises:
             ModelNotFoundError: If model does not exist.
         """
-        model_key = self.generate_model_key(model_id, platform_info, prediction_type)
+        model_key = self.generate_model_key(
+            model_id, platform_info, prediction_type
+        )
 
         with self._lock:
             # Check cache first
@@ -273,7 +278,9 @@ class PredictorLowLevel:
                 raise ModelNotFoundError(f"Model not found: {model_key}")
 
             if prediction_type not in PREDICTOR_CLASSES:
-                raise ValidationError(f"Invalid prediction_type: {prediction_type}")
+                raise ValidationError(
+                    f"Invalid prediction_type: {prediction_type}"
+                )
 
             predictor_class = PREDICTOR_CLASSES[prediction_type]
             predictor = predictor_class()
@@ -300,8 +307,46 @@ class PredictorLowLevel:
         Returns:
             True if model exists, False otherwise.
         """
-        model_key = self.generate_model_key(model_id, platform_info, prediction_type)
+        model_key = self.generate_model_key(
+            model_id, platform_info, prediction_type
+        )
         return self._storage.model_exists(model_key)
+
+    def get_model_info(
+        self,
+        model_id: str,
+        platform_info: PlatformInfo,
+        prediction_type: str,
+    ) -> ModelInfo:
+        """Get metadata about a stored model.
+
+        Args:
+            model_id: Model identifier.
+            platform_info: Platform information.
+            prediction_type: Type of prediction.
+
+        Returns:
+            ModelInfo with model metadata.
+
+        Raises:
+            ModelNotFoundError: If model does not exist.
+        """
+        model_key = self.generate_model_key(
+            model_id, platform_info, prediction_type
+        )
+        model_data = self._storage.load_model(model_key)
+        if model_data is None:
+            raise ModelNotFoundError(f"Model not found: {model_key}")
+
+        metadata = model_data.get("metadata", {})
+        return ModelInfo(
+            model_id=metadata.get("model_id", model_id),
+            platform_info=platform_info,
+            prediction_type=metadata.get("prediction_type", prediction_type),
+            samples_count=metadata.get("samples_count", 0),
+            last_trained=model_data.get("saved_at", ""),
+            feature_names=metadata.get("feature_names"),
+        )
 
     # -------------------------------------------------------------------------
     # Prediction
@@ -328,9 +373,13 @@ class PredictorLowLevel:
         expected_features = predictor.feature_names
 
         if expected_features is None:
-            raise PredictionError("Predictor has no feature_names - not trained?")
+            raise PredictionError(
+                "Predictor has no feature_names - not trained?"
+            )
 
-        filtered = predictor.filter_features_for_prediction(features, expected_features)
+        filtered = predictor.filter_features_for_prediction(
+            features, expected_features
+        )
 
         missing = set(expected_features) - set(filtered.keys())
         if missing:
@@ -371,7 +420,9 @@ class PredictorLowLevel:
             platform_info: Platform information.
             prediction_type: Type of prediction.
         """
-        model_key = self.generate_model_key(model_id, platform_info, prediction_type)
+        model_key = self.generate_model_key(
+            model_id, platform_info, prediction_type
+        )
         with self._lock:
             self._cache.invalidate(model_key)
 
@@ -511,7 +562,9 @@ class PredictorLowLevel:
             Prediction result dictionary.
         """
         if preprocess_config:
-            features = self.apply_preprocess_pipeline(features, preprocess_config)
+            features = self.apply_preprocess_pipeline(
+                features, preprocess_config
+            )
 
         return self.predict_with_predictor(predictor, features)
 
@@ -630,7 +683,9 @@ class PredictorCore:
         if low_level is not None:
             self._low_level = low_level
         else:
-            self._low_level = PredictorLowLevel(storage_dir=storage_dir or "models")
+            self._low_level = PredictorLowLevel(
+                storage_dir=storage_dir or "models"
+            )
 
         self._accumulated: dict[str, list[CollectedSample]] = {}
         self._feature_schemas: dict[str, list[str]] = {}
@@ -661,7 +716,9 @@ class PredictorCore:
         Raises:
             ValidationError: If features are inconsistent with schema.
         """
-        key = self._make_accumulator_key(model_id, platform_info, prediction_type)
+        key = self._make_accumulator_key(
+            model_id, platform_info, prediction_type
+        )
 
         with self._lock:
             if key not in self._feature_schemas:
@@ -702,7 +759,9 @@ class PredictorCore:
         Returns:
             Number of collected samples.
         """
-        key = self._make_accumulator_key(model_id, platform_info, prediction_type)
+        key = self._make_accumulator_key(
+            model_id, platform_info, prediction_type
+        )
         with self._lock:
             return len(self._accumulated.get(key, []))
 
@@ -719,7 +778,9 @@ class PredictorCore:
             platform_info: Platform information.
             prediction_type: Type of prediction.
         """
-        key = self._make_accumulator_key(model_id, platform_info, prediction_type)
+        key = self._make_accumulator_key(
+            model_id, platform_info, prediction_type
+        )
         with self._lock:
             self._accumulated.pop(key, None)
             self._feature_schemas.pop(key, None)
@@ -750,7 +811,9 @@ class PredictorCore:
             ValidationError: If no data collected or insufficient.
             TrainingError: If training fails.
         """
-        key = self._make_accumulator_key(model_id, platform_info, prediction_type)
+        key = self._make_accumulator_key(
+            model_id, platform_info, prediction_type
+        )
 
         with self._lock:
             samples = self._accumulated.get(key, [])
@@ -799,7 +862,8 @@ class PredictorCore:
                 samples_trained=len(features_list),
                 training_metadata=predictor.get_model_state(),
                 message=(
-                    f"Successfully trained model with " f"{len(features_list)} samples"
+                    f"Successfully trained model with "
+                    f"{len(features_list)} samples"
                 ),
             )
 
