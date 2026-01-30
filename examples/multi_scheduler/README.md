@@ -105,6 +105,7 @@ Starts the complete multi-scheduler setup:
 | 5 | Start scheduler C (sleep_model_c) | 8012 |
 
 **Environment Variables:**
+- `DUMMY_HEALTH_PORT`: Dummy health server port (default: 8001)
 - `PYLET_HEAD_PORT`: PyLet head node port (default: 5100)
 - `PLANNER_PORT`: Planner port (default: 8003)
 - `SCHEDULER_A_PORT`, `SCHEDULER_B_PORT`, `SCHEDULER_C_PORT`: Scheduler ports
@@ -181,6 +182,7 @@ PREDICTOR_MODE="library"  # Use library mode (no external service)
 ```bash
 PYLET_ENABLED=true
 PYLET_HEAD_URL="http://localhost:5100"
+PYLET_REUSE_CLUSTER=false
 PYLET_CUSTOM_COMMAND="MODEL_ID={model_id} python pylet_sleep_model.py"
 PYLET_GPU_COUNT=0
 PYLET_CPU_COUNT=1
@@ -247,11 +249,10 @@ curl http://localhost:8012/v1/instance/list | python -m json.tool
 ## Related Examples
 
 - **Mock LLM Cluster** (`examples/mock_llm_cluster/`): Multi-scheduler with mock LLM models (llm-7b, llm-32b)
-- **LLM Cluster** (`examples/llm_cluster/`): Single-scheduler with 3 LLM models and optimizer
+- **LLM Cluster** (`examples/llm_cluster/`): Multi-scheduler with 3 LLM models and optimizer
 - **PyLet Benchmark** (`examples/pylet_benchmark/`): Direct registration, no planner
 
 ## References
 
 - [Scheduler Configuration](../../scheduler/README.md)
 - [Planner Documentation](../../planner/README.md)
-- [PyLet Integration Guide](../../docs/pylet_integration.md)

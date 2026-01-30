@@ -1,48 +1,45 @@
 # LLM Cluster Example
 
-Single-scheduler setup with 3 LLM models using PyLet for container orchestration.
+Multi-scheduler setup with 3 LLM models using PyLet for container orchestration.
 
 ## Overview
 
 This example demonstrates a complete end-to-end LLM inference system with:
-- **Single Scheduler**: Handles all 3 models in one process
-- **3 LLM Models**: llm_fast, llm_medium, llm_slow with different performance characteristics
-- **PyLet Orchestration**: Deploys model instances to PyLet workers
-- **Optimizer-based Deployment**: Uses planner to compute optimal instance distribution
+- **3 Per-Model Schedulers**: One scheduler per model (llm_fast, llm_medium, llm_slow)
+- **Planner Coordination**: Central planner manages scheduler registration and PyLet deployment
+- **Library Predictor**: Schedulers use `PREDICTOR_MODE=library` (no external predictor service)
+- **Optimizer-based Deployment**: Planner computes optimal instance distribution
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────┐
-│           Client                            │
-└──────────────────┬──────────────────────────┘
-                   │ Task submissions
+┌─────────────────────────────────────────────────┐
+│                    Client                       │
+│         (generate_workload.py)                  │
+└──────────────────┬──────────────────────────────┘
+                   │ Discovers schedulers via
+                   │ Planner /v1/scheduler/list
                    ▼
-┌─────────────────────────────────────────────┐
-│  Scheduler (Single, All Models)             │
-│  - Receives tasks for llm_fast|medium|slow  │
-│  - Routes to appropriate instances          │
-│  - Polls predictor for runtime predictions  │
-└──────────────────┬──────────────────────────┘
-                   │
-        ┌──────────┴──────────┐
-        │                     │
-        ▼                     ▼
-   ┌────────┐           ┌──────────┐
-   │Predictor           │ Planner  │
-   │        │           │          │
-   └────────┘           │ - Deploy │
-                        │ - Monitor│
-                        └────┬─────┘
-                             │
-                             ▼
-                    ┌─────────────────┐
-                    │  PyLet Cluster  │
-                    │  32 Workers     │
-                    │  - llm_fast     │
-                    │  - llm_medium   │
-                    │  - llm_slow     │
-                    └─────────────────┘
+┌─────────────────────────────────────────────────┐
+│              Planner (:8003)                     │
+│  - Scheduler registration                       │
+│  - PyLet instance deployment                    │
+│  - Optimizer for instance allocation            │
+└───────┬──────────────┬──────────────┬───────────┘
+        │              │              │
+        ▼              ▼              ▼
+  ┌───────────┐  ┌───────────┐  ┌───────────┐
+  │ Scheduler │  │ Scheduler │  │ Scheduler │
+  │ llm_fast  │  │ llm_medium│  │ llm_slow  │
+  │   :8010   │  │   :8011   │  │   :8012   │
+  └─────┬─────┘  └─────┬─────┘  └─────┬─────┘
+        │              │              │
+        ▼              ▼              ▼
+  ┌───────────┐  ┌───────────┐  ┌───────────┐
+  │   PyLet   │  │   PyLet   │  │   PyLet   │
+  │ Instances │  │ Instances │  │ Instances │
+  │ (fast)    │  │ (medium)  │  │ (slow)    │
+  └───────────┘  └───────────┘  └───────────┘
 ```
 
 ## Model Configuration
@@ -63,7 +60,7 @@ Target distribution: [55.56%, 11.11%, 33.33%]
 - PyLet cluster running (32 workers, 1 GPU each)
 - Python 3.10+
 - uv package manager
-- Ports available: 8000 (scheduler), 8002 (predictor), 8003 (planner)
+- Ports available: 8003 (planner), 8010-8012 (schedulers)
 
 ### 1. Start PyLet Cluster
 
@@ -77,10 +74,13 @@ Target distribution: [55.56%, 11.11%, 33.33%]
 ./examples/llm_cluster/start_cluster.sh
 ```
 
-This starts:
-- Mock Predictor (port 8002)
-- Scheduler (port 8000)
-- Planner (port 8003, PyLet-enabled)
+This starts (4 steps):
+1. Planner (port 8003, PyLet-enabled)
+2. Scheduler for llm_fast (port 8010)
+3. Scheduler for llm_medium (port 8011)
+4. Scheduler for llm_slow (port 8012)
+
+No external predictor is started — schedulers use `PREDICTOR_MODE=library`.
 
 ### 3. Deploy Models
 
@@ -116,6 +116,7 @@ python examples/llm_cluster/generate_workload.py \
 Standalone CLI script for generating LLM inference workload.
 
 **Features:**
+- Discovers per-model schedulers via planner
 - QPS ratio support (5:1:3)
 - Per-model statistics
 - Task completion polling with timeout
@@ -124,7 +125,7 @@ Standalone CLI script for generating LLM inference workload.
 
 **Options:**
 ```
---scheduler-url       Scheduler URL (default: http://localhost:8000)
+--planner-url        Planner URL for scheduler discovery (default: http://localhost:8003)
 --total-qps          Target QPS (default: 10.0)
 --duration           Test duration in seconds (default: 60.0)
 --wait-timeout       Completion timeout (default: 600.0)
@@ -140,16 +141,17 @@ Standalone CLI script for generating LLM inference workload.
 Multi-step service startup with health checks.
 
 **Steps:**
-1. Port availability checks
-2. PyLet cluster verification
-3. Predictor startup (port 8002)
-4. Scheduler startup (port 8000) with library predictor mode
-5. Planner startup (port 8003) with PyLet integration
-6. Health checks on all services
+1. Planner startup (port 8003) with PyLet integration
+2. Scheduler (llm_fast) startup (port 8010)
+3. Scheduler (llm_medium) startup (port 8011)
+4. Scheduler (llm_slow) startup (port 8012)
+
+Each scheduler self-registers with the planner on startup.
 
 **Configuration (environment variables):**
-- `PREDICTOR_PORT`: Mock predictor port (default: 8002)
-- `SCHEDULER_PORT`: Scheduler port (default: 8000)
+- `SCHEDULER_FAST_PORT`: Scheduler for llm_fast (default: 8010)
+- `SCHEDULER_MEDIUM_PORT`: Scheduler for llm_medium (default: 8011)
+- `SCHEDULER_SLOW_PORT`: Scheduler for llm_slow (default: 8012)
 - `PLANNER_PORT`: Planner port (default: 8003)
 - `PYLET_HEAD_PORT`: PyLet head port (default: 5100)
 
@@ -158,10 +160,11 @@ Multi-step service startup with health checks.
 Graceful service shutdown.
 
 **Steps:**
-1. Terminate PyLet instances via planner
-2. Stop Planner
-3. Stop Scheduler
-4. Stop Predictor
+1. Terminate PyLet instances via planner `/v1/terminate-all`
+2. Stop Scheduler (llm_fast)
+3. Stop Scheduler (llm_medium)
+4. Stop Scheduler (llm_slow)
+5. Stop Planner
 
 All services write logs to `/tmp/llm_cluster/`.
 
@@ -184,7 +187,7 @@ Deploy models using planner optimizer.
 
 ### PyLet workers not connecting
 
-Check logs: `tail -f /tmp/llm_cluster/pylet_head.log`
+Check logs: `tail -f /tmp/llm_cluster/planner.log`
 
 Verify cluster health:
 ```bash
@@ -193,18 +196,23 @@ curl http://localhost:5100/workers | python3 -m json.tool
 
 ### Scheduler not healthy
 
-Check predictor mode:
+Check per-model scheduler logs:
 ```bash
-grep "PREDICTOR_MODE" /tmp/llm_cluster/scheduler.log
+tail -f /tmp/llm_cluster/scheduler-fast.log
+tail -f /tmp/llm_cluster/scheduler-medium.log
+tail -f /tmp/llm_cluster/scheduler-slow.log
 ```
 
-Should be "library" for this example.
+Verify predictor mode is "library":
+```bash
+grep "PREDICTOR_MODE" /tmp/llm_cluster/scheduler-fast.log
+```
 
 ### Planner deployment fails
 
-Verify scheduler is healthy:
+Verify schedulers are registered:
 ```bash
-curl http://localhost:8000/v1/health
+curl http://localhost:8003/v1/scheduler/list | python3 -m json.tool
 ```
 
 Check planner logs for PyLet connection issues:
@@ -214,9 +222,11 @@ tail -f /tmp/llm_cluster/planner.log
 
 ### Tasks not completing
 
-Verify instances are deployed:
+Verify instances are deployed in each scheduler:
 ```bash
-curl http://localhost:8003/v1/instance/list | python3 -m json.tool
+curl http://localhost:8010/v1/instance/list | python3 -m json.tool
+curl http://localhost:8011/v1/instance/list | python3 -m json.tool
+curl http://localhost:8012/v1/instance/list | python3 -m json.tool
 ```
 
 Check instance logs in `/tmp/llm_cluster/` for errors.
@@ -244,12 +254,12 @@ Actual performance varies with:
 - `start_cluster.sh` - Service startup script
 - `stop_cluster.sh` - Service shutdown script
 - `deploy_model.sh` - Model deployment script
-- `mock_predictor_server.py` - Mock predictor (pre-existing)
-- `mock_vllm_server.py` - Mock vLLM server (pre-existing)
+- `mock_predictor_server.py` - Mock predictor (used by deploy script)
+- `mock_vllm_server.py` - Mock vLLM server (deployed via PyLet)
 - `README.md` - This file
 
 ## Related
 
-- Mock cluster: `examples/mock_llm_cluster/` (multi-scheduler)
-- Multi-scheduler: `examples/multi_scheduler/` (per-model schedulers)
+- Mock LLM cluster: `examples/mock_llm_cluster/` (multi-scheduler, 2 models)
+- Multi-scheduler: `examples/multi_scheduler/` (per-model schedulers, sleep models)
 - PyLet benchmark: `examples/pylet_benchmark/` (direct registration, no planner)

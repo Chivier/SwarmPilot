@@ -371,7 +371,6 @@ For production multi-model deployments, see `examples/mock_llm_cluster/`.
 
 ## References
 
-- **Scheduler API**: `/scheduler/src/api.py`
-- **Sleep Model**: `/examples/pylet_benchmark/pylet_sleep_model.py`
-- **Mock Predictor**: `/examples/pylet_benchmark/mock_predictor_server.py`
-- **Architecture**: See [PYLET-025](https://taskmgr.example.com) documentation
+- **Scheduler API**: `../../scheduler/src/api.py`
+- **Sleep Model**: `./pylet_sleep_model.py`
+- **Mock Predictor**: `./mock_predictor_server.py`
