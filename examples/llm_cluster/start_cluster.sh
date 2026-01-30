@@ -1,16 +1,25 @@
 #!/bin/bash
-# LLM Cluster - Start Services (Single-Scheduler)
+# LLM Cluster - Start Services (Multi-Scheduler)
 # Usage: ./examples/llm_cluster/start_cluster.sh
 #
-# Starts Mock Predictor, Scheduler, and Planner (PyLet-enabled)
+# Starts Planner (PyLet-enabled) and three per-model Schedulers
 # for the LLM cluster example with 3 models (llm_fast, llm_medium, llm_slow).
-# PyLet cluster must be running separately.
+# PyLet cluster must be running separately (see scripts/start_pylet_test_cluster.sh)
+#
+# Architecture:
+# - Planner on :8003 (with PyLet)
+# - Scheduler llm_fast   on :8010
+# - Scheduler llm_medium on :8011
+# - Scheduler llm_slow   on :8012
+#
+# PYLET-036: Per-Model Schedulers + Correct Startup Sequence
 
 set -e
 
 # Configuration
-PREDICTOR_PORT=${PREDICTOR_PORT:-8002}
-SCHEDULER_PORT=${SCHEDULER_PORT:-8000}
+SCHEDULER_FAST_PORT=${SCHEDULER_FAST_PORT:-8010}
+SCHEDULER_MEDIUM_PORT=${SCHEDULER_MEDIUM_PORT:-8011}
+SCHEDULER_SLOW_PORT=${SCHEDULER_SLOW_PORT:-8012}
 PLANNER_PORT=${PLANNER_PORT:-8003}
 PYLET_HEAD_PORT=${PYLET_HEAD_PORT:-5100}
 LOG_DIR="/tmp/llm_cluster"
@@ -27,7 +36,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
 
 echo -e "${BLUE}╔════════════════════════════════════════════════════════╗${NC}"
-echo -e "${BLUE}║     LLM Cluster - Single-Scheduler Startup            ║${NC}"
+echo -e "${BLUE}║     LLM Cluster - Multi-Scheduler Startup             ║${NC}"
 echo -e "${BLUE}╚════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
@@ -51,8 +60,9 @@ check_port() {
 }
 
 echo "Checking ports..."
-check_port $PREDICTOR_PORT "Mock Predictor" || exit 1
-check_port $SCHEDULER_PORT "Scheduler" || exit 1
+check_port $SCHEDULER_FAST_PORT "Scheduler (llm_fast)" || exit 1
+check_port $SCHEDULER_MEDIUM_PORT "Scheduler (llm_medium)" || exit 1
+check_port $SCHEDULER_SLOW_PORT "Scheduler (llm_slow)" || exit 1
 check_port $PLANNER_PORT "Planner" || exit 1
 echo -e "${GREEN}✓ Service ports available${NC}"
 echo ""
@@ -85,68 +95,21 @@ uv sync --quiet
 echo -e "${GREEN}✓ Dependencies ready${NC}"
 echo ""
 
-# Start Mock Predictor
-echo -e "${BLUE}[1/3] Starting Mock Predictor on port $PREDICTOR_PORT...${NC}"
-cd "$PROJECT_ROOT"
-PREDICTOR_PORT=$PREDICTOR_PORT \
-    uv run python examples/llm_cluster/mock_predictor_server.py > "$LOG_DIR/predictor.log" 2>&1 &
-PREDICTOR_PID=$!
-echo $PREDICTOR_PID > "$LOG_DIR/predictor.pid"
-
-# Wait for Predictor to be ready
-sleep 2
-if ! kill -0 $PREDICTOR_PID 2>/dev/null; then
-    echo -e "${RED}Error: Mock Predictor failed to start. Check $LOG_DIR/predictor.log${NC}"
-    exit 1
-fi
-echo -e "${GREEN}✓ Mock Predictor started (PID: $PREDICTOR_PID)${NC}"
-
-# Start Scheduler
-echo -e "${BLUE}[2/3] Starting Scheduler on port $SCHEDULER_PORT...${NC}"
-cd "$PROJECT_ROOT/scheduler"
-
-SCHEDULER_PORT=$SCHEDULER_PORT \
-    PREDICTOR_MODE=library \
-    SCHEDULING_STRATEGY=probabilistic \
-    uv run python -m uvicorn src.api:app --host 0.0.0.0 --port $SCHEDULER_PORT \
-    > "$LOG_DIR/scheduler.log" 2>&1 &
-SCHEDULER_PID=$!
-echo $SCHEDULER_PID > "$LOG_DIR/scheduler.pid"
-
-# Wait for Scheduler to be ready
-sleep 3
-if ! kill -0 $SCHEDULER_PID 2>/dev/null; then
-    echo -e "${RED}Error: Scheduler failed to start. Check $LOG_DIR/scheduler.log${NC}"
-    exit 1
-fi
-echo -e "${GREEN}✓ Scheduler started (PID: $SCHEDULER_PID)${NC}"
-
-# Wait for scheduler to be healthy before starting planner
-echo "Waiting for scheduler health check..."
-for attempt in {1..30}; do
-    if curl -s "http://localhost:$SCHEDULER_PORT/v1/health" > /dev/null 2>&1; then
-        echo -e "${GREEN}✓ Scheduler is healthy${NC}"
-        break
-    fi
-    if [ $attempt -eq 30 ]; then
-        echo -e "${RED}Error: Scheduler failed to become healthy${NC}"
-        exit 1
-    fi
-    sleep 1
-done
-echo ""
-
-# Start Planner
-echo -e "${BLUE}[3/3] Starting Planner on port $PLANNER_PORT...${NC}"
+# Step 1: Start Planner (no SCHEDULER_URL — schedulers self-register)
+echo -e "${BLUE}[1/4] Starting Planner on port $PLANNER_PORT...${NC}"
 cd "$PROJECT_ROOT/planner"
 
+# Build custom command for mock vLLM server
+MOCK_VLLM_PATH="$PROJECT_ROOT/examples/llm_cluster/mock_vllm_server.py"
+VENV_PYTHON="$PROJECT_ROOT/.venv/bin/python"
+CUSTOM_CMD="MODEL_ID={model_id} $VENV_PYTHON $MOCK_VLLM_PATH"
+
 PLANNER_PORT=$PLANNER_PORT \
-    SCHEDULER_URL="http://localhost:$SCHEDULER_PORT" \
     PYLET_ENABLED=true \
     PYLET_HEAD_URL="http://localhost:$PYLET_HEAD_PORT" \
     PYLET_REUSE_CLUSTER=true \
     PYLET_DEFAULT_GPU_COUNT=1 \
-    PYLET_CUSTOM_COMMAND="python $PROJECT_ROOT/examples/llm_cluster/mock_vllm_server.py" \
+    PYLET_CUSTOM_COMMAND="$CUSTOM_CMD" \
     uv run python -m uvicorn src.api:app --host 0.0.0.0 --port $PLANNER_PORT \
     > "$LOG_DIR/planner.log" 2>&1 &
 PLANNER_PID=$!
@@ -159,6 +122,81 @@ if ! kill -0 $PLANNER_PID 2>/dev/null; then
     exit 1
 fi
 echo -e "${GREEN}✓ Planner started (PID: $PLANNER_PID)${NC}"
+
+# Wait for planner health check
+echo "Waiting for planner health check..."
+for attempt in {1..30}; do
+    if curl -s "http://localhost:$PLANNER_PORT/v1/health" > /dev/null 2>&1; then
+        echo -e "${GREEN}✓ Planner is healthy${NC}"
+        break
+    fi
+    if [ $attempt -eq 30 ]; then
+        echo -e "${RED}Error: Planner failed to become healthy${NC}"
+        exit 1
+    fi
+    sleep 1
+done
+echo ""
+
+# Step 2: Start Scheduler for llm_fast
+echo -e "${BLUE}[2/4] Starting Scheduler (llm_fast) on port $SCHEDULER_FAST_PORT...${NC}"
+cd "$PROJECT_ROOT/scheduler"
+SCHEDULER_MODEL_ID="llm_fast" \
+    PLANNER_REGISTRATION_URL="http://localhost:$PLANNER_PORT" \
+    SCHEDULER_SELF_URL="http://localhost:$SCHEDULER_FAST_PORT" \
+    PREDICTOR_MODE="library" \
+    uv run python -m uvicorn src.api:app --host 0.0.0.0 --port $SCHEDULER_FAST_PORT \
+    > "$LOG_DIR/scheduler-fast.log" 2>&1 &
+SCHEDULER_FAST_PID=$!
+echo $SCHEDULER_FAST_PID > "$LOG_DIR/scheduler-fast.pid"
+
+# Wait for Scheduler fast to be ready
+sleep 2
+if ! kill -0 $SCHEDULER_FAST_PID 2>/dev/null; then
+    echo -e "${RED}Error: Scheduler (llm_fast) failed to start. Check $LOG_DIR/scheduler-fast.log${NC}"
+    exit 1
+fi
+echo -e "${GREEN}✓ Scheduler (llm_fast) started (PID: $SCHEDULER_FAST_PID)${NC}"
+
+# Step 3: Start Scheduler for llm_medium
+echo -e "${BLUE}[3/4] Starting Scheduler (llm_medium) on port $SCHEDULER_MEDIUM_PORT...${NC}"
+cd "$PROJECT_ROOT/scheduler"
+SCHEDULER_MODEL_ID="llm_medium" \
+    PLANNER_REGISTRATION_URL="http://localhost:$PLANNER_PORT" \
+    SCHEDULER_SELF_URL="http://localhost:$SCHEDULER_MEDIUM_PORT" \
+    PREDICTOR_MODE="library" \
+    uv run python -m uvicorn src.api:app --host 0.0.0.0 --port $SCHEDULER_MEDIUM_PORT \
+    > "$LOG_DIR/scheduler-medium.log" 2>&1 &
+SCHEDULER_MEDIUM_PID=$!
+echo $SCHEDULER_MEDIUM_PID > "$LOG_DIR/scheduler-medium.pid"
+
+# Wait for Scheduler medium to be ready
+sleep 2
+if ! kill -0 $SCHEDULER_MEDIUM_PID 2>/dev/null; then
+    echo -e "${RED}Error: Scheduler (llm_medium) failed to start. Check $LOG_DIR/scheduler-medium.log${NC}"
+    exit 1
+fi
+echo -e "${GREEN}✓ Scheduler (llm_medium) started (PID: $SCHEDULER_MEDIUM_PID)${NC}"
+
+# Step 4: Start Scheduler for llm_slow
+echo -e "${BLUE}[4/4] Starting Scheduler (llm_slow) on port $SCHEDULER_SLOW_PORT...${NC}"
+cd "$PROJECT_ROOT/scheduler"
+SCHEDULER_MODEL_ID="llm_slow" \
+    PLANNER_REGISTRATION_URL="http://localhost:$PLANNER_PORT" \
+    SCHEDULER_SELF_URL="http://localhost:$SCHEDULER_SLOW_PORT" \
+    PREDICTOR_MODE="library" \
+    uv run python -m uvicorn src.api:app --host 0.0.0.0 --port $SCHEDULER_SLOW_PORT \
+    > "$LOG_DIR/scheduler-slow.log" 2>&1 &
+SCHEDULER_SLOW_PID=$!
+echo $SCHEDULER_SLOW_PID > "$LOG_DIR/scheduler-slow.pid"
+
+# Wait for Scheduler slow to be ready
+sleep 2
+if ! kill -0 $SCHEDULER_SLOW_PID 2>/dev/null; then
+    echo -e "${RED}Error: Scheduler (llm_slow) failed to start. Check $LOG_DIR/scheduler-slow.log${NC}"
+    exit 1
+fi
+echo -e "${GREEN}✓ Scheduler (llm_slow) started (PID: $SCHEDULER_SLOW_PID)${NC}"
 
 # Health checks
 echo ""
@@ -176,9 +214,29 @@ health_check() {
     fi
 }
 
-health_check "http://localhost:$PREDICTOR_PORT/health" "Predictor"
-health_check "http://localhost:$SCHEDULER_PORT/v1/health" "Scheduler"
+health_check "http://localhost:$SCHEDULER_FAST_PORT/v1/health" "Scheduler (llm_fast)"
+health_check "http://localhost:$SCHEDULER_MEDIUM_PORT/v1/health" "Scheduler (llm_medium)"
+health_check "http://localhost:$SCHEDULER_SLOW_PORT/v1/health" "Scheduler (llm_slow)"
 health_check "http://localhost:$PLANNER_PORT/v1/health" "Planner"
+
+# Verify scheduler registration
+echo ""
+echo "Verifying scheduler registration..."
+REGISTERED=$(curl -s "http://localhost:$PLANNER_PORT/v1/scheduler/list" 2>/dev/null)
+REG_COUNT=$(echo "$REGISTERED" | python3 -c "import sys, json; print(json.load(sys.stdin).get('total', 0))" 2>/dev/null || echo "0")
+
+if [ "$REG_COUNT" -ge 3 ]; then
+    echo -e "${GREEN}✓ $REG_COUNT schedulers registered with planner${NC}"
+    echo "$REGISTERED" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+for s in data.get('schedulers', []):
+    print(f\"  {s['model_id']}: {s['scheduler_url']}\")
+" 2>/dev/null
+else
+    echo -e "${YELLOW}! Only $REG_COUNT scheduler(s) registered (expected 3)${NC}"
+    echo "  Check scheduler logs for registration errors."
+fi
 
 echo ""
 echo -e "${GREEN}╔════════════════════════════════════════════════════════╗${NC}"
@@ -186,10 +244,11 @@ echo -e "${GREEN}║     LLM Cluster Services Ready!                       ║${
 echo -e "${GREEN}╚════════════════════════════════════════════════════════╝${NC}"
 echo ""
 echo "Services:"
-echo "  Predictor:  http://localhost:$PREDICTOR_PORT"
-echo "  Scheduler:  http://localhost:$SCHEDULER_PORT"
-echo "  Planner:    http://localhost:$PLANNER_PORT"
-echo "  PyLet:      http://localhost:$PYLET_HEAD_PORT"
+echo "  Scheduler (llm_fast):   http://localhost:$SCHEDULER_FAST_PORT"
+echo "  Scheduler (llm_medium): http://localhost:$SCHEDULER_MEDIUM_PORT"
+echo "  Scheduler (llm_slow):   http://localhost:$SCHEDULER_SLOW_PORT"
+echo "  Planner:                http://localhost:$PLANNER_PORT"
+echo "  PyLet:                  http://localhost:$PYLET_HEAD_PORT"
 echo ""
 echo "Logs: $LOG_DIR/"
 echo ""
@@ -197,3 +256,4 @@ echo -e "${YELLOW}Next steps:${NC}"
 echo "1. Deploy models:    ./examples/llm_cluster/deploy_model.sh"
 echo "2. Generate traffic: python examples/llm_cluster/generate_workload.py"
 echo "3. Stop cluster:     ./examples/llm_cluster/stop_cluster.sh"
+echo ""

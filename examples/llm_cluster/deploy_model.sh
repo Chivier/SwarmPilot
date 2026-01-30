@@ -8,8 +8,13 @@
 # - llm_slow (runtime 20x, QPS ratio 3)
 #
 # Default: 32 total instances distributed optimally
+#
+# PYLET-036: Per-Model Schedulers + Correct Startup Sequence
 
 PLANNER_PORT=${PLANNER_PORT:-8003}
+SCHEDULER_FAST_PORT=${SCHEDULER_FAST_PORT:-8010}
+SCHEDULER_MEDIUM_PORT=${SCHEDULER_MEDIUM_PORT:-8011}
+SCHEDULER_SLOW_PORT=${SCHEDULER_SLOW_PORT:-8012}
 NUM_INSTANCES=${1:-32}
 
 # Colors for output
@@ -17,6 +22,7 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 echo -e "${BLUE}╔════════════════════════════════════════════════════════╗${NC}"
@@ -53,7 +59,7 @@ print(json.dumps(target))
 EOF
 )
 
-echo "Configuration:"
+echo -e "${CYAN}Configuration:${NC}"
 echo "  Total Instances: $NUM_INSTANCES"
 echo "  Models: 3 (llm_fast, llm_medium, llm_slow)"
 echo "  Runtime Ratio: 1:5:20"
@@ -68,6 +74,24 @@ if ! curl -s "http://localhost:$PLANNER_PORT/v1/health" > /dev/null 2>&1; then
     exit 1
 fi
 echo -e "${GREEN}✓ Planner is healthy${NC}"
+
+# Check scheduler registration
+echo "Checking scheduler registration..."
+REGISTERED=$(curl -s "http://localhost:$PLANNER_PORT/v1/scheduler/list" 2>/dev/null)
+REG_COUNT=$(echo "$REGISTERED" | python3 -c "import sys, json; print(json.load(sys.stdin).get('total', 0))" 2>/dev/null || echo "0")
+
+if [ "$REG_COUNT" -ge 3 ]; then
+    echo -e "${GREEN}✓ $REG_COUNT schedulers registered${NC}"
+    echo "$REGISTERED" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+for s in data.get('schedulers', []):
+    print(f\"  {s['model_id']}: {s['scheduler_url']}\")
+" 2>/dev/null
+else
+    echo -e "${YELLOW}Warning: Only $REG_COUNT scheduler(s) registered (expected 3)${NC}"
+    echo "  Instances may not be routed to the correct scheduler."
+fi
 echo ""
 
 # Build deployment request
@@ -117,7 +141,7 @@ import sys
 
 response = json.loads('''$RESPONSE''')
 
-print("[bold cyan]Deployment Results:[/bold cyan]" if False else "Deployment Results:")
+print("Deployment Results:")
 print("")
 
 # Optimization score
@@ -148,18 +172,6 @@ for model_id, count in sorted(model_counts.items()):
 
 # Show expected capacity
 print("\nExpected Capacity:")
-total_capacity_by_model = [0.0, 0.0, 0.0]
-for i, inst in enumerate(active_instances):
-    # Each instance has capacity based on its model
-    # Capacity matrix is [20.0, 4.0, 1.0] for each worker
-    if deployment:
-        for j, model_id in enumerate(['llm_fast', 'llm_medium', 'llm_slow']):
-            if inst.get('model_id') == model_id:
-                if i < len(service_capacity):
-                    # Find the model's capacity index
-                    capacities = [20.0, 4.0, 1.0]
-                    total_capacity_by_model[j] += capacities[j]
-
 for i, model_id in enumerate(['llm_fast', 'llm_medium', 'llm_slow']):
     if model_counts.get(model_id, 0) > 0:
         # Capacity per model based on count
@@ -169,7 +181,24 @@ for i, model_id in enumerate(['llm_fast', 'llm_medium', 'llm_slow']):
 EOF
 
 echo ""
+
+# Verify instances in each per-model scheduler
+echo -e "${BLUE}Verifying instances in per-model schedulers...${NC}"
+
+INSTANCES_FAST=$(curl -s "http://localhost:$SCHEDULER_FAST_PORT/v1/instance/list" 2>/dev/null)
+TOTAL_FAST=$(echo "$INSTANCES_FAST" | python3 -c "import sys, json; print(len(json.load(sys.stdin).get('instances', [])))" 2>/dev/null || echo "?")
+echo -e "${GREEN}✓ Scheduler (llm_fast) reports $TOTAL_FAST instances${NC}"
+
+INSTANCES_MEDIUM=$(curl -s "http://localhost:$SCHEDULER_MEDIUM_PORT/v1/instance/list" 2>/dev/null)
+TOTAL_MEDIUM=$(echo "$INSTANCES_MEDIUM" | python3 -c "import sys, json; print(len(json.load(sys.stdin).get('instances', [])))" 2>/dev/null || echo "?")
+echo -e "${GREEN}✓ Scheduler (llm_medium) reports $TOTAL_MEDIUM instances${NC}"
+
+INSTANCES_SLOW=$(curl -s "http://localhost:$SCHEDULER_SLOW_PORT/v1/instance/list" 2>/dev/null)
+TOTAL_SLOW=$(echo "$INSTANCES_SLOW" | python3 -c "import sys, json; print(len(json.load(sys.stdin).get('instances', [])))" 2>/dev/null || echo "?")
+echo -e "${GREEN}✓ Scheduler (llm_slow) reports $TOTAL_SLOW instances${NC}"
+
+echo ""
 echo -e "${GREEN}✓ Deployment complete!${NC}"
 echo ""
-echo "Next: Generate workload with:"
-echo "  python examples/llm_cluster/generate_workload.py --total-qps 10 --duration 60"
+echo -e "${YELLOW}Next step:${NC}"
+echo "  Generate traffic: python examples/llm_cluster/generate_workload.py --total-qps 10 --duration 60"

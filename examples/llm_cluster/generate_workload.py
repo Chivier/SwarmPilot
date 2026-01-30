@@ -1,21 +1,23 @@
 #!/usr/bin/env python3
-"""Generate workload for LLM Cluster example (Single-Scheduler).
+"""Generate workload for LLM Cluster example (Multi-Scheduler).
 
-This script generates tasks with QPS ratios 5:1:3 (llm_fast:llm_medium:llm_slow)
-and submits them to a single scheduler. It polls for task completion and reports
-per-model statistics.
+This script generates tasks with QPS ratios 5:1:3 (llm_fast:llm_medium:llm_slow),
+queries the planner for the scheduler map, and submits tasks directly to the correct
+per-model scheduler.
 
 Usage:
     python examples/llm_cluster/generate_workload.py [options]
 
 Options:
-    --scheduler-url   Scheduler URL (default: http://localhost:8000)
+    --planner-url     Planner URL for scheduler discovery (default: http://localhost:8003)
     --total-qps       Target queries per second (default: 10.0)
     --duration        Test duration in seconds (default: 60.0)
     --wait-timeout    Timeout for task completion in seconds (default: 600.0)
 
 Example:
     python examples/llm_cluster/generate_workload.py --total-qps 15 --duration 120
+
+PYLET-036: Per-Model Schedulers + Correct Startup Sequence
 """
 
 import argparse
@@ -42,11 +44,76 @@ from rich.table import Table
 console = Console()
 
 
+class SchedulerRouter:
+    """Routes tasks to the correct per-model scheduler.
+
+    Queries the planner's /v1/scheduler/list endpoint to build a mapping
+    from model_id to scheduler_url.
+
+    Attributes:
+        planner_url: Base URL of the planner service.
+        scheduler_map: Mapping from model_id to scheduler URL.
+    """
+
+    def __init__(self, planner_url: str) -> None:
+        """Initialize the scheduler router.
+
+        Args:
+            planner_url: Base URL of the planner service.
+        """
+        self.planner_url = planner_url.rstrip("/")
+        self.scheduler_map: dict[str, str] = {}
+
+    def refresh(self) -> None:
+        """Refresh the scheduler map from the planner.
+
+        Raises:
+            RuntimeError: If the planner is unreachable or returns
+                no schedulers.
+        """
+        try:
+            response = httpx.get(
+                f"{self.planner_url}/v1/scheduler/list", timeout=5.0
+            )
+            if response.status_code != 200:
+                raise RuntimeError(
+                    f"Failed to get scheduler list: HTTP {response.status_code}"
+                )
+            data = response.json()
+            self.scheduler_map = {
+                s["model_id"]: s["scheduler_url"]
+                for s in data.get("schedulers", [])
+            }
+            if not self.scheduler_map:
+                raise RuntimeError("No schedulers registered with planner")
+        except httpx.RequestError as e:
+            raise RuntimeError(f"Cannot reach planner: {e}") from e
+
+    def get_scheduler_url(self, model_id: str) -> str:
+        """Get the scheduler URL for a model.
+
+        Args:
+            model_id: Model identifier.
+
+        Returns:
+            Scheduler URL.
+
+        Raises:
+            KeyError: If no scheduler is registered for the model.
+        """
+        if model_id not in self.scheduler_map:
+            raise KeyError(
+                f"No scheduler registered for model: {model_id}. "
+                f"Available: {list(self.scheduler_map.keys())}"
+            )
+        return self.scheduler_map[model_id]
+
+
 @dataclass
 class WorkloadConfig:
     """Configuration for LLM workload generation."""
 
-    scheduler_url: str = "http://localhost:8000"
+    planner_url: str = "http://localhost:8003"
     total_qps: float = 10.0
     duration_seconds: float = 60.0
     wait_timeout_seconds: float = 600.0
@@ -195,11 +262,11 @@ async def submit_task(
     model_id: str,
     prompt: str,
 ) -> bool:
-    """Submit a single task to the scheduler.
+    """Submit a single task to the model's scheduler.
 
     Args:
         client: HTTP client.
-        scheduler_url: Scheduler base URL.
+        scheduler_url: Scheduler base URL for this model.
         task_id: Unique task identifier.
         model_id: Model to route the task to.
         prompt: User prompt for the task.
@@ -246,11 +313,11 @@ async def poll_task_status(
     scheduler_url: str,
     task_id: str,
 ) -> tuple[str, str | None, float | None]:
-    """Poll task status.
+    """Poll task status from the model's scheduler.
 
     Args:
         client: HTTP client.
-        scheduler_url: Scheduler base URL.
+        scheduler_url: Scheduler base URL for this model.
         task_id: Task identifier.
 
     Returns:
@@ -277,11 +344,13 @@ async def poll_task_status(
 
 async def run_workload(
     config: WorkloadConfig,
+    router: SchedulerRouter,
 ) -> WorkloadStats:
     """Run the workload generator.
 
     Args:
         config: Workload configuration.
+        router: Scheduler router for per-model task routing.
 
     Returns:
         WorkloadStats with results.
@@ -317,7 +386,10 @@ async def run_workload(
 
     for i in range(total_expected_tasks):
         # Select model based on QPS ratios using weighted random choice
-        weights = [config.qps_ratios[j] / total_ratio for j in range(len(config.model_ids))]
+        weights = [
+            config.qps_ratios[j] / total_ratio
+            for j in range(len(config.model_ids))
+        ]
         model_id = random.choices(config.model_ids, weights=weights)[0]
         if task_counters[model_id] < tasks_per_model[model_id]:
             task_id = f"llm-{uuid.uuid4().hex[:8]}-{i:06d}"
@@ -332,7 +404,9 @@ async def run_workload(
         f"\n  QPS Ratio: 5:1:3 (fast:medium:slow)"
     )
     for model_id, qps in model_qps.items():
-        console.print(f"    {model_id}: {qps:.2f} QPS ({tasks_per_model[model_id]} tasks)")
+        console.print(
+            f"    {model_id}: {qps:.2f} QPS ({tasks_per_model[model_id]} tasks)"
+        )
     console.print("")
 
     # Create progress display
@@ -344,14 +418,18 @@ async def run_workload(
         TimeElapsedColumn(),
     )
 
-    submit_task_id = progress.add_task("Submitting tasks", total=total_expected_tasks)
-    complete_task_id = progress.add_task("Completed tasks", total=total_expected_tasks)
+    submit_task_id = progress.add_task(
+        "Submitting tasks", total=total_expected_tasks
+    )
+    complete_task_id = progress.add_task(
+        "Completed tasks", total=total_expected_tasks
+    )
 
     interval = 1.0 / config.total_qps
 
     async with httpx.AsyncClient() as client:
         with Live(progress, console=console, refresh_per_second=10):
-            # Phase 1: Submit tasks
+            # Phase 1: Submit tasks to per-model schedulers
             next_submit_time = time.time()
             for task_id, model_id in task_queue:
                 task_stat = TaskStats(
@@ -369,8 +447,10 @@ async def run_workload(
                 # Get random prompt
                 prompt = random.choice(config.sample_prompts)
 
+                # Route to the correct per-model scheduler
+                scheduler_url = router.get_scheduler_url(model_id)
                 success = await submit_task(
-                    client, config.scheduler_url, task_id, model_id, prompt
+                    client, scheduler_url, task_id, model_id, prompt
                 )
                 if not success:
                     stats.mark_complete(task_id, "failed", error="Submit failed")
@@ -381,7 +461,7 @@ async def run_workload(
 
             progress.update(submit_task_id, description="[green]Tasks submitted")
 
-            # Phase 2: Poll for completion
+            # Phase 2: Poll for completion from per-model schedulers
             pending_tasks = [
                 (t.task_id, t.model_id)
                 for t in stats.tasks.values()
@@ -395,8 +475,9 @@ async def run_workload(
                 still_pending = []
 
                 for task_id, model_id in pending_tasks:
+                    scheduler_url = router.get_scheduler_url(model_id)
                     poll_status, error, exec_time = await poll_task_status(
-                        client, config.scheduler_url, task_id
+                        client, scheduler_url, task_id
                     )
 
                     if poll_status in ("completed", "failed"):
@@ -438,7 +519,9 @@ def print_results(stats: WorkloadStats, config: WorkloadConfig) -> None:
     overall_table.add_row("Pending", str(summary["pending"]))
     overall_table.add_row("Duration", f"{summary['duration_s']:.2f}s")
     overall_table.add_row("Actual QPS", f"{summary['actual_qps']:.2f}")
-    overall_table.add_row("Avg Submit Latency", f"{summary['avg_submit_latency_ms']:.2f}ms")
+    overall_table.add_row(
+        "Avg Submit Latency", f"{summary['avg_submit_latency_ms']:.2f}ms"
+    )
 
     console.print(overall_table)
 
@@ -458,7 +541,11 @@ def print_results(stats: WorkloadStats, config: WorkloadConfig) -> None:
             model_id,
             str(model_stats["total"]),
             f"[green]{model_stats['completed']}[/green]",
-            f"[red]{model_stats['failed']}[/red]" if model_stats["failed"] > 0 else "0",
+            (
+                f"[red]{model_stats['failed']}[/red]"
+                if model_stats["failed"] > 0
+                else "0"
+            ),
             f"{model_stats['avg_submit_latency_ms']:.2f}ms",
             f"{model_stats['avg_execution_time_ms']:.2f}ms",
         )
@@ -475,14 +562,14 @@ def print_results(stats: WorkloadStats, config: WorkloadConfig) -> None:
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
-        description="Generate workload for LLM Cluster",
+        description="Generate workload for LLM Cluster (Multi-Scheduler)",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
-        "--scheduler-url",
+        "--planner-url",
         type=str,
-        default="http://localhost:8000",
-        help="Scheduler URL",
+        default="http://localhost:8003",
+        help="Planner URL for scheduler discovery",
     )
     parser.add_argument(
         "--total-qps",
@@ -509,37 +596,86 @@ def main():
         "[bold blue]╔════════════════════════════════════════════════════════╗[/bold blue]"
     )
     console.print(
-        "[bold blue]║     LLM Cluster - Workload Generator (Single)          ║[/bold blue]"
+        "[bold blue]║     LLM Cluster - Workload Generator (Multi)          ║[/bold blue]"
     )
     console.print(
         "[bold blue]╚════════════════════════════════════════════════════════╝[/bold blue]"
     )
 
-    # Health check scheduler
-    console.print("\nChecking scheduler health...")
+    # Discover schedulers from planner
+    console.print("\nDiscovering schedulers from planner...")
+    router = SchedulerRouter(args.planner_url)
     try:
-        response = httpx.get(f"{args.scheduler_url}/v1/health", timeout=5.0)
-        if response.status_code != 200:
+        router.refresh()
+        console.print(
+            f"[green]✓ Found {len(router.scheduler_map)} schedulers[/green]"
+        )
+        for model_id, url in router.scheduler_map.items():
+            console.print(f"  {model_id}: {url}")
+    except RuntimeError as e:
+        console.print(f"[red]Failed to discover schedulers: {e}[/red]")
+        sys.exit(1)
+
+    # Health-check each scheduler
+    console.print("\nChecking scheduler health...")
+    for model_id, scheduler_url in router.scheduler_map.items():
+        try:
+            response = httpx.get(
+                f"{scheduler_url}/v1/health", timeout=5.0
+            )
+            if response.status_code != 200:
+                console.print(
+                    f"[red]Scheduler for {model_id} not healthy "
+                    f"at {scheduler_url}[/red]"
+                )
+                sys.exit(1)
+            console.print(f"[green]✓ {model_id} scheduler is healthy[/green]")
+        except Exception as e:
             console.print(
-                f"[red]Scheduler not healthy at {args.scheduler_url}[/red]"
+                f"[red]Cannot connect to {model_id} scheduler: {e}[/red]"
             )
             sys.exit(1)
-        console.print(f"[green]✓ Scheduler is healthy[/green]")
-    except Exception as e:
+
+    # Check instances are registered in each scheduler
+    console.print("Checking registered instances...")
+    total_instances = 0
+    for model_id, scheduler_url in router.scheduler_map.items():
+        try:
+            response = httpx.get(
+                f"{scheduler_url}/v1/instance/list", timeout=5.0
+            )
+            if response.status_code == 200:
+                instances = response.json().get("instances", [])
+                total_instances += len(instances)
+                console.print(
+                    f"  {model_id}: {len(instances)} instances"
+                )
+        except Exception as e:
+            console.print(
+                f"[yellow]Warning: Could not check {model_id} instances: "
+                f"{e}[/yellow]"
+            )
+
+    if total_instances == 0:
         console.print(
-            f"[red]Cannot connect to scheduler: {e}[/red]"
+            "[red]No instances registered. "
+            "Run deploy_model.sh first.[/red]"
         )
         sys.exit(1)
 
+    console.print(
+        f"[green]✓ {total_instances} total instances registered[/green]"
+    )
+
     # Create config and run workload
     config = WorkloadConfig(
-        scheduler_url=args.scheduler_url,
+        planner_url=args.planner_url,
         total_qps=args.total_qps,
         duration_seconds=args.duration,
         wait_timeout_seconds=args.wait_timeout,
     )
 
-    stats = asyncio.run(run_workload(config))
+    stats = asyncio.run(run_workload(config, router))
 
     # Print results
     print_results(stats, config)
