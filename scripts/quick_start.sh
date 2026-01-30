@@ -73,7 +73,7 @@ echo ""
 echo -e "${BLUE}[1/4] Starting Mock Predictor on port $PREDICTOR_PORT...${NC}"
 cd "$PROJECT_ROOT"
 PREDICTOR_PORT=$PREDICTOR_PORT \
-    uv run python -m tests.integration.e2e_pylet_benchmark.mock_predictor_server > "$LOG_DIR/predictor.log" 2>&1 &
+    uv run python "$PROJECT_ROOT/examples/mock_llm_cluster/mock_predictor_server.py" > "$LOG_DIR/predictor.log" 2>&1 &
 PREDICTOR_PID=$!
 echo $PREDICTOR_PID > "$LOG_DIR/predictor.pid"
 
@@ -108,7 +108,7 @@ PORT=$SLEEP_MODEL_PORT_1 \
     MODEL_ID="sleep_model" \
     INSTANCE_ID="sleep_model-001" \
     SCHEDULER_URL="http://localhost:$SCHEDULER_PORT" \
-    uv run python tests/integration/e2e_pylet_benchmark/pylet_sleep_model.py > "$LOG_DIR/sleep_model_1.log" 2>&1 &
+    uv run python examples/pylet_benchmark/pylet_sleep_model.py > "$LOG_DIR/sleep_model_1.log" 2>&1 &
 SLEEP1_PID=$!
 echo $SLEEP1_PID > "$LOG_DIR/sleep_model_1.pid"
 
@@ -120,7 +120,7 @@ PORT=$SLEEP_MODEL_PORT_2 \
     MODEL_ID="sleep_model" \
     INSTANCE_ID="sleep_model-002" \
     SCHEDULER_URL="http://localhost:$SCHEDULER_PORT" \
-    uv run python tests/integration/e2e_pylet_benchmark/pylet_sleep_model.py > "$LOG_DIR/sleep_model_2.log" 2>&1 &
+    uv run python examples/pylet_benchmark/pylet_sleep_model.py > "$LOG_DIR/sleep_model_2.log" 2>&1 &
 SLEEP2_PID=$!
 echo $SLEEP2_PID > "$LOG_DIR/sleep_model_2.pid"
 

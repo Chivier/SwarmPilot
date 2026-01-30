@@ -93,7 +93,7 @@ echo ""
 echo -e "${BLUE}[1/4] Starting Mock Predictor on port $PREDICTOR_PORT...${NC}"
 cd "$PROJECT_ROOT"
 PREDICTOR_PORT=$PREDICTOR_PORT \
-    uv run python -m tests.integration.e2e_pylet_benchmark.mock_predictor_server > "$LOG_DIR/predictor.log" 2>&1 &
+    uv run python "$SCRIPT_DIR/mock_predictor_server.py" > "$LOG_DIR/predictor.log" 2>&1 &
 PREDICTOR_PID=$!
 echo $PREDICTOR_PID > "$LOG_DIR/predictor.pid"
 
@@ -188,14 +188,14 @@ health_check() {
 }
 
 health_check "http://localhost:$PREDICTOR_PORT/health" "Predictor"
-health_check "http://localhost:$SCHEDULER_7B_PORT/health" "Scheduler (llm-7b)"
-health_check "http://localhost:$SCHEDULER_32B_PORT/health" "Scheduler (llm-32b)"
-health_check "http://localhost:$PLANNER_PORT/health" "Planner"
+health_check "http://localhost:$SCHEDULER_7B_PORT/v1/health" "Scheduler (llm-7b)"
+health_check "http://localhost:$SCHEDULER_32B_PORT/v1/health" "Scheduler (llm-32b)"
+health_check "http://localhost:$PLANNER_PORT/v1/health" "Planner"
 
 # Verify scheduler registration
 echo ""
 echo "Verifying scheduler registration..."
-REGISTERED=$(curl -s "http://localhost:$PLANNER_PORT/scheduler/list" 2>/dev/null)
+REGISTERED=$(curl -s "http://localhost:$PLANNER_PORT/v1/scheduler/list" 2>/dev/null)
 REG_COUNT=$(echo "$REGISTERED" | python3 -c "import sys, json; print(json.load(sys.stdin).get('total', 0))" 2>/dev/null || echo "0")
 
 if [ "$REG_COUNT" -ge 2 ]; then

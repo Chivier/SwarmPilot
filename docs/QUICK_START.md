@@ -58,7 +58,7 @@ uv sync
 
 **Terminal 1: Mock Predictor**
 ```bash
-PREDICTOR_PORT=8001 uv run python -m tests.integration.e2e_pylet_benchmark.mock_predictor_server
+PREDICTOR_PORT=8001 uv run python examples/mock_llm_cluster/mock_predictor_server.py
 ```
 
 **Terminal 2: Scheduler**
@@ -72,7 +72,7 @@ PREDICTOR_URL=http://localhost:8001 uv run python -m src.cli start --port 8000
 PORT=8300 \
   MODEL_ID=sleep_model \
   SCHEDULER_URL=http://localhost:8000 \
-  uv run python tests/integration/e2e_pylet_benchmark/pylet_sleep_model.py
+  uv run python examples/pylet_benchmark/pylet_sleep_model.py
 ```
 
 > **Tip**: Start additional instances on different ports (8301, 8302, etc.) for parallel task execution.

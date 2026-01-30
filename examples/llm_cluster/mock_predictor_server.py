@@ -20,11 +20,11 @@ Environment Variables:
 
 Usage:
     # Start the server
-    uvicorn tests.integration.e2e_pylet_benchmark.mock_predictor_server:app \\
-        --host 0.0.0.0 --port 8002
+    uv run python examples/llm_cluster/mock_predictor_server.py
 
-    # Or run directly
-    python -m tests.integration.e2e_pylet_benchmark.mock_predictor_server
+    # Or via uvicorn
+    uv run uvicorn examples.llm_cluster.mock_predictor_server:app \
+        --host 0.0.0.0 --port 8002
 """
 
 import os
@@ -216,7 +216,7 @@ async def stats() -> dict[str, Any]:
 if __name__ == "__main__":
     logger.info(f"Starting Mock Predictor Server on port {PREDICTOR_PORT}")
     uvicorn.run(
-        "tests.integration.e2e_pylet_benchmark.mock_predictor_server:app",
+        app,
         host="0.0.0.0",
         port=PREDICTOR_PORT,
         log_level=LOG_LEVEL.lower(),
