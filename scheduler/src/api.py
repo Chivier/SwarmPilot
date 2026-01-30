@@ -253,11 +253,13 @@ from src.clients.training_library_client import TrainingClient
 predictor_client = PredictorClient(
     storage_dir=config.predictor.storage_dir,
     cache_max_size=config.predictor.cache_max_size,
+    preprocessor_config=config.preprocessor,
 )
 training_client = (
     TrainingClient(
-        storage=predictor_client._storage,
-        cache=predictor_client._cache,
+        storage=predictor_client._low_level._storage,
+        cache=predictor_client._low_level._cache,
+        chain_builder=predictor_client._chain_builder,
         batch_size=config.training.batch_size,
         min_samples=config.training.min_samples,
         prediction_types=config.training.prediction_types,

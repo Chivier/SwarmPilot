@@ -2,6 +2,8 @@
 
 Shares ModelStorage and ModelCache instances with PredictorClient
 so that trained models are immediately visible to predictions.
+Applies V2 preprocessor chains during training for consistency
+with prediction-time preprocessing.
 """
 
 from __future__ import annotations
@@ -17,9 +19,9 @@ from src.clients._predictor_lib import (
     PREDICTOR_CLASSES,
     ModelCache,
     ModelStorage,
-    PreprocessorsRegistry,
 )
 from src.clients.models import TrainingSample
+from src.clients.preprocessor_config import PreprocessorChainBuilder
 
 
 class TrainingClient:
@@ -27,12 +29,15 @@ class TrainingClient:
 
     Shares ModelStorage and ModelCache with PredictorClient
     so that trained models are immediately visible to predictions.
+    Applies the same V2 preprocessor chain used at prediction time
+    to ensure feature consistency.
     """
 
     def __init__(
         self,
         storage: ModelStorage,
         cache: ModelCache,
+        chain_builder: PreprocessorChainBuilder | None = None,
         batch_size: int = 100,
         min_samples: int = 10,
         prediction_types: list[str] | None = None,
@@ -42,13 +47,15 @@ class TrainingClient:
         Args:
             storage: Shared ModelStorage instance.
             cache: Shared ModelCache instance.
+            chain_builder: Shared PreprocessorChainBuilder for applying
+                the same preprocessing at training time.
             batch_size: Samples to batch before training.
             min_samples: Minimum samples required for training.
             prediction_types: Prediction types to train.
         """
         self._storage = storage
         self._cache = cache
-        self._preprocessors_registry = PreprocessorsRegistry()
+        self._chain_builder = chain_builder
         self.batch_size = batch_size
         self.min_samples = min_samples
         self.prediction_types = prediction_types or [
@@ -61,7 +68,8 @@ class TrainingClient:
         logger.info(
             f"TrainingClient initialized "
             f"(batch_size={batch_size}, min_samples={min_samples}, "
-            f"types={self.prediction_types})"
+            f"types={self.prediction_types}, "
+            f"chain_builder={'yes' if chain_builder else 'no'})"
         )
 
     def add_sample(
@@ -187,6 +195,9 @@ class TrainingClient:
     ) -> None:
         """Train a single model and save to storage.
 
+        Applies V2 preprocessor chain to each training sample before
+        training, ensuring consistency with prediction-time preprocessing.
+
         Args:
             model_id: Model identifier.
             platform_info: Platform info dict.
@@ -200,6 +211,18 @@ class TrainingClient:
         cls = PREDICTOR_CLASSES.get(prediction_type)
         if cls is None:
             raise ValueError(f"Invalid prediction type: {prediction_type}")
+
+        # Apply V2 preprocessor chain if configured
+        if self._chain_builder is not None:
+            chain = self._chain_builder.get_chain(model_id)
+            if chain is not None:
+                processed_list = []
+                for sample in features_list:
+                    runtime_ms = sample.pop("runtime_ms")
+                    processed = chain.transform(sample)
+                    processed["runtime_ms"] = runtime_ms
+                    processed_list.append(processed)
+                features_list = processed_list
 
         logger.debug(
             f"Training {model_id} ({prediction_type}) on "

@@ -1,11 +1,12 @@
 """Pydantic data models for the predictor service.
 
-Defines all request/response models for API endpoints.
+Defines all request/response models for API endpoints and library API.
 """
 
 from __future__ import annotations
 
 import re
+from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel
@@ -67,23 +68,23 @@ class PlatformInfo(BaseModel):
         # This ensures we match longer model names before shorter ones
         gpu_patterns = [
             # H20/H200 variants (check specific variants first)
-            (r'H20', 'H20'),
+            (r"H20", "H20"),
             # H100 variants (check specific variants first)
-            (r'H100[- ]?PCIE', 'H100-PCIe'),
-            (r'H100[- ]?94GB', 'H100-94GB'),
-            (r'H100', 'H100'),
+            (r"H100[- ]?PCIE", "H100-PCIe"),
+            (r"H100[- ]?94GB", "H100-94GB"),
+            (r"H100", "H100"),
             # A100 variants
-            (r'A100[- ]?80GB', 'A100-80GB'),
-            (r'A100', 'A100'),
+            (r"A100[- ]?80GB", "A100-80GB"),
+            (r"A100", "A100"),
             # V100 variants
-            (r'V100[- ]?32GB', 'V100-32GB'),
-            (r'V100', 'V100'),
+            (r"V100[- ]?32GB", "V100-32GB"),
+            (r"V100", "V100"),
             # Other A-series
-            (r'A40', 'A40'),
-            (r'A30', 'A30'),
-            (r'A10', 'A10'),
+            (r"A40", "A40"),
+            (r"A30", "A30"),
+            (r"A10", "A10"),
             # T-series
-            (r'T4', 'T4'),
+            (r"T4", "T4"),
         ]
 
         # Try to match each pattern
@@ -142,15 +143,15 @@ class TrainingRequest(BaseModel):
         description="Which features need preprocessing by which preprocessor",
     )
 
-    @field_validator('prediction_type')
+    @field_validator("prediction_type")
     @classmethod
     def validate_prediction_type(cls, v: str) -> str:
         """Validate that prediction_type is one of the allowed values."""
         allowed_types = {
-            'expect_error',
-            'quantile',
-            'linear_regression',
-            'decision_tree',
+            "expect_error",
+            "quantile",
+            "linear_regression",
+            "decision_tree",
         }
         if v not in allowed_types:
             raise ValueError(
@@ -158,7 +159,7 @@ class TrainingRequest(BaseModel):
             )
         return v
 
-    @field_validator('features_list')
+    @field_validator("features_list")
     @classmethod
     def validate_features_list(
         cls,
@@ -169,15 +170,13 @@ class TrainingRequest(BaseModel):
             raise ValueError("features_list cannot be empty")
 
         for idx, sample in enumerate(v):
-            if 'runtime_ms' not in sample:
+            if "runtime_ms" not in sample:
                 raise ValueError(
                     f"Sample at index {idx} missing required field 'runtime_ms'"
                 )
 
-            if not isinstance(sample['runtime_ms'], (int, float)):
-                raise ValueError(
-                    f"Sample at index {idx}: 'runtime_ms' must be numeric"
-                )
+            if not isinstance(sample["runtime_ms"], (int, float)):
+                raise ValueError(f"Sample at index {idx}: 'runtime_ms' must be numeric")
 
         return v
 
@@ -252,15 +251,15 @@ class PredictionRequest(BaseModel):
         description="Which features need preprocessing by which preprocessor",
     )
 
-    @field_validator('prediction_type')
+    @field_validator("prediction_type")
     @classmethod
     def validate_prediction_type(cls, v: str) -> str:
         """Validate that prediction_type is one of the allowed values."""
         allowed_types = {
-            'expect_error',
-            'quantile',
-            'linear_regression',
-            'decision_tree',
+            "expect_error",
+            "quantile",
+            "linear_regression",
+            "decision_tree",
         }
         if v not in allowed_types:
             raise ValueError(
@@ -268,7 +267,7 @@ class PredictionRequest(BaseModel):
             )
         return v
 
-    @field_validator('quantiles')
+    @field_validator("quantiles")
     @classmethod
     def validate_quantiles(
         cls,
@@ -278,9 +277,7 @@ class PredictionRequest(BaseModel):
         if v is not None:
             for q in v:
                 if not isinstance(q, (int, float)) or not (0 < q < 1):
-                    raise ValueError(
-                        f"All quantiles must be between 0 and 1, got {q}"
-                    )
+                    raise ValueError(f"All quantiles must be between 0 and 1, got {q}")
         return v
 
 
@@ -396,4 +393,141 @@ class HealthResponse(BaseModel):
     reason: str | None = Field(
         None,
         description="Reason if unhealthy",
+    )
+
+
+# =============================================================================
+# Library API Models
+# =============================================================================
+
+
+class TrainingResult(BaseModel):
+    """Result from a training operation in the library API.
+
+    Attributes:
+        success: Whether training completed successfully.
+        model_id: Model identifier.
+        platform_info: Platform information.
+        prediction_type: Type of prediction model.
+        samples_trained: Number of samples used for training.
+        training_metadata: Additional training metadata.
+        message: Human-readable result message.
+    """
+
+    success: bool = Field(
+        ...,
+        description="Whether training completed successfully",
+    )
+    model_id: str = Field(
+        ...,
+        description="Model identifier",
+    )
+    platform_info: PlatformInfo = Field(
+        ...,
+        description="Platform information",
+    )
+    prediction_type: str = Field(
+        ...,
+        description="Type of prediction model",
+    )
+    samples_trained: int = Field(
+        ...,
+        description="Number of samples used for training",
+    )
+    training_metadata: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Additional training metadata",
+    )
+    message: str = Field(
+        ...,
+        description="Human-readable result message",
+    )
+
+
+class PredictionResult(BaseModel):
+    """Result from a prediction operation in the library API.
+
+    Attributes:
+        model_id: Model identifier used for prediction.
+        platform_info: Platform information.
+        prediction_type: Type of prediction used.
+        result: Prediction result (format varies by prediction_type).
+    """
+
+    model_id: str = Field(
+        ...,
+        description="Model identifier used for prediction",
+    )
+    platform_info: PlatformInfo = Field(
+        ...,
+        description="Platform information",
+    )
+    prediction_type: str = Field(
+        ...,
+        description="Type of prediction used",
+    )
+    result: dict[str, Any] = Field(
+        ...,
+        description="Prediction result (format varies by prediction_type)",
+    )
+
+
+class ModelInfo(BaseModel):
+    """Detailed information about a stored model.
+
+    Attributes:
+        model_id: Model identifier.
+        platform_info: Platform information.
+        prediction_type: Type of prediction.
+        samples_count: Number of training samples.
+        last_trained: ISO 8601 timestamp of last training.
+        feature_names: List of feature names the model expects.
+    """
+
+    model_id: str = Field(
+        ...,
+        description="Model identifier",
+    )
+    platform_info: PlatformInfo = Field(
+        ...,
+        description="Platform information",
+    )
+    prediction_type: str = Field(
+        ...,
+        description="Type of prediction",
+    )
+    samples_count: int = Field(
+        ...,
+        description="Number of training samples",
+    )
+    last_trained: str = Field(
+        ...,
+        description="ISO 8601 timestamp of last training",
+    )
+    feature_names: list[str] | None = Field(
+        None,
+        description="List of feature names the model expects",
+    )
+
+
+class CollectedSample(BaseModel):
+    """A single sample collected for training via the accumulator pattern.
+
+    Attributes:
+        features: Feature dictionary.
+        runtime_ms: Measured runtime in milliseconds.
+        collected_at: ISO 8601 timestamp when sample was collected.
+    """
+
+    features: dict[str, Any] = Field(
+        ...,
+        description="Feature dictionary",
+    )
+    runtime_ms: float = Field(
+        ...,
+        description="Measured runtime in milliseconds",
+    )
+    collected_at: str = Field(
+        default_factory=lambda: datetime.now().isoformat(),
+        description="ISO 8601 timestamp when sample was collected",
     )

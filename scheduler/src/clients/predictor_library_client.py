@@ -1,7 +1,8 @@
-"""Predictor client using direct library imports.
+"""Predictor client using PredictorLowLevel two-layer API.
 
-Uses direct library calls to the predictor models,
-providing in-process prediction without network overhead.
+Uses PredictorLowLevel for model management and V2 PreprocessorChainV2
+for config-driven preprocessing. All preprocessor logic is delegated
+to the PreprocessorChainBuilder.
 """
 
 from __future__ import annotations
@@ -15,176 +16,64 @@ import numpy as np
 from loguru import logger
 
 from src.clients._predictor_lib import (
-    PREDICTOR_CLASSES,
-    ModelCache,
-    ModelStorage,
     PlatformInfo,
-    PreprocessorsRegistry,
+    PredictorLowLevel,
     generate_experiment_prediction,
     is_experiment_mode,
 )
 from src.clients.models import Prediction
+from src.clients.preprocessor_config import PreprocessorChainBuilder
+from src.config import PreprocessorConfig
 
 if TYPE_CHECKING:
     from src.model import Instance
 
 
 class PredictorClient:
-    """Predictor client using direct library imports."""
+    """Predictor client using PredictorLowLevel two-layer API.
+
+    Delegates model management (load, save, cache) to PredictorLowLevel
+    and preprocessor chain building to PreprocessorChainBuilder.
+    """
 
     def __init__(
         self,
         storage_dir: str = "models",
         cache_max_size: int = 100,
+        preprocessor_config: PreprocessorConfig | None = None,
     ):
         """Initialize predictor client.
 
         Args:
             storage_dir: Directory for model storage.
-            cache_max_size: Maximum number of models to cache in memory.
+            cache_max_size: Maximum number of models to cache.
+            preprocessor_config: Preprocessor pipeline configuration.
+                If None, no preprocessors are applied.
+
+        Raises:
+            RuntimeError: If preprocessor_config has strict=True and
+                a configured preprocessor model is unavailable.
         """
-        self._storage = ModelStorage(storage_dir=storage_dir)
-        self._cache = ModelCache(max_size=cache_max_size)
-        self._preprocessors_registry = PreprocessorsRegistry()
+        self._low_level = PredictorLowLevel(
+            storage_dir=storage_dir,
+            cache_size=cache_max_size,
+        )
+
+        if preprocessor_config is None:
+            preprocessor_config = PreprocessorConfig()
+
+        self._chain_builder = PreprocessorChainBuilder(
+            config_file=preprocessor_config.config_file,
+            registry_v1=self._low_level._preprocessors_registry,
+            strict=preprocessor_config.strict_validation,
+        )
 
         logger.info(
             f"PredictorClient initialized "
-            f"(storage_dir={storage_dir}, cache_max_size={cache_max_size})"
+            f"(storage_dir={storage_dir}, "
+            f"cache_max_size={cache_max_size}, "
+            f"preprocessor_rules={self._chain_builder.has_rules})"
         )
-
-    def _create_predictor(self, prediction_type: str):
-        """Create a predictor instance by type.
-
-        Args:
-            prediction_type: One of expect_error, quantile,
-                linear_regression, decision_tree.
-
-        Returns:
-            Predictor instance.
-
-        Raises:
-            ValueError: If prediction_type is invalid.
-        """
-        cls = PREDICTOR_CLASSES.get(prediction_type)
-        if cls is None:
-            raise ValueError(
-                f"prediction_type must be 'expect_error', 'quantile', "
-                f"'linear_regression', or 'decision_tree', "
-                f"got '{prediction_type}'"
-            )
-        return cls()
-
-    def _get_predictor(
-        self,
-        model_id: str,
-        platform_info_dict: dict[str, str],
-        prediction_type: str,
-    ):
-        """Load predictor from cache or storage.
-
-        Args:
-            model_id: Model identifier.
-            platform_info_dict: Platform info as dict.
-            prediction_type: Prediction type string.
-
-        Returns:
-            Loaded predictor instance.
-
-        Raises:
-            ValueError: If model not found or type mismatch.
-        """
-        model_key = self._storage.generate_model_key(
-            model_id=model_id,
-            platform_info=platform_info_dict,
-            prediction_type=prediction_type,
-        )
-
-        # Try cache first
-        cached_result = self._cache.get(model_key)
-        if cached_result is not None:
-            predictor, stored_type = cached_result
-            if stored_type != prediction_type:
-                raise ValueError(
-                    f"Prediction type mismatch: model trained with "
-                    f"'{stored_type}', request has '{prediction_type}'"
-                )
-            return predictor
-
-        # Cache miss — load from storage
-        model_data = self._storage.load_model(model_key)
-        if model_data is None:
-            raise ValueError(
-                f"Model not found: no trained model for "
-                f"model_id='{model_id}' with given platform_info"
-            )
-
-        stored_type = model_data["metadata"].get("prediction_type")
-        if stored_type != prediction_type:
-            raise ValueError(
-                f"Prediction type mismatch: model trained with "
-                f"'{stored_type}', request has '{prediction_type}'"
-            )
-
-        predictor = self._create_predictor(prediction_type)
-        predictor.load_model_state(model_data["predictor_state"])
-
-        # Cache for future use
-        self._cache.put(model_key, predictor, stored_type)
-        logger.info(f"Loaded and cached model: {model_key}")
-
-        return predictor
-
-    def _apply_preprocessors(
-        self,
-        features: dict[str, Any],
-        model_id: str,
-    ) -> dict[str, Any]:
-        """Apply preprocessors if model needs them.
-
-        Args:
-            features: Input features dict.
-            model_id: Model ID to determine which preprocessors.
-
-        Returns:
-            Features dict with preprocessors applied.
-        """
-        all_features = features.copy()
-
-        # Determine preprocessors based on model_id
-        enable_preprocessors = None
-        preprocessor_mappings = None
-
-        if "llm_service" in model_id and "model" in model_id:
-            enable_preprocessors = ["semantic"]
-            preprocessor_mappings = {"semantic": ["sentence"]}
-
-        if not enable_preprocessors:
-            return all_features
-
-        for preprocessor_name in enable_preprocessors:
-            preprocessor = self._preprocessors_registry.get_preprocessor(
-                preprocessor_name
-            )
-            target_feature_keys = preprocessor_mappings[preprocessor_name]
-
-            # Validate features exist
-            if not all(key in all_features for key in target_feature_keys):
-                raise ValueError(
-                    f"Feature keys {target_feature_keys} " f"not all found in features"
-                )
-
-            target_feature_values = [all_features[key] for key in target_feature_keys]
-
-            processed_features, remove_origin = preprocessor(target_feature_values)
-
-            for k, v in processed_features.items():
-                all_features[k] = v
-
-            if remove_origin:
-                for key in target_feature_keys:
-                    del all_features[key]
-
-        return all_features
 
     def _predict_single_platform(
         self,
@@ -233,21 +122,27 @@ class PredictorClient:
                 platform_info_dict,
             )
 
-        # Normal mode: load model and predict
-        predictor = self._get_predictor(model_id, platform_info_dict, prediction_type)
-
-        # Build feature set with hardware info and preprocessors
+        # Normal mode: load model via PredictorLowLevel
         platform_model = PlatformInfo(**platform_info_dict)
-        hardware_features = platform_model.extract_gpu_specs()
+        predictor = self._low_level.load_model(
+            model_id=model_id,
+            platform_info=platform_model,
+            prediction_type=prediction_type,
+        )
 
+        # Build feature set with hardware info
+        hardware_features = platform_model.extract_gpu_specs()
         all_features = metadata.copy()
         if hardware_features:
-            for key, value in hardware_features.items():
-                all_features[key] = value
+            all_features.update(hardware_features)
 
-        all_features = self._apply_preprocessors(all_features, model_id)
-
-        result = predictor.predict(all_features)
+        # Apply V2 preprocessor chain (config-driven)
+        chain = self._chain_builder.get_chain(model_id)
+        result = self._low_level.predict_with_pipeline_v2(
+            predictor=predictor,
+            features=all_features,
+            chain=chain,
+        )
 
         return self._parse_result(
             result,
@@ -424,7 +319,7 @@ class PredictorClient:
 
     async def close(self) -> None:
         """Close the predictor client and cleanup resources."""
-        self._cache.clear()
+        self._low_level.clear_cache()
         logger.info("PredictorClient closed")
 
     async def __aenter__(self):

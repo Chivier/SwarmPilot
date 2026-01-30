@@ -20,6 +20,22 @@ class PredictorConfig:
 
 
 @dataclass
+class PreprocessorConfig:
+    """Configuration for preprocessor pipeline.
+
+    Controls how features are preprocessed before prediction and training.
+    Uses a JSON config file to define rules mapping model_id patterns
+    to preprocessor chains.
+    """
+
+    # Path to preprocessor rules JSON (empty = no preprocessors)
+    config_file: str = os.getenv("PREPROCESSOR_CONFIG_FILE", "")
+
+    # Fail if configured preprocessor model unavailable
+    strict_validation: bool = os.getenv("PREPROCESSOR_STRICT", "true").lower() == "true"
+
+
+@dataclass
 class SchedulingConfig:
     """Configuration for scheduling behavior."""
 
@@ -165,6 +181,7 @@ class Config:
     """Main configuration object combining all settings."""
 
     predictor: PredictorConfig
+    preprocessor: PreprocessorConfig
     scheduling: SchedulingConfig
     training: TrainingConfig
     logging: LoggingConfig
@@ -182,6 +199,7 @@ class Config:
         """
         return cls(
             predictor=PredictorConfig(),
+            preprocessor=PreprocessorConfig(),
             scheduling=SchedulingConfig(),
             training=TrainingConfig(),
             logging=LoggingConfig(),

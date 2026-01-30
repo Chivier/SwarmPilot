@@ -31,9 +31,10 @@ def mock_storage():
 
 @pytest.fixture
 def mock_predictor_client(mock_storage):
-    """Create a mock PredictorClient with storage."""
+    """Create a mock PredictorClient with PredictorLowLevel storage."""
     client = MagicMock()
-    client._storage = mock_storage
+    client._low_level = MagicMock()
+    client._low_level._storage = mock_storage
     client.predict = AsyncMock()
     return client
 
