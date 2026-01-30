@@ -46,3 +46,4 @@ class StrategyType(str, Enum):
     RANDOM = "random"
     POWEROFTWO = "po2"
     SERVERLESS = "serverless"
+    ADAPTIVE_BOOTSTRAP = "adaptive_bootstrap"

@@ -24,7 +24,7 @@ class SchedulingConfig:
     """Configuration for scheduling behavior."""
 
     # Default scheduling strategy: "min_time", "probabilistic", "round_robin"
-    default_strategy: str = os.getenv("SCHEDULING_STRATEGY", "probabilistic")
+    default_strategy: str = os.getenv("SCHEDULING_STRATEGY", "adaptive_bootstrap")
 
     # Target quantile for probabilistic scheduling (0.0 - 1.0)
     probabilistic_quantile: float = float(
@@ -57,7 +57,7 @@ class TrainingConfig:
     def __post_init__(self):
         """Parse prediction_types from environment variable."""
         if self.prediction_types is None:
-            env_types = os.getenv("TRAINING_PREDICTION_TYPES", "expect_error,quantile")
+            env_types = os.getenv("TRAINING_PREDICTION_TYPES", "quantile")
             self.prediction_types = [
                 t.strip() for t in env_types.split(",") if t.strip()
             ]

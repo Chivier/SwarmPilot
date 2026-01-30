@@ -2759,7 +2759,7 @@ async def reinitialize_instance_queues(
         or strategy_name == "severless"
     ):
         queue_info_type = "expect_error"
-    elif strategy_name == "probabilistic":
+    elif strategy_name in ("probabilistic", "adaptive_bootstrap"):
         queue_info_type = "probabilistic"
     else:  # round_robin
         queue_info_type = "probabilistic"  # Default to probabilistic for round_robin
@@ -2832,6 +2832,10 @@ def get_current_strategy_info() -> StrategyInfo:
     elif strategy_class_name == "PowerOfTwoStrategy":
         strategy_name = "po2"
         parameters = {}
+    elif strategy_class_name == "AdaptiveBootstrapStrategy":
+        strategy_name = "adaptive_bootstrap"
+        target_quantile = getattr(scheduling_strategy, "target_quantile", 0.9)
+        parameters = {"target_quantile": target_quantile}
     else:
         strategy_name = "unknown"
         parameters = {}

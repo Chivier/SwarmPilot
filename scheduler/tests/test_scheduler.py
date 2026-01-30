@@ -3,10 +3,10 @@
 Tests all scheduling strategies and the factory function.
 """
 
-
 import pytest
 
 from src.algorithms import (
+    AdaptiveBootstrapStrategy,
     MinimumExpectedTimeStrategy,
     ProbabilisticSchedulingStrategy,
     RoundRobinStrategy,
@@ -492,21 +492,21 @@ class TestGetStrategy:
         strategy = get_strategy("round_robin", mock_predictor_client, instance_registry)
         assert isinstance(strategy, RoundRobinStrategy)
 
-    async def test_unknown_strategy_defaults_to_probabilistic(
+    async def test_unknown_strategy_defaults_to_adaptive_bootstrap(
         self, mock_predictor_client, instance_registry
     ):
-        """Test that unknown strategy name defaults to probabilistic."""
+        """Test that unknown strategy name defaults to adaptive bootstrap."""
         strategy = get_strategy(
             "unknown_strategy", mock_predictor_client, instance_registry
         )
-        assert isinstance(strategy, ProbabilisticSchedulingStrategy)
+        assert isinstance(strategy, AdaptiveBootstrapStrategy)
 
     async def test_case_sensitivity(self, mock_predictor_client, instance_registry):
         """Test that strategy names are case-sensitive."""
         # "MIN_TIME" should not match "min_time"
         strategy = get_strategy("MIN_TIME", mock_predictor_client, instance_registry)
-        # Should default to probabilistic
-        assert isinstance(strategy, ProbabilisticSchedulingStrategy)
+        # Should default to adaptive bootstrap
+        assert isinstance(strategy, AdaptiveBootstrapStrategy)
 
 
 # ============================================================================

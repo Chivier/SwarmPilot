@@ -5,6 +5,7 @@ Provides a centralized way to instantiate scheduling strategies by name.
 
 from typing import TYPE_CHECKING
 
+from src.algorithms.adaptive_bootstrap import AdaptiveBootstrapStrategy
 from src.algorithms.min_expected_time import MinimumExpectedTimeStrategy
 from src.algorithms.min_expected_time_dt import MinimumExpectedTimeDTStrategy
 from src.algorithms.min_expected_time_lr import MinimumExpectedTimeLRStrategy
@@ -60,8 +61,12 @@ def get_strategy(
         return MinimumExpectedTimeServerlessStrategy(
             predictor_client, instance_registry
         )
+    elif strategy_name == "adaptive_bootstrap":
+        return AdaptiveBootstrapStrategy(
+            predictor_client, instance_registry, target_quantile=target_quantile
+        )
     else:
-        # Default to probabilistic
-        return ProbabilisticSchedulingStrategy(
+        # Default to adaptive bootstrap
+        return AdaptiveBootstrapStrategy(
             predictor_client, instance_registry, target_quantile=target_quantile
         )

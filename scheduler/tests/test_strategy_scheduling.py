@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from src.algorithms import (
+    AdaptiveBootstrapStrategy,
     MinimumExpectedTimeStrategy,
     ProbabilisticSchedulingStrategy,
     RoundRobinStrategy,
@@ -587,11 +588,11 @@ class TestStrategyFactory:
         strategy = get_strategy("round_robin", mock_predictor_client, instance_registry)
         assert isinstance(strategy, RoundRobinStrategy)
 
-    def test_get_strategy_unknown_defaults_to_probabilistic(
+    def test_get_strategy_unknown_defaults_to_adaptive_bootstrap(
         self, mock_predictor_client, instance_registry
     ):
-        """Test unknown strategy name defaults to probabilistic."""
+        """Test unknown strategy name defaults to adaptive bootstrap."""
         strategy = get_strategy(
             "unknown_strategy", mock_predictor_client, instance_registry
         )
-        assert isinstance(strategy, ProbabilisticSchedulingStrategy)
+        assert isinstance(strategy, AdaptiveBootstrapStrategy)
