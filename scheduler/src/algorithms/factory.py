@@ -7,8 +7,6 @@ from typing import TYPE_CHECKING
 
 from src.algorithms.adaptive_bootstrap import AdaptiveBootstrapStrategy
 from src.algorithms.min_expected_time import MinimumExpectedTimeStrategy
-from src.algorithms.min_expected_time_dt import MinimumExpectedTimeDTStrategy
-from src.algorithms.min_expected_time_lr import MinimumExpectedTimeLRStrategy
 from src.algorithms.power_of_two import PowerOfTwoStrategy
 from src.algorithms.probabilistic import ProbabilisticSchedulingStrategy
 from src.algorithms.random import RandomStrategy
@@ -32,7 +30,7 @@ def get_strategy(
 
     Args:
         strategy_name: Name of strategy
-                      ("min_time", "probabilistic", "round_robin", "min_time_lr", "min_time_dt")
+                      ("min_time", "probabilistic", "round_robin", etc.)
         predictor_client: Predictor client instance
         instance_registry: Instance registry instance
         target_quantile: Target quantile for probabilistic strategy (default: 0.9)
@@ -43,10 +41,6 @@ def get_strategy(
     """
     if strategy_name == "min_time":
         return MinimumExpectedTimeStrategy(predictor_client, instance_registry)
-    elif strategy_name == "min_time_lr":
-        return MinimumExpectedTimeLRStrategy(predictor_client, instance_registry)
-    elif strategy_name == "min_time_dt":
-        return MinimumExpectedTimeDTStrategy(predictor_client, instance_registry)
     elif strategy_name == "probabilistic":
         return ProbabilisticSchedulingStrategy(
             predictor_client, instance_registry, target_quantile=target_quantile

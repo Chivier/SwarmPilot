@@ -174,7 +174,7 @@ All environment variables are defined in `src/config.py` and loaded via Pydantic
 | `SCHEDULING_STRATEGY` | str | `"probabilistic"` | Default strategy name |
 | `SCHEDULING_PROBABILISTIC_QUANTILE` | float | `0.9` | Target quantile for probabilistic strategy |
 
-Available strategies: `min_time`, `min_time_dt`, `min_time_lr`, `probabilistic`, `round_robin`, `random`, `power_of_two`, `serverless`
+Available strategies: `min_time`, `probabilistic`, `round_robin`, `random`, `power_of_two`, `serverless`
 
 ### Training Configuration
 | Variable | Type | Default | Description |
@@ -348,8 +348,6 @@ All strategies are in `src/algorithms/` and inherit from `SchedulingStrategy` ba
 | **round_robin** | `round_robin.py` | Simple cyclic distribution |
 | **random** | `random.py` | Random instance selection |
 | **min_time** | `min_expected_time.py` | Greedy shortest queue selection |
-| **min_time_dt** | `min_expected_time_dt.py` | Decision tree-based prediction |
-| **min_time_lr** | `min_expected_time_lr.py` | Linear regression-based prediction |
 | **probabilistic** | `probabilistic.py` | Monte Carlo quantile-based scheduling |
 | **power_of_two** | `power_of_two.py` | Power of two choices algorithm |
 | **serverless** | `serverless.py` | Optimized for serverless workloads |
@@ -510,8 +508,8 @@ curl "http://localhost:8000/task/submit?profile=true&profile_format=speedscope"
 - **Instance:** initializing, active, draining, removing, redeploying
 
 ### Strategy Names
-- `round_robin`, `random`, `min_time`, `min_time_dt`, `min_time_lr`
-- `probabilistic`, `power_of_two`, `serverless`
+- `round_robin`, `random`, `min_time`, `probabilistic`
+- `power_of_two`, `serverless`
 
 ### Default Ports
 - **Scheduler:** 8000

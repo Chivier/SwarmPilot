@@ -11,9 +11,7 @@ from fastapi import WebSocketDisconnect
 from src.api import dependencies
 from src.models import PredictionRequest
 from src.models import PredictionResponse
-from src.predictor.decision_tree import DecisionTreePredictor
 from src.predictor.expect_error import ExpectErrorPredictor
-from src.predictor.linear_regression import LinearRegressionPredictor
 from src.predictor.quantile import QuantilePredictor
 from src.utils.experiment import generate_experiment_prediction
 from src.utils.experiment import is_experiment_mode
@@ -222,17 +220,13 @@ async def websocket_predict(websocket: WebSocket):
                         predictor = ExpectErrorPredictor()
                     elif request.prediction_type == "quantile":
                         predictor = QuantilePredictor()
-                    elif request.prediction_type == "linear_regression":
-                        predictor = LinearRegressionPredictor()
-                    elif request.prediction_type == "decision_tree":
-                        predictor = DecisionTreePredictor()
                     else:
                         error_detail = {
                             "error": "Invalid prediction type",
                             "message": (
-                                f"prediction_type must be 'expect_error', "
-                                f"'quantile', 'linear_regression', or "
-                                f"'decision_tree', got '{request.prediction_type}'"
+                                f"prediction_type must be 'expect_error' "
+                                f"or 'quantile', "
+                                f"got '{request.prediction_type}'"
                             ),
                         }
                         dependencies._log_error(

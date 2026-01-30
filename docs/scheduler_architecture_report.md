@@ -112,13 +112,11 @@ scheduler/src/
   4. `update_queue()` — abstract method to update queue state post-scheduling
   5. Returns `ScheduleResult(selected_instance_id, selected_prediction)`
 
-- **8 concrete strategies** selected via `factory.py::get_strategy()`:
+- **6 concrete strategies** selected via `factory.py::get_strategy()`:
 
 | Strategy Name | Class | Approach |
 |--------------|-------|----------|
 | `min_time` | `MinimumExpectedTimeStrategy` | Minimize (queue_wait + predicted_runtime) |
-| `min_time_lr` | `MinimumExpectedTimeLRStrategy` | Linear regression variant |
-| `min_time_dt` | `MinimumExpectedTimeDTStrategy` | Decision tree variant |
 | `probabilistic` | `ProbabilisticSchedulingStrategy` | Monte Carlo sampling on quantiles (default) |
 | `round_robin` | `RoundRobinStrategy` | Simple rotation |
 | `random` | `RandomStrategy` | Random baseline |

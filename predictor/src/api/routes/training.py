@@ -11,9 +11,7 @@ from fastapi import status
 from src.api import dependencies
 from src.models import TrainingRequest
 from src.models import TrainingResponse
-from src.predictor.decision_tree import DecisionTreePredictor
 from src.predictor.expect_error import ExpectErrorPredictor
-from src.predictor.linear_regression import LinearRegressionPredictor
 from src.predictor.quantile import QuantilePredictor
 from src.utils.logging import get_logger
 
@@ -66,16 +64,11 @@ async def train_model(request: TrainingRequest):
             predictor = ExpectErrorPredictor()
         elif request.prediction_type == "quantile":
             predictor = QuantilePredictor()
-        elif request.prediction_type == "linear_regression":
-            predictor = LinearRegressionPredictor()
-        elif request.prediction_type == "decision_tree":
-            predictor = DecisionTreePredictor()
         else:
             error_detail = {
                 "error": "Invalid prediction type",
                 "message": (
-                    f"prediction_type must be 'expect_error', 'quantile', "
-                    f"'linear_regression', or 'decision_tree', "
+                    f"prediction_type must be 'expect_error' or 'quantile', "
                     f"got '{request.prediction_type}'"
                 ),
             }

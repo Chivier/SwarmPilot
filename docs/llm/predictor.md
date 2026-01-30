@@ -37,9 +37,7 @@ predictor/src/
 ├── predictor/                # Prediction algorithms
 │   ├── base.py              # Abstract base class
 │   ├── expect_error.py      # MSE-based predictor
-│   ├── quantile.py          # Quantile regression
-│   ├── decision_tree.py     # Decision tree
-│   └── linear_regression.py # Linear regression
+│   └── quantile.py          # Quantile regression
 ├── preprocessor/             # Feature processing
 │   ├── base_preprocessor.py
 │   └── preprocessors_registry.py

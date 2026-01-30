@@ -1281,70 +1281,12 @@ class TestMinimumExpectedTimeServerlessStrategy:
 
 
 # ============================================================================
-# MinimumExpectedTimeLRStrategy Tests
-# ============================================================================
-
-
-class TestMinimumExpectedTimeLRStrategy:
-    """Tests for MinimumExpectedTimeLRStrategy."""
-
-    async def test_get_prediction_type(self, mock_predictor_client, instance_registry):
-        """Test get_prediction_type returns correct type."""
-        from src.algorithms import MinimumExpectedTimeLRStrategy
-
-        strategy = MinimumExpectedTimeLRStrategy(
-            mock_predictor_client, instance_registry
-        )
-
-        assert strategy.get_prediction_type() == "linear_regression"
-
-
-# ============================================================================
-# MinimumExpectedTimeDTStrategy Tests
-# ============================================================================
-
-
-class TestMinimumExpectedTimeDTStrategy:
-    """Tests for MinimumExpectedTimeDTStrategy."""
-
-    async def test_get_prediction_type(self, mock_predictor_client, instance_registry):
-        """Test get_prediction_type returns correct type."""
-        from src.algorithms import MinimumExpectedTimeDTStrategy
-
-        strategy = MinimumExpectedTimeDTStrategy(
-            mock_predictor_client, instance_registry
-        )
-
-        assert strategy.get_prediction_type() == "decision_tree"
-
-
-# ============================================================================
 # get_strategy Factory Tests (additional cases)
 # ============================================================================
 
 
 class TestGetStrategyAdditional:
     """Additional tests for get_strategy factory function."""
-
-    async def test_get_min_time_lr_strategy(
-        self, mock_predictor_client, instance_registry
-    ):
-        """Test get_strategy returns MinimumExpectedTimeLRStrategy."""
-        from src.algorithms import MinimumExpectedTimeLRStrategy
-
-        strategy = get_strategy("min_time_lr", mock_predictor_client, instance_registry)
-
-        assert isinstance(strategy, MinimumExpectedTimeLRStrategy)
-
-    async def test_get_min_time_dt_strategy(
-        self, mock_predictor_client, instance_registry
-    ):
-        """Test get_strategy returns MinimumExpectedTimeDTStrategy."""
-        from src.algorithms import MinimumExpectedTimeDTStrategy
-
-        strategy = get_strategy("min_time_dt", mock_predictor_client, instance_registry)
-
-        assert isinstance(strategy, MinimumExpectedTimeDTStrategy)
 
     async def test_get_random_strategy(self, mock_predictor_client, instance_registry):
         """Test get_strategy returns RandomStrategy."""

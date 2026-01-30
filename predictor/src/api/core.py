@@ -43,9 +43,7 @@ from src.models import PlatformInfo
 from src.models import PredictionResult
 from src.models import TrainingResult
 from src.predictor.base import BasePredictor
-from src.predictor.decision_tree import DecisionTreePredictor
 from src.predictor.expect_error import ExpectErrorPredictor
-from src.predictor.linear_regression import LinearRegressionPredictor
 from src.predictor.quantile import QuantilePredictor
 from src.preprocessor.chain_v2 import PreprocessorChainV2
 from src.preprocessor.preprocessors_registry import PreprocessorsRegistry
@@ -99,8 +97,6 @@ class PredictionError(PredictorError):
 PREDICTOR_CLASSES: dict[str, type[BasePredictor]] = {
     "expect_error": ExpectErrorPredictor,
     "quantile": QuantilePredictor,
-    "linear_regression": LinearRegressionPredictor,
-    "decision_tree": DecisionTreePredictor,
 }
 
 MIN_TRAINING_SAMPLES = 10

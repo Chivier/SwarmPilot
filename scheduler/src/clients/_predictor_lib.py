@@ -59,14 +59,8 @@ def _bootstrap_predictor_imports():
             ValidationError as _ValidationError,
         )
         from src.models import PlatformInfo as _PlatformInfo
-        from src.predictor.decision_tree import (
-            DecisionTreePredictor as _DecisionTreePredictor,
-        )
         from src.predictor.expect_error import (
             ExpectErrorPredictor as _ExpectErrorPredictor,
-        )
-        from src.predictor.linear_regression import (
-            LinearRegressionPredictor as _LinearRegressionPredictor,
         )
         from src.predictor.quantile import (
             QuantilePredictor as _QuantilePredictor,
@@ -99,8 +93,6 @@ def _bootstrap_predictor_imports():
         imports = {
             "ExpectErrorPredictor": _ExpectErrorPredictor,
             "QuantilePredictor": _QuantilePredictor,
-            "LinearRegressionPredictor": _LinearRegressionPredictor,
-            "DecisionTreePredictor": _DecisionTreePredictor,
             "ModelStorage": _ModelStorage,
             "ModelCache": _ModelCache,
             "PreprocessorsRegistry": _PreprocessorsRegistry,
@@ -141,8 +133,6 @@ _imports = _bootstrap_predictor_imports()
 # Export as module-level variables
 ExpectErrorPredictor = _imports["ExpectErrorPredictor"]
 QuantilePredictor = _imports["QuantilePredictor"]
-LinearRegressionPredictor = _imports["LinearRegressionPredictor"]
-DecisionTreePredictor = _imports["DecisionTreePredictor"]
 ModelStorage = _imports["ModelStorage"]
 ModelCache = _imports["ModelCache"]
 PreprocessorsRegistry = _imports["PreprocessorsRegistry"]
@@ -169,17 +159,13 @@ V1PreprocessorAdapter = _imports["V1PreprocessorAdapter"]
 PREDICTOR_CLASSES = {
     "expect_error": ExpectErrorPredictor,
     "quantile": QuantilePredictor,
-    "linear_regression": LinearRegressionPredictor,
-    "decision_tree": DecisionTreePredictor,
 }
 
 __all__ = [
     "PREDICTOR_CLASSES",
     "BasePreprocessorV2",
-    "DecisionTreePredictor",
     "ExpectErrorPredictor",
     "FeatureContext",
-    "LinearRegressionPredictor",
     "ModelCache",
     "ModelNotFoundError",
     "ModelStorage",

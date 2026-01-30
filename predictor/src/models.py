@@ -150,8 +150,6 @@ class TrainingRequest(BaseModel):
         allowed_types = {
             "expect_error",
             "quantile",
-            "linear_regression",
-            "decision_tree",
         }
         if v not in allowed_types:
             raise ValueError(
@@ -258,8 +256,6 @@ class PredictionRequest(BaseModel):
         allowed_types = {
             "expect_error",
             "quantile",
-            "linear_regression",
-            "decision_tree",
         }
         if v not in allowed_types:
             raise ValueError(

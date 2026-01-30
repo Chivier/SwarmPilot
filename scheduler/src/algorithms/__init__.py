@@ -8,8 +8,6 @@ from src.algorithms.adaptive_bootstrap import AdaptiveBootstrapStrategy
 from src.algorithms.base import ScheduleResult, SchedulingStrategy
 from src.algorithms.factory import get_strategy
 from src.algorithms.min_expected_time import MinimumExpectedTimeStrategy
-from src.algorithms.min_expected_time_dt import MinimumExpectedTimeDTStrategy
-from src.algorithms.min_expected_time_lr import MinimumExpectedTimeLRStrategy
 from src.algorithms.power_of_two import PowerOfTwoStrategy
 from src.algorithms.probabilistic import ProbabilisticSchedulingStrategy
 from src.algorithms.queue_state_adapter import (
@@ -22,8 +20,6 @@ from src.algorithms.serverless import MinimumExpectedTimeServerlessStrategy
 
 __all__ = [
     "AdaptiveBootstrapStrategy",
-    "MinimumExpectedTimeDTStrategy",
-    "MinimumExpectedTimeLRStrategy",
     "MinimumExpectedTimeServerlessStrategy",
     "MinimumExpectedTimeStrategy",
     "PowerOfTwoStrategy",

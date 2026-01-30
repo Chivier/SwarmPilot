@@ -5,8 +5,6 @@ Tests for predictor implementations.
 import pytest
 from src.predictor.expect_error import ExpectErrorPredictor
 from src.predictor.quantile import QuantilePredictor
-from src.predictor.linear_regression import LinearRegressionPredictor
-from src.predictor.decision_tree import DecisionTreePredictor
 
 
 def generate_training_data(n_samples=20):
@@ -95,213 +93,6 @@ class TestExpectErrorPredictor:
         result2 = predictor2.predict(test_features)
         assert result1['expected_runtime_ms'] == result2['expected_runtime_ms']
         assert result1['error_margin_ms'] == result2['error_margin_ms']
-
-
-class TestLinearRegressionPredictor:
-    """Test LinearRegressionPredictor functionality."""
-
-    def test_train_with_valid_data(self):
-        """Should train successfully with valid data."""
-        predictor = LinearRegressionPredictor()
-        training_data = generate_training_data(20)
-
-        metadata = predictor.train(training_data)
-
-        assert 'feature_names' in metadata
-        assert 'samples_count' in metadata
-        assert 'mean_error' in metadata
-        assert 'r2_score' in metadata
-        assert metadata['samples_count'] == 20
-        assert len(metadata['feature_names']) == 2  # batch_size, sequence_length
-
-    def test_train_with_insufficient_samples_raises_error(self):
-        """Should raise error with less than 10 samples."""
-        predictor = LinearRegressionPredictor()
-        training_data = generate_training_data(5)
-
-        with pytest.raises(ValueError, match="at least 10 samples"):
-            predictor.train(training_data)
-
-    def test_predict_after_training(self):
-        """Should make predictions after training."""
-        predictor = LinearRegressionPredictor()
-        training_data = generate_training_data(20)
-        predictor.train(training_data)
-
-        result = predictor.predict({'batch_size': 25, 'sequence_length': 128})
-
-        assert 'expected_runtime_ms' in result
-        assert 'error_margin_ms' in result
-        assert isinstance(result['expected_runtime_ms'], float)
-        assert isinstance(result['error_margin_ms'], float)
-        assert result['error_margin_ms'] >= 0
-
-    def test_predict_before_training_raises_error(self):
-        """Should raise error if predicting before training."""
-        predictor = LinearRegressionPredictor()
-
-        with pytest.raises(ValueError, match="not trained"):
-            predictor.predict({'batch_size': 25})
-
-    def test_predict_with_missing_features_raises_error(self):
-        """Should raise error for missing features."""
-        predictor = LinearRegressionPredictor()
-        training_data = generate_training_data(20)
-        predictor.train(training_data)
-
-        with pytest.raises(ValueError, match="Missing required features"):
-            predictor.predict({'batch_size': 25})  # Missing sequence_length
-
-    def test_model_serialization(self):
-        """Should serialize and deserialize model state."""
-        predictor1 = LinearRegressionPredictor()
-        training_data = generate_training_data(20)
-        predictor1.train(training_data)
-
-        # Get predictions before serialization
-        test_features = {'batch_size': 25, 'sequence_length': 128}
-        result1 = predictor1.predict(test_features)
-
-        # Serialize and deserialize
-        state = predictor1.get_model_state()
-        predictor2 = LinearRegressionPredictor()
-        predictor2.load_model_state(state)
-
-        # Predictions should be identical
-        result2 = predictor2.predict(test_features)
-        assert abs(result1['expected_runtime_ms'] - result2['expected_runtime_ms']) < 1e-5
-        assert abs(result1['error_margin_ms'] - result2['error_margin_ms']) < 1e-5
-
-    def test_get_model_state_before_training_raises_error(self):
-        """Should raise error when getting state before training."""
-        predictor = LinearRegressionPredictor()
-
-        with pytest.raises(ValueError, match="No model to serialize"):
-            predictor.get_model_state()
-
-    def test_r2_score_in_valid_range(self):
-        """R2 score should be reasonable for linear relationship."""
-        predictor = LinearRegressionPredictor()
-        training_data = generate_training_data(20)  # Data has linear relationship
-
-        metadata = predictor.train(training_data)
-
-        # With perfect linear relationship in training data, R2 should be high
-        assert metadata['r2_score'] >= 0.9
-
-
-class TestDecisionTreePredictor:
-    """Test DecisionTreePredictor functionality."""
-
-    def test_train_with_valid_data(self):
-        """Should train successfully with valid data."""
-        predictor = DecisionTreePredictor()
-        training_data = generate_training_data(20)
-
-        metadata = predictor.train(training_data)
-
-        assert 'feature_names' in metadata
-        assert 'samples_count' in metadata
-        assert 'mean_error' in metadata
-        assert 'r2_score' in metadata
-        assert metadata['samples_count'] == 20
-        assert len(metadata['feature_names']) == 2
-
-    def test_train_with_insufficient_samples_raises_error(self):
-        """Should raise error with less than 10 samples."""
-        predictor = DecisionTreePredictor()
-        training_data = generate_training_data(5)
-
-        with pytest.raises(ValueError, match="at least 10 samples"):
-            predictor.train(training_data)
-
-    def test_train_with_custom_config(self):
-        """Should accept custom hyperparameters."""
-        predictor = DecisionTreePredictor()
-        training_data = generate_training_data(20)
-
-        config = {'max_depth': 5, 'min_samples_split': 3}
-        metadata = predictor.train(training_data, config=config)
-
-        assert 'samples_count' in metadata
-        assert metadata['samples_count'] == 20
-
-    def test_predict_after_training(self):
-        """Should make predictions after training."""
-        predictor = DecisionTreePredictor()
-        training_data = generate_training_data(20)
-        predictor.train(training_data)
-
-        result = predictor.predict({'batch_size': 25, 'sequence_length': 128})
-
-        assert 'expected_runtime_ms' in result
-        assert 'error_margin_ms' in result
-        assert isinstance(result['expected_runtime_ms'], float)
-        assert isinstance(result['error_margin_ms'], float)
-        assert result['error_margin_ms'] >= 0
-
-    def test_predict_before_training_raises_error(self):
-        """Should raise error if predicting before training."""
-        predictor = DecisionTreePredictor()
-
-        with pytest.raises(ValueError, match="not trained"):
-            predictor.predict({'batch_size': 25})
-
-    def test_predict_with_missing_features_raises_error(self):
-        """Should raise error for missing features."""
-        predictor = DecisionTreePredictor()
-        training_data = generate_training_data(20)
-        predictor.train(training_data)
-
-        with pytest.raises(ValueError, match="Missing required features"):
-            predictor.predict({'batch_size': 25})  # Missing sequence_length
-
-    def test_model_serialization(self):
-        """Should serialize and deserialize model state."""
-        predictor1 = DecisionTreePredictor()
-        training_data = generate_training_data(20)
-        predictor1.train(training_data)
-
-        # Get predictions before serialization
-        test_features = {'batch_size': 25, 'sequence_length': 128}
-        result1 = predictor1.predict(test_features)
-
-        # Serialize and deserialize
-        state = predictor1.get_model_state()
-        predictor2 = DecisionTreePredictor()
-        predictor2.load_model_state(state)
-
-        # Predictions should be identical
-        result2 = predictor2.predict(test_features)
-        assert abs(result1['expected_runtime_ms'] - result2['expected_runtime_ms']) < 1e-5
-        assert abs(result1['error_margin_ms'] - result2['error_margin_ms']) < 1e-5
-
-    def test_get_model_state_before_training_raises_error(self):
-        """Should raise error when getting state before training."""
-        predictor = DecisionTreePredictor()
-
-        with pytest.raises(ValueError, match="No model to serialize"):
-            predictor.get_model_state()
-
-    def test_decision_tree_handles_nonlinear_patterns(self):
-        """Decision tree should fit non-linear patterns well."""
-        predictor = DecisionTreePredictor()
-
-        # Create non-linear data (quadratic relationship)
-        training_data = []
-        for i in range(30):
-            batch_size = 10 + i
-            runtime = 50 + batch_size ** 1.5  # Non-linear
-            training_data.append({
-                'batch_size': batch_size,
-                'sequence_length': 128,
-                'runtime_ms': runtime
-            })
-
-        metadata = predictor.train(training_data)
-
-        # Decision tree should fit well on training data
-        assert metadata['r2_score'] >= 0.9
 
 
 class TestQuantilePredictor:
@@ -803,8 +594,7 @@ class TestBasePredictorValidation:
 
     def test_extract_features_no_features_raises_error(self):
         """Should raise error when samples have only runtime_ms."""
-        # Use LinearRegression which has lower sample requirement
-        predictor = LinearRegressionPredictor()
+        predictor = ExpectErrorPredictor()
         # Samples with only runtime_ms and no features
         data = [{'runtime_ms': 100 + i} for i in range(15)]
 
@@ -813,8 +603,7 @@ class TestBasePredictorValidation:
 
     def test_extract_features_inconsistent_features_raises_error(self):
         """Should raise error when samples have different features."""
-        # Use LinearRegression which has lower sample requirement
-        predictor = LinearRegressionPredictor()
+        predictor = ExpectErrorPredictor()
         # Build samples with inconsistent features (need at least 10)
         data = []
         for i in range(5):
