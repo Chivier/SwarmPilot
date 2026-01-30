@@ -6,7 +6,6 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "swarmpilot-scheduler",
-    "swarmpilot-instance",
     "swarmpilot-predictor",
     "swarmpilot-planner",
     "requests>=2.32.5",
@@ -26,14 +25,12 @@ dependencies = [
 [project.optional-dependencies]
 # Single service extras (for selective installation)
 scheduler = ["swarmpilot-scheduler"]
-instance = ["swarmpilot-instance"]
 predictor = ["swarmpilot-predictor"]
 planner = ["swarmpilot-planner"]
 
 # All services (explicit install all)
 all = [
     "swarmpilot-scheduler",
-    "swarmpilot-instance",
     "swarmpilot-predictor",
     "swarmpilot-planner",
 ]
@@ -51,7 +48,6 @@ dev = [
 
 [tool.uv.sources]
 swarmpilot-scheduler = { workspace = true }
-swarmpilot-instance = { workspace = true }
 swarmpilot-predictor = { workspace = true }
 swarmpilot-planner = { workspace = true }
 
@@ -61,11 +57,10 @@ package = false
 [tool.uv.workspace]
 members = [
     "scheduler",
-    "instance",
     "predictor",
     "planner",
     "scripts",
-    "instance/dockers/sleep_model", "graph", "instance/dockers/llm_service_large_model",
+    "graph",
 ]
 
 [dependency-groups]

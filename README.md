@@ -4,12 +4,13 @@ A distributed task scheduling and execution system with dynamic load balancing, 
 
 ## Architecture
 
-SwarmPilot consists of four core microservices:
+SwarmPilot consists of three core microservices:
 
 - **Scheduler**: Task orchestration and instance management
-- **Instance**: Task execution nodes running containerized model services
 - **Predictor**: MLP-based runtime prediction service
 - **Planner**: Deployment optimization using linear programming
+
+Task execution nodes are managed via **PyLet** (see [Quick Start](docs/QUICK_START.md)).
 
 ## Quick Start
 
@@ -38,9 +39,6 @@ Start services using CLI commands:
 # Start scheduler
 sscheduler start
 
-# Start instance service
-sinstance start
-
 # Start predictor service
 spredictor start
 
@@ -52,7 +50,6 @@ For help with any command:
 
 ```bash
 sscheduler --help
-sinstance --help
 spredictor --help
 splanner --help
 ```
@@ -74,7 +71,6 @@ uv run pytest
 
 ```bash
 pip install swarmpilot[scheduler]
-pip install swarmpilot[instance]
 pip install swarmpilot[predictor]
 pip install swarmpilot[planner]
 ```
@@ -97,9 +93,8 @@ pip install .
 ```
 swarmpilot-refresh/
 ├── scheduler/          # Scheduling service
-├── instance/           # Instance service
 ├── predictor/          # Prediction service
-├── planner/            # Planning service
+├── planner/            # Planning service (with PyLet integration)
 └── pyproject.toml      # Metapackage configuration
 ```
 

@@ -1,9 +1,0 @@
-[project]
-name = "swarmpilot-sleep-model"
-version = "0.1.0"
-description = "Example sleep model container for SwarmPilot Instance Service"
-requires-python = ">=3.11"
-dependencies = [
-    "fastapi>=0.120.4",
-    "uvicorn>=0.38.0",
-]
