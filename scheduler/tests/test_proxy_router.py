@@ -11,11 +11,11 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from src.algorithms.base import ScheduleResult
-from src.clients.models import Prediction
-from src.proxy.router import ProxyRouter
-from src.services.task_result_callback import TaskResultCallback
-from src.services.worker_queue_thread import TaskResult
+from swarmpilot.scheduler.algorithms.base import ScheduleResult
+from swarmpilot.scheduler.clients.models import Prediction
+from swarmpilot.scheduler.proxy.router import ProxyRouter
+from swarmpilot.scheduler.services.task_result_callback import TaskResultCallback
+from swarmpilot.scheduler.services.worker_queue_thread import TaskResult
 
 # ============================================================================
 # Fixtures

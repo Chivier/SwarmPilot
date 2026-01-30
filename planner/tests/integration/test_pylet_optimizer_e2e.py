@@ -37,11 +37,11 @@ except ImportError:
     pylet = None  # type: ignore
 
 # Import optimizer
-from src.core.swarm_optimizer import SimulatedAnnealingOptimizer
+from swarmpilot.planner.core.swarm_optimizer import SimulatedAnnealingOptimizer
 
 # Try to import IP optimizer (optional, requires pulp)
 try:
-    from src.core.swarm_optimizer import IntegerProgrammingOptimizer
+    from swarmpilot.planner.core.swarm_optimizer import IntegerProgrammingOptimizer
 
     IP_AVAILABLE = True
 except ImportError:

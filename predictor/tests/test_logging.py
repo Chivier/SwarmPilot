@@ -11,7 +11,7 @@ from unittest.mock import patch, MagicMock
 import pytest
 from loguru import logger
 
-from src.utils.logging import (
+from swarmpilot.predictor.utils.logging import (
     InterceptHandler,
     setup_logging,
     get_logger,

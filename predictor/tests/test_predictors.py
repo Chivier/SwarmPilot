@@ -3,8 +3,8 @@ Tests for predictor implementations.
 """
 
 import pytest
-from src.predictor.expect_error import ExpectErrorPredictor
-from src.predictor.quantile import QuantilePredictor
+from swarmpilot.predictor.predictor.expect_error import ExpectErrorPredictor
+from swarmpilot.predictor.predictor.quantile import QuantilePredictor
 
 
 def generate_training_data(n_samples=20):

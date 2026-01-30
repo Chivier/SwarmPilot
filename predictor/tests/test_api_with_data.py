@@ -226,7 +226,7 @@ def wait_for_service(url: str, timeout: int = 30, interval: float = 0.5) -> bool
 class PredictorServiceManager:
     """Context manager for predictor service lifecycle."""
 
-    def __init__(self, api_module_path: str = "src.api:app", host: str = "0.0.0.0", port: int = 8000):
+    def __init__(self, api_module_path: str = "swarmpilot.predictor.api:app", host: str = "0.0.0.0", port: int = 8000):
         """
         Initialize service manager.
 

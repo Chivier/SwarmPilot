@@ -16,14 +16,14 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from src.instance_sync import (
+from swarmpilot.scheduler.instance_sync import (
     InstanceInfo,
     InstanceSyncRequest,
     handle_instance_sync,
 )
-from src.services.task_result_callback import TaskResultCallback
-from src.services.worker_queue_manager import WorkerQueueManager
-from src.services.worker_queue_thread import (
+from swarmpilot.scheduler.services.task_result_callback import TaskResultCallback
+from swarmpilot.scheduler.services.worker_queue_manager import WorkerQueueManager
+from swarmpilot.scheduler.services.worker_queue_thread import (
     QueuedTask,
     TaskResult,
     WorkerQueueThread,

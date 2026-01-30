@@ -10,8 +10,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from src.api import app, instance_registry, task_registry
-from src.models import InstanceStatus
+from swarmpilot.scheduler.api import app, instance_registry, task_registry
+from swarmpilot.scheduler.models import InstanceStatus
 
 # ============================================================================
 # Fixtures
@@ -21,9 +21,9 @@ from src.models import InstanceStatus
 @pytest.fixture(autouse=True)
 def reset_registries():
     """Reset registries before each test."""
-    import src.api as api_module
-    from src.algorithms import get_strategy
-    from src.api import predictor_client
+    import swarmpilot.scheduler.api as api_module
+    from swarmpilot.scheduler.algorithms import get_strategy
+    from swarmpilot.scheduler.api import predictor_client
 
     # Clear registries
     instance_registry._instances.clear()
@@ -109,7 +109,7 @@ def test_redeploy_start_endpoint_success(client):
         mock_post.return_value = mock_response
 
         # Mock scheduling_strategy.schedule_task + worker_queue_manager
-        from src.algorithms import ScheduleResult
+        from swarmpilot.scheduler.algorithms import ScheduleResult
 
         mock_result = ScheduleResult(
             selected_instance_id="instance-2",
@@ -117,12 +117,12 @@ def test_redeploy_start_endpoint_success(client):
         )
         with (
             patch(
-                "src.api.scheduling_strategy.schedule_task",
+                "swarmpilot.scheduler.api.scheduling_strategy.schedule_task",
                 new_callable=AsyncMock,
                 return_value=mock_result,
             ),
             patch(
-                "src.api.worker_queue_manager.enqueue_task",
+                "swarmpilot.scheduler.api.worker_queue_manager.enqueue_task",
                 return_value=1,
             ),
         ):
@@ -324,7 +324,7 @@ def test_redeploy_task_redistribution_preserves_priority(client):
             enqueued_tasks.append(task)
             return 1
 
-        from src.algorithms import ScheduleResult
+        from swarmpilot.scheduler.algorithms import ScheduleResult
 
         mock_result = ScheduleResult(
             selected_instance_id="instance-2",
@@ -333,12 +333,12 @@ def test_redeploy_task_redistribution_preserves_priority(client):
 
         with (
             patch(
-                "src.api.scheduling_strategy.schedule_task",
+                "swarmpilot.scheduler.api.scheduling_strategy.schedule_task",
                 new_callable=AsyncMock,
                 return_value=mock_result,
             ),
             patch(
-                "src.api.worker_queue_manager.enqueue_task",
+                "swarmpilot.scheduler.api.worker_queue_manager.enqueue_task",
                 side_effect=mock_enqueue_task,
             ),
         ):

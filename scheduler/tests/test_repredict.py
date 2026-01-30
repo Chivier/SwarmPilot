@@ -11,8 +11,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from src.clients.models import Prediction
-from src.models import (
+from swarmpilot.scheduler.clients.models import Prediction
+from swarmpilot.scheduler.models import (
     TaskStatus,
 )
 
@@ -63,7 +63,7 @@ def setup_instance_and_task(test_client, task_id: str, model_id: str = "model-1"
     )
 
     # Submit task
-    with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
+    with patch("swarmpilot.scheduler.api.predictor_client.predict", new=AsyncMock(return_value=[])):
         test_client.post(
             "/v1/task/submit",
             json={
@@ -98,7 +98,7 @@ class TestRepredictBasic:
 
     def test_no_eligible_tasks_all_completed(self, test_client):
         """Test with only COMPLETED tasks - all should be skipped."""
-        from src.api import task_registry
+        from swarmpilot.scheduler.api import task_registry
 
         setup_instance_and_task(test_client, "task-completed-1")
         setup_instance_and_task(test_client, "task-completed-2")
@@ -132,7 +132,7 @@ class TestRepredictTasks:
 
     def test_pending_task_repredicted(self, test_client, new_prediction):
         """Test that PENDING task is re-predicted."""
-        from src.api import task_registry
+        from swarmpilot.scheduler.api import task_registry
 
         setup_instance_and_task(test_client, "task-pending")
 
@@ -155,7 +155,7 @@ class TestRepredictTasks:
 
         # Mock predictor to return new prediction
         with patch(
-            "src.api.predictor_client.predict",
+            "swarmpilot.scheduler.api.predictor_client.predict",
             new=AsyncMock(return_value=[new_prediction]),
         ):
             response = test_client.post("/v1/task/repredict")
@@ -167,7 +167,7 @@ class TestRepredictTasks:
 
     def test_running_task_repredicted(self, test_client, new_prediction):
         """Test that RUNNING task is re-predicted."""
-        from src.api import task_registry
+        from swarmpilot.scheduler.api import task_registry
 
         setup_instance_and_task(test_client, "task-running")
 
@@ -189,7 +189,7 @@ class TestRepredictTasks:
         asyncio.run(setup_task_running())
 
         with patch(
-            "src.api.predictor_client.predict",
+            "swarmpilot.scheduler.api.predictor_client.predict",
             new=AsyncMock(return_value=[new_prediction]),
         ):
             response = test_client.post("/v1/task/repredict")
@@ -200,7 +200,7 @@ class TestRepredictTasks:
 
     def test_multiple_tasks_repredicted(self, test_client, new_prediction):
         """Test that multiple eligible tasks are all re-predicted."""
-        from src.api import task_registry
+        from swarmpilot.scheduler.api import task_registry
 
         # Setup multiple tasks
         for i in range(3):
@@ -225,7 +225,7 @@ class TestRepredictTasks:
         asyncio.run(setup_tasks_in_queue())
 
         with patch(
-            "src.api.predictor_client.predict",
+            "swarmpilot.scheduler.api.predictor_client.predict",
             new=AsyncMock(return_value=[new_prediction]),
         ):
             response = test_client.post("/v1/task/repredict")
@@ -236,7 +236,7 @@ class TestRepredictTasks:
 
     def test_metadata_not_modified(self, test_client, new_prediction):
         """Test that metadata is NOT modified during repredict."""
-        from src.api import task_registry
+        from swarmpilot.scheduler.api import task_registry
 
         setup_instance_and_task(test_client, "task-no-meta-change")
 
@@ -260,7 +260,7 @@ class TestRepredictTasks:
         asyncio.run(setup_task())
 
         with patch(
-            "src.api.predictor_client.predict",
+            "swarmpilot.scheduler.api.predictor_client.predict",
             new=AsyncMock(return_value=[new_prediction]),
         ):
             response = test_client.post("/v1/task/repredict")
@@ -285,7 +285,7 @@ class TestRepredictSkipBehavior:
 
     def test_completed_task_skipped(self, test_client):
         """Test that COMPLETED task is skipped."""
-        from src.api import task_registry
+        from swarmpilot.scheduler.api import task_registry
 
         setup_instance_and_task(test_client, "task-skip-completed")
 
@@ -305,7 +305,7 @@ class TestRepredictSkipBehavior:
 
     def test_failed_task_skipped(self, test_client):
         """Test that FAILED task is skipped."""
-        from src.api import task_registry
+        from swarmpilot.scheduler.api import task_registry
 
         setup_instance_and_task(test_client, "task-skip-failed")
 
@@ -325,7 +325,7 @@ class TestRepredictSkipBehavior:
 
     def test_task_not_in_queue_skipped(self, test_client):
         """Test that task without assigned_instance is skipped."""
-        from src.api import task_registry
+        from swarmpilot.scheduler.api import task_registry
 
         setup_instance_and_task(test_client, "task-no-instance")
 
@@ -356,7 +356,7 @@ class TestRepredictErrorHandling:
 
     def test_predictor_failure_continues(self, test_client):
         """Test that predictor failure for one task doesn't stop others."""
-        from src.api import task_registry
+        from swarmpilot.scheduler.api import task_registry
 
         # Setup two tasks
         setup_instance_and_task(test_client, "task-fail-1")
@@ -381,7 +381,7 @@ class TestRepredictErrorHandling:
 
         # Make predictor fail
         with patch(
-            "src.api.predictor_client.predict",
+            "swarmpilot.scheduler.api.predictor_client.predict",
             new=AsyncMock(side_effect=Exception("Predictor error")),
         ):
             response = test_client.post("/v1/task/repredict")
@@ -394,7 +394,7 @@ class TestRepredictErrorHandling:
 
     def test_predictor_failure_restores_queue(self, test_client):
         """Test that queue is restored on predictor failure."""
-        from src.api import instance_registry, task_registry
+        from swarmpilot.scheduler.api import instance_registry, task_registry
 
         setup_instance_and_task(test_client, "task-restore-queue")
 
@@ -425,7 +425,7 @@ class TestRepredictErrorHandling:
 
         # Make predictor fail
         with patch(
-            "src.api.predictor_client.predict",
+            "swarmpilot.scheduler.api.predictor_client.predict",
             new=AsyncMock(side_effect=Exception("Predictor error")),
         ):
             response = test_client.post("/v1/task/repredict")
@@ -448,7 +448,7 @@ class TestRepredictExpectErrorStrategy:
 
     def test_expect_error_queue_updated(self, test_client, new_prediction):
         """Test that queue is updated correctly with expect_error strategy."""
-        from src.api import task_registry
+        from swarmpilot.scheduler.api import task_registry
 
         setup_instance_and_task(test_client, "task-expect-error")
 
@@ -470,7 +470,7 @@ class TestRepredictExpectErrorStrategy:
 
         # Re-predict with new values
         with patch(
-            "src.api.predictor_client.predict",
+            "swarmpilot.scheduler.api.predictor_client.predict",
             new=AsyncMock(return_value=[new_prediction]),
         ):
             response = test_client.post("/v1/task/repredict")
@@ -498,7 +498,7 @@ class TestRepredictProbabilisticStrategy:
 
     def test_probabilistic_queue_updated(self, test_client, new_prediction):
         """Test that queue is updated correctly with probabilistic strategy."""
-        from src.api import task_registry
+        from swarmpilot.scheduler.api import task_registry
 
         # Switch to probabilistic strategy
         response = test_client.post(
@@ -528,7 +528,7 @@ class TestRepredictProbabilisticStrategy:
 
         # Re-predict
         with patch(
-            "src.api.predictor_client.predict",
+            "swarmpilot.scheduler.api.predictor_client.predict",
             new=AsyncMock(return_value=[new_prediction]),
         ):
             response = test_client.post("/v1/task/repredict")
@@ -548,7 +548,7 @@ class TestRepredictMixedScenarios:
 
     def test_mixed_task_states(self, test_client, new_prediction):
         """Test with mix of PENDING, RUNNING, COMPLETED, FAILED tasks."""
-        from src.api import task_registry
+        from swarmpilot.scheduler.api import task_registry
 
         # Setup tasks with different states
         for i in range(4):
@@ -596,7 +596,7 @@ class TestRepredictMixedScenarios:
         asyncio.run(setup_mixed_states())
 
         with patch(
-            "src.api.predictor_client.predict",
+            "swarmpilot.scheduler.api.predictor_client.predict",
             new=AsyncMock(return_value=[new_prediction]),
         ):
             response = test_client.post("/v1/task/repredict")

@@ -5,7 +5,7 @@ Tests sliding window behavior, average calculations, and thread safety.
 
 import pytest
 
-from src.utils.throughput_tracker import (
+from swarmpilot.scheduler.utils.throughput_tracker import (
     InstanceThroughputData,
     ThroughputTracker,
 )

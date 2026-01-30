@@ -97,7 +97,7 @@ echo ""
 
 # Step 1: Start Planner (no SCHEDULER_URL — schedulers self-register)
 echo -e "${BLUE}[1/4] Starting Planner on port $PLANNER_PORT...${NC}"
-cd "$PROJECT_ROOT/planner"
+cd "$PROJECT_ROOT"
 
 # Build custom command for mock vLLM server
 MOCK_VLLM_PATH="$PROJECT_ROOT/examples/llm_cluster/mock_vllm_server.py"
@@ -110,7 +110,7 @@ PLANNER_PORT=$PLANNER_PORT \
     PYLET_REUSE_CLUSTER=true \
     PYLET_DEFAULT_GPU_COUNT=1 \
     PYLET_CUSTOM_COMMAND="$CUSTOM_CMD" \
-    uv run python -m uvicorn src.api:app --host 0.0.0.0 --port $PLANNER_PORT \
+    uv run python -m uvicorn swarmpilot.planner.api:app --host 0.0.0.0 --port $PLANNER_PORT \
     > "$LOG_DIR/planner.log" 2>&1 &
 PLANNER_PID=$!
 echo $PLANNER_PID > "$LOG_DIR/planner.pid"
@@ -140,12 +140,12 @@ echo ""
 
 # Step 2: Start Scheduler for llm_fast
 echo -e "${BLUE}[2/4] Starting Scheduler (llm_fast) on port $SCHEDULER_FAST_PORT...${NC}"
-cd "$PROJECT_ROOT/scheduler"
+cd "$PROJECT_ROOT"
 SCHEDULER_MODEL_ID="llm_fast" \
     PLANNER_REGISTRATION_URL="http://localhost:$PLANNER_PORT" \
     SCHEDULER_SELF_URL="http://localhost:$SCHEDULER_FAST_PORT" \
     PREDICTOR_MODE="library" \
-    uv run python -m uvicorn src.api:app --host 0.0.0.0 --port $SCHEDULER_FAST_PORT \
+    uv run python -m uvicorn swarmpilot.scheduler.api:app --host 0.0.0.0 --port $SCHEDULER_FAST_PORT \
     > "$LOG_DIR/scheduler-fast.log" 2>&1 &
 SCHEDULER_FAST_PID=$!
 echo $SCHEDULER_FAST_PID > "$LOG_DIR/scheduler-fast.pid"
@@ -160,12 +160,12 @@ echo -e "${GREEN}✓ Scheduler (llm_fast) started (PID: $SCHEDULER_FAST_PID)${NC
 
 # Step 3: Start Scheduler for llm_medium
 echo -e "${BLUE}[3/4] Starting Scheduler (llm_medium) on port $SCHEDULER_MEDIUM_PORT...${NC}"
-cd "$PROJECT_ROOT/scheduler"
+cd "$PROJECT_ROOT"
 SCHEDULER_MODEL_ID="llm_medium" \
     PLANNER_REGISTRATION_URL="http://localhost:$PLANNER_PORT" \
     SCHEDULER_SELF_URL="http://localhost:$SCHEDULER_MEDIUM_PORT" \
     PREDICTOR_MODE="library" \
-    uv run python -m uvicorn src.api:app --host 0.0.0.0 --port $SCHEDULER_MEDIUM_PORT \
+    uv run python -m uvicorn swarmpilot.scheduler.api:app --host 0.0.0.0 --port $SCHEDULER_MEDIUM_PORT \
     > "$LOG_DIR/scheduler-medium.log" 2>&1 &
 SCHEDULER_MEDIUM_PID=$!
 echo $SCHEDULER_MEDIUM_PID > "$LOG_DIR/scheduler-medium.pid"
@@ -180,12 +180,12 @@ echo -e "${GREEN}✓ Scheduler (llm_medium) started (PID: $SCHEDULER_MEDIUM_PID)
 
 # Step 4: Start Scheduler for llm_slow
 echo -e "${BLUE}[4/4] Starting Scheduler (llm_slow) on port $SCHEDULER_SLOW_PORT...${NC}"
-cd "$PROJECT_ROOT/scheduler"
+cd "$PROJECT_ROOT"
 SCHEDULER_MODEL_ID="llm_slow" \
     PLANNER_REGISTRATION_URL="http://localhost:$PLANNER_PORT" \
     SCHEDULER_SELF_URL="http://localhost:$SCHEDULER_SLOW_PORT" \
     PREDICTOR_MODE="library" \
-    uv run python -m uvicorn src.api:app --host 0.0.0.0 --port $SCHEDULER_SLOW_PORT \
+    uv run python -m uvicorn swarmpilot.scheduler.api:app --host 0.0.0.0 --port $SCHEDULER_SLOW_PORT \
     > "$LOG_DIR/scheduler-slow.log" 2>&1 &
 SCHEDULER_SLOW_PID=$!
 echo $SCHEDULER_SLOW_PID > "$LOG_DIR/scheduler-slow.pid"

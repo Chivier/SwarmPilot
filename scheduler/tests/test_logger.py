@@ -12,7 +12,7 @@ class TestInterceptHandler:
 
     def test_emit_with_invalid_level_name(self):
         """Test emit() when level name is invalid (lines 34-35)."""
-        from src.utils.logger import InterceptHandler
+        from swarmpilot.scheduler.utils.logger import InterceptHandler
 
         handler = InterceptHandler()
 
@@ -35,7 +35,7 @@ class TestInterceptHandler:
         """Test emit() with deep call stack (lines 40-41)."""
         import sys
 
-        from src.utils.logger import InterceptHandler
+        from swarmpilot.scheduler.utils.logger import InterceptHandler
 
         handler = InterceptHandler()
 
@@ -80,13 +80,13 @@ class TestSetupLogger:
         mock_config.logging.enable_json_logs = True
 
         # Patch the config in the logger module
-        monkeypatch.setattr("src.utils.logger.config", mock_config)
+        monkeypatch.setattr("swarmpilot.scheduler.utils.logger.config", mock_config)
 
         # Remove existing handlers
         logger.remove()
 
         # Import and call setup_logger
-        from src.utils.logger import setup_logger
+        from swarmpilot.scheduler.utils.logger import setup_logger
 
         # This should add JSON file handler (line 86)
         setup_logger()
@@ -111,13 +111,13 @@ class TestSetupLogger:
         mock_config.logging.enable_json_logs = False
 
         # Patch the config in the logger module
-        monkeypatch.setattr("src.utils.logger.config", mock_config)
+        monkeypatch.setattr("swarmpilot.scheduler.utils.logger.config", mock_config)
 
         # Remove existing handlers
         logger.remove()
 
         # Import and call setup_logger
-        from src.utils.logger import setup_logger
+        from swarmpilot.scheduler.utils.logger import setup_logger
 
         # This should NOT add JSON file handler
         setup_logger()

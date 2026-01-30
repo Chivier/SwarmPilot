@@ -12,7 +12,7 @@ import pytest
 import typer
 from typer.testing import CliRunner
 
-from src.cli import app, apply_config, load_config_file
+from swarmpilot.scheduler.cli import app, apply_config, load_config_file
 
 
 def strip_ansi_codes(text: str) -> str:
@@ -293,7 +293,7 @@ class TestStartCommand:
     def test_start_with_defaults(self, runner, monkeypatch):
         """Test starting with default configuration."""
         # Mock uvicorn.run to prevent actual server start
-        with patch("src.cli.uvicorn.run") as mock_run:
+        with patch("swarmpilot.scheduler.cli.uvicorn.run") as mock_run:
             result = runner.invoke(app, ["start"])
 
             assert result.exit_code == 0
@@ -304,11 +304,11 @@ class TestStartCommand:
             call_args = mock_run.call_args
             assert call_args[1]["host"]  # Some host value
             assert call_args[1]["port"]  # Some port value
-            assert "src.api:app" in call_args[0]
+            assert "swarmpilot.scheduler.api:app" in call_args[0]
 
     def test_start_with_config_file(self, runner, temp_config_files, monkeypatch):
         """Test starting with configuration file."""
-        with patch("src.cli.uvicorn.run") as mock_run:
+        with patch("swarmpilot.scheduler.cli.uvicorn.run") as mock_run:
             result = runner.invoke(
                 app, ["start", "--config", str(temp_config_files["json"])]
             )
@@ -323,7 +323,7 @@ class TestStartCommand:
         monkeypatch.delenv("SCHEDULER_HOST", raising=False)
         monkeypatch.delenv("SCHEDULER_PORT", raising=False)
 
-        with patch("src.cli.uvicorn.run") as mock_run:
+        with patch("swarmpilot.scheduler.cli.uvicorn.run") as mock_run:
             result = runner.invoke(
                 app, ["start", "--host", "127.0.0.1", "--port", "9000"]
             )
@@ -335,7 +335,7 @@ class TestStartCommand:
 
     def test_start_keyboard_interrupt(self, runner, monkeypatch):
         """Test handling of keyboard interrupt during start."""
-        with patch("src.cli.uvicorn.run", side_effect=KeyboardInterrupt):
+        with patch("swarmpilot.scheduler.cli.uvicorn.run", side_effect=KeyboardInterrupt):
             result = runner.invoke(app, ["start"])
 
             assert result.exit_code == 0
@@ -343,7 +343,7 @@ class TestStartCommand:
 
     def test_start_exception_handling(self, runner, monkeypatch):
         """Test handling of exceptions during start."""
-        with patch("src.cli.uvicorn.run", side_effect=Exception("Test error")):
+        with patch("swarmpilot.scheduler.cli.uvicorn.run", side_effect=Exception("Test error")):
             result = runner.invoke(app, ["start"], catch_exceptions=False)
 
             # The exception should be raised
@@ -356,7 +356,7 @@ class TestStartCommand:
         # Clear environment
         monkeypatch.delenv("SCHEDULER_PORT", raising=False)
 
-        with patch("src.cli.uvicorn.run") as mock_run:
+        with patch("swarmpilot.scheduler.cli.uvicorn.run") as mock_run:
             result = runner.invoke(
                 app,
                 [

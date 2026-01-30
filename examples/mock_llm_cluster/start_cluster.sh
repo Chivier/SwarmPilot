@@ -107,7 +107,7 @@ echo -e "${GREEN}✓ Mock Predictor started (PID: $PREDICTOR_PID)${NC}"
 
 # Start Planner first (schedulers need it for registration)
 echo -e "${BLUE}[2/4] Starting Planner on port $PLANNER_PORT...${NC}"
-cd "$PROJECT_ROOT/planner"
+cd "$PROJECT_ROOT"
 
 # Build custom command for mock LLM server
 MOCK_SERVER_PATH="$PROJECT_ROOT/examples/mock_llm_cluster/mock_llm_server.py"
@@ -121,7 +121,7 @@ PLANNER_PORT=$PLANNER_PORT \
     PYLET_GPU_COUNT=0 \
     PYLET_CPU_COUNT=1 \
     PYLET_CUSTOM_COMMAND="$CUSTOM_CMD" \
-    uv run python -m uvicorn src.api:app --host 0.0.0.0 --port $PLANNER_PORT > "$LOG_DIR/planner.log" 2>&1 &
+    uv run python -m uvicorn swarmpilot.planner.api:app --host 0.0.0.0 --port $PLANNER_PORT > "$LOG_DIR/planner.log" 2>&1 &
 PLANNER_PID=$!
 echo $PLANNER_PID > "$LOG_DIR/planner.pid"
 
@@ -135,12 +135,12 @@ echo -e "${GREEN}✓ Planner started (PID: $PLANNER_PID)${NC}"
 
 # Start Scheduler for llm-7b
 echo -e "${BLUE}[3/4] Starting Scheduler (llm-7b) on port $SCHEDULER_7B_PORT...${NC}"
-cd "$PROJECT_ROOT/scheduler"
+cd "$PROJECT_ROOT"
 PREDICTOR_URL="http://localhost:$PREDICTOR_PORT" \
     SCHEDULER_MODEL_ID="llm-7b" \
     PLANNER_REGISTRATION_URL="http://localhost:$PLANNER_PORT" \
     SCHEDULER_SELF_URL="http://localhost:$SCHEDULER_7B_PORT" \
-    uv run python -m src.cli start --port $SCHEDULER_7B_PORT > "$LOG_DIR/scheduler-7b.log" 2>&1 &
+    uv run python -m swarmpilot.scheduler.cli start --port $SCHEDULER_7B_PORT > "$LOG_DIR/scheduler-7b.log" 2>&1 &
 SCHEDULER_7B_PID=$!
 echo $SCHEDULER_7B_PID > "$LOG_DIR/scheduler-7b.pid"
 
@@ -154,12 +154,12 @@ echo -e "${GREEN}✓ Scheduler (llm-7b) started (PID: $SCHEDULER_7B_PID)${NC}"
 
 # Start Scheduler for llm-32b
 echo -e "${BLUE}[4/4] Starting Scheduler (llm-32b) on port $SCHEDULER_32B_PORT...${NC}"
-cd "$PROJECT_ROOT/scheduler"
+cd "$PROJECT_ROOT"
 PREDICTOR_URL="http://localhost:$PREDICTOR_PORT" \
     SCHEDULER_MODEL_ID="llm-32b" \
     PLANNER_REGISTRATION_URL="http://localhost:$PLANNER_PORT" \
     SCHEDULER_SELF_URL="http://localhost:$SCHEDULER_32B_PORT" \
-    uv run python -m src.cli start --port $SCHEDULER_32B_PORT > "$LOG_DIR/scheduler-32b.log" 2>&1 &
+    uv run python -m swarmpilot.scheduler.cli start --port $SCHEDULER_32B_PORT > "$LOG_DIR/scheduler-32b.log" 2>&1 &
 SCHEDULER_32B_PID=$!
 echo $SCHEDULER_32B_PID > "$LOG_DIR/scheduler-32b.pid"
 

@@ -5,15 +5,15 @@ Tests all scheduling strategies and the factory function.
 
 import pytest
 
-from src.algorithms import (
+from swarmpilot.scheduler.algorithms import (
     AdaptiveBootstrapStrategy,
     MinimumExpectedTimeStrategy,
     ProbabilisticSchedulingStrategy,
     RoundRobinStrategy,
     get_strategy,
 )
-from src.clients.models import Prediction
-from src.models import InstanceQueueExpectError, InstanceQueueProbabilistic
+from swarmpilot.scheduler.clients.models import Prediction
+from swarmpilot.scheduler.models import InstanceQueueExpectError, InstanceQueueProbabilistic
 
 # ============================================================================
 # MinimumExpectedTimeStrategy Tests
@@ -304,7 +304,7 @@ class TestProbabilisticSchedulingStrategy:
         """Test selection when queue is not InstanceQueueProbabilistic (line 476)."""
         import numpy as np
 
-        from src.models import Instance, InstanceQueueExpectError
+        from swarmpilot.scheduler.models import Instance, InstanceQueueExpectError
 
         # Set seed for reproducibility
         np.random.seed(42)
@@ -519,7 +519,7 @@ class TestMinimumExpectedTimeStrategyUpdate:
 
     async def test_update_queue_success(self, mock_predictor_client, instance_registry):
         """Test successful queue update with error accumulation."""
-        from src.models import Instance, InstanceQueueExpectError
+        from swarmpilot.scheduler.models import Instance, InstanceQueueExpectError
 
         strategy = MinimumExpectedTimeStrategy(mock_predictor_client, instance_registry)
 
@@ -563,7 +563,7 @@ class TestMinimumExpectedTimeStrategyUpdate:
         self, mock_predictor_client, instance_registry
     ):
         """Test update_queue with wrong queue info type."""
-        from src.models import (
+        from swarmpilot.scheduler.models import (
             Instance,
         )
 
@@ -610,7 +610,7 @@ class TestProbabilisticStrategyUpdate:
         """Test update_queue with full quantile information."""
         import numpy as np
 
-        from src.models import Instance
+        from swarmpilot.scheduler.models import Instance
 
         # Set seed for reproducibility
         np.random.seed(42)
@@ -662,7 +662,7 @@ class TestProbabilisticStrategyUpdate:
         self, mock_predictor_client, instance_registry
     ):
         """Test update_queue fallback when prediction has no quantiles."""
-        from src.models import Instance
+        from swarmpilot.scheduler.models import Instance
 
         strategy = ProbabilisticSchedulingStrategy(
             mock_predictor_client, instance_registry
@@ -710,7 +710,7 @@ class TestProbabilisticStrategyUpdate:
         """Test update_queue when no queue exists (line 517)."""
         from unittest.mock import AsyncMock
 
-        from src.models import Instance
+        from swarmpilot.scheduler.models import Instance
 
         strategy = ProbabilisticSchedulingStrategy(
             mock_predictor_client, instance_registry
@@ -757,7 +757,7 @@ class TestProbabilisticStrategyUpdate:
         self, mock_predictor_client, instance_registry
     ):
         """Test update_queue with wrong queue info type."""
-        from src.models import (
+        from swarmpilot.scheduler.models import (
             Instance,
             InstanceQueueExpectError,
         )
@@ -856,7 +856,7 @@ class TestSchedulingStrategyErrors:
         self, mock_predictor_client, instance_registry
     ):
         """Test get_predictions when model is not found."""
-        from src.models import Instance
+        from swarmpilot.scheduler.models import Instance
 
         strategy = MinimumExpectedTimeStrategy(mock_predictor_client, instance_registry)
 
@@ -885,7 +885,7 @@ class TestSchedulingStrategyErrors:
         self, mock_predictor_client, instance_registry
     ):
         """Test get_predictions with invalid metadata."""
-        from src.models import Instance
+        from swarmpilot.scheduler.models import Instance
 
         strategy = MinimumExpectedTimeStrategy(mock_predictor_client, instance_registry)
 
@@ -916,7 +916,7 @@ class TestRoundRobinStrategyUpdate:
 
     async def test_update_queue_noop(self, mock_predictor_client, instance_registry):
         """Test that RoundRobinStrategy update_queue is a no-op."""
-        from src.models import Instance
+        from swarmpilot.scheduler.models import Instance
 
         strategy = RoundRobinStrategy(mock_predictor_client, instance_registry)
 
@@ -1009,7 +1009,7 @@ class TestPowerOfTwoStrategy:
         self, mock_predictor_client, instance_registry
     ):
         """Test select_instance with empty predictions."""
-        from src.algorithms import PowerOfTwoStrategy
+        from swarmpilot.scheduler.algorithms import PowerOfTwoStrategy
 
         strategy = PowerOfTwoStrategy(mock_predictor_client, instance_registry)
 
@@ -1020,7 +1020,7 @@ class TestPowerOfTwoStrategy:
         self, mock_predictor_client, instance_registry
     ):
         """Test select_instance with queue info."""
-        from src.algorithms import PowerOfTwoStrategy
+        from swarmpilot.scheduler.algorithms import PowerOfTwoStrategy
 
         strategy = PowerOfTwoStrategy(mock_predictor_client, instance_registry)
 
@@ -1056,7 +1056,7 @@ class TestPowerOfTwoStrategy:
         self, mock_predictor_client, instance_registry
     ):
         """Test select_instance without queue info (fallback)."""
-        from src.algorithms import PowerOfTwoStrategy
+        from swarmpilot.scheduler.algorithms import PowerOfTwoStrategy
 
         strategy = PowerOfTwoStrategy(mock_predictor_client, instance_registry)
 
@@ -1072,8 +1072,8 @@ class TestPowerOfTwoStrategy:
         """Test update_queue updates queue with error accumulation."""
         import math
 
-        from src.algorithms import PowerOfTwoStrategy
-        from src.models import Instance
+        from swarmpilot.scheduler.algorithms import PowerOfTwoStrategy
+        from swarmpilot.scheduler.models import Instance
 
         strategy = PowerOfTwoStrategy(mock_predictor_client, instance_registry)
 
@@ -1124,7 +1124,7 @@ class TestMinimumExpectedTimeServerlessStrategy:
         self, mock_predictor_client, instance_registry
     ):
         """Test select_instance with empty predictions."""
-        from src.algorithms import MinimumExpectedTimeServerlessStrategy
+        from swarmpilot.scheduler.algorithms import MinimumExpectedTimeServerlessStrategy
 
         strategy = MinimumExpectedTimeServerlessStrategy(
             mock_predictor_client, instance_registry
@@ -1137,7 +1137,7 @@ class TestMinimumExpectedTimeServerlessStrategy:
         self, mock_predictor_client, instance_registry
     ):
         """Test select_instance with queue info."""
-        from src.algorithms import MinimumExpectedTimeServerlessStrategy
+        from swarmpilot.scheduler.algorithms import MinimumExpectedTimeServerlessStrategy
 
         strategy = MinimumExpectedTimeServerlessStrategy(
             mock_predictor_client, instance_registry
@@ -1178,7 +1178,7 @@ class TestMinimumExpectedTimeServerlessStrategy:
         self, mock_predictor_client, instance_registry
     ):
         """Test select_instance without queue info (fallback)."""
-        from src.algorithms import MinimumExpectedTimeServerlessStrategy
+        from swarmpilot.scheduler.algorithms import MinimumExpectedTimeServerlessStrategy
 
         strategy = MinimumExpectedTimeServerlessStrategy(
             mock_predictor_client, instance_registry
@@ -1198,8 +1198,8 @@ class TestMinimumExpectedTimeServerlessStrategy:
         """Test update_queue updates queue with error accumulation."""
         import math
 
-        from src.algorithms import MinimumExpectedTimeServerlessStrategy
-        from src.models import Instance
+        from swarmpilot.scheduler.algorithms import MinimumExpectedTimeServerlessStrategy
+        from swarmpilot.scheduler.models import Instance
 
         strategy = MinimumExpectedTimeServerlessStrategy(
             mock_predictor_client, instance_registry
@@ -1243,8 +1243,8 @@ class TestMinimumExpectedTimeServerlessStrategy:
         self, mock_predictor_client, instance_registry
     ):
         """Test update_queue skips when queue type is wrong (line 929-936)."""
-        from src.algorithms import MinimumExpectedTimeServerlessStrategy
-        from src.models import Instance
+        from swarmpilot.scheduler.algorithms import MinimumExpectedTimeServerlessStrategy
+        from swarmpilot.scheduler.models import Instance
 
         strategy = MinimumExpectedTimeServerlessStrategy(
             mock_predictor_client, instance_registry
@@ -1290,7 +1290,7 @@ class TestGetStrategyAdditional:
 
     async def test_get_random_strategy(self, mock_predictor_client, instance_registry):
         """Test get_strategy returns RandomStrategy."""
-        from src.algorithms import RandomStrategy
+        from swarmpilot.scheduler.algorithms import RandomStrategy
 
         strategy = get_strategy("random", mock_predictor_client, instance_registry)
 
@@ -1298,7 +1298,7 @@ class TestGetStrategyAdditional:
 
     async def test_get_po2_strategy(self, mock_predictor_client, instance_registry):
         """Test get_strategy returns PowerOfTwoStrategy."""
-        from src.algorithms import PowerOfTwoStrategy
+        from swarmpilot.scheduler.algorithms import PowerOfTwoStrategy
 
         strategy = get_strategy("po2", mock_predictor_client, instance_registry)
 
@@ -1308,7 +1308,7 @@ class TestGetStrategyAdditional:
         self, mock_predictor_client, instance_registry
     ):
         """Test get_strategy returns MinimumExpectedTimeServerlessStrategy."""
-        from src.algorithms import MinimumExpectedTimeServerlessStrategy
+        from swarmpilot.scheduler.algorithms import MinimumExpectedTimeServerlessStrategy
 
         strategy = get_strategy("severless", mock_predictor_client, instance_registry)
 

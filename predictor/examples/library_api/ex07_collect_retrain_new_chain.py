@@ -28,9 +28,9 @@ from examples.library_api.utils import print_result
 from examples.library_api.utils import print_section
 from examples.library_api.utils import print_subsection
 from examples.library_api.utils import setup_storage
-from src.preprocessor.chain_v2 import PreprocessorChainV2
-from src.preprocessor.preprocessors_v2 import MultiplyPreprocessor
-from src.preprocessor.preprocessors_v2 import RemoveFeaturePreprocessor
+from swarmpilot.predictor.preprocessor.chain_v2 import PreprocessorChainV2
+from swarmpilot.predictor.preprocessor.preprocessors_v2 import MultiplyPreprocessor
+from swarmpilot.predictor.preprocessor.preprocessors_v2 import RemoveFeaturePreprocessor
 
 
 def create_chain_a() -> PreprocessorChainV2:

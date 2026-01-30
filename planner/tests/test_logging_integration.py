@@ -27,7 +27,7 @@ class TestLoggingConfiguration:
             os.environ["PLANNER_LOG_DIR"] = tmpdir
             os.environ["PLANNER_LOGURU_LEVEL"] = "INFO"
 
-            from src.logging_config import setup_logging
+            from swarmpilot.planner.logging_config import setup_logging
 
             # Remove existing handlers to reset
             logger.remove()
@@ -47,7 +47,7 @@ class TestLoggingConfiguration:
             os.environ["PLANNER_LOG_DIR"] = tmpdir
             os.environ["PLANNER_LOGURU_LEVEL"] = "DEBUG"
 
-            from src.logging_config import setup_logging
+            from swarmpilot.planner.logging_config import setup_logging
 
             # Remove existing handlers to reset
             logger.remove()
@@ -67,7 +67,7 @@ class TestLoggingConfiguration:
             os.environ["PLANNER_LOG_DIR"] = tmpdir
             os.environ["PLANNER_LOGURU_LEVEL"] = "INVALID_LEVEL"
 
-            from src.logging_config import setup_logging
+            from swarmpilot.planner.logging_config import setup_logging
 
             # Remove existing handlers to reset
             logger.remove()
@@ -90,7 +90,7 @@ class TestStandardLoggingInterception:
             os.environ["PLANNER_LOG_DIR"] = tmpdir
             os.environ["PLANNER_LOGURU_LEVEL"] = "INFO"
 
-            from src.logging_config import setup_logging
+            from swarmpilot.planner.logging_config import setup_logging
 
             # Remove existing handlers to reset
             logger.remove()
@@ -114,7 +114,7 @@ class TestStandardLoggingInterception:
             os.environ["PLANNER_LOG_DIR"] = tmpdir
             os.environ["PLANNER_LOGURU_LEVEL"] = "INFO"
 
-            from src.logging_config import setup_logging
+            from swarmpilot.planner.logging_config import setup_logging
 
             # Remove existing handlers to reset
             logger.remove()
@@ -140,7 +140,7 @@ class TestLogFileCreation:
             os.environ["PLANNER_LOG_DIR"] = tmpdir
             os.environ["PLANNER_LOGURU_LEVEL"] = "INFO"
 
-            from src.logging_config import setup_logging
+            from swarmpilot.planner.logging_config import setup_logging
 
             # Remove existing handlers to reset
             logger.remove()
@@ -167,7 +167,7 @@ class TestLogFileCreation:
             os.environ["PLANNER_LOG_DIR"] = tmpdir
             os.environ["PLANNER_LOGURU_LEVEL"] = "INFO"
 
-            from src.logging_config import setup_logging
+            from swarmpilot.planner.logging_config import setup_logging
 
             # Remove existing handlers to reset
             logger.remove()
@@ -202,7 +202,7 @@ class TestAPILogging:
             os.environ["PLANNER_LOGURU_LEVEL"] = "INFO"
 
             # Import API module (this triggers setup_logging)
-            from src import api
+            from swarmpilot.planner import api
 
             # Check that log directory was created
             log_path = Path(tmpdir)
@@ -240,7 +240,7 @@ class TestBackwardCompatibility:
             os.environ["PLANNER_LOG_DIR"] = tmpdir
             os.environ["PLANNER_LOGURU_LEVEL"] = "INFO"
 
-            from src.logging_config import setup_logging
+            from swarmpilot.planner.logging_config import setup_logging
 
             # Remove existing handlers to reset
             logger.remove()

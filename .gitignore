@@ -113,5 +113,5 @@ experiments/07.Exp2.Deep_Research_Migration_Test/raw_results_*experiments/13.wor
 # Removed from tracking (kept locally)
 e2e_comparison_results/
 dispatcher/
-graph/
-scripts/
+/graph/
+/scripts/

@@ -9,7 +9,7 @@ Tests the complete lifecycle:
 
 import pytest
 
-from src.models import Instance, InstanceStatus
+from swarmpilot.scheduler.models import Instance, InstanceStatus
 
 # ============================================================================
 # Unit Tests for InstanceRegistry Drain Methods

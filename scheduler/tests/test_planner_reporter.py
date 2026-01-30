@@ -9,8 +9,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from src.models import TaskStatus
-from src.utils.planner_reporter import PlannerReporter
+from swarmpilot.scheduler.models import TaskStatus
+from swarmpilot.scheduler.utils.planner_reporter import PlannerReporter
 
 
 class TestPlannerReporterInit:
@@ -107,7 +107,7 @@ class TestPlannerReporterStart:
         """Test start when already running logs warning."""
         await reporter.start()
 
-        with patch("src.utils.planner_reporter.logger") as mock_logger:
+        with patch("swarmpilot.scheduler.utils.planner_reporter.logger") as mock_logger:
             await reporter.start()
             mock_logger.warning.assert_called_with("Planner reporter already running")
 
@@ -277,7 +277,7 @@ class TestPlannerReporterReportToPlanner:
         reporter._http_client.post = AsyncMock(side_effect=error)
 
         # Should not raise
-        with patch("src.utils.planner_reporter.log_http_error"):
+        with patch("swarmpilot.scheduler.utils.planner_reporter.log_http_error"):
             await reporter._report_to_planner()
 
     @pytest.mark.asyncio
@@ -289,7 +289,7 @@ class TestPlannerReporterReportToPlanner:
         )
 
         # Should not raise
-        with patch("src.utils.planner_reporter.log_http_error"):
+        with patch("swarmpilot.scheduler.utils.planner_reporter.log_http_error"):
             await reporter._report_to_planner()
 
     @pytest.mark.asyncio

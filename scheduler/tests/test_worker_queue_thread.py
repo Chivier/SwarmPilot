@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 import httpx
 import pytest
 
-from src.services.worker_queue_thread import (
+from swarmpilot.scheduler.services.worker_queue_thread import (
     QueuedTask,
     TaskResult,
     WorkerQueueThread,

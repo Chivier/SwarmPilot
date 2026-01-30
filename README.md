@@ -4,7 +4,7 @@ A distributed task scheduling and execution system with dynamic load balancing, 
 
 ## Architecture
 
-SwarmPilot consists of three core microservices:
+SwarmPilot consists of three core services, shipped as a single Python package:
 
 - **Scheduler**: Task orchestration and instance management
 - **Predictor**: MLP-based runtime prediction service
@@ -17,26 +17,36 @@ Task execution nodes are managed via **PyLet** (see [Quick Start](docs/QUICK_STA
 ### Prerequisites
 
 - Python >= 3.11
-- uv (recommended) or pip
+- [uv](https://docs.astral.sh/uv/) (recommended) or pip
 
 ### Installation
 
-Install all services:
+```bash
+# Using pip
+pip install swarmpilot
+
+# Using uv (recommended)
+uv add swarmpilot
+
+# With PyLet support (for production deployments)
+pip install swarmpilot[pylet]
+```
+
+### Development Installation
 
 ```bash
-# Development mode
-uv sync
-
-# Or using pip (when published to PyPI)
-pip install swarmpilot
+git clone <repo-url> swarmpilot-refresh
+cd swarmpilot-refresh
+uv sync              # install in editable mode
+uv sync --extra pylet  # include PyLet for planner
 ```
 
 ### Usage
 
-Start services using CLI commands:
+Installing `swarmpilot` provides three CLI tools:
 
 ```bash
-# Start scheduler
+# Start scheduler on default port
 sscheduler start
 
 # Start predictor service
@@ -54,6 +64,14 @@ spredictor --help
 splanner --help
 ```
 
+### Library Usage
+
+```python
+from swarmpilot.scheduler.config import config
+from swarmpilot.predictor.predictor.expect_error import ExpectErrorPredictor
+from swarmpilot.planner.core.swarm_optimizer import SimulatedAnnealingOptimizer
+```
+
 ### Running Tests
 
 ```bash
@@ -61,42 +79,35 @@ splanner --help
 uv run pytest
 
 # Run tests for a specific service
-cd scheduler
-uv run pytest
-```
-
-## Advanced Installation
-
-### Install specific services
-
-```bash
-pip install swarmpilot[scheduler]
-pip install swarmpilot[predictor]
-pip install swarmpilot[planner]
-```
-
-### Development installation
-
-```bash
-uv sync --all-extras
-```
-
-### Standalone subpackage installation
-
-```bash
-cd scheduler
-pip install .
+uv run pytest scheduler/tests/
+uv run pytest predictor/tests/
+uv run pytest planner/tests/
 ```
 
 ## Project Structure
 
 ```
 swarmpilot-refresh/
-├── scheduler/          # Scheduling service
-├── predictor/          # Prediction service
-├── planner/            # Planning service (with PyLet integration)
-└── pyproject.toml      # Metapackage configuration
+├── swarmpilot/             # Distributable Python package
+│   ├── scheduler/          # Scheduling service
+│   ├── predictor/          # Prediction service
+│   ├── planner/            # Planning service (with PyLet integration)
+│   ├── graph/              # Client library
+│   └── scripts/            # Deployment utilities
+├── scheduler/tests/        # Scheduler tests
+├── predictor/tests/        # Predictor tests
+├── planner/tests/          # Planner tests
+├── examples/               # Example cluster configurations
+└── pyproject.toml          # Package configuration
 ```
+
+## Documentation
+
+See [docs/](docs/) for detailed guides:
+
+- [Quick Start](docs/QUICK_START.md) — get a local cluster running
+- [Scheduler Architecture](docs/scheduler_architecture_report.md)
+- [PyLet Migration](docs/pylet_migration.md)
 
 ## Experiments
 
@@ -106,9 +117,9 @@ Exp. 01, 02, 03
 
 ### Scheduler Experiments
 
-Exp. 09 (Universial Entrance for 04~07)  
+Exp. 09 (Universial Entrance for 04~07)
 
-Cluster Config: static, A = m, B = n, m << n  
+Cluster Config: static, A = m, B = n, m << n
 Example Config: m = 8, n = 120
 ```
 Exp. 04:   -> B
@@ -119,15 +130,15 @@ Exp. 04:   -> B
 Exp. 05: A -> B -> B -> B
 
 
-Exp. 06:   -> B -> 
+Exp. 06:   -> B ->
          A -> B -> A
            -> B ->
 
 
-Exp. 07:   -> B1 -> B2 -> 
+Exp. 07:   -> B1 -> B2 ->
          A -> B1 -> B2 -> A
            -> B1 -> B2 ->
-```       
+```
 
 
 ## License

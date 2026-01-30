@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from src.models import TaskStatus, TaskTimestamps
+from swarmpilot.scheduler.models import TaskStatus, TaskTimestamps
 
 # ============================================================================
 # Connection Management Tests

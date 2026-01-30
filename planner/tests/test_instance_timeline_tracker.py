@@ -7,7 +7,7 @@ import os
 import pytest
 from pathlib import Path
 
-from src.instance_timeline_tracker import (
+from swarmpilot.planner.instance_timeline_tracker import (
     InstanceTimelineTracker,
     TimelineEntry,
     compute_instance_counts,

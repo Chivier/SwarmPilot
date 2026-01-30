@@ -10,11 +10,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from src.clients.models import Prediction
-from src.clients.predictor_library_client import PredictorClient
+from swarmpilot.scheduler.clients.models import Prediction
+from swarmpilot.scheduler.clients.predictor_library_client import PredictorClient
 
 # Import models
-from src.models import (
+from swarmpilot.scheduler.models import (
     Instance,
     InstanceQueueBase,
     InstanceQueueProbabilistic,
@@ -22,9 +22,9 @@ from src.models import (
 )
 
 # Import components
-from src.registry.instance_registry import InstanceRegistry
-from src.registry.task_registry import TaskRegistry
-from src.services.websocket_manager import ConnectionManager
+from swarmpilot.scheduler.registry.instance_registry import InstanceRegistry
+from swarmpilot.scheduler.registry.task_registry import TaskRegistry
+from swarmpilot.scheduler.services.websocket_manager import ConnectionManager
 
 # ============================================================================
 # Sample Data Fixtures
@@ -247,7 +247,7 @@ def test_app():
 
     This fixture imports the app lazily to avoid circular dependencies.
     """
-    from src.api import app
+    from swarmpilot.scheduler.api import app
 
     return app
 
@@ -346,14 +346,14 @@ def freeze_time(monkeypatch):
         def now():
             return fixed_time
 
-    monkeypatch.setattr("src.registry.task_registry.datetime", MockDatetime)
+    monkeypatch.setattr("swarmpilot.scheduler.registry.task_registry.datetime", MockDatetime)
     return fixed_time
 
 
 @pytest.fixture(autouse=True)
 def reset_round_robin_counter():
     """Reset the round-robin counter before each test."""
-    from src.algorithms import RoundRobinStrategy
+    from swarmpilot.scheduler.algorithms import RoundRobinStrategy
 
     # Reset the class-level counter if it exists
     if hasattr(RoundRobinStrategy, "_counter"):
@@ -369,7 +369,7 @@ def reset_global_registries():
     """Reset global registries before each test to ensure test isolation."""
     import asyncio
 
-    from src.api import instance_registry, task_registry
+    from swarmpilot.scheduler.api import instance_registry, task_registry
 
     # Clear registries before test
     async def clear_registries():

@@ -11,11 +11,25 @@ Get SwarmPilot running in **5 minutes** with a local test cluster. No Docker or 
 
 ---
 
+## Installation
+
+```bash
+# Using pip
+pip install swarmpilot
+
+# Using uv (recommended for development)
+git clone <repo-url> swarmpilot-refresh
+cd swarmpilot-refresh
+uv sync
+```
+
+This installs one package with three CLI tools: `sscheduler`, `spredictor`, `splanner`.
+
+---
+
 ## Option A: One-Click Start (Recommended)
 
 ```bash
-# Clone and start
-git clone <repo-url> swarmpilot-refresh
 cd swarmpilot-refresh
 ./scripts/quick_start.sh
 ```
@@ -63,8 +77,7 @@ PREDICTOR_PORT=8001 uv run python examples/mock_llm_cluster/mock_predictor_serve
 
 **Terminal 2: Scheduler**
 ```bash
-cd scheduler
-PREDICTOR_URL=http://localhost:8001 uv run python -m src.cli start --port 8000
+PREDICTOR_URL=http://localhost:8001 sscheduler start --port 8000
 ```
 
 **Terminal 3: Sleep Model Instance**
@@ -171,6 +184,7 @@ For production deployments, use **PyLet** to manage instances automatically.
 
 - PyLet cluster running (see [PyLet documentation](https://github.com/your-org/pylet))
 - GPU resources (for LLM deployments)
+- Install with PyLet extra: `pip install swarmpilot[pylet]`
 
 ### Architecture with PyLet
 
@@ -192,19 +206,16 @@ For production deployments, use **PyLet** to manage instances automatically.
 
 ```bash
 # Terminal 1: Predictor
-cd predictor
-uv run python -m src.cli start --port 8001
+spredictor start --port 8001
 
 # Terminal 2: Scheduler
-cd scheduler
-PREDICTOR_URL=http://localhost:8001 uv run python -m src.cli start --port 8000
+PREDICTOR_URL=http://localhost:8001 sscheduler start --port 8000
 
 # Terminal 3: Planner with PyLet
-cd planner
-export PYLET_ENABLED=true
-export PYLET_HEAD_URL=http://your-pylet-head:8000
-export SCHEDULER_URL=http://localhost:8000
-uv run python -m src.cli start --port 8002
+PYLET_ENABLED=true \
+  PYLET_HEAD_URL=http://your-pylet-head:8000 \
+  SCHEDULER_URL=http://localhost:8000 \
+  splanner start --port 8002
 ```
 
 ### Deploy Instances via PyLet

@@ -84,14 +84,14 @@ echo -e "${GREEN}✓ Mock Predictor started (PID: $PREDICTOR_PID)${NC}"
 
 # Start Scheduler
 echo -e "${BLUE}[2/2] Starting Scheduler on port $SCHEDULER_PORT...${NC}"
-cd "$PROJECT_ROOT/scheduler"
+cd "$PROJECT_ROOT"
 
 env \
     PREDICTOR_URL="http://localhost:$PREDICTOR_PORT" \
     SCHEDULER_PORT=$SCHEDULER_PORT \
     SCHEDULING_STRATEGY="probabilistic" \
     SCHEDULER_LOGURU_LEVEL="INFO" \
-    uv run python -m uvicorn src.api:app --host 0.0.0.0 --port $SCHEDULER_PORT > "$LOG_DIR/scheduler.log" 2>&1 &
+    uv run python -m uvicorn swarmpilot.scheduler.api:app --host 0.0.0.0 --port $SCHEDULER_PORT > "$LOG_DIR/scheduler.log" 2>&1 &
 SCHEDULER_PID=$!
 echo $SCHEDULER_PID > "$LOG_DIR/scheduler.pid"
 

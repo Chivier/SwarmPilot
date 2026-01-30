@@ -12,26 +12,26 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.pylet.client import (
+from swarmpilot.planner.pylet.client import (
     InstanceInfo,
     PartialDeploymentError,
     PartialDeploymentResult,
     PyLetClient,
 )
-from src.pylet.deployment_executor import (
+from swarmpilot.planner.pylet.deployment_executor import (
     DeploymentExecutor,
     DeploymentPlan,
 )
-from src.pylet.instance_manager import (
+from swarmpilot.planner.pylet.instance_manager import (
     ManagedInstance,
     ManagedInstanceStatus,
 )
-from src.pylet.migration_executor import (
+from swarmpilot.planner.pylet.migration_executor import (
     MigrationExecutor,
     MigrationOperation,
     MigrationStatus,
 )
-from src.pylet.scheduler_client import SchedulerClient
+from swarmpilot.planner.pylet.scheduler_client import SchedulerClient
 
 
 class TestInstanceInfo:
@@ -66,7 +66,7 @@ class TestPyLetClient:
         client = PyLetClient("http://localhost:8000")
         assert not client.initialized
 
-    @patch("src.pylet.client.pylet")
+    @patch("swarmpilot.planner.pylet.client.pylet")
     def test_init_success(self, mock_pylet):
         """Test successful initialization."""
         client = PyLetClient("http://localhost:8000")
@@ -75,7 +75,7 @@ class TestPyLetClient:
         mock_pylet.init.assert_called_once_with("http://localhost:8000")
         assert client.initialized
 
-    @patch("src.pylet.client.pylet")
+    @patch("swarmpilot.planner.pylet.client.pylet")
     def test_deploy_model_invalid_backend(self, mock_pylet):
         """Test deploy with invalid backend raises ValueError."""
         client = PyLetClient("http://localhost:8000")
@@ -84,7 +84,7 @@ class TestPyLetClient:
         with pytest.raises(ValueError, match="Unsupported backend"):
             client.deploy_model("Qwen/Qwen3-0.6B", backend="invalid")
 
-    @patch("src.pylet.client.pylet")
+    @patch("swarmpilot.planner.pylet.client.pylet")
     def test_deploy_model_success(self, mock_pylet):
         """Test successful model deployment returns list."""
         mock_instance = MagicMock()
@@ -114,7 +114,7 @@ class TestPyLetClient:
         assert infos[0].model_id == "Qwen/Qwen3-0.6B"
         mock_pylet.submit.assert_called_once()
 
-    @patch("src.pylet.client.pylet")
+    @patch("swarmpilot.planner.pylet.client.pylet")
     def test_deploy_model_multiple(self, mock_pylet):
         """Test deploying multiple instances."""
         mock_instances = []
@@ -142,7 +142,7 @@ class TestPyLetClient:
         for i, info in enumerate(infos):
             assert info.pylet_id == f"instance-{i}"
 
-    @patch("src.pylet.client.pylet")
+    @patch("swarmpilot.planner.pylet.client.pylet")
     def test_deploy_model_partial_failure(self, mock_pylet):
         """Test that partial failures raise PartialDeploymentError."""
         from pylet.errors import PyletError as PyletSDKError
@@ -178,7 +178,7 @@ class TestPyLetClient:
 class TestSchedulerClient:
     """Tests for SchedulerClient."""
 
-    @patch("src.pylet.scheduler_client.httpx.Client")
+    @patch("swarmpilot.planner.pylet.scheduler_client.httpx.Client")
     def test_register_instance_success(self, mock_client_class):
         """Test successful instance registration."""
         mock_client = MagicMock()
@@ -200,7 +200,7 @@ class TestSchedulerClient:
         assert result.instance_id == "inst-1"
         assert result.model_id == "Qwen/Qwen3-0.6B"
 
-    @patch("src.pylet.scheduler_client.httpx.Client")
+    @patch("swarmpilot.planner.pylet.scheduler_client.httpx.Client")
     def test_drain_instance(self, mock_client_class):
         """Test draining an instance."""
         mock_client = MagicMock()
@@ -215,7 +215,7 @@ class TestSchedulerClient:
         assert result is True
         mock_client.post.assert_called_once()
 
-    @patch("src.pylet.scheduler_client.httpx.Client")
+    @patch("swarmpilot.planner.pylet.scheduler_client.httpx.Client")
     def test_health_check(self, mock_client_class):
         """Test scheduler health check."""
         mock_client = MagicMock()
@@ -350,7 +350,7 @@ class TestDeploymentExecutor:
 
     def test_scale_model(self):
         """Test scaling a specific model using batch deployment."""
-        from src.pylet.instance_manager import DeploymentResult
+        from swarmpilot.planner.pylet.instance_manager import DeploymentResult
 
         mock_manager = MagicMock()
         mock_manager.instances = {}
@@ -441,7 +441,7 @@ class TestAvailableInstanceStore:
     @pytest.mark.asyncio
     async def test_add_and_get_pylet_instance(self):
         """Test adding and retrieving instance by PyLet ID."""
-        from src.available_instance_store import (
+        from swarmpilot.planner.available_instance_store import (
             AvailableInstance,
             AvailableInstanceStore,
         )
@@ -466,7 +466,7 @@ class TestAvailableInstanceStore:
     @pytest.mark.asyncio
     async def test_remove_by_pylet_id(self):
         """Test removing instance by PyLet ID."""
-        from src.available_instance_store import (
+        from swarmpilot.planner.available_instance_store import (
             AvailableInstance,
             AvailableInstanceStore,
         )
@@ -491,7 +491,7 @@ class TestAvailableInstanceStore:
     @pytest.mark.asyncio
     async def test_get_all_pylet_ids(self):
         """Test getting all PyLet IDs."""
-        from src.available_instance_store import (
+        from swarmpilot.planner.available_instance_store import (
             AvailableInstance,
             AvailableInstanceStore,
         )

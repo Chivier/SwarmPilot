@@ -9,7 +9,7 @@ import asyncio
 import pytest
 from fastapi.testclient import TestClient
 
-from src.models import TaskStatus
+from swarmpilot.scheduler.models import TaskStatus
 
 
 class TestTaskScheduleInfoEndpoint:
@@ -33,7 +33,7 @@ class TestTaskScheduleInfoEndpoint:
         self, test_client, task_registry, instance_registry
     ):
         """Test schedule_info with a single task."""
-        from src.models import Instance
+        from swarmpilot.scheduler.models import Instance
 
         # Register instance directly
         async def setup():
@@ -80,7 +80,7 @@ class TestTaskScheduleInfoEndpoint:
         self, test_client, task_registry, instance_registry
     ):
         """Test schedule_info with multiple tasks across instances."""
-        from src.models import Instance
+        from swarmpilot.scheduler.models import Instance
 
         async def setup():
             # Register two instances
@@ -133,7 +133,7 @@ class TestTaskScheduleInfoEndpoint:
         self, test_client, task_registry, instance_registry
     ):
         """Test schedule_info filtering by model_id."""
-        from src.models import Instance
+        from swarmpilot.scheduler.models import Instance
 
         async def setup():
             # Register instances for different models
@@ -202,7 +202,7 @@ class TestTaskScheduleInfoEndpoint:
         self, test_client, task_registry, instance_registry
     ):
         """Test schedule_info filtering by instance_id."""
-        from src.models import Instance
+        from swarmpilot.scheduler.models import Instance
 
         async def setup():
             # Register two instances
@@ -254,7 +254,7 @@ class TestTaskScheduleInfoEndpoint:
         self, test_client, task_registry, instance_registry
     ):
         """Test schedule_info filtering by task status."""
-        from src.models import Instance
+        from swarmpilot.scheduler.models import Instance
 
         async def setup():
             # Register instance
@@ -314,7 +314,7 @@ class TestTaskScheduleInfoEndpoint:
         self, test_client, task_registry, instance_registry
     ):
         """Test schedule_info with multiple filters combined."""
-        from src.models import Instance
+        from swarmpilot.scheduler.models import Instance
 
         async def setup():
             # Register instances for different models
@@ -395,7 +395,7 @@ class TestTaskScheduleInfoEndpoint:
         self, test_client, task_registry, instance_registry
     ):
         """Test that schedule_info response contains all required fields."""
-        from src.models import Instance
+        from swarmpilot.scheduler.models import Instance
 
         async def setup():
             await instance_registry.register(
@@ -447,7 +447,7 @@ class TestTaskScheduleInfoEndpoint:
         self, test_client, task_registry, instance_registry
     ):
         """Test schedule_info with pagination parameters."""
-        from src.models import Instance
+        from swarmpilot.scheduler.models import Instance
 
         async def setup():
             await instance_registry.register(
@@ -497,7 +497,7 @@ class TestTaskScheduleInfoEndpoint:
         self, test_client, task_registry, instance_registry
     ):
         """Test schedule_info when filter matches no tasks."""
-        from src.models import Instance
+        from swarmpilot.scheduler.models import Instance
 
         async def setup():
             await instance_registry.register(
@@ -544,7 +544,7 @@ class TestTaskScheduleInfoEndpoint:
 @pytest.fixture
 def test_client():
     """Create a test client for the FastAPI app."""
-    from src.api import app
+    from swarmpilot.scheduler.api import app
 
     return TestClient(app)
 
@@ -552,7 +552,7 @@ def test_client():
 @pytest.fixture
 def task_registry():
     """Get the global task registry from the app."""
-    from src.api import task_registry
+    from swarmpilot.scheduler.api import task_registry
 
     return task_registry
 
@@ -560,6 +560,6 @@ def task_registry():
 @pytest.fixture
 def instance_registry():
     """Get the global instance registry from the app."""
-    from src.api import instance_registry
+    from swarmpilot.scheduler.api import instance_registry
 
     return instance_registry

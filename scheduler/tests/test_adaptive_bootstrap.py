@@ -10,10 +10,10 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from src.algorithms.adaptive_bootstrap import AdaptiveBootstrapStrategy
-from src.algorithms.base import ScheduleResult
-from src.algorithms.factory import get_strategy
-from src.clients.models import Prediction
+from swarmpilot.scheduler.algorithms.adaptive_bootstrap import AdaptiveBootstrapStrategy
+from swarmpilot.scheduler.algorithms.base import ScheduleResult
+from swarmpilot.scheduler.algorithms.factory import get_strategy
+from swarmpilot.scheduler.clients.models import Prediction
 
 # ============================================================================
 # Fixtures

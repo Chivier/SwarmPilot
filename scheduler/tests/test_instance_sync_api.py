@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from src.instance_sync import (
+from swarmpilot.scheduler.instance_sync import (
     InstanceInfo,
     InstanceSyncRequest,
     handle_instance_addition,
@@ -16,7 +16,7 @@ from src.instance_sync import (
     handle_instance_sync,
     reschedule_task,
 )
-from src.services.worker_queue_thread import QueuedTask
+from swarmpilot.scheduler.services.worker_queue_thread import QueuedTask
 
 
 class TestInstanceInfo:

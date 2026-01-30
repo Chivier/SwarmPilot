@@ -12,8 +12,8 @@ from unittest.mock import patch, MagicMock
 import pytest
 from typer.testing import CliRunner
 
-from src.cli import app
-from src.config import PredictorConfig, reset_config
+from swarmpilot.predictor.cli import app
+from swarmpilot.predictor.config import PredictorConfig, reset_config
 
 
 runner = CliRunner()

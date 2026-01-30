@@ -8,8 +8,8 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from src.api import app, instance_registry, task_registry
-from src.models import TaskStatus
+from swarmpilot.scheduler.api import app, instance_registry, task_registry
+from swarmpilot.scheduler.models import TaskStatus
 
 # ============================================================================
 # Fixtures
@@ -19,9 +19,9 @@ from src.models import TaskStatus
 @pytest.fixture(autouse=True)
 def reset_registries():
     """Reset registries before each test."""
-    import src.api as api_module
-    from src.algorithms import get_strategy
-    from src.api import config, predictor_client
+    import swarmpilot.scheduler.api as api_module
+    from swarmpilot.scheduler.algorithms import get_strategy
+    from swarmpilot.scheduler.api import config, predictor_client
 
     # Clear registries
     instance_registry._instances.clear()
@@ -355,7 +355,7 @@ class TestTaskSubmission:
         )
 
         # Mock predictor
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
+        with patch("swarmpilot.scheduler.api.predictor_client.predict", new=AsyncMock(return_value=[])):
             response = client.post(
                 "/v1/task/submit",
                 json={
@@ -409,7 +409,7 @@ class TestTaskSubmission:
         )
 
         # Submit task first time
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
+        with patch("swarmpilot.scheduler.api.predictor_client.predict", new=AsyncMock(return_value=[])):
             client.post(
                 "/v1/task/submit",
                 json={
@@ -421,7 +421,7 @@ class TestTaskSubmission:
             )
 
         # Try to submit again
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
+        with patch("swarmpilot.scheduler.api.predictor_client.predict", new=AsyncMock(return_value=[])):
             response = client.post(
                 "/v1/task/submit",
                 json={
@@ -460,7 +460,7 @@ class TestTaskList:
             },
         )
 
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
+        with patch("swarmpilot.scheduler.api.predictor_client.predict", new=AsyncMock(return_value=[])):
             for i in range(3):
                 client.post(
                     "/v1/task/submit",
@@ -498,7 +498,7 @@ class TestTaskList:
         )
 
         # Submit task
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
+        with patch("swarmpilot.scheduler.api.predictor_client.predict", new=AsyncMock(return_value=[])):
             client.post(
                 "/v1/task/submit",
                 json={
@@ -550,7 +550,7 @@ class TestTaskInfo:
             },
         )
 
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
+        with patch("swarmpilot.scheduler.api.predictor_client.predict", new=AsyncMock(return_value=[])):
             client.post(
                 "/v1/task/submit",
                 json={
@@ -581,7 +581,7 @@ class TestTaskResubmit:
 
     def test_resubmit_task_success(self, client):
         """Test successful task resubmission with original submission time preserved."""
-        from src.clients.models import Prediction
+        from swarmpilot.scheduler.clients.models import Prediction
 
         # Register instance
         client.post(
@@ -607,7 +607,7 @@ class TestTaskResubmit:
         )
 
         with patch(
-            "src.api.predictor_client.predict",
+            "swarmpilot.scheduler.api.predictor_client.predict",
             new=AsyncMock(return_value=[mock_prediction]),
         ):
             client.post(
@@ -623,7 +623,7 @@ class TestTaskResubmit:
         # Mock scheduling_strategy.schedule_task to verify resubmission path
         from unittest.mock import MagicMock
 
-        from src.algorithms import ScheduleResult
+        from swarmpilot.scheduler.algorithms import ScheduleResult
 
         mock_result = ScheduleResult(
             selected_instance_id="inst-1",
@@ -633,10 +633,10 @@ class TestTaskResubmit:
         mock_wqm.enqueue_task = MagicMock(return_value=1)
         with (
             patch(
-                "src.api.scheduling_strategy.schedule_task",
+                "swarmpilot.scheduler.api.scheduling_strategy.schedule_task",
                 new=AsyncMock(return_value=mock_result),
             ) as mock_schedule,
-            patch("src.api.worker_queue_manager", mock_wqm),
+            patch("swarmpilot.scheduler.api.worker_queue_manager", mock_wqm),
         ):
             response = client.post(
                 "/v1/task/resubmit",
@@ -657,8 +657,8 @@ class TestTaskResubmit:
         """Test that resubmit preserves the original submission timestamp."""
         import asyncio
 
-        from src import api
-        from src.clients.models import Prediction
+        from swarmpilot.scheduler import api
+        from swarmpilot.scheduler.clients.models import Prediction
 
         # Register instance
         client.post(
@@ -684,7 +684,7 @@ class TestTaskResubmit:
         )
 
         with patch(
-            "src.api.predictor_client.predict",
+            "swarmpilot.scheduler.api.predictor_client.predict",
             new=AsyncMock(return_value=[mock_prediction]),
         ):
             client.post(
@@ -712,14 +712,14 @@ class TestTaskResubmit:
         )
 
         # Resubmit and verify it succeeds
-        from src.algorithms import ScheduleResult
+        from swarmpilot.scheduler.algorithms import ScheduleResult
 
         mock_result = ScheduleResult(
             selected_instance_id="inst-1",
             selected_prediction=None,
         )
         with patch(
-            "src.api.scheduling_strategy.schedule_task",
+            "swarmpilot.scheduler.api.scheduling_strategy.schedule_task",
             new=AsyncMock(return_value=mock_result),
         ):
             response = client.post(
@@ -758,8 +758,8 @@ class TestTaskResubmit:
         """Test resubmitting completed task returns 400."""
         import asyncio
 
-        from src import api
-        from src.clients.models import Prediction
+        from swarmpilot.scheduler import api
+        from swarmpilot.scheduler.clients.models import Prediction
 
         # Register instance
         client.post(
@@ -785,7 +785,7 @@ class TestTaskResubmit:
         )
 
         with patch(
-            "src.api.predictor_client.predict",
+            "swarmpilot.scheduler.api.predictor_client.predict",
             new=AsyncMock(return_value=[mock_prediction]),
         ):
             client.post(
@@ -818,8 +818,8 @@ class TestTaskResubmit:
         """Test resubmitting failed task returns 400."""
         import asyncio
 
-        from src import api
-        from src.clients.models import Prediction
+        from swarmpilot.scheduler import api
+        from swarmpilot.scheduler.clients.models import Prediction
 
         # Register instance
         client.post(
@@ -845,7 +845,7 @@ class TestTaskResubmit:
         )
 
         with patch(
-            "src.api.predictor_client.predict",
+            "swarmpilot.scheduler.api.predictor_client.predict",
             new=AsyncMock(return_value=[mock_prediction]),
         ):
             client.post(
@@ -876,7 +876,7 @@ class TestTaskResubmit:
 
     def test_resubmit_task_original_instance_not_found(self, client):
         """Test resubmitting with non-existent original instance returns 404."""
-        from src.clients.models import Prediction
+        from swarmpilot.scheduler.clients.models import Prediction
 
         # Register instance
         client.post(
@@ -902,7 +902,7 @@ class TestTaskResubmit:
         )
 
         with patch(
-            "src.api.predictor_client.predict",
+            "swarmpilot.scheduler.api.predictor_client.predict",
             new=AsyncMock(return_value=[mock_prediction]),
         ):
             client.post(
@@ -929,7 +929,7 @@ class TestTaskResubmit:
 
     def test_resubmit_task_decrements_pending_count(self, client):
         """Test that resubmit decrements pending count on original instance."""
-        from src.clients.models import Prediction
+        from swarmpilot.scheduler.clients.models import Prediction
 
         # Register instance
         client.post(
@@ -955,7 +955,7 @@ class TestTaskResubmit:
         )
 
         with patch(
-            "src.api.predictor_client.predict",
+            "swarmpilot.scheduler.api.predictor_client.predict",
             new=AsyncMock(return_value=[mock_prediction]),
         ):
             client.post(
@@ -971,11 +971,11 @@ class TestTaskResubmit:
         # Verify decrement_pending is called
         with (
             patch(
-                "src.api.scheduling_strategy.schedule_task",
+                "swarmpilot.scheduler.api.scheduling_strategy.schedule_task",
                 new=AsyncMock(return_value=None),
             ),
             patch(
-                "src.api.instance_registry.decrement_pending", new=AsyncMock()
+                "swarmpilot.scheduler.api.instance_registry.decrement_pending", new=AsyncMock()
             ) as mock_decrement,
         ):
             response = client.post(
@@ -993,8 +993,8 @@ class TestTaskResubmit:
         """Test resubmitting a running task succeeds."""
         import asyncio
 
-        from src import api
-        from src.clients.models import Prediction
+        from swarmpilot.scheduler import api
+        from swarmpilot.scheduler.clients.models import Prediction
 
         # Register instance
         client.post(
@@ -1020,7 +1020,7 @@ class TestTaskResubmit:
         )
 
         with patch(
-            "src.api.predictor_client.predict",
+            "swarmpilot.scheduler.api.predictor_client.predict",
             new=AsyncMock(return_value=[mock_prediction]),
         ):
             client.post(
@@ -1041,7 +1041,7 @@ class TestTaskResubmit:
 
         # Resubmit should succeed for running task
         with patch(
-            "src.api.scheduling_strategy.schedule_task",
+            "swarmpilot.scheduler.api.scheduling_strategy.schedule_task",
             new=AsyncMock(return_value=None),
         ):
             response = client.post(
@@ -1055,7 +1055,7 @@ class TestTaskResubmit:
 
     def test_resubmit_task_reset_for_resubmit_error(self, client):
         """Test resubmit when reset_for_resubmit raises KeyError."""
-        from src.clients.models import Prediction
+        from swarmpilot.scheduler.clients.models import Prediction
 
         # Register instance
         client.post(
@@ -1081,7 +1081,7 @@ class TestTaskResubmit:
         )
 
         with patch(
-            "src.api.predictor_client.predict",
+            "swarmpilot.scheduler.api.predictor_client.predict",
             new=AsyncMock(return_value=[mock_prediction]),
         ):
             client.post(
@@ -1096,7 +1096,7 @@ class TestTaskResubmit:
 
         # Mock reset_for_resubmit to raise KeyError
         with patch(
-            "src.api.task_registry.reset_for_resubmit",
+            "swarmpilot.scheduler.api.task_registry.reset_for_resubmit",
             side_effect=KeyError("not found"),
         ):
             response = client.post(
@@ -1109,7 +1109,7 @@ class TestTaskResubmit:
 
     def test_resubmit_task_with_metadata(self, client):
         """Test resubmitting task preserves metadata."""
-        from src.clients.models import Prediction
+        from swarmpilot.scheduler.clients.models import Prediction
 
         # Register instance
         client.post(
@@ -1137,7 +1137,7 @@ class TestTaskResubmit:
         task_metadata = {"user_id": "user-123", "priority": "high"}
 
         with patch(
-            "src.api.predictor_client.predict",
+            "swarmpilot.scheduler.api.predictor_client.predict",
             new=AsyncMock(return_value=[mock_prediction]),
         ):
             client.post(
@@ -1161,7 +1161,7 @@ class TestTaskResubmit:
         # Verify task still has its metadata in registry
         import asyncio
 
-        from src.api import task_registry
+        from swarmpilot.scheduler.api import task_registry
 
         task = asyncio.get_event_loop().run_until_complete(task_registry.get("task-1"))
         assert task.metadata == task_metadata
@@ -1198,7 +1198,7 @@ class TestTaskClear:
         )
 
         # Submit multiple tasks
-        with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
+        with patch("swarmpilot.scheduler.api.predictor_client.predict", new=AsyncMock(return_value=[])):
             for i in range(3):
                 client.post(
                     "/v1/task/submit",
@@ -1337,7 +1337,7 @@ class TestStrategyManagement:
 
     def test_set_strategy_clears_tasks(self, client):
         """Test that setting strategy clears all tasks."""
-        from src.clients.models import Prediction
+        from swarmpilot.scheduler.clients.models import Prediction
 
         # Register instance first
         client.post(
@@ -1363,7 +1363,7 @@ class TestStrategyManagement:
         )
 
         with patch(
-            "src.api.predictor_client.predict",
+            "swarmpilot.scheduler.api.predictor_client.predict",
             new=AsyncMock(return_value=[mock_prediction]),
         ):
             client.post(
@@ -1426,7 +1426,7 @@ class TestStrategyManagement:
 
     async def test_set_strategy_rejects_when_tasks_running(self, client):
         """Test that setting strategy is rejected when tasks are running."""
-        from src.clients.models import Prediction
+        from swarmpilot.scheduler.clients.models import Prediction
 
         # Register instance
         client.post(
@@ -1452,7 +1452,7 @@ class TestStrategyManagement:
         )
 
         with patch(
-            "src.api.predictor_client.predict",
+            "swarmpilot.scheduler.api.predictor_client.predict",
             new=AsyncMock(return_value=[mock_prediction]),
         ):
             client.post(
@@ -1596,7 +1596,7 @@ class TestInstanceDrain:
         a task is dispatched to an instance, not when it's submitted. This test
         manually increments the pending count to simulate a dispatched task.
         """
-        from src import api
+        from swarmpilot.scheduler import api
 
         # Register instance
         client.post(
@@ -1666,7 +1666,7 @@ class TestTaskResultCallback:
 
     def test_callback_task_result_success(self, client):
         """Test successful task result callback."""
-        from src.clients.models import Prediction
+        from swarmpilot.scheduler.clients.models import Prediction
 
         # Register instance
         client.post(
@@ -1692,7 +1692,7 @@ class TestTaskResultCallback:
         )
 
         with patch(
-            "src.api.predictor_client.predict",
+            "swarmpilot.scheduler.api.predictor_client.predict",
             new=AsyncMock(return_value=[mock_prediction]),
         ):
             client.post(
@@ -1706,7 +1706,7 @@ class TestTaskResultCallback:
             )
 
         # Send callback
-        with patch("src.api.task_result_callback.handle_result", new=AsyncMock()):
+        with patch("swarmpilot.scheduler.api.task_result_callback.handle_result", new=AsyncMock()):
             response = client.post(
                 "/v1/callback/task_result",
                 json={
@@ -1737,7 +1737,7 @@ class TestTaskResultCallback:
 
     def test_callback_task_result_invalid_status(self, client):
         """Test callback with invalid status."""
-        from src.clients.models import Prediction
+        from swarmpilot.scheduler.clients.models import Prediction
 
         # Register instance and submit task
         client.post(
@@ -1762,7 +1762,7 @@ class TestTaskResultCallback:
         )
 
         with patch(
-            "src.api.predictor_client.predict",
+            "swarmpilot.scheduler.api.predictor_client.predict",
             new=AsyncMock(return_value=[mock_prediction]),
         ):
             client.post(
@@ -1790,7 +1790,7 @@ class TestTaskResultCallback:
 
     def test_callback_task_result_failed(self, client):
         """Test callback for failed task."""
-        from src.clients.models import Prediction
+        from swarmpilot.scheduler.clients.models import Prediction
 
         # Register instance and submit task
         client.post(
@@ -1815,7 +1815,7 @@ class TestTaskResultCallback:
         )
 
         with patch(
-            "src.api.predictor_client.predict",
+            "swarmpilot.scheduler.api.predictor_client.predict",
             new=AsyncMock(return_value=[mock_prediction]),
         ):
             client.post(
@@ -1829,7 +1829,7 @@ class TestTaskResultCallback:
             )
 
         # Send callback with failure
-        with patch("src.api.task_result_callback.handle_result", new=AsyncMock()):
+        with patch("swarmpilot.scheduler.api.task_result_callback.handle_result", new=AsyncMock()):
             response = client.post(
                 "/v1/callback/task_result",
                 json={
@@ -1852,7 +1852,7 @@ class TestTaskSubmissionErrors:
         Tasks are created with PENDING status and scheduling happens inline.
         If scheduling fails, the task remains in 'pending' status.
         """
-        from src import api
+        from swarmpilot.scheduler import api
 
         # Clear any leftover state from previous tests
         await api.task_registry.clear_all()
@@ -1900,7 +1900,7 @@ class TestTaskSubmissionErrors:
 
         Tasks are created with PENDING status and scheduling happens inline.
         """
-        from src import api
+        from swarmpilot.scheduler import api
 
         # Clear any leftover state from previous tests
         await api.task_registry.clear_all()
@@ -1946,7 +1946,7 @@ class TestTaskSubmissionErrors:
 
         Tasks are created with PENDING status and scheduling happens inline.
         """
-        from src import api
+        from swarmpilot.scheduler import api
 
         # Clear any leftover state from previous tests
         await api.task_registry.clear_all()
@@ -2048,7 +2048,7 @@ class TestDrainEdgeCases:
 
     def test_drain_instance_with_expect_error_queue(self, client):
         """Test draining with expect_error queue type."""
-        from src.clients.models import Prediction
+        from swarmpilot.scheduler.clients.models import Prediction
 
         # Register instance first
         client.post(
@@ -2089,7 +2089,7 @@ class TestDrainEdgeCases:
         )
 
         with patch(
-            "src.api.predictor_client.predict",
+            "swarmpilot.scheduler.api.predictor_client.predict",
             new=AsyncMock(return_value=[mock_prediction]),
         ):
             client.post(
@@ -2111,7 +2111,7 @@ class TestDrainEdgeCases:
 
     def test_drain_instance_probabilistic_with_median(self, client):
         """Test draining with probabilistic queue that has median."""
-        from src.clients.models import Prediction
+        from swarmpilot.scheduler.clients.models import Prediction
 
         # Register instance
         client.post(
@@ -2137,7 +2137,7 @@ class TestDrainEdgeCases:
         )
 
         with patch(
-            "src.api.predictor_client.predict",
+            "swarmpilot.scheduler.api.predictor_client.predict",
             new=AsyncMock(return_value=[mock_prediction]),
         ):
             client.post(
@@ -2175,7 +2175,7 @@ class TestWebSocketEndpoint:
 
     def test_websocket_subscribe_and_receive_result(self, client):
         """Test WebSocket subscribe and receive task result."""
-        from src.clients.models import Prediction
+        from swarmpilot.scheduler.clients.models import Prediction
 
         # Register instance and submit task
         client.post(
@@ -2200,7 +2200,7 @@ class TestWebSocketEndpoint:
         )
 
         with patch(
-            "src.api.predictor_client.predict",
+            "swarmpilot.scheduler.api.predictor_client.predict",
             new=AsyncMock(return_value=[mock_prediction]),
         ):
             client.post(
@@ -2316,7 +2316,7 @@ class TestWebSocketEndpoint:
 
     def test_websocket_exception_handling(self, client):
         """Test WebSocket exception handling."""
-        from src.clients.models import Prediction
+        from swarmpilot.scheduler.clients.models import Prediction
 
         # Register instance and submit task
         client.post(
@@ -2341,7 +2341,7 @@ class TestWebSocketEndpoint:
         )
 
         with patch(
-            "src.api.predictor_client.predict",
+            "swarmpilot.scheduler.api.predictor_client.predict",
             new=AsyncMock(return_value=[mock_prediction]),
         ):
             client.post(
@@ -2370,7 +2370,7 @@ class TestRemainingErrorHandling:
         """Test registration with registry error."""
         # Try to register with invalid data that causes internal error
         with patch(
-            "src.api.instance_registry.register",
+            "swarmpilot.scheduler.api.instance_registry.register",
             side_effect=ValueError("Internal error"),
         ):
             response = client.post(
@@ -2408,7 +2408,7 @@ class TestRemainingErrorHandling:
 
         # Try to drain instance with mocked error
         with patch(
-            "src.api.instance_registry.start_draining",
+            "swarmpilot.scheduler.api.instance_registry.start_draining",
             side_effect=ValueError("Cannot drain"),
         ):
             response = client.post("/v1/instance/drain", json={"instance_id": "inst-1"})
@@ -2435,7 +2435,7 @@ class TestRemainingErrorHandling:
         # Mock to raise timeout error
         # Mock the scheduling_strategy
         with patch(
-            "src.api.scheduling_strategy.schedule_task",
+            "swarmpilot.scheduler.api.scheduling_strategy.schedule_task",
             side_effect=TimeoutError("Request timeout"),
         ):
             response = client.post(
@@ -2453,7 +2453,7 @@ class TestRemainingErrorHandling:
 
     def test_task_registry_create_error(self, client):
         """Test task submission with task registry error."""
-        from src.clients.models import Prediction
+        from swarmpilot.scheduler.clients.models import Prediction
 
         # Register instance
         client.post(
@@ -2472,11 +2472,11 @@ class TestRemainingErrorHandling:
 
         mock_prediction = Prediction(instance_id="inst-1", predicted_time_ms=100.0)
 
-        from src.algorithms import ScheduleResult
+        from swarmpilot.scheduler.algorithms import ScheduleResult
 
         with (
             patch(
-                "src.api.scheduling_strategy.schedule_task",
+                "swarmpilot.scheduler.api.scheduling_strategy.schedule_task",
                 new=AsyncMock(
                     return_value=ScheduleResult(
                         selected_instance_id="inst-1",
@@ -2485,7 +2485,7 @@ class TestRemainingErrorHandling:
                 ),
             ),
             patch(
-                "src.api.task_registry.create_task",
+                "swarmpilot.scheduler.api.task_registry.create_task",
                 side_effect=ValueError("Task creation error"),
             ),
         ):
@@ -2505,7 +2505,7 @@ class TestRemainingErrorHandling:
         """Test set strategy with exception during initialization."""
         # Mock get_strategy to raise exception
         with patch(
-            "src.api.get_strategy", side_effect=Exception("Strategy init error")
+            "swarmpilot.scheduler.api.get_strategy", side_effect=Exception("Strategy init error")
         ):
             response = client.post("/v1/strategy/set", json={"strategy_name": "min_time"})
 
@@ -2515,7 +2515,7 @@ class TestRemainingErrorHandling:
         """Test health check when registry has errors."""
         # Mock to raise exception
         with patch(
-            "src.api.instance_registry.get_total_count",
+            "swarmpilot.scheduler.api.instance_registry.get_total_count",
             side_effect=Exception("Registry error"),
         ):
             response = client.get("/v1/health")
@@ -2526,7 +2526,7 @@ class TestRemainingErrorHandling:
         """Test remove instance with KeyError."""
         # Try to remove non-existent instance that causes KeyError
         with patch(
-            "src.api.instance_registry.safe_remove",
+            "swarmpilot.scheduler.api.instance_registry.safe_remove",
             side_effect=KeyError("not found"),
         ):
             response = client.post(
@@ -2561,7 +2561,7 @@ class TestRemainingErrorHandling:
 
     def test_drain_instance_no_median_quantile(self, client):
         """Test drain when quantile distribution has no 0.5."""
-        from src.clients.models import Prediction
+        from swarmpilot.scheduler.clients.models import Prediction
 
         # Register instance
         client.post(
@@ -2587,7 +2587,7 @@ class TestRemainingErrorHandling:
         )
 
         with patch(
-            "src.api.predictor_client.predict",
+            "swarmpilot.scheduler.api.predictor_client.predict",
             new=AsyncMock(return_value=[mock_prediction]),
         ):
             client.post(
@@ -2623,7 +2623,7 @@ class TestRemainingErrorHandling:
         )
 
         # Mock get_queue_info to return None
-        with patch("src.api.instance_registry.get_queue_info", return_value=None):
+        with patch("swarmpilot.scheduler.api.instance_registry.get_queue_info", return_value=None):
             response = client.get("/v1/instance/info?instance_id=inst-1")
 
         assert response.status_code == 500
@@ -2646,7 +2646,7 @@ class TestRemainingErrorHandling:
         )
 
         # Mock get_stats to return None
-        with patch("src.api.instance_registry.get_stats", return_value=None):
+        with patch("swarmpilot.scheduler.api.instance_registry.get_stats", return_value=None):
             response = client.get("/v1/instance/info?instance_id=inst-1")
 
         assert response.status_code == 500
@@ -2711,7 +2711,7 @@ class TestRemainingErrorHandling:
         # Mock to raise ValueError with "Model not found"
         # Mock the scheduling_strategy
         with patch(
-            "src.api.scheduling_strategy.schedule_task",
+            "swarmpilot.scheduler.api.scheduling_strategy.schedule_task",
             side_effect=ValueError("Model not found in database"),
         ):
             response = client.post(
@@ -2733,7 +2733,7 @@ class TestLifespanContextManager:
 
     async def test_lifespan_startup_success(self):
         """Test successful application startup."""
-        from src import api
+        from swarmpilot.scheduler import api
 
         # Track startup calls
         startup_called = False
@@ -2741,7 +2741,7 @@ class TestLifespanContextManager:
 
         # Mock the external services
         with patch(
-            "src.api.predictor_client.close", new=AsyncMock()
+            "swarmpilot.scheduler.api.predictor_client.close", new=AsyncMock()
         ) as mock_predictor_close:
             # Get the lifespan context manager
             lifespan_cm = api.lifespan(api.app)
@@ -2759,13 +2759,13 @@ class TestLifespanContextManager:
 
     async def test_lifespan_shutdown_with_training_client(self):
         """Test shutdown when training client is available."""
-        from src import api
+        from swarmpilot.scheduler import api
 
         # Set up a mock training client
         mock_training_client = AsyncMock()
         mock_training_client.close = AsyncMock()
 
-        with patch("src.api.predictor_client.close", new=AsyncMock()):
+        with patch("swarmpilot.scheduler.api.predictor_client.close", new=AsyncMock()):
             # Temporarily set training_client
             original_training_client = api.training_client
             api.training_client = mock_training_client
@@ -2783,12 +2783,12 @@ class TestLifespanContextManager:
 
     async def test_lifespan_shutdown_error_handling(self):
         """Test shutdown error propagation."""
-        from src import api
+        from swarmpilot.scheduler import api
 
         # Mock predictor_client.close to fail
         mock_predictor_close = AsyncMock(side_effect=Exception("Shutdown failed"))
 
-        with patch("src.api.predictor_client.close", mock_predictor_close):
+        with patch("swarmpilot.scheduler.api.predictor_client.close", mock_predictor_close):
             lifespan_cm = api.lifespan(api.app)
             # Shutdown errors should propagate
             with pytest.raises(Exception) as exc_info:
@@ -2838,8 +2838,8 @@ class TestAdditionalCoveragePaths:
 
     async def test_websocket_subscribe_to_completed_task(self, client):
         """Test subscribing to a task that is already completed."""
-        from src import api
-        from src.clients.models import Prediction
+        from swarmpilot.scheduler import api
+        from swarmpilot.scheduler.clients.models import Prediction
 
         # Register instance
         client.post(
@@ -2865,7 +2865,7 @@ class TestAdditionalCoveragePaths:
         )
 
         with patch(
-            "src.api.predictor_client.predict",
+            "swarmpilot.scheduler.api.predictor_client.predict",
             new=AsyncMock(return_value=[mock_prediction]),
         ):
             client.post(
@@ -2881,7 +2881,7 @@ class TestAdditionalCoveragePaths:
         # Mark task as completed
         from datetime import datetime
 
-        from src.models import TaskStatus
+        from swarmpilot.scheduler.models import TaskStatus
 
         await api.task_registry.update_status("task-1", TaskStatus.COMPLETED)
         task = await api.task_registry.get("task-1")
@@ -2946,7 +2946,7 @@ class TestAdditionalCoveragePaths:
 
     def test_drain_instance_median_fallback(self, client):
         """Test drain when median quantile needs fallback."""
-        from src.clients.models import Prediction
+        from swarmpilot.scheduler.clients.models import Prediction
 
         # Register instance
         client.post(
@@ -2975,7 +2975,7 @@ class TestAdditionalCoveragePaths:
         )
 
         with patch(
-            "src.api.predictor_client.predict",
+            "swarmpilot.scheduler.api.predictor_client.predict",
             new=AsyncMock(return_value=[mock_prediction]),
         ):
             client.post(
@@ -2997,7 +2997,7 @@ class TestAdditionalCoveragePaths:
 
     def test_get_strategy_info_unknown(self, client):
         """Test get_current_strategy_info with unknown strategy."""
-        from src import api
+        from swarmpilot.scheduler import api
 
         # Create a mock strategy with unknown class name
         class UnknownStrategy:

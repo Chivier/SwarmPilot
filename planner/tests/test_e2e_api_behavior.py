@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 @pytest.fixture
 def client():
     """Create a test client for the FastAPI application."""
-    from src.api import app
+    from swarmpilot.planner.api import app
     return TestClient(app)
 
 

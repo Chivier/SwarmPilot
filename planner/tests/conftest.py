@@ -123,5 +123,5 @@ def mock_instance_responses() -> Dict:
 @pytest.fixture
 def client():
     """Create FastAPI test client."""
-    from src.api import app
+    from swarmpilot.planner.api import app
     return TestClient(app)

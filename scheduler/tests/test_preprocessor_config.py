@@ -11,7 +11,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.clients.preprocessor_config import PreprocessorChainBuilder
+from swarmpilot.scheduler.clients.preprocessor_config import PreprocessorChainBuilder
 
 # ============================================================================
 # Fixtures

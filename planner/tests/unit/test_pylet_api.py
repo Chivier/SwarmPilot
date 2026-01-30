@@ -11,17 +11,17 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from src.models.pylet import (
+from swarmpilot.planner.models.pylet import (
     PyLetDeploymentInput,
     PyLetInstanceStatus,
     PyLetOptimizeInput,
     PyLetScaleInput,
 )
-from src.pylet.deployment_service import (
+from swarmpilot.planner.pylet.deployment_service import (
     DeploymentServiceResult,
     PyLetDeploymentService,
 )
-from src.pylet.instance_manager import ManagedInstance, ManagedInstanceStatus
+from swarmpilot.planner.pylet.instance_manager import ManagedInstance, ManagedInstanceStatus
 
 
 class TestPyLetModels:
@@ -93,7 +93,7 @@ class TestDeploymentServiceResult:
 
     def test_total_added(self):
         """Test total_added property."""
-        from src.pylet.deployment_executor import ExecutionResult
+        from swarmpilot.planner.pylet.deployment_executor import ExecutionResult
 
         mock_result = ExecutionResult(
             success=True,
@@ -112,7 +112,7 @@ class TestDeploymentServiceResult:
 
     def test_total_removed(self):
         """Test total_removed property."""
-        from src.pylet.deployment_executor import ExecutionResult
+        from swarmpilot.planner.pylet.deployment_executor import ExecutionResult
 
         mock_result = ExecutionResult(
             success=True,
@@ -131,7 +131,7 @@ class TestDeploymentServiceResult:
 
     def test_total_migrated(self):
         """Test total_migrated property."""
-        from src.pylet.migration_executor import MigrationResult
+        from swarmpilot.planner.pylet.migration_executor import MigrationResult
 
         mock_result = MigrationResult(
             success=True,
@@ -159,7 +159,7 @@ class TestPyLetDeploymentService:
         )
         assert not service.initialized
 
-    @patch("src.pylet.deployment_service.InstanceManager")
+    @patch("swarmpilot.planner.pylet.deployment_service.InstanceManager")
     def test_get_current_state(self, mock_manager_class):
         """Test get_current_state method."""
         mock_manager = MagicMock()
@@ -201,7 +201,7 @@ class TestPyLetDeploymentService:
         assert state["model-a"] == 2
         assert state["model-b"] == 1
 
-    @patch("src.pylet.deployment_service.InstanceManager")
+    @patch("swarmpilot.planner.pylet.deployment_service.InstanceManager")
     def test_get_active_instances(self, mock_manager_class):
         """Test get_active_instances method."""
         mock_manager = MagicMock()
@@ -236,25 +236,25 @@ class TestPyLetAPIEndpoints:
     @pytest.fixture
     def mock_config(self):
         """Create mock config with PyLet disabled."""
-        with patch("src.pylet_api.config") as mock:
+        with patch("swarmpilot.planner.pylet_api.config") as mock:
             mock.pylet_enabled = False
             yield mock
 
     @pytest.fixture
     def mock_config_enabled(self):
         """Create mock config with PyLet enabled."""
-        with patch("src.pylet_api.config") as mock:
+        with patch("swarmpilot.planner.pylet_api.config") as mock:
             mock.pylet_enabled = True
             yield mock
 
     def test_pylet_status_disabled(self, mock_config):
         """Test /status when PyLet is disabled."""
-        with patch("src.pylet_api.get_pylet_service_optional") as mock_get:
+        with patch("swarmpilot.planner.pylet_api.get_pylet_service_optional") as mock_get:
             mock_get.return_value = None
 
             from fastapi import FastAPI
 
-            from src.pylet_api import router
+            from swarmpilot.planner.pylet_api import router
 
             app = FastAPI()
             app.include_router(router, prefix="/v1")
@@ -282,12 +282,12 @@ class TestPyLetAPIEndpoints:
             ),
         ]
 
-        with patch("src.pylet_api.get_pylet_service_optional") as mock_get:
+        with patch("swarmpilot.planner.pylet_api.get_pylet_service_optional") as mock_get:
             mock_get.return_value = mock_service
 
             from fastapi import FastAPI
 
-            from src.pylet_api import router
+            from swarmpilot.planner.pylet_api import router
 
             app = FastAPI()
             app.include_router(router, prefix="/v1")
@@ -304,12 +304,12 @@ class TestPyLetAPIEndpoints:
 
     def test_pylet_deploy_manually_disabled(self, mock_config):
         """Test /deploy_manually returns 503 when PyLet is disabled."""
-        with patch("src.pylet_api.get_pylet_service_optional") as mock_get:
+        with patch("swarmpilot.planner.pylet_api.get_pylet_service_optional") as mock_get:
             mock_get.return_value = None
 
             from fastapi import FastAPI
 
-            from src.pylet_api import router
+            from swarmpilot.planner.pylet_api import router
 
             app = FastAPI()
             app.include_router(router, prefix="/v1")
@@ -324,12 +324,12 @@ class TestPyLetAPIEndpoints:
 
     def test_pylet_scale_disabled(self, mock_config):
         """Test /scale returns 503 when PyLet is disabled."""
-        with patch("src.pylet_api.get_pylet_service_optional") as mock_get:
+        with patch("swarmpilot.planner.pylet_api.get_pylet_service_optional") as mock_get:
             mock_get.return_value = None
 
             from fastapi import FastAPI
 
-            from src.pylet_api import router
+            from swarmpilot.planner.pylet_api import router
 
             app = FastAPI()
             app.include_router(router, prefix="/v1")
@@ -356,7 +356,7 @@ class TestPyLetConfigValidation:
             {"PYLET_ENABLED": "true", "PYLET_HEAD_URL": ""},
             clear=False,
         ):
-            from src.config import PlannerConfig
+            from swarmpilot.planner.config import PlannerConfig
 
             config = PlannerConfig()
             config.pylet_enabled = True
@@ -367,7 +367,7 @@ class TestPyLetConfigValidation:
 
     def test_pylet_invalid_backend(self):
         """Test that invalid backend raises error."""
-        from src.config import PlannerConfig
+        from swarmpilot.planner.config import PlannerConfig
 
         config = PlannerConfig()
         config.pylet_enabled = True
@@ -379,7 +379,7 @@ class TestPyLetConfigValidation:
 
     def test_pylet_invalid_gpu_count(self):
         """Test that invalid GPU count raises error."""
-        from src.config import PlannerConfig
+        from swarmpilot.planner.config import PlannerConfig
 
         config = PlannerConfig()
         config.pylet_enabled = True
@@ -392,7 +392,7 @@ class TestPyLetConfigValidation:
 
     def test_pylet_invalid_cpu_count(self):
         """Test that invalid CPU count raises error."""
-        from src.config import PlannerConfig
+        from swarmpilot.planner.config import PlannerConfig
 
         config = PlannerConfig()
         config.pylet_enabled = True
@@ -405,7 +405,7 @@ class TestPyLetConfigValidation:
 
     def test_pylet_valid_config(self):
         """Test that valid PyLet config passes validation."""
-        from src.config import PlannerConfig
+        from swarmpilot.planner.config import PlannerConfig
 
         config = PlannerConfig()
         config.pylet_enabled = True

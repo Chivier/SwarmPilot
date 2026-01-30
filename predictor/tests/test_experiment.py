@@ -3,7 +3,7 @@ Tests for experiment mode functionality.
 """
 
 import pytest
-from src.utils.experiment import (
+from swarmpilot.predictor.utils.experiment import (
     is_experiment_mode,
     get_exp_runtime,
     generate_expect_error_prediction,

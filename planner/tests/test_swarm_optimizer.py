@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from unittest.mock import patch, MagicMock
 
-from src.core.swarm_optimizer import (
+from swarmpilot.planner.core.swarm_optimizer import (
     SimulatedAnnealingOptimizer,
     IntegerProgrammingOptimizer,
     PULP_AVAILABLE,
@@ -317,7 +317,7 @@ class TestIPImportError:
         target = np.array([100.0, 100.0])
 
         # Mock PULP_AVAILABLE to be False
-        with patch('src.core.swarm_optimizer.PULP_AVAILABLE', False):
+        with patch('swarmpilot.planner.core.swarm_optimizer.PULP_AVAILABLE', False):
             with pytest.raises(ImportError, match="pulp library required"):
                 IntegerProgrammingOptimizer(
                     M=1, N=2, B=B, initial=initial, a=1.0, target=target
@@ -457,7 +457,7 @@ class TestCompareAlgorithms:
 
     def test_compare_algorithms_basic(self):
         """Test compare_algorithms runs both optimizers."""
-        from src.core.swarm_optimizer import compare_algorithms
+        from swarmpilot.planner.core.swarm_optimizer import compare_algorithms
 
         B = np.array([
             [10.0, 5.0],
@@ -478,7 +478,7 @@ class TestCompareAlgorithms:
     @pytest.mark.skipif(not PULP_AVAILABLE, reason="pulp not installed")
     def test_compare_algorithms_with_ip(self):
         """Test compare_algorithms includes IP when available."""
-        from src.core.swarm_optimizer import compare_algorithms
+        from swarmpilot.planner.core.swarm_optimizer import compare_algorithms
 
         B = np.array([
             [10.0, 5.0],

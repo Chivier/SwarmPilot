@@ -17,12 +17,12 @@ from fastapi.testclient import TestClient
 def client():
     """Create a test client with a fresh app instance."""
     # Import here to avoid circular dependencies
-    from src import api
+    from swarmpilot.scheduler import api
 
     # Reset global registries for clean state
-    from src.registry.instance_registry import InstanceRegistry
-    from src.registry.task_registry import TaskRegistry
-    from src.services.websocket_manager import ConnectionManager
+    from swarmpilot.scheduler.registry.instance_registry import InstanceRegistry
+    from swarmpilot.scheduler.registry.task_registry import TaskRegistry
+    from swarmpilot.scheduler.services.websocket_manager import ConnectionManager
 
     api.instance_registry = InstanceRegistry()
     api.task_registry = TaskRegistry()
@@ -105,8 +105,8 @@ class TestDrainEndpoint:
         register_test_instance("inst-1", 9001)
 
         # Mock queue info with some expected time
-        from src import api
-        from src.models import InstanceQueueExpectError
+        from swarmpilot.scheduler import api
+        from swarmpilot.scheduler.models import InstanceQueueExpectError
 
         await api.instance_registry.update_queue_info(
             "inst-1",
@@ -170,7 +170,7 @@ class TestDrainStatusEndpoint:
 
     async def test_get_status_draining_with_tasks(self, client, register_test_instance):
         """Test drain status for draining instance with pending tasks."""
-        from src import api
+        from swarmpilot.scheduler import api
 
         register_test_instance("inst-1", 9001)
 
@@ -249,7 +249,7 @@ class TestSafeRemoveEndpoint:
         self, client, register_test_instance
     ):
         """Test removing draining instance with pending tasks succeeds (with warning log)."""
-        from src import api
+        from swarmpilot.scheduler import api
 
         register_test_instance("inst-1", 9001)
 
@@ -278,8 +278,8 @@ class TestTaskAssignmentWithDraining:
     @pytest.fixture(autouse=True)
     def setup_mocks(self):
         """Setup mocks for task submission dependencies."""
-        from src import api
-        from src.clients.models import Prediction
+        from swarmpilot.scheduler import api
+        from swarmpilot.scheduler.clients.models import Prediction
 
         # Mock the predict method on the scheduling_strategy's predictor_client
         async def mock_predict(
@@ -311,7 +311,7 @@ class TestTaskAssignmentWithDraining:
     @pytest.fixture
     def mock_task_dispatcher(self):
         """Mock worker_queue_manager to avoid actual task dispatch."""
-        from src import api
+        from swarmpilot.scheduler import api
 
         with patch.object(api, "worker_queue_manager") as mock_wqm:
             mock_wqm.enqueue_task = lambda *a, **kw: 1
@@ -326,8 +326,8 @@ class TestTaskAssignmentWithDraining:
         are excluded from the available instances list, which ensures they
         won't be selected by the background scheduler.
         """
-        from src import api
-        from src.models import InstanceQueueExpectError
+        from swarmpilot.scheduler import api
+        from swarmpilot.scheduler.models import InstanceQueueExpectError
 
         # Register 3 instances
         register_test_instance("inst-1", 9001)
@@ -411,7 +411,7 @@ class TestTaskAssignmentWithDraining:
         self, client, register_test_instance, mock_task_dispatcher
     ):
         """Test workflow: drain → tasks complete → remove → re-register."""
-        from src import api
+        from swarmpilot.scheduler import api
 
         # Register instance
         register_test_instance("inst-1", 9001)
@@ -486,7 +486,7 @@ class TestCompleteRemovalWorkflow:
     @pytest.fixture(autouse=True)
     def setup_mocks(self):
         """Setup mocks."""
-        with patch("src.api.predictor_client") as mock_predictor:
+        with patch("swarmpilot.scheduler.api.predictor_client") as mock_predictor:
             mock_predictor.predict = AsyncMock(return_value=[])
             yield
 
@@ -500,8 +500,8 @@ class TestCompleteRemovalWorkflow:
         5. Simulate task completion
         6. Remove instance when safe
         """
-        from src import api
-        from src.models import InstanceQueueExpectError
+        from swarmpilot.scheduler import api
+        from swarmpilot.scheduler.models import InstanceQueueExpectError
 
         # Step 1: Register 2 instances
         register_test_instance("inst-1", 9001)

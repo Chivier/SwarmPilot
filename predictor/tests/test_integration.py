@@ -9,7 +9,7 @@ import pytest
 import shutil
 from pathlib import Path
 from fastapi.testclient import TestClient
-from src.api import app
+from swarmpilot.predictor.api import app
 
 
 # Use a test-specific storage directory
@@ -23,8 +23,8 @@ def setup_and_teardown():
     Path(TEST_STORAGE_DIR).mkdir(exist_ok=True)
 
     # Reconfigure app's storage to use test directory
-    from src import api
-    from src.api import dependencies
+    from swarmpilot.predictor import api
+    from swarmpilot.predictor.api import dependencies
 
     test_storage = api.ModelStorage(storage_dir=TEST_STORAGE_DIR)
     api.storage = test_storage

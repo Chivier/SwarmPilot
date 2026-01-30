@@ -23,7 +23,7 @@ class TestHealthEndpointErrors:
 
     def test_health_check_storage_not_accessible(self, client):
         """Should return 503 when storage is not accessible."""
-        with patch('src.api.dependencies.storage') as mock_storage:
+        with patch('swarmpilot.predictor.api.dependencies.storage') as mock_storage:
             mock_storage.get_storage_info.return_value = {
                 'is_accessible': False,
                 'storage_dir': '/nonexistent'
@@ -35,7 +35,7 @@ class TestHealthEndpointErrors:
 
     def test_health_check_exception(self, client):
         """Should handle exception in health check."""
-        with patch('src.api.dependencies.storage') as mock_storage:
+        with patch('swarmpilot.predictor.api.dependencies.storage') as mock_storage:
             mock_storage.get_storage_info.side_effect = Exception("Storage error")
 
             response = client.get("/health")
@@ -48,7 +48,7 @@ class TestCacheEndpointErrors:
 
     def test_cache_stats_exception(self, client):
         """Should handle exception in cache stats."""
-        with patch('src.api.dependencies.model_cache') as mock_cache:
+        with patch('swarmpilot.predictor.api.dependencies.model_cache') as mock_cache:
             mock_cache.get_stats.side_effect = Exception("Cache error")
 
             response = client.get("/cache/stats")
@@ -56,7 +56,7 @@ class TestCacheEndpointErrors:
 
     def test_cache_clear_exception(self, client):
         """Should handle exception in cache clear."""
-        with patch('src.api.dependencies.model_cache') as mock_cache:
+        with patch('swarmpilot.predictor.api.dependencies.model_cache') as mock_cache:
             mock_cache.clear.side_effect = Exception("Cache clear error")
 
             response = client.post("/cache/clear")
@@ -68,7 +68,7 @@ class TestListModelsErrors:
 
     def test_list_models_storage_error(self, client):
         """Should handle storage error in list models."""
-        with patch('src.api.dependencies.storage') as mock_storage:
+        with patch('swarmpilot.predictor.api.dependencies.storage') as mock_storage:
             mock_storage.list_models.side_effect = Exception("Storage list error")
 
             response = client.get("/list")
@@ -80,7 +80,7 @@ class TestTrainEndpointErrors:
 
     def test_train_storage_save_error(self, client):
         """Should handle storage save error."""
-        with patch('src.api.dependencies.storage') as mock_storage:
+        with patch('swarmpilot.predictor.api.dependencies.storage') as mock_storage:
             mock_storage.save_model.side_effect = Exception("Save error")
             # Let other methods work normally
             mock_storage.generate_model_key.return_value = "test-key"
@@ -135,10 +135,10 @@ class TestPredictEndpointErrors:
         client.post("/train", json=train_request)
 
         # Then patch storage to fail on load
-        with patch('src.api.dependencies.model_cache') as mock_cache:
+        with patch('swarmpilot.predictor.api.dependencies.model_cache') as mock_cache:
             mock_cache.get.return_value = None
 
-            with patch('src.api.dependencies.storage') as mock_storage:
+            with patch('swarmpilot.predictor.api.dependencies.storage') as mock_storage:
                 mock_storage.load_model.side_effect = Exception("Load error")
                 mock_storage.generate_model_key.return_value = "test-key"
 
@@ -199,7 +199,7 @@ class TestDeleteModelErrors:
 
     def test_delete_storage_error(self, client):
         """Should handle storage error during delete."""
-        with patch('src.api.dependencies.storage') as mock_storage:
+        with patch('swarmpilot.predictor.api.dependencies.storage') as mock_storage:
             mock_storage.delete_model.side_effect = Exception("Delete error")
 
             response = client.delete("/models/any-model")

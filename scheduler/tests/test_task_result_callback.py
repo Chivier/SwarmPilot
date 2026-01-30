@@ -9,9 +9,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.models import TaskStatus
-from src.services.task_result_callback import TaskResultCallback
-from src.services.worker_queue_thread import TaskResult
+from swarmpilot.scheduler.models import TaskStatus
+from swarmpilot.scheduler.services.task_result_callback import TaskResultCallback
+from swarmpilot.scheduler.services.worker_queue_thread import TaskResult
 
 # ============================================================================
 # Fixtures

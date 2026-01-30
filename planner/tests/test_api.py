@@ -5,7 +5,7 @@ from unittest.mock import patch, AsyncMock, MagicMock
 from fastapi.testclient import TestClient
 import numpy as np
 
-from src.api import app
+from swarmpilot.planner.api import app
 
 
 @pytest.fixture
@@ -50,7 +50,7 @@ class TestPlanEndpoint:
         sample_planner_input["max_iterations"] = 10
         sample_planner_input["verbose"] = False
 
-        with patch("src.api.SimulatedAnnealingOptimizer") as mock_optimizer_class:
+        with patch("swarmpilot.planner.api.SimulatedAnnealingOptimizer") as mock_optimizer_class:
             # Mock optimizer instance and its methods
             mock_optimizer = MagicMock()
             mock_optimizer.optimize.return_value = (
@@ -81,7 +81,7 @@ class TestPlanEndpoint:
         sample_planner_input["algorithm"] = "integer_programming"
         sample_planner_input["verbose"] = False
 
-        with patch("src.api.IntegerProgrammingOptimizer") as mock_optimizer_class:
+        with patch("swarmpilot.planner.api.IntegerProgrammingOptimizer") as mock_optimizer_class:
             mock_optimizer = MagicMock()
             mock_optimizer.optimize.return_value = (
                 np.array([0, 1, 1, 2]),
@@ -115,7 +115,7 @@ class TestPlanEndpoint:
         """Test /plan handles optimization failures."""
         sample_planner_input["max_iterations"] = 10
 
-        with patch("src.api.SimulatedAnnealingOptimizer") as mock_optimizer_class:
+        with patch("swarmpilot.planner.api.SimulatedAnnealingOptimizer") as mock_optimizer_class:
             mock_optimizer_class.side_effect = ValueError("Optimization failed")
 
             response = client.post("/v1/plan", json=sample_planner_input)

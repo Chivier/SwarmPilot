@@ -5,7 +5,7 @@ Tests instance management, stats tracking, queue info, and thread safety.
 
 import pytest
 
-from src.models import (
+from swarmpilot.scheduler.models import (
     Instance,
     InstanceQueueBase,
     InstanceQueueProbabilistic,

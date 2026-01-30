@@ -12,7 +12,7 @@ Tests the ModelStorage class functionality including:
 import pytest
 import tempfile
 import shutil
-from src.storage.model_storage import ModelStorage
+from swarmpilot.predictor.storage.model_storage import ModelStorage
 
 
 @pytest.fixture
@@ -378,7 +378,7 @@ class TestStorageErrorHandling:
 
     def test_list_models_with_corrupted_file(self, temp_storage_dir):
         """Should skip corrupted model files and continue listing."""
-        from src.storage.model_storage import ModelStorage
+        from swarmpilot.predictor.storage.model_storage import ModelStorage
         import os
 
         storage = ModelStorage(storage_dir=temp_storage_dir)
@@ -404,7 +404,7 @@ class TestStorageErrorHandling:
 
     def test_load_model_with_corrupted_file(self, temp_storage_dir):
         """Should raise exception when loading corrupted model."""
-        from src.storage.model_storage import ModelStorage
+        from swarmpilot.predictor.storage.model_storage import ModelStorage
         import os
 
         storage = ModelStorage(storage_dir=temp_storage_dir)
@@ -420,7 +420,7 @@ class TestStorageErrorHandling:
 
     def test_save_model_to_readonly_directory(self, temp_storage_dir):
         """Should handle permission errors gracefully."""
-        from src.storage.model_storage import ModelStorage
+        from swarmpilot.predictor.storage.model_storage import ModelStorage
         import os
         import stat
 

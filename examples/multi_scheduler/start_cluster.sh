@@ -137,7 +137,7 @@ echo -e "${GREEN}✓ Dummy Health Server started (PID: $DUMMY_PID)${NC}"
 
 # Start Planner with PyLet integration (pointing to dummy health server for init check)
 echo -e "${BLUE}[2/5] Starting Planner on port $PLANNER_PORT...${NC}"
-cd "$PROJECT_ROOT/planner"
+cd "$PROJECT_ROOT"
 
 # Build custom command for sleep model
 SLEEP_MODEL_PATH="$PROJECT_ROOT/examples/multi_scheduler/pylet_sleep_model.py"
@@ -152,7 +152,7 @@ PLANNER_PORT=$PLANNER_PORT \
     PYLET_CPU_COUNT=1 \
     PYLET_CUSTOM_COMMAND="$CUSTOM_CMD" \
     SCHEDULER_URL="http://localhost:$DUMMY_HEALTH_PORT" \
-    uv run python -m uvicorn src.api:app --host 0.0.0.0 --port $PLANNER_PORT > "$LOG_DIR/planner.log" 2>&1 &
+    uv run python -m uvicorn swarmpilot.planner.api:app --host 0.0.0.0 --port $PLANNER_PORT > "$LOG_DIR/planner.log" 2>&1 &
 PLANNER_PID=$!
 echo $PLANNER_PID > "$LOG_DIR/planner.pid"
 
@@ -178,12 +178,12 @@ echo ""
 
 # Start Scheduler A (sleep_model_a)
 echo -e "${BLUE}[3/5] Starting Scheduler A (sleep_model_a) on port $SCHEDULER_A_PORT...${NC}"
-cd "$PROJECT_ROOT/scheduler"
+cd "$PROJECT_ROOT"
 SCHEDULER_MODEL_ID="sleep_model_a" \
     PLANNER_REGISTRATION_URL="http://localhost:$PLANNER_PORT" \
     SCHEDULER_SELF_URL="http://localhost:$SCHEDULER_A_PORT" \
     PREDICTOR_MODE="library" \
-    uv run python -m uvicorn src.api:app --host 0.0.0.0 --port $SCHEDULER_A_PORT > "$LOG_DIR/scheduler-a.log" 2>&1 &
+    uv run python -m uvicorn swarmpilot.scheduler.api:app --host 0.0.0.0 --port $SCHEDULER_A_PORT > "$LOG_DIR/scheduler-a.log" 2>&1 &
 SCHEDULER_A_PID=$!
 echo $SCHEDULER_A_PID > "$LOG_DIR/scheduler-a.pid"
 
@@ -197,12 +197,12 @@ echo -e "${GREEN}✓ Scheduler A started (PID: $SCHEDULER_A_PID)${NC}"
 
 # Start Scheduler B (sleep_model_b)
 echo -e "${BLUE}[4/5] Starting Scheduler B (sleep_model_b) on port $SCHEDULER_B_PORT...${NC}"
-cd "$PROJECT_ROOT/scheduler"
+cd "$PROJECT_ROOT"
 SCHEDULER_MODEL_ID="sleep_model_b" \
     PLANNER_REGISTRATION_URL="http://localhost:$PLANNER_PORT" \
     SCHEDULER_SELF_URL="http://localhost:$SCHEDULER_B_PORT" \
     PREDICTOR_MODE="library" \
-    uv run python -m uvicorn src.api:app --host 0.0.0.0 --port $SCHEDULER_B_PORT > "$LOG_DIR/scheduler-b.log" 2>&1 &
+    uv run python -m uvicorn swarmpilot.scheduler.api:app --host 0.0.0.0 --port $SCHEDULER_B_PORT > "$LOG_DIR/scheduler-b.log" 2>&1 &
 SCHEDULER_B_PID=$!
 echo $SCHEDULER_B_PID > "$LOG_DIR/scheduler-b.pid"
 
@@ -216,12 +216,12 @@ echo -e "${GREEN}✓ Scheduler B started (PID: $SCHEDULER_B_PID)${NC}"
 
 # Start Scheduler C (sleep_model_c)
 echo -e "${BLUE}[5/5] Starting Scheduler C (sleep_model_c) on port $SCHEDULER_C_PORT...${NC}"
-cd "$PROJECT_ROOT/scheduler"
+cd "$PROJECT_ROOT"
 SCHEDULER_MODEL_ID="sleep_model_c" \
     PLANNER_REGISTRATION_URL="http://localhost:$PLANNER_PORT" \
     SCHEDULER_SELF_URL="http://localhost:$SCHEDULER_C_PORT" \
     PREDICTOR_MODE="library" \
-    uv run python -m uvicorn src.api:app --host 0.0.0.0 --port $SCHEDULER_C_PORT > "$LOG_DIR/scheduler-c.log" 2>&1 &
+    uv run python -m uvicorn swarmpilot.scheduler.api:app --host 0.0.0.0 --port $SCHEDULER_C_PORT > "$LOG_DIR/scheduler-c.log" 2>&1 &
 SCHEDULER_C_PID=$!
 echo $SCHEDULER_C_PID > "$LOG_DIR/scheduler-c.pid"
 

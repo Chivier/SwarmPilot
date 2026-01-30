@@ -6,7 +6,7 @@ Tests all model validation, serialization, and enum functionality.
 import pytest
 from pydantic import ValidationError
 
-from src.models import (
+from swarmpilot.scheduler.models import (
     ErrorResponse,
     HealthErrorResponse,
     HealthResponse,

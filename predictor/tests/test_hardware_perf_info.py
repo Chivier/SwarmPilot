@@ -3,7 +3,7 @@ Tests for hardware performance information utilities.
 """
 
 import pytest
-from src.utils.hardware_perf_info import (
+from swarmpilot.predictor.utils.hardware_perf_info import (
     NVIDIA_TESLA_SPECS,
     get_gpu_spec,
     list_available_gpus,

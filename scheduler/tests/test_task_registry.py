@@ -7,8 +7,8 @@ from time import sleep
 
 import pytest
 
-from src.models import TaskStatus, TaskTimestamps
-from src.registry.task_registry import TaskRecord
+from swarmpilot.scheduler.models import TaskStatus, TaskTimestamps
+from swarmpilot.scheduler.registry.task_registry import TaskRecord
 
 # ============================================================================
 # TaskRecord Tests

@@ -363,11 +363,11 @@ def planner_server(
     # Force reimport of config with new env vars
     import importlib
 
-    from src import config as config_module
+    from swarmpilot.planner import config as config_module
 
     importlib.reload(config_module)
 
-    from src.api import app
+    from swarmpilot.planner.api import app
 
     # Start planner in background thread
     uvicorn_config = uvicorn.Config(

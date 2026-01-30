@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 import httpx
 import pytest
 
-from src.utils.planner_reporter import PlannerReporter
+from swarmpilot.scheduler.utils.planner_reporter import PlannerReporter
 
 
 class TestPlannerReporterThroughputIntegration:

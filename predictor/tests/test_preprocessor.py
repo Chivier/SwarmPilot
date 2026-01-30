@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from src.preprocessor.preprocessors_registry import PreprocessorsRegistry
+from swarmpilot.predictor.preprocessor.preprocessors_registry import PreprocessorsRegistry
 
 
 # Get predictor directory (parent of tests directory)
@@ -27,7 +27,7 @@ requires_semantic_model = pytest.mark.skipif(
 @requires_semantic_model
 def test_preprocessor_registry():
     """Test that the preprocessor registry loads the semantic preprocessor."""
-    from src.preprocessor.semantic_predictor import SemanticPredictor
+    from swarmpilot.predictor.preprocessor.semantic_predictor import SemanticPredictor
 
     registry = PreprocessorsRegistry()
     assert registry is not None
@@ -38,7 +38,7 @@ def test_preprocessor_registry():
 @requires_semantic_model
 def test_semantic_predictor():
     """Test SemanticPredictor initialization and prediction."""
-    from src.preprocessor.semantic_predictor import SemanticPredictor
+    from swarmpilot.predictor.preprocessor.semantic_predictor import SemanticPredictor
 
     start_time = time.time()
     predictor = SemanticPredictor(
@@ -66,7 +66,7 @@ def test_semantic_predictor():
 @requires_semantic_model
 def test_semantic_predictor_multiple_inputs():
     """Test that SemanticPredictor rejects multiple inputs."""
-    from src.preprocessor.semantic_predictor import SemanticPredictor
+    from swarmpilot.predictor.preprocessor.semantic_predictor import SemanticPredictor
 
     predictor = SemanticPredictor(
         model_path=str(MODEL_PATH), model_config_path=str(CONFIG_PATH)
@@ -82,7 +82,7 @@ def test_semantic_predictor_multiple_inputs():
 @requires_semantic_model
 def test_semantic_predictor_with_preprocessor_registry():
     """Test SemanticPredictor accessed through the registry."""
-    from src.preprocessor.semantic_predictor import SemanticPredictor
+    from swarmpilot.predictor.preprocessor.semantic_predictor import SemanticPredictor
 
     registry = PreprocessorsRegistry()
     predictor = registry.get_preprocessor("semantic")

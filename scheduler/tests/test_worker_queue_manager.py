@@ -9,8 +9,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.services.worker_queue_manager import WorkerQueueManager
-from src.services.worker_queue_thread import QueuedTask, WorkerQueueThread
+from swarmpilot.scheduler.services.worker_queue_manager import WorkerQueueManager
+from swarmpilot.scheduler.services.worker_queue_thread import QueuedTask, WorkerQueueThread
 
 # ============================================================================
 # Fixtures

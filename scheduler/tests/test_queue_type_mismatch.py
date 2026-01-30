@@ -8,19 +8,19 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from src.algorithms import (
+from swarmpilot.scheduler.algorithms import (
     MinimumExpectedTimeStrategy,
     ProbabilisticSchedulingStrategy,
 )
-from src.clients.models import Prediction
-from src.clients.predictor_library_client import PredictorClient
-from src.models import (
+from swarmpilot.scheduler.clients.models import Prediction
+from swarmpilot.scheduler.clients.predictor_library_client import PredictorClient
+from swarmpilot.scheduler.models import (
     Instance,
     InstanceQueueExpectError,
     InstanceQueueProbabilistic,
     InstanceStatus,
 )
-from src.registry.instance_registry import InstanceRegistry
+from swarmpilot.scheduler.registry.instance_registry import InstanceRegistry
 
 
 class TestQueueTypeMismatch:
@@ -66,7 +66,7 @@ class TestQueueTypeMismatch:
         )
 
         # Try to update queue - this should trigger the mismatch warning and skip update
-        with patch("src.algorithms.min_expected_time.logger") as mock_logger:
+        with patch("swarmpilot.scheduler.algorithms.min_expected_time.logger") as mock_logger:
             await strategy.update_queue("test-instance-1", prediction)
 
             # Verify that warning was logged
@@ -124,7 +124,7 @@ class TestQueueTypeMismatch:
         )
 
         # Try to update queue - this should trigger the mismatch warning and skip update
-        with patch("src.algorithms.probabilistic.logger") as mock_logger:
+        with patch("swarmpilot.scheduler.algorithms.probabilistic.logger") as mock_logger:
             await strategy.update_queue("test-instance-2", prediction)
 
             # Verify that warning was logged
@@ -206,7 +206,7 @@ class TestQueueTypeMismatch:
         ]
 
         # Update queues - should work without warnings
-        with patch("src.algorithms.min_expected_time.logger") as mock_logger:
+        with patch("swarmpilot.scheduler.algorithms.min_expected_time.logger") as mock_logger:
             for prediction in predictions:
                 await strategy.update_queue(prediction.instance_id, prediction)
 
@@ -344,7 +344,7 @@ class TestQueueTypeMismatch:
         ]
 
         # Update queues - should work without warnings
-        with patch("src.algorithms.min_expected_time.logger") as mock_logger:
+        with patch("swarmpilot.scheduler.algorithms.min_expected_time.logger") as mock_logger:
             for pred in predictions:
                 await strategy.update_queue(pred.instance_id, pred)
 

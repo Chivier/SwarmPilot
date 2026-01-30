@@ -37,7 +37,7 @@ class TestTaskClearAPI:
     @pytest.mark.asyncio
     async def test_clear_tasks_clears_registry(self, test_client):
         """Test that /task/clear clears the task registry."""
-        from src.api import task_registry
+        from swarmpilot.scheduler.api import task_registry
 
         # Setup: Add tasks to task registry
         await task_registry.create_task(
@@ -56,7 +56,7 @@ class TestTaskClearAPI:
         )
 
         # Call clear endpoint
-        with patch("src.api.httpx.AsyncClient") as mock_client_class:
+        with patch("swarmpilot.scheduler.api.httpx.AsyncClient") as mock_client_class:
             mock_client = AsyncMock()
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock()
@@ -83,7 +83,7 @@ class TestTaskClearAPI:
     async def test_clearing_flag_reset_after_error(self, test_client):
         """Test that clear recovers gracefully from errors."""
         with patch(
-            "src.api.task_registry.clear_all", new_callable=AsyncMock
+            "swarmpilot.scheduler.api.task_registry.clear_all", new_callable=AsyncMock
         ) as mock_clear:
             mock_clear.side_effect = Exception("Test error")
 
@@ -103,9 +103,9 @@ class TestTaskClearIntegration:
     @pytest.mark.asyncio
     async def test_clear_submit_clear_cycle(self, test_client):
         """Test clear -> submit -> clear cycle works correctly."""
-        from src.api import task_registry
+        from swarmpilot.scheduler.api import task_registry
 
-        with patch("src.api.httpx.AsyncClient") as mock_client_class:
+        with patch("swarmpilot.scheduler.api.httpx.AsyncClient") as mock_client_class:
             mock_client = AsyncMock()
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock()
@@ -135,7 +135,7 @@ class TestTaskClearIntegration:
             assigned_instance="",
         )
 
-        with patch("src.api.httpx.AsyncClient") as mock_client_class:
+        with patch("swarmpilot.scheduler.api.httpx.AsyncClient") as mock_client_class:
             mock_client = AsyncMock()
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock()
@@ -159,7 +159,7 @@ class TestTaskClearIntegration:
     @pytest.mark.asyncio
     async def test_clear_response_includes_queue_count(self, test_client):
         """Test that clear response includes queue cleared count in message."""
-        from src.api import task_registry
+        from swarmpilot.scheduler.api import task_registry
 
         # Add tasks to registry
         await task_registry.create_task(
@@ -170,7 +170,7 @@ class TestTaskClearIntegration:
             assigned_instance="",
         )
 
-        with patch("src.api.httpx.AsyncClient") as mock_client_class:
+        with patch("swarmpilot.scheduler.api.httpx.AsyncClient") as mock_client_class:
             mock_client = AsyncMock()
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock()

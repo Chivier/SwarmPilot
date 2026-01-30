@@ -11,22 +11,22 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from src.algorithms import (
+from swarmpilot.scheduler.algorithms import (
     AdaptiveBootstrapStrategy,
     MinimumExpectedTimeStrategy,
     ProbabilisticSchedulingStrategy,
     RoundRobinStrategy,
     get_strategy,
 )
-from src.clients.models import Prediction
-from src.clients.predictor_library_client import PredictorClient
-from src.models import (
+from swarmpilot.scheduler.clients.models import Prediction
+from swarmpilot.scheduler.clients.predictor_library_client import PredictorClient
+from swarmpilot.scheduler.models import (
     Instance,
     InstanceQueueExpectError,
     InstanceQueueProbabilistic,
     InstanceStatus,
 )
-from src.registry.instance_registry import InstanceRegistry
+from swarmpilot.scheduler.registry.instance_registry import InstanceRegistry
 
 
 class TestSchedulingStrategies:

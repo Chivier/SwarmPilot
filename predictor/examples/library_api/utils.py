@@ -13,7 +13,7 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-from src.models import PlatformInfo
+from swarmpilot.predictor.models import PlatformInfo
 
 
 # =============================================================================
@@ -248,7 +248,7 @@ def create_core_with_storage(storage_dir: Path):
     Returns:
         PredictorCore instance configured for the storage.
     """
-    from src.api.core import PredictorCore
+    from swarmpilot.predictor.api.core import PredictorCore
 
     # Set environment variable for storage
     os.environ["PREDICTOR_STORAGE_DIR"] = str(storage_dir)
@@ -265,6 +265,6 @@ def create_low_level_with_storage(storage_dir: Path):
     Returns:
         PredictorLowLevel instance configured for the storage.
     """
-    from src.api.core import PredictorLowLevel
+    from swarmpilot.predictor.api.core import PredictorLowLevel
 
     return PredictorLowLevel(storage_dir=str(storage_dir))
