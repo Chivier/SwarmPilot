@@ -49,7 +49,7 @@ def setup_instance_and_task(test_client, task_id: str, model_id: str = "model-1"
     """Helper to register instance and submit a task."""
     # Register instance (idempotent)
     test_client.post(
-        "/instance/register",
+        "/v1/instance/register",
         json={
             "instance_id": "inst-1",
             "model_id": model_id,
@@ -65,7 +65,7 @@ def setup_instance_and_task(test_client, task_id: str, model_id: str = "model-1"
     # Submit task
     with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
         test_client.post(
-            "/task/submit",
+            "/v1/task/submit",
             json={
                 "task_id": task_id,
                 "model_id": model_id,
@@ -85,7 +85,7 @@ class TestRepredictBasic:
 
     def test_empty_registry_returns_zero(self, test_client):
         """Test that empty registry returns zero counts."""
-        response = test_client.post("/task/repredict")
+        response = test_client.post("/v1/task/repredict")
 
         assert response.status_code == 200
         data = response.json()
@@ -112,7 +112,7 @@ class TestRepredictBasic:
 
         asyncio.run(set_completed())
 
-        response = test_client.post("/task/repredict")
+        response = test_client.post("/v1/task/repredict")
 
         assert response.status_code == 200
         data = response.json()
@@ -158,7 +158,7 @@ class TestRepredictTasks:
             "src.api.predictor_client.predict",
             new=AsyncMock(return_value=[new_prediction]),
         ):
-            response = test_client.post("/task/repredict")
+            response = test_client.post("/v1/task/repredict")
 
         assert response.status_code == 200
         data = response.json()
@@ -192,7 +192,7 @@ class TestRepredictTasks:
             "src.api.predictor_client.predict",
             new=AsyncMock(return_value=[new_prediction]),
         ):
-            response = test_client.post("/task/repredict")
+            response = test_client.post("/v1/task/repredict")
 
         assert response.status_code == 200
         data = response.json()
@@ -228,7 +228,7 @@ class TestRepredictTasks:
             "src.api.predictor_client.predict",
             new=AsyncMock(return_value=[new_prediction]),
         ):
-            response = test_client.post("/task/repredict")
+            response = test_client.post("/v1/task/repredict")
 
         assert response.status_code == 200
         data = response.json()
@@ -263,7 +263,7 @@ class TestRepredictTasks:
             "src.api.predictor_client.predict",
             new=AsyncMock(return_value=[new_prediction]),
         ):
-            response = test_client.post("/task/repredict")
+            response = test_client.post("/v1/task/repredict")
 
         assert response.status_code == 200
 
@@ -296,7 +296,7 @@ class TestRepredictSkipBehavior:
 
         asyncio.run(set_completed())
 
-        response = test_client.post("/task/repredict")
+        response = test_client.post("/v1/task/repredict")
 
         assert response.status_code == 200
         data = response.json()
@@ -316,7 +316,7 @@ class TestRepredictSkipBehavior:
 
         asyncio.run(set_failed())
 
-        response = test_client.post("/task/repredict")
+        response = test_client.post("/v1/task/repredict")
 
         assert response.status_code == 200
         data = response.json()
@@ -338,7 +338,7 @@ class TestRepredictSkipBehavior:
 
         asyncio.run(clear_instance())
 
-        response = test_client.post("/task/repredict")
+        response = test_client.post("/v1/task/repredict")
 
         assert response.status_code == 200
         data = response.json()
@@ -384,7 +384,7 @@ class TestRepredictErrorHandling:
             "src.api.predictor_client.predict",
             new=AsyncMock(side_effect=Exception("Predictor error")),
         ):
-            response = test_client.post("/task/repredict")
+            response = test_client.post("/v1/task/repredict")
 
         assert response.status_code == 200
         data = response.json()
@@ -428,7 +428,7 @@ class TestRepredictErrorHandling:
             "src.api.predictor_client.predict",
             new=AsyncMock(side_effect=Exception("Predictor error")),
         ):
-            response = test_client.post("/task/repredict")
+            response = test_client.post("/v1/task/repredict")
 
         assert response.status_code == 200
         data = response.json()
@@ -473,7 +473,7 @@ class TestRepredictExpectErrorStrategy:
             "src.api.predictor_client.predict",
             new=AsyncMock(return_value=[new_prediction]),
         ):
-            response = test_client.post("/task/repredict")
+            response = test_client.post("/v1/task/repredict")
 
         assert response.status_code == 200
         data = response.json()
@@ -502,7 +502,7 @@ class TestRepredictProbabilisticStrategy:
 
         # Switch to probabilistic strategy
         response = test_client.post(
-            "/strategy/set",
+            "/v1/strategy/set",
             json={"strategy_name": "probabilistic", "target_quantile": 0.9},
         )
         if response.status_code != 200:
@@ -531,7 +531,7 @@ class TestRepredictProbabilisticStrategy:
             "src.api.predictor_client.predict",
             new=AsyncMock(return_value=[new_prediction]),
         ):
-            response = test_client.post("/task/repredict")
+            response = test_client.post("/v1/task/repredict")
 
         assert response.status_code == 200
         data = response.json()
@@ -599,7 +599,7 @@ class TestRepredictMixedScenarios:
             "src.api.predictor_client.predict",
             new=AsyncMock(return_value=[new_prediction]),
         ):
-            response = test_client.post("/task/repredict")
+            response = test_client.post("/v1/task/repredict")
 
         assert response.status_code == 200
         data = response.json()

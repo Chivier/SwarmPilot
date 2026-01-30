@@ -21,7 +21,7 @@ class TestTaskScheduleInfoEndpoint:
 
     def test_schedule_info_empty_registry(self, test_client):
         """Test schedule_info with no tasks returns empty list."""
-        response = test_client.get("/task/schedule_info")
+        response = test_client.get("/v1/task/schedule_info")
         assert response.status_code == 200
 
         data = response.json()
@@ -62,7 +62,7 @@ class TestTaskScheduleInfoEndpoint:
         asyncio.run(setup())
 
         # Get schedule info
-        response = test_client.get("/task/schedule_info")
+        response = test_client.get("/v1/task/schedule_info")
         assert response.status_code == 200
 
         data = response.json()
@@ -112,7 +112,7 @@ class TestTaskScheduleInfoEndpoint:
         asyncio.run(setup())
 
         # Get schedule info
-        response = test_client.get("/task/schedule_info")
+        response = test_client.get("/v1/task/schedule_info")
         assert response.status_code == 200
 
         data = response.json()
@@ -188,7 +188,7 @@ class TestTaskScheduleInfoEndpoint:
         asyncio.run(setup())
 
         # Filter by model_id
-        response = test_client.get("/task/schedule_info?model_id=model-a")
+        response = test_client.get("/v1/task/schedule_info?model_id=model-a")
         assert response.status_code == 200
 
         data = response.json()
@@ -241,7 +241,7 @@ class TestTaskScheduleInfoEndpoint:
         asyncio.run(setup())
 
         # Filter by instance_id
-        response = test_client.get("/task/schedule_info?instance_id=inst-1")
+        response = test_client.get("/v1/task/schedule_info?instance_id=inst-1")
         assert response.status_code == 200
 
         data = response.json()
@@ -301,7 +301,7 @@ class TestTaskScheduleInfoEndpoint:
         asyncio.run(setup())
 
         # Filter by status=pending
-        response = test_client.get("/task/schedule_info?status=pending")
+        response = test_client.get("/v1/task/schedule_info?status=pending")
         assert response.status_code == 200
 
         data = response.json()
@@ -376,7 +376,7 @@ class TestTaskScheduleInfoEndpoint:
 
         # Filter by model_id and status
         response = test_client.get(
-            "/task/schedule_info?model_id=model-a&status=completed"
+            "/v1/task/schedule_info?model_id=model-a&status=completed"
         )
         assert response.status_code == 200
 
@@ -420,7 +420,7 @@ class TestTaskScheduleInfoEndpoint:
 
         asyncio.run(setup())
 
-        response = test_client.get("/task/schedule_info")
+        response = test_client.get("/v1/task/schedule_info")
         assert response.status_code == 200
 
         data = response.json()
@@ -475,7 +475,7 @@ class TestTaskScheduleInfoEndpoint:
         asyncio.run(setup())
 
         # Test with limit
-        response = test_client.get("/task/schedule_info?limit=3")
+        response = test_client.get("/v1/task/schedule_info?limit=3")
         assert response.status_code == 200
         data = response.json()
         assert data["count"] == 3
@@ -483,7 +483,7 @@ class TestTaskScheduleInfoEndpoint:
         assert len(data["tasks"]) == 3
 
         # Test with offset
-        response = test_client.get("/task/schedule_info?limit=3&offset=3")
+        response = test_client.get("/v1/task/schedule_info?limit=3&offset=3")
         assert response.status_code == 200
         data = response.json()
         assert data["count"] == 3
@@ -523,7 +523,7 @@ class TestTaskScheduleInfoEndpoint:
         asyncio.run(setup())
 
         # Filter by non-existent model
-        response = test_client.get("/task/schedule_info?model_id=non-existent")
+        response = test_client.get("/v1/task/schedule_info?model_id=non-existent")
         assert response.status_code == 200
 
         data = response.json()
@@ -533,7 +533,7 @@ class TestTaskScheduleInfoEndpoint:
 
     def test_schedule_info_invalid_status(self, test_client):
         """Test schedule_info with invalid status filter returns 400."""
-        response = test_client.get("/task/schedule_info?status=invalid_status")
+        response = test_client.get("/v1/task/schedule_info?status=invalid_status")
         assert response.status_code == 400
 
         data = response.json()

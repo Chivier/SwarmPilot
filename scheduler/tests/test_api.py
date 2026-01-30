@@ -64,7 +64,7 @@ class TestInstanceRegistration:
     def test_register_instance_success(self, client):
         """Test successful instance registration."""
         response = client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
@@ -90,7 +90,7 @@ class TestInstanceRegistration:
         """Test registering duplicate instance returns 200 with warning (idempotent)."""
         # Register first time
         client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
@@ -105,7 +105,7 @@ class TestInstanceRegistration:
 
         # Try to register again - now returns 200 (idempotent behavior)
         response = client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
@@ -129,7 +129,7 @@ class TestInstanceRegistration:
     def test_register_instance_validation(self, client):
         """Test validation of registration request."""
         response = client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={"instance_id": "inst-1"},  # Missing required fields
         )
 
@@ -148,7 +148,7 @@ class TestInstanceRemoval:
         """Test successful instance removal with drain-before-remove workflow."""
         # Register instance first
         client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
@@ -162,11 +162,11 @@ class TestInstanceRemoval:
         )
 
         # Drain the instance first (required for safe removal)
-        drain_response = client.post("/instance/drain", json={"instance_id": "inst-1"})
+        drain_response = client.post("/v1/instance/drain", json={"instance_id": "inst-1"})
         assert drain_response.status_code == 200
 
         # Remove it
-        response = client.post("/instance/remove", json={"instance_id": "inst-1"})
+        response = client.post("/v1/instance/remove", json={"instance_id": "inst-1"})
 
         assert response.status_code == 200
         data = response.json()
@@ -175,7 +175,7 @@ class TestInstanceRemoval:
 
     def test_remove_nonexistent_instance(self, client):
         """Test removing non-existent instance returns 404."""
-        response = client.post("/instance/remove", json={"instance_id": "nonexistent"})
+        response = client.post("/v1/instance/remove", json={"instance_id": "nonexistent"})
 
         assert response.status_code == 404
 
@@ -183,7 +183,7 @@ class TestInstanceRemoval:
         """Test removing instance with pending tasks (allowed with warning)."""
         # Register instance
         client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
@@ -200,7 +200,7 @@ class TestInstanceRemoval:
         await instance_registry.increment_pending("inst-1")
 
         # Removal is allowed even with pending tasks (logs warning)
-        response = client.post("/instance/remove", json={"instance_id": "inst-1"})
+        response = client.post("/v1/instance/remove", json={"instance_id": "inst-1"})
 
         assert response.status_code == 200
         data = response.json()
@@ -220,7 +220,7 @@ class TestInstanceList:
         # Register multiple instances
         for i in range(3):
             client.post(
-                "/instance/register",
+                "/v1/instance/register",
                 json={
                     "instance_id": f"inst-{i}",
                     "model_id": "model-1",
@@ -233,7 +233,7 @@ class TestInstanceList:
                 },
             )
 
-        response = client.get("/instance/list")
+        response = client.get("/v1/instance/list")
 
         assert response.status_code == 200
         data = response.json()
@@ -245,7 +245,7 @@ class TestInstanceList:
         """Test listing instances filtered by model_id."""
         # Register instances with different models
         client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-a",
@@ -258,7 +258,7 @@ class TestInstanceList:
             },
         )
         client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-2",
                 "model_id": "model-b",
@@ -271,7 +271,7 @@ class TestInstanceList:
             },
         )
 
-        response = client.get("/instance/list?model_id=model-a")
+        response = client.get("/v1/instance/list?model_id=model-a")
 
         assert response.status_code == 200
         data = response.json()
@@ -280,7 +280,7 @@ class TestInstanceList:
 
     def test_list_empty_instances(self, client):
         """Test listing when no instances registered."""
-        response = client.get("/instance/list")
+        response = client.get("/v1/instance/list")
 
         assert response.status_code == 200
         data = response.json()
@@ -300,7 +300,7 @@ class TestInstanceInfo:
         """Test getting instance information."""
         # Register instance
         client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
@@ -313,7 +313,7 @@ class TestInstanceInfo:
             },
         )
 
-        response = client.get("/instance/info?instance_id=inst-1")
+        response = client.get("/v1/instance/info?instance_id=inst-1")
 
         assert response.status_code == 200
         data = response.json()
@@ -324,7 +324,7 @@ class TestInstanceInfo:
 
     def test_get_nonexistent_instance_info(self, client):
         """Test getting info for non-existent instance."""
-        response = client.get("/instance/info?instance_id=nonexistent")
+        response = client.get("/v1/instance/info?instance_id=nonexistent")
 
         assert response.status_code == 404
 
@@ -341,7 +341,7 @@ class TestTaskSubmission:
         """Test successful task submission."""
         # Register instance first
         client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
@@ -357,7 +357,7 @@ class TestTaskSubmission:
         # Mock predictor
         with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
             response = client.post(
-                "/task/submit",
+                "/v1/task/submit",
                 json={
                     "task_id": "task-1",
                     "model_id": "model-1",
@@ -374,7 +374,7 @@ class TestTaskSubmission:
     def test_submit_task_no_instances(self, client):
         """Test submitting task when no instances available - task is queued."""
         response = client.post(
-            "/task/submit",
+            "/v1/task/submit",
             json={
                 "task_id": "task-1",
                 "model_id": "model-1",
@@ -395,7 +395,7 @@ class TestTaskSubmission:
         """Test submitting duplicate task."""
         # Register instance
         client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
@@ -411,7 +411,7 @@ class TestTaskSubmission:
         # Submit task first time
         with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
             client.post(
-                "/task/submit",
+                "/v1/task/submit",
                 json={
                     "task_id": "task-1",
                     "model_id": "model-1",
@@ -423,7 +423,7 @@ class TestTaskSubmission:
         # Try to submit again
         with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
             response = client.post(
-                "/task/submit",
+                "/v1/task/submit",
                 json={
                     "task_id": "task-1",
                     "model_id": "model-1",
@@ -447,7 +447,7 @@ class TestTaskList:
         """Test listing all tasks."""
         # Register instance and submit tasks
         client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
@@ -463,7 +463,7 @@ class TestTaskList:
         with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
             for i in range(3):
                 client.post(
-                    "/task/submit",
+                    "/v1/task/submit",
                     json={
                         "task_id": f"task-{i}",
                         "model_id": "model-1",
@@ -472,7 +472,7 @@ class TestTaskList:
                     },
                 )
 
-        response = client.get("/task/list")
+        response = client.get("/v1/task/list")
 
         assert response.status_code == 200
         data = response.json()
@@ -484,7 +484,7 @@ class TestTaskList:
         """Test listing tasks with status filter."""
         # Register instance
         client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
@@ -500,7 +500,7 @@ class TestTaskList:
         # Submit task
         with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
             client.post(
-                "/task/submit",
+                "/v1/task/submit",
                 json={
                     "task_id": "task-1",
                     "model_id": "model-1",
@@ -509,7 +509,7 @@ class TestTaskList:
                 },
             )
 
-        response = client.get("/task/list?status=pending")
+        response = client.get("/v1/task/list?status=pending")
 
         assert response.status_code == 200
         data = response.json()
@@ -517,7 +517,7 @@ class TestTaskList:
 
     def test_list_tasks_pagination(self, client):
         """Test task list pagination."""
-        response = client.get("/task/list?limit=10&offset=0")
+        response = client.get("/v1/task/list?limit=10&offset=0")
 
         assert response.status_code == 200
         data = response.json()
@@ -537,7 +537,7 @@ class TestTaskInfo:
         """Test getting task information."""
         # Register instance and submit task
         client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
@@ -552,7 +552,7 @@ class TestTaskInfo:
 
         with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
             client.post(
-                "/task/submit",
+                "/v1/task/submit",
                 json={
                     "task_id": "task-1",
                     "model_id": "model-1",
@@ -561,7 +561,7 @@ class TestTaskInfo:
                 },
             )
 
-        response = client.get("/task/info?task_id=task-1")
+        response = client.get("/v1/task/info?task_id=task-1")
 
         assert response.status_code == 200
         data = response.json()
@@ -571,7 +571,7 @@ class TestTaskInfo:
 
     def test_get_nonexistent_task_info(self, client):
         """Test getting info for non-existent task."""
-        response = client.get("/task/info?task_id=nonexistent")
+        response = client.get("/v1/task/info?task_id=nonexistent")
 
         assert response.status_code == 404
 
@@ -585,7 +585,7 @@ class TestTaskResubmit:
 
         # Register instance
         client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
@@ -611,7 +611,7 @@ class TestTaskResubmit:
             new=AsyncMock(return_value=[mock_prediction]),
         ):
             client.post(
-                "/task/submit",
+                "/v1/task/submit",
                 json={
                     "task_id": "task-1",
                     "model_id": "model-1",
@@ -639,7 +639,7 @@ class TestTaskResubmit:
             patch("src.api.worker_queue_manager", mock_wqm),
         ):
             response = client.post(
-                "/task/resubmit",
+                "/v1/task/resubmit",
                 json={"task_id": "task-1", "original_instance_id": "inst-1"},
             )
 
@@ -662,7 +662,7 @@ class TestTaskResubmit:
 
         # Register instance
         client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
@@ -688,7 +688,7 @@ class TestTaskResubmit:
             new=AsyncMock(return_value=[mock_prediction]),
         ):
             client.post(
-                "/task/submit",
+                "/v1/task/submit",
                 json={
                     "task_id": "task-1",
                     "model_id": "model-1",
@@ -723,7 +723,7 @@ class TestTaskResubmit:
             new=AsyncMock(return_value=mock_result),
         ):
             response = client.post(
-                "/task/resubmit",
+                "/v1/task/resubmit",
                 json={"task_id": "task-1", "original_instance_id": "inst-1"},
             )
 
@@ -733,7 +733,7 @@ class TestTaskResubmit:
         """Test resubmitting non-existent task returns 404."""
         # Register instance
         client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
@@ -747,7 +747,7 @@ class TestTaskResubmit:
         )
 
         response = client.post(
-            "/task/resubmit",
+            "/v1/task/resubmit",
             json={"task_id": "nonexistent", "original_instance_id": "inst-1"},
         )
 
@@ -763,7 +763,7 @@ class TestTaskResubmit:
 
         # Register instance
         client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
@@ -789,7 +789,7 @@ class TestTaskResubmit:
             new=AsyncMock(return_value=[mock_prediction]),
         ):
             client.post(
-                "/task/submit",
+                "/v1/task/submit",
                 json={
                     "task_id": "task-1",
                     "model_id": "model-1",
@@ -806,7 +806,7 @@ class TestTaskResubmit:
 
         # Try to resubmit
         response = client.post(
-            "/task/resubmit",
+            "/v1/task/resubmit",
             json={"task_id": "task-1", "original_instance_id": "inst-1"},
         )
 
@@ -823,7 +823,7 @@ class TestTaskResubmit:
 
         # Register instance
         client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
@@ -849,7 +849,7 @@ class TestTaskResubmit:
             new=AsyncMock(return_value=[mock_prediction]),
         ):
             client.post(
-                "/task/submit",
+                "/v1/task/submit",
                 json={
                     "task_id": "task-1",
                     "model_id": "model-1",
@@ -866,7 +866,7 @@ class TestTaskResubmit:
 
         # Try to resubmit
         response = client.post(
-            "/task/resubmit",
+            "/v1/task/resubmit",
             json={"task_id": "task-1", "original_instance_id": "inst-1"},
         )
 
@@ -880,7 +880,7 @@ class TestTaskResubmit:
 
         # Register instance
         client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
@@ -906,7 +906,7 @@ class TestTaskResubmit:
             new=AsyncMock(return_value=[mock_prediction]),
         ):
             client.post(
-                "/task/submit",
+                "/v1/task/submit",
                 json={
                     "task_id": "task-1",
                     "model_id": "model-1",
@@ -917,7 +917,7 @@ class TestTaskResubmit:
 
         # Try to resubmit with non-existent instance
         response = client.post(
-            "/task/resubmit",
+            "/v1/task/resubmit",
             json={
                 "task_id": "task-1",
                 "original_instance_id": "nonexistent-instance",
@@ -933,7 +933,7 @@ class TestTaskResubmit:
 
         # Register instance
         client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
@@ -959,7 +959,7 @@ class TestTaskResubmit:
             new=AsyncMock(return_value=[mock_prediction]),
         ):
             client.post(
-                "/task/submit",
+                "/v1/task/submit",
                 json={
                     "task_id": "task-1",
                     "model_id": "model-1",
@@ -979,7 +979,7 @@ class TestTaskResubmit:
             ) as mock_decrement,
         ):
             response = client.post(
-                "/task/resubmit",
+                "/v1/task/resubmit",
                 json={
                     "task_id": "task-1",
                     "original_instance_id": "inst-1",
@@ -998,7 +998,7 @@ class TestTaskResubmit:
 
         # Register instance
         client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
@@ -1024,7 +1024,7 @@ class TestTaskResubmit:
             new=AsyncMock(return_value=[mock_prediction]),
         ):
             client.post(
-                "/task/submit",
+                "/v1/task/submit",
                 json={
                     "task_id": "task-1",
                     "model_id": "model-1",
@@ -1045,7 +1045,7 @@ class TestTaskResubmit:
             new=AsyncMock(return_value=None),
         ):
             response = client.post(
-                "/task/resubmit",
+                "/v1/task/resubmit",
                 json={"task_id": "task-1", "original_instance_id": "inst-1"},
             )
 
@@ -1059,7 +1059,7 @@ class TestTaskResubmit:
 
         # Register instance
         client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
@@ -1085,7 +1085,7 @@ class TestTaskResubmit:
             new=AsyncMock(return_value=[mock_prediction]),
         ):
             client.post(
-                "/task/submit",
+                "/v1/task/submit",
                 json={
                     "task_id": "task-1",
                     "model_id": "model-1",
@@ -1100,7 +1100,7 @@ class TestTaskResubmit:
             side_effect=KeyError("not found"),
         ):
             response = client.post(
-                "/task/resubmit",
+                "/v1/task/resubmit",
                 json={"task_id": "task-1", "original_instance_id": "inst-1"},
             )
 
@@ -1113,7 +1113,7 @@ class TestTaskResubmit:
 
         # Register instance
         client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
@@ -1141,7 +1141,7 @@ class TestTaskResubmit:
             new=AsyncMock(return_value=[mock_prediction]),
         ):
             client.post(
-                "/task/submit",
+                "/v1/task/submit",
                 json={
                     "task_id": "task-1",
                     "model_id": "model-1",
@@ -1152,7 +1152,7 @@ class TestTaskResubmit:
 
         # Resubmit and verify metadata is preserved
         response = client.post(
-            "/task/resubmit",
+            "/v1/task/resubmit",
             json={"task_id": "task-1", "original_instance_id": "inst-1"},
         )
 
@@ -1172,7 +1172,7 @@ class TestTaskClear:
 
     def test_clear_empty_tasks(self, client):
         """Test clearing tasks when registry is empty."""
-        response = client.post("/task/clear")
+        response = client.post("/v1/task/clear")
 
         assert response.status_code == 200
         data = response.json()
@@ -1184,7 +1184,7 @@ class TestTaskClear:
         """Test clearing multiple tasks."""
         # Register instance
         client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
@@ -1201,7 +1201,7 @@ class TestTaskClear:
         with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
             for i in range(3):
                 client.post(
-                    "/task/submit",
+                    "/v1/task/submit",
                     json={
                         "task_id": f"task-{i}",
                         "model_id": "model-1",
@@ -1211,11 +1211,11 @@ class TestTaskClear:
                 )
 
         # Verify tasks exist
-        response = client.get("/task/list")
+        response = client.get("/v1/task/list")
         assert response.json()["count"] == 3
 
         # Clear all tasks
-        response = client.post("/task/clear")
+        response = client.post("/v1/task/clear")
 
         assert response.status_code == 200
         data = response.json()
@@ -1224,7 +1224,7 @@ class TestTaskClear:
         assert "Successfully cleared 3 scheduler task(s)" in data["message"]
 
         # Verify tasks are cleared
-        response = client.get("/task/list")
+        response = client.get("/v1/task/list")
         assert response.json()["count"] == 0
 
 
@@ -1238,7 +1238,7 @@ class TestHealthCheck:
 
     def test_health_check_healthy(self, client):
         """Test health check when service is healthy."""
-        response = client.get("/health")
+        response = client.get("/v1/health")
 
         assert response.status_code == 200
         data = response.json()
@@ -1252,7 +1252,7 @@ class TestHealthCheck:
         """Test that health check includes statistics."""
         # Register instance
         client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
@@ -1265,7 +1265,7 @@ class TestHealthCheck:
             },
         )
 
-        response = client.get("/health")
+        response = client.get("/v1/health")
 
         assert response.status_code == 200
         data = response.json()
@@ -1283,7 +1283,7 @@ class TestStrategyManagement:
 
     def test_get_strategy_default(self, client):
         """Test getting the default strategy (probabilistic)."""
-        response = client.get("/strategy/get")
+        response = client.get("/v1/strategy/get")
 
         assert response.status_code == 200
         data = response.json()
@@ -1294,7 +1294,7 @@ class TestStrategyManagement:
 
     def test_set_strategy_to_min_time(self, client):
         """Test switching to min_time strategy."""
-        response = client.post("/strategy/set", json={"strategy_name": "min_time"})
+        response = client.post("/v1/strategy/set", json={"strategy_name": "min_time"})
 
         assert response.status_code == 200
         data = response.json()
@@ -1306,7 +1306,7 @@ class TestStrategyManagement:
 
     def test_set_strategy_to_round_robin(self, client):
         """Test switching to round_robin strategy."""
-        response = client.post("/strategy/set", json={"strategy_name": "round_robin"})
+        response = client.post("/v1/strategy/set", json={"strategy_name": "round_robin"})
 
         assert response.status_code == 200
         data = response.json()
@@ -1317,7 +1317,7 @@ class TestStrategyManagement:
     def test_set_strategy_to_probabilistic_with_custom_quantile(self, client):
         """Test switching to probabilistic strategy with custom quantile."""
         response = client.post(
-            "/strategy/set",
+            "/v1/strategy/set",
             json={"strategy_name": "probabilistic", "target_quantile": 0.95},
         )
 
@@ -1330,7 +1330,7 @@ class TestStrategyManagement:
     def test_set_strategy_invalid_name(self, client):
         """Test setting strategy with invalid name."""
         response = client.post(
-            "/strategy/set", json={"strategy_name": "invalid_strategy"}
+            "/v1/strategy/set", json={"strategy_name": "invalid_strategy"}
         )
 
         assert response.status_code == 422  # Pydantic validation error
@@ -1341,7 +1341,7 @@ class TestStrategyManagement:
 
         # Register instance first
         client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
@@ -1367,7 +1367,7 @@ class TestStrategyManagement:
             new=AsyncMock(return_value=[mock_prediction]),
         ):
             client.post(
-                "/task/submit",
+                "/v1/task/submit",
                 json={
                     "task_id": "task-1",
                     "model_id": "model-1",
@@ -1377,14 +1377,14 @@ class TestStrategyManagement:
             )
 
         # Switch strategy
-        response = client.post("/strategy/set", json={"strategy_name": "min_time"})
+        response = client.post("/v1/strategy/set", json={"strategy_name": "min_time"})
 
         assert response.status_code == 200
         data = response.json()
         assert data["cleared_tasks"] == 1
 
         # Verify tasks are cleared
-        tasks_response = client.get("/task/list")
+        tasks_response = client.get("/v1/task/list")
         assert tasks_response.json()["total"] == 0
 
     def test_set_strategy_reinitializes_instances(self, client):
@@ -1392,7 +1392,7 @@ class TestStrategyManagement:
         # Register two instances
         for i in range(1, 3):
             client.post(
-                "/instance/register",
+                "/v1/instance/register",
                 json={
                     "instance_id": f"inst-{i}",
                     "model_id": "model-1",
@@ -1406,18 +1406,18 @@ class TestStrategyManagement:
             )
 
         # Switch from probabilistic to min_time
-        response = client.post("/strategy/set", json={"strategy_name": "min_time"})
+        response = client.post("/v1/strategy/set", json={"strategy_name": "min_time"})
 
         assert response.status_code == 200
         data = response.json()
         assert data["reinitialized_instances"] == 2
 
         # Verify instances still exist
-        instances_response = client.get("/instance/list")
+        instances_response = client.get("/v1/instance/list")
         assert instances_response.json()["count"] == 2
 
         # Verify queue info type changed by checking instance info
-        instance_info = client.get("/instance/info?instance_id=inst-1")
+        instance_info = client.get("/v1/instance/info?instance_id=inst-1")
         assert instance_info.status_code == 200
         queue_info = instance_info.json()["queue_info"]
         # For min_time, should have expected_time_ms and error_margin_ms
@@ -1430,7 +1430,7 @@ class TestStrategyManagement:
 
         # Register instance
         client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
@@ -1456,7 +1456,7 @@ class TestStrategyManagement:
             new=AsyncMock(return_value=[mock_prediction]),
         ):
             client.post(
-                "/task/submit",
+                "/v1/task/submit",
                 json={
                     "task_id": "task-1",
                     "model_id": "model-1",
@@ -1469,7 +1469,7 @@ class TestStrategyManagement:
         await task_registry.update_status("task-1", TaskStatus.RUNNING)
 
         # Try to switch strategy - should fail
-        response = client.post("/strategy/set", json={"strategy_name": "min_time"})
+        response = client.post("/v1/strategy/set", json={"strategy_name": "min_time"})
 
         assert response.status_code == 400
         data = response.json()
@@ -1478,31 +1478,31 @@ class TestStrategyManagement:
     def test_strategy_switch_round_trip(self, client):
         """Test switching between all strategies."""
         # Start with probabilistic (default)
-        response = client.get("/strategy/get")
+        response = client.get("/v1/strategy/get")
         assert response.json()["strategy_info"]["strategy_name"] == "probabilistic"
 
         # Switch to min_time
-        response = client.post("/strategy/set", json={"strategy_name": "min_time"})
+        response = client.post("/v1/strategy/set", json={"strategy_name": "min_time"})
         assert response.status_code == 200
 
-        response = client.get("/strategy/get")
+        response = client.get("/v1/strategy/get")
         assert response.json()["strategy_info"]["strategy_name"] == "min_time"
 
         # Switch to round_robin
-        response = client.post("/strategy/set", json={"strategy_name": "round_robin"})
+        response = client.post("/v1/strategy/set", json={"strategy_name": "round_robin"})
         assert response.status_code == 200
 
-        response = client.get("/strategy/get")
+        response = client.get("/v1/strategy/get")
         assert response.json()["strategy_info"]["strategy_name"] == "round_robin"
 
         # Switch back to probabilistic
         response = client.post(
-            "/strategy/set",
+            "/v1/strategy/set",
             json={"strategy_name": "probabilistic", "target_quantile": 0.8},
         )
         assert response.status_code == 200
 
-        response = client.get("/strategy/get")
+        response = client.get("/v1/strategy/get")
         data = response.json()
         assert data["strategy_info"]["strategy_name"] == "probabilistic"
         assert data["strategy_info"]["parameters"]["target_quantile"] == 0.8
@@ -1511,14 +1511,14 @@ class TestStrategyManagement:
         """Test setting strategy with invalid quantile value."""
         # Quantile > 1.0
         response = client.post(
-            "/strategy/set",
+            "/v1/strategy/set",
             json={"strategy_name": "probabilistic", "target_quantile": 1.5},
         )
         assert response.status_code == 422  # Pydantic validation error
 
         # Quantile < 0.0
         response = client.post(
-            "/strategy/set",
+            "/v1/strategy/set",
             json={"strategy_name": "probabilistic", "target_quantile": -0.1},
         )
         assert response.status_code == 422  # Pydantic validation error
@@ -1535,7 +1535,7 @@ class TestInstanceRegistrationValidation:
     def test_register_instance_missing_platform_keys(self, client):
         """Test registration with incomplete platform_info."""
         response = client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
@@ -1560,7 +1560,7 @@ class TestInstanceDrain:
         """Test draining an instance successfully."""
         # Register instance
         client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
@@ -1574,7 +1574,7 @@ class TestInstanceDrain:
         )
 
         # Drain the instance
-        response = client.post("/instance/drain", json={"instance_id": "inst-1"})
+        response = client.post("/v1/instance/drain", json={"instance_id": "inst-1"})
 
         assert response.status_code == 200
         data = response.json()
@@ -1585,7 +1585,7 @@ class TestInstanceDrain:
 
     def test_drain_nonexistent_instance(self, client):
         """Test draining non-existent instance returns 404."""
-        response = client.post("/instance/drain", json={"instance_id": "nonexistent"})
+        response = client.post("/v1/instance/drain", json={"instance_id": "nonexistent"})
 
         assert response.status_code == 404
 
@@ -1600,7 +1600,7 @@ class TestInstanceDrain:
 
         # Register instance
         client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
@@ -1619,7 +1619,7 @@ class TestInstanceDrain:
         await api.instance_registry.increment_pending("inst-1")
 
         # Now drain the instance
-        response = client.post("/instance/drain", json={"instance_id": "inst-1"})
+        response = client.post("/v1/instance/drain", json={"instance_id": "inst-1"})
 
         assert response.status_code == 200
         data = response.json()
@@ -1629,7 +1629,7 @@ class TestInstanceDrain:
         """Test getting drain status."""
         # Register and drain instance
         client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
@@ -1642,10 +1642,10 @@ class TestInstanceDrain:
             },
         )
 
-        client.post("/instance/drain", json={"instance_id": "inst-1"})
+        client.post("/v1/instance/drain", json={"instance_id": "inst-1"})
 
         # Check drain status
-        response = client.get("/instance/drain/status?instance_id=inst-1")
+        response = client.get("/v1/instance/drain/status?instance_id=inst-1")
 
         assert response.status_code == 200
         data = response.json()
@@ -1656,7 +1656,7 @@ class TestInstanceDrain:
 
     def test_get_drain_status_nonexistent(self, client):
         """Test getting drain status for non-existent instance."""
-        response = client.get("/instance/drain/status?instance_id=nonexistent")
+        response = client.get("/v1/instance/drain/status?instance_id=nonexistent")
 
         assert response.status_code == 404
 
@@ -1670,7 +1670,7 @@ class TestTaskResultCallback:
 
         # Register instance
         client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
@@ -1696,7 +1696,7 @@ class TestTaskResultCallback:
             new=AsyncMock(return_value=[mock_prediction]),
         ):
             client.post(
-                "/task/submit",
+                "/v1/task/submit",
                 json={
                     "task_id": "task-1",
                     "model_id": "model-1",
@@ -1708,7 +1708,7 @@ class TestTaskResultCallback:
         # Send callback
         with patch("src.api.task_result_callback.handle_result", new=AsyncMock()):
             response = client.post(
-                "/callback/task_result",
+                "/v1/callback/task_result",
                 json={
                     "task_id": "task-1",
                     "status": "completed",
@@ -1724,7 +1724,7 @@ class TestTaskResultCallback:
     def test_callback_task_result_task_not_found(self, client):
         """Test callback for non-existent task."""
         response = client.post(
-            "/callback/task_result",
+            "/v1/callback/task_result",
             json={
                 "task_id": "nonexistent",
                 "status": "completed",
@@ -1741,7 +1741,7 @@ class TestTaskResultCallback:
 
         # Register instance and submit task
         client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
@@ -1766,7 +1766,7 @@ class TestTaskResultCallback:
             new=AsyncMock(return_value=[mock_prediction]),
         ):
             client.post(
-                "/task/submit",
+                "/v1/task/submit",
                 json={
                     "task_id": "task-1",
                     "model_id": "model-1",
@@ -1777,7 +1777,7 @@ class TestTaskResultCallback:
 
         # Send callback with invalid status
         response = client.post(
-            "/callback/task_result",
+            "/v1/callback/task_result",
             json={
                 "task_id": "task-1",
                 "status": "invalid_status",
@@ -1794,7 +1794,7 @@ class TestTaskResultCallback:
 
         # Register instance and submit task
         client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
@@ -1819,7 +1819,7 @@ class TestTaskResultCallback:
             new=AsyncMock(return_value=[mock_prediction]),
         ):
             client.post(
-                "/task/submit",
+                "/v1/task/submit",
                 json={
                     "task_id": "task-1",
                     "model_id": "model-1",
@@ -1831,7 +1831,7 @@ class TestTaskResultCallback:
         # Send callback with failure
         with patch("src.api.task_result_callback.handle_result", new=AsyncMock()):
             response = client.post(
-                "/callback/task_result",
+                "/v1/callback/task_result",
                 json={
                     "task_id": "task-1",
                     "status": "failed",
@@ -1859,7 +1859,7 @@ class TestTaskSubmissionErrors:
 
         # Register instance
         client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
@@ -1874,7 +1874,7 @@ class TestTaskSubmissionErrors:
 
         # Submit task - with central queue, task is enqueued immediately
         response = client.post(
-            "/task/submit",
+            "/v1/task/submit",
             json={
                 "task_id": "task-1",
                 "model_id": "model-1",
@@ -1907,7 +1907,7 @@ class TestTaskSubmissionErrors:
 
         # Register instance
         client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
@@ -1922,7 +1922,7 @@ class TestTaskSubmissionErrors:
 
         # Submit task - with central queue, task is enqueued immediately
         response = client.post(
-            "/task/submit",
+            "/v1/task/submit",
             json={
                 "task_id": "task-1",
                 "model_id": "model-1",
@@ -1953,7 +1953,7 @@ class TestTaskSubmissionErrors:
 
         # Register instance
         client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
@@ -1968,7 +1968,7 @@ class TestTaskSubmissionErrors:
 
         # Submit task with custom metadata - task is enqueued immediately
         response = client.post(
-            "/task/submit",
+            "/v1/task/submit",
             json={
                 "task_id": "task-1",
                 "model_id": "model-1",
@@ -1996,7 +1996,7 @@ class TestProfilingMiddleware:
         import os
 
         # Make a request with profiling enabled (HTML format)
-        response = client.get("/health?profile=true&profile_format=html")
+        response = client.get("/v1/health?profile=true&profile_format=html")
 
         # Should succeed
         assert response.status_code == 200
@@ -2013,7 +2013,7 @@ class TestProfilingMiddleware:
         import os
 
         # Make a request with profiling enabled (speedscope format, default)
-        response = client.get("/health?profile=true&profile_format=speedscope")
+        response = client.get("/v1/health?profile=true&profile_format=speedscope")
 
         # Should succeed
         assert response.status_code == 200
@@ -2030,7 +2030,7 @@ class TestProfilingMiddleware:
         import os
 
         # Make a request with profiling enabled (default format)
-        response = client.get("/health?profile=true")
+        response = client.get("/v1/health?profile=true")
 
         # Should succeed
         assert response.status_code == 200
@@ -2052,7 +2052,7 @@ class TestDrainEdgeCases:
 
         # Register instance first
         client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
@@ -2066,11 +2066,11 @@ class TestDrainEdgeCases:
         )
 
         # Switch to min_time strategy (uses expect_error queue)
-        client.post("/strategy/set", json={"strategy_name": "min_time"})
+        client.post("/v1/strategy/set", json={"strategy_name": "min_time"})
 
         # Register another instance after strategy switch
         client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-2",
                 "model_id": "model-1",
@@ -2093,7 +2093,7 @@ class TestDrainEdgeCases:
             new=AsyncMock(return_value=[mock_prediction]),
         ):
             client.post(
-                "/task/submit",
+                "/v1/task/submit",
                 json={
                     "task_id": "task-1",
                     "model_id": "model-1",
@@ -2103,7 +2103,7 @@ class TestDrainEdgeCases:
             )
 
         # Drain the instance
-        response = client.post("/instance/drain", json={"instance_id": "inst-2"})
+        response = client.post("/v1/instance/drain", json={"instance_id": "inst-2"})
 
         assert response.status_code == 200
         data = response.json()
@@ -2115,7 +2115,7 @@ class TestDrainEdgeCases:
 
         # Register instance
         client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
@@ -2141,7 +2141,7 @@ class TestDrainEdgeCases:
             new=AsyncMock(return_value=[mock_prediction]),
         ):
             client.post(
-                "/task/submit",
+                "/v1/task/submit",
                 json={
                     "task_id": "task-1",
                     "model_id": "model-1",
@@ -2151,7 +2151,7 @@ class TestDrainEdgeCases:
             )
 
         # Drain the instance
-        response = client.post("/instance/drain", json={"instance_id": "inst-1"})
+        response = client.post("/v1/instance/drain", json={"instance_id": "inst-1"})
 
         assert response.status_code == 200
         data = response.json()
@@ -2166,7 +2166,7 @@ class TestStrategyHelpers:
         """Test getting strategy info for unknown strategy."""
         # This is harder to test directly without modifying global state
         # But we can at least exercise the code path
-        response = client.get("/strategy/get")
+        response = client.get("/v1/strategy/get")
         assert response.status_code == 200
 
 
@@ -2179,7 +2179,7 @@ class TestWebSocketEndpoint:
 
         # Register instance and submit task
         client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
@@ -2204,7 +2204,7 @@ class TestWebSocketEndpoint:
             new=AsyncMock(return_value=[mock_prediction]),
         ):
             client.post(
-                "/task/submit",
+                "/v1/task/submit",
                 json={
                     "task_id": "task-1",
                     "model_id": "model-1",
@@ -2214,7 +2214,7 @@ class TestWebSocketEndpoint:
             )
 
         # Test WebSocket connection
-        with client.websocket_connect("/task/get_result") as websocket:
+        with client.websocket_connect("/v1/task/get_result") as websocket:
             # Subscribe to task
             websocket.send_json({"type": "subscribe", "task_ids": ["task-1"]})
 
@@ -2228,7 +2228,7 @@ class TestWebSocketEndpoint:
 
     def test_websocket_unsubscribe(self, client):
         """Test WebSocket unsubscribe."""
-        with client.websocket_connect("/task/get_result") as websocket:
+        with client.websocket_connect("/v1/task/get_result") as websocket:
             # Subscribe first
             websocket.send_json({"type": "subscribe", "task_ids": ["task-1", "task-2"]})
 
@@ -2245,7 +2245,7 @@ class TestWebSocketEndpoint:
 
     def test_websocket_invalid_message_type(self, client):
         """Test WebSocket with invalid message type."""
-        with client.websocket_connect("/task/get_result") as websocket:
+        with client.websocket_connect("/v1/task/get_result") as websocket:
             # Send invalid message type
             websocket.send_json({"type": "invalid_type", "data": "test"})
 
@@ -2256,7 +2256,7 @@ class TestWebSocketEndpoint:
 
     def test_websocket_invalid_task_ids_format(self, client):
         """Test WebSocket with invalid task_ids format."""
-        with client.websocket_connect("/task/get_result") as websocket:
+        with client.websocket_connect("/v1/task/get_result") as websocket:
             # Send invalid task_ids (not a list)
             websocket.send_json({"type": "subscribe", "task_ids": "not-a-list"})
 
@@ -2267,7 +2267,7 @@ class TestWebSocketEndpoint:
 
     def test_websocket_multiple_subscriptions(self, client):
         """Test WebSocket with multiple task subscriptions."""
-        with client.websocket_connect("/task/get_result") as websocket:
+        with client.websocket_connect("/v1/task/get_result") as websocket:
             # Subscribe to multiple tasks
             websocket.send_json(
                 {
@@ -2282,7 +2282,7 @@ class TestWebSocketEndpoint:
 
     def test_websocket_ping_pong_application_level(self, client):
         """Test WebSocket application-level ping/pong."""
-        with client.websocket_connect("/task/get_result") as websocket:
+        with client.websocket_connect("/v1/task/get_result") as websocket:
             # Send application-level ping
             websocket.send_json({"type": "ping", "timestamp": 123456.789})
 
@@ -2293,7 +2293,7 @@ class TestWebSocketEndpoint:
 
     def test_websocket_json_decode_error(self, client):
         """Test WebSocket with invalid JSON."""
-        with client.websocket_connect("/task/get_result") as websocket:
+        with client.websocket_connect("/v1/task/get_result") as websocket:
             # Send invalid JSON
             websocket.send_text("invalid json {")
 
@@ -2304,7 +2304,7 @@ class TestWebSocketEndpoint:
 
     def test_websocket_protocol_level_ping(self, client):
         """Test WebSocket protocol-level ping."""
-        with client.websocket_connect("/task/get_result") as websocket:
+        with client.websocket_connect("/v1/task/get_result") as websocket:
             # Send protocol-level ping (this is handled by the WebSocket server)
             # We can't easily test this from the client side, but we can verify
             # that the endpoint handles it by checking it doesn't break
@@ -2320,7 +2320,7 @@ class TestWebSocketEndpoint:
 
         # Register instance and submit task
         client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
@@ -2345,7 +2345,7 @@ class TestWebSocketEndpoint:
             new=AsyncMock(return_value=[mock_prediction]),
         ):
             client.post(
-                "/task/submit",
+                "/v1/task/submit",
                 json={
                     "task_id": "task-1",
                     "model_id": "model-1",
@@ -2355,7 +2355,7 @@ class TestWebSocketEndpoint:
             )
 
         # Connect and test
-        with client.websocket_connect("/task/get_result") as websocket:
+        with client.websocket_connect("/v1/task/get_result") as websocket:
             # Subscribe to trigger code paths
             websocket.send_json({"type": "subscribe", "task_ids": ["task-1"]})
 
@@ -2374,7 +2374,7 @@ class TestRemainingErrorHandling:
             side_effect=ValueError("Internal error"),
         ):
             response = client.post(
-                "/instance/register",
+                "/v1/instance/register",
                 json={
                     "instance_id": "inst-1",
                     "model_id": "model-1",
@@ -2393,7 +2393,7 @@ class TestRemainingErrorHandling:
         """Test drain with value error."""
         # Register instance
         client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
@@ -2411,7 +2411,7 @@ class TestRemainingErrorHandling:
             "src.api.instance_registry.start_draining",
             side_effect=ValueError("Cannot drain"),
         ):
-            response = client.post("/instance/drain", json={"instance_id": "inst-1"})
+            response = client.post("/v1/instance/drain", json={"instance_id": "inst-1"})
 
         assert response.status_code == 400
 
@@ -2419,7 +2419,7 @@ class TestRemainingErrorHandling:
         """Test task submission with timeout error."""
         # Register instance
         client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
@@ -2439,7 +2439,7 @@ class TestRemainingErrorHandling:
             side_effect=TimeoutError("Request timeout"),
         ):
             response = client.post(
-                "/task/submit",
+                "/v1/task/submit",
                 json={
                     "task_id": "task-1",
                     "model_id": "model-1",
@@ -2457,7 +2457,7 @@ class TestRemainingErrorHandling:
 
         # Register instance
         client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
@@ -2490,7 +2490,7 @@ class TestRemainingErrorHandling:
             ),
         ):
             response = client.post(
-                "/task/submit",
+                "/v1/task/submit",
                 json={
                     "task_id": "task-1",
                     "model_id": "model-1",
@@ -2507,7 +2507,7 @@ class TestRemainingErrorHandling:
         with patch(
             "src.api.get_strategy", side_effect=Exception("Strategy init error")
         ):
-            response = client.post("/strategy/set", json={"strategy_name": "min_time"})
+            response = client.post("/v1/strategy/set", json={"strategy_name": "min_time"})
 
         assert response.status_code == 500
 
@@ -2518,7 +2518,7 @@ class TestRemainingErrorHandling:
             "src.api.instance_registry.get_total_count",
             side_effect=Exception("Registry error"),
         ):
-            response = client.get("/health")
+            response = client.get("/v1/health")
 
         assert response.status_code == 503
 
@@ -2530,7 +2530,7 @@ class TestRemainingErrorHandling:
             side_effect=KeyError("not found"),
         ):
             response = client.post(
-                "/instance/remove", json={"instance_id": "nonexistent"}
+                "/v1/instance/remove", json={"instance_id": "nonexistent"}
             )
 
         assert response.status_code == 404
@@ -2539,7 +2539,7 @@ class TestRemainingErrorHandling:
         """Test remove instance succeeds after registration."""
         # Register instance first
         client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
@@ -2553,7 +2553,7 @@ class TestRemainingErrorHandling:
         )
 
         # Remove instance - should succeed
-        response = client.post("/instance/remove", json={"instance_id": "inst-1"})
+        response = client.post("/v1/instance/remove", json={"instance_id": "inst-1"})
 
         assert response.status_code == 200
         data = response.json()
@@ -2565,7 +2565,7 @@ class TestRemainingErrorHandling:
 
         # Register instance
         client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
@@ -2591,7 +2591,7 @@ class TestRemainingErrorHandling:
             new=AsyncMock(return_value=[mock_prediction]),
         ):
             client.post(
-                "/task/submit",
+                "/v1/task/submit",
                 json={
                     "task_id": "task-1",
                     "model_id": "model-1",
@@ -2601,7 +2601,7 @@ class TestRemainingErrorHandling:
             )
 
         # Drain should handle missing 0.5 quantile gracefully
-        response = client.post("/instance/drain", json={"instance_id": "inst-1"})
+        response = client.post("/v1/instance/drain", json={"instance_id": "inst-1"})
 
         assert response.status_code == 200
 
@@ -2609,7 +2609,7 @@ class TestRemainingErrorHandling:
         """Test instance info when queue info is missing."""
         # Register instance
         client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
@@ -2624,7 +2624,7 @@ class TestRemainingErrorHandling:
 
         # Mock get_queue_info to return None
         with patch("src.api.instance_registry.get_queue_info", return_value=None):
-            response = client.get("/instance/info?instance_id=inst-1")
+            response = client.get("/v1/instance/info?instance_id=inst-1")
 
         assert response.status_code == 500
 
@@ -2632,7 +2632,7 @@ class TestRemainingErrorHandling:
         """Test instance info when stats are missing."""
         # Register instance
         client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
@@ -2647,16 +2647,16 @@ class TestRemainingErrorHandling:
 
         # Mock get_stats to return None
         with patch("src.api.instance_registry.get_stats", return_value=None):
-            response = client.get("/instance/info?instance_id=inst-1")
+            response = client.get("/v1/instance/info?instance_id=inst-1")
 
         assert response.status_code == 500
 
     def test_get_current_strategy_info_round_robin(self, client):
         """Test getting strategy info for round_robin."""
         # Switch to round_robin
-        client.post("/strategy/set", json={"strategy_name": "round_robin"})
+        client.post("/v1/strategy/set", json={"strategy_name": "round_robin"})
 
-        response = client.get("/strategy/get")
+        response = client.get("/v1/strategy/get")
 
         assert response.status_code == 200
         data = response.json()
@@ -2668,7 +2668,7 @@ class TestRemainingErrorHandling:
         # Register multiple instances
         for i in range(1, 4):
             client.post(
-                "/instance/register",
+                "/v1/instance/register",
                 json={
                     "instance_id": f"inst-{i}",
                     "model_id": "model-1",
@@ -2682,12 +2682,12 @@ class TestRemainingErrorHandling:
             )
 
         # Switch to min_time (expect_error queues)
-        response = client.post("/strategy/set", json={"strategy_name": "min_time"})
+        response = client.post("/v1/strategy/set", json={"strategy_name": "min_time"})
         assert response.status_code == 200
         assert response.json()["reinitialized_instances"] == 3
 
         # Switch to round_robin (probabilistic queues)
-        response = client.post("/strategy/set", json={"strategy_name": "round_robin"})
+        response = client.post("/v1/strategy/set", json={"strategy_name": "round_robin"})
         assert response.status_code == 200
         assert response.json()["reinitialized_instances"] == 3
 
@@ -2695,7 +2695,7 @@ class TestRemainingErrorHandling:
         """Test submit_task with 'Model not found' ValueError."""
         # Register instance
         client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
@@ -2715,7 +2715,7 @@ class TestRemainingErrorHandling:
             side_effect=ValueError("Model not found in database"),
         ):
             response = client.post(
-                "/task/submit",
+                "/v1/task/submit",
                 json={
                     "task_id": "task-1",
                     "model_id": "model-1",
@@ -2808,7 +2808,7 @@ class TestCustomQuantilesInReinitialization:
         """Test reinitializing instance queues with custom quantiles."""
         # Register instance
         client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
@@ -2823,7 +2823,7 @@ class TestCustomQuantilesInReinitialization:
 
         # Switch strategy with custom quantile
         response = client.post(
-            "/strategy/set",
+            "/v1/strategy/set",
             json={"strategy_name": "probabilistic", "target_quantile": 0.75},
         )
 
@@ -2843,7 +2843,7 @@ class TestAdditionalCoveragePaths:
 
         # Register instance
         client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
@@ -2869,7 +2869,7 @@ class TestAdditionalCoveragePaths:
             new=AsyncMock(return_value=[mock_prediction]),
         ):
             client.post(
-                "/task/submit",
+                "/v1/task/submit",
                 json={
                     "task_id": "task-1",
                     "model_id": "model-1",
@@ -2891,7 +2891,7 @@ class TestAdditionalCoveragePaths:
         task.started_at = datetime.now().isoformat() + "Z"
 
         # Now subscribe to the completed task
-        with client.websocket_connect("/task/get_result") as websocket:
+        with client.websocket_connect("/v1/task/get_result") as websocket:
             websocket.send_json({"type": "subscribe", "task_ids": ["task-1"]})
 
             # Should receive the result immediately
@@ -2911,7 +2911,7 @@ class TestAdditionalCoveragePaths:
 
     def test_websocket_unsubscribe_invalid_format(self, client):
         """Test unsubscribe with invalid task_ids format."""
-        with client.websocket_connect("/task/get_result") as websocket:
+        with client.websocket_connect("/v1/task/get_result") as websocket:
             # Send unsubscribe with invalid task_ids (not a list)
             websocket.send_json({"type": "unsubscribe", "task_ids": "not-a-list"})
 
@@ -2922,7 +2922,7 @@ class TestAdditionalCoveragePaths:
 
     def test_websocket_pong_message(self, client):
         """Test receiving pong message from client."""
-        with client.websocket_connect("/task/get_result") as websocket:
+        with client.websocket_connect("/v1/task/get_result") as websocket:
             # Send pong message (client responding to server ping)
             websocket.send_json({"type": "pong", "timestamp": 123456.789})
 
@@ -2937,7 +2937,7 @@ class TestAdditionalCoveragePaths:
         """Test remove instance when KeyError is raised."""
         # This should trigger the KeyError exception path (lines 385-386)
         response = client.post(
-            "/instance/remove",
+            "/v1/instance/remove",
             json={"instance_id": "definitely-does-not-exist"},
         )
 
@@ -2950,7 +2950,7 @@ class TestAdditionalCoveragePaths:
 
         # Register instance
         client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
@@ -2979,7 +2979,7 @@ class TestAdditionalCoveragePaths:
             new=AsyncMock(return_value=[mock_prediction]),
         ):
             client.post(
-                "/task/submit",
+                "/v1/task/submit",
                 json={
                     "task_id": "task-1",
                     "model_id": "model-1",
@@ -2989,7 +2989,7 @@ class TestAdditionalCoveragePaths:
             )
 
         # Drain the instance - should trigger lines 448-450
-        response = client.post("/instance/drain", json={"instance_id": "inst-1"})
+        response = client.post("/v1/instance/drain", json={"instance_id": "inst-1"})
 
         assert response.status_code == 200
         data = response.json()
@@ -3007,7 +3007,7 @@ class TestAdditionalCoveragePaths:
         try:
             api.scheduling_strategy = UnknownStrategy()
 
-            response = client.get("/strategy/get")
+            response = client.get("/v1/strategy/get")
 
             assert response.status_code == 200
             data = response.json()

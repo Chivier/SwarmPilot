@@ -139,7 +139,7 @@ class PlannerReporter:
 
             # POST to planner's /submit_target endpoint
             response = await self._http_client.post(
-                f"{self._planner_url}/submit_target",
+                f"{self._planner_url}/v1/submit_target",
                 json={
                     "model_id": self._model_id,
                     "value": float(total_uncompleted),
@@ -171,7 +171,7 @@ class PlannerReporter:
         except httpx.HTTPError as e:
             log_http_error(
                 e,
-                request_url=f"{self._planner_url}/submit_target",
+                request_url=f"{self._planner_url}/v1/submit_target",
                 request_method="POST",
                 request_body={
                     "model_id": self._model_id,
@@ -210,7 +210,7 @@ class PlannerReporter:
             ) in averages.items():
                 try:
                     await self._http_client.post(
-                        f"{self._planner_url}/submit_throughput",
+                        f"{self._planner_url}/v1/submit_throughput",
                         json={
                             "instance_url": instance_endpoint,
                             "avg_execution_time": avg_execution_time_seconds,

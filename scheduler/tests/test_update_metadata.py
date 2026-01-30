@@ -69,7 +69,7 @@ class TestUpdateMetadataValidation:
         """Test that a valid request is accepted."""
         # First register an instance and submit a task
         test_client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
@@ -85,7 +85,7 @@ class TestUpdateMetadataValidation:
         # Submit a task
         with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
             test_client.post(
-                "/task/submit",
+                "/v1/task/submit",
                 json={
                     "task_id": "task-1",
                     "model_id": "model-1",
@@ -97,7 +97,7 @@ class TestUpdateMetadataValidation:
         # Update metadata
         with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
             response = test_client.post(
-                "/task/update_metadata", json=sample_metadata_update
+                "/v1/task/update_metadata", json=sample_metadata_update
             )
 
         assert response.status_code == 200
@@ -107,7 +107,7 @@ class TestUpdateMetadataValidation:
 
     def test_empty_list_returns_zero_count(self, test_client):
         """Test that an empty updates list returns zero count."""
-        response = test_client.post("/task/update_metadata", json={"updates": []})
+        response = test_client.post("/v1/task/update_metadata", json={"updates": []})
 
         # Empty list should either be accepted (0 updates) or rejected (validation)
         # Based on design, we accept empty list
@@ -122,7 +122,7 @@ class TestUpdateMetadataValidation:
     def test_missing_task_id_validation_error(self, test_client):
         """Test that missing task_id returns validation error."""
         response = test_client.post(
-            "/task/update_metadata",
+            "/v1/task/update_metadata",
             json={"updates": [{"metadata": {"key": "value"}}]},  # Missing task_id
         )
 
@@ -131,7 +131,7 @@ class TestUpdateMetadataValidation:
     def test_missing_metadata_validation_error(self, test_client):
         """Test that missing metadata returns validation error."""
         response = test_client.post(
-            "/task/update_metadata",
+            "/v1/task/update_metadata",
             json={"updates": [{"task_id": "task-1"}]},  # Missing metadata
         )
 
@@ -140,7 +140,7 @@ class TestUpdateMetadataValidation:
     def test_invalid_metadata_type_validation_error(self, test_client):
         """Test that invalid metadata type returns validation error."""
         response = test_client.post(
-            "/task/update_metadata",
+            "/v1/task/update_metadata",
             json={"updates": [{"task_id": "task-1", "metadata": "not a dict"}]},
         )
 
@@ -159,7 +159,7 @@ class TestUpdateMetadataBasic:
         """Test updating metadata for task not assigned to any instance."""
         # Register instance
         test_client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
@@ -175,7 +175,7 @@ class TestUpdateMetadataBasic:
         # Submit task (will be assigned but not yet in queue for this test)
         with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
             test_client.post(
-                "/task/submit",
+                "/v1/task/submit",
                 json={
                     "task_id": "task-not-in-queue",
                     "model_id": "model-1",
@@ -187,7 +187,7 @@ class TestUpdateMetadataBasic:
         # Update metadata - should succeed without predictor call
         with patch("src.api.predictor_client.predict", new=AsyncMock()):
             response = test_client.post(
-                "/task/update_metadata",
+                "/v1/task/update_metadata",
                 json={
                     "updates": [
                         {
@@ -209,7 +209,7 @@ class TestUpdateMetadataBasic:
         """Test batch update of multiple tasks."""
         # Register instance
         test_client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
@@ -226,7 +226,7 @@ class TestUpdateMetadataBasic:
         with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
             for i in range(1, 4):
                 test_client.post(
-                    "/task/submit",
+                    "/v1/task/submit",
                     json={
                         "task_id": f"task-{i}",
                         "model_id": "model-1",
@@ -238,7 +238,7 @@ class TestUpdateMetadataBasic:
         # Update all tasks
         with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
             response = test_client.post(
-                "/task/update_metadata", json=sample_batch_metadata_update
+                "/v1/task/update_metadata", json=sample_batch_metadata_update
             )
 
         assert response.status_code == 200
@@ -248,7 +248,7 @@ class TestUpdateMetadataBasic:
     def test_task_not_found_reported(self, test_client):
         """Test that non-existent task is reported in results."""
         response = test_client.post(
-            "/task/update_metadata",
+            "/v1/task/update_metadata",
             json={
                 "updates": [
                     {
@@ -268,7 +268,7 @@ class TestUpdateMetadataBasic:
         """Test that empty metadata dict is valid."""
         # Register and submit task
         test_client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
@@ -283,7 +283,7 @@ class TestUpdateMetadataBasic:
 
         with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
             test_client.post(
-                "/task/submit",
+                "/v1/task/submit",
                 json={
                     "task_id": "task-empty-meta",
                     "model_id": "model-1",
@@ -295,7 +295,7 @@ class TestUpdateMetadataBasic:
         # Update with empty metadata
         with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
             response = test_client.post(
-                "/task/update_metadata",
+                "/v1/task/update_metadata",
                 json={"updates": [{"task_id": "task-empty-meta", "metadata": {}}]},
             )
 
@@ -319,7 +319,7 @@ class TestUpdateMetadataSkipBehavior:
 
         # Register instance and submit task
         test_client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
@@ -334,7 +334,7 @@ class TestUpdateMetadataSkipBehavior:
 
         with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
             test_client.post(
-                "/task/submit",
+                "/v1/task/submit",
                 json={
                     "task_id": "completed-task",
                     "model_id": "model-1",
@@ -356,7 +356,7 @@ class TestUpdateMetadataSkipBehavior:
         # Try to update - should be skipped
         with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
             response = test_client.post(
-                "/task/update_metadata",
+                "/v1/task/update_metadata",
                 json={
                     "updates": [
                         {
@@ -378,7 +378,7 @@ class TestUpdateMetadataSkipBehavior:
 
         # Register instance and submit task
         test_client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "model-1",
@@ -393,7 +393,7 @@ class TestUpdateMetadataSkipBehavior:
 
         with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
             test_client.post(
-                "/task/submit",
+                "/v1/task/submit",
                 json={
                     "task_id": "failed-task",
                     "model_id": "model-1",
@@ -415,7 +415,7 @@ class TestUpdateMetadataSkipBehavior:
         # Try to update - should be skipped
         with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
             response = test_client.post(
-                "/task/update_metadata",
+                "/v1/task/update_metadata",
                 json={
                     "updates": [
                         {"task_id": "failed-task", "metadata": {"new": "value"}}
@@ -440,7 +440,7 @@ class TestUpdateMetadataExpectError:
         """Test queue recalculation for PENDING task with assigned instance."""
         # Setup: Register instance with expect_error queue
         test_client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-queue-test",
                 "model_id": "model-1",
@@ -467,7 +467,7 @@ class TestUpdateMetadataExpectError:
             new=AsyncMock(return_value=[old_prediction]),
         ):
             test_client.post(
-                "/task/submit",
+                "/v1/task/submit",
                 json={
                     "task_id": "task-queue-update",
                     "model_id": "model-1",
@@ -490,7 +490,7 @@ class TestUpdateMetadataExpectError:
             new=AsyncMock(return_value=[new_prediction]),
         ):
             response = test_client.post(
-                "/task/update_metadata",
+                "/v1/task/update_metadata",
                 json={
                     "updates": [
                         {
@@ -523,7 +523,7 @@ class TestUpdateMetadataProbabilistic:
         """Test queue recalculation uses Monte Carlo for probabilistic queues."""
         # Register instance
         test_client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-prob",
                 "model_id": "model-1",
@@ -549,7 +549,7 @@ class TestUpdateMetadataProbabilistic:
             new=AsyncMock(return_value=[old_pred]),
         ):
             test_client.post(
-                "/task/submit",
+                "/v1/task/submit",
                 json={
                     "task_id": "task-prob",
                     "model_id": "model-1",
@@ -571,7 +571,7 @@ class TestUpdateMetadataProbabilistic:
             new=AsyncMock(return_value=[new_pred]),
         ):
             response = test_client.post(
-                "/task/update_metadata",
+                "/v1/task/update_metadata",
                 json={
                     "updates": [
                         {
@@ -601,7 +601,7 @@ class TestUpdateMetadataRollback:
 
         # Register instance
         test_client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-rollback",
                 "model_id": "model-1",
@@ -628,7 +628,7 @@ class TestUpdateMetadataRollback:
             new=AsyncMock(return_value=[old_pred]),
         ):
             test_client.post(
-                "/task/submit",
+                "/v1/task/submit",
                 json={
                     "task_id": "task-rollback",
                     "model_id": "model-1",
@@ -669,7 +669,7 @@ class TestUpdateMetadataRollback:
             new=AsyncMock(side_effect=ConnectionError("Predictor unavailable")),
         ):
             response = test_client.post(
-                "/task/update_metadata",
+                "/v1/task/update_metadata",
                 json={
                     "updates": [
                         {
@@ -710,7 +710,7 @@ class TestUpdateMetadataRollback:
 
         # Register instance
         test_client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-timeout",
                 "model_id": "model-1",
@@ -737,7 +737,7 @@ class TestUpdateMetadataRollback:
             new=AsyncMock(return_value=[old_pred]),
         ):
             test_client.post(
-                "/task/submit",
+                "/v1/task/submit",
                 json={
                     "task_id": "task-timeout",
                     "model_id": "model-1",
@@ -771,7 +771,7 @@ class TestUpdateMetadataRollback:
             new=AsyncMock(side_effect=TimeoutError("Predictor timeout")),
         ):
             response = test_client.post(
-                "/task/update_metadata",
+                "/v1/task/update_metadata",
                 json={
                     "updates": [
                         {
@@ -803,7 +803,7 @@ class TestUpdateMetadataEdgeCases:
         """Test that if assigned instance is removed, queue update is skipped."""
         # Register instance
         test_client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-to-remove",
                 "model_id": "model-1",
@@ -829,7 +829,7 @@ class TestUpdateMetadataEdgeCases:
             new=AsyncMock(return_value=[old_pred]),
         ):
             test_client.post(
-                "/task/submit",
+                "/v1/task/submit",
                 json={
                     "task_id": "task-orphan",
                     "model_id": "model-1",
@@ -839,12 +839,12 @@ class TestUpdateMetadataEdgeCases:
             )
 
         # Remove the instance
-        test_client.post("/instance/remove", json={"instance_id": "inst-to-remove"})
+        test_client.post("/v1/instance/remove", json={"instance_id": "inst-to-remove"})
 
         # Try to update metadata - should still work but skip queue update
         with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
             response = test_client.post(
-                "/task/update_metadata",
+                "/v1/task/update_metadata",
                 json={
                     "updates": [
                         {"task_id": "task-orphan", "metadata": {"new": "value"}}
@@ -861,7 +861,7 @@ class TestUpdateMetadataEdgeCases:
 
         # Register and submit
         test_client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-replace",
                 "model_id": "model-1",
@@ -876,7 +876,7 @@ class TestUpdateMetadataEdgeCases:
 
         with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
             test_client.post(
-                "/task/submit",
+                "/v1/task/submit",
                 json={
                     "task_id": "task-replace",
                     "model_id": "model-1",
@@ -892,7 +892,7 @@ class TestUpdateMetadataEdgeCases:
         # Update with partial metadata (only key1)
         with patch("src.api.predictor_client.predict", new=AsyncMock(return_value=[])):
             response = test_client.post(
-                "/task/update_metadata",
+                "/v1/task/update_metadata",
                 json={
                     "updates": [
                         {

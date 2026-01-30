@@ -81,9 +81,9 @@ def test_redeploy_start_endpoint_success(client):
     }
 
     # Register both instances
-    response1 = client.post("/instance/register", json=instance1_data)
+    response1 = client.post("/v1/instance/register", json=instance1_data)
     assert response1.status_code == 200
-    response2 = client.post("/instance/register", json=instance2_data)
+    response2 = client.post("/v1/instance/register", json=instance2_data)
     assert response2.status_code == 200
 
     # Mock the HTTP call to instance's /redeploy/start endpoint
@@ -132,7 +132,7 @@ def test_redeploy_start_endpoint_success(client):
                 "redeploy_reason": "Testing redeployment",
                 "target_model_id": "model-b",
             }
-            response = client.post("/instance/redeploy/start", json=redeploy_request)
+            response = client.post("/v1/instance/redeploy/start", json=redeploy_request)
 
             # Verify response
             assert response.status_code == 200
@@ -154,7 +154,7 @@ def test_redeploy_start_instance_not_found(client):
         "instance_id": "nonexistent-instance",
         "redeploy_reason": "Testing",
     }
-    response = client.post("/instance/redeploy/start", json=redeploy_request)
+    response = client.post("/v1/instance/redeploy/start", json=redeploy_request)
 
     assert response.status_code == 404
     data = response.json()
@@ -175,7 +175,7 @@ def test_redeploy_start_instance_not_active(client):
             "hardware_name": "gpu-v100",
         },
     }
-    client.post("/instance/register", json=instance_data)
+    client.post("/v1/instance/register", json=instance_data)
 
     # Set instance to DRAINING status
     asyncio.run(instance_registry.update_status("instance-1", InstanceStatus.DRAINING))
@@ -185,7 +185,7 @@ def test_redeploy_start_instance_not_active(client):
         "instance_id": "instance-1",
         "redeploy_reason": "Testing",
     }
-    response = client.post("/instance/redeploy/start", json=redeploy_request)
+    response = client.post("/v1/instance/redeploy/start", json=redeploy_request)
 
     assert response.status_code == 400
     data = response.json()
@@ -206,7 +206,7 @@ def test_redeploy_complete_endpoint_success(client):
             "hardware_name": "gpu-v100",
         },
     }
-    client.post("/instance/register", json=instance_data)
+    client.post("/v1/instance/register", json=instance_data)
 
     # Set instance to REDEPLOYING status
     asyncio.run(
@@ -224,7 +224,7 @@ def test_redeploy_complete_endpoint_success(client):
             "hardware_name": "gpu-v100",
         },
     }
-    response = client.post("/instance/redeploy/complete", json=complete_request)
+    response = client.post("/v1/instance/redeploy/complete", json=complete_request)
 
     # Verify response
     assert response.status_code == 200
@@ -253,7 +253,7 @@ def test_redeploy_complete_instance_not_redeploying(client):
             "hardware_name": "gpu-v100",
         },
     }
-    client.post("/instance/register", json=instance_data)
+    client.post("/v1/instance/register", json=instance_data)
 
     # Instance is ACTIVE, not REDEPLOYING
     complete_request = {
@@ -266,7 +266,7 @@ def test_redeploy_complete_instance_not_redeploying(client):
             "hardware_name": "gpu-v100",
         },
     }
-    response = client.post("/instance/redeploy/complete", json=complete_request)
+    response = client.post("/v1/instance/redeploy/complete", json=complete_request)
 
     assert response.status_code == 400
     data = response.json()
@@ -288,7 +288,7 @@ def test_redeploy_task_redistribution_preserves_priority(client):
                 "hardware_name": "gpu-v100",
             },
         }
-        client.post("/instance/register", json=instance_data)
+        client.post("/v1/instance/register", json=instance_data)
 
     # Mock instance response with tasks that have different enqueue_times
     with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
@@ -347,7 +347,7 @@ def test_redeploy_task_redistribution_preserves_priority(client):
                 "instance_id": "instance-1",
                 "redeploy_reason": "Testing priority preservation",
             }
-            response = client.post("/instance/redeploy/start", json=redeploy_request)
+            response = client.post("/v1/instance/redeploy/start", json=redeploy_request)
 
             assert response.status_code == 200
             # Verify enqueue_times were preserved

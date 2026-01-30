@@ -84,10 +84,10 @@ class TestPlannerReporterThroughputIntegration:
 
         # Check submit_target call
         submit_target_call = calls[0]
-        assert "/submit_target" in str(submit_target_call)
+        assert "/v1/submit_target" in str(submit_target_call)
 
         # Check submit_throughput calls
-        throughput_calls = [c for c in calls if "/submit_throughput" in str(c)]
+        throughput_calls = [c for c in calls if "/v1/submit_throughput" in str(c)]
         assert len(throughput_calls) == 2
 
     @pytest.mark.asyncio
@@ -109,7 +109,7 @@ class TestPlannerReporterThroughputIntegration:
         # Should only have 1 call (submit_target), no submit_throughput
         calls = reporter_without_tracker._http_client.post.call_args_list
         assert len(calls) == 1
-        assert "/submit_target" in str(calls[0])
+        assert "/v1/submit_target" in str(calls[0])
 
     @pytest.mark.asyncio
     async def test_throughput_call_includes_correct_payload(
@@ -130,7 +130,7 @@ class TestPlannerReporterThroughputIntegration:
         # Find submit_throughput calls
         for call in calls:
             url = call[0][0] if call[0] else call.kwargs.get("url", "")
-            if "/submit_throughput" in str(url):
+            if "/v1/submit_throughput" in str(url):
                 json_data = call.kwargs.get("json", call[1].get("json", {}))
                 assert "instance_url" in json_data
                 assert "avg_execution_time" in json_data
@@ -146,7 +146,7 @@ class TestPlannerReporterThroughputIntegration:
         async def side_effect(*args, **kwargs):
             nonlocal call_count
             call_count += 1
-            if "/submit_throughput" in str(args) or "/submit_throughput" in str(kwargs):
+            if "/v1/submit_throughput" in str(args) or "/v1/submit_throughput" in str(kwargs):
                 raise httpx.HTTPError("Connection refused")
             mock_resp = MagicMock()
             mock_resp.status_code = 200
@@ -184,7 +184,7 @@ class TestPlannerReporterThroughputIntegration:
 
         # Should only have submit_target call, no submit_throughput
         assert len(calls) == 1
-        assert "/submit_target" in str(calls[0])
+        assert "/v1/submit_target" in str(calls[0])
 
     @pytest.mark.asyncio
     async def test_throughput_reported_for_each_instance(
@@ -214,7 +214,7 @@ class TestPlannerReporterThroughputIntegration:
         # 1 submit_target + 3 submit_throughput = 4 total
         assert len(calls) == 4
 
-        throughput_calls = [c for c in calls if "/submit_throughput" in str(c)]
+        throughput_calls = [c for c in calls if "/v1/submit_throughput" in str(c)]
         assert len(throughput_calls) == 3
 
 

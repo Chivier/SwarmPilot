@@ -256,7 +256,7 @@ class TestPlannerReporterReportToPlanner:
         reporter._http_client.post.assert_called_once()
         call_args = reporter._http_client.post.call_args
 
-        assert "/submit_target" in call_args[0][0]
+        assert "/v1/submit_target" in call_args[0][0]
         assert call_args[1]["json"]["model_id"] == "test_model"
         assert call_args[1]["json"]["value"] == 10.0  # 5 pending + 5 running
 
@@ -401,7 +401,7 @@ class TestPlannerReporterReportThroughput:
         # Verify call args
         calls = reporter._http_client.post.call_args_list
         urls = [c[0][0] for c in calls]
-        assert all("/submit_throughput" in url for url in urls)
+        assert all("/v1/submit_throughput" in url for url in urls)
 
     @pytest.mark.asyncio
     async def test_report_throughput_http_error_continues(self, reporter, mock_tracker):

@@ -73,7 +73,7 @@ class TestTaskClearAPI:
             )
             mock_client_class.return_value = mock_client
 
-            response = test_client.post("/task/clear")
+            response = test_client.post("/v1/task/clear")
 
         assert response.status_code == 200
         data = response.json()
@@ -89,7 +89,7 @@ class TestTaskClearAPI:
 
             # This should fail but not leave state corrupted
             with suppress(Exception):
-                _response = test_client.post("/task/clear")
+                _response = test_client.post("/v1/task/clear")
 
 
 # ============================================================================
@@ -123,7 +123,7 @@ class TestTaskClearIntegration:
             mock_client_class.return_value = mock_client
 
             # First clear
-            response1 = test_client.post("/task/clear")
+            response1 = test_client.post("/v1/task/clear")
             assert response1.status_code == 200
 
         # Add tasks directly to registry
@@ -153,7 +153,7 @@ class TestTaskClearIntegration:
             mock_client_class.return_value = mock_client
 
             # Second clear
-            response2 = test_client.post("/task/clear")
+            response2 = test_client.post("/v1/task/clear")
             assert response2.status_code == 200
 
     @pytest.mark.asyncio
@@ -187,7 +187,7 @@ class TestTaskClearIntegration:
             )
             mock_client_class.return_value = mock_client
 
-            response = test_client.post("/task/clear")
+            response = test_client.post("/v1/task/clear")
 
         assert response.status_code == 200
         data = response.json()

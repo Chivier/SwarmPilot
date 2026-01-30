@@ -37,7 +37,7 @@ def register_test_instance(client):
 
     def _register(instance_id="test-inst-1", port=9000):
         response = client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": instance_id,
                 "model_id": "test_model",
@@ -67,7 +67,7 @@ class TestDrainEndpoint:
         """Test draining an active instance."""
         register_test_instance("inst-1", 9001)
 
-        response = client.post("/instance/drain", json={"instance_id": "inst-1"})
+        response = client.post("/v1/instance/drain", json={"instance_id": "inst-1"})
 
         assert response.status_code == 200
         data = response.json()
@@ -79,7 +79,7 @@ class TestDrainEndpoint:
 
     async def test_drain_nonexistent_instance(self, client):
         """Test draining non-existent instance returns 404."""
-        response = client.post("/instance/drain", json={"instance_id": "nonexistent"})
+        response = client.post("/v1/instance/drain", json={"instance_id": "nonexistent"})
 
         assert response.status_code == 404
         data = response.json()
@@ -91,11 +91,11 @@ class TestDrainEndpoint:
         register_test_instance("inst-1", 9001)
 
         # First drain succeeds
-        response1 = client.post("/instance/drain", json={"instance_id": "inst-1"})
+        response1 = client.post("/v1/instance/drain", json={"instance_id": "inst-1"})
         assert response1.status_code == 200
 
         # Second drain fails
-        response2 = client.post("/instance/drain", json={"instance_id": "inst-1"})
+        response2 = client.post("/v1/instance/drain", json={"instance_id": "inst-1"})
         assert response2.status_code == 400
         data = response2.json()
         assert data["detail"]["success"] is False
@@ -117,7 +117,7 @@ class TestDrainEndpoint:
             ),
         )
 
-        response = client.post("/instance/drain", json={"instance_id": "inst-1"})
+        response = client.post("/v1/instance/drain", json={"instance_id": "inst-1"})
 
         assert response.status_code == 200
         data = response.json()
@@ -138,7 +138,7 @@ class TestDrainStatusEndpoint:
         register_test_instance("inst-1", 9001)
 
         response = client.get(
-            "/instance/drain/status", params={"instance_id": "inst-1"}
+            "/v1/instance/drain/status", params={"instance_id": "inst-1"}
         )
 
         assert response.status_code == 200
@@ -154,11 +154,11 @@ class TestDrainStatusEndpoint:
         register_test_instance("inst-1", 9001)
 
         # Start draining
-        client.post("/instance/drain", json={"instance_id": "inst-1"})
+        client.post("/v1/instance/drain", json={"instance_id": "inst-1"})
 
         # Check status
         response = client.get(
-            "/instance/drain/status", params={"instance_id": "inst-1"}
+            "/v1/instance/drain/status", params={"instance_id": "inst-1"}
         )
 
         assert response.status_code == 200
@@ -179,11 +179,11 @@ class TestDrainStatusEndpoint:
         await api.instance_registry.increment_pending("inst-1")
 
         # Start draining
-        client.post("/instance/drain", json={"instance_id": "inst-1"})
+        client.post("/v1/instance/drain", json={"instance_id": "inst-1"})
 
         # Check status
         response = client.get(
-            "/instance/drain/status", params={"instance_id": "inst-1"}
+            "/v1/instance/drain/status", params={"instance_id": "inst-1"}
         )
 
         assert response.status_code == 200
@@ -195,7 +195,7 @@ class TestDrainStatusEndpoint:
     async def test_get_status_nonexistent_instance(self, client):
         """Test getting status for non-existent instance returns 404."""
         response = client.get(
-            "/instance/drain/status", params={"instance_id": "nonexistent"}
+            "/v1/instance/drain/status", params={"instance_id": "nonexistent"}
         )
 
         assert response.status_code == 404
@@ -216,10 +216,10 @@ class TestSafeRemoveEndpoint:
         register_test_instance("inst-1", 9001)
 
         # Drain instance
-        client.post("/instance/drain", json={"instance_id": "inst-1"})
+        client.post("/v1/instance/drain", json={"instance_id": "inst-1"})
 
         # Remove should succeed
-        response = client.post("/instance/remove", json={"instance_id": "inst-1"})
+        response = client.post("/v1/instance/remove", json={"instance_id": "inst-1"})
 
         assert response.status_code == 200
         data = response.json()
@@ -227,7 +227,7 @@ class TestSafeRemoveEndpoint:
         assert data["instance_id"] == "inst-1"
 
         # Verify instance is gone
-        list_response = client.get("/instance/list")
+        list_response = client.get("/v1/instance/list")
         instances = list_response.json()["instances"]
         assert "inst-1" not in [i["instance_id"] for i in instances]
 
@@ -238,7 +238,7 @@ class TestSafeRemoveEndpoint:
         register_test_instance("inst-1", 9001)
 
         # Remove without draining - now allowed
-        response = client.post("/instance/remove", json={"instance_id": "inst-1"})
+        response = client.post("/v1/instance/remove", json={"instance_id": "inst-1"})
 
         assert response.status_code == 200
         data = response.json()
@@ -257,10 +257,10 @@ class TestSafeRemoveEndpoint:
         await api.instance_registry.increment_pending("inst-1")
 
         # Drain instance
-        client.post("/instance/drain", json={"instance_id": "inst-1"})
+        client.post("/v1/instance/drain", json={"instance_id": "inst-1"})
 
         # Remove - now succeeds (logs warning about pending tasks)
-        response = client.post("/instance/remove", json={"instance_id": "inst-1"})
+        response = client.post("/v1/instance/remove", json={"instance_id": "inst-1"})
 
         assert response.status_code == 200
         data = response.json()
@@ -346,7 +346,7 @@ class TestTaskAssignmentWithDraining:
             )
 
         # Drain one instance
-        drain_response = client.post("/instance/drain", json={"instance_id": "inst-1"})
+        drain_response = client.post("/v1/instance/drain", json={"instance_id": "inst-1"})
         assert drain_response.status_code == 200
 
         # Verify that inst-1 is excluded from active instances
@@ -360,7 +360,7 @@ class TestTaskAssignmentWithDraining:
 
         # Submit a task - it should succeed (returns immediately in background mode)
         task_response = client.post(
-            "/task/submit",
+            "/v1/task/submit",
             json={
                 "task_id": "test-task-1",
                 "model_id": "test_model",
@@ -387,12 +387,12 @@ class TestTaskAssignmentWithDraining:
         register_test_instance("inst-2", 9002)
 
         # Drain both
-        client.post("/instance/drain", json={"instance_id": "inst-1"})
-        client.post("/instance/drain", json={"instance_id": "inst-2"})
+        client.post("/v1/instance/drain", json={"instance_id": "inst-1"})
+        client.post("/v1/instance/drain", json={"instance_id": "inst-2"})
 
         # Try to submit task - task is queued even when all instances are draining
         response = client.post(
-            "/task/submit",
+            "/v1/task/submit",
             json={
                 "task_id": "test-task-1",
                 "model_id": "test_model",
@@ -430,7 +430,7 @@ class TestTaskAssignmentWithDraining:
         await api.instance_registry.increment_pending("inst-1")
 
         # Drain instance
-        client.post("/instance/drain", json={"instance_id": "inst-1"})
+        client.post("/v1/instance/drain", json={"instance_id": "inst-1"})
 
         # Task completes
         await api.instance_registry.decrement_pending("inst-1")
@@ -438,19 +438,19 @@ class TestTaskAssignmentWithDraining:
 
         # Check can_remove status
         status_response = client.get(
-            "/instance/drain/status", params={"instance_id": "inst-1"}
+            "/v1/instance/drain/status", params={"instance_id": "inst-1"}
         )
         assert status_response.json()["can_remove"] is True
 
         # Remove instance
         remove_response = client.post(
-            "/instance/remove", json={"instance_id": "inst-1"}
+            "/v1/instance/remove", json={"instance_id": "inst-1"}
         )
         assert remove_response.status_code == 200
 
         # Re-register same instance
         register_response = client.post(
-            "/instance/register",
+            "/v1/instance/register",
             json={
                 "instance_id": "inst-1",
                 "model_id": "test_model",
@@ -465,7 +465,7 @@ class TestTaskAssignmentWithDraining:
         assert register_response.status_code == 200
 
         # Instance should be available again
-        list_response = client.get("/instance/list")
+        list_response = client.get("/v1/instance/list")
         instances = list_response.json()["instances"]
         instance_ids = [i["instance_id"] for i in instances]
         assert "inst-1" in instance_ids
@@ -523,7 +523,7 @@ class TestCompleteRemovalWorkflow:
         await api.instance_registry.increment_pending("inst-1")
 
         # Step 3: Drain inst-1
-        drain_response = client.post("/instance/drain", json={"instance_id": "inst-1"})
+        drain_response = client.post("/v1/instance/drain", json={"instance_id": "inst-1"})
         assert drain_response.status_code == 200
         assert drain_response.json()["pending_tasks"] == 2
 
@@ -535,13 +535,13 @@ class TestCompleteRemovalWorkflow:
         # Step 5: Remove succeeds even with pending tasks (permissive behavior)
         # Note: This logs a warning but allows removal for operational flexibility
         remove_response = client.post(
-            "/instance/remove", json={"instance_id": "inst-1"}
+            "/v1/instance/remove", json={"instance_id": "inst-1"}
         )
         assert remove_response.status_code == 200
         assert remove_response.json()["success"] is True
 
         # Step 6: Verify instance is gone
-        final_list = client.get("/instance/list")
+        final_list = client.get("/v1/instance/list")
         instances = final_list.json()["instances"]
         assert len(instances) == 1
         assert instances[0]["instance_id"] == "inst-2"

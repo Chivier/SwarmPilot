@@ -104,7 +104,7 @@ def proxy_app(
     app = FastAPI()
 
     # Add a scheduler-internal route first (should take priority)
-    @app.get("/health")
+    @app.get("/v1/health")
     async def health():
         return {"status": "ok"}
 
@@ -354,7 +354,7 @@ class TestRoutePriority:
     def test_health_not_proxied(self, proxy_app):
         """Test /health is handled by scheduler, not proxy."""
         client = TestClient(proxy_app)
-        response = client.get("/health")
+        response = client.get("/v1/health")
 
         assert response.status_code == 200
         assert response.json() == {"status": "ok"}

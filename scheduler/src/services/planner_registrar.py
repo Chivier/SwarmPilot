@@ -72,7 +72,7 @@ class PlannerRegistrar:
                 async with httpx.AsyncClient(timeout=self._config.timeout) as client:
                     response = await client.post(
                         f"{self._config.planner_url.rstrip('/')}"
-                        f"/scheduler/register",
+                        f"/v1/scheduler/register",
                         json={
                             "model_id": self._config.model_id,
                             "scheduler_url": self._config.self_url,
@@ -130,7 +130,7 @@ class PlannerRegistrar:
         try:
             async with httpx.AsyncClient(timeout=self._config.timeout) as client:
                 response = await client.post(
-                    f"{self._config.planner_url.rstrip('/')}" f"/scheduler/deregister",
+                    f"{self._config.planner_url.rstrip('/')}" f"/v1/scheduler/deregister",
                     json={"model_id": self._config.model_id},
                 )
 
