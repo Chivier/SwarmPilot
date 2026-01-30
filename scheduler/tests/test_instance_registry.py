@@ -5,7 +5,7 @@ Tests instance management, stats tracking, queue info, and thread safety.
 
 import pytest
 
-from src.model import (
+from src.models import (
     Instance,
     InstanceQueueBase,
     InstanceQueueProbabilistic,

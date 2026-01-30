@@ -14,7 +14,7 @@ from src.algorithms import (
 )
 from src.clients.models import Prediction
 from src.clients.predictor_library_client import PredictorClient
-from src.model import (
+from src.models import (
     Instance,
     InstanceQueueExpectError,
     InstanceQueueProbabilistic,

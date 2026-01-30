@@ -7,7 +7,7 @@ that can execute tasks.
 import asyncio
 from datetime import UTC, datetime
 
-from src.model import (
+from src.models import (
     Instance,
     InstanceQueueBase,
     InstanceQueueExpectError,

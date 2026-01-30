@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.model import TaskStatus
+from src.models import TaskStatus
 from src.services.task_result_callback import TaskResultCallback
 from src.services.worker_queue_thread import TaskResult
 

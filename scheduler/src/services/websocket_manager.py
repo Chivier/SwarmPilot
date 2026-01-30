@@ -7,7 +7,7 @@ import asyncio
 
 from fastapi import WebSocket
 
-from src.model import TaskStatus, TaskTimestamps, WSTaskResultMessage
+from src.models import TaskStatus, TaskTimestamps, WSTaskResultMessage
 
 
 class ConnectionManager:

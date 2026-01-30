@@ -11,7 +11,7 @@ from src.clients.models import Prediction
 
 if TYPE_CHECKING:
     from src.clients.predictor_library_client import PredictorClient
-    from src.model import InstanceQueueBase
+    from src.models import InstanceQueueBase
     from src.registry.instance_registry import InstanceRegistry
 
 

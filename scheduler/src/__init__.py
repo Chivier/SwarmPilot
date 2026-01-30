@@ -5,7 +5,7 @@ task distribution across multiple compute instances.
 """
 
 from .api import app
-from .model import (
+from .models import (
     Instance,
     InstanceStatus,
     Task,

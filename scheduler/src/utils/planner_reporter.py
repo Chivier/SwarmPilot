@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from src.registry.task_registry import TaskRegistry
     from src.utils.throughput_tracker import ThroughputTracker
 
-from src.model import TaskStatus
+from src.models import TaskStatus
 
 
 class PlannerReporter:

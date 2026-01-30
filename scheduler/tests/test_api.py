@@ -9,7 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src.api import app, instance_registry, task_registry
-from src.model import TaskStatus
+from src.models import TaskStatus
 
 # ============================================================================
 # Fixtures
@@ -2881,7 +2881,7 @@ class TestAdditionalCoveragePaths:
         # Mark task as completed
         from datetime import datetime
 
-        from src.model import TaskStatus
+        from src.models import TaskStatus
 
         await api.task_registry.update_status("task-1", TaskStatus.COMPLETED)
         task = await api.task_registry.get("task-1")

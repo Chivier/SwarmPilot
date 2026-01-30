@@ -13,7 +13,7 @@ from src.algorithms import (
     get_strategy,
 )
 from src.clients.models import Prediction
-from src.model import InstanceQueueExpectError, InstanceQueueProbabilistic
+from src.models import InstanceQueueExpectError, InstanceQueueProbabilistic
 
 # ============================================================================
 # MinimumExpectedTimeStrategy Tests
@@ -304,7 +304,7 @@ class TestProbabilisticSchedulingStrategy:
         """Test selection when queue is not InstanceQueueProbabilistic (line 476)."""
         import numpy as np
 
-        from src.model import Instance, InstanceQueueExpectError
+        from src.models import Instance, InstanceQueueExpectError
 
         # Set seed for reproducibility
         np.random.seed(42)
@@ -519,7 +519,7 @@ class TestMinimumExpectedTimeStrategyUpdate:
 
     async def test_update_queue_success(self, mock_predictor_client, instance_registry):
         """Test successful queue update with error accumulation."""
-        from src.model import Instance, InstanceQueueExpectError
+        from src.models import Instance, InstanceQueueExpectError
 
         strategy = MinimumExpectedTimeStrategy(mock_predictor_client, instance_registry)
 
@@ -563,7 +563,7 @@ class TestMinimumExpectedTimeStrategyUpdate:
         self, mock_predictor_client, instance_registry
     ):
         """Test update_queue with wrong queue info type."""
-        from src.model import (
+        from src.models import (
             Instance,
         )
 
@@ -610,7 +610,7 @@ class TestProbabilisticStrategyUpdate:
         """Test update_queue with full quantile information."""
         import numpy as np
 
-        from src.model import Instance
+        from src.models import Instance
 
         # Set seed for reproducibility
         np.random.seed(42)
@@ -662,7 +662,7 @@ class TestProbabilisticStrategyUpdate:
         self, mock_predictor_client, instance_registry
     ):
         """Test update_queue fallback when prediction has no quantiles."""
-        from src.model import Instance
+        from src.models import Instance
 
         strategy = ProbabilisticSchedulingStrategy(
             mock_predictor_client, instance_registry
@@ -710,7 +710,7 @@ class TestProbabilisticStrategyUpdate:
         """Test update_queue when no queue exists (line 517)."""
         from unittest.mock import AsyncMock
 
-        from src.model import Instance
+        from src.models import Instance
 
         strategy = ProbabilisticSchedulingStrategy(
             mock_predictor_client, instance_registry
@@ -757,7 +757,7 @@ class TestProbabilisticStrategyUpdate:
         self, mock_predictor_client, instance_registry
     ):
         """Test update_queue with wrong queue info type."""
-        from src.model import (
+        from src.models import (
             Instance,
             InstanceQueueExpectError,
         )
@@ -856,7 +856,7 @@ class TestSchedulingStrategyErrors:
         self, mock_predictor_client, instance_registry
     ):
         """Test get_predictions when model is not found."""
-        from src.model import Instance
+        from src.models import Instance
 
         strategy = MinimumExpectedTimeStrategy(mock_predictor_client, instance_registry)
 
@@ -885,7 +885,7 @@ class TestSchedulingStrategyErrors:
         self, mock_predictor_client, instance_registry
     ):
         """Test get_predictions with invalid metadata."""
-        from src.model import Instance
+        from src.models import Instance
 
         strategy = MinimumExpectedTimeStrategy(mock_predictor_client, instance_registry)
 
@@ -916,7 +916,7 @@ class TestRoundRobinStrategyUpdate:
 
     async def test_update_queue_noop(self, mock_predictor_client, instance_registry):
         """Test that RoundRobinStrategy update_queue is a no-op."""
-        from src.model import Instance
+        from src.models import Instance
 
         strategy = RoundRobinStrategy(mock_predictor_client, instance_registry)
 
@@ -1073,7 +1073,7 @@ class TestPowerOfTwoStrategy:
         import math
 
         from src.algorithms import PowerOfTwoStrategy
-        from src.model import Instance
+        from src.models import Instance
 
         strategy = PowerOfTwoStrategy(mock_predictor_client, instance_registry)
 
@@ -1199,7 +1199,7 @@ class TestMinimumExpectedTimeServerlessStrategy:
         import math
 
         from src.algorithms import MinimumExpectedTimeServerlessStrategy
-        from src.model import Instance
+        from src.models import Instance
 
         strategy = MinimumExpectedTimeServerlessStrategy(
             mock_predictor_client, instance_registry
@@ -1244,7 +1244,7 @@ class TestMinimumExpectedTimeServerlessStrategy:
     ):
         """Test update_queue skips when queue type is wrong (line 929-936)."""
         from src.algorithms import MinimumExpectedTimeServerlessStrategy
-        from src.model import Instance
+        from src.models import Instance
 
         strategy = MinimumExpectedTimeServerlessStrategy(
             mock_predictor_client, instance_registry

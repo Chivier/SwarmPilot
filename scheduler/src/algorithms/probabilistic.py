@@ -15,7 +15,7 @@ from src.clients.models import Prediction
 
 if TYPE_CHECKING:
     from src.clients.predictor_library_client import PredictorClient
-    from src.model import InstanceQueueBase
+    from src.models import InstanceQueueBase
     from src.registry.instance_registry import InstanceRegistry
 
 
@@ -68,7 +68,7 @@ class ProbabilisticSchedulingStrategy(SchedulingStrategy):
         Returns:
             Selected instance ID (the one with most wins across Monte Carlo samples)
         """
-        from src.model import InstanceQueueProbabilistic
+        from src.models import InstanceQueueProbabilistic
 
         if not predictions:
             return None
@@ -150,7 +150,7 @@ class ProbabilisticSchedulingStrategy(SchedulingStrategy):
             instance_id: Selected instance
             prediction: Prediction for the task
         """
-        from src.model import InstanceQueueProbabilistic
+        from src.models import InstanceQueueProbabilistic
 
         current_queue = await self.instance_registry.get_queue_info(instance_id)
 

@@ -7,7 +7,7 @@ from time import sleep
 
 import pytest
 
-from src.model import TaskStatus, TaskTimestamps
+from src.models import TaskStatus, TaskTimestamps
 from src.registry.task_registry import TaskRecord
 
 # ============================================================================

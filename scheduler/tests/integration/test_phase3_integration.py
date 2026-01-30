@@ -16,17 +16,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from src.algorithms.queue_state_adapter import (
-    get_all_queue_info_from_manager,
-    get_queue_info_from_manager,
-)
 from src.instance_sync import (
     InstanceInfo,
     InstanceSyncRequest,
     handle_instance_sync,
 )
-from src.models.queue import InstanceQueueExpectError
-from src.services.shutdown_handler import ShutdownHandler
 from src.services.task_result_callback import TaskResultCallback
 from src.services.worker_queue_manager import WorkerQueueManager
 from src.services.worker_queue_thread import (
@@ -142,65 +136,6 @@ class TestQueueBehavior:
         # Clean up
         manager.shutdown(timeout=1.0)
 
-
-class TestQueueStateAdapter:
-    """Tests for queue state adapter integration."""
-
-    def test_adapter_integrates_with_manager(self):
-        """Test adapter correctly converts manager state."""
-        manager = WorkerQueueManager(
-            callback=lambda x: None,
-            http_timeout=5.0,
-        )
-
-        manager.register_worker(
-            worker_id="worker-1",
-            worker_endpoint="http://localhost:9999",
-            model_id="test-model",
-        )
-
-        # Get queue info via adapter
-        queue_info = get_queue_info_from_manager(
-            worker_queue_manager=manager,
-            instance_id="worker-1",
-            avg_exec_time_ms=100.0,
-        )
-
-        assert isinstance(queue_info, InstanceQueueExpectError)
-        assert queue_info.instance_id == "worker-1"
-        assert queue_info.expected_time_ms >= 0
-        assert queue_info.error_margin_ms == 20.0  # 20% of 100.0
-
-        # Clean up
-        manager.shutdown(timeout=1.0)
-
-    def test_batch_adapter(self):
-        """Test batch adapter for multiple workers."""
-        manager = WorkerQueueManager(
-            callback=lambda x: None,
-            http_timeout=5.0,
-        )
-
-        for i in range(3):
-            manager.register_worker(
-                worker_id=f"worker-{i}",
-                worker_endpoint=f"http://localhost:{9000 + i}",
-                model_id="test-model",
-            )
-
-        # Get all queue info
-        all_info = get_all_queue_info_from_manager(
-            worker_queue_manager=manager,
-            instance_ids=["worker-0", "worker-1", "worker-2"],
-            avg_exec_time_ms=50.0,
-        )
-
-        assert len(all_info) == 3
-        for info in all_info.values():
-            assert info.error_margin_ms == 10.0  # 20% of 50.0
-
-        # Clean up
-        manager.shutdown(timeout=1.0)
 
 
 class TestWorkerRegistrationDeregistration:
@@ -352,59 +287,6 @@ class TestInstanceSyncIntegration:
                 scheduling_strategy=mock_strategy,
             )
 
-
-class TestGracefulShutdownIntegration:
-    """Tests for graceful shutdown integration."""
-
-    @pytest.mark.asyncio
-    async def test_shutdown_all_workers(self):
-        """Test shutdown stops all workers."""
-        mock_manager = MagicMock()
-        mock_manager.get_worker_ids.return_value = ["w1", "w2", "w3"]
-        mock_manager.deregister_worker.return_value = []
-
-        mock_registry = AsyncMock()
-
-        handler = ShutdownHandler(
-            worker_queue_manager=mock_manager,
-            instance_registry=mock_registry,
-        )
-
-        result = await handler.shutdown_all(timeout=60.0)
-
-        assert result.workers_stopped == 3
-        assert result.tasks_dropped == 0
-        assert not result.timeout_occurred
-
-    @pytest.mark.asyncio
-    async def test_shutdown_counts_dropped_tasks(self):
-        """Test shutdown accurately counts dropped tasks."""
-        mock_manager = MagicMock()
-        mock_manager.get_worker_ids.return_value = ["w1"]
-
-        # Worker has 5 pending tasks
-        pending = [
-            QueuedTask(
-                task_id=f"task-{i}",
-                model_id="test",
-                task_input={},
-                metadata={},
-                enqueue_time=1000.0,
-            )
-            for i in range(5)
-        ]
-        mock_manager.deregister_worker.return_value = pending
-
-        mock_registry = AsyncMock()
-
-        handler = ShutdownHandler(
-            worker_queue_manager=mock_manager,
-            instance_registry=mock_registry,
-        )
-
-        result = await handler.shutdown_all(timeout=60.0)
-
-        assert result.tasks_dropped == 5
 
 
 class TestTaskResultCallback:

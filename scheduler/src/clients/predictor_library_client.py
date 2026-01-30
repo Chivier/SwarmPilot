@@ -26,7 +26,7 @@ from src.clients.preprocessor_config import PreprocessorChainBuilder
 from src.config import PreprocessorConfig
 
 if TYPE_CHECKING:
-    from src.model import Instance
+    from src.models import Instance
 
 
 class PredictorClient:

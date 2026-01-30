@@ -9,7 +9,7 @@ Tests the complete lifecycle:
 
 import pytest
 
-from src.model import Instance, InstanceStatus
+from src.models import Instance, InstanceStatus
 
 # ============================================================================
 # Unit Tests for InstanceRegistry Drain Methods

@@ -30,7 +30,7 @@ from pyinstrument.renderers.speedscope import SpeedscopeRenderer
 
 from .algorithms import get_strategy
 from .config import config
-from .model import (
+from .models import (
     # Health models
     HealthResponse,
     HealthStats,

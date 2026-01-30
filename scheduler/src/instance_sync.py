@@ -183,7 +183,7 @@ async def handle_instance_addition(
         worker_queue_manager: Manager for worker queue threads.
     """
     # Import here to avoid circular imports
-    from src.model import InstanceStatus
+    from src.models import InstanceStatus
     from src.models.core import Instance
 
     # Create Instance object

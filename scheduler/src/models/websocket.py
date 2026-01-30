@@ -11,20 +11,6 @@ from src.models.core import TaskTimestamps
 from src.models.status import TaskStatus, WSMessageType
 
 
-class WSSubscribeMessage(BaseModel):
-    """WebSocket message for subscribing to task results."""
-
-    type: WSMessageType = WSMessageType.SUBSCRIBE
-    task_ids: list[str]
-
-
-class WSUnsubscribeMessage(BaseModel):
-    """WebSocket message for unsubscribing from task results."""
-
-    type: WSMessageType = WSMessageType.UNSUBSCRIBE
-    task_ids: list[str]
-
-
 class WSAckMessage(BaseModel):
     """WebSocket acknowledgment message."""
 

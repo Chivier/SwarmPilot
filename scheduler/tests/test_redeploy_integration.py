@@ -11,7 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src.api import app, instance_registry, task_registry
-from src.model import InstanceStatus
+from src.models import InstanceStatus
 
 # ============================================================================
 # Fixtures

@@ -16,7 +16,6 @@ from src.models.requests import (
     InstanceRedeployRequest,
     InstanceRegisterRequest,
     InstanceRemoveRequest,
-    ProxyTaskSubmitRequest,
     StrategySetRequest,
     TaskMetadataUpdate,
     TaskResubmitRequest,
@@ -66,9 +65,7 @@ from src.models.websocket import (
     WSErrorMessage,
     WSPingMessage,
     WSPongMessage,
-    WSSubscribeMessage,
     WSTaskResultMessage,
-    WSUnsubscribeMessage,
 )
 
 __all__ = [
@@ -104,7 +101,6 @@ __all__ = [
     "InstanceRedeployResponse",
     # Task requests
     "TaskSubmitRequest",
-    "ProxyTaskSubmitRequest",
     "TaskResubmitRequest",
     "TaskMetadataUpdate",
     "TaskUpdateMetadataRequest",
@@ -135,8 +131,6 @@ __all__ = [
     "TaskResultCallbackRequest",
     "TaskResultCallbackResponse",
     # WebSocket models
-    "WSSubscribeMessage",
-    "WSUnsubscribeMessage",
     "WSAckMessage",
     "WSTaskResultMessage",
     "WSErrorMessage",

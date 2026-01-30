@@ -6,7 +6,7 @@ Tests all model validation, serialization, and enum functionality.
 import pytest
 from pydantic import ValidationError
 
-from src.model import (
+from src.models import (
     ErrorResponse,
     HealthErrorResponse,
     HealthResponse,
@@ -41,9 +41,7 @@ from src.model import (
     WSErrorMessage,
     # WebSocket Models
     WSMessageType,
-    WSSubscribeMessage,
     WSTaskResultMessage,
-    WSUnsubscribeMessage,
 )
 
 # ============================================================================
@@ -682,35 +680,6 @@ class TestWSMessageType:
         with pytest.raises(ValueError):
             WSMessageType("invalid")
 
-
-class TestWSSubscribeMessage:
-    """Tests for WSSubscribeMessage model."""
-
-    def test_valid_subscribe(self):
-        """Test valid subscribe message."""
-        msg = WSSubscribeMessage(task_ids=["task-1", "task-2"])
-        assert msg.type == WSMessageType.SUBSCRIBE
-        assert len(msg.task_ids) == 2
-
-    def test_empty_task_ids(self):
-        """Test subscribe with empty task list."""
-        msg = WSSubscribeMessage(task_ids=[])
-        assert msg.task_ids == []
-
-    def test_default_type(self):
-        """Test that type defaults to SUBSCRIBE."""
-        msg = WSSubscribeMessage(task_ids=["task-1"])
-        assert msg.type == WSMessageType.SUBSCRIBE
-
-
-class TestWSUnsubscribeMessage:
-    """Tests for WSUnsubscribeMessage model."""
-
-    def test_valid_unsubscribe(self):
-        """Test valid unsubscribe message."""
-        msg = WSUnsubscribeMessage(task_ids=["task-1"])
-        assert msg.type == WSMessageType.UNSUBSCRIBE
-        assert msg.task_ids == ["task-1"]
 
 
 class TestWSAckMessage:

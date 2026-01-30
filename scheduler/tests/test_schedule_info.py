@@ -9,7 +9,7 @@ import asyncio
 import pytest
 from fastapi.testclient import TestClient
 
-from src.model import TaskStatus
+from src.models import TaskStatus
 
 
 class TestTaskScheduleInfoEndpoint:
@@ -33,7 +33,7 @@ class TestTaskScheduleInfoEndpoint:
         self, test_client, task_registry, instance_registry
     ):
         """Test schedule_info with a single task."""
-        from src.model import Instance
+        from src.models import Instance
 
         # Register instance directly
         async def setup():
@@ -80,7 +80,7 @@ class TestTaskScheduleInfoEndpoint:
         self, test_client, task_registry, instance_registry
     ):
         """Test schedule_info with multiple tasks across instances."""
-        from src.model import Instance
+        from src.models import Instance
 
         async def setup():
             # Register two instances
@@ -133,7 +133,7 @@ class TestTaskScheduleInfoEndpoint:
         self, test_client, task_registry, instance_registry
     ):
         """Test schedule_info filtering by model_id."""
-        from src.model import Instance
+        from src.models import Instance
 
         async def setup():
             # Register instances for different models
@@ -202,7 +202,7 @@ class TestTaskScheduleInfoEndpoint:
         self, test_client, task_registry, instance_registry
     ):
         """Test schedule_info filtering by instance_id."""
-        from src.model import Instance
+        from src.models import Instance
 
         async def setup():
             # Register two instances
@@ -254,7 +254,7 @@ class TestTaskScheduleInfoEndpoint:
         self, test_client, task_registry, instance_registry
     ):
         """Test schedule_info filtering by task status."""
-        from src.model import Instance
+        from src.models import Instance
 
         async def setup():
             # Register instance
@@ -314,7 +314,7 @@ class TestTaskScheduleInfoEndpoint:
         self, test_client, task_registry, instance_registry
     ):
         """Test schedule_info with multiple filters combined."""
-        from src.model import Instance
+        from src.models import Instance
 
         async def setup():
             # Register instances for different models
@@ -395,7 +395,7 @@ class TestTaskScheduleInfoEndpoint:
         self, test_client, task_registry, instance_registry
     ):
         """Test that schedule_info response contains all required fields."""
-        from src.model import Instance
+        from src.models import Instance
 
         async def setup():
             await instance_registry.register(
@@ -447,7 +447,7 @@ class TestTaskScheduleInfoEndpoint:
         self, test_client, task_registry, instance_registry
     ):
         """Test schedule_info with pagination parameters."""
-        from src.model import Instance
+        from src.models import Instance
 
         async def setup():
             await instance_registry.register(
@@ -497,7 +497,7 @@ class TestTaskScheduleInfoEndpoint:
         self, test_client, task_registry, instance_registry
     ):
         """Test schedule_info when filter matches no tasks."""
-        from src.model import Instance
+        from src.models import Instance
 
         async def setup():
             await instance_registry.register(

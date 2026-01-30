@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from src.model import TaskStatus, TaskTimestamps
+from src.models import TaskStatus, TaskTimestamps
 
 # ============================================================================
 # Connection Management Tests

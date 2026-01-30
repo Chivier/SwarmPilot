@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 
 from loguru import logger
 
-from src.model import TaskStatus
+from src.models import TaskStatus
 from src.registry.instance_registry import InstanceRegistry
 from src.registry.task_registry import TaskRegistry
 from src.services.websocket_manager import ConnectionManager

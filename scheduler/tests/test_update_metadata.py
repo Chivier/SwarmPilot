@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from src.clients.models import Prediction
-from src.model import (
+from src.models import (
     TaskStatus,
 )
 

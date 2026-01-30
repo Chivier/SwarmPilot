@@ -106,7 +106,7 @@ class TestDrainEndpoint:
 
         # Mock queue info with some expected time
         from src import api
-        from src.model import InstanceQueueExpectError
+        from src.models import InstanceQueueExpectError
 
         await api.instance_registry.update_queue_info(
             "inst-1",
@@ -327,7 +327,7 @@ class TestTaskAssignmentWithDraining:
         won't be selected by the background scheduler.
         """
         from src import api
-        from src.model import InstanceQueueExpectError
+        from src.models import InstanceQueueExpectError
 
         # Register 3 instances
         register_test_instance("inst-1", 9001)
@@ -501,7 +501,7 @@ class TestCompleteRemovalWorkflow:
         6. Remove instance when safe
         """
         from src import api
-        from src.model import InstanceQueueExpectError
+        from src.models import InstanceQueueExpectError
 
         # Step 1: Register 2 instances
         register_test_instance("inst-1", 9001)

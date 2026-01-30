@@ -15,7 +15,7 @@ from src.clients.models import Prediction
 
 if TYPE_CHECKING:
     from src.clients.predictor_library_client import PredictorClient
-    from src.model import InstanceQueueBase
+    from src.models import InstanceQueueBase
     from src.registry.instance_registry import InstanceRegistry
 
 
@@ -52,7 +52,7 @@ class PowerOfTwoStrategy(SchedulingStrategy):
         instance_1 = pred_1.instance_id
         instance_2 = pred_2.instance_id
 
-        from src.model import InstanceQueueExpectError
+        from src.models import InstanceQueueExpectError
 
         if not predictions:
             return None
@@ -97,7 +97,7 @@ class PowerOfTwoStrategy(SchedulingStrategy):
             instance_id: Selected instance
             prediction: Prediction for the task
         """
-        from src.model import InstanceQueueExpectError
+        from src.models import InstanceQueueExpectError
 
         current_queue = await self.instance_registry.get_queue_info(instance_id)
 

@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from src.model import TaskStatus
+from src.models import TaskStatus
 from src.utils.planner_reporter import PlannerReporter
 
 

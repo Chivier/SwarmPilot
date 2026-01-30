@@ -8,7 +8,7 @@ import asyncio
 from datetime import datetime
 from typing import Any
 
-from src.model import TaskStatus, TaskTimestamps
+from src.models import TaskStatus, TaskTimestamps
 
 
 class TaskRecord:

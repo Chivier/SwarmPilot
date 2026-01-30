@@ -14,7 +14,7 @@ from src.clients.models import Prediction
 from src.clients.predictor_library_client import PredictorClient
 
 # Import models
-from src.model import (
+from src.models import (
     Instance,
     InstanceQueueBase,
     InstanceQueueProbabilistic,
