@@ -6,7 +6,6 @@ All models are re-exported here for backward compatibility.
 
 from .base import InstanceStatus
 from .instance import (
-    InstanceInfo,
     InstanceRegisterRequest,
     InstanceRegisterResponse,
 )
@@ -49,7 +48,6 @@ __all__ = [
     "PlannerInput",
     "PlannerOutput",
     # Instance
-    "InstanceInfo",
     "InstanceRegisterRequest",
     "InstanceRegisterResponse",
     # Scheduler Compat

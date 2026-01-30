@@ -3,13 +3,6 @@
 from pydantic import BaseModel, Field
 
 
-class InstanceInfo(BaseModel):
-    """Information about a target instance."""
-
-    endpoint: str = Field(..., description="Instance API endpoint")
-    current_model: str = Field(..., description="Current model name")
-
-
 class InstanceRegisterRequest(BaseModel):
     """Request model for instance registration (compatible with scheduler)."""
 

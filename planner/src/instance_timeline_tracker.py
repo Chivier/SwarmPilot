@@ -170,7 +170,7 @@ def compute_instance_counts(instances) -> dict[str, int]:
     """Compute instance counts per model from instances list.
 
     Args:
-        instances: List of InstanceInfo objects with current_model attribute.
+        instances: List of objects with a current_model attribute.
 
     Returns:
         Dict mapping model_id to count of instances running that model.

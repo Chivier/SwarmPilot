@@ -6,7 +6,6 @@ from pydantic import ValidationError
 from src.models import (
     PlannerInput,
     PlannerOutput,
-    InstanceInfo,
 )
 
 
@@ -157,16 +156,3 @@ class TestPlannerOutput:
         assert output.deployment == [0, 1, 1, 2]
         assert output.score == 0.0667
         assert output.changes_count == 1
-
-
-class TestInstanceInfo:
-    """Tests for InstanceInfo model."""
-
-    def test_valid_instance_info(self):
-        """Test creation with valid data."""
-        info = InstanceInfo(
-            endpoint="http://localhost:8080",
-            current_model="model_0"
-        )
-        assert info.endpoint == "http://localhost:8080"
-        assert info.current_model == "model_0"
