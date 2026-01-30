@@ -147,7 +147,7 @@ class SchedulerClient:
 
         try:
             response = self._client.post(
-                f"{self.scheduler_url}/instance/register",
+                f"{self.scheduler_url}/v1/instance/register",
                 json=payload,
             )
 
@@ -201,7 +201,7 @@ class SchedulerClient:
 
         try:
             response = self._client.post(
-                f"{self.scheduler_url}/instance/drain",
+                f"{self.scheduler_url}/v1/instance/drain",
                 json={"instance_id": instance_id},
             )
 
@@ -234,7 +234,7 @@ class SchedulerClient:
         """
         try:
             response = self._client.get(
-                f"{self.scheduler_url}/instance/drain/status",
+                f"{self.scheduler_url}/v1/instance/drain/status",
                 params={"instance_id": instance_id},
             )
 
@@ -264,7 +264,7 @@ class SchedulerClient:
 
         try:
             response = self._client.post(
-                f"{self.scheduler_url}/instance/remove",
+                f"{self.scheduler_url}/v1/instance/remove",
                 json={"instance_id": instance_id},
             )
 
@@ -348,7 +348,7 @@ class SchedulerClient:
                 params["model_id"] = model_id
 
             response = self._client.get(
-                f"{self.scheduler_url}/instance/list",
+                f"{self.scheduler_url}/v1/instance/list",
                 params=params,
             )
 
@@ -373,7 +373,7 @@ class SchedulerClient:
         """
         try:
             response = self._client.get(
-                f"{self.scheduler_url}/instance/info",
+                f"{self.scheduler_url}/v1/instance/info",
                 params={"instance_id": instance_id},
             )
 
@@ -393,7 +393,7 @@ class SchedulerClient:
             True if scheduler is healthy, False otherwise.
         """
         try:
-            response = self._client.get(f"{self.scheduler_url}/health")
+            response = self._client.get(f"{self.scheduler_url}/v1/health")
             return response.status_code == 200
         except httpx.RequestError:
             return False

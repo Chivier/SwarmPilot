@@ -153,28 +153,28 @@ def mock_scheduler_server() -> Generator[dict, None, None]:
         "drain_requests": [],
     }
 
-    @app.post("/instance/register")
+    @app.post("/v1/instance/register")
     async def register(data: dict):
         instance_id = data.get("instance_id", "unknown")
         state["instances"][instance_id] = data
         return {"success": True, "instance_id": instance_id}
 
-    @app.post("/instance/drain")
+    @app.post("/v1/instance/drain")
     async def drain(data: dict):
         state["drain_requests"].append(data)
         return {"success": True}
 
-    @app.get("/instance/drain/status")
+    @app.get("/v1/instance/drain/status")
     async def drain_status(pylet_id: str = ""):
         return {"drained": True, "remaining_tasks": 0}
 
-    @app.post("/instance/remove")
+    @app.post("/v1/instance/remove")
     async def remove(data: dict):
         instance_id = data.get("instance_id", "unknown")
         state["instances"].pop(instance_id, None)
         return {"success": True}
 
-    @app.get("/health")
+    @app.get("/v1/health")
     async def health():
         return {"status": "healthy", "mock": True}
 
@@ -389,7 +389,7 @@ def planner_server(
     print(f"\n[FIXTURE] Waiting for planner server at {planner_url}...")
     while waited < max_wait:
         try:
-            resp = httpx.get(f"{planner_url}/health", timeout=2.0)
+            resp = httpx.get(f"{planner_url}/v1/health", timeout=2.0)
             if resp.status_code == 200:
                 print(f"[FIXTURE] Planner server ready after {waited:.1f}s")
                 break
@@ -426,7 +426,7 @@ async def planner_client(
         timeout=60.0,
     ) as client:
         # Verify planner is healthy
-        resp = await client.get("/health")
+        resp = await client.get("/v1/health")
         assert resp.status_code == 200, f"Planner not healthy: {resp.text}"
 
         yield client
@@ -446,7 +446,7 @@ async def cleanup_via_planner(planner_client: httpx.AsyncClient):
 
     # Cleanup after test
     try:
-        resp = await planner_client.post("/terminate-all")
+        resp = await planner_client.post("/v1/terminate-all")
         if resp.status_code == 200:
             data = resp.json()
             print(f"[CLEANUP] Terminated {data.get('succeeded', 0)} instances")

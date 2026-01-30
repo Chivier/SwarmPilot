@@ -21,7 +21,7 @@ class TestAPIBehaviorConsistency:
 
     def test_health_endpoint_response_structure(self, client):
         """Test that /health endpoint returns the expected structure."""
-        response = client.get("/health")
+        response = client.get("/v1/health")
 
         assert response.status_code == 200
         data = response.json()
@@ -33,7 +33,7 @@ class TestAPIBehaviorConsistency:
 
     def test_info_endpoint_response_structure(self, client):
         """Test that /info endpoint returns the expected structure."""
-        response = client.get("/info")
+        response = client.get("/v1/info")
 
         assert response.status_code == 200
         data = response.json()
@@ -64,7 +64,7 @@ class TestAPIBehaviorConsistency:
             "max_iterations": 100,
         }
 
-        response = client.post("/plan", json=request_data)
+        response = client.post("/v1/plan", json=request_data)
 
         assert response.status_code == 200
         data = response.json()
@@ -99,7 +99,7 @@ class TestAPIBehaviorConsistency:
             "algorithm": "invalid_algorithm",
         }
 
-        response = client.post("/plan", json=request_data)
+        response = client.post("/v1/plan", json=request_data)
 
         # FastAPI returns 422 for validation errors
         assert response.status_code == 422
@@ -118,7 +118,7 @@ class TestAPIBehaviorConsistency:
             "target": [20, 30, 25],
         }
 
-        response = client.post("/plan", json=request_data)
+        response = client.post("/v1/plan", json=request_data)
 
         # Should either be 422 (validation) or 400/500 (internal error)
         assert response.status_code in [400, 422, 500]
@@ -141,7 +141,7 @@ class TestLoggingDoesNotAffectResponses:
         }
 
         # Make multiple requests
-        responses = [client.post("/plan", json=request_data) for _ in range(3)]
+        responses = [client.post("/v1/plan", json=request_data) for _ in range(3)]
 
         # All should succeed
         assert all(r.status_code == 200 for r in responses)
@@ -159,7 +159,7 @@ class TestLoggingDoesNotAffectResponses:
 
         start = time.time()
         for _ in range(10):
-            response = client.get("/health")
+            response = client.get("/v1/health")
             assert response.status_code == 200
         duration = time.time() - start
 
@@ -182,7 +182,7 @@ class TestOriginalFunctionalityPreserved:
             "algorithm": "simulated_annealing",
         }
 
-        response = client.post("/plan", json=request_data)
+        response = client.post("/v1/plan", json=request_data)
         assert response.status_code == 200
 
         data = response.json()
@@ -200,7 +200,7 @@ class TestOriginalFunctionalityPreserved:
             "algorithm": "integer_programming",
         }
 
-        response = client.post("/plan", json=request_data)
+        response = client.post("/v1/plan", json=request_data)
         assert response.status_code == 200
 
         data = response.json()
@@ -223,7 +223,7 @@ class TestOriginalFunctionalityPreserved:
                 "max_iterations": 50,
             }
 
-            response = client.post("/plan", json=request_data)
+            response = client.post("/v1/plan", json=request_data)
             assert response.status_code == 200, f"Failed for objective method: {method}"
 
     def test_service_capacity_calculation_preserved(self, client):
@@ -239,7 +239,7 @@ class TestOriginalFunctionalityPreserved:
             "max_iterations": 50,
         }
 
-        response = client.post("/plan", json=request_data)
+        response = client.post("/v1/plan", json=request_data)
         assert response.status_code == 200
 
         data = response.json()

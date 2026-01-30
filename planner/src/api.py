@@ -118,7 +118,7 @@ app = FastAPI(
 )
 
 # Include PyLet router
-app.include_router(pylet_router)
+app.include_router(pylet_router, prefix="/v1")
 
 
 @app.exception_handler(Exception)
@@ -134,7 +134,7 @@ async def global_exception_handler(request, exc):
     )
 
 
-@app.get("/health")
+@app.get("/v1/health")
 async def health_check():
     """Health check endpoint for monitoring and load balancing.
 
@@ -144,7 +144,7 @@ async def health_check():
     return {"status": "healthy", "timestamp": datetime.now(UTC).isoformat()}
 
 
-@app.get("/info")
+@app.get("/v1/info")
 async def service_info():
     """Get service information and capabilities.
 
@@ -184,7 +184,7 @@ async def service_info():
     }
 
 
-@app.post("/plan", response_model=PlannerOutput)
+@app.post("/v1/plan", response_model=PlannerOutput)
 async def plan_deployment(input_data: PlannerInput):
     """Compute optimal deployment plan without execution.
 
@@ -312,7 +312,7 @@ async def plan_deployment(input_data: PlannerInput):
 # ============================================================================
 
 
-@app.post("/scheduler/register", response_model=SchedulerRegisterResponse)
+@app.post("/v1/scheduler/register", response_model=SchedulerRegisterResponse)
 async def register_scheduler(request: SchedulerRegisterRequest):
     """Register a scheduler for a specific model.
 
@@ -344,7 +344,7 @@ async def register_scheduler(request: SchedulerRegisterRequest):
 
 
 @app.post(
-    "/scheduler/deregister", response_model=SchedulerDeregisterResponse
+    "/v1/scheduler/deregister", response_model=SchedulerDeregisterResponse
 )
 async def deregister_scheduler(request: SchedulerDeregisterRequest):
     """Deregister a scheduler for a specific model.
@@ -372,7 +372,7 @@ async def deregister_scheduler(request: SchedulerDeregisterRequest):
         )
 
 
-@app.get("/scheduler/list", response_model=SchedulerListResponse)
+@app.get("/v1/scheduler/list", response_model=SchedulerListResponse)
 async def list_schedulers():
     """List all registered schedulers.
 
@@ -387,7 +387,7 @@ async def list_schedulers():
     )
 
 
-@app.get("/scheduler/{model_id}")
+@app.get("/v1/scheduler/{model_id}")
 async def get_scheduler(model_id: str):
     """Get the scheduler registered for a specific model.
 
@@ -413,7 +413,7 @@ async def get_scheduler(model_id: str):
 # Use the PyLet endpoints (/deploy, /optimize) for deployment.
 
 
-@app.post("/instance/register", response_model=InstanceRegisterResponse)
+@app.post("/v1/instance/register", response_model=InstanceRegisterResponse)
 async def register_available_instance(request: InstanceRegisterRequest):
     """Register an available instance to the planner's available instance store.
 
@@ -483,7 +483,7 @@ async def register_available_instance(request: InstanceRegisterRequest):
 # ============================================================================
 
 
-@app.post("/instance/drain", response_model=InstanceDrainResponse)
+@app.post("/v1/instance/drain", response_model=InstanceDrainResponse)
 async def dummy_drain_instance(request: InstanceDrainRequest):
     """Dummy drain endpoint for instances registered to Planner.
 
@@ -509,7 +509,7 @@ async def dummy_drain_instance(request: InstanceDrainRequest):
     )
 
 
-@app.get("/instance/drain/status", response_model=InstanceDrainStatusResponse)
+@app.get("/v1/instance/drain/status", response_model=InstanceDrainStatusResponse)
 async def dummy_drain_status(instance_id: str):
     """Dummy drain status endpoint for instances registered to Planner.
 
@@ -533,7 +533,7 @@ async def dummy_drain_status(instance_id: str):
     )
 
 
-@app.post("/instance/remove", response_model=InstanceRemoveResponse)
+@app.post("/v1/instance/remove", response_model=InstanceRemoveResponse)
 async def dummy_remove_instance(request: InstanceRemoveRequest):
     """Dummy remove endpoint for instances registered to Planner.
 
@@ -554,7 +554,7 @@ async def dummy_remove_instance(request: InstanceRemoveRequest):
     )
 
 
-@app.post("/task/resubmit", response_model=TaskResubmitResponse)
+@app.post("/v1/task/resubmit", response_model=TaskResubmitResponse)
 async def dummy_resubmit_task(request: TaskResubmitRequest):
     """Dummy task resubmit endpoint for instances registered to Planner.
 
@@ -583,7 +583,7 @@ async def dummy_resubmit_task(request: TaskResubmitRequest):
 # ============================================================================
 
 
-@app.get("/timeline")
+@app.get("/v1/timeline")
 async def get_instance_timeline():
     """Get the instance count timeline.
 
@@ -601,7 +601,7 @@ async def get_instance_timeline():
     return {"success": True, "entry_count": len(entries), "entries": entries}
 
 
-@app.post("/timeline/clear")
+@app.post("/v1/timeline/clear")
 async def clear_instance_timeline():
     """Clear the instance count timeline.
 

@@ -510,7 +510,7 @@ class TestPlannerDeployAPI:
 
         # Deploy via planner API
         resp = await planner_client.post(
-            "/deploy",
+            "/v1/deploy",
             json={
                 "target_state": target_state,
                 "wait_for_ready": True,
@@ -526,7 +526,7 @@ class TestPlannerDeployAPI:
         assert data["added_count"] == 3, f"Expected 3 added, got {data['added_count']}"
 
         # Verify via /status
-        status_resp = await planner_client.get("/status")
+        status_resp = await planner_client.get("/v1/status")
         assert status_resp.status_code == 200
         status_data = status_resp.json()
 
@@ -561,7 +561,7 @@ class TestPlannerDeployAPI:
         """
         # Initial deploy: 2 model-a
         resp = await planner_client.post(
-            "/deploy",
+            "/v1/deploy",
             json={"target_state": {"model-a": 2}, "wait_for_ready": True},
         )
         assert resp.status_code == 200
@@ -571,7 +571,7 @@ class TestPlannerDeployAPI:
 
         # Scale up to 4
         resp = await planner_client.post(
-            "/scale",
+            "/v1/scale",
             json={
                 "model_id": "model-a",
                 "target_count": 4,
@@ -592,7 +592,7 @@ class TestPlannerDeployAPI:
 
         # Scale down to 1
         resp = await planner_client.post(
-            "/scale",
+            "/v1/scale",
             json={
                 "model_id": "model-a",
                 "target_count": 1,
@@ -634,7 +634,7 @@ class TestPlannerDeployAPI:
         print("\n[TEST] Optimizing via planner API...")
 
         resp = await planner_client.post(
-            "/optimize",
+            "/v1/optimize",
             json={
                 "model_ids": model_ids,
                 "B": B,
@@ -681,7 +681,7 @@ class TestPlannerDeployAPI:
         """
         # Initial: 3 model-a
         resp = await planner_client.post(
-            "/deploy",
+            "/v1/deploy",
             json={"target_state": {"model-a": 3}, "wait_for_ready": True},
         )
         assert resp.status_code == 200
@@ -691,7 +691,7 @@ class TestPlannerDeployAPI:
 
         # Change to: 1 model-a, 2 model-b
         resp = await planner_client.post(
-            "/deploy",
+            "/v1/deploy",
             json={"target_state": {"model-a": 1, "model-b": 2}, "wait_for_ready": True},
         )
         assert resp.status_code == 200
@@ -707,7 +707,7 @@ class TestPlannerDeployAPI:
         assert data["added_count"] == 2
 
         # Verify final state
-        status_resp = await planner_client.get("/status")
+        status_resp = await planner_client.get("/v1/status")
         status_data = status_resp.json()
 
         expected_state = {"model-a": 1, "model-b": 2}

@@ -257,10 +257,10 @@ class TestPyLetAPIEndpoints:
             from src.pylet_api import router
 
             app = FastAPI()
-            app.include_router(router)
+            app.include_router(router, prefix="/v1")
             client = TestClient(app)
 
-            response = client.get("/status")
+            response = client.get("/v1/status")
 
             assert response.status_code == 200
             data = response.json()
@@ -290,10 +290,10 @@ class TestPyLetAPIEndpoints:
             from src.pylet_api import router
 
             app = FastAPI()
-            app.include_router(router)
+            app.include_router(router, prefix="/v1")
             client = TestClient(app)
 
-            response = client.get("/status")
+            response = client.get("/v1/status")
 
             assert response.status_code == 200
             data = response.json()
@@ -312,11 +312,11 @@ class TestPyLetAPIEndpoints:
             from src.pylet_api import router
 
             app = FastAPI()
-            app.include_router(router)
+            app.include_router(router, prefix="/v1")
             client = TestClient(app)
 
             response = client.post(
-                "/deploy_manually",
+                "/v1/deploy_manually",
                 json={"target_state": {"model-a": 2}},
             )
 
@@ -332,11 +332,11 @@ class TestPyLetAPIEndpoints:
             from src.pylet_api import router
 
             app = FastAPI()
-            app.include_router(router)
+            app.include_router(router, prefix="/v1")
             client = TestClient(app)
 
             response = client.post(
-                "/scale",
+                "/v1/scale",
                 json={"model_id": "model-a", "target_count": 3},
             )
 

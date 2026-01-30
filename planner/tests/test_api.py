@@ -19,7 +19,7 @@ class TestHealthEndpoint:
 
     def test_health_check(self, client):
         """Test health check returns healthy status."""
-        response = client.get("/health")
+        response = client.get("/v1/health")
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "healthy"
@@ -31,7 +31,7 @@ class TestInfoEndpoint:
 
     def test_service_info(self, client):
         """Test service info returns correct metadata."""
-        response = client.get("/info")
+        response = client.get("/v1/info")
         assert response.status_code == 200
         data = response.json()
         assert data["service"] == "planner"
@@ -62,7 +62,7 @@ class TestPlanEndpoint:
             mock_optimizer.compute_changes.return_value = 1
             mock_optimizer_class.return_value = mock_optimizer
 
-            response = client.post("/plan", json=sample_planner_input)
+            response = client.post("/v1/plan", json=sample_planner_input)
 
             assert response.status_code == 200
             data = response.json()
@@ -92,7 +92,7 @@ class TestPlanEndpoint:
             mock_optimizer.compute_changes.return_value = 1
             mock_optimizer_class.return_value = mock_optimizer
 
-            response = client.post("/plan", json=sample_planner_input)
+            response = client.post("/v1/plan", json=sample_planner_input)
 
             assert response.status_code == 200
             data = response.json()
@@ -102,13 +102,13 @@ class TestPlanEndpoint:
     def test_plan_invalid_input(self, client, sample_planner_input):
         """Test /plan rejects invalid input."""
         sample_planner_input["M"] = -1  # Invalid
-        response = client.post("/plan", json=sample_planner_input)
+        response = client.post("/v1/plan", json=sample_planner_input)
         assert response.status_code == 422  # Validation error
 
     def test_plan_unknown_algorithm(self, client, sample_planner_input):
         """Test /plan rejects unknown algorithm."""
         sample_planner_input["algorithm"] = "unknown_algorithm"
-        response = client.post("/plan", json=sample_planner_input)
+        response = client.post("/v1/plan", json=sample_planner_input)
         assert response.status_code == 422  # Validation error
 
     def test_plan_optimization_failure(self, client, sample_planner_input):
@@ -118,7 +118,7 @@ class TestPlanEndpoint:
         with patch("src.api.SimulatedAnnealingOptimizer") as mock_optimizer_class:
             mock_optimizer_class.side_effect = ValueError("Optimization failed")
 
-            response = client.post("/plan", json=sample_planner_input)
+            response = client.post("/v1/plan", json=sample_planner_input)
 
             assert response.status_code == 400
             assert "Invalid input" in response.json()["detail"]
@@ -140,7 +140,7 @@ class TestInstanceRegisterEndpoint:
             }
         }
 
-        response = client.post("/instance/register", json=request_data)
+        response = client.post("/v1/instance/register", json=request_data)
 
         assert response.status_code == 200
         data = response.json()
@@ -157,7 +157,7 @@ class TestInstanceRegisterEndpoint:
             "platform_info": {}
         }
 
-        response = client.post("/instance/register", json=request_data)
+        response = client.post("/v1/instance/register", json=request_data)
 
         assert response.status_code == 200
         data = response.json()
@@ -172,7 +172,7 @@ class TestInstanceRegisterEndpoint:
             "endpoint": "http://instance1:8080",
             "platform_info": {}
         }
-        response1 = client.post("/instance/register", json=request_data1)
+        response1 = client.post("/v1/instance/register", json=request_data1)
         assert response1.status_code == 200
 
         # Register second instance for same model
@@ -182,7 +182,7 @@ class TestInstanceRegisterEndpoint:
             "endpoint": "http://instance2:8080",
             "platform_info": {}
         }
-        response2 = client.post("/instance/register", json=request_data2)
+        response2 = client.post("/v1/instance/register", json=request_data2)
         assert response2.status_code == 200
 
         data = response2.json()
@@ -196,7 +196,7 @@ class TestInstanceRegisterEndpoint:
             "endpoint": "http://test:8080"
         }
 
-        response = client.post("/instance/register", json=request_data)
+        response = client.post("/v1/instance/register", json=request_data)
 
         assert response.status_code == 422  # Validation error
 
@@ -207,7 +207,7 @@ class TestInstanceRegisterEndpoint:
             "model_id": "model_0"
         }
 
-        response = client.post("/instance/register", json=request_data)
+        response = client.post("/v1/instance/register", json=request_data)
 
         assert response.status_code == 422  # Validation error
 
@@ -221,7 +221,7 @@ class TestDummyEndpoints:
             "instance_id": "test-instance"
         }
 
-        response = client.post("/instance/drain", json=request_data)
+        response = client.post("/v1/instance/drain", json=request_data)
 
         assert response.status_code == 200
         data = response.json()
@@ -233,7 +233,7 @@ class TestDummyEndpoints:
 
     def test_instance_drain_status_success(self, client):
         """Test /instance/drain/status dummy endpoint returns can_remove=True."""
-        response = client.get("/instance/drain/status", params={"instance_id": "test-instance"})
+        response = client.get("/v1/instance/drain/status", params={"instance_id": "test-instance"})
 
         assert response.status_code == 200
         data = response.json()
@@ -247,7 +247,7 @@ class TestDummyEndpoints:
             "instance_id": "test-instance"
         }
 
-        response = client.post("/instance/remove", json=request_data)
+        response = client.post("/v1/instance/remove", json=request_data)
 
         assert response.status_code == 200
         data = response.json()
@@ -261,7 +261,7 @@ class TestDummyEndpoints:
             "original_instance_id": "instance-1"
         }
 
-        response = client.post("/task/resubmit", json=request_data)
+        response = client.post("/v1/task/resubmit", json=request_data)
 
         assert response.status_code == 200
         data = response.json()
@@ -269,7 +269,7 @@ class TestDummyEndpoints:
 
     def test_timeline_get(self, client):
         """Test /timeline GET endpoint."""
-        response = client.get("/timeline")
+        response = client.get("/v1/timeline")
 
         assert response.status_code == 200
         data = response.json()
@@ -278,7 +278,7 @@ class TestDummyEndpoints:
 
     def test_timeline_clear(self, client):
         """Test /timeline/clear POST endpoint."""
-        response = client.post("/timeline/clear")
+        response = client.post("/v1/timeline/clear")
 
         assert response.status_code == 200
         data = response.json()
@@ -292,7 +292,7 @@ class TestPlanEndpointErrors:
         """Test plan fails with a value out of range."""
         sample_planner_input["a"] = 1.5  # Out of 0-1 range
 
-        response = client.post("/plan", json=sample_planner_input)
+        response = client.post("/v1/plan", json=sample_planner_input)
 
         # Pydantic validation catches this
         assert response.status_code == 422
@@ -301,7 +301,7 @@ class TestPlanEndpointErrors:
         """Test plan handles negative max_iterations."""
         sample_planner_input["max_iterations"] = -10
 
-        response = client.post("/plan", json=sample_planner_input)
+        response = client.post("/v1/plan", json=sample_planner_input)
 
         # Pydantic validation catches this
         assert response.status_code == 422
