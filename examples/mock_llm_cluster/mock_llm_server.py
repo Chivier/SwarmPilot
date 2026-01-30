@@ -255,7 +255,7 @@ async def register_with_scheduler() -> bool:
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
-                f"{SCHEDULER_URL}/instance/register",
+                f"{SCHEDULER_URL}/v1/instance/register",
                 json=registration_data,
             )
 
@@ -283,7 +283,7 @@ async def deregister_from_scheduler() -> bool:
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.post(
-                f"{SCHEDULER_URL}/instance/remove",
+                f"{SCHEDULER_URL}/v1/instance/remove",
                 json={"instance_id": INSTANCE_ID},
             )
             return response.status_code == 200
