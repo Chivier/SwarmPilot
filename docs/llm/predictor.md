@@ -1,6 +1,6 @@
 # Predictor Service - LLM Reference
 
-> Single-file reference for the Predictor service. For detailed documentation, see `predictor/README_FOR_LLM.md`.
+> Single-file reference for the Predictor service. For detailed documentation, see [docs/](../).
 
 ## Overview
 
@@ -8,11 +8,13 @@
 |----------|-------|
 | **Service** | Runtime Predictor |
 | **Version** | 0.1.0 |
-| **Port** | 8000 (default) |
+| **Port** | 8001 (typical) |
+| **API Prefix** | _(none)_ |
 | **Framework** | FastAPI |
 | **ML Framework** | PyTorch 2.0+ |
-| **Entry Point** | `predictor/src/cli.py` |
-| **Main API** | `predictor/src/api/app.py` |
+| **Entry Point** | `swarmpilot/predictor/cli.py` |
+| **Main API** | `swarmpilot/predictor/api/app.py` |
+| **CLI** | `spredictor` |
 
 **Purpose:** Predicts task execution runtimes using MLP-based regression models. Supports point estimates (expect/error) and quantile predictions.
 
@@ -21,18 +23,20 @@
 ## File Structure
 
 ```
-predictor/src/
-├── cli.py                    # CLI entry point
-├── config.py                 # Configuration
+swarmpilot/predictor/
+├── cli.py                    # CLI entry point (spredictor)
+├── config.py                 # Configuration (pydantic-settings, PREDICTOR_* prefix)
 ├── models.py                 # Pydantic models
 ├── api/
-│   ├── app.py               # FastAPI application
+│   ├── app.py               # FastAPI application factory
+│   ├── dependencies.py      # Shared dependencies (storage, cache)
 │   ├── routes/
-│   │   ├── prediction.py    # /predict endpoint
-│   │   ├── training.py      # /train endpoint
-│   │   ├── models.py        # /list endpoint
-│   │   ├── health.py        # /health endpoint
-│   │   └── websocket.py     # /ws/predict endpoint
+│   │   ├── prediction.py    # POST /predict
+│   │   ├── training.py      # POST /train
+│   │   ├── models.py        # GET /list
+│   │   ├── health.py        # GET /health
+│   │   ├── cache.py         # GET /cache/stats, POST /cache/clear
+│   │   └── websocket.py     # WS /ws/predict
 │   └── ...
 ├── predictor/                # Prediction algorithms
 │   ├── base.py              # Abstract base class
@@ -50,6 +54,8 @@ predictor/src/
 ---
 
 ## API Endpoints
+
+**Predictor endpoints have NO prefix (mounted at root).**
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
@@ -123,7 +129,7 @@ predictor/src/
   "prediction_type": "expect_error",
   "features_list": [
     {"batch_size": 16, "runtime_ms": 95.3},
-    {"batch_size": 32, "runtime_ms": 125.7},
+    {"batch_size": 32, "runtime_ms": 125.7}
     // ... minimum 10 samples
   ],
   "training_config": {
@@ -150,10 +156,10 @@ predictor/src/
 Models are uniquely identified by:
 
 ```
-{model_id}__{software_name}-{software_version}__{hardware_name}
+{model_id}__{software_name}-{software_version}__{hardware_name}__{prediction_type}
 ```
 
-Example: `image-classifier-v1__pytorch-2.0.1__nvidia-a100`
+Example: `image-classifier-v1__pytorch-2.0.1__nvidia-a100__expect_error`
 
 ---
 
@@ -163,8 +169,13 @@ Example: `image-classifier-v1__pytorch-2.0.1__nvidia-a100`
 |----------|---------|-------------|
 | `PREDICTOR_HOST` | `0.0.0.0` | Bind host |
 | `PREDICTOR_PORT` | `8000` | Bind port |
+| `PREDICTOR_RELOAD` | `false` | Auto-reload (development) |
+| `PREDICTOR_WORKERS` | `1` | Worker processes |
 | `PREDICTOR_STORAGE_DIR` | `models` | Model storage directory |
 | `PREDICTOR_LOG_LEVEL` | `info` | Log level |
+| `PREDICTOR_LOG_DIR` | `logs` | Log file directory |
+
+Also reads `.env` file and `predictor.toml` if present. See [CONFIGURATION.md](../CONFIGURATION.md) for details.
 
 ---
 
@@ -183,6 +194,7 @@ Example: `image-classifier-v1__pytorch-2.0.1__nvidia-a100`
 - Z-score normalization: `(value - mean) / std`
 - Normalization parameters stored with model
 - Special fields excluded: `runtime_ms`, `exp_runtime`
+- Preprocessor pipeline configurable via `enable_preprocessors` and `preprocessor_mappings`
 
 ---
 
@@ -205,4 +217,4 @@ Returns synthetic predictions without trained models.
 
 ---
 
-**Version:** 0.1.0 | **Updated:** 2026-01-16
+**Version:** 0.1.0 | **Updated:** 2026-01-30

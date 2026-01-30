@@ -1,25 +1,91 @@
 # SwarmPilot
 
-A distributed task scheduling and execution system with dynamic load balancing, intelligent task allocation, and runtime prediction.
+Distributed task scheduling with ML-based runtime prediction and automatic instance management.
 
-## Architecture
+## What Is SwarmPilot?
 
-SwarmPilot consists of three core services, shipped as a single Python package:
+SwarmPilot orchestrates compute instances to run tasks efficiently. It predicts how long tasks will take, routes them to the best instance, and scales the cluster up or down via [PyLet](https://github.com/your-org/pylet).
 
-- **Scheduler**: Task orchestration and instance management
-- **Predictor**: MLP-based runtime prediction service
-- **Planner**: Deployment optimization using linear programming
-
-Task execution nodes are managed via **PyLet** (see [Quick Start](docs/QUICK_START.md)).
+| Service | Default Port | Role |
+|---------|-------------|------|
+| **Scheduler** | 8000 | Accepts tasks, picks an instance, tracks results |
+| **Predictor** | 8001 | MLP-based runtime prediction (expect/error and quantile) |
+| **Planner** | 8002 | Optimization-driven deployment via PyLet |
 
 ## Quick Start
 
-### Prerequisites
+```bash
+# Install
+pip install swarmpilot          # or: uv add swarmpilot
 
-- Python >= 3.11
-- [uv](https://docs.astral.sh/uv/) (recommended) or pip
+# Start services (3 terminals)
+spredictor start --port 8001
+sscheduler start --port 8000
+splanner start --port 8002      # optional, needed for PyLet
+```
 
-### Installation
+See [docs/QUICK_START.md](docs/QUICK_START.md) for a full walkthrough with a local test cluster.
+
+## Architecture
+
+```
+              ┌─────────────┐
+              │   Client    │
+              └──────┬──────┘
+                     │ POST /v1/task/submit
+                     ▼
+              ┌─────────────┐         ┌─────────────┐
+              │  Scheduler  │────────▶│  Predictor   │
+              │   (8000)    │◀────────│   (8001)     │
+              └──────┬──────┘         └──────────────┘
+                     │ dispatches
+        ┌────────────┼────────────┐
+        ▼            ▼            ▼
+   ┌─────────┐ ┌─────────┐ ┌─────────┐
+   │Instance │ │Instance │ │Instance │
+   │    A    │ │    B    │ │    C    │
+   └─────────┘ └─────────┘ └─────────┘
+                     ▲ deploys/scales
+              ┌──────┴──────┐
+              │   Planner   │──── PyLet Cluster
+              │   (8002)    │
+              └─────────────┘
+```
+
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [Quick Start](docs/QUICK_START.md) | Local cluster in 5 minutes |
+| [Architecture](docs/ARCHITECTURE.md) | System design and data flows |
+| [API Reference](docs/API_REFERENCE.md) | All endpoints for all services |
+| [Configuration](docs/CONFIGURATION.md) | Environment variables and CLI flags |
+| [Deployment](docs/DEPLOYMENT.md) | Production deployment with PyLet |
+| [Development](docs/DEVELOPMENT.md) | Dev setup, testing, contributing |
+| [LLM Docs](docs/llm/) | Single-file references for AI assistants |
+
+## Project Structure
+
+```
+swarmpilot-refresh/
+├── swarmpilot/             # Python package
+│   ├── scheduler/          # Task scheduling service
+│   ├── predictor/          # Runtime prediction service
+│   ├── planner/            # Deployment optimization (PyLet)
+│   ├── graph/              # Client library
+│   └── scripts/            # Deployment utilities
+├── examples/               # Example cluster configurations
+│   ├── mock_llm_cluster/   # Local test cluster with mock predictor
+│   ├── llm_cluster/        # Real LLM cluster
+│   ├── multi_scheduler/    # Multi-scheduler with planner
+│   └── pylet_benchmark/    # PyLet benchmarking
+├── tests/                  # Test suites
+├── scripts/                # Startup scripts
+├── docs/                   # Documentation
+└── pyproject.toml          # Package configuration
+```
+
+## Installation
 
 ```bash
 # Using pip
@@ -28,123 +94,16 @@ pip install swarmpilot
 # Using uv (recommended)
 uv add swarmpilot
 
-# With PyLet support (for production deployments)
+# With PyLet support
 pip install swarmpilot[pylet]
-```
 
-### Development Installation
-
-```bash
+# Development
 git clone <repo-url> swarmpilot-refresh
 cd swarmpilot-refresh
-uv sync              # install in editable mode
-uv sync --extra pylet  # include PyLet for planner
+uv sync                        # editable install
+uv sync --extra pylet          # include PyLet
 ```
-
-### Usage
-
-Installing `swarmpilot` provides three CLI tools:
-
-```bash
-# Start scheduler on default port
-sscheduler start
-
-# Start predictor service
-spredictor start
-
-# Start planner service
-splanner start
-```
-
-For help with any command:
-
-```bash
-sscheduler --help
-spredictor --help
-splanner --help
-```
-
-### Library Usage
-
-```python
-from swarmpilot.scheduler.config import config
-from swarmpilot.predictor.predictor.expect_error import ExpectErrorPredictor
-from swarmpilot.planner.core.swarm_optimizer import SimulatedAnnealingOptimizer
-```
-
-### Running Tests
-
-```bash
-# Run all tests
-uv run pytest
-
-# Run tests for a specific service
-uv run pytest scheduler/tests/
-uv run pytest predictor/tests/
-uv run pytest planner/tests/
-```
-
-## Project Structure
-
-```
-swarmpilot-refresh/
-├── swarmpilot/             # Distributable Python package
-│   ├── scheduler/          # Scheduling service
-│   ├── predictor/          # Prediction service
-│   ├── planner/            # Planning service (with PyLet integration)
-│   ├── graph/              # Client library
-│   └── scripts/            # Deployment utilities
-├── scheduler/tests/        # Scheduler tests
-├── predictor/tests/        # Predictor tests
-├── planner/tests/          # Planner tests
-├── examples/               # Example cluster configurations
-└── pyproject.toml          # Package configuration
-```
-
-## Documentation
-
-See [docs/](docs/) for detailed guides:
-
-- [Quick Start](docs/QUICK_START.md) — get a local cluster running
-- [Scheduler Architecture](docs/scheduler_architecture_report.md)
-- [PyLet Migration](docs/pylet_migration.md)
-
-## Experiments
-
-### Basic Experiments: Verify Installation
-
-Exp. 01, 02, 03
-
-### Scheduler Experiments
-
-Exp. 09 (Universial Entrance for 04~07)
-
-Cluster Config: static, A = m, B = n, m << n
-Example Config: m = 8, n = 120
-```
-Exp. 04:   -> B
-         A -> B
-           -> B
-
-
-Exp. 05: A -> B -> B -> B
-
-
-Exp. 06:   -> B ->
-         A -> B -> A
-           -> B ->
-
-
-Exp. 07:   -> B1 -> B2 ->
-         A -> B1 -> B2 -> A
-           -> B1 -> B2 ->
-```
-
 
 ## License
-
-TBD
-
-## Contributing
 
 TBD

@@ -14,8 +14,8 @@ This directory contains single-file documentation optimized for LLM consumption.
 
 These documents are designed to be loaded as context for LLM-based coding assistants. Each file:
 
-- Contains complete API specifications
-- Includes accurate file path references
+- Contains complete API specifications with correct endpoint paths
+- Includes accurate file path references (under `swarmpilot/`)
 - Provides request/response JSON schemas
 - Documents component interactions
 
@@ -24,21 +24,26 @@ These documents are designed to be loaded as context for LLM-based coding assist
 Each module document follows this structure:
 
 1. **Overview** - Purpose and key concepts
-2. **Quick Start** - Installation and basic usage
-3. **Configuration** - Environment variables and settings
-4. **API Reference** - Complete endpoint specifications
-5. **Data Models** - Pydantic schema definitions
-6. **Architecture** - Component interactions and file structure
-7. **Quick Reference** - Essential lookup tables
+2. **File Structure** - Source file layout
+3. **API Reference** - Complete endpoint specifications
+4. **Key Schemas** - Request/response examples
+5. **Configuration** - Environment variables
+6. **Quick Reference** - Lookup tables
+
+## Important Notes
+
+- Scheduler and Planner endpoints use the `/v1/` prefix
+- Predictor endpoints have **no** prefix
+- All source files are under `swarmpilot/` (not `scheduler/src/`, `planner/src/`, or `predictor/src/`)
 
 ## Versioning
 
 | Module | Version | Last Updated |
 |--------|---------|--------------|
-| Scheduler | 0.1.0 | 2026-01-16 |
-| Planner | 0.1.0 | 2026-01-16 |
-| Predictor | 0.1.0 | 2026-01-16 |
+| Scheduler | 1.0.0 | 2026-01-30 |
+| Planner | 1.0.0 | 2026-01-30 |
+| Predictor | 0.1.0 | 2026-01-30 |
 
 ---
 
-**Note:** For detailed development guides, see the individual module `README_FOR_LLM.md` files or the `docs/` directories within each module.
+For detailed documentation, see [docs/](../).

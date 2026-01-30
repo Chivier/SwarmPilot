@@ -1,0 +1,352 @@
+# PYLET-016: Library-Based Callback Mechanism
+
+## Status: DONE
+
+## Objective
+
+Implement the `TaskResultCallback` class that handles task completion results from worker threads, updating registries and notifying subscribers via the main event loop.
+
+## Prerequisites
+
+- PYLET-014: Design review complete
+- PYLET-015: `WorkerQueueThread` implemented
+
+## Design
+
+### Class Overview
+
+```python
+class TaskResultCallback:
+    """Handles task completion results from worker threads.
+
+    This class bridges the worker threads (which execute synchronously)
+    with the main asyncio event loop (which manages registries and
+    WebSocket connections).
+
+    Key responsibilities:
+    1. Receive results from worker threads
+    2. Update TaskRegistry with status/result/error
+    3. Update InstanceRegistry with statistics
+    4. Record throughput for planner reporting
+    5. Broadcast results to WebSocket subscribers
+    """
+```
+
+### Thread Safety
+
+The callback mechanism must handle the thread boundary:
+
+```
+WorkerQueueThread (Thread)          Main Event Loop (asyncio)
+        │                                    │
+        │  TaskResult                        │
+        ├──────────────────────────────────▶│
+        │  asyncio.run_coroutine_threadsafe  │
+        │                                    │
+        │                          handle_result()
+        │                                    │
+        │                          ├─ TaskRegistry.update
+        │                          ├─ InstanceRegistry.update
+        │                          ├─ ThroughputTracker.record
+        │                          └─ WebSocketManager.broadcast
+```
+
+### Implementation
+
+```python
+import asyncio
+from typing import TYPE_CHECKING, Callable
+from loguru import logger
+
+from src.model import TaskStatus
+from src.task_registry import TaskRegistry
+from src.instance_registry import InstanceRegistry
+from src.websocket_manager import ConnectionManager
+
+if TYPE_CHECKING:
+    from src.services.throughput_tracker import ThroughputTracker
+    from src.services.worker_queue_thread import TaskResult
+
+
+class TaskResultCallback:
+    """Callback handler for task results from worker threads."""
+
+    def __init__(
+        self,
+        task_registry: TaskRegistry,
+        instance_registry: InstanceRegistry,
+        websocket_manager: ConnectionManager,
+        throughput_tracker: "ThroughputTracker | None" = None,
+    ):
+        """Initialize callback handler.
+
+        Args:
+            task_registry: Registry for task state management
+            instance_registry: Registry for instance statistics
+            websocket_manager: Manager for WebSocket notifications
+            throughput_tracker: Optional tracker for planner reporting
+        """
+        self.task_registry = task_registry
+        self.instance_registry = instance_registry
+        self.websocket_manager = websocket_manager
+        self.throughput_tracker = throughput_tracker
+
+        # Event loop reference (set when creating thread callback)
+        self._loop: asyncio.AbstractEventLoop | None = None
+
+    def create_thread_callback(
+        self,
+        loop: asyncio.AbstractEventLoop,
+    ) -> Callable[["TaskResult"], None]:
+        """Create a callback function that can be called from worker threads.
+
+        This returns a closure that safely schedules the async handle_result
+        coroutine on the main event loop using run_coroutine_threadsafe.
+
+        Args:
+            loop: The main asyncio event loop
+
+        Returns:
+            A synchronous callback function for use in worker threads
+        """
+        self._loop = loop
+
+        def thread_safe_callback(result: "TaskResult") -> None:
+            """Callback function safe to call from any thread."""
+            try:
+                future = asyncio.run_coroutine_threadsafe(
+                    self.handle_result(result),
+                    loop,
+                )
+                # Don't wait for result - fire and forget
+                # Errors are logged in handle_result
+            except Exception as e:
+                logger.error(
+                    f"Failed to schedule callback for task {result.task_id}: {e}"
+                )
+
+        return thread_safe_callback
+
+    async def handle_result(self, result: "TaskResult") -> None:
+        """Handle task completion result.
+
+        This coroutine runs in the main event loop and updates all
+        relevant registries and notifies subscribers.
+
+        Args:
+            result: Task result from worker thread
+        """
+        task_id = result.task_id
+        logger.debug(f"Handling result for task {task_id}: {result.status}")
+
+        try:
+            # Get task record
+            task = await self.task_registry.get(task_id)
+            if not task:
+                logger.warning(f"Task {task_id} not found in registry")
+                return
+
+            # Get instance for stats update
+            instance = await self.instance_registry.get(result.worker_id)
+
+            if result.status == "completed":
+                await self._handle_success(task_id, result, instance)
+            else:
+                await self._handle_failure(task_id, result, instance)
+
+            # Notify WebSocket subscribers
+            await self._notify_subscribers(task_id, result)
+
+        except Exception as e:
+            logger.error(
+                f"Error handling result for task {task_id}: {e}",
+                exc_info=True,
+            )
+
+    async def _handle_success(
+        self,
+        task_id: str,
+        result: "TaskResult",
+        instance,
+    ) -> None:
+        """Handle successful task completion.
+
+        Args:
+            task_id: Task identifier
+            result: Task result
+            instance: Instance that executed the task
+        """
+        # Update task status
+        await self.task_registry.update_status(task_id, TaskStatus.COMPLETED)
+
+        # Set result data
+        if result.result:
+            await self.task_registry.set_result(task_id, result.result)
+
+        # Set execution time
+        task = await self.task_registry.get(task_id)
+        if task:
+            task.set_execution_time(result.execution_time_ms)
+
+        # Update instance statistics
+        if instance:
+            await self.instance_registry.increment_completed(
+                instance.instance_id
+            )
+
+        # Record throughput for planner
+        if self.throughput_tracker and instance:
+            await self.throughput_tracker.record_execution_time(
+                instance_endpoint=instance.endpoint,
+                execution_time_ms=result.execution_time_ms,
+            )
+
+        logger.info(
+            f"Task {task_id} completed on {result.worker_id} "
+            f"in {result.execution_time_ms:.2f}ms"
+        )
+
+    async def _handle_failure(
+        self,
+        task_id: str,
+        result: "TaskResult",
+        instance,
+    ) -> None:
+        """Handle failed task completion.
+
+        Args:
+            task_id: Task identifier
+            result: Task result with error
+            instance: Instance that executed the task
+        """
+        # Update task status
+        await self.task_registry.update_status(task_id, TaskStatus.FAILED)
+
+        # Set error message
+        if result.error:
+            await self.task_registry.set_error(task_id, result.error)
+
+        # Update instance statistics
+        if instance:
+            await self.instance_registry.increment_failed(instance.instance_id)
+
+        logger.warning(
+            f"Task {task_id} failed on {result.worker_id} "
+            f"after {result.execution_time_ms:.2f}ms: {result.error}"
+        )
+
+    async def _notify_subscribers(
+        self,
+        task_id: str,
+        result: "TaskResult",
+    ) -> None:
+        """Notify WebSocket subscribers of task completion.
+
+        Args:
+            task_id: Task identifier
+            result: Task result
+        """
+        task = await self.task_registry.get(task_id)
+        if not task:
+            return
+
+        await self.websocket_manager.broadcast_task_result(
+            task_id=task_id,
+            status=task.status,
+            result=result.result,
+            error=result.error,
+            timestamps=task.get_timestamps(),
+            execution_time_ms=int(result.execution_time_ms),
+        )
+
+        logger.debug(f"Broadcasted result for task {task_id}")
+```
+
+## API Reference
+
+### Constructor
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `task_registry` | `TaskRegistry` | Task state management |
+| `instance_registry` | `InstanceRegistry` | Instance statistics |
+| `websocket_manager` | `ConnectionManager` | WebSocket notifications |
+| `throughput_tracker` | `ThroughputTracker | None` | Optional planner reporting |
+
+### Methods
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `create_thread_callback(loop)` | `Callable` | Create thread-safe callback |
+| `handle_result(result)` | `None` | Process task result (async) |
+
+## Integration Example
+
+```python
+# In api.py initialization
+task_result_callback = TaskResultCallback(
+    task_registry=task_registry,
+    instance_registry=instance_registry,
+    websocket_manager=websocket_manager,
+    throughput_tracker=throughput_tracker,
+)
+
+# Get thread-safe callback for worker threads
+loop = asyncio.get_event_loop()
+thread_callback = task_result_callback.create_thread_callback(loop)
+
+# Pass to WorkerQueueManager
+worker_queue_manager = WorkerQueueManager(
+    callback=thread_callback,
+)
+```
+
+## Implementation Steps
+
+1. [x] Create `src/services/task_result_callback.py`
+2. [x] Implement `TaskResultCallback` class
+3. [x] Add thread-safe callback creation
+4. [x] Integrate with existing registries
+5. [x] Write unit tests
+
+## Testing
+
+### Unit Tests
+
+```python
+def test_callback_updates_task_registry_on_success():
+    """Test task registry updated on completion."""
+
+def test_callback_updates_task_registry_on_failure():
+    """Test task registry updated on failure."""
+
+def test_callback_updates_instance_stats():
+    """Test instance statistics updated."""
+
+def test_callback_records_throughput():
+    """Test throughput tracker receives data."""
+
+def test_callback_broadcasts_to_websocket():
+    """Test WebSocket notification sent."""
+
+def test_thread_safe_callback_schedules_correctly():
+    """Test callback from thread schedules on event loop."""
+
+def test_handles_missing_task_gracefully():
+    """Test graceful handling of unknown task_id."""
+```
+
+## Acceptance Criteria
+
+- [x] Callback can be invoked from worker threads
+- [x] Task registry is updated with correct status/result/error
+- [x] Instance statistics are updated
+- [x] Throughput is recorded for planner
+- [x] WebSocket subscribers are notified
+- [x] Errors are logged and don't crash the callback
+- [x] Unit tests pass (17 tests)
+
+## References
+
+- [PYLET-014: Design Overview](PYLET-014-scheduler-task-queue.md)
+- [Current Task Dispatcher](../../scheduler/src/services/task_dispatcher.py)

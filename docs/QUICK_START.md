@@ -1,6 +1,6 @@
-# SwarmPilot Quick Start
+# Quick Start
 
-Get SwarmPilot running in **5 minutes** with a local test cluster. No Docker or external services required.
+Get SwarmPilot running locally with a test cluster. No Docker or external services required.
 
 ## Prerequisites
 
@@ -9,25 +9,23 @@ Get SwarmPilot running in **5 minutes** with a local test cluster. No Docker or 
 | Python | >= 3.11 | [python.org](https://python.org) |
 | uv | Latest | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
 
----
-
 ## Installation
 
 ```bash
 # Using pip
 pip install swarmpilot
 
-# Using uv (recommended for development)
+# Using uv (development)
 git clone <repo-url> swarmpilot-refresh
 cd swarmpilot-refresh
 uv sync
 ```
 
-This installs one package with three CLI tools: `sscheduler`, `spredictor`, `splanner`.
+This installs three CLI tools: `sscheduler`, `spredictor`, `splanner`.
 
 ---
 
-## Option A: One-Click Start (Recommended)
+## Option A: One-Click Start
 
 ```bash
 cd swarmpilot-refresh
@@ -35,7 +33,7 @@ cd swarmpilot-refresh
 ```
 
 This starts:
-- **Mock Predictor** on port 8001 (no ML model training required)
+- **Mock Predictor** on port 8001
 - **Scheduler** on port 8000
 - **2 Sleep Model instances** on ports 8300-8301
 
@@ -44,8 +42,6 @@ To stop: `./scripts/quick_stop.sh`
 ---
 
 ## Option B: Manual Start (3 Terminals)
-
-For understanding the architecture or customization.
 
 ### Architecture
 
@@ -57,8 +53,8 @@ For understanding the architecture or customization.
 └─────────────┘                         └─────────────┘
 ```
 
-- **Mock Predictor**: Returns sleep_time as predicted runtime (no ML training needed)
-- **Scheduler**: Routes tasks to available instances based on predictions
+- **Mock Predictor**: Returns `sleep_time` as predicted runtime (no ML training needed)
+- **Scheduler**: Routes tasks to instances based on predictions
 - **Instances**: Execute tasks (sleep models for testing)
 
 ### Step 1: Install Dependencies
@@ -68,7 +64,7 @@ cd swarmpilot-refresh
 uv sync
 ```
 
-### Step 2: Start Services (3 Terminals)
+### Step 2: Start Services
 
 **Terminal 1: Mock Predictor**
 ```bash
@@ -88,7 +84,7 @@ PORT=8300 \
   uv run python examples/pylet_benchmark/pylet_sleep_model.py
 ```
 
-> **Tip**: Start additional instances on different ports (8301, 8302, etc.) for parallel task execution.
+> Start additional instances on different ports (8301, 8302, etc.) for parallel task execution.
 
 ---
 
@@ -97,7 +93,7 @@ PORT=8300 \
 ### Submit a Test Task
 
 ```bash
-curl -X POST http://localhost:8000/task/submit \
+curl -X POST http://localhost:8000/v1/task/submit \
   -H "Content-Type: application/json" \
   -d '{
     "task_id": "test-001",
@@ -115,7 +111,7 @@ Expected response:
 ### Check Task Status
 
 ```bash
-curl "http://localhost:8000/task/info?task_id=test-001"
+curl "http://localhost:8000/v1/task/info?task_id=test-001"
 ```
 
 Expected response (after ~2 seconds):
@@ -139,11 +135,12 @@ Expected response (after ~2 seconds):
 ### Health Checks
 
 ```bash
-# All services
-curl http://localhost:8001/health  # Predictor
-curl http://localhost:8000/health  # Scheduler
-curl http://localhost:8300/health  # Sleep Model
+curl http://localhost:8001/health          # Predictor (no /v1 prefix)
+curl http://localhost:8000/v1/health       # Scheduler
+curl http://localhost:8300/health          # Sleep Model
 ```
+
+> **Note:** The Scheduler and Planner APIs use a `/v1/` prefix. The Predictor API does **not**.
 
 ---
 
@@ -155,6 +152,7 @@ curl http://localhost:8300/health  # Sleep Model
 | `Connection refused` on 8000 | Start Scheduler with `PREDICTOR_URL` set |
 | Task stuck in `pending` | Ensure sleep model is registered (check `SCHEDULER_URL`) |
 | Port already in use | Run `./scripts/quick_stop.sh` or change port numbers |
+| `404 Not Found` | Ensure you're using `/v1/` prefix for Scheduler endpoints |
 
 ### View Logs
 
@@ -166,127 +164,7 @@ Manual start: Check the terminal output for each service.
 
 ## Next Steps
 
-Once you've verified the basic setup works:
-
-1. **Scale up**: Start more sleep model instances for parallel execution
-2. **Use PyLet**: For production deployments with automatic instance management
-3. **Deploy LLMs**: Replace sleep models with vLLM/SGLang instances
-
-See the sections below for production deployments.
-
----
-
-## Advanced: Production with PyLet
-
-For production deployments, use **PyLet** to manage instances automatically.
-
-### Prerequisites
-
-- PyLet cluster running (see [PyLet documentation](https://github.com/your-org/pylet))
-- GPU resources (for LLM deployments)
-- Install with PyLet extra: `pip install swarmpilot[pylet]`
-
-### Architecture with PyLet
-
-```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│  Predictor  │────▶│  Scheduler  │◀────│   Planner   │
-│   (8001)    │     │   (8000)    │     │   (8002)    │
-└─────────────┘     └──────┬──────┘     └──────┬──────┘
-                           │                   │
-                           │ registers         │ deploys via
-                           ▼                   ▼
-                    ┌─────────────┐     ┌─────────────┐
-                    │  Instances  │◀────│   PyLet     │
-                    │  (dynamic)  │     │  Cluster    │
-                    └─────────────┘     └─────────────┘
-```
-
-### Start Core Services
-
-```bash
-# Terminal 1: Predictor
-spredictor start --port 8001
-
-# Terminal 2: Scheduler
-PREDICTOR_URL=http://localhost:8001 sscheduler start --port 8000
-
-# Terminal 3: Planner with PyLet
-PYLET_ENABLED=true \
-  PYLET_HEAD_URL=http://your-pylet-head:8000 \
-  SCHEDULER_URL=http://localhost:8000 \
-  splanner start --port 8002
-```
-
-### Deploy Instances via PyLet
-
-The `/deploy` endpoint runs the optimization algorithm to compute optimal instance allocation,
-then deploys the result via PyLet.
-
-```bash
-# Deploy with planner optimization (2 instances, 1 model type)
-curl -X POST http://localhost:8002/deploy \
-  -H "Content-Type: application/json" \
-  -d '{
-    "M": 2,
-    "N": 1,
-    "B": [[1.0], [1.0]],
-    "target": [1.0],
-    "a": 0.5,
-    "model_ids": ["sleep_model"],
-    "wait_for_ready": true
-  }'
-
-# Or deploy manually with explicit target state
-curl -X POST http://localhost:8002/deploy_manually \
-  -H "Content-Type: application/json" \
-  -d '{
-    "target_state": {"sleep_model": 2},
-    "wait_for_ready": true
-  }'
-
-# Check deployment status
-curl http://localhost:8002/status
-```
-
-### Deploy LLM Instances
-
-```bash
-# Configure Planner for vLLM
-export PYLET_BACKEND=vllm
-export PYLET_GPU_COUNT=1
-
-# Deploy 2 Llama instances with planner optimization
-curl -X POST http://localhost:8002/deploy \
-  -H "Content-Type: application/json" \
-  -d '{
-    "M": 2,
-    "N": 1,
-    "B": [[1.0], [1.0]],
-    "target": [1.0],
-    "a": 0.5,
-    "model_ids": ["meta-llama/Llama-3.1-8B-Instruct"],
-    "wait_for_ready": true
-  }'
-```
-
-### PyLet Environment Variables
-
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `PYLET_ENABLED` | Yes | `false` | Enable PyLet integration |
-| `PYLET_HEAD_URL` | Yes* | - | PyLet head node URL |
-| `PYLET_BACKEND` | No | `vllm` | Backend: `vllm` or `sglang` |
-| `PYLET_GPU_COUNT` | No | `1` | GPUs per instance |
-| `PYLET_CPU_COUNT` | No | `1` | CPUs per instance |
-| `PYLET_CUSTOM_COMMAND` | No | - | Custom command (overrides backend) |
-
-*Required when `PYLET_ENABLED=true`
-
----
-
-## Reference
-
-- [PyLet Integration Guide](../planner/docs/2.PYLET_INTEGRATION.md)
-- [Scheduler Usage Examples](../scheduler/docs/9.USAGE_EXAMPLES.md)
-- [API Reference](../planner/docs/1.API_REFERENCE.md)
+1. **Scale up** -- Start more sleep model instances for parallel execution
+2. **Explore the API** -- See [API Reference](API_REFERENCE.md) for all endpoints
+3. **Deploy to production** -- See [Deployment](DEPLOYMENT.md) for PyLet-based production clusters
+4. **Understand the design** -- See [Architecture](ARCHITECTURE.md) for system internals

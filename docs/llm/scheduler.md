@@ -1,17 +1,19 @@
 # Scheduler Service - LLM Reference
 
-> Single-file reference for the Scheduler service. For detailed documentation, see `scheduler/README_FOR_LLM.md`.
+> Single-file reference for the Scheduler service. For detailed documentation, see [docs/](../).
 
 ## Overview
 
 | Property | Value |
 |----------|-------|
 | **Service** | Task Scheduler |
-| **Version** | 0.1.0 |
+| **Version** | 1.0.0 |
 | **Port** | 8000 (default) |
+| **API Prefix** | `/v1/` |
 | **Framework** | FastAPI |
-| **Entry Point** | `scheduler/src/cli.py` |
-| **Main API** | `scheduler/src/api.py` |
+| **Entry Point** | `swarmpilot/scheduler/cli.py` |
+| **Main API** | `swarmpilot/scheduler/api.py` |
+| **CLI** | `sscheduler` |
 
 **Purpose:** Intelligent task scheduling service that distributes tasks across compute instances using ML-based runtime predictions.
 
@@ -20,30 +22,33 @@
 ## File Structure
 
 ```
-scheduler/src/
-├── api.py                    # FastAPI endpoints (3140 lines)
-├── cli.py                    # CLI entry point
-├── config.py                 # Configuration
-├── model.py                  # Pydantic models
-├── algorithms/               # 8 scheduling strategies
+swarmpilot/scheduler/
+├── api.py                    # FastAPI endpoints
+├── cli.py                    # CLI entry point (sscheduler)
+├── config.py                 # Configuration (env vars)
+├── models.py                 # Pydantic models
+├── algorithms/               # 7 scheduling strategies
 │   ├── base.py              # Abstract base class
 │   ├── factory.py           # Strategy factory
+│   ├── adaptive_bootstrap.py # Default strategy
 │   ├── min_expected_time.py # Greedy shortest queue
 │   ├── probabilistic.py     # Monte Carlo quantile-based
 │   ├── round_robin.py       # Cyclic distribution
-│   └── ...                  # Additional strategies
+│   ├── random.py            # Uniform random
+│   ├── power_of_two.py      # Pick best of 2 random
+│   └── serverless.py        # Serverless scaling
 ├── registry/                 # State management
 │   ├── task_registry.py     # Task state
 │   └── instance_registry.py # Instance state
 ├── services/                 # Background services
-│   ├── background_scheduler.py  # Non-blocking scheduling
-│   ├── central_queue.py         # FIFO task queue
 │   ├── worker_queue_manager.py  # Per-worker coordination
 │   ├── worker_queue_thread.py   # Worker execution thread
-│   └── ...
+│   ├── websocket_manager.py     # WebSocket connections
+│   ├── planner_registrar.py     # Planner registration
+│   └── task_result_callback.py  # Result handling
 ├── clients/                  # External clients
-│   ├── predictor_client.py  # Predictor WebSocket client
-│   └── training_client.py   # Training HTTP client
+│   ├── predictor_library_client.py  # Predictor client
+│   └── training_client.py          # Training HTTP client
 └── utils/                    # Utilities
 ```
 
@@ -51,46 +56,48 @@ scheduler/src/
 
 ## API Endpoints
 
+**All endpoints use the `/v1/` prefix.**
+
 ### Instance Management
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/instance/register` | POST | Register compute instance |
-| `/instance/remove` | POST | Remove instance |
-| `/instance/list` | GET | List all instances |
-| `/instance/info` | GET | Get instance details |
-| `/instance/drain` | POST | Start draining instance |
-| `/instance/drain/status` | GET | Check drain status |
-| `/instance/redeploy/start` | POST | Start instance redeploy |
-| `/instance/redeploy/finish` | POST | Finish instance redeploy |
+| `/v1/instance/register` | POST | Register compute instance |
+| `/v1/instance/remove` | POST | Remove instance |
+| `/v1/instance/list` | GET | List all instances |
+| `/v1/instance/info` | GET | Get instance details |
+| `/v1/instance/drain` | POST | Start draining instance |
+| `/v1/instance/drain/status` | GET | Check drain status |
+| `/v1/instance/redeploy/start` | POST | Start instance redeploy |
+| `/v1/instance/redeploy/complete` | POST | Complete instance redeploy |
 
 ### Task Management
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/task/submit` | POST | Submit task for execution |
-| `/task/list` | GET | List tasks with filters |
-| `/task/info` | GET | Get task details |
-| `/task/clear` | POST | Clear all tasks |
-| `/task/resubmit` | POST | Resubmit failed task |
-| `/task/update_metadata` | POST | Update task metadata |
-| `/task/repredict` | POST | Re-run prediction for task |
-| `/task/schedule_info` | GET | Get scheduling info for task |
+| `/v1/task/submit` | POST | Submit task for execution |
+| `/v1/task/list` | GET | List tasks with filters |
+| `/v1/task/info` | GET | Get task details |
+| `/v1/task/clear` | POST | Clear all tasks |
+| `/v1/task/resubmit` | POST | Resubmit failed task |
+| `/v1/task/update_metadata` | POST | Update task metadata |
+| `/v1/task/repredict` | POST | Re-run prediction for task |
+| `/v1/task/schedule_info` | GET | Get scheduling info for task |
 
 ### Callback & WebSocket
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/callback/task_result` | POST | Instance result callback |
-| `/task/get_result` | WebSocket | Real-time results |
+| `/v1/callback/task_result` | POST | Instance result callback |
+| `/v1/task/get_result` | WebSocket | Real-time results |
 
 ### Strategy & Health
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/strategy/get` | GET | Get current strategy |
-| `/strategy/set` | POST | Change strategy |
-| `/health` | GET | Health check |
+| `/v1/strategy/get` | GET | Get current strategy |
+| `/v1/strategy/set` | POST | Change strategy |
+| `/v1/health` | GET | Health check |
 
 ---
 
@@ -98,7 +105,7 @@ scheduler/src/
 
 ### Task Submit
 ```json
-// POST /task/submit
+// POST /v1/task/submit
 {
   "task_id": "task-001",
   "model_id": "llama-7b",
@@ -109,7 +116,7 @@ scheduler/src/
 
 ### Instance Register
 ```json
-// POST /instance/register
+// POST /v1/instance/register
 {
   "instance_id": "worker-001",
   "model_id": "llama-7b",
@@ -120,7 +127,7 @@ scheduler/src/
 
 ### Task Result Callback
 ```json
-// POST /callback/task_result
+// POST /v1/callback/task_result
 {
   "task_id": "task-001",
   "status": "completed",
@@ -133,14 +140,15 @@ scheduler/src/
 
 ## Scheduling Strategies
 
-| Strategy | File | Predictor Required | Use Case |
-|----------|------|-------------------|----------|
-| `round_robin` | `round_robin.py` | No | Equal distribution, testing |
-| `random` | `random.py` | No | Baseline |
-| `min_time` | `min_expected_time.py` | Yes | Minimize avg latency |
-| `probabilistic` | `probabilistic.py` | Yes | Minimize tail latency (SLA) |
-| `power_of_two` | `power_of_two.py` | Yes | Large scale balance |
-| `serverless` | `serverless.py` | Yes | Serverless workloads |
+| Strategy | Key | File | Predictor Required | Use Case |
+|----------|-----|------|-------------------|----------|
+| Adaptive Bootstrap | `adaptive_bootstrap` | `adaptive_bootstrap.py` | Yes | **Default.** Bootstrapped prediction intervals |
+| Min Expected Time | `min_time` | `min_expected_time.py` | Yes | Minimize avg latency |
+| Probabilistic | `probabilistic` | `probabilistic.py` | Yes | Minimize tail latency (SLA) |
+| Round Robin | `round_robin` | `round_robin.py` | No | Equal distribution, testing |
+| Random | `random` | `random.py` | No | Baseline |
+| Power of Two | `po2` | `power_of_two.py` | Yes | Large scale balance |
+| Serverless | `severless` | `serverless.py` | Yes | Serverless workloads |
 
 ---
 
@@ -150,8 +158,16 @@ scheduler/src/
 |----------|---------|-------------|
 | `SCHEDULER_HOST` | `0.0.0.0` | Bind host |
 | `SCHEDULER_PORT` | `8000` | Bind port |
-| `SCHEDULING_STRATEGY` | `probabilistic` | Default strategy |
-| `PREDICTOR_URL` | `http://localhost:8001` | Predictor service |
+| `SCHEDULER_ENABLE_CORS` | `true` | Enable CORS |
+| `SCHEDULING_STRATEGY` | `adaptive_bootstrap` | Default strategy |
+| `SCHEDULING_PROBABILISTIC_QUANTILE` | `0.9` | Quantile for probabilistic strategy |
+| `TRAINING_ENABLE_AUTO` | `false` | Auto-training |
+| `PREDICTOR_STORAGE_DIR` | `models` | Model storage (library mode) |
+| `PREDICTOR_CACHE_MAX_SIZE` | `100` | Model cache size |
+| `PROXY_ENABLED` | `true` | Transparent proxy |
+| `WORKER_HTTP_TIMEOUT` | `300.0` | Worker HTTP timeout (s) |
+
+See [CONFIGURATION.md](../CONFIGURATION.md) for the full list.
 
 ---
 
@@ -163,4 +179,4 @@ scheduler/src/
 
 ---
 
-**Version:** 0.1.0 | **Updated:** 2026-01-16
+**Version:** 1.0.0 | **Updated:** 2026-01-30
