@@ -109,3 +109,9 @@ output_*
 
 # Experiment raw results
 experiments/07.Exp2.Deep_Research_Migration_Test/raw_results_*experiments/13.workflow_benchmark/scripts/grid_search_results/
+
+# Removed from tracking (kept locally)
+e2e_comparison_results/
+dispatcher/
+graph/
+scripts/
