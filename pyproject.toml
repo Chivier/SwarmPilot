@@ -95,13 +95,7 @@ dev = [
 # =============================================================================
 [tool.pytest.ini_options]
 import_mode = "importlib"
-testpaths = [
-    "scheduler/tests",
-    "predictor/tests",
-    "planner/tests",
-    "graph/tests",
-    "scripts/tests",
-]
+testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
@@ -149,7 +143,7 @@ exclude_lines = [
 [tool.ruff]
 line-length = 80
 target-version = "py311"
-src = ["swarmpilot", "scheduler/tests", "predictor/tests", "planner/tests", "graph/tests"]
+src = ["swarmpilot", "tests"]
 
 [tool.ruff.lint]
 select = [

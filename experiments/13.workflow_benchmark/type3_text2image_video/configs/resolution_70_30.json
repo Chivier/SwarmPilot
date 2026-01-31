@@ -1,7 +1,0 @@
-{
-    "type": "weighted_choice",
-    "choices": [
-        {"value": "512x512", "weight": 0.7},
-        {"value": "1024x1024", "weight": 0.3}
-    ]
-}

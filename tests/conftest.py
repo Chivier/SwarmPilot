@@ -56,31 +56,4 @@ def pylet_head_address(request):
     return request.config.getoption("--pylet-head")
 
 
-@pytest.fixture
-async def pylet_client(pylet_head_address):
-    """Create PyLet client for integration tests."""
-    try:
-        from planner.src.pylet import PyLetClient
-    except ImportError:
-        pytest.skip("planner.src.pylet not available")
-
-    client = PyLetClient(head_address=pylet_head_address)
-    try:
-        await client.connect()
-        yield client
-    finally:
-        await client.close()
-
-
-@pytest.fixture
-async def pylet_wrapper(pylet_head_address):
-    """Create PyLet wrapper for integration tests."""
-    try:
-        from planner.src.pylet import PyLetServiceWrapper
-    except ImportError:
-        pytest.skip("planner.src.pylet not available")
-
-    wrapper = PyLetServiceWrapper(head_address=pylet_head_address)
-    async with wrapper:
-        yield wrapper
 
