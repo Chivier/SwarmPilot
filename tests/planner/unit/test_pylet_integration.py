@@ -12,6 +12,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+pylet = pytest.importorskip("pylet")
+
 from swarmpilot.planner.pylet.client import (
     InstanceInfo,
     PartialDeploymentError,

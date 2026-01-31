@@ -11,6 +11,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
+pylet = pytest.importorskip("pylet")
+
 from swarmpilot.planner.models.pylet import (
     PyLetDeploymentInput,
     PyLetInstanceStatus,
