@@ -86,22 +86,19 @@ class SwarmOptimizer(ABC):
             f"{self.B.shape} != ({self.M}, {self.N})"
         )
         assert len(self.initial) == self.M, (
-            f"Initial state vector length error: "
-            f"{len(self.initial)} != {self.M}"
+            f"Initial state vector length error: " f"{len(self.initial)} != {self.M}"
         )
         assert len(self.target) == self.N, (
             f"Target distribution vector length error: "
             f"{len(self.target)} != {self.N}"
         )
-        assert 0 < self.a <= 1, (
-            f"Change factor out of range: {self.a} not in (0, 1]"
-        )
+        assert 0 < self.a <= 1, f"Change factor out of range: {self.a} not in (0, 1]"
 
         # Support -1 as "no model deployed" initial state
         # -1 means the planner should compute the optimal initial deployment
-        assert all(-1 <= x < self.N for x in self.initial), (
-            "Initial state contains invalid model ID"
-        )
+        assert all(
+            -1 <= x < self.N for x in self.initial
+        ), "Initial state contains invalid model ID"
 
         # Only validate capacity for VMs with deployed models (not -1)
         for i in range(self.M):
@@ -121,9 +118,7 @@ class SwarmOptimizer(ABC):
         """
         valid_assignments = {}
         for j in range(self.N):
-            valid_assignments[j] = [
-                i for i in range(self.M) if self.B[i, j] > 0
-            ]
+            valid_assignments[j] = [i for i in range(self.M) if self.B[i, j] > 0]
         return valid_assignments
 
     def generate_initial_deployment(self) -> np.ndarray:
@@ -252,10 +247,10 @@ class SwarmOptimizer(ABC):
             return float(np.sum(np.abs(capacity_ratio - target_ratio)))
 
         elif method == "ratio_difference":
-            # Minimize ratio difference
-            ratios = capacity / (self.target + 1e-8)  # Avoid division by zero
-            scale_factor = capacity_sum / target_sum
-            return float(np.max(np.abs(ratios - scale_factor)))
+            # L-infinity norm of proportion differences
+            capacity_ratio = capacity / capacity_sum
+            target_ratio = self.target / target_sum
+            return float(np.max(np.abs(capacity_ratio - target_ratio)))
 
         elif method == "weighted_squared":
             # Weighted squared error
@@ -335,9 +330,7 @@ class SimulatedAnnealingOptimizer(SwarmOptimizer):
         else:
             current_deployment = self.initial.copy()
 
-        current_score = self.objective_function(
-            current_deployment, objective_method
-        )
+        current_score = self.objective_function(current_deployment, objective_method)
         best_deployment = current_deployment.copy()
         best_score = current_score
 
@@ -358,24 +351,17 @@ class SimulatedAnnealingOptimizer(SwarmOptimizer):
             temp_acceptances = 0
 
             # Iterate at current temperature
-            while (
-                temp_iterations < iterations_per_temp
-                and iterations < max_iterations
-            ):
+            while temp_iterations < iterations_per_temp and iterations < max_iterations:
                 # Generate neighbor solution (random single machine change)
                 neighbor = self._generate_random_neighbor(current_deployment)
 
                 if neighbor is not None and self.is_valid_deployment(neighbor):
-                    neighbor_score = self.objective_function(
-                        neighbor, objective_method
-                    )
+                    neighbor_score = self.objective_function(neighbor, objective_method)
                     delta = neighbor_score - current_score
 
                     # Acceptance criterion: always accept better solutions,
                     # accept worse solutions with probability
-                    if delta < 0 or random.random() < math.exp(
-                        -delta / temperature
-                    ):
+                    if delta < 0 or random.random() < math.exp(-delta / temperature):
                         current_deployment = neighbor.copy()
                         current_score = neighbor_score
                         temp_acceptances += 1
@@ -420,9 +406,7 @@ class SimulatedAnnealingOptimizer(SwarmOptimizer):
                 else 0
             ),
             "final_temperature": temperature,
-            "initial_score": self.objective_function(
-                self.initial, objective_method
-            ),
+            "initial_score": self.objective_function(self.initial, objective_method),
             "final_score": best_score,
         }
 
@@ -439,9 +423,7 @@ class SimulatedAnnealingOptimizer(SwarmOptimizer):
 
         return best_deployment, best_score, stats
 
-    def _generate_random_neighbor(
-        self, deployment: np.ndarray
-    ) -> np.ndarray | None:
+    def _generate_random_neighbor(self, deployment: np.ndarray) -> np.ndarray | None:
         """Generate a random neighbor solution.
 
         Args:
@@ -456,9 +438,7 @@ class SimulatedAnnealingOptimizer(SwarmOptimizer):
 
         # Get other deployable models for this machine
         valid_models = [
-            m
-            for m in range(self.N)
-            if m != current_model and self.B[machine, m] > 0
+            m for m in range(self.N) if m != current_model and self.B[machine, m] > 0
         ]
 
         if not valid_models:
@@ -600,12 +580,10 @@ class IntegerProgrammingOptimizer(SwarmOptimizer):
                 deviation_vars[j] = pulp.LpVariable(f"dev_{j}", lowBound=0)
                 # Linearization of absolute value
                 prob += (
-                    deviation_vars[j]
-                    >= capacity[j] - target_ratio[j] * total_capacity
+                    deviation_vars[j] >= capacity[j] - target_ratio[j] * total_capacity
                 )
                 prob += (
-                    deviation_vars[j]
-                    >= target_ratio[j] * total_capacity - capacity[j]
+                    deviation_vars[j] >= target_ratio[j] * total_capacity - capacity[j]
                 )
 
             prob += pulp.lpSum([deviation_vars[j] for j in range(self.N)])
@@ -630,9 +608,7 @@ class IntegerProgrammingOptimizer(SwarmOptimizer):
             if solver_name == "PULP_CBC_CMD":
                 solver = pulp.PULP_CBC_CMD(timeLimit=time_limit, msg=verbose)
             else:
-                solver = pulp.getSolver(
-                    solver_name, timeLimit=time_limit, msg=verbose
-                )
+                solver = pulp.getSolver(solver_name, timeLimit=time_limit, msg=verbose)
 
             prob.solve(solver)
 
@@ -644,16 +620,11 @@ class IntegerProgrammingOptimizer(SwarmOptimizer):
                 deployment = np.zeros(self.M, dtype=int)
                 for i in range(self.M):
                     for j in range(self.N):
-                        if (
-                            x[i, j].varValue is not None
-                            and x[i, j].varValue > 0.5
-                        ):
+                        if x[i, j].varValue is not None and x[i, j].varValue > 0.5:
                             deployment[i] = j
                             break
 
-                final_score = self.objective_function(
-                    deployment, objective_method
-                )
+                final_score = self.objective_function(deployment, objective_method)
 
                 stats = {
                     "algorithm": "integer_programming",
@@ -661,9 +632,7 @@ class IntegerProgrammingOptimizer(SwarmOptimizer):
                     "status": status,
                     "objective_value": pulp.value(prob.objective),
                     "solve_time": (
-                        prob.solutionTime
-                        if hasattr(prob, "solutionTime")
-                        else None
+                        prob.solutionTime if hasattr(prob, "solutionTime") else None
                     ),
                     "initial_score": self.objective_function(
                         self.initial, objective_method
@@ -694,9 +663,7 @@ class IntegerProgrammingOptimizer(SwarmOptimizer):
                 )
 
                 # Return initial solution
-                initial_score = self.objective_function(
-                    self.initial, objective_method
-                )
+                initial_score = self.objective_function(self.initial, objective_method)
                 stats = {
                     "algorithm": "integer_programming",
                     "solver": solver_name,
@@ -710,10 +677,8 @@ class IntegerProgrammingOptimizer(SwarmOptimizer):
                 return self.initial.copy(), initial_score, stats
 
         except Exception as e:
-            logger.error(f"Error during integer programming solve: {str(e)}")
-            initial_score = self.objective_function(
-                self.initial, objective_method
-            )
+            logger.error(f"Error during integer programming solve: {e!s}")
+            initial_score = self.objective_function(self.initial, objective_method)
             stats = {
                 "algorithm": "integer_programming",
                 "solver": solver_name,
@@ -761,16 +726,14 @@ def compare_algorithms(
             print("=" * 50)
 
         sa_opt = SimulatedAnnealingOptimizer(M, N, B, initial, a, target)
-        deployment, score, stats = sa_opt.optimize(
-            objective_method, verbose=verbose
-        )
+        deployment, score, stats = sa_opt.optimize(objective_method, verbose=verbose)
         results["simulated_annealing"] = {
             "deployment": deployment,
             "score": score,
             "stats": stats,
         }
     except Exception as e:
-        logger.error(f"Simulated annealing execution failed: {str(e)}")
+        logger.error(f"Simulated annealing execution failed: {e!s}")
         results["simulated_annealing"] = {"error": str(e)}
 
     # Test integer programming algorithm (if available)
@@ -791,7 +754,7 @@ def compare_algorithms(
                 "stats": stats,
             }
         except Exception as e:
-            logger.error(f"Integer programming execution failed: {str(e)}")
+            logger.error(f"Integer programming execution failed: {e!s}")
             results["integer_programming"] = {"error": str(e)}
     else:
         results["integer_programming"] = {"error": "pulp library not installed"}
