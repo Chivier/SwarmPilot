@@ -37,7 +37,10 @@ from .models import (
     PyLetScaleOutput,
     PyLetStatusOutput,
 )
-from .pylet.deployment_service import get_pylet_service_optional
+try:
+    from .pylet.deployment_service import get_pylet_service_optional
+except ImportError:
+    get_pylet_service_optional = lambda: None  # type: ignore[assignment]
 from .scheduler_registry import get_scheduler_registry
 from .services.model_validation import ModelValidationService
 

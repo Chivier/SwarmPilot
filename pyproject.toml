@@ -40,9 +40,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-pylet = [
-    "pylet",
-]
 dev = [
     "pytest>=8.4.2",
     "pytest-asyncio>=1.2.0",
@@ -74,7 +71,6 @@ allow-direct-references = true
 package = true
 
 [tool.uv.sources]
-pylet = { path = "/home/yanweiye/Projects/pylet", editable = true }
 
 [dependency-groups]
 dev = [

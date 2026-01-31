@@ -44,11 +44,17 @@ from .models import (
     TaskResubmitResponse,
 )
 from .scheduler_registry import get_scheduler_registry
-from .pylet.deployment_service import (
-    create_pylet_service,
-    get_pylet_service_optional,
-)
-from .pylet_api import router as pylet_router
+
+try:
+    from .pylet.deployment_service import (
+        create_pylet_service,
+        get_pylet_service_optional,
+    )
+    from .pylet_api import router as pylet_router
+except ImportError:
+    create_pylet_service = None  # type: ignore[assignment]
+    get_pylet_service_optional = lambda: None  # type: ignore[assignment]
+    pylet_router = None  # type: ignore[assignment]
 
 np.random.seed(42)
 random.seed(42)
@@ -73,7 +79,7 @@ async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown events."""
     # Startup: Initialize PyLet if enabled
     pylet_service = None
-    if config.pylet_enabled:
+    if config.pylet_enabled and create_pylet_service is not None:
         try:
             logger.info(
                 f"Initializing PyLet service (head={config.pylet_head_url}, "
@@ -117,8 +123,9 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Include PyLet router
-app.include_router(pylet_router, prefix="/v1")
+# Include PyLet router (only if pylet SDK is available)
+if pylet_router is not None:
+    app.include_router(pylet_router, prefix="/v1")
 
 
 @app.exception_handler(Exception)
