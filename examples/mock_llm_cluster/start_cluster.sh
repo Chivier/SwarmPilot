@@ -12,6 +12,7 @@ set -e
 
 # Configuration
 PREDICTOR_PORT=${PREDICTOR_PORT:-8001}
+DUMMY_HEALTH_PORT=${DUMMY_HEALTH_PORT:-8099}
 SCHEDULER_7B_PORT=${SCHEDULER_7B_PORT:-8010}
 SCHEDULER_32B_PORT=${SCHEDULER_32B_PORT:-8020}
 PLANNER_PORT=${PLANNER_PORT:-8002}
@@ -85,7 +86,7 @@ mkdir -p "$LOG_DIR"
 # Install dependencies if needed
 echo "Ensuring dependencies are installed..."
 cd "$PROJECT_ROOT"
-uv sync --quiet
+uv sync --extra pylet --quiet
 echo -e "${GREEN}✓ Dependencies ready${NC}"
 echo ""
 
@@ -105,8 +106,46 @@ if ! kill -0 $PREDICTOR_PID 2>/dev/null; then
 fi
 echo -e "${GREEN}✓ Mock Predictor started (PID: $PREDICTOR_PID)${NC}"
 
-# Start Planner first (schedulers need it for registration)
-echo -e "${BLUE}[2/4] Starting Planner on port $PLANNER_PORT...${NC}"
+# Start Dummy Health Server for planner PyLet init check
+echo -e "${BLUE}[2/5] Starting Dummy Health Server on port $DUMMY_HEALTH_PORT...${NC}"
+
+python3 -c "
+from http.server import HTTPServer, BaseHTTPRequestHandler
+import sys
+
+class HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path in ('/health', '/v1/health'):
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(b'{\"status\": \"ok\"}')
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def log_message(self, format, *args):
+        pass  # Suppress logging
+
+server = HTTPServer(('localhost', $DUMMY_HEALTH_PORT), HealthHandler)
+print('Dummy health server started', flush=True)
+sys.stdout.flush()
+server.serve_forever()
+" > "$LOG_DIR/dummy_health.log" 2>&1 &
+
+DUMMY_PID=$!
+echo $DUMMY_PID > "$LOG_DIR/dummy_health.pid"
+
+# Wait for dummy server to start
+sleep 1
+if ! kill -0 $DUMMY_PID 2>/dev/null; then
+    echo -e "${RED}Error: Dummy Health Server failed to start. Check $LOG_DIR/dummy_health.log${NC}"
+    exit 1
+fi
+echo -e "${GREEN}✓ Dummy Health Server started (PID: $DUMMY_PID)${NC}"
+
+# Start Planner (schedulers need it for registration)
+echo -e "${BLUE}[3/5] Starting Planner on port $PLANNER_PORT...${NC}"
 cd "$PROJECT_ROOT"
 
 # Build custom command for mock LLM server
@@ -121,6 +160,7 @@ PLANNER_PORT=$PLANNER_PORT \
     PYLET_GPU_COUNT=0 \
     PYLET_CPU_COUNT=1 \
     PYLET_CUSTOM_COMMAND="$CUSTOM_CMD" \
+    SCHEDULER_URL="http://localhost:$DUMMY_HEALTH_PORT" \
     uv run python -m uvicorn swarmpilot.planner.api:app --host 0.0.0.0 --port $PLANNER_PORT > "$LOG_DIR/planner.log" 2>&1 &
 PLANNER_PID=$!
 echo $PLANNER_PID > "$LOG_DIR/planner.pid"
@@ -133,8 +173,20 @@ if ! kill -0 $PLANNER_PID 2>/dev/null; then
 fi
 echo -e "${GREEN}✓ Planner started (PID: $PLANNER_PID)${NC}"
 
+# Stop dummy health server now that planner is initialized
+echo -e "${BLUE}Stopping Dummy Health Server...${NC}"
+if kill -0 $DUMMY_PID 2>/dev/null; then
+    kill $DUMMY_PID 2>/dev/null
+    sleep 1
+    if kill -0 $DUMMY_PID 2>/dev/null; then
+        kill -9 $DUMMY_PID 2>/dev/null
+    fi
+    echo -e "${GREEN}✓ Dummy Health Server stopped${NC}"
+fi
+echo ""
+
 # Start Scheduler for llm-7b
-echo -e "${BLUE}[3/4] Starting Scheduler (llm-7b) on port $SCHEDULER_7B_PORT...${NC}"
+echo -e "${BLUE}[4/5] Starting Scheduler (llm-7b) on port $SCHEDULER_7B_PORT...${NC}"
 cd "$PROJECT_ROOT"
 PREDICTOR_URL="http://localhost:$PREDICTOR_PORT" \
     SCHEDULER_MODEL_ID="llm-7b" \
@@ -153,7 +205,7 @@ fi
 echo -e "${GREEN}✓ Scheduler (llm-7b) started (PID: $SCHEDULER_7B_PID)${NC}"
 
 # Start Scheduler for llm-32b
-echo -e "${BLUE}[4/4] Starting Scheduler (llm-32b) on port $SCHEDULER_32B_PORT...${NC}"
+echo -e "${BLUE}[5/5] Starting Scheduler (llm-32b) on port $SCHEDULER_32B_PORT...${NC}"
 cd "$PROJECT_ROOT"
 PREDICTOR_URL="http://localhost:$PREDICTOR_PORT" \
     SCHEDULER_MODEL_ID="llm-32b" \

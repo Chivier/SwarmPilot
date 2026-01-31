@@ -96,13 +96,14 @@ for model_id in "${!MODEL_DISTRIBUTION[@]}"; do
         # Start instance process
         echo -n "  Starting $instance_id on port $instance_port..."
 
+        cd "$PROJECT_ROOT"
         PYTHONUNBUFFERED=1 \
             PORT=$instance_port \
             MODEL_ID=$model_id \
             INSTANCE_ID=$instance_id \
             SCHEDULER_URL="" \
             LOG_LEVEL="INFO" \
-            python "$PROJECT_ROOT/examples/pylet_benchmark/pylet_sleep_model.py" > "$instance_log" 2>&1 &
+            uv run python "$PROJECT_ROOT/examples/pylet_benchmark/pylet_sleep_model.py" > "$instance_log" 2>&1 &
 
         instance_pid=$!
         echo $instance_pid > "$LOG_DIR/instance_${instance_id}.pid"

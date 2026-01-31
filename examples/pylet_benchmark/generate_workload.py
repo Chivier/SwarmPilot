@@ -149,7 +149,11 @@ async def submit_task(
     Returns:
         True if task was accepted, False otherwise.
     """
-    task_input = {"sleep_time": sleep_time}
+    task_input = {
+        "task_id": task_id,
+        "model_id": model_id,
+        "task_input": {"sleep_time": sleep_time},
+    }
 
     try:
         response = await client.post(
@@ -158,7 +162,7 @@ async def submit_task(
                 "task_id": task_id,
                 "model_id": model_id,
                 "task_input": task_input,
-                "metadata": {"sleep_time": sleep_time},
+                "metadata": {"sleep_time": sleep_time, "path": "task/submit"},
             },
             timeout=10.0,
         )

@@ -92,7 +92,7 @@ mkdir -p "$LOG_DIR"
 # Install dependencies if needed
 echo "Ensuring dependencies are installed..."
 cd "$PROJECT_ROOT"
-uv sync --quiet
+uv sync --extra pylet --quiet
 echo -e "${GREEN}✓ Dependencies ready${NC}"
 echo ""
 
@@ -106,7 +106,7 @@ import sys
 
 class HealthHandler(BaseHTTPRequestHandler):
     def do_GET(self):
-        if self.path == '/health':
+        if self.path in ('/health', '/v1/health'):
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self.end_headers()

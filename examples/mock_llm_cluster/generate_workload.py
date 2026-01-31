@@ -70,7 +70,7 @@ class SchedulerRouter:
         """
         try:
             response = httpx.get(
-                f"{self.planner_url}/scheduler/list", timeout=5.0
+                f"{self.planner_url}/v1/scheduler/list", timeout=5.0
             )
             if response.status_code != 200:
                 raise RuntimeError(
@@ -208,18 +208,25 @@ async def submit_task(
     Returns:
         True if task was accepted, False otherwise.
     """
+    messages = [{"role": "user", "content": f"Test prompt for task {task_id}"}]
+
+    # task_input is sent as-is to the instance endpoint by the worker.
+    # The mock LLM server's /task/submit expects TaskSubmitRequest
+    # fields (task_id, model_id, task_input) at the top level.
     task_input = {
-        "messages": [{"role": "user", "content": f"Test prompt for task {task_id}"}]
+        "task_id": task_id,
+        "model_id": model_id,
+        "task_input": {"messages": messages},
     }
 
     try:
         response = await client.post(
-            f"{scheduler_url}/task/submit",
+            f"{scheduler_url}/v1/task/submit",
             json={
                 "task_id": task_id,
                 "model_id": model_id,
                 "task_input": task_input,
-                "metadata": {"source": "workload_generator"},
+                "metadata": {"source": "workload_generator", "path": "task/submit"},
             },
             timeout=10.0,
         )
@@ -247,7 +254,7 @@ async def poll_task_status(
     """
     try:
         response = await client.get(
-            f"{scheduler_url}/task/info",
+            f"{scheduler_url}/v1/task/info",
             params={"task_id": task_id},
             timeout=5.0,
         )
@@ -505,7 +512,7 @@ def main():
     console.print("\nChecking scheduler health...")
     for model_id, scheduler_url in router.scheduler_map.items():
         try:
-            response = httpx.get(f"{scheduler_url}/health", timeout=5.0)
+            response = httpx.get(f"{scheduler_url}/v1/health", timeout=5.0)
             if response.status_code != 200:
                 console.print(
                     f"[red]Scheduler for {model_id} not healthy "
@@ -525,7 +532,7 @@ def main():
     for model_id, scheduler_url in router.scheduler_map.items():
         try:
             response = httpx.get(
-                f"{scheduler_url}/instance/list", timeout=5.0
+                f"{scheduler_url}/v1/instance/list", timeout=5.0
             )
             if response.status_code == 200:
                 instances = response.json().get("instances", [])

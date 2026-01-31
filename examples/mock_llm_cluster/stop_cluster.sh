@@ -26,8 +26,8 @@ echo ""
 
 # First, terminate all PyLet instances via Planner API
 echo -e "${BLUE}[1/6] Terminating PyLet instances...${NC}"
-if curl -s "http://localhost:$PLANNER_PORT/health" > /dev/null 2>&1; then
-    RESULT=$(curl -s -X POST "http://localhost:$PLANNER_PORT/terminate-all" 2>/dev/null || echo '{"error": "failed"}')
+if curl -s "http://localhost:$PLANNER_PORT/v1/health" > /dev/null 2>&1; then
+    RESULT=$(curl -s -X POST "http://localhost:$PLANNER_PORT/v1/terminate-all" 2>/dev/null || echo '{"error": "failed"}')
     if echo "$RESULT" | grep -q '"success": true' 2>/dev/null; then
         TERMINATED=$(echo "$RESULT" | python3 -c "import sys, json; print(json.load(sys.stdin).get('total', 0))" 2>/dev/null || echo "?")
         echo -e "${GREEN}✓ Terminated $TERMINATED PyLet instances${NC}"

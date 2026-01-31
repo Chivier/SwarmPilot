@@ -37,7 +37,7 @@ NUM_MODELS=3
 # Capacity matrix B: inverse of runtime ratios
 # Runtime ratio 1:5:20 -> Capacity 20:4:1 (normalized)
 # Each worker can run any model with different capacities
-CAPACITY_MATRIX=$(python3 << 'EOF'
+CAPACITY_MATRIX=$(python3 << EOF
 import json
 num_instances = $NUM_INSTANCES
 num_models = 3

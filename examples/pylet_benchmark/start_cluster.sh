@@ -62,7 +62,7 @@ mkdir -p "$LOG_DIR"
 # Install dependencies if needed
 echo "Ensuring dependencies are installed..."
 cd "$PROJECT_ROOT"
-uv sync --quiet
+uv sync --extra pylet --quiet
 echo -e "${GREEN}✓ Dependencies ready${NC}"
 echo ""
 
@@ -89,7 +89,7 @@ cd "$PROJECT_ROOT"
 env \
     PREDICTOR_URL="http://localhost:$PREDICTOR_PORT" \
     SCHEDULER_PORT=$SCHEDULER_PORT \
-    SCHEDULING_STRATEGY="probabilistic" \
+    SCHEDULING_STRATEGY="round_robin" \
     SCHEDULER_LOGURU_LEVEL="INFO" \
     uv run python -m uvicorn swarmpilot.scheduler.api:app --host 0.0.0.0 --port $SCHEDULER_PORT > "$LOG_DIR/scheduler.log" 2>&1 &
 SCHEDULER_PID=$!

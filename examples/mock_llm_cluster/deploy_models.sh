@@ -39,7 +39,7 @@ echo ""
 
 # Check if Planner is running
 echo "Checking Planner status..."
-if ! curl -s "http://localhost:$PLANNER_PORT/health" > /dev/null 2>&1; then
+if ! curl -s "http://localhost:$PLANNER_PORT/v1/health" > /dev/null 2>&1; then
     echo -e "${RED}Error: Planner not responding on port $PLANNER_PORT${NC}"
     echo "Start services first: ./examples/mock_llm_cluster/start_cluster.sh"
     exit 1
@@ -48,7 +48,7 @@ echo -e "${GREEN}✓ Planner is healthy${NC}"
 
 # Check PyLet status
 echo "Checking PyLet status..."
-PYLET_STATUS=$(curl -s "http://localhost:$PLANNER_PORT/status" 2>/dev/null)
+PYLET_STATUS=$(curl -s "http://localhost:$PLANNER_PORT/v1/status" 2>/dev/null)
 if echo "$PYLET_STATUS" | grep -q '"initialized": false' 2>/dev/null; then
     echo -e "${RED}Error: PyLet not initialized${NC}"
     echo "Ensure PyLet cluster is running and restart the Planner."
@@ -58,7 +58,7 @@ echo -e "${GREEN}✓ PyLet is initialized${NC}"
 
 # Check scheduler registration
 echo "Checking scheduler registration..."
-REGISTERED=$(curl -s "http://localhost:$PLANNER_PORT/scheduler/list" 2>/dev/null)
+REGISTERED=$(curl -s "http://localhost:$PLANNER_PORT/v1/scheduler/list" 2>/dev/null)
 REG_COUNT=$(echo "$REGISTERED" | python3 -c "import sys, json; print(json.load(sys.stdin).get('total', 0))" 2>/dev/null || echo "0")
 
 if [ "$REG_COUNT" -ge 2 ]; then
@@ -128,7 +128,7 @@ echo "  Algorithm: simulated_annealing"
 echo ""
 
 # Call /deploy (runs optimizer then deploys via PyLet)
-RESPONSE=$(curl -s -X POST "http://localhost:$PLANNER_PORT/deploy" \
+RESPONSE=$(curl -s -X POST "http://localhost:$PLANNER_PORT/v1/deploy" \
     -H "Content-Type: application/json" \
     -d "$DEPLOY_REQUEST")
 
@@ -168,11 +168,11 @@ echo ""
 
 # Verify via per-model schedulers
 echo -e "${BLUE}Verifying instances in schedulers...${NC}"
-INSTANCES_7B=$(curl -s "http://localhost:$SCHEDULER_7B_PORT/instance/list" 2>/dev/null)
+INSTANCES_7B=$(curl -s "http://localhost:$SCHEDULER_7B_PORT/v1/instance/list" 2>/dev/null)
 TOTAL_7B=$(echo "$INSTANCES_7B" | python3 -c "import sys, json; print(len(json.load(sys.stdin).get('instances', [])))" 2>/dev/null || echo "?")
 echo -e "${GREEN}✓ Scheduler (llm-7b) reports $TOTAL_7B instances${NC}"
 
-INSTANCES_32B=$(curl -s "http://localhost:$SCHEDULER_32B_PORT/instance/list" 2>/dev/null)
+INSTANCES_32B=$(curl -s "http://localhost:$SCHEDULER_32B_PORT/v1/instance/list" 2>/dev/null)
 TOTAL_32B=$(echo "$INSTANCES_32B" | python3 -c "import sys, json; print(len(json.load(sys.stdin).get('instances', [])))" 2>/dev/null || echo "?")
 echo -e "${GREEN}✓ Scheduler (llm-32b) reports $TOTAL_32B instances${NC}"
 echo ""
