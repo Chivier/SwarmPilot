@@ -3034,6 +3034,15 @@ async def health_check():
 
 
 # ============================================================================
+# Predictor Management Router
+# ============================================================================
+
+from .routes.predictor import router as predictor_router
+
+app.include_router(predictor_router, prefix="/v1")
+logger.info("Predictor management router mounted at /v1/predictor")
+
+# ============================================================================
 # Transparent Proxy Router (catch-all, must be mounted LAST)
 # ============================================================================
 

@@ -114,6 +114,56 @@ class StrategySetRequest(BaseModel):
 
 
 # ============================================================================
+# Predictor Management Requests
+# ============================================================================
+
+
+class PredictorTrainRequest(BaseModel):
+    """Request model for triggering predictor training."""
+
+    model_id: str = Field(
+        ..., description="Model identifier to train"
+    )
+    platform_info: dict[str, str] | None = Field(
+        None,
+        description=(
+            "Platform info (software_name, software_version,"
+            " hardware_name)"
+        ),
+    )
+    prediction_type: str = Field(
+        "expect_error",
+        description=(
+            "Prediction type: 'expect_error' or 'quantile'"
+        ),
+    )
+
+
+class PredictorPredictRequest(BaseModel):
+    """Request model for manual prediction via the scheduler."""
+
+    model_id: str = Field(
+        ..., description="Model identifier"
+    )
+    platform_info: dict[str, str] = Field(
+        ...,
+        description=(
+            "Platform info (software_name, software_version,"
+            " hardware_name)"
+        ),
+    )
+    features: dict[str, Any] = Field(
+        ..., description="Feature values for prediction"
+    )
+    prediction_type: str = Field(
+        "expect_error",
+        description=(
+            "Prediction type: 'expect_error' or 'quantile'"
+        ),
+    )
+
+
+# ============================================================================
 # Callback Requests (Instance -> Scheduler)
 # ============================================================================
 

@@ -56,6 +56,8 @@ except ImportError:
     get_pylet_service_optional = lambda: None  # type: ignore[assignment]
     pylet_router = None  # type: ignore[assignment]
 
+from .routes.sdk_api import router as sdk_router
+
 np.random.seed(42)
 random.seed(42)
 
@@ -126,6 +128,9 @@ app = FastAPI(
 # Include PyLet router (only if pylet SDK is available)
 if pylet_router is not None:
     app.include_router(pylet_router, prefix="/v1")
+
+# Include SDK deployment management router
+app.include_router(sdk_router, prefix="/v1")
 
 
 @app.exception_handler(Exception)

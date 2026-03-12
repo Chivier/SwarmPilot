@@ -89,10 +89,6 @@ ood_results
 
 *_no_git.*
 
-# Task files
-tasks.json
-tasks/ 
-
 .taskmaster
 
 GEMINI.md
@@ -119,3 +115,7 @@ dispatcher/
 /common/
 /experiments/
 predictor/preprocessors/
+
+# Task files
+# tasks.json
+# tasks/ 

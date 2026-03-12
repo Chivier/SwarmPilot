@@ -7,7 +7,11 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from swarmpilot.scheduler.models.core import Instance, InstanceStats, TaskTimestamps
+from swarmpilot.scheduler.models.core import (
+    Instance,
+    InstanceStats,
+    TaskTimestamps,
+)
 from swarmpilot.scheduler.models.queue import (
     InstanceQueueExpectError,
     InstanceQueueProbabilistic,
@@ -343,6 +347,63 @@ class StrategyGetResponse(BaseModel):
 
     success: bool
     strategy_info: StrategyInfo
+
+
+# ============================================================================
+# Predictor Management Responses
+# ============================================================================
+
+
+class PredictorTrainResponse(BaseModel):
+    """Response model for predictor training."""
+
+    success: bool
+    model_id: str
+    samples_trained: int = Field(
+        ..., description="Number of samples used for training"
+    )
+    message: str
+    strategy: str | None = Field(
+        None,
+        description=(
+            "Active scheduling strategy after training. "
+            "Set when auto-switch to 'probabilistic' occurs."
+        ),
+    )
+
+
+class PredictorStatusResponse(BaseModel):
+    """Response model for predictor model status."""
+
+    success: bool
+    model_id: str
+    samples_collected: int = Field(
+        ..., description="Samples in the training buffer"
+    )
+    models: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Trained model entries for this model_id",
+    )
+
+
+class PredictorPredictResponse(BaseModel):
+    """Response model for manual prediction."""
+
+    success: bool
+    model_id: str
+    expected_runtime_ms: float | None = None
+    error_margin_ms: float | None = None
+    quantiles: dict[str, float] | None = None
+
+
+class PredictorModelsResponse(BaseModel):
+    """Response model for listing all predictor models."""
+
+    success: bool
+    models: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="List of trained model metadata dicts",
+    )
 
 
 # ============================================================================

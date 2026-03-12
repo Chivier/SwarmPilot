@@ -22,6 +22,7 @@ uv run pytest                         # all tests
 uv run pytest tests/scheduler/ -v     # scheduler only
 uv run pytest tests/predictor/ -v     # predictor only
 uv run pytest tests/planner/ -v       # planner only
+uv run pytest tests/sdk/ -v           # SDK only
 uv run pytest -k "test_name"          # single test
 
 # Lint & format
@@ -32,6 +33,21 @@ uv run black .                        # auto-format
 spredictor start --port 8001
 sscheduler start --port 8000
 splanner start --port 8002
+
+# SDK usage (async)
+from swarmpilot.sdk import SwarmPilotClient
+async with SwarmPilotClient("http://localhost:8002") as sp:
+    group = await sp.serve("Qwen/Qwen2.5-7B", gpu=1)
+
+# CLI deployment commands
+splanner serve Qwen/Qwen2.5-7B --gpu 1 --replicas 2
+splanner ps                              # list instances
+splanner scale Qwen/Qwen2.5-7B --replicas 3
+splanner terminate --all
+splanner register my-model --gpu 2 --replicas 3
+splanner deploy
+splanner schedulers
+splanner run "python train.py" --name my-job
 ```
 
 ## Project Structure
@@ -61,17 +77,29 @@ swarmpilot-refresh/
 │   ├── planner/             # Planner service
 │   │   ├── api.py           # FastAPI endpoints (/v1/ prefix)
 │   │   ├── pylet_api.py     # PyLet router (mounted at /v1)
-│   │   ├── cli.py           # splanner CLI (typer)
+│   │   ├── cli.py           # splanner CLI (typer) — serve, run, scale, etc.
 │   │   ├── config.py        # Plain class config (env vars)
 │   │   ├── core/            # SwarmOptimizer (SA + IP)
 │   │   ├── pylet/           # PyLet SDK integration
+│   │   ├── routes/          # Modular API routes
+│   │   │   └── sdk_api.py   # SDK deployment endpoints (serve/run/scale/terminate)
 │   │   └── scaling/         # Scaling logic
+│   ├── scheduler/           # Scheduler service (continued)
+│   │   └── routes/          # Modular API routes
+│   │       └── predictor.py # Predictor management (train/predict/status)
+│   ├── sdk/                 # Python SDK (async httpx client)
+│   │   ├── __init__.py      # Public exports: SwarmPilotClient, models
+│   │   ├── client.py        # SwarmPilotClient (async context manager)
+│   │   └── models.py        # Dataclasses: Instance, InstanceGroup, Process, etc.
+│   ├── errors.py            # Centralized error hierarchy (SwarmPilotError, etc.)
 │   ├── graph/               # Client library
 │   └── scripts/             # Deployment utilities
 ├── tests/                   # Test suites (mirrors swarmpilot/ layout)
 │   ├── scheduler/           # Scheduler tests + conftest.py with fixtures
 │   ├── predictor/           # Predictor tests
 │   ├── planner/             # Planner tests (unit/ + integration/)
+│   ├── sdk/                 # SDK client + model unit tests
+│   ├── integration/         # End-to-end SDK integration tests
 │   └── conftest.py          # Shared: --run-integration flag, PyLet fixtures
 ├── examples/                # Example cluster configurations
 ├── docs/                    # Documentation
@@ -129,6 +157,11 @@ Each service uses a different config approach:
 - Scheduler endpoints: `/v1/...`
 - Predictor endpoints: root (no prefix, e.g., `POST /predict`)
 - Planner endpoints: `/v1/...`
+- Planner SDK endpoints: `/v1/serve`, `/v1/run`, `/v1/scale`, `/v1/terminate`, `/v1/instances`, `/v1/schedulers`, `/v1/register`, `/v1/deploy`, `/v1/registered`
+- Scheduler predictor endpoints: `/v1/predictor/train`, `/v1/predictor/predict`, `/v1/predictor/status/{model_id}`, `/v1/predictor/models`
+
+### SDK & CLI
+The `swarmpilot.sdk` package provides `SwarmPilotClient`, an async httpx-based client for Planner and Scheduler APIs. The `splanner` CLI exposes matching commands: `serve`, `run`, `register`, `deploy`, `ps`, `scale`, `terminate`, `schedulers`. Error hierarchy in `swarmpilot.errors`: `SwarmPilotError` > `DeployError`, `RegistrationError`, `SchedulerNotFound`, `ModelNotDeployed`, `OptimizationError`, `SwarmPilotTimeoutError`.
 
 ### Scheduling Strategies
 7 strategies available, selectable at runtime via `POST /v1/strategy/set` or `SCHEDULING_STRATEGY` env var:

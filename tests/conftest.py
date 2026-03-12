@@ -40,13 +40,22 @@ def pytest_configure(config):
 
 
 def pytest_collection_modifyitems(config, items):
-    """Skip integration/performance tests unless explicitly enabled."""
+    """Skip integration/performance tests unless explicitly enabled.
+
+    Only tests carrying an explicit ``@pytest.mark.integration``
+    or ``@pytest.mark.performance`` decorator are skipped.  The
+    check uses ``get_closest_marker`` so that directory names
+    (e.g. ``tests/integration/``) do not trigger a false skip.
+    """
     if not config.getoption("--run-integration"):
         skip_marker = pytest.mark.skip(
             reason="Need --run-integration flag and PyLet cluster"
         )
         for item in items:
-            if "integration" in item.keywords or "performance" in item.keywords:
+            if (
+                item.get_closest_marker("integration")
+                or item.get_closest_marker("performance")
+            ):
                 item.add_marker(skip_marker)
 
 

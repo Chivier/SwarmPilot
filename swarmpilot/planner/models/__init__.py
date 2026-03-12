@@ -40,6 +40,21 @@ from .scheduler_compat import (
     TaskResubmitRequest,
     TaskResubmitResponse,
 )
+from .sdk_api import (
+    DeployResponse,
+    InstanceDetailResponse,
+    RegisteredModelsResponse,
+    RegisterRequest,
+    RunRequest,
+    RunResponse,
+    ScaleRequest,
+    ScaleResponse,
+    SchedulerMapResponse,
+    ServeRequest,
+    ServeResponse,
+    TerminateRequest,
+    TerminateResponse,
+)
 
 __all__ = [
     # Base
@@ -77,4 +92,18 @@ __all__ = [
     "PyLetScaleInput",
     "PyLetScaleOutput",
     "PyLetStatusOutput",
+    # SDK API
+    "ServeRequest",
+    "ServeResponse",
+    "RunRequest",
+    "RunResponse",
+    "RegisterRequest",
+    "RegisteredModelsResponse",
+    "DeployResponse",
+    "InstanceDetailResponse",
+    "ScaleRequest",
+    "ScaleResponse",
+    "TerminateRequest",
+    "TerminateResponse",
+    "SchedulerMapResponse",
 ]
