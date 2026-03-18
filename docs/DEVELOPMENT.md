@@ -164,10 +164,9 @@ swarmpilot-refresh/
 │   ├── graph/                 # Client library
 │   └── scripts/               # Deployment utilities
 ├── examples/                  # Example cluster configs
-│   ├── mock_llm_cluster/
-│   ├── llm_cluster/
-│   ├── multi_scheduler/
-│   └── pylet_benchmark/
+│   ├── single_model/
+│   ├── multi_model_direct/
+│   └── multi_model_planner/
 ├── scripts/                   # Startup scripts
 ├── tests/                     # Test suites
 ├── docs/                      # Documentation
@@ -180,7 +179,6 @@ swarmpilot-refresh/
 
 | Directory | Purpose |
 |-----------|---------|
-| `examples/mock_llm_cluster/` | Local test with mock predictor + sleep models |
-| `examples/llm_cluster/` | Real LLM cluster with vLLM/SGLang |
-| `examples/multi_scheduler/` | Multi-scheduler setup with planner registration |
-| `examples/pylet_benchmark/` | PyLet benchmarking tools |
+| `examples/single_model/` | Single model with direct registration (no Planner) |
+| `examples/multi_model_direct/` | Multi-model with direct registration |
+| `examples/multi_model_planner/` | Multi-model with Planner optimizer and PyLet |

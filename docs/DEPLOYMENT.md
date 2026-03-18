@@ -246,7 +246,6 @@ See `examples/` for ready-to-run configurations:
 
 | Directory | Description |
 |-----------|-------------|
-| `examples/mock_llm_cluster/` | Local test cluster with mock predictor |
-| `examples/llm_cluster/` | Real LLM cluster with vLLM/SGLang |
-| `examples/multi_scheduler/` | Multi-scheduler setup with planner |
-| `examples/pylet_benchmark/` | PyLet benchmarking with sleep models |
+| `examples/single_model/` | Single model with direct registration (no Planner) |
+| `examples/multi_model_direct/` | Multi-model with direct registration |
+| `examples/multi_model_planner/` | Multi-model with Planner optimizer and PyLet |

@@ -29,33 +29,31 @@ This installs three CLI tools: `sscheduler`, `spredictor`, `splanner`.
 
 ```bash
 cd swarmpilot-refresh
-./scripts/quick_start.sh
+bash examples/single_model/start_cluster.sh
 ```
 
 This starts:
-- **Mock Predictor** on port 8001
-- **Scheduler** on port 8000
-- **2 Sleep Model instances** on ports 8300-8301
+- **Scheduler** on port 8000 (with embedded predictor via `PREDICTOR_MODE=library`)
+- **Mock vLLM instances** on ports 8100+
 
-To stop: `./scripts/quick_stop.sh`
+To stop: `bash examples/single_model/stop_cluster.sh`
 
 ---
 
-## Option B: Manual Start (3 Terminals)
+## Option B: Manual Start (2 Terminals)
 
 ### Architecture
 
 ```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│    Mock     │────▶│  Scheduler  │◀────│  Sleep      │
-│  Predictor  │     │   (8000)    │     │  Models     │
-│   (8001)    │     └─────────────┘     │  (8300+)    │
-└─────────────┘                         └─────────────┘
+┌─────────────┐     ┌─────────────┐
+│  Scheduler  │◀────│  Mock vLLM  │
+│   (8000)    │     │  Instance   │
+│  + Predictor│     │  (8100+)    │
+└─────────────┘     └─────────────┘
 ```
 
-- **Mock Predictor**: Returns `sleep_time` as predicted runtime (no ML training needed)
-- **Scheduler**: Routes tasks to instances based on predictions
-- **Instances**: Execute tasks (sleep models for testing)
+- **Scheduler**: Routes tasks to instances, with embedded predictor (`PREDICTOR_MODE=library`)
+- **Instances**: Mock vLLM servers that simulate inference latency
 
 ### Step 1: Install Dependencies
 
@@ -66,25 +64,19 @@ uv sync
 
 ### Step 2: Start Services
 
-**Terminal 1: Mock Predictor**
+**Terminal 1: Scheduler (with embedded predictor)**
 ```bash
-PREDICTOR_PORT=8001 uv run python examples/mock_llm_cluster/mock_predictor_server.py
+PREDICTOR_MODE=library sscheduler start --port 8000
 ```
 
-**Terminal 2: Scheduler**
+**Terminal 2: Mock vLLM Instance**
 ```bash
-PREDICTOR_URL=http://localhost:8001 sscheduler start --port 8000
+MODEL_ID=sleep_model PORT=8100 \
+  uv run python examples/single_model/mock_vllm_server.py
 ```
 
-**Terminal 3: Sleep Model Instance**
-```bash
-PORT=8300 \
-  MODEL_ID=sleep_model \
-  SCHEDULER_URL=http://localhost:8000 \
-  uv run python examples/pylet_benchmark/pylet_sleep_model.py
-```
-
-> Start additional instances on different ports (8301, 8302, etc.) for parallel task execution.
+> Start additional instances on different ports (8101, 8102, etc.) for parallel task execution.
+> Each instance self-registers with the Scheduler on startup.
 
 ---
 
@@ -135,12 +127,11 @@ Expected response (after ~2 seconds):
 ### Health Checks
 
 ```bash
-curl http://localhost:8001/health          # Predictor (no /v1 prefix)
 curl http://localhost:8000/v1/health       # Scheduler
-curl http://localhost:8300/health          # Sleep Model
+curl http://localhost:8100/health          # Mock vLLM Instance
 ```
 
-> **Note:** The Scheduler and Planner APIs use a `/v1/` prefix. The Predictor API does **not**.
+> **Note:** The Scheduler and Planner APIs use a `/v1/` prefix. Instance health endpoints have no prefix.
 
 ---
 
@@ -148,8 +139,7 @@ curl http://localhost:8300/health          # Sleep Model
 
 | Issue | Solution |
 |-------|----------|
-| `Connection refused` on 8001 | Start Predictor first |
-| `Connection refused` on 8000 | Start Scheduler with `PREDICTOR_URL` set |
+| `Connection refused` on 8000 | Start Scheduler first |
 | Task stuck in `pending` | Ensure sleep model is registered (check `SCHEDULER_URL`) |
 | Port already in use | Run `./scripts/quick_stop.sh` or change port numbers |
 | `404 Not Found` | Ensure you're using `/v1/` prefix for Scheduler endpoints |

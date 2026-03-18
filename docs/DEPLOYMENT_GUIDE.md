@@ -83,10 +83,10 @@ PORT=8100 python -m sglang.launch_server \
   --model Qwen/Qwen3-0.6B --port 8100 --host 0.0.0.0
 ```
 
-**Mock server** (for testing, from `examples/llm_cluster/mock_vllm_server.py`):
+**Mock server** (for testing, from `examples/single_model/mock_vllm_server.py`):
 
 ```bash
-MODEL_ID=llm-fast PORT=8100 python examples/llm_cluster/mock_vllm_server.py
+MODEL_ID=llm-fast PORT=8100 python examples/single_model/mock_vllm_server.py
 ```
 
 Wait for the health endpoint to respond before registering:
@@ -774,7 +774,7 @@ PyLet with an auto-allocated port.
 `deploy_model.sh` pattern:
 
 ```bash
-# From examples/llm_cluster/deploy_model.sh
+# From examples/multi_model_planner/deploy_model.sh
 DEPLOY_COMMAND="MODEL_ID={model_id} .venv/bin/python mock_vllm_server.py"
 ```
 
@@ -785,61 +785,39 @@ model's identifier.
 
 ## Reference: Complete Examples
 
-The `examples/` directory contains four end-to-end cluster examples:
+The `examples/` directory contains three end-to-end cluster examples:
 
-### `examples/llm_cluster/` — Optimizer-driven multi-model
+### `examples/single_model/` — Single model, direct registration (no Planner)
 
-Deploys 3 model types (llm-fast, llm-medium, llm-slow) using a mock
-vLLM server with realistic latency distributions.
+Starts a single Scheduler and mock vLLM instances, registering them
+directly. No Planner or PyLet involved.
 
 ```bash
-# 1. Start cluster (Predictor + Planner + 3 Schedulers)
-bash examples/llm_cluster/start_cluster.sh
-
-# 2. Deploy instances via optimizer
-bash examples/llm_cluster/deploy_model.sh
-
-# 3. Generate workload
-python examples/llm_cluster/generate_workload.py
-
-# 4. Stop everything
-bash examples/llm_cluster/stop_cluster.sh
+bash examples/single_model/start_cluster.sh
+bash examples/single_model/deploy_model.sh
+bash examples/single_model/stop_cluster.sh
 ```
 
-### `examples/mock_llm_cluster/` — Multi-model with 2 schedulers
+### `examples/multi_model_direct/` — Multi-model with direct registration
 
-Similar to `llm_cluster` but with 2 models (llm-7b, llm-32b) and
-optimizer-driven deployment.
+Deploys multiple models, each with a dedicated Scheduler. Instances are
+registered directly without the Planner optimizer.
 
 ```bash
-bash examples/mock_llm_cluster/start_cluster.sh
-bash examples/mock_llm_cluster/deploy_models.sh
-python examples/mock_llm_cluster/generate_workload.py
-bash examples/mock_llm_cluster/stop_cluster.sh
+bash examples/multi_model_direct/start_cluster.sh
+bash examples/multi_model_direct/deploy_model.sh
+bash examples/multi_model_direct/stop_cluster.sh
 ```
 
-### `examples/multi_scheduler/` — Manual target state deployment
+### `examples/multi_model_planner/` — Multi-model with Planner optimizer
 
-Deploys 3 sleep models using `deploy_manually` (no optimizer). Each model
-gets a dedicated Scheduler.
-
-```bash
-bash examples/multi_scheduler/start_cluster.sh
-bash examples/multi_scheduler/deploy_model.sh    # uses /v1/deploy_manually
-python examples/multi_scheduler/generate_workload.py
-bash examples/multi_scheduler/stop_cluster.sh
-```
-
-### `examples/pylet_benchmark/` — Direct deployment (no Planner)
-
-Starts instance processes directly and registers them manually with the
-Scheduler. No Planner or PyLet involved.
+Deploys multiple models using the Planner's optimization-driven deployment
+via PyLet. Each model gets a dedicated Scheduler managed by the Planner.
 
 ```bash
-bash examples/pylet_benchmark/start_cluster.sh
-bash examples/pylet_benchmark/deploy_model.sh    # starts processes + curl register
-python examples/pylet_benchmark/generate_workload.py
-bash examples/pylet_benchmark/stop_cluster.sh
+bash examples/multi_model_planner/start_cluster.sh
+bash examples/multi_model_planner/deploy_model.sh
+bash examples/multi_model_planner/stop_cluster.sh
 ```
 
 ### `examples/planner/` — Standalone optimizer
