@@ -108,51 +108,6 @@ def get_instance_info(
     }
 
 
-def wait_for_health(
-    endpoint: str,
-    timeout: float = 120.0,
-    health_path: str = "/health",
-    poll_interval: float = 2.0,
-) -> bool:
-    """Wait for model health check to pass.
-
-    Polls the model's health endpoint until it responds with 200 OK.
-
-    Args:
-        endpoint: Model endpoint in "host:port" format.
-        timeout: Maximum wait time in seconds.
-        health_path: Health check endpoint path.
-        poll_interval: Time between health check attempts.
-
-    Returns:
-        True if health check passed, False if timeout.
-
-    Example:
-        if wait_for_health("192.168.1.100:8001"):
-            print("Model is healthy")
-        else:
-            print("Model health check timed out")
-    """
-    health_url = f"http://{endpoint}{health_path}"
-    logger.info(f"Waiting for health check at {health_url}...")
-
-    start_time = time.time()
-    while time.time() - start_time < timeout:
-        try:
-            response = httpx.get(health_url, timeout=5.0)
-            if response.status_code == 200:
-                logger.info(f"Health check passed for {endpoint}")
-                return True
-            logger.debug(f"Health check returned {response.status_code}")
-        except httpx.RequestError as e:
-            logger.debug(f"Health check error: {e}")
-
-        time.sleep(poll_interval)
-
-    logger.warning(f"Health check timed out after {timeout}s")
-    return False
-
-
 def register_with_scheduler(
     scheduler_url: str,
     instance_id: str,

@@ -427,8 +427,6 @@ async def _add_task_to_queue_info(
         predicted_error_margin_ms: Predicted error margin (for expect_error strategy)
         predicted_quantiles: Predicted quantiles (for probabilistic strategy)
     """
-    import math
-
     current_queue = await instance_registry.get_queue_info(instance_id)
     if not current_queue:
         logger.warning(
@@ -2758,7 +2756,7 @@ async def reinitialize_instance_queues(
     if (
         strategy_name == "min_time"
         or strategy_name == "po2"
-        or strategy_name == "severless"
+        or strategy_name == "serverless"
     ):
         queue_info_type = "expect_error"
     elif strategy_name in ("probabilistic", "adaptive_bootstrap"):

@@ -6,8 +6,6 @@ import pytest
 from swarmpilot.predictor.utils.hardware_perf_info import (
     NVIDIA_TESLA_SPECS,
     get_gpu_spec,
-    list_available_gpus,
-    compare_gpus,
 )
 
 
@@ -65,77 +63,6 @@ class TestGetGpuSpec:
 
         assert spec["cuda_cores"] == 2560
         assert spec["memory_gb"] == 16
-
-
-class TestListAvailableGpus:
-    """Tests for list_available_gpus function."""
-
-    def test_list_available_gpus_returns_list(self):
-        """Should return a list of GPU names."""
-        gpus = list_available_gpus()
-
-        assert isinstance(gpus, list)
-        assert len(gpus) > 0
-
-    def test_list_available_gpus_contains_expected_gpus(self):
-        """Should contain common GPU models."""
-        gpus = list_available_gpus()
-
-        assert "V100" in gpus
-        assert "A100" in gpus
-        assert "H100" in gpus
-        assert "T4" in gpus
-
-    def test_list_available_gpus_matches_specs_keys(self):
-        """Should match the keys in NVIDIA_TESLA_SPECS."""
-        gpus = list_available_gpus()
-
-        assert set(gpus) == set(NVIDIA_TESLA_SPECS.keys())
-
-
-class TestCompareGpus:
-    """Tests for compare_gpus function."""
-
-    def test_compare_gpus_returns_ratios(self):
-        """Should return comparison ratios between GPUs."""
-        comparison = compare_gpus("V100", "H100")
-
-        assert "gpu1" in comparison
-        assert "gpu2" in comparison
-        assert "cuda_cores_ratio" in comparison
-        assert "fp32_tflops_ratio" in comparison
-        assert "memory_ratio" in comparison
-        assert "bandwidth_ratio" in comparison
-
-    def test_compare_gpus_correct_values(self):
-        """Should calculate correct ratios."""
-        comparison = compare_gpus("V100", "H100")
-
-        # H100 has more CUDA cores than V100
-        assert comparison["cuda_cores_ratio"] > 1
-        # H100 has higher TFLOPS than V100
-        assert comparison["fp32_tflops_ratio"] > 1
-        # H100 has more memory than V100
-        assert comparison["memory_ratio"] > 1
-
-    def test_compare_gpus_same_gpu(self):
-        """Should return ratio of 1 when comparing same GPU."""
-        comparison = compare_gpus("A100", "A100")
-
-        assert comparison["cuda_cores_ratio"] == 1.0
-        assert comparison["fp32_tflops_ratio"] == 1.0
-        assert comparison["memory_ratio"] == 1.0
-        assert comparison["bandwidth_ratio"] == 1.0
-
-    def test_compare_gpus_invalid_gpu1(self):
-        """Should raise KeyError for invalid first GPU."""
-        with pytest.raises(KeyError):
-            compare_gpus("INVALID", "H100")
-
-    def test_compare_gpus_invalid_gpu2(self):
-        """Should raise KeyError for invalid second GPU."""
-        with pytest.raises(KeyError):
-            compare_gpus("V100", "INVALID")
 
 
 class TestNvidiaTeslaSpecs:
