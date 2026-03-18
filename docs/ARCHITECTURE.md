@@ -29,6 +29,27 @@ System design overview of SwarmPilot's three services and how they interact.
                 └─────────────┘
 ```
 
+## Core Architectural Constraint: One Scheduler Per Model
+
+Each Scheduler process serves exactly one model. This is configured at startup via the `SCHEDULER_MODEL_ID` environment variable (a single string, not a list).
+
+```
+Single model:      Model A  ──→  Scheduler A (:8000)
+
+Multi-model:       Model A  ──→  Scheduler A (:8010)
+                   Model B  ──→  Scheduler B (:8020)
+                   Model C  ──→  Scheduler C (:8030)
+```
+
+**How it's enforced:**
+
+- `SCHEDULER_MODEL_ID` env var configures which model a Scheduler handles
+- The Planner's `SchedulerRegistry` maps each `model_id` to exactly one `scheduler_url` (a `dict[str, SchedulerInfo]`)
+- Duplicate registrations for the same `model_id` silently overwrite the previous mapping
+- The `PlannerRegistrar` auto-registers each Scheduler on startup using `PLANNER_REGISTRATION_URL`, `SCHEDULER_MODEL_ID`, and `SCHEDULER_SELF_URL`
+
+For multi-model deployments, run N Scheduler processes (one per model), optionally coordinated by a single Planner.
+
 ## Services
 
 ### Scheduler (port 8000)
@@ -86,7 +107,7 @@ Deployment optimization using mathematical programming. Core endpoints use `/v1/
 |---------|-------------|
 | **Optimizer** | Simulated Annealing or Integer Programming to find optimal instance-to-model mapping |
 | **PyLet** | Cluster manager that provisions, drains, and terminates instances |
-| **SchedulerRegistry** | Maps model IDs to scheduler URLs for multi-scheduler setups |
+| **SchedulerRegistry** | Maps model IDs to scheduler URLs (1:1 mapping — see [One Scheduler Per Model](#core-architectural-constraint-one-scheduler-per-model)) |
 | **AvailableInstanceStore** | Tracks instances available for migration |
 | **InstanceTimeline** | Records deployment events over time |
 

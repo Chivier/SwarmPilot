@@ -163,6 +163,14 @@ Each service uses a different config approach:
 ### SDK & CLI
 The `swarmpilot.sdk` package provides `SwarmPilotClient`, an async httpx-based client for Planner and Scheduler APIs. The `splanner` CLI exposes matching commands: `serve`, `run`, `register`, `deploy`, `ps`, `scale`, `terminate`, `schedulers`. Error hierarchy in `swarmpilot.errors`: `SwarmPilotError` > `DeployError`, `RegistrationError`, `SchedulerNotFound`, `ModelNotDeployed`, `OptimizationError`, `SwarmPilotTimeoutError`.
 
+### One Scheduler Per Model (Mandatory Constraint)
+Each Scheduler process serves exactly one model, configured at startup via `SCHEDULER_MODEL_ID` (a single string, not a list). The Planner's SchedulerRegistry maps each `model_id` to exactly one `scheduler_url`; duplicate registrations silently overwrite the previous mapping. For multi-model deployments, run one Scheduler process per model.
+
+| Deployment | Schedulers | Planner |
+|------------|-----------|---------|
+| 1 model | 1 Scheduler | Optional |
+| N models | N Schedulers (one per model) | Recommended |
+
 ### Scheduling Strategies
 7 strategies available, selectable at runtime via `POST /v1/strategy/set` or `SCHEDULING_STRATEGY` env var:
 `adaptive_bootstrap` (default), `min_time`, `probabilistic`, `round_robin`, `random`, `po2`, `severless`
