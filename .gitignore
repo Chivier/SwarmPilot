@@ -119,3 +119,6 @@ predictor/preprocessors/
 # Task files
 # tasks.json
 # tasks/ 
+
+# Sisyphus work orchestration
+.sisyphus/
