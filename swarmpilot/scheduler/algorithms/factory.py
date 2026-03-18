@@ -5,17 +5,27 @@ Provides a centralized way to instantiate scheduling strategies by name.
 
 from typing import TYPE_CHECKING
 
-from swarmpilot.scheduler.algorithms.adaptive_bootstrap import AdaptiveBootstrapStrategy
-from swarmpilot.scheduler.algorithms.min_expected_time import MinimumExpectedTimeStrategy
+from swarmpilot.scheduler.algorithms.adaptive_bootstrap import (
+    AdaptiveBootstrapStrategy,
+)
+from swarmpilot.scheduler.algorithms.min_expected_time import (
+    MinimumExpectedTimeStrategy,
+)
 from swarmpilot.scheduler.algorithms.power_of_two import PowerOfTwoStrategy
-from swarmpilot.scheduler.algorithms.probabilistic import ProbabilisticSchedulingStrategy
+from swarmpilot.scheduler.algorithms.probabilistic import (
+    ProbabilisticSchedulingStrategy,
+)
 from swarmpilot.scheduler.algorithms.random import RandomStrategy
 from swarmpilot.scheduler.algorithms.round_robin import RoundRobinStrategy
-from swarmpilot.scheduler.algorithms.serverless import MinimumExpectedTimeServerlessStrategy
+from swarmpilot.scheduler.algorithms.serverless import (
+    MinimumExpectedTimeServerlessStrategy,
+)
 
 if TYPE_CHECKING:
     from swarmpilot.scheduler.algorithms.base import SchedulingStrategy
-    from swarmpilot.scheduler.clients.predictor_library_client import PredictorClient
+    from swarmpilot.scheduler.clients.predictor_library_client import (
+        PredictorClient,
+    )
     from swarmpilot.scheduler.registry.instance_registry import InstanceRegistry
 
 
@@ -51,7 +61,7 @@ def get_strategy(
         return RandomStrategy(predictor_client, instance_registry)
     elif strategy_name == "po2":
         return PowerOfTwoStrategy(predictor_client, instance_registry)
-    elif strategy_name == "severless":
+    elif strategy_name == "serverless":
         return MinimumExpectedTimeServerlessStrategy(
             predictor_client, instance_registry
         )

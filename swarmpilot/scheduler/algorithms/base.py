@@ -14,10 +14,14 @@ from loguru import logger
 from swarmpilot.scheduler.clients.models import Prediction
 
 if TYPE_CHECKING:
-    from swarmpilot.scheduler.clients.predictor_library_client import PredictorClient
+    from swarmpilot.scheduler.clients.predictor_library_client import (
+        PredictorClient,
+    )
     from swarmpilot.scheduler.models import Instance, InstanceQueueBase
     from swarmpilot.scheduler.registry.instance_registry import InstanceRegistry
-    from swarmpilot.scheduler.services.worker_queue_manager import WorkerQueueManager
+    from swarmpilot.scheduler.services.worker_queue_manager import (
+        WorkerQueueManager,
+    )
 
 
 random.seed(42)
@@ -260,7 +264,7 @@ class SchedulingStrategy(ABC):
         pass
 
     @abstractmethod
-    def update_queue(
+    async def update_queue(
         self,
         instance_id: str,
         prediction: Prediction,

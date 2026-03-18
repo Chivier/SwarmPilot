@@ -1310,6 +1310,6 @@ class TestGetStrategyAdditional:
         """Test get_strategy returns MinimumExpectedTimeServerlessStrategy."""
         from swarmpilot.scheduler.algorithms import MinimumExpectedTimeServerlessStrategy
 
-        strategy = get_strategy("severless", mock_predictor_client, instance_registry)
+        strategy = get_strategy("serverless", mock_predictor_client, instance_registry)
 
         assert isinstance(strategy, MinimumExpectedTimeServerlessStrategy)
