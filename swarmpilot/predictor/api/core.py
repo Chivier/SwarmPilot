@@ -37,58 +37,31 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import Any
 
+from swarmpilot.errors import (
+    ModelNotFoundError,
+    PredictionError,
+    PredictorValidationError as ValidationError,
+    TrainingError,
+)
 from swarmpilot.predictor.api.cache import ModelCache
-from swarmpilot.predictor.models import CollectedSample
-from swarmpilot.predictor.models import ModelInfo
-from swarmpilot.predictor.models import PlatformInfo
-from swarmpilot.predictor.models import PredictionResult
-from swarmpilot.predictor.models import TrainingResult
+from swarmpilot.predictor.models import (
+    CollectedSample,
+    ModelInfo,
+    PlatformInfo,
+    PredictionResult,
+    TrainingResult,
+)
 from swarmpilot.predictor.predictor.base import BasePredictor
 from swarmpilot.predictor.predictor.expect_error import ExpectErrorPredictor
 from swarmpilot.predictor.predictor.quantile import QuantilePredictor
 from swarmpilot.predictor.preprocessor.chain_v2 import PreprocessorChainV2
-from swarmpilot.predictor.preprocessor.preprocessors_registry import PreprocessorsRegistry
+from swarmpilot.predictor.preprocessor.preprocessors_registry import (
+    PreprocessorsRegistry,
+)
 from swarmpilot.predictor.storage.model_storage import ModelStorage
 from swarmpilot.predictor.utils.logging import get_logger
 
-
 logger = get_logger()
-
-
-# =============================================================================
-# Exceptions
-# =============================================================================
-
-
-class PredictorError(Exception):
-    """Base exception for all predictor errors."""
-
-    pass
-
-
-class ModelNotFoundError(PredictorError):
-    """Raised when a requested model does not exist."""
-
-    pass
-
-
-class ValidationError(PredictorError):
-    """Raised when input validation fails."""
-
-    pass
-
-
-class TrainingError(PredictorError):
-    """Raised when model training fails."""
-
-    pass
-
-
-class PredictionError(PredictorError):
-    """Raised when prediction fails."""
-
-    pass
-
 
 # =============================================================================
 # Constants

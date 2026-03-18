@@ -7,8 +7,6 @@ import pytest
 from swarmpilot.errors import (
     DeployError,
     ModelNotDeployed,
-    OptimizationError,
-    RegistrationError,
     SchedulerNotFound,
     SwarmPilotError,
     SwarmPilotTimeoutError,
@@ -23,9 +21,7 @@ class TestInheritance:
         [
             SwarmPilotError,
             DeployError,
-            RegistrationError,
             SchedulerNotFound,
-            OptimizationError,
             ModelNotDeployed,
             SwarmPilotTimeoutError,
         ],
@@ -38,9 +34,7 @@ class TestInheritance:
         "exc_class",
         [
             DeployError,
-            RegistrationError,
             SchedulerNotFound,
-            OptimizationError,
             ModelNotDeployed,
             SwarmPilotTimeoutError,
         ],
@@ -73,21 +67,6 @@ class TestDeployError:
         assert err.failed == []
 
 
-class TestRegistrationError:
-    """RegistrationError stores scheduler and model attributes."""
-
-    def test_stores_scheduler_and_model(self) -> None:
-        """Scheduler URL and model ID are preserved."""
-        err = RegistrationError(
-            "connection refused",
-            scheduler="http://scheduler:8000",
-            model="llama-7b",
-        )
-        assert err.scheduler == "http://scheduler:8000"
-        assert err.model == "llama-7b"
-        assert err.message == "connection refused"
-
-
 class TestSchedulerNotFound:
     """SchedulerNotFound auto-generates a hint."""
 
@@ -102,16 +81,6 @@ class TestSchedulerNotFound:
         """String representation matches the hint."""
         err = SchedulerNotFound(model="gpt-4")
         assert str(err) == err.hint
-
-
-class TestOptimizationError:
-    """OptimizationError stores the reason."""
-
-    def test_stores_reason(self) -> None:
-        """Reason string is preserved."""
-        err = OptimizationError(reason="infeasible: GPU budget exceeded")
-        assert err.reason == "infeasible: GPU budget exceeded"
-        assert str(err) == "infeasible: GPU budget exceeded"
 
 
 class TestModelNotDeployed:

@@ -40,26 +40,6 @@ class DeployError(SwarmPilotError):
         super().__init__(message)
 
 
-class RegistrationError(SwarmPilotError):
-    """Scheduler registration failed.
-
-    Args:
-        message: Human-readable description of the failure.
-        scheduler: URL that was unreachable.
-        model: Model ID that failed registration.
-    """
-
-    def __init__(
-        self,
-        message: str,
-        scheduler: str,
-        model: str,
-    ) -> None:
-        self.scheduler = scheduler
-        self.model = model
-        super().__init__(message)
-
-
 class SchedulerNotFound(SwarmPilotError):  # noqa: N818
     """No scheduler registered for the given model.
 
@@ -79,19 +59,6 @@ class SchedulerNotFound(SwarmPilotError):  # noqa: N818
         super().__init__(self.hint)
 
 
-class OptimizationError(SwarmPilotError):
-    """Planner optimizer found no feasible solution.
-
-    Args:
-        reason: Human-readable explanation of why optimization
-            failed.
-    """
-
-    def __init__(self, reason: str) -> None:
-        self.reason = reason
-        super().__init__(reason)
-
-
 class ModelNotDeployed(SwarmPilotError):  # noqa: N818
     """Predictor operation attempted on a model with no scheduler.
 
@@ -109,6 +76,41 @@ class ModelNotDeployed(SwarmPilotError):  # noqa: N818
             "swarmpilot.serve() or swarmpilot.deploy()."
         )
         super().__init__(self.hint)
+
+
+# ---------------------------------------------------------------
+# Predictor errors
+# ---------------------------------------------------------------
+
+
+class PredictorError(SwarmPilotError):
+    """Base exception for predictor-related errors."""
+
+    pass
+
+
+class ModelNotFoundError(PredictorError):
+    """Raised when a requested predictor model does not exist."""
+
+    pass
+
+
+class PredictorValidationError(PredictorError):
+    """Raised when predictor input validation fails."""
+
+    pass
+
+
+class TrainingError(PredictorError):
+    """Raised when model training fails."""
+
+    pass
+
+
+class PredictionError(PredictorError):
+    """Raised when prediction fails."""
+
+    pass
 
 
 class SwarmPilotTimeoutError(SwarmPilotError):
