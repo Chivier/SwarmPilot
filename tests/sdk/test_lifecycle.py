@@ -7,7 +7,8 @@ correctly call the planner API and handle error cases.
 
 from __future__ import annotations
 
-from unittest.mock import patch
+import asyncio
+from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
@@ -20,7 +21,6 @@ from swarmpilot.errors import (
 )
 from swarmpilot.sdk.client import SwarmPilotClient
 from swarmpilot.sdk.models import (
-    DeploymentResult,
     Instance,
     InstanceGroup,
     Process,
@@ -79,7 +79,7 @@ class TestInstanceWaitReady:
     """Instance.wait_ready() polls until status is ready."""
 
     @respx.mock
-    def test_polls_until_running(
+    async def test_polls_until_running(
         self, client: SwarmPilotClient
     ) -> None:
         """wait_ready returns once status becomes 'running'."""
@@ -100,14 +100,15 @@ class TestInstanceWaitReady:
         inst = _make_instance(client=client)
 
         with patch(
-            "swarmpilot.sdk.models.time.sleep"
+            "swarmpilot.sdk.models.asyncio.sleep",
+            new_callable=AsyncMock,
         ):
-            inst.wait_ready(timeout=300)
+            await inst.wait_ready(timeout=300)
 
         assert inst.status == "running"
 
     @respx.mock
-    def test_accepts_active_status(
+    async def test_accepts_active_status(
         self, client: SwarmPilotClient
     ) -> None:
         """wait_ready returns for 'active' status too."""
@@ -122,14 +123,15 @@ class TestInstanceWaitReady:
         inst = _make_instance(client=client)
 
         with patch(
-            "swarmpilot.sdk.models.time.sleep"
+            "swarmpilot.sdk.models.asyncio.sleep",
+            new_callable=AsyncMock,
         ):
-            inst.wait_ready(timeout=300)
+            await inst.wait_ready(timeout=300)
 
         assert inst.status == "active"
 
     @respx.mock
-    def test_timeout_raises_swarm_pilot_timeout_error(
+    async def test_timeout_raises_swarm_pilot_timeout_error(
         self, client: SwarmPilotClient
     ) -> None:
         """wait_ready raises SwarmPilotTimeoutError on timeout."""
@@ -144,11 +146,10 @@ class TestInstanceWaitReady:
         inst = _make_instance(client=client)
 
         # Simulate time moving past the deadline by
-        # advancing monotonic time.
+        # advancing event loop time.
         call_count = 0
-        original_monotonic = None
 
-        def fast_monotonic() -> float:
+        def fast_time() -> float:
             """Return increasing time to force timeout."""
             nonlocal call_count
             call_count += 1
@@ -156,20 +157,23 @@ class TestInstanceWaitReady:
             # exceed it after a few iterations.
             return call_count * 100.0
 
+        loop = asyncio.get_event_loop()
         with (
-            patch(
-                "swarmpilot.sdk.models.time.monotonic",
-                side_effect=fast_monotonic,
+            patch.object(
+                loop,
+                "time",
+                side_effect=fast_time,
             ),
             patch(
-                "swarmpilot.sdk.models.time.sleep"
+                "swarmpilot.sdk.models.asyncio.sleep",
+                new_callable=AsyncMock,
             ),
             pytest.raises(SwarmPilotTimeoutError),
         ):
-            inst.wait_ready(timeout=10)
+            await inst.wait_ready(timeout=10)
 
     @respx.mock
-    def test_failed_status_raises_deploy_error(
+    async def test_failed_status_raises_deploy_error(
         self, client: SwarmPilotClient
     ) -> None:
         """wait_ready raises DeployError on 'failed' status."""
@@ -185,13 +189,14 @@ class TestInstanceWaitReady:
 
         with (
             patch(
-                "swarmpilot.sdk.models.time.sleep"
+                "swarmpilot.sdk.models.asyncio.sleep",
+                new_callable=AsyncMock,
             ),
             pytest.raises(
                 DeployError, match="worker-0"
             ),
         ):
-            inst.wait_ready(timeout=300)
+            await inst.wait_ready(timeout=300)
 
 
 # ------------------------------------------------------------------
@@ -203,10 +208,10 @@ class TestInstanceTerminate:
     """Instance.terminate() calls POST /v1/terminate."""
 
     @respx.mock
-    def test_terminate_calls_correct_endpoint(
+    async def test_terminate_calls_correct_endpoint(
         self, client: SwarmPilotClient
     ) -> None:
-        """terminate sends name in the payload."""
+        """Terminate sends name in the payload."""
         route = respx.post(
             f"{PLANNER}/v1/terminate"
         ).mock(
@@ -216,7 +221,7 @@ class TestInstanceTerminate:
         )
 
         inst = _make_instance(client=client)
-        inst.terminate()
+        await inst.terminate()
 
         assert route.called
         payload = route.calls[0].request.content
@@ -234,19 +239,19 @@ class TestInstanceTerminate:
 class TestInstanceRequiresClient:
     """Instance methods raise SwarmPilotError without _client."""
 
-    def test_wait_ready_raises_without_client(self) -> None:
+    async def test_wait_ready_raises_without_client(self) -> None:
         """wait_ready raises when _client is None."""
         inst = _make_instance(client=None)
 
         with pytest.raises(SwarmPilotError, match="No client"):
-            inst.wait_ready()
+            await inst.wait_ready()
 
-    def test_terminate_raises_without_client(self) -> None:
-        """terminate raises when _client is None."""
+    async def test_terminate_raises_without_client(self) -> None:
+        """Terminate raises when _client is None."""
         inst = _make_instance(client=None)
 
         with pytest.raises(SwarmPilotError, match="No client"):
-            inst.terminate()
+            await inst.terminate()
 
 
 # ------------------------------------------------------------------
@@ -258,7 +263,7 @@ class TestInstanceGroupWaitReady:
     """InstanceGroup.wait_ready() delegates to instances."""
 
     @respx.mock
-    def test_delegates_to_each_instance(
+    async def test_delegates_to_each_instance(
         self, client: SwarmPilotClient
     ) -> None:
         """wait_ready calls each instance's wait_ready."""
@@ -291,9 +296,10 @@ class TestInstanceGroupWaitReady:
         )
 
         with patch(
-            "swarmpilot.sdk.models.time.sleep"
+            "swarmpilot.sdk.models.asyncio.sleep",
+            new_callable=AsyncMock,
         ):
-            group.wait_ready(timeout=300)
+            await group.wait_ready(timeout=300)
 
         assert instances[0].status == "running"
         assert instances[1].status == "running"
@@ -308,10 +314,10 @@ class TestInstanceGroupTerminate:
     """InstanceGroup.terminate() calls POST /v1/terminate."""
 
     @respx.mock
-    def test_terminate_sends_model(
+    async def test_terminate_sends_model(
         self, client: SwarmPilotClient
     ) -> None:
-        """terminate sends model in the payload."""
+        """Terminate sends model in the payload."""
         route = respx.post(
             f"{PLANNER}/v1/terminate"
         ).mock(
@@ -326,7 +332,7 @@ class TestInstanceGroupTerminate:
             command="vllm serve llama-7b",
             _client=client,
         )
-        group.terminate()
+        await group.terminate()
 
         assert route.called
         import json
@@ -346,10 +352,10 @@ class TestInstanceGroupScale:
     """InstanceGroup.scale() calls POST /v1/scale."""
 
     @respx.mock
-    def test_scale_sends_model_and_replicas(
+    async def test_scale_sends_model_and_replicas(
         self, client: SwarmPilotClient
     ) -> None:
-        """scale sends model and replicas in the payload."""
+        """Scale sends model and replicas in the payload."""
         route = respx.post(f"{PLANNER}/v1/scale").mock(
             return_value=httpx.Response(
                 200, json={"status": "scaled"}
@@ -362,7 +368,7 @@ class TestInstanceGroupScale:
             command="vllm serve llama-7b",
             _client=client,
         )
-        group.scale(replicas=3)
+        await group.scale(replicas=3)
 
         assert route.called
         import json
@@ -385,10 +391,10 @@ class TestProcessTerminate:
     """Process.terminate() calls POST /v1/terminate."""
 
     @respx.mock
-    def test_terminate_sends_name(
+    async def test_terminate_sends_name(
         self, client: SwarmPilotClient
     ) -> None:
-        """terminate sends process name in the payload."""
+        """Terminate sends process name in the payload."""
         route = respx.post(
             f"{PLANNER}/v1/terminate"
         ).mock(
@@ -405,7 +411,7 @@ class TestProcessTerminate:
             gpu=0,
             _client=client,
         )
-        proc.terminate()
+        await proc.terminate()
 
         assert route.called
         import json

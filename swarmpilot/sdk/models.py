@@ -7,11 +7,9 @@ Predictor, Planner).
 
 from __future__ import annotations
 
-import time
+import asyncio
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
-
-import httpx
 
 from swarmpilot.errors import (
     DeployError,
@@ -68,8 +66,8 @@ class Instance:
             )
         return self._client
 
-    def wait_ready(self, timeout: int = 300) -> None:
-        """Block until the instance is running or active.
+    async def wait_ready(self, timeout: int = 300) -> None:
+        """Poll until the instance is running or active.
 
         Polls ``GET /v1/instances/{name}`` every 2 seconds until the
         status becomes ``"running"`` or ``"active"``.
@@ -88,9 +86,9 @@ class Instance:
             f"{client.planner_url}"
             f"/v1/instances/{self.name}"
         )
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            resp = httpx.get(url)
+        deadline = asyncio.get_event_loop().time() + timeout
+        while asyncio.get_event_loop().time() < deadline:
+            resp = await client._client.get(url)
             data = resp.json()
             status = data.get("status", "unknown")
             if status in ("running", "active"):
@@ -100,12 +98,12 @@ class Instance:
                 raise DeployError(
                     f"Instance '{self.name}' failed"
                 )
-            time.sleep(2)
+            await asyncio.sleep(2)
         raise SwarmPilotTimeoutError(
             timeout=timeout, name=self.name
         )
 
-    def terminate(self) -> None:
+    async def terminate(self) -> None:
         """Terminate this instance.
 
         Sends ``POST /v1/terminate`` with ``{"name": self.name}``
@@ -116,7 +114,9 @@ class Instance:
         """
         client = self._require_client()
         url = f"{client.planner_url}/v1/terminate"
-        httpx.post(url, json={"name": self.name})
+        await client._client.post(
+            url, json={"name": self.name}
+        )
 
 
 @dataclass
@@ -173,8 +173,8 @@ class InstanceGroup:
             )
         return self._client
 
-    def wait_ready(self, timeout: int = 300) -> None:
-        """Block until every instance in the group is ready.
+    async def wait_ready(self, timeout: int = 300) -> None:
+        """Wait until every instance in the group is ready.
 
         Delegates to each instance's :meth:`Instance.wait_ready`.
 
@@ -189,9 +189,9 @@ class InstanceGroup:
         """
         self._require_client()
         for inst in self.instances:
-            inst.wait_ready(timeout=timeout)
+            await inst.wait_ready(timeout=timeout)
 
-    def scale(self, replicas: int) -> None:
+    async def scale(self, replicas: int) -> None:
         """Scale this group to a target replica count.
 
         Sends ``POST /v1/scale`` with the group's model and the
@@ -205,12 +205,12 @@ class InstanceGroup:
         """
         client = self._require_client()
         url = f"{client.planner_url}/v1/scale"
-        httpx.post(
+        await client._client.post(
             url,
             json={"model": self.model, "replicas": replicas},
         )
 
-    def terminate(self) -> None:
+    async def terminate(self) -> None:
         """Terminate all instances in this group.
 
         Sends ``POST /v1/terminate`` with
@@ -221,7 +221,9 @@ class InstanceGroup:
         """
         client = self._require_client()
         url = f"{client.planner_url}/v1/terminate"
-        httpx.post(url, json={"model": self.model})
+        await client._client.post(
+            url, json={"model": self.model}
+        )
 
 
 @dataclass
@@ -265,7 +267,7 @@ class Process:
             )
         return self._client
 
-    def terminate(self) -> None:
+    async def terminate(self) -> None:
         """Terminate this process.
 
         Sends ``POST /v1/terminate`` with ``{"name": self.name}``
@@ -276,7 +278,9 @@ class Process:
         """
         client = self._require_client()
         url = f"{client.planner_url}/v1/terminate"
-        httpx.post(url, json={"name": self.name})
+        await client._client.post(
+            url, json={"name": self.name}
+        )
 
 
 @dataclass
@@ -313,8 +317,8 @@ class DeploymentResult:
         """
         return self.groups[model]
 
-    def wait_ready(self, timeout: int = 600) -> None:
-        """Block until every group in the deployment is ready.
+    async def wait_ready(self, timeout: int = 600) -> None:
+        """Wait until every group in the deployment is ready.
 
         Delegates to each group's :meth:`InstanceGroup.wait_ready`.
 
@@ -333,7 +337,7 @@ class DeploymentResult:
                 "Use SwarmPilotClient to create deployments."
             )
         for group in self.groups.values():
-            group.wait_ready(timeout=timeout)
+            await group.wait_ready(timeout=timeout)
 
 
 @dataclass
