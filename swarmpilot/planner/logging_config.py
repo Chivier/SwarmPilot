@@ -10,42 +10,13 @@ Environment Variables:
                          Valid values: TRACE, DEBUG, INFO, SUCCESS, WARNING, ERROR, CRITICAL
 """
 
-import logging
 import os
 import sys
 from pathlib import Path
 
 from loguru import logger
 
-
-class InterceptHandler(logging.Handler):
-    """Intercept standard logging calls and redirect them to loguru.
-
-    This handler is used to bridge the gap between Python's standard logging
-    module and loguru, allowing all log messages to be handled consistently.
-    """
-
-    def emit(self, record: logging.LogRecord) -> None:
-        """Emit a log record by redirecting it to loguru.
-
-        Args:
-            record: The log record to emit
-        """
-        # Get corresponding Loguru level if it exists
-        try:
-            level = logger.level(record.levelname).name
-        except ValueError:
-            level = record.levelno
-
-        # Find caller from where the logged message originated
-        frame, depth = sys._getframe(6), 6
-        while frame and frame.f_code.co_filename == logging.__file__:
-            frame = frame.f_back
-            depth += 1
-
-        logger.opt(depth=depth, exception=record.exc_info).log(
-            level, record.getMessage()
-        )
+from swarmpilot.shared.logging import intercept_standard_logging
 
 
 def setup_logging() -> None:
@@ -114,17 +85,6 @@ def setup_logging() -> None:
     )
 
     # Intercept standard library logging
-    logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
-
-    # Intercept specific loggers
-    for logger_name in [
-        "uvicorn",
-        "uvicorn.error",
-        "uvicorn.access",
-        "fastapi",
-    ]:
-        logging_logger = logging.getLogger(logger_name)
-        logging_logger.handlers = [InterceptHandler()]
-        logging_logger.propagate = False
+    intercept_standard_logging()
 
     logger.info(f"Logging configured: level={log_level}, log_dir={log_dir}")

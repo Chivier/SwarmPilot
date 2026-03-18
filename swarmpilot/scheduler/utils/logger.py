@@ -4,44 +4,16 @@ This module configures loguru for the entire scheduler application,
 providing structured logging with rotation, retention, and customizable formats.
 """
 
-import logging
 import sys
 from pathlib import Path
 
 from loguru import logger
 
 from swarmpilot.scheduler.config import config
-
-
-class InterceptHandler(logging.Handler):
-    """Intercept standard logging messages and redirect them to loguru.
-
-    This handler is used to capture logs from libraries that use the standard
-    logging module (like uvicorn, fastapi, httpx) and route them through loguru
-    for consistent formatting and handling.
-    """
-
-    def emit(self, record: logging.LogRecord) -> None:
-        """Emit a log record by forwarding it to loguru.
-
-        Args:
-            record: The log record from standard logging
-        """
-        # Get corresponding Loguru level if it exists
-        try:
-            level = logger.level(record.levelname).name
-        except ValueError:
-            level = record.levelno
-
-        # Find caller from where originated the logged message
-        frame, depth = sys._getframe(6), 6
-        while frame and frame.f_code.co_filename == logging.__file__:
-            frame = frame.f_back
-            depth += 1
-
-        logger.opt(depth=depth, exception=record.exc_info).log(
-            level, record.getMessage()
-        )
+from swarmpilot.shared.logging import (
+    InterceptHandler,  # noqa: F401
+    intercept_standard_logging,
+)
 
 
 def setup_logger():
@@ -93,20 +65,15 @@ def setup_logger():
         )
 
     # Intercept standard logging and redirect to loguru
-    # This ensures all logs from uvicorn, fastapi, httpx, etc. go through loguru
-    logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
-
-    # Configure specific loggers to use our interceptor
-    for logger_name in [
-        "uvicorn",
-        "uvicorn.error",
-        "uvicorn.access",
-        "fastapi",
-        "httpx",
-    ]:
-        logging_logger = logging.getLogger(logger_name)
-        logging_logger.handlers = [InterceptHandler()]
-        logging_logger.propagate = False
+    intercept_standard_logging(
+        logger_names=(
+            "uvicorn",
+            "uvicorn.error",
+            "uvicorn.access",
+            "fastapi",
+            "httpx",
+        )
+    )
 
     logger.info("Logger initialized successfully")
 
