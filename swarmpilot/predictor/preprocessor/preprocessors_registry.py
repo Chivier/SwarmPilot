@@ -7,13 +7,9 @@ transformation during training and prediction.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from swarmpilot.predictor.preprocessor.base_preprocessor import BasePreprocessor
 from swarmpilot.predictor.utils.logging import get_logger
-
-if TYPE_CHECKING:
-    from swarmpilot.predictor.preprocessor.semantic_predictor import SemanticPredictor
 
 logger = get_logger()
 
@@ -49,7 +45,9 @@ class PreprocessorsRegistry:
         # Only load semantic predictor if model files exist
         if model_path.exists() and config_path.exists():
             try:
-                from swarmpilot.predictor.preprocessor.semantic_predictor import SemanticPredictor
+                from swarmpilot.predictor.preprocessor.semantic_predictor import (
+                    SemanticPredictor,
+                )
 
                 self._preprocessors["semantic"] = SemanticPredictor(
                     str(model_path),

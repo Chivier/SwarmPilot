@@ -115,7 +115,9 @@ class PinballLoss(nn.Module):
         self.quantiles = torch.tensor(quantiles, dtype=torch.float32)
         self.monotonicity_penalty = monotonicity_penalty
 
-    def forward(self, predictions: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, predictions: torch.Tensor, targets: torch.Tensor
+    ) -> torch.Tensor:
         """
         Compute pinball loss with optional monotonicity penalty.
 
@@ -140,7 +142,7 @@ class PinballLoss(nn.Module):
         pinball_loss = torch.where(
             errors >= 0,
             quantiles_expanded * errors,
-            (quantiles_expanded - 1) * errors
+            (quantiles_expanded - 1) * errors,
         )
 
         # Compute mean pinball loss
@@ -161,7 +163,9 @@ class PinballLoss(nn.Module):
             monotonicity_loss = violations.mean()
 
             # Add weighted penalty to total loss
-            total_loss = total_loss + self.monotonicity_penalty * monotonicity_loss
+            total_loss = (
+                total_loss + self.monotonicity_penalty * monotonicity_loss
+            )
 
         return total_loss
 
@@ -182,8 +186,12 @@ class QuantilePredictor(BasePredictor):
         """Initialize the predictor."""
         self.model = None
         self.transform = None  # BaseDeltaTransform for converting MLP output
-        self.feature_names = None  # Features actually used by model (after filtering)
-        self.removed_features = None  # Constant features removed during training
+        self.feature_names = (
+            None  # Features actually used by model (after filtering)
+        )
+        self.removed_features = (
+            None  # Constant features removed during training
+        )
         self.quantiles = None
         self.feature_mean = None
         self.feature_std = None
@@ -197,10 +205,12 @@ class QuantilePredictor(BasePredictor):
 
         # Residual calibration parameters (learned from training data)
         self.residual_calibration_enabled = False
-        self.residual_mu = None      # Log-space mean of residuals
-        self.residual_sigma = None   # Log-space std of residuals
+        self.residual_mu = None  # Log-space mean of residuals
+        self.residual_sigma = None  # Log-space std of residuals
 
-    def train(self, features_list: List[Dict[str, Any]], config: Dict[str, Any] = None) -> Dict[str, Any]:
+    def train(
+        self, features_list: List[Dict[str, Any]], config: Dict[str, Any] = None
+    ) -> Dict[str, Any]:
         """
         Train the predictor on the given data.
 
@@ -267,10 +277,10 @@ class QuantilePredictor(BasePredictor):
         # Data Augmentation: Generate synthetic samples to simulate variance
         # Default: ENABLED with auto-calculated parameters
         # ============================================================
-        augmentation_config = config.get('data_augmentation', {})
+        augmentation_config = config.get("data_augmentation", {})
 
         # Default to enabled unless explicitly disabled
-        augmentation_enabled = augmentation_config.get('enabled', True)
+        augmentation_enabled = augmentation_config.get("enabled", True)
         augmented_features_list = features_list
 
         if augmentation_enabled:
@@ -279,22 +289,31 @@ class QuantilePredictor(BasePredictor):
 
             # Get parameters with auto-calculated defaults
             # User-specified values override auto-calculated ones
-            aug_cv = augmentation_config.get('cv', auto_cv)
-            aug_samples = augmentation_config.get('samples_per_point', 5)
-            aug_dist = augmentation_config.get('distribution', 'lognormal')
+            aug_cv = augmentation_config.get("cv", auto_cv)
+            aug_samples = augmentation_config.get("samples_per_point", 5)
+            aug_dist = augmentation_config.get("distribution", "lognormal")
 
-            print(f"Data augmentation enabled: cv={aug_cv:.3f} (auto={auto_cv:.3f}), "
-                  f"samples_per_point={aug_samples}, distribution={aug_dist}")
+            print(
+                f"Data augmentation enabled: cv={aug_cv:.3f} (auto={auto_cv:.3f}), "
+                f"samples_per_point={aug_samples}, distribution={aug_dist}"
+            )
 
             augmented_features_list = self._augment_training_data(
-                features_list, cv=aug_cv, samples_per_point=aug_samples, distribution=aug_dist
+                features_list,
+                cv=aug_cv,
+                samples_per_point=aug_samples,
+                distribution=aug_dist,
             )
-            print(f"Augmented {len(features_list)} samples to {len(augmented_features_list)} samples")
+            print(
+                f"Augmented {len(features_list)} samples to {len(augmented_features_list)} samples"
+            )
         else:
             print("Data augmentation disabled by user configuration")
 
         # Extract features and labels
-        X, y, all_feature_names = self.extract_features_and_labels(augmented_features_list)
+        X, y, all_feature_names = self.extract_features_and_labels(
+            augmented_features_list
+        )
 
         # Filter out constant features (zero variance)
         # Constant features provide no predictive value and cause numerical issues
@@ -303,7 +322,9 @@ class QuantilePredictor(BasePredictor):
         )
 
         if self.removed_features:
-            print(f"Filtered {len(self.removed_features)} constant features: {self.removed_features}")
+            print(
+                f"Filtered {len(self.removed_features)} constant features: {self.removed_features}"
+            )
 
         if not feature_names:
             error_msg = (
@@ -330,14 +351,16 @@ class QuantilePredictor(BasePredictor):
         # Log Transform: Apply log to runtime_ms before normalization
         # This helps with right-skewed distributions (common for latency)
         # ============================================================
-        log_transform_config = config.get('log_transform', {})
-        self.log_transform_enabled = log_transform_config.get('enabled', False)
+        log_transform_config = config.get("log_transform", {})
+        self.log_transform_enabled = log_transform_config.get("enabled", False)
 
         if self.log_transform_enabled:
             # Clip to avoid log(0) or log(negative)
             y = np.maximum(y, 1e-6)
             y = np.log(y)
-            print(f"Log transform enabled: applied log() to {len(y)} runtime values")
+            print(
+                f"Log transform enabled: applied log() to {len(y)} runtime values"
+            )
 
         # Normalize features (z-score normalization)
         self.feature_mean = X.mean(axis=0)
@@ -355,12 +378,14 @@ class QuantilePredictor(BasePredictor):
         y_tensor = torch.tensor(y_normalized, dtype=torch.float32).unsqueeze(1)
 
         # Get quantiles from config or use defaults
-        self.quantiles = config.get('quantiles', [0.5, 0.9, 0.95, 0.99])
+        self.quantiles = config.get("quantiles", [0.5, 0.9, 0.95, 0.99])
 
         # Validate quantiles
         for q in self.quantiles:
             if not (0 < q < 1):
-                error_msg = f"Invalid quantile value {q}. Must be between 0 and 1."
+                error_msg = (
+                    f"Invalid quantile value {q}. Must be between 0 and 1."
+                )
                 logger.error(
                     f"QuantilePredictor training failed - invalid quantile\n"
                     f"Error: {error_msg}\n"
@@ -371,26 +396,33 @@ class QuantilePredictor(BasePredictor):
         # Sort quantiles to ensure proper ordering for base+delta transform
         self.quantiles = sorted(self.quantiles)
 
-        epochs = config.get('epochs', 500)
-        learning_rate = config.get('learning_rate', 0.01)
-        hidden_layers = config.get('hidden_layers', [64, 32])
-        monotonicity_penalty = config.get('monotonicity_penalty', 0.0)
-        self.delta_scale = config.get('delta_scale', 1.0)
+        epochs = config.get("epochs", 500)
+        learning_rate = config.get("learning_rate", 0.01)
+        hidden_layers = config.get("hidden_layers", [64, 32])
+        monotonicity_penalty = config.get("monotonicity_penalty", 0.0)
+        self.delta_scale = config.get("delta_scale", 1.0)
 
         # Create model and transform
         input_dim = len(feature_names)
-        output_dim = len(self.quantiles)  # One output per quantile (base + deltas)
+        output_dim = len(
+            self.quantiles
+        )  # One output per quantile (base + deltas)
 
         # MLP outputs raw [base, δ₁, δ₂, ...] values
-        self.model = MLP(input_dim=input_dim, output_dim=output_dim, hidden_layers=hidden_layers)
+        self.model = MLP(
+            input_dim=input_dim,
+            output_dim=output_dim,
+            hidden_layers=hidden_layers,
+        )
 
         # Transform converts raw outputs to monotonic quantiles
         self.transform = BaseDeltaTransform(
-            num_quantiles=output_dim,
-            delta_scale=self.delta_scale
+            num_quantiles=output_dim, delta_scale=self.delta_scale
         )
 
-        criterion = PinballLoss(self.quantiles, monotonicity_penalty=monotonicity_penalty)
+        criterion = PinballLoss(
+            self.quantiles, monotonicity_penalty=monotonicity_penalty
+        )
         optimizer = optim.Adam(self.model.parameters(), lr=learning_rate)
 
         # Training loop
@@ -413,9 +445,11 @@ class QuantilePredictor(BasePredictor):
         # ============================================================
         # Residual Calibration: Analyze prediction residuals for better quantile estimation
         # ============================================================
-        residual_config = config.get('residual_calibration', {})
-        self.residual_calibration_enabled = residual_config.get('enabled', False)
-        min_sigma = residual_config.get('min_sigma', 0.1)
+        residual_config = config.get("residual_calibration", {})
+        self.residual_calibration_enabled = residual_config.get(
+            "enabled", False
+        )
+        min_sigma = residual_config.get("min_sigma", 0.1)
 
         calibration_stats = {}
         if self.residual_calibration_enabled:
@@ -425,21 +459,31 @@ class QuantilePredictor(BasePredictor):
             print(f"\nResidual calibration enabled:")
             print(f"  Residual μ (log-space): {self.residual_mu:.4f}")
             print(f"  Residual σ (log-space): {self.residual_sigma:.4f}")
-            print(f"  Estimated CV: {calibration_stats.get('estimated_cv', 0):.4f}")
+            print(
+                f"  Estimated CV: {calibration_stats.get('estimated_cv', 0):.4f}"
+            )
 
         return {
-            'feature_names': self.feature_names,
-            'removed_features': self.removed_features,
-            'samples_count': len(features_list),
-            'augmented_samples_count': len(augmented_features_list) if augmentation_enabled else len(features_list),
-            'quantiles': self.quantiles,
-            'final_loss': float(loss.item()),
-            'data_augmentation': augmentation_config if augmentation_enabled else None,
-            'residual_calibration': calibration_stats if self.residual_calibration_enabled else None,
-            'log_transform_enabled': self.log_transform_enabled
+            "feature_names": self.feature_names,
+            "removed_features": self.removed_features,
+            "samples_count": len(features_list),
+            "augmented_samples_count": len(augmented_features_list)
+            if augmentation_enabled
+            else len(features_list),
+            "quantiles": self.quantiles,
+            "final_loss": float(loss.item()),
+            "data_augmentation": augmentation_config
+            if augmentation_enabled
+            else None,
+            "residual_calibration": calibration_stats
+            if self.residual_calibration_enabled
+            else None,
+            "log_transform_enabled": self.log_transform_enabled,
         }
 
-    def _estimate_cv_from_data(self, features_list: List[Dict[str, Any]]) -> float:
+    def _estimate_cv_from_data(
+        self, features_list: List[Dict[str, Any]]
+    ) -> float:
         """
         Estimate coefficient of variation (CV) from training data.
 
@@ -458,7 +502,7 @@ class QuantilePredictor(BasePredictor):
         from collections import defaultdict
 
         # Extract runtimes
-        runtimes = np.array([s['runtime_ms'] for s in features_list])
+        runtimes = np.array([s["runtime_ms"] for s in features_list])
 
         # Group samples by feature signature (excluding runtime_ms)
         groups = defaultdict(list)
@@ -467,9 +511,9 @@ class QuantilePredictor(BasePredictor):
             feature_key = tuple(
                 (k, round(v, 6) if isinstance(v, float) else v)
                 for k, v in sorted(sample.items())
-                if k != 'runtime_ms' and not k.startswith('_')
+                if k != "runtime_ms" and not k.startswith("_")
             )
-            groups[feature_key].append(sample['runtime_ms'])
+            groups[feature_key].append(sample["runtime_ms"])
 
         # Calculate CV for groups with multiple samples
         group_cvs = []
@@ -517,7 +561,7 @@ class QuantilePredictor(BasePredictor):
         features_list: List[Dict[str, Any]],
         cv: float = 0.3,
         samples_per_point: int = 5,
-        distribution: str = 'lognormal'
+        distribution: str = "lognormal",
     ) -> List[Dict[str, Any]]:
         """
         Augment training data by generating synthetic runtime variations.
@@ -541,22 +585,22 @@ class QuantilePredictor(BasePredictor):
         augmented = []
 
         for sample in features_list:
-            original_runtime = sample['runtime_ms']
+            original_runtime = sample["runtime_ms"]
             augmented.append(sample.copy())
 
             for _ in range(samples_per_point - 1):
                 new_sample = sample.copy()
 
-                if distribution == 'lognormal':
-                    sigma_ln = np.sqrt(np.log(1 + cv ** 2))
-                    mu_ln = np.log(original_runtime) - sigma_ln ** 2 / 2
+                if distribution == "lognormal":
+                    sigma_ln = np.sqrt(np.log(1 + cv**2))
+                    mu_ln = np.log(original_runtime) - sigma_ln**2 / 2
                     new_runtime = np.random.lognormal(mu_ln, sigma_ln)
                 else:
                     sigma = original_runtime * cv
                     new_runtime = np.random.normal(original_runtime, sigma)
                     new_runtime = max(new_runtime, 1.0)
 
-                new_sample['runtime_ms'] = float(new_runtime)
+                new_sample["runtime_ms"] = float(new_runtime)
                 augmented.append(new_sample)
 
         return augmented
@@ -565,7 +609,7 @@ class QuantilePredictor(BasePredictor):
         self,
         X_tensor: torch.Tensor,
         y_original: np.ndarray,
-        min_sigma: float = 0.1
+        min_sigma: float = 0.1,
     ) -> Dict[str, Any]:
         """
         Compute residual distribution parameters for calibration.
@@ -581,8 +625,6 @@ class QuantilePredictor(BasePredictor):
         Returns:
             Dict with calibration statistics
         """
-        from scipy import stats
-
         self.model.eval()
         with torch.no_grad():
             raw_output = self.model(X_tensor)
@@ -595,7 +637,9 @@ class QuantilePredictor(BasePredictor):
                 break
 
         predictions_median_normalized = predictions_normalized[:, median_idx]
-        predictions_median = predictions_median_normalized * self.target_std + self.target_mean
+        predictions_median = (
+            predictions_median_normalized * self.target_std + self.target_mean
+        )
 
         predictions_clipped = np.maximum(predictions_median, 1e-6)
         residuals = y_original / predictions_clipped
@@ -605,14 +649,14 @@ class QuantilePredictor(BasePredictor):
         self.residual_mu = float(np.mean(log_residuals))
         self.residual_sigma = float(max(np.std(log_residuals), min_sigma))
 
-        estimated_cv = np.sqrt(np.exp(self.residual_sigma ** 2) - 1)
+        estimated_cv = np.sqrt(np.exp(self.residual_sigma**2) - 1)
 
         return {
-            'residual_mu': self.residual_mu,
-            'residual_sigma': self.residual_sigma,
-            'estimated_cv': float(estimated_cv),
-            'residual_mean': float(np.mean(residuals)),
-            'residual_std': float(np.std(residuals))
+            "residual_mu": self.residual_mu,
+            "residual_sigma": self.residual_sigma,
+            "estimated_cv": float(estimated_cv),
+            "residual_mean": float(np.mean(residuals)),
+            "residual_std": float(np.std(residuals)),
         }
 
     def _get_residual_quantile_multiplier(self, quantile: float) -> float:
@@ -659,7 +703,9 @@ class QuantilePredictor(BasePredictor):
 
         return predictions
 
-    def predict(self, features: Dict[str, Any], enforce_monotonicity: bool = False) -> Dict[str, Any]:
+    def predict(
+        self, features: Dict[str, Any], enforce_monotonicity: bool = False
+    ) -> Dict[str, Any]:
         """
         Make a prediction for the given features.
 
@@ -693,7 +739,9 @@ class QuantilePredictor(BasePredictor):
         self.validate_features(filtered_features, self.feature_names)
 
         # Extract feature values in correct order
-        feature_values = [filtered_features[fname] for fname in self.feature_names]
+        feature_values = [
+            filtered_features[fname] for fname in self.feature_names
+        ]
         X = np.array([feature_values], dtype=np.float32)
 
         # Normalize using training statistics
@@ -706,11 +754,15 @@ class QuantilePredictor(BasePredictor):
         with torch.no_grad():
             # Forward pass: MLP -> BaseDeltaTransform -> monotonic quantiles
             raw_output = self.model(X_tensor)
-            predictions_normalized = self.transform(raw_output).numpy().flatten()
+            predictions_normalized = (
+                self.transform(raw_output).numpy().flatten()
+            )
 
         # Denormalize predictions back to original scale
         # Note: when log_transform is enabled, this gives log(runtime_ms)
-        predictions = predictions_normalized * self.target_std + self.target_mean
+        predictions = (
+            predictions_normalized * self.target_std + self.target_mean
+        )
 
         # Apply inverse log transform if enabled during training
         # This converts log(runtime_ms) back to runtime_ms using exponential
@@ -725,13 +777,10 @@ class QuantilePredictor(BasePredictor):
 
         # Format results as dict with quantile: value pairs
         quantile_results = {
-            str(q): float(pred)
-            for q, pred in zip(self.quantiles, predictions)
+            str(q): float(pred) for q, pred in zip(self.quantiles, predictions)
         }
 
-        return {
-            'quantiles': quantile_results
-        }
+        return {"quantiles": quantile_results}
 
     def get_model_state(self) -> Dict[str, Any]:
         """
@@ -742,26 +791,29 @@ class QuantilePredictor(BasePredictor):
         """
         if self.model is None:
             error_msg = "No model to serialize"
-            logger.error(f"QuantilePredictor get_model_state failed: {error_msg}")
+            logger.error(
+                f"QuantilePredictor get_model_state failed: {error_msg}"
+            )
             raise ValueError(error_msg)
 
         return {
-            'model_config': self.model.get_config(),
-            'model_state_dict': self.model.state_dict(),
-            'feature_names': self.feature_names,
-            'removed_features': self.removed_features or [],  # Constant features filtered during training
-            'quantiles': self.quantiles,
-            'feature_mean': self.feature_mean.tolist(),
-            'feature_std': self.feature_std.tolist(),
-            'target_mean': float(self.target_mean),
-            'target_std': float(self.target_std),
-            'delta_scale': float(self.delta_scale) if self.delta_scale else 1.0,
+            "model_config": self.model.get_config(),
+            "model_state_dict": self.model.state_dict(),
+            "feature_names": self.feature_names,
+            "removed_features": self.removed_features
+            or [],  # Constant features filtered during training
+            "quantiles": self.quantiles,
+            "feature_mean": self.feature_mean.tolist(),
+            "feature_std": self.feature_std.tolist(),
+            "target_mean": float(self.target_mean),
+            "target_std": float(self.target_std),
+            "delta_scale": float(self.delta_scale) if self.delta_scale else 1.0,
             # Log transform parameter
-            'log_transform_enabled': self.log_transform_enabled,
+            "log_transform_enabled": self.log_transform_enabled,
             # Residual calibration parameters
-            'residual_calibration_enabled': self.residual_calibration_enabled,
-            'residual_mu': self.residual_mu,
-            'residual_sigma': self.residual_sigma
+            "residual_calibration_enabled": self.residual_calibration_enabled,
+            "residual_mu": self.residual_mu,
+            "residual_sigma": self.residual_sigma,
         }
 
     def load_model_state(self, state: Dict[str, Any]) -> None:
@@ -772,34 +824,35 @@ class QuantilePredictor(BasePredictor):
             state: Model state dict from get_model_state()
         """
         # Recreate model architecture
-        self.model = MLP.from_config(state['model_config'])
-        self.model.load_state_dict(state['model_state_dict'])
+        self.model = MLP.from_config(state["model_config"])
+        self.model.load_state_dict(state["model_state_dict"])
         self.model.eval()
 
         # Restore metadata
-        self.feature_names = state['feature_names']
-        self.quantiles = state['quantiles']
-        self.feature_mean = np.array(state['feature_mean'])
-        self.feature_std = np.array(state['feature_std'])
-        self.target_mean = state['target_mean']
-        self.target_std = state['target_std']
+        self.feature_names = state["feature_names"]
+        self.quantiles = state["quantiles"]
+        self.feature_mean = np.array(state["feature_mean"])
+        self.feature_std = np.array(state["feature_std"])
+        self.target_mean = state["target_mean"]
+        self.target_std = state["target_std"]
 
         # Restore removed_features (backward compatible with old models)
-        self.removed_features = state.get('removed_features', [])
+        self.removed_features = state.get("removed_features", [])
 
         # Restore delta_scale (backward compatible with old models)
-        self.delta_scale = state.get('delta_scale', 1.0)
+        self.delta_scale = state.get("delta_scale", 1.0)
 
         # Recreate transform with correct parameters
         self.transform = BaseDeltaTransform(
-            num_quantiles=len(self.quantiles),
-            delta_scale=self.delta_scale
+            num_quantiles=len(self.quantiles), delta_scale=self.delta_scale
         )
 
         # Restore log transform setting (backward compatible with old models)
-        self.log_transform_enabled = state.get('log_transform_enabled', False)
+        self.log_transform_enabled = state.get("log_transform_enabled", False)
 
         # Restore residual calibration parameters (backward compatible)
-        self.residual_calibration_enabled = state.get('residual_calibration_enabled', False)
-        self.residual_mu = state.get('residual_mu', None)
-        self.residual_sigma = state.get('residual_sigma', None)
+        self.residual_calibration_enabled = state.get(
+            "residual_calibration_enabled", False
+        )
+        self.residual_mu = state.get("residual_mu", None)
+        self.residual_sigma = state.get("residual_sigma", None)
