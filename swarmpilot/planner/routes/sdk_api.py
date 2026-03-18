@@ -94,9 +94,7 @@ def _sanitize_name(model: str) -> str:
     return model.replace("/", "-").lstrip("-")
 
 
-def _resolve_scheduler(
-    scheduler: str | None, model: str
-) -> str | None:
+def _resolve_scheduler(scheduler: str | None, model: str) -> str | None:
     """Resolve the scheduler URL for a model.
 
     Args:
@@ -157,10 +155,8 @@ async def serve_model(request: ServeRequest):
     # Auto-generate vllm serve command for model names
     if "/" in model_or_cmd:
         model = model_or_cmd
-        command = f"vllm serve {model} --port $PORT"
     else:
         model = model_or_cmd
-        command = model_or_cmd
 
     name = request.name or _sanitize_name(model)
     scheduler_url = _resolve_scheduler(request.scheduler, model)
@@ -176,9 +172,7 @@ async def serve_model(request: ServeRequest):
             wait_for_ready=True,
         )
 
-        instance_ids = [
-            inst.pylet_id for inst in result.active_instances
-        ]
+        instance_ids = [inst.pylet_id for inst in result.active_instances]
 
         return ServeResponse(
             success=result.success,
@@ -225,9 +219,7 @@ async def run_workload(request: RunRequest):
             wait_for_ready=True,
         )
 
-        instance_ids = [
-            inst.pylet_id for inst in result.active_instances
-        ]
+        instance_ids = [inst.pylet_id for inst in result.active_instances]
 
         return RunResponse(
             success=result.success,
@@ -319,9 +311,7 @@ async def deploy_registered():
         )
 
 
-@router.get(
-    "/registered", response_model=RegisteredModelsResponse
-)
+@router.get("/registered", response_model=RegisteredModelsResponse)
 async def list_registered():
     """List all registered model requirements.
 
@@ -404,14 +394,11 @@ async def scale_model(request: ScaleRequest):
     service = _ensure_pylet_enabled()
 
     logger.info(
-        f"[SDK] scale model={request.model} "
-        f"replicas={request.replicas}"
+        f"[SDK] scale model={request.model} replicas={request.replicas}"
     )
 
     try:
-        previous = len(
-            service.get_instances_by_model(request.model)
-        )
+        previous = len(service.get_instances_by_model(request.model))
 
         result = service.scale_model(
             model_id=request.model,
@@ -467,9 +454,7 @@ async def terminate_instances(request: TerminateRequest):
             )
 
         if request.model:
-            instances = service.get_instances_by_model(
-                request.model
-            )
+            instances = service.get_instances_by_model(request.model)
             pylet_ids = [i.pylet_id for i in instances]
             mgr = service.instance_manager
             results = mgr.terminate_instances(pylet_ids)
@@ -478,8 +463,7 @@ async def terminate_instances(request: TerminateRequest):
                 success=True,
                 terminated_count=count,
                 message=(
-                    f"Terminated {count} instances "
-                    f"for model {request.model}"
+                    f"Terminated {count} instances for model {request.model}"
                 ),
             )
 
@@ -489,17 +473,13 @@ async def terminate_instances(request: TerminateRequest):
             matched = [
                 i
                 for i in active
-                if request.name
-                in (i.pylet_id, i.instance_id, i.model_id)
+                if request.name in (i.pylet_id, i.instance_id, i.model_id)
             ]
             if not matched:
                 return TerminateResponse(
                     success=False,
                     terminated_count=0,
-                    message=(
-                        f"No instances found matching "
-                        f"'{request.name}'"
-                    ),
+                    message=(f"No instances found matching '{request.name}'"),
                 )
             pylet_ids = [i.pylet_id for i in matched]
             mgr = service.instance_manager
@@ -509,8 +489,7 @@ async def terminate_instances(request: TerminateRequest):
                 success=True,
                 terminated_count=count,
                 message=(
-                    f"Terminated {count} instances "
-                    f"matching '{request.name}'"
+                    f"Terminated {count} instances matching '{request.name}'"
                 ),
             )
 
@@ -540,9 +519,7 @@ async def get_schedulers():
     """
     registry = get_scheduler_registry()
     all_info = registry.list_all()
-    mapping = {
-        info.model_id: info.scheduler_url for info in all_info
-    }
+    mapping = {info.model_id: info.scheduler_url for info in all_info}
     return SchedulerMapResponse(
         schedulers=mapping,
         total=len(mapping),

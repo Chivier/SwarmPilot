@@ -95,10 +95,8 @@ async def train_model(request: TrainingRequest):
 
                     # Apply each preprocessor
                     for preprocessor_name in request.enable_preprocessors:
-                        preprocessor = (
-                            dependencies.preprocessors_registry.get_preprocessor(
-                                preprocessor_name
-                            )
+                        preprocessor = dependencies.preprocessors_registry.get_preprocessor(
+                            preprocessor_name
                         )
                         target_feature_keys = request.preprocessor_mappings[
                             preprocessor_name
@@ -108,7 +106,9 @@ async def train_model(request: TrainingRequest):
                         assert all(
                             key in processed_features_dict
                             for key in target_feature_keys
-                        ), f"Feature keys {target_feature_keys} not all found in features"
+                        ), (
+                            f"Feature keys {target_feature_keys} not all found in features"
+                        )
 
                         # Extract target feature values
                         target_feature_values = [
@@ -154,7 +154,7 @@ async def train_model(request: TrainingRequest):
 
         # Train the model
         try:
-            training_metadata = predictor.train(
+            predictor.train(
                 features_list=processed_features_list,
                 config=request.training_config or {},
             )
@@ -208,7 +208,9 @@ async def train_model(request: TrainingRequest):
                 "samples_count": len(request.features_list),
                 "training_config": request.training_config,
             }
-            dependencies.storage.save_model(model_key, predictor_state, metadata)
+            dependencies.storage.save_model(
+                model_key, predictor_state, metadata
+            )
 
             # Invalidate cache for this model (it has been retrained)
             dependencies.model_cache.invalidate(model_key)
