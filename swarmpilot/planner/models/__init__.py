@@ -4,7 +4,17 @@ This package provides domain-specific Pydantic models organized by function.
 All models are re-exported here for backward compatibility.
 """
 
-from .base import InstanceStatus
+from swarmpilot.shared.models import (
+    InstanceDrainRequest,
+    InstanceDrainResponse,
+    InstanceDrainStatusResponse,
+    InstanceRemoveRequest,
+    InstanceRemoveResponse,
+    InstanceStatus,
+    TaskResubmitRequest,
+    TaskResubmitResponse,
+)
+
 from .instance import (
     InstanceRegisterRequest,
     InstanceRegisterResponse,
@@ -30,15 +40,6 @@ from .scheduler import (
     SchedulerListResponse,
     SchedulerRegisterRequest,
     SchedulerRegisterResponse,
-)
-from .scheduler_compat import (
-    InstanceDrainRequest,
-    InstanceDrainResponse,
-    InstanceDrainStatusResponse,
-    InstanceRemoveRequest,
-    InstanceRemoveResponse,
-    TaskResubmitRequest,
-    TaskResubmitResponse,
 )
 from .sdk_api import (
     DeployResponse,

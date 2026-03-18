@@ -1,13 +1,5 @@
 """Base models and enums for the Planner service."""
 
-from enum import Enum
+from swarmpilot.shared.models import InstanceStatus
 
-
-class InstanceStatus(str, Enum):
-    """Enumeration of possible instance statuses (compatible with Scheduler)."""
-
-    INITIALIZING = "initializing"
-    ACTIVE = "active"
-    DRAINING = "draining"
-    REMOVING = "removing"
-    REDEPLOYING = "redeploying"
+__all__ = ["InstanceStatus"]
