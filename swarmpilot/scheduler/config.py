@@ -158,7 +158,8 @@ class PlannerRegistrationConfig:
     # Model ID this scheduler handles
     model_id: str = os.getenv("SCHEDULER_MODEL_ID", "")
 
-    # Advertised URL for this scheduler (how planner reaches us)
+    # Advertised URL for this scheduler (how planner reaches us).
+    # Auto-derived from localhost:{SCHEDULER_PORT} when not set.
     self_url: str = os.getenv("SCHEDULER_SELF_URL", "")
 
     # Request timeout for registration calls
@@ -169,6 +170,12 @@ class PlannerRegistrationConfig:
 
     # Delay between retries in seconds
     retry_delay: float = float(os.getenv("PLANNER_REGISTRATION_RETRY_DELAY", "5.0"))
+
+    def __post_init__(self) -> None:
+        """Auto-derive self_url from localhost:{port} when not set."""
+        if not self.self_url and self.planner_url:
+            port = os.getenv("SCHEDULER_PORT", "8000")
+            self.self_url = f"http://localhost:{port}"
 
     @property
     def enabled(self) -> bool:
