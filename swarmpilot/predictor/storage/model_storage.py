@@ -86,6 +86,7 @@ class ModelStorage:
 
         # Save to disk
         model_path = self.storage_dir / f"{model_key}.joblib"
+        model_path.parent.mkdir(parents=True, exist_ok=True)
         try:
             joblib.dump(complete_state, model_path)
             logger.debug(f"Model saved successfully: {model_path}")
