@@ -320,9 +320,19 @@ class SwarmPilotClient:
             "GET",
             self._planner("/v1/instances"),
         )
+        # The API may return a flat list of instances or a dict
+        # with "instances", "processes", and "groups" keys.
+        if isinstance(data, list):
+            raw_instances = data
+            raw_processes: list = []
+            raw_groups: list = []
+        else:
+            raw_instances = data.get("instances", [])
+            raw_processes = data.get("processes", [])
+            raw_groups = data.get("groups", [])
         instances_list = [
             self._parse_instance(inst)
-            for inst in data.get("instances", [])
+            for inst in raw_instances
         ]
         processes_list = [
             Process(
@@ -333,11 +343,11 @@ class SwarmPilotClient:
                 gpu=p.get("gpu", 0),
                 _client=self,
             )
-            for p in data.get("processes", [])
+            for p in raw_processes
         ]
         groups_list = [
             self._parse_instance_group(g)
-            for g in data.get("groups", [])
+            for g in raw_groups
         ]
         return ClusterState(
             instances=instances_list,
@@ -539,13 +549,13 @@ class SwarmPilotClient:
             An :class:`Instance` dataclass with ``_client`` set.
         """
         return Instance(
-            name=data["name"],
-            model=data.get("model"),
+            name=data.get("name") or data.get("instance_id", ""),
+            model=data.get("model") or data.get("model_id"),
             command=data.get("command", ""),
             endpoint=data.get("endpoint"),
             scheduler=data.get("scheduler"),
             status=data.get("status", "unknown"),
-            gpu=data.get("gpu", 0),
+            gpu=data.get("gpu") or data.get("gpu_count", 0),
             _client=self,
         )
 
@@ -562,31 +572,44 @@ class SwarmPilotClient:
             An :class:`InstanceGroup` dataclass with ``_client``
             set.
         """
-        # ServeResponse uses "replicas"; other responses may use
-        # "instances".
-        raw_replicas = data.get(
-            "replicas", data.get("instances", [])
-        )
-        instances = [
-            self._parse_instance(r) if "name" in r else r
-            for r in raw_replicas
-        ]
-        # Replicas from ServeResponse have a simpler shape
-        # (name, endpoint, status) without full Instance fields.
+        # Several response formats co-exist:
+        #   - "replicas" as list[dict] (legacy SDK convention in tests)
+        #   - "replicas" as int + "instances" as list[str] (ServeResponse)
+        #   - "instances" as list[dict] (cluster-state listings)
+        # Resolve to a list of dicts or strings.
+        raw_replicas = data.get("replicas", data.get("instances", []))
+        if isinstance(raw_replicas, int):
+            # replicas is a count; use instances list instead
+            raw_replicas = data.get("instances", [])
+
         parsed: list[Instance] = []
-        for item in instances:
-            if isinstance(item, Instance):
-                parsed.append(item)
-            else:
+        for r in raw_replicas:
+            if isinstance(r, str):
+                # ServeResponse: instance IDs as strings
                 parsed.append(
                     Instance(
-                        name=item.get("name", ""),
+                        name=r,
                         model=data.get("model"),
                         command=data.get("command", ""),
-                        endpoint=item.get("endpoint"),
+                        endpoint=None,
+                        scheduler=data.get("scheduler_url"),
+                        status="pending",
+                        gpu=data.get("gpu_count", 0),
+                        _client=self,
+                    )
+                )
+            elif isinstance(r, dict) and "name" in r:
+                parsed.append(self._parse_instance(r))
+            elif isinstance(r, dict):
+                parsed.append(
+                    Instance(
+                        name=r.get("name", ""),
+                        model=data.get("model"),
+                        command=data.get("command", ""),
+                        endpoint=r.get("endpoint"),
                         scheduler=data.get("scheduler"),
-                        status=item.get("status", "unknown"),
-                        gpu=item.get("gpu", 0),
+                        status=r.get("status", "unknown"),
+                        gpu=r.get("gpu", 0),
                         _client=self,
                     )
                 )
