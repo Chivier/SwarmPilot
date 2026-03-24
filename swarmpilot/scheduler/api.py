@@ -3032,6 +3032,83 @@ async def health_check():
 
 
 # ============================================================================
+# Model Reassignment
+# ============================================================================
+
+
+@app.post("/v1/model/reassign")
+async def reassign_model(request: Request):
+    """Reassign the scheduler to serve a different model.
+
+    Only allowed when no instances are registered. Updates the
+    scheduler's model_id and re-registers with the planner under
+    the new model.
+
+    Request body:
+        model_id (str): New model identifier.
+
+    Returns:
+        JSON with old_model_id, new_model_id, success flag.
+    """
+    body = await request.json()
+    new_model_id = body.get("model_id")
+    if not new_model_id:
+        raise HTTPException(
+            status_code=400,
+            detail="model_id is required",
+        )
+
+    active_count = await instance_registry.get_active_count()
+    total_count = await instance_registry.get_total_count()
+    if active_count > 0 or total_count > 0:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Cannot reassign: {total_count} instance(s) still "
+                f"registered ({active_count} active). Remove all "
+                f"instances first."
+            ),
+        )
+
+    old_model_id = config.planner_registration.model_id
+    config.planner_registration.model_id = new_model_id
+
+    # Reset PlannerReporter so next instance sets it correctly
+    if planner_reporter:
+        planner_reporter._model_id = None
+
+    # Re-register with planner under new model_id
+    if config.planner_registration.enabled:
+        try:
+            async with httpx.AsyncClient(
+                timeout=httpx.Timeout(10.0),
+            ) as client:
+                await client.post(
+                    f"{config.planner_registration.planner_url.rstrip('/')}"
+                    f"/v1/scheduler/register",
+                    json={
+                        "model_id": new_model_id,
+                        "scheduler_url": (
+                            config.planner_registration.self_url
+                        ),
+                    },
+                )
+        except Exception as e:
+            logger.warning(
+                f"Failed to re-register with planner: {e}"
+            )
+
+    logger.info(
+        f"Model reassigned: {old_model_id} -> {new_model_id}"
+    )
+    return {
+        "success": True,
+        "old_model_id": old_model_id,
+        "new_model_id": new_model_id,
+    }
+
+
+# ============================================================================
 # Predictor Management Router
 # ============================================================================
 

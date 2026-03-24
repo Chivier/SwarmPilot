@@ -97,6 +97,10 @@ def _sanitize_name(model: str) -> str:
 def _resolve_scheduler(scheduler: str | None, model: str) -> str | None:
     """Resolve the scheduler URL for a model.
 
+    If no scheduler is registered for the model, attempts to find an
+    idle scheduler (one whose instances have all been removed) and
+    reassign it to the new model.
+
     Args:
         scheduler: 'auto' to look up in SchedulerRegistry,
             None to skip, or a URL string.
@@ -107,11 +111,72 @@ def _resolve_scheduler(scheduler: str | None, model: str) -> str | None:
     """
     if scheduler is None:
         return None
-    if scheduler == "auto":
-        registry = get_scheduler_registry()
-        return registry.get_scheduler_url(model)
-    # Treat as a direct URL
-    return scheduler
+    if scheduler != "auto":
+        return scheduler
+
+    registry = get_scheduler_registry()
+    url = registry.get_scheduler_url(model)
+    if url is not None:
+        return url
+
+    # No scheduler for this model — look for an idle one to reassign
+    url = _try_reassign_idle_scheduler(model)
+    return url
+
+
+def _try_reassign_idle_scheduler(model: str) -> str | None:
+    """Find an idle scheduler and reassign it to the given model.
+
+    A scheduler is idle when the planner has no managed instances
+    for its current model_id. On success the scheduler's model_id
+    is updated via its ``/v1/model/reassign`` API and the
+    SchedulerRegistry is remapped.
+
+    Args:
+        model: Target model identifier.
+
+    Returns:
+        Scheduler URL if reassignment succeeded, None otherwise.
+    """
+    from ..pylet.instance_manager import get_instance_manager
+    from ..pylet.scheduler_client import SchedulerClient
+
+    registry = get_scheduler_registry()
+
+    try:
+        manager = get_instance_manager()
+    except RuntimeError:
+        return None
+
+    # Check each registered scheduler for idleness
+    for info in registry.list_all():
+        old_model = info.model_id
+        # Count managed instances for this scheduler's model
+        instances = [
+            inst
+            for inst in manager.instances.values()
+            if inst.model_id == old_model
+        ]
+        if len(instances) > 0:
+            continue
+
+        # This scheduler has no instances — try to reassign it
+        logger.info(
+            f"Found idle scheduler for {old_model} at "
+            f"{info.scheduler_url}, reassigning to {model}"
+        )
+        client = SchedulerClient(info.scheduler_url)
+        try:
+            if client.reassign_model(model):
+                registry.reassign(old_model, model)
+                return info.scheduler_url
+        finally:
+            client.close()
+
+    logger.warning(
+        f"No idle scheduler available for model {model}"
+    )
+    return None
 
 
 def _instance_to_detail(instance) -> InstanceDetailResponse:

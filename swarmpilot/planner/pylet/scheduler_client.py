@@ -398,6 +398,37 @@ class SchedulerClient:
         except httpx.RequestError:
             return False
 
+    def reassign_model(self, new_model_id: str) -> bool:
+        """Reassign the scheduler to serve a different model.
+
+        Only succeeds if the scheduler has zero registered instances.
+
+        Args:
+            new_model_id: New model identifier.
+
+        Returns:
+            True if reassignment succeeded.
+        """
+        try:
+            response = self._client.post(
+                f"{self.scheduler_url}/v1/model/reassign",
+                json={"model_id": new_model_id},
+            )
+            if response.status_code == 200:
+                logger.info(
+                    f"Scheduler {self.scheduler_url} reassigned "
+                    f"to {new_model_id}"
+                )
+                return True
+            logger.warning(
+                f"Scheduler reassign failed "
+                f"({response.status_code}): {response.text}"
+            )
+            return False
+        except httpx.RequestError as e:
+            logger.error(f"Scheduler reassign request error: {e}")
+            return False
+
 
 # Global client singleton
 _scheduler_client: SchedulerClient | None = None

@@ -139,6 +139,38 @@ class SchedulerRegistry:
         with self._lock:
             return model_id in self._schedulers
 
+    def reassign(
+        self, old_model_id: str, new_model_id: str
+    ) -> bool:
+        """Remap a scheduler from one model to another.
+
+        Moves the SchedulerInfo entry from old_model_id to
+        new_model_id, preserving the scheduler_url.
+
+        Args:
+            old_model_id: Current model identifier.
+            new_model_id: Target model identifier.
+
+        Returns:
+            True if the reassignment was performed.
+        """
+        with self._lock:
+            info = self._schedulers.pop(old_model_id, None)
+            if info is None:
+                return False
+            self._schedulers[new_model_id] = SchedulerInfo(
+                model_id=new_model_id,
+                scheduler_url=info.scheduler_url,
+                registered_at=datetime.now(UTC).isoformat(),
+                is_healthy=info.is_healthy,
+                metadata=info.metadata,
+            )
+            logger.info(
+                f"Scheduler reassigned: {old_model_id} -> "
+                f"{new_model_id} (url={info.scheduler_url})"
+            )
+            return True
+
 
 # Global registry singleton
 _scheduler_registry: SchedulerRegistry | None = None
