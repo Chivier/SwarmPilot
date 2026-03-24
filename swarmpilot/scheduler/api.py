@@ -3077,26 +3077,10 @@ async def reassign_model(request: Request):
     if planner_reporter:
         planner_reporter._model_id = None
 
-    # Re-register with planner under new model_id
-    if config.planner_registration.enabled:
-        try:
-            async with httpx.AsyncClient(
-                timeout=httpx.Timeout(10.0),
-            ) as client:
-                await client.post(
-                    f"{config.planner_registration.planner_url.rstrip('/')}"
-                    f"/v1/scheduler/register",
-                    json={
-                        "model_id": new_model_id,
-                        "scheduler_url": (
-                            config.planner_registration.self_url
-                        ),
-                    },
-                )
-        except Exception as e:
-            logger.warning(
-                f"Failed to re-register with planner: {e}"
-            )
+    # NOTE: The planner is responsible for updating its own
+    # SchedulerRegistry after a successful reassign call.
+    # We do NOT call back to the planner here to avoid a
+    # deadlock (planner is blocked waiting for this response).
 
     logger.info(
         f"Model reassigned: {old_model_id} -> {new_model_id}"
