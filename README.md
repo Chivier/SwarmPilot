@@ -138,6 +138,11 @@ pip install swarmpilot
 # With PyLet support
 pip install swarmpilot[pylet]
 ```
+## Pre-Trained Model
+
+Predictor models for Qwen3-8B-VL
+
+> https://www.dropbox.com/scl/fo/wvwm5cklrfvjqtofcsgfk/ANRYs9NnKR-sFnvpPfFV_vM?rlkey=gryoqk9sa6c65lky3csfhvsvp&st=2biytvst&dl=0
 
 ## License
 
