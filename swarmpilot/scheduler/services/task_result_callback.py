@@ -230,6 +230,7 @@ class TaskResultCallback:
             task = await self.task_registry.get(task_id)
             if not task:
                 logger.warning(f"Task {task_id} not found in registry")
+                self._resolve_future(task_id, result)
                 return
 
             # Get instance for stats update
