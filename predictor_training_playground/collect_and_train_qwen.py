@@ -53,7 +53,7 @@ PLATFORM_INFO = {
 MAX_TOKENS_CHOICES = [64, 128, 256, 512]
 DEFAULT_HEALTH_TIMEOUT = 300.0
 DEFAULT_RETRY_DELAY = 5.0
-MAX_RETRIES_PER_REQUEST = 10
+MAX_RETRIES_PER_REQUEST = 60
 
 
 # ── Helpers ──────────────────────────────────────────────────────
