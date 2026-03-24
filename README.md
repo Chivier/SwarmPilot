@@ -23,15 +23,15 @@ git clone <repo-url> swarmpilot-refresh
 cd swarmpilot-refresh
 uv sync
 
-# Terminal 1: Start Planner (orchestration layer)
+# Node 1: Start Planner (orchestration layer)
 uv run splanner start --port 8002
 
-# Terminal 2: Start Scheduler for model A (auto-registers with Planner)
+# Node 2: Start Scheduler for model A (auto-registers with Planner)
 SCHEDULER_MODEL_ID="Qwen/Qwen3-8B-VL" \
   PLANNER_REGISTRATION_URL="http://localhost:8002" \
   uv run sscheduler start --port 8010
 
-# Terminal 3: Start Scheduler for model B (auto-registers with Planner)
+# Node 3: Start Scheduler for model B (auto-registers with Planner)
 SCHEDULER_MODEL_ID="meta-llama/Llama-3.1-8B" \
   PLANNER_REGISTRATION_URL="http://localhost:8002" \
   uv run sscheduler start --port 8020
