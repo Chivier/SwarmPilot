@@ -590,6 +590,9 @@ class InstanceManager:
             old_status = managed.status
             managed.status = ManagedInstanceStatus.TERMINATED
 
+            # Remove from managed instances so idle checks are accurate
+            del self._instances[pylet_id]
+
             # Log termination complete
             logger.info(
                 f"[INSTANCE_TERMINATE] pylet_id={pylet_id} action=complete success=true"

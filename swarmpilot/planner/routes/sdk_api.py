@@ -138,8 +138,20 @@ def _try_reassign_idle_scheduler(model: str) -> str | None:
     Returns:
         Scheduler URL if reassignment succeeded, None otherwise.
     """
-    from ..pylet.instance_manager import get_instance_manager
+    from ..pylet.instance_manager import (
+        ManagedInstanceStatus,
+        get_instance_manager,
+    )
     from ..pylet.scheduler_client import SchedulerClient
+
+    _LIVE_STATUSES = {
+        ManagedInstanceStatus.DEPLOYING,
+        ManagedInstanceStatus.WAITING_HEALTH,
+        ManagedInstanceStatus.REGISTERING,
+        ManagedInstanceStatus.ACTIVE,
+        ManagedInstanceStatus.DRAINING,
+        ManagedInstanceStatus.TERMINATING,
+    }
 
     registry = get_scheduler_registry()
 
@@ -151,13 +163,14 @@ def _try_reassign_idle_scheduler(model: str) -> str | None:
     # Check each registered scheduler for idleness
     for info in registry.list_all():
         old_model = info.model_id
-        # Count managed instances for this scheduler's model
-        instances = [
-            inst
+        # Count live (non-terminated/failed) instances for this model
+        live_count = sum(
+            1
             for inst in manager.instances.values()
             if inst.model_id == old_model
-        ]
-        if len(instances) > 0:
+            and inst.status in _LIVE_STATUSES
+        )
+        if live_count > 0:
             continue
 
         # This scheduler has no instances — try to reassign it
