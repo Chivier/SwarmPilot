@@ -138,10 +138,8 @@ def _try_reassign_idle_scheduler(model: str) -> str | None:
     Returns:
         Scheduler URL if reassignment succeeded, None otherwise.
     """
-    from ..pylet.instance_manager import (
-        ManagedInstanceStatus,
-        get_instance_manager,
-    )
+    from ..pylet.deployment_service import get_pylet_service_optional
+    from ..pylet.instance_manager import ManagedInstanceStatus
     from ..pylet.scheduler_client import SchedulerClient
 
     _LIVE_STATUSES = {
@@ -155,10 +153,10 @@ def _try_reassign_idle_scheduler(model: str) -> str | None:
 
     registry = get_scheduler_registry()
 
-    try:
-        manager = get_instance_manager()
-    except RuntimeError:
+    service = get_pylet_service_optional()
+    if service is None:
         return None
+    manager = service._instance_manager
 
     # Check each registered scheduler for idleness
     for info in registry.list_all():
