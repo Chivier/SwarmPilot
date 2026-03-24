@@ -48,7 +48,7 @@ DEFAULT_STORAGE_DIR = "models"
 DEFAULT_NUM_REQUESTS = 200
 DEFAULT_MAX_CONCURRENT = 5
 DEFAULT_GPU = 1
-DEFAULT_REPLICAS = 4
+DEFAULT_REPLICAS = 1
 DEFAULT_TIMEOUT = 600.0
 DEFAULT_HEALTH_TIMEOUT = 300.0
 DEFAULT_RETRY_DELAY = 5.0
@@ -166,21 +166,21 @@ async def wait_scheduler_ready(
 
 async def check_and_teardown(
     planner_url: str,
-    default_replicas: int,
 ) -> int:
-    """Check for existing instances and terminate them if present.
+    """Check for existing instances, terminate them, and return the count.
 
     Queries the planner for all running instances. If any exist,
     terminates them all and returns the count so the new deployment
-    can match it.
+    matches the existing cluster scale.
 
     Args:
         planner_url: Planner service URL.
-        default_replicas: Replica count to use if no existing
-            instances are found.
 
     Returns:
-        Number of replicas to deploy (existing count or default).
+        Number of replicas to deploy (matching existing count).
+
+    Raises:
+        RuntimeError: If no existing instances are found.
     """
     from swarmpilot.sdk import SwarmPilotClient
 
@@ -188,11 +188,11 @@ async def check_and_teardown(
         state = await sp.instances()
         existing = state.instances
         if not existing:
-            logger.info(
-                "No existing instances found, will deploy "
-                f"{default_replicas} replicas"
+            raise RuntimeError(
+                "No existing instances found. Cannot determine "
+                "replica count. Deploy instances first or use "
+                "--replicas to specify explicitly."
             )
-            return default_replicas
 
         count = len(existing)
         models = {inst.model or "unknown" for inst in existing}
@@ -582,7 +582,7 @@ def parse_args() -> argparse.Namespace:
         "--replicas",
         type=int,
         default=DEFAULT_REPLICAS,
-        help="Default number of instances (overridden by existing count)",
+        help="Replica count (only used with --skip-deploy)",
     )
     parser.add_argument(
         "--load-json",
@@ -606,15 +606,14 @@ async def main() -> None:
     """Run the full collection and training pipeline."""
     args = parse_args()
 
-    replicas = args.replicas
-
     # Phase A: Check existing deployments and teardown
     if not args.load_json and not args.skip_deploy:
         replicas = await check_and_teardown(
             planner_url=args.planner_url,
-            default_replicas=args.replicas,
         )
         logger.info(f"Will deploy {replicas} instance(s)")
+    else:
+        replicas = args.replicas
 
     # Phase B: Deploy
     if not args.load_json and not args.skip_deploy:
