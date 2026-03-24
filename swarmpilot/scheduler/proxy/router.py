@@ -34,6 +34,17 @@ if TYPE_CHECKING:
     from swarmpilot.scheduler.services.worker_queue_manager import WorkerQueueManager
 
 
+# Lightweight OpenAI-compatible paths that should be prioritized.
+# These are fast metadata queries that should not be blocked by
+# long-running inference requests in the worker queue.
+PRIORITY_PATHS: set[str] = {
+    "v1/models",
+    "health",
+    "ping",
+    "version",
+}
+
+
 class ProxyRouter:
     """Transparent proxy router that forwards requests to backend instances.
 
@@ -182,8 +193,17 @@ class ProxyRouter:
             enqueue_time=time.time(),
         )
 
+        is_priority = path in PRIORITY_PATHS
+
         try:
-            self._queue_manager.enqueue_task(selected_instance_id, queued_task)
+            if is_priority:
+                self._queue_manager.enqueue_priority_task(
+                    selected_instance_id, queued_task
+                )
+            else:
+                self._queue_manager.enqueue_task(
+                    selected_instance_id, queued_task
+                )
         except ValueError as e:
             self._callback.cleanup_future(task_id)
             logger.error(f"[PROXY] Failed to enqueue task: {e}")

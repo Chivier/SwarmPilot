@@ -12,10 +12,11 @@ Key features:
 """
 
 import time
+from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from queue import Empty, Queue
-from threading import Event, Thread
+from threading import Event, Lock, Thread
 from typing import Any, Literal
 
 import httpx
@@ -41,6 +42,7 @@ class QueuedTask:
     metadata: dict[str, Any]
     enqueue_time: float
     predicted_time_ms: float | None = None
+    priority: bool = False
 
 
 @dataclass
@@ -139,6 +141,10 @@ class WorkerQueueThread:
         # Thread-safe FIFO queue
         self._queue: Queue[QueuedTask] = Queue()
 
+        # Priority queue for lightweight requests (processed first)
+        self._priority_deque: deque[QueuedTask] = deque()
+        self._priority_lock = Lock()
+
         # Thread control
         self._thread: Thread | None = None
         self._shutdown = Event()
@@ -225,6 +231,23 @@ class WorkerQueueThread:
         )
         return size
 
+    def enqueue_priority(self, task: QueuedTask) -> None:
+        """Add a lightweight task to the front of the queue.
+
+        Priority tasks are processed before normal tasks and do not
+        affect queue depth or estimated wait time calculations.
+
+        Args:
+            task: Task to enqueue with priority.
+        """
+        task.priority = True
+        with self._priority_lock:
+            self._priority_deque.append(task)
+        logger.debug(
+            f"Priority task {task.task_id} enqueued to "
+            f"{self.worker_id}"
+        )
+
     def queue_size(self) -> int:
         """Get current queue size (approximate)."""
         return self._queue.qsize()
@@ -270,8 +293,14 @@ class WorkerQueueThread:
         try:
             while not self._shutdown.is_set():
                 try:
-                    # Wait for task with timeout (allows shutdown check)
-                    task = self._queue.get(timeout=1.0)
+                    # Priority tasks are processed first
+                    task: QueuedTask | None = None
+                    with self._priority_lock:
+                        if self._priority_deque:
+                            task = self._priority_deque.popleft()
+                    if task is None:
+                        # Wait for normal task with timeout
+                        task = self._queue.get(timeout=1.0)
                     self._execute_task(task)
                 except Empty:
                     continue

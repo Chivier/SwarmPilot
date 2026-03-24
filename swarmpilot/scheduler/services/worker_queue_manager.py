@@ -192,6 +192,27 @@ class WorkerQueueManager:
 
         return thread.enqueue(task)
 
+    def enqueue_priority_task(
+        self, worker_id: str, task: QueuedTask
+    ) -> None:
+        """Enqueue a lightweight task to the front of a worker's queue.
+
+        Priority tasks skip ahead of normal tasks and do not affect
+        queue depth or estimated wait time calculations.
+
+        Args:
+            worker_id: Worker to receive the task.
+            task: Task to enqueue with priority.
+
+        Raises:
+            ValueError: If worker is not registered.
+        """
+        thread = self.get_worker(worker_id)
+        if thread is None:
+            raise ValueError(f"Worker {worker_id} not registered")
+
+        thread.enqueue_priority(task)
+
     def get_queue_depth(self, worker_id: str) -> int:
         """Get the current queue depth for a worker.
 
