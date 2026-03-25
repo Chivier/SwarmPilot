@@ -683,5 +683,29 @@ async def main() -> None:
             logger.info("Instances terminated")
 
 
+async def cleanup(planner_url: str, model_id: str) -> None:
+    """Terminate deployed instances on exit.
+
+    Args:
+        planner_url: Planner service URL.
+        model_id: Model to terminate.
+    """
+    from swarmpilot.sdk import SwarmPilotClient
+
+    try:
+        async with SwarmPilotClient(planner_url=planner_url) as sp:
+            await sp.terminate(model=model_id)
+            logger.info(f"Cleanup: terminated {model_id} instances")
+    except Exception as e:
+        logger.warning(f"Cleanup failed: {e}")
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    args = parse_args()
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("Interrupted by user, cleaning up...")
+    finally:
+        if not args.load_json and not args.skip_deploy:
+            asyncio.run(cleanup(args.planner_url, args.model_id))
