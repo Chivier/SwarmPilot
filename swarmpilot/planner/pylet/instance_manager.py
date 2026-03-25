@@ -166,31 +166,16 @@ class InstanceManager:
         self._initialized = False
 
     def init(self) -> None:
-        """Initialize connections to PyLet and scheduler.
+        """Initialize connection to PyLet.
 
         Raises:
-            RuntimeError: If PyLet is unavailable. Default scheduler health
-                check is skipped if scheduler registry has entries (PYLET-024).
+            RuntimeError: If PyLet is unavailable.
         """
         if self._initialized:
             return
 
         # Initialize PyLet client
         self.pylet_client.init()
-
-        # Verify default scheduler is available (only if no registry entries)
-        registry = get_scheduler_registry()
-        if len(registry) == 0:
-            if not self.scheduler_client.health_check():
-                raise RuntimeError(
-                    f"Scheduler not available at "
-                    f"{self.scheduler_client.scheduler_url}"
-                )
-        else:
-            logger.info(
-                f"Scheduler registry has {len(registry)} entries, "
-                f"skipping default scheduler health check"
-            )
 
         self._initialized = True
         logger.info("InstanceManager initialized")
