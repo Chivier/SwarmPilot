@@ -152,6 +152,7 @@ Each service uses a different config approach:
 - **Scheduler:** `@dataclass` classes with `os.getenv()`, global `config = Config.load()`
 - **Predictor:** `pydantic_settings.BaseSettings` with `PREDICTOR_*` env prefix
 - **Planner:** Plain class with `os.getenv()` in `__init__`, global `config = PlannerConfig()`
+  - Supports `PYLET_LOCAL_MODE=true` to start a local PyLet cluster as subprocesses (no external cluster needed)
 
 ### API Prefixes
 - Scheduler endpoints: `/v1/...`
@@ -163,13 +164,14 @@ Each service uses a different config approach:
 ### SDK & CLI
 The `swarmpilot.sdk` package provides `SwarmPilotClient`, an async httpx-based client for Planner and Scheduler APIs. The `splanner` CLI exposes matching commands: `serve`, `run`, `register`, `deploy`, `ps`, `scale`, `terminate`, `schedulers`. Error hierarchy in `swarmpilot.errors`: `SwarmPilotError` > `DeployError`, `RegistrationError`, `SchedulerNotFound`, `ModelNotDeployed`, `OptimizationError`, `SwarmPilotTimeoutError`.
 
-### One Scheduler Per Model (Mandatory Constraint)
-Each Scheduler process serves exactly one model, configured at startup via `SCHEDULER_MODEL_ID` (a single string, not a list). The Planner's SchedulerRegistry maps each `model_id` to exactly one `scheduler_url`; duplicate registrations silently overwrite the previous mapping. For multi-model deployments, run one Scheduler process per model.
+### One Scheduler Per Model (Dynamic Assignment)
+Each Scheduler process serves one model at a time. The model can be assigned dynamically — `SCHEDULER_MODEL_ID` is optional at startup. When the Planner receives a `serve()` request for a model with no registered scheduler, it finds an idle scheduler (zero instances) and calls `POST /v1/model/reassign` to bind it to the new model. When all instances of a model are terminated, the scheduler becomes idle and can be reassigned.
 
 | Deployment | Schedulers | Planner |
 |------------|-----------|---------|
 | 1 model | 1 Scheduler | Optional |
 | N models | N Schedulers (one per model) | Recommended |
+| Model switch | Same Scheduler (after teardown) | Required |
 
 ### Scheduling Strategies
 7 strategies available, selectable at runtime via `POST /v1/strategy/set` or `SCHEDULING_STRATEGY` env var:

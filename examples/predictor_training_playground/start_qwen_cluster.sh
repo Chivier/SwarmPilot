@@ -1,14 +1,17 @@
 #!/bin/bash
-# Qwen3-Next-80B-A3B Runtime Collection — Start Cluster
+# Predictor Training Playground — Start Cluster
 # Usage: ./examples/predictor_training_playground/start_qwen_cluster.sh
 #
 # Starts Planner (with local PyLet cluster) + Scheduler for
-# Qwen/Qwen3-Next-80B-A3B-Instruct runtime data collection.
+# runtime data collection and predictor training.
 #
-# Follows the examples/multi_model_planner/start_cluster.sh pattern:
+# The Scheduler starts without a fixed model ID. The Planner assigns
+# the model dynamically on the first serve() call via /v1/model/reassign.
+#
+# Flow:
 #   1. Dummy Health Server (satisfies Planner's scheduler health check)
 #   2. Planner with PYLET_LOCAL_MODE (auto-starts PyLet head+worker)
-#   3. Scheduler (registers with Planner)
+#   3. Scheduler (registers with Planner, model assigned on first deploy)
 
 set -e
 
@@ -40,14 +43,11 @@ BOLD='\033[1m'
 NC='\033[0m'
 
 echo -e "${BLUE}${BOLD}╔══════════════════════════════════════════════════╗${NC}"
-echo -e "${BLUE}${BOLD}║   Qwen Runtime Collection — Cluster Startup      ║${NC}"
+echo -e "${BLUE}${BOLD}║   Predictor Training — Cluster Startup            ║${NC}"
 echo -e "${BLUE}${BOLD}╚══════════════════════════════════════════════════╝${NC}"
 echo ""
-echo "  Model:    $MODEL_ID"
-echo "  GPUs:     $GPU_PER_INSTANCE per instance (tensor-parallel-size=$GPU_PER_INSTANCE)"
-echo "  Replicas: $REPLICAS"
 echo "  Planner:  :$PLANNER_PORT (local PyLet on :$PYLET_LOCAL_PORT)"
-echo "  Scheduler::$SCHEDULER_PORT (round_robin)"
+echo "  Scheduler::$SCHEDULER_PORT (round_robin, model assigned on deploy)"
 echo ""
 
 # ── Helpers ──────────────────────────────────────────────────────
@@ -168,8 +168,7 @@ echo ""
 echo -e "${BLUE}[3/3] Starting Scheduler on port $SCHEDULER_PORT (round_robin)...${NC}"
 cd "$PROJECT_ROOT"
 
-SCHEDULER_MODEL_ID="$MODEL_ID" \
-    SCHEDULING_STRATEGY="round_robin" \
+SCHEDULING_STRATEGY="round_robin" \
     TRAINING_ENABLE_AUTO="false" \
     PROXY_ENABLED="true" \
     PROXY_TIMEOUT="600.0" \
@@ -202,8 +201,8 @@ echo ""
 echo "  Planner:   http://localhost:$PLANNER_PORT"
 echo "  Scheduler: http://localhost:$SCHEDULER_PORT"
 echo "  PyLet:     http://localhost:$PYLET_LOCAL_PORT"
-echo "  Model:     $MODEL_ID"
 echo "  Strategy:  round_robin"
+echo "  Model:     (assigned on first deploy)"
 echo "  Logs:      $LOG_DIR/"
 echo ""
 echo -e "${YELLOW}Next:${NC} uv run python examples/predictor_training_playground/collect_and_train_qwen.py --train"

@@ -78,13 +78,13 @@ When set, the Scheduler registers itself with a Planner on startup for multi-sch
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PLANNER_REGISTRATION_URL` | _(empty)_ | Planner URL for registration. Empty disables |
-| `SCHEDULER_MODEL_ID` | _(empty)_ | Model ID this scheduler handles |
-| `SCHEDULER_SELF_URL` | _(empty)_ | Advertised URL for this scheduler |
+| `SCHEDULER_MODEL_ID` | _(empty)_ | Initial model ID. Optional — the Planner assigns a model dynamically when the first deployment arrives (via `/v1/model/reassign`) |
+| `SCHEDULER_SELF_URL` | _(empty)_ | Advertised URL for this scheduler (auto-derived from `localhost:{SCHEDULER_PORT}` when not set) |
 | `PLANNER_REGISTRATION_TIMEOUT` | `10.0` | Registration request timeout (seconds) |
 | `PLANNER_REGISTRATION_MAX_RETRIES` | `3` | Max registration retries |
 | `PLANNER_REGISTRATION_RETRY_DELAY` | `5.0` | Delay between retries (seconds) |
 
-All three (`PLANNER_REGISTRATION_URL`, `SCHEDULER_MODEL_ID`, `SCHEDULER_SELF_URL`) must be set to enable registration.
+Only `PLANNER_REGISTRATION_URL` is required to enable registration. `SCHEDULER_MODEL_ID` can be omitted — the Planner will assign a model on the first `serve()` call by finding an idle scheduler.
 
 ---
 

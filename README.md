@@ -15,7 +15,7 @@ SwarmPilot orchestrates compute instances to run tasks efficiently. It predicts 
 
 ## Quick Start
 
-Each Scheduler process serves exactly **one model**. For multi-model deployments, run one Scheduler per model and use the Planner for coordination.
+Each Scheduler process serves **one model at a time**. The model is assigned dynamically by the Planner when the first deployment request arrives — you do not need to set `SCHEDULER_MODEL_ID` at startup. When all instances of a model are removed, the Scheduler becomes idle and the Planner can reassign it to a different model.
 
 ```bash
 # Install
@@ -26,15 +26,9 @@ uv sync
 # Node 1: Start Planner (orchestration layer)
 uv run splanner start --port 8002
 
-# Node 2: Start Scheduler for model A (auto-registers with Planner)
-SCHEDULER_MODEL_ID="Qwen/Qwen3-8B-VL" \
-  PLANNER_REGISTRATION_URL="http://localhost:8002" \
-  uv run sscheduler start --port 8010
-
-# Node 3: Start Scheduler for model B (auto-registers with Planner)
-SCHEDULER_MODEL_ID="meta-llama/Llama-3.1-8B" \
-  PLANNER_REGISTRATION_URL="http://localhost:8002" \
-  uv run sscheduler start --port 8020
+# Node 2: Start Scheduler (auto-registers with Planner, model assigned on first deploy)
+PLANNER_REGISTRATION_URL="http://localhost:8002" \
+  uv run sscheduler start --port 8000
 ```
 
 Deploy models and interact via the SDK:
@@ -45,19 +39,18 @@ from swarmpilot.sdk import SwarmPilotClient
 
 async def main():
     async with SwarmPilotClient("http://localhost:8002") as sp:
-        # Check registered schedulers
-        schedulers = await sp.schedulers()
-        print(schedulers)
-
-        # Deploy 2 replicas of Qwen
-        group = await sp.serve("Qwen/Qwen3-8B-VL", gpu=1, replicas=2)
+        # Deploy 2 replicas — Planner auto-assigns an idle Scheduler
+        group = await sp.serve("Qwen/Qwen3-VL-8B-Instruct", gpu=1, replicas=2)
         print(f"Deployed: {group.name}")
 
         # Scale up
-        scaled = await sp.scale("Qwen/Qwen3-8B-VL", replicas=3)
+        scaled = await sp.scale("Qwen/Qwen3-VL-8B-Instruct", replicas=3)
 
-        # Clean up
+        # Terminate — Scheduler becomes idle, can serve a different model next
         await sp.terminate(all=True)
+
+        # Deploy a different model on the same Scheduler
+        group = await sp.serve("meta-llama/Llama-3.1-8B", gpu=1, replicas=1)
 
 asyncio.run(main())
 ```
@@ -113,11 +106,12 @@ swarmpilot-refresh/
 │   ├── sdk/                 # Async Python SDK (SwarmPilotClient)
 │   ├── graph/               # Client library
 │   └── scripts/             # Deployment utilities
-├── examples/                # Runnable cluster examples
-│   ├── single_model/        # Single model, scheduler-only
-│   ├── multi_model_direct/  # Multi-model, no planner
-│   ├── multi_model_planner/ # Multi-model with planner + SDK
-│   └── predictor/           # ML prediction (library + HTTP API)
+├── examples/                         # Runnable cluster examples
+│   ├── single_model/                 # Single model, scheduler-only
+│   ├── multi_model_direct/           # Multi-model, no planner
+│   ├── multi_model_planner/          # Multi-model with planner + SDK
+│   ├── predictor/                    # ML prediction (library + HTTP API)
+│   └── predictor_training_playground/# Runtime collection + MLP training
 ├── tests/                   # Test suites
 ├── docs/                    # Documentation
 └── pyproject.toml           # Package configuration
