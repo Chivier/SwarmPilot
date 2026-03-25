@@ -6,14 +6,14 @@ vLLM endpoint, records timing, and saves results to a JSON file.
 
 Usage:
     # Default: 200 requests to 127.0.1.1:5301
-    uv run python predictor_training_playground/collect_runtime.py
+    uv run python examples/predictor_training_playground/collect_runtime.py
 
     # Custom endpoint and count
-    uv run python predictor_training_playground/collect_runtime.py \
+    uv run python examples/predictor_training_playground/collect_runtime.py \
         --endpoint http://127.0.1.1:5301 --num-requests 100
 
     # With training
-    uv run python predictor_training_playground/collect_runtime.py --train
+    uv run python examples/predictor_training_playground/collect_runtime.py --train
 """
 
 from __future__ import annotations

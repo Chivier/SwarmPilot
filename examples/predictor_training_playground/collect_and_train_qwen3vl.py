@@ -15,13 +15,13 @@ Phases:
 
 Usage:
     # Default: 4 instances, collect 200 samples and train
-    uv run python predictor_training_playground/collect_and_train_qwen3vl.py --train
+    uv run python examples/predictor_training_playground/collect_and_train_qwen3vl.py --train
 
     # Collect only
-    uv run python predictor_training_playground/collect_and_train_qwen3vl.py
+    uv run python examples/predictor_training_playground/collect_and_train_qwen3vl.py
 
     # Train from existing data
-    uv run python predictor_training_playground/collect_and_train_qwen3vl.py \
+    uv run python examples/predictor_training_playground/collect_and_train_qwen3vl.py \
         --load-json qwen3vl_runtime_data.json --train
 """
 
