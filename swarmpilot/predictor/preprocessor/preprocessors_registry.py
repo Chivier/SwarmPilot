@@ -1,7 +1,8 @@
-"""Registry for available preprocessors.
+"""V1 preprocessor registry (uses :class:`BasePreprocessor`).
 
-Manages the collection of preprocessor instances available for feature
-transformation during training and prediction.
+.. deprecated::
+    See :mod:`~swarmpilot.predictor.preprocessor.registry_v2` for the
+    V2 registry that supports flexible feature operations.
 """
 
 from __future__ import annotations

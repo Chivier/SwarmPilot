@@ -1,6 +1,10 @@
-"""Base preprocessor interface for feature transformation.
+"""V1 preprocessor interface (text-to-feature transformation).
 
-Defines the abstract interface that all preprocessors must implement.
+.. deprecated::
+    Prefer :mod:`~swarmpilot.predictor.preprocessor.base_preprocessor_v2`
+    for new preprocessors.  V1 remains because
+    :class:`SemanticPredictor` and the runtime
+    :class:`PreprocessorsRegistry` still depend on it.
 """
 
 from __future__ import annotations
