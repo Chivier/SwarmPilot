@@ -13,17 +13,20 @@ from fastapi.testclient import TestClient
 
 pylet = pytest.importorskip("pylet")
 
-from swarmpilot.planner.models.pylet import (
+from swarmpilot.planner.models.pylet import (  # noqa: E402
     PyLetDeploymentInput,
     PyLetInstanceStatus,
     PyLetOptimizeInput,
     PyLetScaleInput,
 )
-from swarmpilot.planner.pylet.deployment_service import (
+from swarmpilot.planner.pylet.deployment_service import (  # noqa: E402
     DeploymentServiceResult,
     PyLetDeploymentService,
 )
-from swarmpilot.planner.pylet.instance_manager import ManagedInstance, ManagedInstanceStatus
+from swarmpilot.planner.pylet.instance_manager import (  # noqa: E402
+    ManagedInstance,
+    ManagedInstanceStatus,
+)
 
 
 class TestPyLetModels:
@@ -251,7 +254,9 @@ class TestPyLetAPIEndpoints:
 
     def test_pylet_status_disabled(self, mock_config):
         """Test /status when PyLet is disabled."""
-        with patch("swarmpilot.planner.pylet_api.get_pylet_service_optional") as mock_get:
+        with patch(
+            "swarmpilot.planner.pylet_api.get_pylet_service_optional"
+        ) as mock_get:
             mock_get.return_value = None
 
             from fastapi import FastAPI
@@ -259,10 +264,10 @@ class TestPyLetAPIEndpoints:
             from swarmpilot.planner.pylet_api import router
 
             app = FastAPI()
-            app.include_router(router, prefix="/v1")
+            app.include_router(router, prefix="/v1/pylet")
             client = TestClient(app)
 
-            response = client.get("/v1/status")
+            response = client.get("/v1/pylet/status")
 
             assert response.status_code == 200
             data = response.json()
@@ -284,7 +289,9 @@ class TestPyLetAPIEndpoints:
             ),
         ]
 
-        with patch("swarmpilot.planner.pylet_api.get_pylet_service_optional") as mock_get:
+        with patch(
+            "swarmpilot.planner.pylet_api.get_pylet_service_optional"
+        ) as mock_get:
             mock_get.return_value = mock_service
 
             from fastapi import FastAPI
@@ -292,10 +299,10 @@ class TestPyLetAPIEndpoints:
             from swarmpilot.planner.pylet_api import router
 
             app = FastAPI()
-            app.include_router(router, prefix="/v1")
+            app.include_router(router, prefix="/v1/pylet")
             client = TestClient(app)
 
-            response = client.get("/v1/status")
+            response = client.get("/v1/pylet/status")
 
             assert response.status_code == 200
             data = response.json()
@@ -306,7 +313,9 @@ class TestPyLetAPIEndpoints:
 
     def test_pylet_deploy_manually_disabled(self, mock_config):
         """Test /deploy_manually returns 503 when PyLet is disabled."""
-        with patch("swarmpilot.planner.pylet_api.get_pylet_service_optional") as mock_get:
+        with patch(
+            "swarmpilot.planner.pylet_api.get_pylet_service_optional"
+        ) as mock_get:
             mock_get.return_value = None
 
             from fastapi import FastAPI
@@ -314,11 +323,11 @@ class TestPyLetAPIEndpoints:
             from swarmpilot.planner.pylet_api import router
 
             app = FastAPI()
-            app.include_router(router, prefix="/v1")
+            app.include_router(router, prefix="/v1/pylet")
             client = TestClient(app)
 
             response = client.post(
-                "/v1/deploy_manually",
+                "/v1/pylet/deploy_manually",
                 json={"target_state": {"model-a": 2}},
             )
 
@@ -326,7 +335,9 @@ class TestPyLetAPIEndpoints:
 
     def test_pylet_scale_disabled(self, mock_config):
         """Test /scale returns 503 when PyLet is disabled."""
-        with patch("swarmpilot.planner.pylet_api.get_pylet_service_optional") as mock_get:
+        with patch(
+            "swarmpilot.planner.pylet_api.get_pylet_service_optional"
+        ) as mock_get:
             mock_get.return_value = None
 
             from fastapi import FastAPI
@@ -334,11 +345,11 @@ class TestPyLetAPIEndpoints:
             from swarmpilot.planner.pylet_api import router
 
             app = FastAPI()
-            app.include_router(router, prefix="/v1")
+            app.include_router(router, prefix="/v1/pylet")
             client = TestClient(app)
 
             response = client.post(
-                "/v1/scale",
+                "/v1/pylet/scale",
                 json={"model_id": "model-a", "target_count": 3},
             )
 
@@ -389,7 +400,9 @@ class TestPyLetConfigValidation:
         config.pylet_backend = "vllm"
         config.pylet_gpu_count = -1  # Negative GPU count is invalid
 
-        with pytest.raises(ValueError, match="PYLET_GPU_COUNT must be non-negative"):
+        with pytest.raises(
+            ValueError, match="PYLET_GPU_COUNT must be non-negative"
+        ):
             config.validate()
 
     def test_pylet_invalid_cpu_count(self):
@@ -402,7 +415,9 @@ class TestPyLetConfigValidation:
         config.pylet_backend = "vllm"
         config.pylet_cpu_count = 0  # CPU count must be positive
 
-        with pytest.raises(ValueError, match="PYLET_CPU_COUNT must be positive"):
+        with pytest.raises(
+            ValueError, match="PYLET_CPU_COUNT must be positive"
+        ):
             config.validate()
 
     def test_pylet_valid_config(self):

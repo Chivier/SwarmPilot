@@ -76,7 +76,7 @@ swarmpilot-refresh/
 │   │   └── models.py        # Pydantic models
 │   ├── planner/             # Planner service
 │   │   ├── api.py           # FastAPI endpoints (/v1/ prefix)
-│   │   ├── pylet_api.py     # PyLet router (mounted at /v1)
+│   │   ├── pylet_api.py     # PyLet router (mounted at /v1/pylet)
 │   │   ├── cli.py           # splanner CLI (typer) — serve, run, scale, etc.
 │   │   ├── config.py        # Plain class config (env vars)
 │   │   ├── core/            # SwarmOptimizer (SA + IP)

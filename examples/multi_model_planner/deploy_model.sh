@@ -28,9 +28,9 @@ echo -e "${BLUE}║   Multi-Model Planner - Deploy Models           ║${NC}"
 echo -e "${BLUE}╚══════════════════════════════════════════════════╝${NC}"
 echo ""
 
-# Check PyLet availability via planner /v1/status
+# Check PyLet availability via planner /v1/pylet/status
 PYLET_AVAILABLE=false
-if curl -s "http://localhost:$PLANNER_PORT/v1/status" 2>/dev/null | python3 -c "
+if curl -s "http://localhost:$PLANNER_PORT/v1/pylet/status" 2>/dev/null | python3 -c "
 import sys, json
 try:
     d = json.load(sys.stdin)

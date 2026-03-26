@@ -107,7 +107,7 @@ See [SDK Usage](sdk_usage.md) for the full API reference.
 **Manual target state** -- specify exact instance counts per model:
 
 ```bash
-curl -X POST http://localhost:8002/v1/deploy_manually \
+curl -X POST http://localhost:8002/v1/pylet/deploy_manually \
   -H "Content-Type: application/json" \
   -d '{
     "target_state": {
@@ -120,7 +120,7 @@ curl -X POST http://localhost:8002/v1/deploy_manually \
 **Optimizer-driven deployment** -- let the Planner compute optimal allocation:
 
 ```bash
-curl -X POST http://localhost:8002/v1/deploy \
+curl -X POST http://localhost:8002/v1/pylet/deploy \
   -H "Content-Type: application/json" \
   -d '{
     "M": 4,
@@ -136,7 +136,7 @@ curl -X POST http://localhost:8002/v1/deploy \
 **Scale a single model:**
 
 ```bash
-curl -X POST http://localhost:8002/v1/scale \
+curl -X POST http://localhost:8002/v1/pylet/scale \
   -H "Content-Type: application/json" \
   -d '{
     "model_id": "Qwen/Qwen3-8B-VL-Instruct",
@@ -148,7 +148,7 @@ curl -X POST http://localhost:8002/v1/scale \
 **Check deployment status:**
 
 ```bash
-curl http://localhost:8002/v1/status
+curl http://localhost:8002/v1/pylet/status
 splanner ps
 ```
 
@@ -255,7 +255,7 @@ PYLET_CUSTOM_COMMAND="python my_model_server.py" \
 splanner terminate --all
 
 # Via REST API
-curl -X POST http://localhost:8002/v1/terminate-all
+curl -X POST http://localhost:8002/v1/pylet/terminate-all
 ```
 
 ### Drain a Single Instance
@@ -320,7 +320,7 @@ Any HTTP server can serve as a SwarmPilot instance if it implements:
 ```bash
 curl http://localhost:8000/v1/health      # Scheduler (+ embedded predictor)
 curl http://localhost:8002/v1/health      # Planner
-curl http://localhost:8002/v1/status      # PyLet status
+curl http://localhost:8002/v1/pylet/status      # PyLet status
 curl http://localhost:8002/v1/info        # Planner info + registered schedulers
 ```
 

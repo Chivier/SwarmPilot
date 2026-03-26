@@ -11,13 +11,14 @@ PYLET-013: PyLet Optimizer Integration E2E Test
 PYLET-015: E2E tests using Planner deploy API
 """
 
-import asyncio
+import contextlib
 import os
 import sys
 import threading
 import time
+from collections.abc import AsyncGenerator, Generator
 from pathlib import Path
-from typing import Any, AsyncGenerator, Generator
+from typing import Any
 
 import httpx
 import pytest
@@ -26,7 +27,6 @@ import pytest_asyncio
 # Try to import pylet - skip tests if not available
 try:
     import pylet
-    from pylet import Instance
 
     PYLET_AVAILABLE = True
 except ImportError:
@@ -65,7 +65,9 @@ def pylet_local_cluster(check_pylet_available, request):
     """
     pylet_head_url = request.config.getoption("--pylet-head")
 
-    print(f"\n[FIXTURE] Connecting to external PyLet cluster at {pylet_head_url}...")
+    print(
+        f"\n[FIXTURE] Connecting to external PyLet cluster at {pylet_head_url}..."
+    )
 
     try:
         pylet.init(pylet_head_url)
@@ -207,10 +209,8 @@ def cleanup_instances(pylet_local_cluster):
             labels = instance.labels or {}
             # Only cleanup swarmpilot-managed instances
             if labels.get("managed_by") == "swarmpilot":
-                try:
+                with contextlib.suppress(Exception):
                     instance.cancel(delete=True)
-                except Exception:
-                    pass  # Instance may already be cancelled
     except Exception:
         pass  # PyLet may not be initialized
 
@@ -239,7 +239,9 @@ def deployed_instances(pylet_local_cluster):
 
     # Give workers time to fully release resources before next test
     if cancelled_count > 0:
-        print(f"\n[CLEANUP] Cancelled {cancelled_count} instances, waiting for workers...")
+        print(
+            f"\n[CLEANUP] Cancelled {cancelled_count} instances, waiting for workers..."
+        )
         time.sleep(2)  # Allow workers to clean up
 
 
@@ -438,7 +440,7 @@ async def cleanup_via_planner(planner_client: httpx.AsyncClient):
 
     # Cleanup after test
     try:
-        resp = await planner_client.post("/v1/terminate-all")
+        resp = await planner_client.post("/v1/pylet/terminate-all")
         if resp.status_code == 200:
             data = resp.json()
             print(f"[CLEANUP] Terminated {data.get('succeeded', 0)} instances")

@@ -53,7 +53,11 @@ try:
     from .pylet_api import router as pylet_router
 except ImportError:
     create_pylet_service = None  # type: ignore[assignment]
-    get_pylet_service_optional = lambda: None  # type: ignore[assignment]
+
+    def get_pylet_service_optional():
+        """Return no PyLet service when optional dependency is missing."""
+        return None
+
     pylet_router = None  # type: ignore[assignment]
 
 from .routes.sdk_api import router as sdk_router
@@ -79,7 +83,35 @@ except ValueError as e:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown events."""
-    # Startup: Initialize PyLet if enabled
+    # Startup: Optionally start a local PyLet cluster
+    local_cluster = None
+    if config.pylet_local_mode:
+        try:
+            from swarmpilot.planner.pylet.local_cluster import (
+                LocalPyLetCluster,
+            )
+
+            local_cluster = LocalPyLetCluster(
+                port=config.pylet_local_port,
+                num_workers=config.pylet_local_num_workers,
+                cpu_per_worker=config.pylet_local_cpu_per_worker,
+                gpu_per_worker=config.pylet_local_gpu_per_worker,
+                worker_port_start=config.pylet_local_worker_port_start,
+                worker_port_gap=config.pylet_local_worker_port_gap,
+                memory_per_worker=config.pylet_local_memory_per_worker,
+            )
+            if not local_cluster.start():
+                logger.error("Failed to start local PyLet cluster")
+                local_cluster = None
+            else:
+                logger.info(
+                    f"Local PyLet cluster started at {local_cluster.head_url}"
+                )
+        except Exception as e:
+            logger.error(f"Failed to start local PyLet cluster: {e}")
+            local_cluster = None
+
+    # Startup: Initialize PyLet service (connects to cluster)
     pylet_service = None
     if config.pylet_enabled and create_pylet_service is not None:
         try:
@@ -102,7 +134,14 @@ async def lifespan(app: FastAPI):
             logger.info("PyLet service initialized successfully")
         except Exception as e:
             logger.error(f"Failed to initialize PyLet service: {e}")
-            logger.warning("Continuing without PyLet - endpoints will be unavailable")
+            logger.warning(
+                "Continuing without PyLet - endpoints will be unavailable"
+            )
+    elif config.pylet_enabled and create_pylet_service is None:
+        logger.error(
+            "PyLet is enabled but pylet SDK is not installed. "
+            "Install with: pip install pylet"
+        )
     else:
         logger.info("PyLet is disabled")
 
@@ -113,6 +152,10 @@ async def lifespan(app: FastAPI):
         logger.info("Closing PyLet service")
         pylet_service.close()
         logger.info("PyLet service closed")
+
+    # Shutdown: Stop local PyLet cluster (after service is closed)
+    if local_cluster is not None:
+        local_cluster.stop()
 
 
 # Create FastAPI app
@@ -126,8 +169,10 @@ app = FastAPI(
 )
 
 # Include PyLet router (only if pylet SDK is available)
+# Mounted under /v1/pylet to avoid path collisions with SDK routes
+# (both define /deploy and /scale with different request schemas).
 if pylet_router is not None:
-    app.include_router(pylet_router, prefix="/v1")
+    app.include_router(pylet_router, prefix="/v1/pylet")
 
 # Include SDK deployment management router
 app.include_router(sdk_router, prefix="/v1")
@@ -141,7 +186,7 @@ async def global_exception_handler(request, exc):
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={
             "success": False,
-            "error": f"Internal server error: {str(exc)}",
+            "error": f"Internal server error: {exc!s}",
         },
     )
 
@@ -170,7 +215,9 @@ async def service_info():
         "initialized": pylet_service is not None and pylet_service.initialized,
     }
     if pylet_service and pylet_service.initialized:
-        pylet_status["active_instances"] = len(pylet_service.get_active_instances())
+        pylet_status["active_instances"] = len(
+            pylet_service.get_active_instances()
+        )
         pylet_status["current_state"] = pylet_service.get_current_state()
 
     # Get scheduler registry info
@@ -291,7 +338,7 @@ async def plan_deployment(input_data: PlannerInput):
         return result
 
     except ImportError as e:
-        client_msg = f"Algorithm dependency not available: {str(e)}"
+        client_msg = f"Algorithm dependency not available: {e!s}"
         logger.error(
             f"/plan request failed - ImportError: {e}. Returning HTTP 500. Client will receive: {client_msg}",
             exc_info=True,
@@ -300,14 +347,16 @@ async def plan_deployment(input_data: PlannerInput):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=client_msg
         )
     except ValueError as e:
-        client_msg = f"Invalid input: {str(e)}"
+        client_msg = f"Invalid input: {e!s}"
         logger.error(
             f"/plan request failed - ValueError: {e}. Returning HTTP 400. Client will receive: {client_msg}",
             exc_info=True,
         )
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=client_msg)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=client_msg
+        )
     except Exception as e:
-        client_msg = f"Optimization failed: {str(e)}"
+        client_msg = f"Optimization failed: {e!s}"
         logger.error(
             f"/plan request failed - Unexpected error: {e}. Returning HTTP 500. Client will receive: {client_msg}",
             exc_info=True,
@@ -468,7 +517,7 @@ async def register_available_instance(request: InstanceRegisterRequest):
         )
 
     except Exception as e:
-        client_msg = f"Failed to register instance: {str(e)}"
+        client_msg = f"Failed to register instance: {e!s}"
         logger.error(
             f"/instance/register failed - Error: {e}. Returning HTTP 500. Client will receive: {client_msg}",
             exc_info=True,
@@ -521,7 +570,9 @@ async def dummy_drain_instance(request: InstanceDrainRequest):
     )
 
 
-@app.get("/v1/instance/drain/status", response_model=InstanceDrainStatusResponse)
+@app.get(
+    "/v1/instance/drain/status", response_model=InstanceDrainStatusResponse
+)
 async def dummy_drain_status(instance_id: str):
     """Dummy drain status endpoint for instances registered to Planner.
 

@@ -37,11 +37,15 @@ except ImportError:
     pylet = None  # type: ignore
 
 # Import optimizer
-from swarmpilot.planner.core.swarm_optimizer import SimulatedAnnealingOptimizer
+from swarmpilot.planner.core.swarm_optimizer import (  # noqa: E402
+    SimulatedAnnealingOptimizer,
+)
 
 # Try to import IP optimizer (optional, requires pulp)
 try:
-    from swarmpilot.planner.core.swarm_optimizer import IntegerProgrammingOptimizer
+    from swarmpilot.planner.core.swarm_optimizer import (
+        IntegerProgrammingOptimizer,
+    )
 
     IP_AVAILABLE = True
 except ImportError:
@@ -74,7 +78,7 @@ async def verify_endpoint_health(
     """
     last_error = None
     async with httpx.AsyncClient(timeout=10.0) as client:
-        for attempt in range(max_retries):
+        for _attempt in range(max_retries):
             try:
                 resp = await client.get(f"http://{endpoint}/health")
                 if resp.status_code == 200:
@@ -143,14 +147,16 @@ class TestPyLetOptimizerE2E:
             target=target,
         )
 
-        deployment, score, stats = optimizer.optimize(
+        deployment, score, _stats = optimizer.optimize(
             objective_method="relative_error",
             verbose=False,
         )
 
         # Verify deployment is valid
         assert len(deployment) == 5, "Deployment should have 5 entries"
-        assert all(0 <= d <= 2 for d in deployment), "Each entry should be 0, 1, or 2"
+        assert all(0 <= d <= 2 for d in deployment), (
+            "Each entry should be 0, 1, or 2"
+        )
 
         # Convert deployment array to target_state dict
         target_state: dict[str, int] = {}
@@ -193,7 +199,9 @@ class TestPyLetOptimizerE2E:
             print(f"[TEST] Submitted {count} {model_id} instance(s)")
 
         # Wait for all instances to be running
-        print(f"[TEST] Waiting for {len(deployed_instances)} instances to start...")
+        print(
+            f"[TEST] Waiting for {len(deployed_instances)} instances to start..."
+        )
         for i, inst in enumerate(deployed_instances):
             inst.wait_running(timeout=60)
             print(f"[TEST] Instance {i + 1} running at {inst.endpoint}")
@@ -203,11 +211,15 @@ class TestPyLetOptimizerE2E:
         async with httpx.AsyncClient(timeout=10.0) as client:
             for inst in deployed_instances:
                 endpoint = inst.endpoint
-                assert endpoint is not None, f"Instance {inst.id} has no endpoint"
+                assert endpoint is not None, (
+                    f"Instance {inst.id} has no endpoint"
+                )
 
                 # Try health check
                 resp = await client.get(f"http://{endpoint}/health")
-                assert resp.status_code == 200, f"Health check failed: {resp.text}"
+                assert resp.status_code == 200, (
+                    f"Health check failed: {resp.text}"
+                )
 
                 data = resp.json()
                 assert data["status"] == "healthy", f"Unhealthy: {data}"
@@ -275,12 +287,12 @@ class TestPyLetOptimizerE2E:
         # Verify optimizer found a valid solution
         # Note: IP may not assign specialized workers to their specialty
         # if another configuration achieves better target alignment
-        assert all(
-            0 <= d < 3 for d in deployment
-        ), "All workers must be assigned valid models"
-        assert (
-            score < 1.0
-        ), f"Optimizer should find reasonable solution, got score {score}"
+        assert all(0 <= d < 3 for d in deployment), (
+            "All workers must be assigned valid models"
+        )
+        assert score < 1.0, (
+            f"Optimizer should find reasonable solution, got score {score}"
+        )
 
         # Deploy based on optimizer output
         for worker_idx, model_idx in enumerate(deployment):
@@ -312,9 +324,13 @@ class TestPyLetOptimizerE2E:
                 resp = await client.get(f"http://{inst.endpoint}/health")
                 assert resp.status_code == 200
 
-        print(f"[TEST] All {len(deployed_instances)} heterogeneous instances verified!")
+        print(
+            f"[TEST] All {len(deployed_instances)} heterogeneous instances verified!"
+        )
 
-    @pytest.mark.skipif(not IP_AVAILABLE, reason="pulp not available for IP optimizer")
+    @pytest.mark.skipif(
+        not IP_AVAILABLE, reason="pulp not available for IP optimizer"
+    )
     async def test_optimize_with_ip(
         self,
         pylet_local_cluster,
@@ -388,7 +404,9 @@ class TestPyLetOptimizerE2E:
                 resp = await client.get(f"http://{inst.endpoint}/health")
                 assert resp.status_code == 200
 
-        print(f"[TEST] All {len(deployed_instances)} IP-optimized instances verified!")
+        print(
+            f"[TEST] All {len(deployed_instances)} IP-optimized instances verified!"
+        )
 
 
 class TestOptimizerServiceCapacity:
@@ -430,7 +448,7 @@ class TestOptimizerServiceCapacity:
             target=target,
         )
 
-        deployment, score, _ = optimizer.optimize(
+        deployment, _score, _ = optimizer.optimize(
             objective_method="relative_error",
             verbose=False,
         )
@@ -510,7 +528,7 @@ class TestPlannerDeployAPI:
 
         # Deploy via planner API
         resp = await planner_client.post(
-            "/v1/deploy",
+            "/v1/pylet/deploy",
             json={
                 "target_state": target_state,
                 "wait_for_ready": True,
@@ -520,13 +538,17 @@ class TestPlannerDeployAPI:
 
         data = resp.json()
         print(f"[TEST] Deploy response: success={data['success']}")
-        print(f"[TEST] Added: {data['added_count']}, Removed: {data['removed_count']}")
+        print(
+            f"[TEST] Added: {data['added_count']}, Removed: {data['removed_count']}"
+        )
 
         assert data["success"], f"Deployment failed: {data.get('error')}"
-        assert data["added_count"] == 3, f"Expected 3 added, got {data['added_count']}"
+        assert data["added_count"] == 3, (
+            f"Expected 3 added, got {data['added_count']}"
+        )
 
         # Verify via /status
-        status_resp = await planner_client.get("/v1/status")
+        status_resp = await planner_client.get("/v1/pylet/status")
         assert status_resp.status_code == 200
         status_data = status_resp.json()
 
@@ -542,7 +564,9 @@ class TestPlannerDeployAPI:
 
         for inst in active_instances:
             endpoint = inst["endpoint"]
-            assert endpoint is not None, f"Instance {inst['pylet_id']} has no endpoint"
+            assert endpoint is not None, (
+                f"Instance {inst['pylet_id']} has no endpoint"
+            )
 
             health_data = await verify_endpoint_health(endpoint)
             assert health_data["status"] == "healthy"
@@ -561,7 +585,7 @@ class TestPlannerDeployAPI:
         """
         # Initial deploy: 2 model-a
         resp = await planner_client.post(
-            "/v1/deploy",
+            "/v1/pylet/deploy",
             json={"target_state": {"model-a": 2}, "wait_for_ready": True},
         )
         assert resp.status_code == 200
@@ -571,7 +595,7 @@ class TestPlannerDeployAPI:
 
         # Scale up to 4
         resp = await planner_client.post(
-            "/v1/scale",
+            "/v1/pylet/scale",
             json={
                 "model_id": "model-a",
                 "target_count": 4,
@@ -592,7 +616,7 @@ class TestPlannerDeployAPI:
 
         # Scale down to 1
         resp = await planner_client.post(
-            "/v1/scale",
+            "/v1/pylet/scale",
             json={
                 "model_id": "model-a",
                 "target_count": 1,
@@ -634,7 +658,7 @@ class TestPlannerDeployAPI:
         print("\n[TEST] Optimizing via planner API...")
 
         resp = await planner_client.post(
-            "/v1/optimize",
+            "/v1/pylet/optimize",
             json={
                 "model_ids": model_ids,
                 "B": B,
@@ -654,9 +678,13 @@ class TestPlannerDeployAPI:
         print(f"[TEST] Deployment success: {data['deployment_success']}")
         print(f"[TEST] Added: {data['added_count']}")
 
-        assert data["deployment_success"], f"Deployment failed: {data.get('error')}"
+        assert data["deployment_success"], (
+            f"Deployment failed: {data.get('error')}"
+        )
         assert len(data["deployment"]) == 5, "Should have 5 worker assignments"
-        assert data["added_count"] == 5, f"Expected 5 added, got {data['added_count']}"
+        assert data["added_count"] == 5, (
+            f"Expected 5 added, got {data['added_count']}"
+        )
 
         # Verify instances (with retry for startup timing)
         active = data["active_instances"]
@@ -681,7 +709,7 @@ class TestPlannerDeployAPI:
         """
         # Initial: 3 model-a
         resp = await planner_client.post(
-            "/v1/deploy",
+            "/v1/pylet/deploy",
             json={"target_state": {"model-a": 3}, "wait_for_ready": True},
         )
         assert resp.status_code == 200
@@ -691,8 +719,11 @@ class TestPlannerDeployAPI:
 
         # Change to: 1 model-a, 2 model-b
         resp = await planner_client.post(
-            "/v1/deploy",
-            json={"target_state": {"model-a": 1, "model-b": 2}, "wait_for_ready": True},
+            "/v1/pylet/deploy",
+            json={
+                "target_state": {"model-a": 1, "model-b": 2},
+                "wait_for_ready": True,
+            },
         )
         assert resp.status_code == 200
         data = resp.json()
@@ -707,12 +738,12 @@ class TestPlannerDeployAPI:
         assert data["added_count"] == 2
 
         # Verify final state
-        status_resp = await planner_client.get("/v1/status")
+        status_resp = await planner_client.get("/v1/pylet/status")
         status_data = status_resp.json()
 
         expected_state = {"model-a": 1, "model-b": 2}
-        assert (
-            status_data["current_state"] == expected_state
-        ), f"Expected {expected_state}, got {status_data['current_state']}"
+        assert status_data["current_state"] == expected_state, (
+            f"Expected {expected_state}, got {status_data['current_state']}"
+        )
 
         print("[TEST] test_deploy_reconciliation passed!")
