@@ -108,6 +108,9 @@ addopts = [
     "-v",
     "--strict-markers",
     "--tb=short",
+    "--cov=swarmpilot",
+    "--cov-report=term-missing",
+    "--cov-fail-under=70",
 ]
 
 # =============================================================================
@@ -119,6 +122,7 @@ omit = [
     "*/tests/*",
     "*/__init__.py",
     "*/__main__.py",
+    "swarmpilot/scripts/*",
 ]
 
 [tool.coverage.report]
@@ -166,6 +170,8 @@ ignore = [
     "B008",   # Function call in default argument (FastAPI Query/Depends pattern)
     "B904",   # Exception chaining (too pedantic for HTTP exceptions)
     "B905",   # zip() strict= (Python 3.10+, not always needed)
+    "N803",
+    "N806",
 ]
 
 [tool.ruff.lint.per-file-ignores]

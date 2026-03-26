@@ -84,10 +84,11 @@ jobs:
       - name: Verify installation
         run: uv pip list
 
-      - name: Check Python syntax
-        run: |
-          find . -name "*.py" \
-            -not -path "./.venv/*" \
-            -not -path "./experiments/*" \
-            -not -path "./.git/*" \
-            -print0 | xargs -0 -n 50 uv run python -m py_compile
+      - name: Run Ruff
+        run: uv run ruff check swarmpilot/ tests/
+
+      - name: Check formatting
+        run: uv run ruff format --check swarmpilot/ tests/
+
+      - name: Run tests with coverage
+        run: uv run pytest tests/ --cov=swarmpilot --cov-report=term-missing --cov-fail-under=70
