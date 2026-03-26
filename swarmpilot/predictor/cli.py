@@ -9,13 +9,12 @@ import os
 import sys
 import traceback
 from pathlib import Path
+from typing import Annotated
 
 import typer
 from typer import Option
-from typing_extensions import Annotated
 
-from swarmpilot.predictor.config import PredictorConfig
-from swarmpilot.predictor.config import set_config
+from swarmpilot.predictor.config import PredictorConfig, set_config
 from swarmpilot.predictor.utils.logging import get_logger
 
 logger = get_logger()
@@ -51,7 +50,8 @@ def start(
         int, Option("--workers", "-w", help="Number of worker processes")
     ] = 1,
     storage_dir: Annotated[
-        str | None, Option("--storage-dir", "-s", help="Directory to store models")
+        str | None,
+        Option("--storage-dir", "-s", help="Directory to store models"),
     ] = None,
     config_file: Annotated[
         Path | None, Option("--config", "-c", help="Path to configuration file")
@@ -106,10 +106,7 @@ def start(
     # Initialize logging system before starting the server
     from swarmpilot.predictor.utils.logging import setup_logging
 
-    setup_logging(
-        log_dir=config.log_dir,
-        log_level=config.log_level
-    )
+    setup_logging(log_dir=config.log_dir, log_level=config.log_level)
 
     # Ensure storage directory exists
     storage_path = config.ensure_storage_dir()
@@ -145,9 +142,7 @@ def health(
     host: Annotated[
         str, Option("--host", "-h", help="Host to check")
     ] = "localhost",
-    port: Annotated[
-        int, Option("--port", "-p", help="Port to check")
-    ] = 8000,
+    port: Annotated[int, Option("--port", "-p", help="Port to check")] = 8000,
 ) -> None:
     """Check the health of a running predictor service.
 
@@ -165,14 +160,16 @@ def health(
 
         if response.status_code == 200:
             data = response.json()
-            typer.echo(f"✅ Service is healthy!")
+            typer.echo("✅ Service is healthy!")
             typer.echo(f"   Status: {data.get('status', 'unknown')}")
             typer.echo(f"   Message: {data.get('message', 'N/A')}")
-            if 'timestamp' in data:
+            if "timestamp" in data:
                 typer.echo(f"   Timestamp: {data['timestamp']}")
             sys.exit(0)
         else:
-            typer.echo(f"❌ Service returned status {response.status_code}", err=True)
+            typer.echo(
+                f"❌ Service returned status {response.status_code}", err=True
+            )
             sys.exit(1)
 
     except httpx.ConnectError as e:
@@ -181,11 +178,13 @@ def health(
             f"CLI health check failed\n"
             f"Error: {error_msg}\n"
             f"Host: {host}, Port: {port}\n"
-            f"Exception: {type(e).__name__}: {str(e)}\n"
+            f"Exception: {type(e).__name__}: {e!s}\n"
             f"Traceback:\n{traceback.format_exc()}"
         )
         typer.echo(f"❌ {error_msg}", err=True)
-        typer.echo(f"   Make sure the service is running on {host}:{port}", err=True)
+        typer.echo(
+            f"   Make sure the service is running on {host}:{port}", err=True
+        )
         sys.exit(1)
     except httpx.TimeoutException as e:
         error_msg = "Request timed out"
@@ -193,7 +192,7 @@ def health(
             f"CLI health check failed\n"
             f"Error: {error_msg}\n"
             f"URL: {url}\n"
-            f"Exception: {type(e).__name__}: {str(e)}\n"
+            f"Exception: {type(e).__name__}: {e!s}\n"
             f"Traceback:\n{traceback.format_exc()}"
         )
         typer.echo(f"❌ {error_msg}", err=True)
@@ -201,7 +200,7 @@ def health(
     except Exception as e:
         logger.error(
             f"CLI health check failed\n"
-            f"Error: {str(e)}\n"
+            f"Error: {e!s}\n"
             f"URL: {url}\n"
             f"Exception: {type(e).__name__}\n"
             f"Traceback:\n{traceback.format_exc()}"
@@ -213,10 +212,10 @@ def health(
 @app.command()
 def version() -> None:
     """Show version information and dependencies."""
-    import torch
     import fastapi
-    import uvicorn
     import pydantic
+    import torch
+    import uvicorn
 
     config = PredictorConfig()
 
@@ -224,7 +223,7 @@ def version() -> None:
     typer.echo(f"🤖 {config.app_name}")
     typer.echo(f"{'=' * 50}")
     typer.echo(f"Version: {config.app_version}")
-    typer.echo(f"\nDependencies:")
+    typer.echo("\nDependencies:")
     typer.echo(f"  • Python: {sys.version.split()[0]}")
     typer.echo(f"  • FastAPI: {fastapi.__version__}")
     typer.echo(f"  • Uvicorn: {uvicorn.__version__}")
@@ -262,27 +261,31 @@ def list_models(
     typer.echo(f"📁 Storage directory: {storage_info['storage_dir']}")
     typer.echo(f"📊 Total models: {storage_info['model_count']}")
 
-    if storage_info['model_count'] == 0:
+    if storage_info["model_count"] == 0:
         typer.echo("\n   No models found.")
         return
 
     typer.echo(f"\n{'Model ID':<30} {'Type':<20} {'Samples':<10}")
     typer.echo("=" * 70)
 
-    for model_id in storage_info['model_ids']:
+    for model_id in storage_info["model_ids"]:
         try:
             metadata = storage.get_metadata(model_id)
             if metadata:
-                model_type = metadata.get('model_type', 'Unknown')
-                samples = metadata.get('training_samples', 0)
+                model_type = metadata.get("model_type", "Unknown")
+                samples = metadata.get("training_samples", 0)
 
                 typer.echo(f"{model_id:<30} {model_type:<20} {samples:<10}")
 
                 if verbose:
-                    typer.echo(f"   Created: {metadata.get('created_at', 'Unknown')}")
-                    typer.echo(f"   Updated: {metadata.get('updated_at', 'Unknown')}")
-                    if 'model_config' in metadata:
-                        config_info = metadata['model_config']
+                    typer.echo(
+                        f"   Created: {metadata.get('created_at', 'Unknown')}"
+                    )
+                    typer.echo(
+                        f"   Updated: {metadata.get('updated_at', 'Unknown')}"
+                    )
+                    if "model_config" in metadata:
+                        config_info = metadata["model_config"]
                         typer.echo(f"   Config: {config_info}")
                     typer.echo("")
 
@@ -290,10 +293,10 @@ def list_models(
             logger.warning(
                 f"Failed to load model metadata\n"
                 f"Model ID: {model_id}\n"
-                f"Exception: {type(e).__name__}: {str(e)}\n"
+                f"Exception: {type(e).__name__}: {e!s}\n"
                 f"Traceback:\n{traceback.format_exc()}"
             )
-            typer.echo(f"{model_id:<30} {'Error':<20} {str(e)}")
+            typer.echo(f"{model_id:<30} {'Error':<20} {e!s}")
 
 
 @config_app.command("show")
@@ -320,10 +323,12 @@ def config_show(
     typer.echo(f"{'=' * 50}")
 
     config_dict = config.to_dict()
-    max_key_length = max(len(key) for key in config_dict.keys())
+    max_key_length = max(len(key) for key in config_dict)
 
     for key, value in config_dict.items():
-        typer.echo(f"{key.replace('_', ' ').title():<{max_key_length + 5}}: {value}")
+        typer.echo(
+            f"{key.replace('_', ' ').title():<{max_key_length + 5}}: {value}"
+        )
 
     typer.echo(f"{'=' * 50}")
 
@@ -345,7 +350,7 @@ def config_init(
     """
     if output.exists() and not force:
         typer.echo(f"❌ Configuration file already exists: {output}", err=True)
-        typer.echo(f"   Use --force to overwrite", err=True)
+        typer.echo("   Use --force to overwrite", err=True)
         sys.exit(1)
 
     # Create default configuration content
@@ -375,15 +380,17 @@ app_version = "0.1.0"
     try:
         output.write_text(config_content)
         typer.echo(f"✅ Created configuration file: {output}")
-        typer.echo(f"\nYou can now:")
+        typer.echo("\nYou can now:")
         typer.echo(f"  1. Edit {output} to customize your settings")
-        typer.echo(f"  2. Start the service with: spredictor start --config {output}")
+        typer.echo(
+            f"  2. Start the service with: spredictor start --config {output}"
+        )
     except Exception as e:
         logger.error(
             f"Failed to create configuration file\n"
             f"Output path: {output}\n"
             f"Force overwrite: {force}\n"
-            f"Exception: {type(e).__name__}: {str(e)}\n"
+            f"Exception: {type(e).__name__}: {e!s}\n"
             f"Traceback:\n{traceback.format_exc()}"
         )
         typer.echo(f"❌ Error creating configuration file: {e}", err=True)

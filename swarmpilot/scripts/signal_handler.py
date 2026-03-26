@@ -22,7 +22,7 @@ from __future__ import annotations
 import signal
 import sys
 import time
-from typing import Callable, List, Optional
+from collections.abc import Callable
 
 import httpx
 from loguru import logger
@@ -64,7 +64,7 @@ class GracefulShutdown:
         self.instance_id = instance_id
         self.grace_period = grace_period
         self._shutdown_requested = False
-        self._cleanup_callbacks: List[Callable[[], None]] = []
+        self._cleanup_callbacks: list[Callable[[], None]] = []
         self._original_sigterm = None
         self._original_sigint = None
 
@@ -100,7 +100,7 @@ class GracefulShutdown:
             signal.signal(signal.SIGINT, self._original_sigint)
         logger.debug("Original signal handlers restored")
 
-    def _handle_signal(self, signum: int, frame: Optional[object]) -> None:
+    def _handle_signal(self, signum: int, frame: object | None) -> None:
         """Handle received signal.
 
         Args:
@@ -199,7 +199,7 @@ class GracefulShutdown:
 def create_shutdown_handler(
     scheduler_url: str,
     instance_id: str,
-    cleanup_callbacks: Optional[List[Callable[[], None]]] = None,
+    cleanup_callbacks: list[Callable[[], None]] | None = None,
     grace_period: float = 25.0,
 ) -> GracefulShutdown:
     """Create and setup a graceful shutdown handler.

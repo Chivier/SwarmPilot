@@ -1,5 +1,4 @@
-"""
-Integration tests for the loguru logging system.
+"""Integration tests for the loguru logging system.
 
 This test module verifies that:
 1. Loguru configuration works correctly
@@ -9,12 +8,11 @@ This test module verifies that:
 5. Uvicorn logs are redirected to loguru
 """
 
-import os
 import logging
+import os
 import tempfile
 from pathlib import Path
 
-import pytest
 from loguru import logger
 
 
@@ -202,7 +200,6 @@ class TestAPILogging:
             os.environ["PLANNER_LOGURU_LEVEL"] = "INFO"
 
             # Import API module (this triggers setup_logging)
-            from swarmpilot.planner import api
 
             # Check that log directory was created
             log_path = Path(tmpdir)

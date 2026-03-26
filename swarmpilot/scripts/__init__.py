@@ -18,8 +18,8 @@ from swarmpilot.scripts.deploy import (
 )
 from swarmpilot.scripts.health import (
     HEALTH_ENDPOINTS,
-    HeartbeatSender,
     HealthMonitor,
+    HeartbeatSender,
     check_health_once,
     wait_for_health,
 )
@@ -35,25 +35,21 @@ from swarmpilot.scripts.signal_handler import (
 )
 
 __all__ = [
-    # Deployment (PYLET-001)
+    "HEALTH_ENDPOINTS",
     "MODEL_COMMANDS",
+    "GracefulShutdown",
+    "HealthMonitor",
+    "HeartbeatSender",
+    "check_health_once",
+    "create_shutdown_handler",
     "deploy_model",
-    "wait_model_ready",
-    "wait_model_ready_sync",
-    # Registration (PYLET-002)
-    "get_instance_info",
-    "register_with_scheduler",
     "deregister_from_scheduler",
     "force_remove_from_scheduler",
-    # Signal Handling (PYLET-003)
-    "GracefulShutdown",
-    "create_shutdown_handler",
-    # Health Monitoring (PYLET-004)
-    "HEALTH_ENDPOINTS",
+    "get_instance_info",
+    "register_with_scheduler",
     "wait_for_health",
-    "check_health_once",
-    "HeartbeatSender",
-    "HealthMonitor",
+    "wait_model_ready",
+    "wait_model_ready_sync",
 ]
 
 __version__ = "0.1.0"

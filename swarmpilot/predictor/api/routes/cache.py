@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import traceback
 
-from fastapi import APIRouter
-from fastapi import HTTPException
-from fastapi import status
+from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import JSONResponse
 
 from swarmpilot.predictor.api import dependencies

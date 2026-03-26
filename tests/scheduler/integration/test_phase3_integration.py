@@ -21,8 +21,12 @@ from swarmpilot.scheduler.instance_sync import (
     InstanceSyncRequest,
     handle_instance_sync,
 )
-from swarmpilot.scheduler.services.task_result_callback import TaskResultCallback
-from swarmpilot.scheduler.services.worker_queue_manager import WorkerQueueManager
+from swarmpilot.scheduler.services.task_result_callback import (
+    TaskResultCallback,
+)
+from swarmpilot.scheduler.services.worker_queue_manager import (
+    WorkerQueueManager,
+)
 from swarmpilot.scheduler.services.worker_queue_thread import (
     QueuedTask,
     TaskResult,

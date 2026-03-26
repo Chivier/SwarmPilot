@@ -1,8 +1,7 @@
-"""
-Tests for hardware performance information utilities.
-"""
+"""Tests for hardware performance information utilities."""
 
 import pytest
+
 from swarmpilot.predictor.utils.hardware_perf_info import (
     NVIDIA_TESLA_SPECS,
     get_gpu_spec,
@@ -26,7 +25,7 @@ class TestGetGpuSpec:
 
     def test_get_gpu_spec_all_gpus(self):
         """Should return valid specs for all available GPUs."""
-        for gpu_name in NVIDIA_TESLA_SPECS.keys():
+        for gpu_name in NVIDIA_TESLA_SPECS:
             spec = get_gpu_spec(gpu_name)
             assert "cuda_cores" in spec
             assert "fp32_tflops" in spec
@@ -70,7 +69,13 @@ class TestNvidiaTeslaSpecs:
 
     def test_all_gpus_have_required_fields(self):
         """All GPUs should have the required specification fields."""
-        required_fields = ["cuda_cores", "tensor_cores", "fp32_tflops", "memory_gb", "memory_bandwidth_gb_s"]
+        required_fields = [
+            "cuda_cores",
+            "tensor_cores",
+            "fp32_tflops",
+            "memory_gb",
+            "memory_bandwidth_gb_s",
+        ]
 
         for gpu_name, spec in NVIDIA_TESLA_SPECS.items():
             for field in required_fields:
@@ -80,7 +85,9 @@ class TestNvidiaTeslaSpecs:
         """All specification values should be positive numbers."""
         for gpu_name, spec in NVIDIA_TESLA_SPECS.items():
             for key, value in spec.items():
-                assert value > 0, f"{gpu_name}.{key} should be positive, got {value}"
+                assert value > 0, (
+                    f"{gpu_name}.{key} should be positive, got {value}"
+                )
 
     def test_h100_variants_exist(self):
         """H100 should have multiple variants."""

@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter
-from fastapi import status
+from fastapi import APIRouter, status
 from fastapi.responses import JSONResponse
 
 from swarmpilot.predictor.api import dependencies
@@ -47,7 +46,7 @@ async def health_check():
     except Exception as e:
         error_detail = {
             "status": "unhealthy",
-            "reason": f"Health check failed: {str(e)}",
+            "reason": f"Health check failed: {e!s}",
         }
         dependencies._log_error(
             error_context="Health check - unexpected exception",

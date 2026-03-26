@@ -8,8 +8,7 @@ from fastapi import FastAPI
 
 from swarmpilot.predictor.api.dependencies import storage
 from swarmpilot.predictor.config import get_config
-from swarmpilot.predictor.utils.logging import get_logger
-from swarmpilot.predictor.utils.logging import setup_logging
+from swarmpilot.predictor.utils.logging import get_logger, setup_logging
 
 logger = get_logger()
 
@@ -64,12 +63,14 @@ def _register_routes(application: FastAPI) -> None:
     Args:
         application: The FastAPI application instance.
     """
-    from swarmpilot.predictor.api.routes import cache
-    from swarmpilot.predictor.api.routes import health
-    from swarmpilot.predictor.api.routes import models
-    from swarmpilot.predictor.api.routes import prediction
-    from swarmpilot.predictor.api.routes import training
-    from swarmpilot.predictor.api.routes import websocket
+    from swarmpilot.predictor.api.routes import (
+        cache,
+        health,
+        models,
+        prediction,
+        training,
+        websocket,
+    )
 
     # Include routers
     application.include_router(health.router)

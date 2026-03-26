@@ -41,16 +41,15 @@ def is_experiment_mode(
         True if experiment mode should be used.
     """
     # Check for exp_runtime in features
-    if 'exp_runtime' in features:
+    if "exp_runtime" in features:
         return True
 
     # Check if all platform info fields are "exp"
-    if (platform_info.get('software_name') == 'exp' and
-        platform_info.get('software_version') == 'exp' and
-        platform_info.get('hardware_name') == 'exp'):
-        return True
-
-    return False
+    return (
+        platform_info.get("software_name") == "exp"
+        and platform_info.get("software_version") == "exp"
+        and platform_info.get("hardware_name") == "exp"
+    )
 
 
 def get_exp_runtime(features: dict[str, Any]) -> float:
@@ -65,7 +64,7 @@ def get_exp_runtime(features: dict[str, Any]) -> float:
     Raises:
         ValueError: If exp_runtime not found or invalid.
     """
-    if 'exp_runtime' not in features:
+    if "exp_runtime" not in features:
         error_msg = "Experiment mode requires 'exp_runtime' in features"
         logger.error(
             f"Experiment mode validation failed\n"
@@ -74,7 +73,7 @@ def get_exp_runtime(features: dict[str, Any]) -> float:
         )
         raise ValueError(error_msg)
 
-    exp_runtime = features['exp_runtime']
+    exp_runtime = features["exp_runtime"]
 
     if not isinstance(exp_runtime, (int, float)):
         error_msg = f"exp_runtime must be numeric, got {type(exp_runtime)}"
@@ -113,8 +112,8 @@ def generate_expect_error_prediction(
         Dict with expected_runtime_ms and error_margin_ms.
     """
     return {
-        'expected_runtime_ms': exp_runtime,
-        'error_margin_ms': exp_runtime * cv
+        "expected_runtime_ms": exp_runtime,
+        "error_margin_ms": exp_runtime * cv,
     }
 
 
@@ -151,8 +150,8 @@ def generate_multimodal_samples(
         raise ValueError(error_msg)
 
     # Normalize weights
-    total_weight = sum(m.get('weight', 1.0) for m in modes)
-    normalized_weights = [m.get('weight', 1.0) / total_weight for m in modes]
+    total_weight = sum(m.get("weight", 1.0) for m in modes)
+    normalized_weights = [m.get("weight", 1.0) / total_weight for m in modes]
 
     # Calculate samples per mode based on weights
     samples_per_mode = [int(w * num_samples) for w in normalized_weights]
@@ -168,9 +167,9 @@ def generate_multimodal_samples(
         if n_samples <= 0:
             continue
 
-        mean = mode['mean']
-        cv = mode.get('cv', 0.20)
-        skewness = mode.get('skewness', 0.0)
+        mean = mode["mean"]
+        cv = mode.get("cv", 0.20)
+        skewness = mode.get("skewness", 0.0)
 
         if skewness <= 0:
             # Normal distribution for this mode
@@ -179,9 +178,11 @@ def generate_multimodal_samples(
         else:
             # Log-normal distribution for this mode
             effective_cv = cv * (1 + 0.3 * skewness)
-            sigma_ln = np.sqrt(np.log(1 + effective_cv ** 2))
-            mu_ln = np.log(mean) - sigma_ln ** 2 / 2
-            mode_samples = rng.lognormal(mean=mu_ln, sigma=sigma_ln, size=n_samples)
+            sigma_ln = np.sqrt(np.log(1 + effective_cv**2))
+            mu_ln = np.log(mean) - sigma_ln**2 / 2
+            mode_samples = rng.lognormal(
+                mean=mu_ln, sigma=sigma_ln, size=n_samples
+            )
 
         all_samples.extend(mode_samples)
 
@@ -233,20 +234,20 @@ def generate_quantile_prediction(
         samples = rng.normal(loc=mu, scale=sigma, size=2000)
     else:
         # Log-normal distribution (right-skewed)
-        # For log-normal: E[X] = exp(μ + σ²/2), CV = sqrt(exp(σ²) - 1)
+        # For log-normal: E[X] = exp(mu + sigma²/2), CV = sqrt(exp(sigma²) - 1)
         # Given target mean (exp_runtime) and CV, solve for log-normal params
         #
-        # σ_ln = sqrt(ln(1 + CV²))
-        # μ_ln = ln(mean) - σ_ln²/2
+        # sigma_ln = sqrt(ln(1 + CV²))
+        # mu_ln = ln(mean) - sigma_ln²/2
         #
-        # Skewness of log-normal = (exp(σ²) + 2) * sqrt(exp(σ²) - 1)
+        # Skewness of log-normal = (exp(sigma²) + 2) * sqrt(exp(sigma²) - 1)
         # We use skewness parameter to adjust the CV for more extreme tails
 
         # Adjust CV based on skewness for more realistic long-tail behavior
         effective_cv = cv * (1 + 0.3 * skewness)
 
-        sigma_ln = np.sqrt(np.log(1 + effective_cv ** 2))
-        mu_ln = np.log(exp_runtime) - sigma_ln ** 2 / 2
+        sigma_ln = np.sqrt(np.log(1 + effective_cv**2))
+        mu_ln = np.log(exp_runtime) - sigma_ln**2 / 2
 
         samples = rng.lognormal(mean=mu_ln, sigma=sigma_ln, size=2000)
 
@@ -257,9 +258,7 @@ def generate_quantile_prediction(
     quantile_value = np.quantile(samples, quantiles)
     results = {str(q): float(v) for q, v in zip(quantiles, quantile_value)}
 
-    return {
-        'quantiles': results
-    }
+    return {"quantiles": results}
 
 
 def generate_experiment_prediction(
@@ -289,44 +288,57 @@ def generate_experiment_prediction(
     exp_runtime = get_exp_runtime(features)
 
     # Extract distribution parameters from features (with defaults for backward compatibility)
-    cv = features.get('exp_cv', 0.30)
-    skewness = features.get('exp_skewness', 0.0)
-    modes = features.get('exp_modes', None)
+    cv = features.get("exp_cv", 0.30)
+    skewness = features.get("exp_skewness", 0.0)
+    modes = features.get("exp_modes")
 
-    if prediction_type == 'expect_error':
+    if prediction_type == "expect_error":
         # For multimodal, calculate weighted average CV for error margin
         if modes is not None and len(modes) > 0:
             # Use the overall spread of the mixture for error margin
             # Approximate by using the weighted average of mode CVs plus inter-mode variance
-            total_weight = sum(m.get('weight', 1.0) for m in modes)
-            weighted_mean = sum(m['mean'] * m.get('weight', 1.0) for m in modes) / total_weight
+            total_weight = sum(m.get("weight", 1.0) for m in modes)
+            weighted_mean = (
+                sum(m["mean"] * m.get("weight", 1.0) for m in modes)
+                / total_weight
+            )
 
             # Calculate variance: sum of (within-mode variance + between-mode variance)
-            within_var = sum(
-                m.get('weight', 1.0) * (m['mean'] * m.get('cv', 0.20)) ** 2
-                for m in modes
-            ) / total_weight
-            between_var = sum(
-                m.get('weight', 1.0) * (m['mean'] - weighted_mean) ** 2
-                for m in modes
-            ) / total_weight
+            within_var = (
+                sum(
+                    m.get("weight", 1.0) * (m["mean"] * m.get("cv", 0.20)) ** 2
+                    for m in modes
+                )
+                / total_weight
+            )
+            between_var = (
+                sum(
+                    m.get("weight", 1.0) * (m["mean"] - weighted_mean) ** 2
+                    for m in modes
+                )
+                / total_weight
+            )
             total_std = np.sqrt(within_var + between_var)
 
-            effective_cv = total_std / weighted_mean if weighted_mean > 0 else cv
-            return generate_expect_error_prediction(exp_runtime, cv=effective_cv)
+            effective_cv = (
+                total_std / weighted_mean if weighted_mean > 0 else cv
+            )
+            return generate_expect_error_prediction(
+                exp_runtime, cv=effective_cv
+            )
         else:
             return generate_expect_error_prediction(exp_runtime, cv=cv)
 
-    elif prediction_type == 'quantile':
+    elif prediction_type == "quantile":
         quantiles = None
-        if config and 'quantiles' in config:
-            quantiles = config['quantiles']
+        if config and "quantiles" in config:
+            quantiles = config["quantiles"]
         return generate_quantile_prediction(
             exp_runtime,
             quantiles=quantiles,
             cv=cv,
             skewness=skewness,
-            modes=modes
+            modes=modes,
         )
 
     else:

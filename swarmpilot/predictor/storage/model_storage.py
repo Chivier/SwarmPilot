@@ -7,8 +7,7 @@ from __future__ import annotations
 
 import os
 import traceback
-from datetime import datetime
-from datetime import timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -81,7 +80,7 @@ class ModelStorage:
         complete_state = {
             'predictor_state': predictor_state,
             'metadata': metadata,
-            'saved_at': datetime.now(timezone.utc).isoformat()
+            'saved_at': datetime.now(UTC).isoformat()
         }
 
         # Save to disk
@@ -96,7 +95,7 @@ class ModelStorage:
                 f"Model key: {model_key}\n"
                 f"Model path: {model_path}\n"
                 f"Metadata: {metadata}\n"
-                f"Exception: {type(e).__name__}: {str(e)}\n"
+                f"Exception: {type(e).__name__}: {e!s}\n"
                 f"Traceback:\n{traceback.format_exc()}"
             )
             raise
@@ -128,7 +127,7 @@ class ModelStorage:
                 f"Failed to load model\n"
                 f"Model key: {model_key}\n"
                 f"Model path: {model_path}\n"
-                f"Exception: {type(e).__name__}: {str(e)}\n"
+                f"Exception: {type(e).__name__}: {e!s}\n"
                 f"Traceback:\n{traceback.format_exc()}"
             )
             raise
@@ -174,7 +173,7 @@ class ModelStorage:
                 logger.warning(
                     f"Failed to load model file (skipping)\n"
                     f"File: {model_file}\n"
-                    f"Exception: {type(e).__name__}: {str(e)}\n"
+                    f"Exception: {type(e).__name__}: {e!s}\n"
                     f"Traceback:\n{traceback.format_exc()}"
                 )
                 continue

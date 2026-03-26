@@ -30,8 +30,12 @@ if TYPE_CHECKING:
     from swarmpilot.scheduler.algorithms.base import SchedulingStrategy
     from swarmpilot.scheduler.registry.instance_registry import InstanceRegistry
     from swarmpilot.scheduler.registry.task_registry import TaskRegistry
-    from swarmpilot.scheduler.services.task_result_callback import TaskResultCallback
-    from swarmpilot.scheduler.services.worker_queue_manager import WorkerQueueManager
+    from swarmpilot.scheduler.services.task_result_callback import (
+        TaskResultCallback,
+    )
+    from swarmpilot.scheduler.services.worker_queue_manager import (
+        WorkerQueueManager,
+    )
 
 
 # Lightweight OpenAI-compatible paths that should be prioritized.

@@ -26,14 +26,12 @@ from __future__ import annotations
 
 import threading
 import time
-from typing import List, Optional
 
 import httpx
 from loguru import logger
 
-
 # Health check endpoints for different backends
-HEALTH_ENDPOINTS: List[str] = [
+HEALTH_ENDPOINTS: list[str] = [
     "/health",  # vLLM standard
     "/v1/models",  # OpenAI-compatible (vLLM, sglang)
     "/healthz",  # Kubernetes-style
@@ -45,7 +43,7 @@ def wait_for_health(
     endpoint: str,
     timeout: float = 300.0,
     poll_interval: float = 2.0,
-    health_endpoints: Optional[List[str]] = None,
+    health_endpoints: list[str] | None = None,
 ) -> bool:
     """Wait for model health check to pass.
 
@@ -119,7 +117,7 @@ def wait_for_health(
 
 def check_health_once(
     endpoint: str,
-    health_endpoints: Optional[List[str]] = None,
+    health_endpoints: list[str] | None = None,
 ) -> bool:
     """Perform a single health check.
 
@@ -180,7 +178,7 @@ class HeartbeatSender:
         self.instance_id = instance_id
         self.interval = interval
         self._running = False
-        self._thread: Optional[threading.Thread] = None
+        self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
         self._heartbeat_count = 0
         self._last_success = False

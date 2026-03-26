@@ -9,8 +9,9 @@ from pathlib import Path
 
 import pytest
 
-from swarmpilot.predictor.preprocessor.preprocessors_registry import PreprocessorsRegistry
-
+from swarmpilot.predictor.preprocessor.preprocessors_registry import (
+    PreprocessorsRegistry,
+)
 
 # Get predictor directory (parent of tests directory)
 PREDICTOR_DIR = Path(__file__).parent.parent
@@ -27,7 +28,9 @@ requires_semantic_model = pytest.mark.skipif(
 @requires_semantic_model
 def test_preprocessor_registry():
     """Test that the preprocessor registry loads the semantic preprocessor."""
-    from swarmpilot.predictor.preprocessor.semantic_predictor import SemanticPredictor
+    from swarmpilot.predictor.preprocessor.semantic_predictor import (
+        SemanticPredictor,
+    )
 
     registry = PreprocessorsRegistry()
     assert registry is not None
@@ -38,7 +41,9 @@ def test_preprocessor_registry():
 @requires_semantic_model
 def test_semantic_predictor():
     """Test SemanticPredictor initialization and prediction."""
-    from swarmpilot.predictor.preprocessor.semantic_predictor import SemanticPredictor
+    from swarmpilot.predictor.preprocessor.semantic_predictor import (
+        SemanticPredictor,
+    )
 
     start_time = time.time()
     predictor = SemanticPredictor(
@@ -60,29 +65,35 @@ def test_semantic_predictor():
 
     print(f"Load time: {load_end_time - start_time} seconds")
     print(f"Predict time: {predict_end_time - predict_start_time} seconds")
-    print(f"Predict output length of 'Hello, world!': {output['output_length']}")
+    print(
+        f"Predict output length of 'Hello, world!': {output['output_length']}"
+    )
 
 
 @requires_semantic_model
 def test_semantic_predictor_multiple_inputs():
     """Test that SemanticPredictor rejects multiple inputs."""
-    from swarmpilot.predictor.preprocessor.semantic_predictor import SemanticPredictor
+    from swarmpilot.predictor.preprocessor.semantic_predictor import (
+        SemanticPredictor,
+    )
 
     predictor = SemanticPredictor(
         model_path=str(MODEL_PATH), model_config_path=str(CONFIG_PATH)
     )
-    try:
+    with pytest.raises(AssertionError) as exc_info:
         predictor.predict(["Hello, world!", "Hello, world!"])
-        assert False, "Expected AssertionError for multiple inputs"
-    except AssertionError as e:
-        assert "SemanticPredictor only supports one input text" in str(e)
-        print("Correctly raised AssertionError for multiple inputs")
+    assert "SemanticPredictor only supports one input text" in str(
+        exc_info.value
+    )
+    print("Correctly raised AssertionError for multiple inputs")
 
 
 @requires_semantic_model
 def test_semantic_predictor_with_preprocessor_registry():
     """Test SemanticPredictor accessed through the registry."""
-    from swarmpilot.predictor.preprocessor.semantic_predictor import SemanticPredictor
+    from swarmpilot.predictor.preprocessor.semantic_predictor import (
+        SemanticPredictor,
+    )
 
     registry = PreprocessorsRegistry()
     predictor = registry.get_preprocessor("semantic")

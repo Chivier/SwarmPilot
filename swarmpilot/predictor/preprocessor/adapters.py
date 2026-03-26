@@ -8,13 +8,16 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from swarmpilot.predictor.preprocessor.base_preprocessor_v2 import BasePreprocessorV2
-from swarmpilot.predictor.preprocessor.base_preprocessor_v2 import FeatureContext
-from swarmpilot.predictor.preprocessor.base_preprocessor_v2 import OperationType
-
+from swarmpilot.predictor.preprocessor.base_preprocessor_v2 import (
+    BasePreprocessorV2,
+    FeatureContext,
+    OperationType,
+)
 
 if TYPE_CHECKING:
-    from swarmpilot.predictor.preprocessor.base_preprocessor import BasePreprocessor
+    from swarmpilot.predictor.preprocessor.base_preprocessor import (
+        BasePreprocessor,
+    )
 
 
 class V1PreprocessorAdapter(BasePreprocessorV2):

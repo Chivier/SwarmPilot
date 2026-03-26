@@ -1,13 +1,12 @@
-"""
-Shared pytest fixtures for all tests.
-"""
+"""Shared pytest fixtures for all tests."""
 
-import pytest
 import shutil
 from pathlib import Path
-from fastapi.testclient import TestClient
-from swarmpilot.predictor.api import app
 
+import pytest
+from fastapi.testclient import TestClient
+
+from swarmpilot.predictor.api import app
 
 # Use a test-specific storage directory
 TEST_STORAGE_DIR = "test_models"
@@ -23,6 +22,7 @@ def setup_and_teardown():
     # Need to update both src.api and src.api.dependencies for compatibility
     from swarmpilot.predictor import api
     from swarmpilot.predictor.api import dependencies
+
     test_storage = api.ModelStorage(storage_dir=TEST_STORAGE_DIR)
     api.storage = test_storage
     dependencies.storage = test_storage

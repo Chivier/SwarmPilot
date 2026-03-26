@@ -22,7 +22,9 @@ def client():
     # Reset global registries for clean state
     from swarmpilot.scheduler.registry.instance_registry import InstanceRegistry
     from swarmpilot.scheduler.registry.task_registry import TaskRegistry
-    from swarmpilot.scheduler.services.websocket_manager import ConnectionManager
+    from swarmpilot.scheduler.services.websocket_manager import (
+        ConnectionManager,
+    )
 
     api.instance_registry = InstanceRegistry()
     api.task_registry = TaskRegistry()

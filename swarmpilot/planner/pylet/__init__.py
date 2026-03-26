@@ -48,40 +48,34 @@ from swarmpilot.planner.pylet.scheduler_client import (
 )
 
 __all__ = [
-    # PyLet client
-    "InstanceInfo",
-    "PartialDeploymentError",
-    "PartialDeploymentResult",
-    "PyLetClient",
-    "create_pylet_client",
-    "get_pylet_client",
-    # Deployment executor
     "DeploymentAction",
     "DeploymentExecutor",
     "DeploymentPlan",
-    "ExecutionResult",
-    # Instance manager
     "DeploymentResult",
+    "DeploymentServiceResult",
+    "ExecutionResult",
+    "InstanceInfo",
     "InstanceManager",
     "ManagedInstance",
     "ManagedInstanceStatus",
-    "create_instance_manager",
-    "get_instance_manager",
-    # Migration executor
     "MigrationExecutor",
     "MigrationOperation",
     "MigrationPlan",
     "MigrationResult",
     "MigrationStatus",
-    # Scheduler client
+    "PartialDeploymentError",
+    "PartialDeploymentResult",
+    "PyLetClient",
+    "PyLetDeploymentService",
     "RegistrationInfo",
     "SchedulerClient",
-    "create_scheduler_client",
-    "get_scheduler_client",
-    # Deployment service
-    "DeploymentServiceResult",
-    "PyLetDeploymentService",
+    "create_instance_manager",
+    "create_pylet_client",
     "create_pylet_service",
+    "create_scheduler_client",
+    "get_instance_manager",
+    "get_pylet_client",
     "get_pylet_service",
     "get_pylet_service_optional",
+    "get_scheduler_client",
 ]

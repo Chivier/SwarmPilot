@@ -1,5 +1,4 @@
-"""
-Tests for CLI commands.
+"""Tests for CLI commands.
 
 Note: The `start` command is not tested as it actually starts a uvicorn server.
 """
@@ -7,14 +6,12 @@ Note: The `start` command is not tested as it actually starts a uvicorn server.
 import os
 import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
-import pytest
 from typer.testing import CliRunner
 
 from swarmpilot.predictor.cli import app
-from swarmpilot.predictor.config import PredictorConfig, reset_config
-
+from swarmpilot.predictor.config import reset_config
 
 runner = CliRunner()
 

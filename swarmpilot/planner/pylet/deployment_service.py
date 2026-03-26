@@ -27,15 +27,23 @@ from typing import TYPE_CHECKING
 
 from loguru import logger
 
-from swarmpilot.planner.pylet.deployment_executor import DeploymentExecutor, ExecutionResult
+from swarmpilot.planner.pylet.deployment_executor import (
+    DeploymentExecutor,
+    ExecutionResult,
+)
 from swarmpilot.planner.pylet.instance_manager import (
     InstanceManager,
     ManagedInstance,
 )
-from swarmpilot.planner.pylet.migration_executor import MigrationExecutor, MigrationResult
+from swarmpilot.planner.pylet.migration_executor import (
+    MigrationExecutor,
+    MigrationResult,
+)
 
 if TYPE_CHECKING:
-    from swarmpilot.planner.available_instance_store import AvailableInstanceStore
+    from swarmpilot.planner.available_instance_store import (
+        AvailableInstanceStore,
+    )
 
 
 @dataclass
@@ -332,7 +340,9 @@ class PyLetDeploymentService:
         """
         self._ensure_initialized()
 
-        from swarmpilot.planner.available_instance_store import AvailableInstance
+        from swarmpilot.planner.available_instance_store import (
+            AvailableInstance,
+        )
 
         synced = 0
         for instance in self._instance_manager.get_active_instances():
@@ -370,7 +380,9 @@ class PyLetDeploymentService:
         """
         self._ensure_initialized()
 
-        from swarmpilot.planner.available_instance_store import AvailableInstance
+        from swarmpilot.planner.available_instance_store import (
+            AvailableInstance,
+        )
 
         synced = 0
         for instance in self._instance_manager.get_active_instances():

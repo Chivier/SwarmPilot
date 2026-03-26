@@ -18,7 +18,7 @@ Example:
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Any
 
 import httpx
 from loguru import logger
@@ -30,7 +30,7 @@ if TYPE_CHECKING:
 
 # Model launch command templates
 # $PORT is replaced by PyLet with the auto-allocated port
-MODEL_COMMANDS: Dict[str, str] = {
+MODEL_COMMANDS: dict[str, str] = {
     "vllm": "vllm serve {model_id} --port $PORT --host 0.0.0.0",
     "sglang": (
         "python -m sglang.launch_server "
@@ -43,10 +43,10 @@ def deploy_model(
     model_id: str,
     backend: str = "vllm",
     gpu_count: int = 1,
-    env: Optional[Dict[str, str]] = None,
-    labels: Optional[Dict[str, str]] = None,
-    name: Optional[str] = None,
-    target_worker: Optional[str] = None,
+    env: dict[str, str] | None = None,
+    labels: dict[str, str] | None = None,
+    name: str | None = None,
+    target_worker: str | None = None,
 ) -> Any:
     """Deploy a model directly via PyLet.
 
@@ -108,7 +108,7 @@ def deploy_model(
     logger.info(f"Deploying model: {model_id} (backend={backend}, gpu={gpu_count})")
 
     # Build submit kwargs
-    submit_kwargs: Dict[str, Any] = {
+    submit_kwargs: dict[str, Any] = {
         "gpu": gpu_count,
         "name": name,
         "labels": instance_labels,

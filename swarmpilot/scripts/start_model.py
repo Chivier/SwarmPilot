@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Start model and register with scheduler.
+r"""Start model and register with scheduler.
 
 This is the main entry point for PyLet-deployed models. It:
 1. Waits for the model service to be healthy
@@ -36,7 +36,10 @@ import time
 from loguru import logger
 
 from swarmpilot.scripts.health import HeartbeatSender, wait_for_health
-from swarmpilot.scripts.register import get_instance_info, register_with_scheduler
+from swarmpilot.scripts.register import (
+    get_instance_info,
+    register_with_scheduler,
+)
 from swarmpilot.scripts.signal_handler import GracefulShutdown
 
 
@@ -79,7 +82,9 @@ def main() -> int:
     logger.info(f"  Instance ID: {instance_id}")
     logger.info(f"  Endpoint: {endpoint}")
     logger.info(f"  Scheduler: {scheduler_url}")
-    logger.info(f"  Heartbeat: {'enabled' if heartbeat_enabled else 'disabled'}")
+    logger.info(
+        f"  Heartbeat: {'enabled' if heartbeat_enabled else 'disabled'}"
+    )
 
     # Step 1: Wait for model to be healthy
     logger.info("Step 1/4: Waiting for model to be healthy...")

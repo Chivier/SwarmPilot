@@ -16,7 +16,10 @@ from collections.abc import Callable
 
 from loguru import logger
 
-from swarmpilot.scheduler.services.worker_queue_thread import QueuedTask, WorkerQueueThread
+from swarmpilot.scheduler.services.worker_queue_thread import (
+    QueuedTask,
+    WorkerQueueThread,
+)
 
 
 class WorkerQueueManager:

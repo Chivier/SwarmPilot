@@ -10,7 +10,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from swarmpilot.scheduler.algorithms.adaptive_bootstrap import AdaptiveBootstrapStrategy
+from swarmpilot.scheduler.algorithms.adaptive_bootstrap import (
+    AdaptiveBootstrapStrategy,
+)
 from swarmpilot.scheduler.algorithms.base import ScheduleResult
 from swarmpilot.scheduler.algorithms.factory import get_strategy
 from swarmpilot.scheduler.clients.models import Prediction

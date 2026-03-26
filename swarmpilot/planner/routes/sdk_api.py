@@ -46,7 +46,11 @@ from ..scheduler_registry import get_scheduler_registry
 try:
     from ..pylet.deployment_service import get_pylet_service_optional
 except ImportError:
-    get_pylet_service_optional = lambda: None  # type: ignore[assignment]
+
+    def get_pylet_service_optional():
+        """Return no PyLet service when optional dependency is missing."""
+        return None
+
 
 router = APIRouter(tags=["sdk"])
 
@@ -165,8 +169,7 @@ def _try_reassign_idle_scheduler(model: str) -> str | None:
         live_count = sum(
             1
             for inst in manager.instances.values()
-            if inst.model_id == old_model
-            and inst.status in _LIVE_STATUSES
+            if inst.model_id == old_model and inst.status in _LIVE_STATUSES
         )
         if live_count > 0:
             continue
@@ -184,9 +187,7 @@ def _try_reassign_idle_scheduler(model: str) -> str | None:
         finally:
             client.close()
 
-    logger.warning(
-        f"No idle scheduler available for model {model}"
-    )
+    logger.warning(f"No idle scheduler available for model {model}")
     return None
 
 
@@ -228,11 +229,7 @@ async def serve_model(request: ServeRequest):
     service = _ensure_pylet_enabled()
 
     model_or_cmd = request.model_or_command
-    # Auto-generate vllm serve command for model names
-    if "/" in model_or_cmd:
-        model = model_or_cmd
-    else:
-        model = model_or_cmd
+    model = model_or_cmd
 
     name = request.name or _sanitize_name(model)
     scheduler_url = _resolve_scheduler(request.scheduler, model)
@@ -263,7 +260,7 @@ async def serve_model(request: ServeRequest):
         logger.error(f"[SDK] serve failed: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Serve failed: {str(e)}",
+            detail=f"Serve failed: {e!s}",
         )
 
 
@@ -309,7 +306,7 @@ async def run_workload(request: RunRequest):
         logger.error(f"[SDK] run failed: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Run failed: {str(e)}",
+            detail=f"Run failed: {e!s}",
         )
 
 
@@ -383,7 +380,7 @@ async def deploy_registered():
         logger.error(f"[SDK] deploy failed: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Deploy failed: {str(e)}",
+            detail=f"Deploy failed: {e!s}",
         )
 
 
@@ -495,7 +492,7 @@ async def scale_model(request: ScaleRequest):
         logger.error(f"[SDK] scale failed: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Scale failed: {str(e)}",
+            detail=f"Scale failed: {e!s}",
         )
 
 
@@ -582,7 +579,7 @@ async def terminate_instances(request: TerminateRequest):
         logger.error(f"[SDK] terminate failed: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Terminate failed: {str(e)}",
+            detail=f"Terminate failed: {e!s}",
         )
 
 

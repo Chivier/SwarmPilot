@@ -5,12 +5,10 @@ Defines the abstract base class for all predictor implementations.
 
 from __future__ import annotations
 
-from abc import ABC
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 from typing import Any
 
 from swarmpilot.predictor.utils.logging import get_logger
-
 
 logger = get_logger()
 
@@ -137,13 +135,11 @@ class BasePredictor(ABC):
             raise ValueError(error_msg)
 
         # Extract runtime_ms labels
-        y = [sample['runtime_ms'] for sample in features_list]
+        y = [sample["runtime_ms"] for sample in features_list]
 
         # Get feature names (all keys except runtime_ms) from first sample
         first_sample = features_list[0]
-        feature_names = sorted(
-            [k for k in first_sample.keys() if k != 'runtime_ms']
-        )
+        feature_names = sorted([k for k in first_sample if k != "runtime_ms"])
 
         if not feature_names:
             error_msg = "No features found (only runtime_ms present)"
@@ -157,9 +153,7 @@ class BasePredictor(ABC):
         # Extract feature values in consistent order
         X = []
         for idx, sample in enumerate(features_list):
-            sample_features = sorted(
-                [k for k in sample.keys() if k != 'runtime_ms']
-            )
+            sample_features = sorted([k for k in sample if k != "runtime_ms"])
 
             # Validate all samples have same features
             if sample_features != feature_names:

@@ -21,7 +21,9 @@ from swarmpilot.scheduler.clients._predictor_lib import (
     ModelStorage,
 )
 from swarmpilot.scheduler.clients.models import TrainingSample
-from swarmpilot.scheduler.clients.preprocessor_config import PreprocessorChainBuilder
+from swarmpilot.scheduler.clients.preprocessor_config import (
+    PreprocessorChainBuilder,
+)
 
 
 class TrainingClient:

@@ -12,7 +12,7 @@ class PlannerInput(BaseModel):
     # Core parameters
     M: int = Field(..., description="Number of instances", gt=0)
     N: int = Field(..., description="Number of model types", gt=0)
-    B: list[list[float]] = Field(..., description="Batch capacity matrix [M×N]")
+    B: list[list[float]] = Field(..., description="Batch capacity matrix [MxN]")
     # When deploying the model, inital status will be computed from the instance informations
     initial: list[int] | None = Field(
         None, description="Initial deployment [M], -1 = no model"

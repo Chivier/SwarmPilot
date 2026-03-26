@@ -12,8 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from pydantic import Field
-from pydantic_settings import BaseSettings
-from pydantic_settings import SettingsConfigDict
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class PredictorConfig(BaseSettings):

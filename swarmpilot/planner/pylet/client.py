@@ -20,11 +20,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from loguru import logger
-from pylet.errors import NotFoundError, PyletError
-
 import pylet
+from loguru import logger
 from pylet import Instance
+from pylet.errors import NotFoundError, PyletError
 
 
 @dataclass
@@ -48,7 +47,7 @@ class InstanceInfo:
     labels: dict[str, str] = field(default_factory=dict)
 
     @classmethod
-    def from_pylet_instance(cls, instance: Instance) -> "InstanceInfo":
+    def from_pylet_instance(cls, instance: Instance) -> InstanceInfo:
         """Create InstanceInfo from a PyLet Instance object.
 
         Args:
@@ -243,6 +242,10 @@ class PyLetClient:
                 )
             command_template = MODEL_COMMANDS[backend]
             command = command_template.format(model_id=model_id)
+
+            # Auto-enable tensor parallelism when multiple GPUs
+            if gpu_count > 1:
+                command += f" --tensor-parallel-size {gpu_count}"
 
         # Build labels with SwarmPilot metadata
         instance_labels = {

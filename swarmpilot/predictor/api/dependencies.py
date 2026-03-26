@@ -5,12 +5,13 @@ from __future__ import annotations
 import traceback
 from typing import Any
 
+from swarmpilot.predictor.api.cache import ModelCache
 from swarmpilot.predictor.config import get_config
-from swarmpilot.predictor.preprocessor.preprocessors_registry import PreprocessorsRegistry
+from swarmpilot.predictor.preprocessor.preprocessors_registry import (
+    PreprocessorsRegistry,
+)
 from swarmpilot.predictor.storage.model_storage import ModelStorage
 from swarmpilot.predictor.utils.logging import get_logger
-
-from swarmpilot.predictor.api.cache import ModelCache
 
 logger = get_logger()
 
@@ -36,7 +37,7 @@ def _log_error(
 
     if exception:
         log_lines.append(f"Exception type: {type(exception).__name__}")
-        log_lines.append(f"Exception message: {str(exception)}")
+        log_lines.append(f"Exception message: {exception!s}")
 
     if include_traceback:
         log_lines.append(f"Traceback:\n{traceback.format_exc()}")

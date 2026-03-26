@@ -12,9 +12,7 @@ from typing import Any
 import torch
 import yaml
 from torch import nn
-from transformers import AutoConfig
-from transformers import AutoModel
-from transformers import AutoTokenizer
+from transformers import AutoConfig, AutoModel, AutoTokenizer
 
 from swarmpilot.predictor.preprocessor.base_preprocessor import BasePreprocessor
 
@@ -149,7 +147,7 @@ def create_model_from_config(
             "attention_probs_dropout_prob", 0.1
         ),
         use_pretrained=config.get("use_pretrained", False),
-        pretrained_model_name=config.get("pretrained_model_name", None),
+        pretrained_model_name=config.get("pretrained_model_name"),
     )
 
     param_count = model.count_parameters()

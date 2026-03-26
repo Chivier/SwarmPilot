@@ -1,19 +1,15 @@
-"""
-Tests for configuration management.
-"""
+"""Tests for configuration management."""
 
 import os
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 from swarmpilot.predictor.config import (
     PredictorConfig,
     get_config,
-    set_config,
     reset_config,
+    set_config,
 )
 
 

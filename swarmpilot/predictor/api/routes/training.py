@@ -4,13 +4,10 @@ from __future__ import annotations
 
 import traceback
 
-from fastapi import APIRouter
-from fastapi import HTTPException
-from fastapi import status
+from fastapi import APIRouter, HTTPException, status
 
 from swarmpilot.predictor.api import dependencies
-from swarmpilot.predictor.models import TrainingRequest
-from swarmpilot.predictor.models import TrainingResponse
+from swarmpilot.predictor.models import TrainingRequest, TrainingResponse
 from swarmpilot.predictor.predictor.expect_error import ExpectErrorPredictor
 from swarmpilot.predictor.predictor.quantile import QuantilePredictor
 from swarmpilot.predictor.utils.logging import get_logger

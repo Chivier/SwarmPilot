@@ -14,26 +14,27 @@ import pytest
 
 pylet = pytest.importorskip("pylet")
 
-from swarmpilot.planner.pylet.client import (
+from swarmpilot.planner.pylet.client import (  # noqa: E402
     InstanceInfo,
     PartialDeploymentError,
-    PartialDeploymentResult,
     PyLetClient,
 )
-from swarmpilot.planner.pylet.deployment_executor import (
+from swarmpilot.planner.pylet.deployment_executor import (  # noqa: E402
     DeploymentExecutor,
     DeploymentPlan,
 )
-from swarmpilot.planner.pylet.instance_manager import (
+from swarmpilot.planner.pylet.instance_manager import (  # noqa: E402
     ManagedInstance,
     ManagedInstanceStatus,
 )
-from swarmpilot.planner.pylet.migration_executor import (
+from swarmpilot.planner.pylet.migration_executor import (  # noqa: E402
     MigrationExecutor,
     MigrationOperation,
     MigrationStatus,
 )
-from swarmpilot.planner.pylet.scheduler_client import SchedulerClient
+from swarmpilot.planner.pylet.scheduler_client import (  # noqa: E402
+    SchedulerClient,
+)
 
 
 class TestInstanceInfo:

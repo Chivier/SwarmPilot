@@ -6,11 +6,12 @@ the execution of multiple preprocessors in sequence.
 
 from __future__ import annotations
 
-from typing import Any
-from typing import Self
+from typing import Any, Self
 
-from swarmpilot.predictor.preprocessor.base_preprocessor_v2 import BasePreprocessorV2
-from swarmpilot.predictor.preprocessor.base_preprocessor_v2 import FeatureContext
+from swarmpilot.predictor.preprocessor.base_preprocessor_v2 import (
+    BasePreprocessorV2,
+    FeatureContext,
+)
 
 
 class PreprocessorChainV2:

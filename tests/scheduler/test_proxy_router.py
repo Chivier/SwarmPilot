@@ -14,7 +14,9 @@ from fastapi.testclient import TestClient
 from swarmpilot.scheduler.algorithms.base import ScheduleResult
 from swarmpilot.scheduler.clients.models import Prediction
 from swarmpilot.scheduler.proxy.router import ProxyRouter
-from swarmpilot.scheduler.services.task_result_callback import TaskResultCallback
+from swarmpilot.scheduler.services.task_result_callback import (
+    TaskResultCallback,
+)
 from swarmpilot.scheduler.services.worker_queue_thread import TaskResult
 
 # ============================================================================

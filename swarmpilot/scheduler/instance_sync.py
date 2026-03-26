@@ -38,7 +38,9 @@ from loguru import logger
 if TYPE_CHECKING:
     from swarmpilot.scheduler.algorithms.base import SchedulingStrategy
     from swarmpilot.scheduler.registry.instance_registry import InstanceRegistry
-    from swarmpilot.scheduler.services.worker_queue_manager import WorkerQueueManager
+    from swarmpilot.scheduler.services.worker_queue_manager import (
+        WorkerQueueManager,
+    )
     from swarmpilot.scheduler.services.worker_queue_thread import QueuedTask
 
 

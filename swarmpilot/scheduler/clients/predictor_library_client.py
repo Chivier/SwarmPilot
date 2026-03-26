@@ -22,7 +22,9 @@ from swarmpilot.scheduler.clients._predictor_lib import (
     is_experiment_mode,
 )
 from swarmpilot.scheduler.clients.models import Prediction
-from swarmpilot.scheduler.clients.preprocessor_config import PreprocessorChainBuilder
+from swarmpilot.scheduler.clients.preprocessor_config import (
+    PreprocessorChainBuilder,
+)
 from swarmpilot.scheduler.config import PreprocessorConfig
 
 if TYPE_CHECKING:

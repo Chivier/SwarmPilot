@@ -162,11 +162,15 @@ class TestInstanceRemoval:
         )
 
         # Drain the instance first (required for safe removal)
-        drain_response = client.post("/v1/instance/drain", json={"instance_id": "inst-1"})
+        drain_response = client.post(
+            "/v1/instance/drain", json={"instance_id": "inst-1"}
+        )
         assert drain_response.status_code == 200
 
         # Remove it
-        response = client.post("/v1/instance/remove", json={"instance_id": "inst-1"})
+        response = client.post(
+            "/v1/instance/remove", json={"instance_id": "inst-1"}
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -175,7 +179,9 @@ class TestInstanceRemoval:
 
     def test_remove_nonexistent_instance(self, client):
         """Test removing non-existent instance returns 404."""
-        response = client.post("/v1/instance/remove", json={"instance_id": "nonexistent"})
+        response = client.post(
+            "/v1/instance/remove", json={"instance_id": "nonexistent"}
+        )
 
         assert response.status_code == 404
 
@@ -200,7 +206,9 @@ class TestInstanceRemoval:
         await instance_registry.increment_pending("inst-1")
 
         # Removal is allowed even with pending tasks (logs warning)
-        response = client.post("/v1/instance/remove", json={"instance_id": "inst-1"})
+        response = client.post(
+            "/v1/instance/remove", json={"instance_id": "inst-1"}
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -355,7 +363,10 @@ class TestTaskSubmission:
         )
 
         # Mock predictor
-        with patch("swarmpilot.scheduler.api.predictor_client.predict", new=AsyncMock(return_value=[])):
+        with patch(
+            "swarmpilot.scheduler.api.predictor_client.predict",
+            new=AsyncMock(return_value=[]),
+        ):
             response = client.post(
                 "/v1/task/submit",
                 json={
@@ -409,7 +420,10 @@ class TestTaskSubmission:
         )
 
         # Submit task first time
-        with patch("swarmpilot.scheduler.api.predictor_client.predict", new=AsyncMock(return_value=[])):
+        with patch(
+            "swarmpilot.scheduler.api.predictor_client.predict",
+            new=AsyncMock(return_value=[]),
+        ):
             client.post(
                 "/v1/task/submit",
                 json={
@@ -421,7 +435,10 @@ class TestTaskSubmission:
             )
 
         # Try to submit again
-        with patch("swarmpilot.scheduler.api.predictor_client.predict", new=AsyncMock(return_value=[])):
+        with patch(
+            "swarmpilot.scheduler.api.predictor_client.predict",
+            new=AsyncMock(return_value=[]),
+        ):
             response = client.post(
                 "/v1/task/submit",
                 json={
@@ -460,7 +477,10 @@ class TestTaskList:
             },
         )
 
-        with patch("swarmpilot.scheduler.api.predictor_client.predict", new=AsyncMock(return_value=[])):
+        with patch(
+            "swarmpilot.scheduler.api.predictor_client.predict",
+            new=AsyncMock(return_value=[]),
+        ):
             for i in range(3):
                 client.post(
                     "/v1/task/submit",
@@ -498,7 +518,10 @@ class TestTaskList:
         )
 
         # Submit task
-        with patch("swarmpilot.scheduler.api.predictor_client.predict", new=AsyncMock(return_value=[])):
+        with patch(
+            "swarmpilot.scheduler.api.predictor_client.predict",
+            new=AsyncMock(return_value=[]),
+        ):
             client.post(
                 "/v1/task/submit",
                 json={
@@ -550,7 +573,10 @@ class TestTaskInfo:
             },
         )
 
-        with patch("swarmpilot.scheduler.api.predictor_client.predict", new=AsyncMock(return_value=[])):
+        with patch(
+            "swarmpilot.scheduler.api.predictor_client.predict",
+            new=AsyncMock(return_value=[]),
+        ):
             client.post(
                 "/v1/task/submit",
                 json={
@@ -703,13 +729,13 @@ class TestTaskResubmit:
         async def get_original_time():
             task = await api.task_registry.get("task-1")
             if task.submitted_at:
-                dt = dt_module.fromisoformat(task.submitted_at.replace("Z", "+00:00"))
+                dt = dt_module.fromisoformat(
+                    task.submitted_at.replace("Z", "+00:00")
+                )
                 return dt.timestamp()
             return None
 
-        original_timestamp = asyncio.get_event_loop().run_until_complete(
-            get_original_time()
-        )
+        asyncio.get_event_loop().run_until_complete(get_original_time())
 
         # Resubmit and verify it succeeds
         from swarmpilot.scheduler.algorithms import ScheduleResult
@@ -800,7 +826,9 @@ class TestTaskResubmit:
 
         # Mark task as completed
         async def mark_completed():
-            await api.task_registry.update_status("task-1", TaskStatus.COMPLETED)
+            await api.task_registry.update_status(
+                "task-1", TaskStatus.COMPLETED
+            )
 
         asyncio.get_event_loop().run_until_complete(mark_completed())
 
@@ -925,7 +953,9 @@ class TestTaskResubmit:
         )
 
         assert response.status_code == 404
-        assert "Original instance not found" in response.json()["detail"]["error"]
+        assert (
+            "Original instance not found" in response.json()["detail"]["error"]
+        )
 
     def test_resubmit_task_decrements_pending_count(self, client):
         """Test that resubmit decrements pending count on original instance."""
@@ -975,7 +1005,8 @@ class TestTaskResubmit:
                 new=AsyncMock(return_value=None),
             ),
             patch(
-                "swarmpilot.scheduler.api.instance_registry.decrement_pending", new=AsyncMock()
+                "swarmpilot.scheduler.api.instance_registry.decrement_pending",
+                new=AsyncMock(),
             ) as mock_decrement,
         ):
             response = client.post(
@@ -1163,7 +1194,9 @@ class TestTaskResubmit:
 
         from swarmpilot.scheduler.api import task_registry
 
-        task = asyncio.get_event_loop().run_until_complete(task_registry.get("task-1"))
+        task = asyncio.get_event_loop().run_until_complete(
+            task_registry.get("task-1")
+        )
         assert task.metadata == task_metadata
 
 
@@ -1198,7 +1231,10 @@ class TestTaskClear:
         )
 
         # Submit multiple tasks
-        with patch("swarmpilot.scheduler.api.predictor_client.predict", new=AsyncMock(return_value=[])):
+        with patch(
+            "swarmpilot.scheduler.api.predictor_client.predict",
+            new=AsyncMock(return_value=[]),
+        ):
             for i in range(3):
                 client.post(
                     "/v1/task/submit",
@@ -1294,7 +1330,9 @@ class TestStrategyManagement:
 
     def test_set_strategy_to_min_time(self, client):
         """Test switching to min_time strategy."""
-        response = client.post("/v1/strategy/set", json={"strategy_name": "min_time"})
+        response = client.post(
+            "/v1/strategy/set", json={"strategy_name": "min_time"}
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -1306,7 +1344,9 @@ class TestStrategyManagement:
 
     def test_set_strategy_to_round_robin(self, client):
         """Test switching to round_robin strategy."""
-        response = client.post("/v1/strategy/set", json={"strategy_name": "round_robin"})
+        response = client.post(
+            "/v1/strategy/set", json={"strategy_name": "round_robin"}
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -1377,7 +1417,9 @@ class TestStrategyManagement:
             )
 
         # Switch strategy
-        response = client.post("/v1/strategy/set", json={"strategy_name": "min_time"})
+        response = client.post(
+            "/v1/strategy/set", json={"strategy_name": "min_time"}
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -1406,7 +1448,9 @@ class TestStrategyManagement:
             )
 
         # Switch from probabilistic to min_time
-        response = client.post("/v1/strategy/set", json={"strategy_name": "min_time"})
+        response = client.post(
+            "/v1/strategy/set", json={"strategy_name": "min_time"}
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -1469,7 +1513,9 @@ class TestStrategyManagement:
         await task_registry.update_status("task-1", TaskStatus.RUNNING)
 
         # Try to switch strategy - should fail
-        response = client.post("/v1/strategy/set", json={"strategy_name": "min_time"})
+        response = client.post(
+            "/v1/strategy/set", json={"strategy_name": "min_time"}
+        )
 
         assert response.status_code == 400
         data = response.json()
@@ -1479,21 +1525,29 @@ class TestStrategyManagement:
         """Test switching between all strategies."""
         # Start with probabilistic (default)
         response = client.get("/v1/strategy/get")
-        assert response.json()["strategy_info"]["strategy_name"] == "probabilistic"
+        assert (
+            response.json()["strategy_info"]["strategy_name"] == "probabilistic"
+        )
 
         # Switch to min_time
-        response = client.post("/v1/strategy/set", json={"strategy_name": "min_time"})
+        response = client.post(
+            "/v1/strategy/set", json={"strategy_name": "min_time"}
+        )
         assert response.status_code == 200
 
         response = client.get("/v1/strategy/get")
         assert response.json()["strategy_info"]["strategy_name"] == "min_time"
 
         # Switch to round_robin
-        response = client.post("/v1/strategy/set", json={"strategy_name": "round_robin"})
+        response = client.post(
+            "/v1/strategy/set", json={"strategy_name": "round_robin"}
+        )
         assert response.status_code == 200
 
         response = client.get("/v1/strategy/get")
-        assert response.json()["strategy_info"]["strategy_name"] == "round_robin"
+        assert (
+            response.json()["strategy_info"]["strategy_name"] == "round_robin"
+        )
 
         # Switch back to probabilistic
         response = client.post(
@@ -1574,7 +1628,9 @@ class TestInstanceDrain:
         )
 
         # Drain the instance
-        response = client.post("/v1/instance/drain", json={"instance_id": "inst-1"})
+        response = client.post(
+            "/v1/instance/drain", json={"instance_id": "inst-1"}
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -1585,7 +1641,9 @@ class TestInstanceDrain:
 
     def test_drain_nonexistent_instance(self, client):
         """Test draining non-existent instance returns 404."""
-        response = client.post("/v1/instance/drain", json={"instance_id": "nonexistent"})
+        response = client.post(
+            "/v1/instance/drain", json={"instance_id": "nonexistent"}
+        )
 
         assert response.status_code == 404
 
@@ -1619,7 +1677,9 @@ class TestInstanceDrain:
         await api.instance_registry.increment_pending("inst-1")
 
         # Now drain the instance
-        response = client.post("/v1/instance/drain", json={"instance_id": "inst-1"})
+        response = client.post(
+            "/v1/instance/drain", json={"instance_id": "inst-1"}
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -1656,7 +1716,9 @@ class TestInstanceDrain:
 
     def test_get_drain_status_nonexistent(self, client):
         """Test getting drain status for non-existent instance."""
-        response = client.get("/v1/instance/drain/status?instance_id=nonexistent")
+        response = client.get(
+            "/v1/instance/drain/status?instance_id=nonexistent"
+        )
 
         assert response.status_code == 404
 
@@ -1706,7 +1768,10 @@ class TestTaskResultCallback:
             )
 
         # Send callback
-        with patch("swarmpilot.scheduler.api.task_result_callback.handle_result", new=AsyncMock()):
+        with patch(
+            "swarmpilot.scheduler.api.task_result_callback.handle_result",
+            new=AsyncMock(),
+        ):
             response = client.post(
                 "/v1/callback/task_result",
                 json={
@@ -1829,7 +1894,10 @@ class TestTaskResultCallback:
             )
 
         # Send callback with failure
-        with patch("swarmpilot.scheduler.api.task_result_callback.handle_result", new=AsyncMock()):
+        with patch(
+            "swarmpilot.scheduler.api.task_result_callback.handle_result",
+            new=AsyncMock(),
+        ):
             response = client.post(
                 "/v1/callback/task_result",
                 json={
@@ -2013,7 +2081,9 @@ class TestProfilingMiddleware:
         import os
 
         # Make a request with profiling enabled (speedscope format, default)
-        response = client.get("/v1/health?profile=true&profile_format=speedscope")
+        response = client.get(
+            "/v1/health?profile=true&profile_format=speedscope"
+        )
 
         # Should succeed
         assert response.status_code == 200
@@ -2103,7 +2173,9 @@ class TestDrainEdgeCases:
             )
 
         # Drain the instance
-        response = client.post("/v1/instance/drain", json={"instance_id": "inst-2"})
+        response = client.post(
+            "/v1/instance/drain", json={"instance_id": "inst-2"}
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -2151,7 +2223,9 @@ class TestDrainEdgeCases:
             )
 
         # Drain the instance
-        response = client.post("/v1/instance/drain", json={"instance_id": "inst-1"})
+        response = client.post(
+            "/v1/instance/drain", json={"instance_id": "inst-1"}
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -2230,7 +2304,9 @@ class TestWebSocketEndpoint:
         """Test WebSocket unsubscribe."""
         with client.websocket_connect("/v1/task/get_result") as websocket:
             # Subscribe first
-            websocket.send_json({"type": "subscribe", "task_ids": ["task-1", "task-2"]})
+            websocket.send_json(
+                {"type": "subscribe", "task_ids": ["task-1", "task-2"]}
+            )
 
             ack1 = websocket.receive_json()
             assert len(ack1["subscribed_tasks"]) == 2
@@ -2411,7 +2487,9 @@ class TestRemainingErrorHandling:
             "swarmpilot.scheduler.api.instance_registry.start_draining",
             side_effect=ValueError("Cannot drain"),
         ):
-            response = client.post("/v1/instance/drain", json={"instance_id": "inst-1"})
+            response = client.post(
+                "/v1/instance/drain", json={"instance_id": "inst-1"}
+            )
 
         assert response.status_code == 400
 
@@ -2470,7 +2548,9 @@ class TestRemainingErrorHandling:
             },
         )
 
-        mock_prediction = Prediction(instance_id="inst-1", predicted_time_ms=100.0)
+        mock_prediction = Prediction(
+            instance_id="inst-1", predicted_time_ms=100.0
+        )
 
         from swarmpilot.scheduler.algorithms import ScheduleResult
 
@@ -2505,9 +2585,12 @@ class TestRemainingErrorHandling:
         """Test set strategy with exception during initialization."""
         # Mock get_strategy to raise exception
         with patch(
-            "swarmpilot.scheduler.api.get_strategy", side_effect=Exception("Strategy init error")
+            "swarmpilot.scheduler.api.get_strategy",
+            side_effect=Exception("Strategy init error"),
         ):
-            response = client.post("/v1/strategy/set", json={"strategy_name": "min_time"})
+            response = client.post(
+                "/v1/strategy/set", json={"strategy_name": "min_time"}
+            )
 
         assert response.status_code == 500
 
@@ -2553,7 +2636,9 @@ class TestRemainingErrorHandling:
         )
 
         # Remove instance - should succeed
-        response = client.post("/v1/instance/remove", json={"instance_id": "inst-1"})
+        response = client.post(
+            "/v1/instance/remove", json={"instance_id": "inst-1"}
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -2601,7 +2686,9 @@ class TestRemainingErrorHandling:
             )
 
         # Drain should handle missing 0.5 quantile gracefully
-        response = client.post("/v1/instance/drain", json={"instance_id": "inst-1"})
+        response = client.post(
+            "/v1/instance/drain", json={"instance_id": "inst-1"}
+        )
 
         assert response.status_code == 200
 
@@ -2623,7 +2710,10 @@ class TestRemainingErrorHandling:
         )
 
         # Mock get_queue_info to return None
-        with patch("swarmpilot.scheduler.api.instance_registry.get_queue_info", return_value=None):
+        with patch(
+            "swarmpilot.scheduler.api.instance_registry.get_queue_info",
+            return_value=None,
+        ):
             response = client.get("/v1/instance/info?instance_id=inst-1")
 
         assert response.status_code == 500
@@ -2646,7 +2736,10 @@ class TestRemainingErrorHandling:
         )
 
         # Mock get_stats to return None
-        with patch("swarmpilot.scheduler.api.instance_registry.get_stats", return_value=None):
+        with patch(
+            "swarmpilot.scheduler.api.instance_registry.get_stats",
+            return_value=None,
+        ):
             response = client.get("/v1/instance/info?instance_id=inst-1")
 
         assert response.status_code == 500
@@ -2682,12 +2775,16 @@ class TestRemainingErrorHandling:
             )
 
         # Switch to min_time (expect_error queues)
-        response = client.post("/v1/strategy/set", json={"strategy_name": "min_time"})
+        response = client.post(
+            "/v1/strategy/set", json={"strategy_name": "min_time"}
+        )
         assert response.status_code == 200
         assert response.json()["reinitialized_instances"] == 3
 
         # Switch to round_robin (probabilistic queues)
-        response = client.post("/v1/strategy/set", json={"strategy_name": "round_robin"})
+        response = client.post(
+            "/v1/strategy/set", json={"strategy_name": "round_robin"}
+        )
         assert response.status_code == 200
         assert response.json()["reinitialized_instances"] == 3
 
@@ -2765,7 +2862,9 @@ class TestLifespanContextManager:
         mock_training_client = AsyncMock()
         mock_training_client.close = AsyncMock()
 
-        with patch("swarmpilot.scheduler.api.predictor_client.close", new=AsyncMock()):
+        with patch(
+            "swarmpilot.scheduler.api.predictor_client.close", new=AsyncMock()
+        ):
             # Temporarily set training_client
             original_training_client = api.training_client
             api.training_client = mock_training_client
@@ -2786,9 +2885,14 @@ class TestLifespanContextManager:
         from swarmpilot.scheduler import api
 
         # Mock predictor_client.close to fail
-        mock_predictor_close = AsyncMock(side_effect=Exception("Shutdown failed"))
+        mock_predictor_close = AsyncMock(
+            side_effect=Exception("Shutdown failed")
+        )
 
-        with patch("swarmpilot.scheduler.api.predictor_client.close", mock_predictor_close):
+        with patch(
+            "swarmpilot.scheduler.api.predictor_client.close",
+            mock_predictor_close,
+        ):
             lifespan_cm = api.lifespan(api.app)
             # Shutdown errors should propagate
             with pytest.raises(Exception) as exc_info:
@@ -2913,7 +3017,9 @@ class TestAdditionalCoveragePaths:
         """Test unsubscribe with invalid task_ids format."""
         with client.websocket_connect("/v1/task/get_result") as websocket:
             # Send unsubscribe with invalid task_ids (not a list)
-            websocket.send_json({"type": "unsubscribe", "task_ids": "not-a-list"})
+            websocket.send_json(
+                {"type": "unsubscribe", "task_ids": "not-a-list"}
+            )
 
             # Should receive error message
             error = websocket.receive_json()
@@ -2989,7 +3095,9 @@ class TestAdditionalCoveragePaths:
             )
 
         # Drain the instance - should trigger lines 448-450
-        response = client.post("/v1/instance/drain", json={"instance_id": "inst-1"})
+        response = client.post(
+            "/v1/instance/drain", json={"instance_id": "inst-1"}
+        )
 
         assert response.status_code == 200
         data = response.json()

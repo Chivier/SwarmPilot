@@ -4,13 +4,10 @@ from __future__ import annotations
 
 import traceback
 
-from fastapi import APIRouter
-from fastapi import HTTPException
-from fastapi import status
+from fastapi import APIRouter, HTTPException, status
 
 from swarmpilot.predictor.api import dependencies
-from swarmpilot.predictor.models import ModelListResponse
-from swarmpilot.predictor.models import ModelMetadata
+from swarmpilot.predictor.models import ModelListResponse, ModelMetadata
 
 router = APIRouter()
 

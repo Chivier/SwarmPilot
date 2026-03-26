@@ -13,7 +13,9 @@ from swarmpilot.scheduler.algorithms import (
     ProbabilisticSchedulingStrategy,
 )
 from swarmpilot.scheduler.clients.models import Prediction
-from swarmpilot.scheduler.clients.predictor_library_client import PredictorClient
+from swarmpilot.scheduler.clients.predictor_library_client import (
+    PredictorClient,
+)
 from swarmpilot.scheduler.models import (
     Instance,
     InstanceQueueExpectError,

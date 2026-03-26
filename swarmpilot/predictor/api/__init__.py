@@ -9,31 +9,28 @@ The implementation has been split into separate modules for better organization:
 - routes/: API endpoint handlers organized by domain
 """
 
-from swarmpilot.predictor.api.app import app
-from swarmpilot.predictor.api.app import create_app
-from swarmpilot.predictor.api.app import lifespan
+from swarmpilot.predictor.api.app import app, create_app, lifespan
 from swarmpilot.predictor.api.cache import ModelCache
-from swarmpilot.predictor.api.dependencies import _log_error
-from swarmpilot.predictor.api.dependencies import get_storage
-from swarmpilot.predictor.api.dependencies import model_cache
-from swarmpilot.predictor.api.dependencies import preprocessors_registry
-from swarmpilot.predictor.api.dependencies import storage
+from swarmpilot.predictor.api.dependencies import (
+    _log_error,
+    get_storage,
+    model_cache,
+    preprocessors_registry,
+    storage,
+)
 
 # Re-export ModelStorage for backwards compatibility with test fixtures
 from swarmpilot.predictor.storage.model_storage import ModelStorage
 
 __all__ = [
-    # App
-    "app",
-    "create_app",
-    "lifespan",
-    # Cache
     "ModelCache",
-    "model_cache",
-    # Dependencies
     "ModelStorage",
     "_log_error",
+    "app",
+    "create_app",
     "get_storage",
+    "lifespan",
+    "model_cache",
     "preprocessors_registry",
     "storage",
 ]

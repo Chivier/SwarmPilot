@@ -93,6 +93,7 @@ class Instance:
             status = data.get("status", "unknown")
             if status in ("running", "active"):
                 self.status = status
+                self.endpoint = data.get("endpoint", self.endpoint)
                 return
             if status == "failed":
                 raise DeployError(

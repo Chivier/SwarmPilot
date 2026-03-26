@@ -104,7 +104,9 @@ class TestObjectiveFunction:
     def test_relative_error_method(self, optimizer):
         """Test relative_error objective function."""
         deployment = np.array([0, 1, 0])
-        score = optimizer.objective_function(deployment, method="relative_error")
+        score = optimizer.objective_function(
+            deployment, method="relative_error"
+        )
 
         # Should return a finite value
         assert np.isfinite(score)
@@ -113,7 +115,9 @@ class TestObjectiveFunction:
     def test_ratio_difference_method(self, optimizer):
         """Test ratio_difference objective function."""
         deployment = np.array([0, 1, 0])
-        score = optimizer.objective_function(deployment, method="ratio_difference")
+        score = optimizer.objective_function(
+            deployment, method="ratio_difference"
+        )
 
         # Should return a finite value
         assert np.isfinite(score)
@@ -122,7 +126,9 @@ class TestObjectiveFunction:
     def test_weighted_squared_method(self, optimizer):
         """Test weighted_squared objective function."""
         deployment = np.array([0, 1, 0])
-        score = optimizer.objective_function(deployment, method="weighted_squared")
+        score = optimizer.objective_function(
+            deployment, method="weighted_squared"
+        )
 
         # Should return a finite value
         assert np.isfinite(score)
@@ -164,12 +170,16 @@ class TestObjectiveFunction:
         balanced = np.array([0] + [1] * 11)  # 1 on model-0, 11 on model-1
         degenerate = np.array([1] * 12)  # all on model-1, model-0 starved
 
-        score_balanced = opt.objective_function(balanced, method="ratio_difference")
-        score_degenerate = opt.objective_function(degenerate, method="ratio_difference")
+        score_balanced = opt.objective_function(
+            balanced, method="ratio_difference"
+        )
+        score_degenerate = opt.objective_function(
+            degenerate, method="ratio_difference"
+        )
 
-        assert (
-            score_balanced < score_degenerate
-        ), f"Balanced ({score_balanced}) should beat degenerate ({score_degenerate})"
+        assert score_balanced < score_degenerate, (
+            f"Balanced ({score_balanced}) should beat degenerate ({score_degenerate})"
+        )
 
     def test_ratio_difference_is_l_infinity_of_proportions(self):
         """Verify ratio_difference computes L-inf of proportion diffs."""
@@ -209,7 +219,9 @@ class TestObjectiveFunction:
         target = np.array([100.0, 100.0])
 
         # Need to bypass validation
-        optimizer = SimulatedAnnealingOptimizer.__new__(SimulatedAnnealingOptimizer)
+        optimizer = SimulatedAnnealingOptimizer.__new__(
+            SimulatedAnnealingOptimizer
+        )
         optimizer.M = 2
         optimizer.N = 2
         optimizer.B = B
@@ -221,7 +233,9 @@ class TestObjectiveFunction:
 
         deployment = np.array([0, 1])
         # The is_valid_deployment check will fail, returning inf
-        score = optimizer.objective_function(deployment, method="relative_error")
+        score = optimizer.objective_function(
+            deployment, method="relative_error"
+        )
         assert score == float("inf")
 
 
@@ -243,7 +257,9 @@ class TestSimulatedAnnealing:
             M=2, N=2, B=B, initial=initial, a=1.0, target=target
         )
 
-        deployment, score, stats = optimizer.optimize(max_iterations=10, verbose=False)
+        deployment, score, _stats = optimizer.optimize(
+            max_iterations=10, verbose=False
+        )
 
         # Should produce a valid deployment (no -1s)
         assert -1 not in deployment
@@ -265,7 +281,7 @@ class TestSimulatedAnnealing:
         )
 
         # Run with verbose=True, should not raise
-        deployment, score, stats = optimizer.optimize(
+        deployment, _score, stats = optimizer.optimize(
             max_iterations=100, iterations_per_temp=10, verbose=True
         )
 
@@ -313,7 +329,9 @@ class TestSimulatedAnnealing:
             M=2, N=2, B=B, initial=initial, a=0.5, target=target
         )
 
-        deployment, score, stats = optimizer.optimize(max_iterations=50, verbose=False)
+        _deployment, _score, stats = optimizer.optimize(
+            max_iterations=50, verbose=False
+        )
 
         assert "iterations" in stats
         assert "temperature_changes" in stats
@@ -344,7 +362,9 @@ class TestIntegerProgramming:
             M=2, N=2, B=B, initial=initial, a=0.5, target=target
         )
 
-        deployment, score, stats = optimizer.optimize(verbose=False, time_limit=10)
+        deployment, score, stats = optimizer.optimize(
+            verbose=False, time_limit=10
+        )
 
         assert deployment is not None
         assert np.isfinite(score)
@@ -365,7 +385,9 @@ class TestIntegerProgramming:
             M=2, N=2, B=B, initial=initial, a=1.0, target=target
         )
 
-        deployment, score, stats = optimizer.optimize(verbose=False, time_limit=10)
+        deployment, _score, _stats = optimizer.optimize(
+            verbose=False, time_limit=10
+        )
 
         # Should produce a valid deployment
         assert -1 not in deployment
@@ -381,17 +403,21 @@ class TestIPImportError:
         target = np.array([100.0, 100.0])
 
         # Mock PULP_AVAILABLE to be False
-        with patch("swarmpilot.planner.core.swarm_optimizer.PULP_AVAILABLE", False):
-            with pytest.raises(ImportError, match="pulp library required"):
-                IntegerProgrammingOptimizer(
-                    M=1, N=2, B=B, initial=initial, a=1.0, target=target
-                )
+        with (
+            patch(
+                "swarmpilot.planner.core.swarm_optimizer.PULP_AVAILABLE", False
+            ),
+            pytest.raises(ImportError, match="pulp library required"),
+        ):
+            IntegerProgrammingOptimizer(
+                M=1, N=2, B=B, initial=initial, a=1.0, target=target
+            )
 
 
 class TestValidation:
     """Tests for input validation in SwarmOptimizer."""
 
-    def test_invalid_B_shape(self):
+    def test_invalid_B_shape(self):  # noqa: N802
         """Test validation fails for incorrect B matrix shape."""
         B = np.array([[10.0, 5.0]])  # Wrong shape
         initial = np.array([0, 1])
@@ -410,7 +436,9 @@ class TestValidation:
         initial = np.array([0])  # Wrong length
         target = np.array([100.0, 100.0])
 
-        with pytest.raises(AssertionError, match="Initial state vector length error"):
+        with pytest.raises(
+            AssertionError, match="Initial state vector length error"
+        ):
             SimulatedAnnealingOptimizer(
                 M=2, N=2, B=B, initial=initial, a=0.5, target=target
             )
@@ -436,7 +464,12 @@ class TestValidation:
 
         with pytest.raises(AssertionError, match="Change factor out of range"):
             SimulatedAnnealingOptimizer(
-                M=2, N=2, B=B, initial=initial, a=1.5, target=target  # Invalid
+                M=2,
+                N=2,
+                B=B,
+                initial=initial,
+                a=1.5,
+                target=target,  # Invalid
             )
 
     def test_invalid_initial_model_id(self):
@@ -492,14 +525,11 @@ class TestIPSolverFailurePaths:
             M=2, N=2, B=B, initial=initial, a=0.5, target=target
         )
 
-        # Mock pulp.LpProblem to raise exception during solve
-        original_solve = pulp.LpProblem.solve
-
         def mock_solve(self, *args, **kwargs):
             raise Exception("Solver crashed")
 
         with patch.object(pulp.LpProblem, "solve", mock_solve):
-            deployment, score, stats = optimizer.optimize(verbose=False)
+            deployment, _score, stats = optimizer.optimize(verbose=False)
 
             # Should return initial deployment on error
             assert np.array_equal(deployment, initial)
@@ -522,10 +552,10 @@ class TestIPSolverFailurePaths:
         )
 
         # Run with verbose=True
-        deployment, score, stats = optimizer.optimize(verbose=True, time_limit=10)
+        deployment, _score, stats = optimizer.optimize(
+            verbose=True, time_limit=10
+        )
 
         # Should complete successfully
         assert deployment is not None
         assert "algorithm" in stats
-
-

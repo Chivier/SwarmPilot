@@ -14,14 +14,12 @@ from typing import Any
 
 import numpy as np
 import torch
-from torch import nn
-from torch import optim
-from torch.nn import functional as F
+from torch import nn, optim
+from torch.nn import functional
 
 from swarmpilot.predictor.predictor.base import BasePredictor
 from swarmpilot.predictor.predictor.mlp import MLP
 from swarmpilot.predictor.utils.logging import get_logger
-
 
 logger = get_logger()
 
@@ -47,7 +45,7 @@ class BaseDeltaTransform(nn.Module):
             delta_scale: Scale factor for deltas (default: 1.0).
                 Higher values allow larger gaps between quantiles.
         """
-        super(BaseDeltaTransform, self).__init__()
+        super().__init__()
         self.num_quantiles = num_quantiles
         self.delta_scale = delta_scale
 
@@ -73,7 +71,7 @@ class BaseDeltaTransform(nn.Module):
 
         # Transform deltas to positive values using softplus
         # softplus(x) = log(1 + exp(x)), always positive
-        positive_deltas = F.softplus(deltas) * self.delta_scale
+        positive_deltas = functional.softplus(deltas) * self.delta_scale
 
         # Build quantiles by cumulative sum of deltas
         # q[0] = base
@@ -111,15 +109,14 @@ class PinballLoss(nn.Module):
             monotonicity_penalty: Weight for monotonicity penalty term (default: 0.0).
                 Higher values enforce stricter monotonicity. Typical range: 0.1 - 10.0.
         """
-        super(PinballLoss, self).__init__()
+        super().__init__()
         self.quantiles = torch.tensor(quantiles, dtype=torch.float32)
         self.monotonicity_penalty = monotonicity_penalty
 
     def forward(
         self, predictions: torch.Tensor, targets: torch.Tensor
     ) -> torch.Tensor:
-        """
-        Compute pinball loss with optional monotonicity penalty.
+        """Compute pinball loss with optional monotonicity penalty.
 
         Args:
             predictions: Predicted quantiles of shape (batch_size, num_quantiles)
@@ -171,8 +168,7 @@ class PinballLoss(nn.Module):
 
 
 class QuantilePredictor(BasePredictor):
-    """
-    Predictor for quantile-based runtime prediction.
+    """Predictor for quantile-based runtime prediction.
 
     Trains MLP to predict multiple quantiles simultaneously using pinball loss.
 
@@ -209,10 +205,11 @@ class QuantilePredictor(BasePredictor):
         self.residual_sigma = None  # Log-space std of residuals
 
     def train(
-        self, features_list: List[Dict[str, Any]], config: Dict[str, Any] = None
-    ) -> Dict[str, Any]:
-        """
-        Train the predictor on the given data.
+        self,
+        features_list: list[dict[str, Any]],
+        config: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Train the predictor on the given data.
 
         Args:
             features_list: List of training samples with features and runtime_ms
@@ -456,9 +453,9 @@ class QuantilePredictor(BasePredictor):
             calibration_stats = self._compute_residual_calibration(
                 X_tensor, y, min_sigma=min_sigma
             )
-            print(f"\nResidual calibration enabled:")
+            print("\nResidual calibration enabled:")
             print(f"  Residual μ (log-space): {self.residual_mu:.4f}")
-            print(f"  Residual σ (log-space): {self.residual_sigma:.4f}")
+            print(f"  Residual sigma (log-space): {self.residual_sigma:.4f}")
             print(
                 f"  Estimated CV: {calibration_stats.get('estimated_cv', 0):.4f}"
             )
@@ -482,10 +479,9 @@ class QuantilePredictor(BasePredictor):
         }
 
     def _estimate_cv_from_data(
-        self, features_list: List[Dict[str, Any]]
+        self, features_list: list[dict[str, Any]]
     ) -> float:
-        """
-        Estimate coefficient of variation (CV) from training data.
+        """Estimate coefficient of variation (CV) from training data.
 
         Strategy:
         1. Group samples by feature values (excluding runtime_ms)
@@ -519,7 +515,7 @@ class QuantilePredictor(BasePredictor):
         group_cvs = []
         group_weights = []
 
-        for key, runtime_values in groups.items():
+        for _key, runtime_values in groups.items():
             if len(runtime_values) >= 2:
                 arr = np.array(runtime_values)
                 mean_val = np.mean(arr)
@@ -558,13 +554,12 @@ class QuantilePredictor(BasePredictor):
 
     def _augment_training_data(
         self,
-        features_list: List[Dict[str, Any]],
+        features_list: list[dict[str, Any]],
         cv: float = 0.3,
         samples_per_point: int = 5,
         distribution: str = "lognormal",
-    ) -> List[Dict[str, Any]]:
-        """
-        Augment training data by generating synthetic runtime variations.
+    ) -> list[dict[str, Any]]:
+        """Augment training data by generating synthetic runtime variations.
 
         For each original sample, generates multiple samples with the same features
         but different runtime values sampled from a distribution around the original.
@@ -610,9 +605,8 @@ class QuantilePredictor(BasePredictor):
         X_tensor: torch.Tensor,
         y_original: np.ndarray,
         min_sigma: float = 0.1,
-    ) -> Dict[str, Any]:
-        """
-        Compute residual distribution parameters for calibration.
+    ) -> dict[str, Any]:
+        """Compute residual distribution parameters for calibration.
 
         Analyzes the ratio between actual runtimes and model predictions
         to estimate the uncertainty distribution.
@@ -660,8 +654,7 @@ class QuantilePredictor(BasePredictor):
         }
 
     def _get_residual_quantile_multiplier(self, quantile: float) -> float:
-        """
-        Get the multiplier for a given quantile based on residual distribution.
+        """Get the multiplier for a given quantile based on residual distribution.
 
         For log-normal residuals with parameters (mu, sigma):
             quantile(p) = exp(mu + sigma * z_p)
@@ -682,8 +675,7 @@ class QuantilePredictor(BasePredictor):
 
     @staticmethod
     def _enforce_monotonicity(predictions: np.ndarray) -> np.ndarray:
-        """
-        Enforce monotonicity constraint on quantile predictions.
+        """Enforce monotonicity constraint on quantile predictions.
 
         Uses a forward-pass algorithm that ensures strict monotonicity by
         propagating the maximum value forward when violations are detected.
@@ -704,10 +696,9 @@ class QuantilePredictor(BasePredictor):
         return predictions
 
     def predict(
-        self, features: Dict[str, Any], enforce_monotonicity: bool = False
-    ) -> Dict[str, Any]:
-        """
-        Make a prediction for the given features.
+        self, features: dict[str, Any], enforce_monotonicity: bool = False
+    ) -> dict[str, Any]:
+        """Make a prediction for the given features.
 
         Automatically filters out constant features that were removed during training.
         Users can provide the full feature set - constant features will be ignored.
@@ -782,9 +773,8 @@ class QuantilePredictor(BasePredictor):
 
         return {"quantiles": quantile_results}
 
-    def get_model_state(self) -> Dict[str, Any]:
-        """
-        Get complete model state for serialization.
+    def get_model_state(self) -> dict[str, Any]:
+        """Get complete model state for serialization.
 
         Returns:
             Dict containing all model parameters and metadata
@@ -816,9 +806,8 @@ class QuantilePredictor(BasePredictor):
             "residual_sigma": self.residual_sigma,
         }
 
-    def load_model_state(self, state: Dict[str, Any]) -> None:
-        """
-        Load a previously saved model state.
+    def load_model_state(self, state: dict[str, Any]) -> None:
+        """Load a previously saved model state.
 
         Args:
             state: Model state dict from get_model_state()
@@ -854,5 +843,5 @@ class QuantilePredictor(BasePredictor):
         self.residual_calibration_enabled = state.get(
             "residual_calibration_enabled", False
         )
-        self.residual_mu = state.get("residual_mu", None)
-        self.residual_sigma = state.get("residual_sigma", None)
+        self.residual_mu = state.get("residual_mu")
+        self.residual_sigma = state.get("residual_sigma")

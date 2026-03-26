@@ -1,11 +1,11 @@
 """Tests for instance timeline tracker."""
 
-import math
+import os
 import tempfile
 import threading
-import os
-import pytest
 from pathlib import Path
+
+import pytest
 
 from swarmpilot.planner.instance_timeline_tracker import (
     InstanceTimelineTracker,
@@ -33,7 +33,7 @@ class TestInstanceTimelineTracker:
             changes_count=3,
             success=True,
             target_distribution=[0.5, 0.5],
-            score=0.95
+            score=0.95,
         )
 
         entries = tracker.get_entries()
@@ -53,7 +53,7 @@ class TestInstanceTimelineTracker:
             instance_counts={"model_a": 1},
             changes_count=1,
             success=True,
-            score=float('inf')
+            score=float("inf"),
         )
 
         entries = tracker.get_entries()
@@ -69,7 +69,7 @@ class TestInstanceTimelineTracker:
             instance_counts={"model_a": 1},
             changes_count=1,
             success=True,
-            score=float('-inf')
+            score=float("-inf"),
         )
 
         entries = tracker.get_entries()
@@ -85,7 +85,7 @@ class TestInstanceTimelineTracker:
             instance_counts={"model_a": 1},
             changes_count=1,
             success=True,
-            score=float('nan')
+            score=float("nan"),
         )
 
         entries = tracker.get_entries()
@@ -101,7 +101,7 @@ class TestInstanceTimelineTracker:
             instance_counts={"model_a": 1},
             changes_count=1,
             success=True,
-            score=None
+            score=None,
         )
 
         entries = tracker.get_entries()
@@ -117,13 +117,13 @@ class TestInstanceTimelineTracker:
             event_type="deploy_migration",
             instance_counts={"model_a": 2},
             changes_count=1,
-            success=True
+            success=True,
         )
         tracker.record_migration(
             event_type="auto_optimize",
             instance_counts={"model_b": 3},
             changes_count=2,
-            success=True
+            success=True,
         )
 
         assert tracker.get_entry_count() == 2
@@ -144,7 +144,7 @@ class TestInstanceTimelineTracker:
             event_type="deploy_migration",
             instance_counts={"model_a": 1},
             changes_count=1,
-            success=True
+            success=True,
         )
 
         assert tracker.get_entry_count() == 1
@@ -153,7 +153,7 @@ class TestInstanceTimelineTracker:
             event_type="auto_optimize",
             instance_counts={"model_b": 2},
             changes_count=1,
-            success=True
+            success=True,
         )
 
         assert tracker.get_entry_count() == 2
@@ -166,7 +166,7 @@ class TestInstanceTimelineTracker:
             event_type="deploy_migration",
             instance_counts={"model_a": 1},
             changes_count=1,
-            success=True
+            success=True,
         )
 
         entries1 = tracker.get_entries()
@@ -186,13 +186,14 @@ class TestInstanceTimelineTracker:
             event_type="deploy_migration",
             instance_counts={"model_a": 2},
             changes_count=1,
-            success=True
+            success=True,
         )
 
         # Verify file exists and contains data
         assert Path(temp_output_path).exists()
 
         import json
+
         with open(temp_output_path) as f:
             data = json.load(f)
 
@@ -204,7 +205,7 @@ class TestInstanceTimelineTracker:
         """Test that output directory is created if it doesn't exist."""
         with tempfile.TemporaryDirectory() as tmpdir:
             nested_path = os.path.join(tmpdir, "nested", "dir", "timeline.json")
-            tracker = InstanceTimelineTracker(output_path=nested_path)
+            InstanceTimelineTracker(output_path=nested_path)
 
             # Verify directory was created
             assert Path(nested_path).parent.exists()
@@ -221,10 +222,13 @@ class TestInstanceTimelineTracker:
                     event_type=f"thread_{thread_id}",
                     instance_counts={"model": thread_id},
                     changes_count=i,
-                    success=True
+                    success=True,
                 )
 
-        threads = [threading.Thread(target=write_entries, args=(i,)) for i in range(num_threads)]
+        threads = [
+            threading.Thread(target=write_entries, args=(i,))
+            for i in range(num_threads)
+        ]
         for t in threads:
             t.start()
         for t in threads:
@@ -243,7 +247,7 @@ class TestInstanceTimelineTracker:
                 event_type="test",
                 instance_counts={"model": i},
                 changes_count=i,
-                success=True
+                success=True,
             )
 
         results = []
@@ -267,6 +271,7 @@ class TestComputeInstanceCounts:
 
     def test_compute_basic(self):
         """Test basic instance count computation."""
+
         class MockInstance:
             def __init__(self, model):
                 self.current_model = model
@@ -287,6 +292,7 @@ class TestComputeInstanceCounts:
 
     def test_compute_single_model(self):
         """Test with all instances running same model."""
+
         class MockInstance:
             def __init__(self, model):
                 self.current_model = model
@@ -310,7 +316,7 @@ class TestTimelineEntry:
             changes_count=1,
             success=True,
             target_distribution=[0.5, 0.5],
-            score=0.95
+            score=0.95,
         )
 
         assert entry.timestamp == 1234567890.0
@@ -333,7 +339,7 @@ class TestTimelineEntry:
             changes_count=0,
             success=True,
             target_distribution=None,
-            score=None
+            score=None,
         )
 
         assert entry.target_distribution is None

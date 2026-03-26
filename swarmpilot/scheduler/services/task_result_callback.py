@@ -23,7 +23,9 @@ from swarmpilot.scheduler.registry.task_registry import TaskRegistry
 from swarmpilot.scheduler.services.websocket_manager import ConnectionManager
 
 if TYPE_CHECKING:
-    from swarmpilot.scheduler.clients.training_library_client import TrainingClient
+    from swarmpilot.scheduler.clients.training_library_client import (
+        TrainingClient,
+    )
     from swarmpilot.scheduler.services.worker_queue_thread import TaskResult
     from swarmpilot.scheduler.utils.throughput_tracker import ThroughputTracker
 

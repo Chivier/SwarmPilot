@@ -7,7 +7,11 @@ import asyncio
 
 from fastapi import WebSocket
 
-from swarmpilot.scheduler.models import TaskStatus, TaskTimestamps, WSTaskResultMessage
+from swarmpilot.scheduler.models import (
+    TaskStatus,
+    TaskTimestamps,
+    WSTaskResultMessage,
+)
 
 
 class ConnectionManager:

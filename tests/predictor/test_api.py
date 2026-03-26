@@ -1,11 +1,8 @@
-"""
-Tests for API endpoints.
-"""
+"""Tests for API endpoints."""
 
 from pathlib import Path
 
 import pytest
-
 
 # Path to semantic model for preprocessor tests
 PREDICTOR_DIR = Path(__file__).parent.parent
@@ -29,12 +26,12 @@ def generate_training_data(n_samples=20, include_sentence=False):
     data = []
     for i in range(n_samples):
         sample = {
-            'batch_size': 16 + i,
-            'sequence_length': 128,
-            'runtime_ms': 100 + i * 2
+            "batch_size": 16 + i,
+            "sequence_length": 128,
+            "runtime_ms": 100 + i * 2,
         }
         if include_sentence:
-            sample['sentence'] = f'Hello, world! {i}'
+            sample["sentence"] = f"Hello, world! {i}"
         data.append(sample)
     return data
 
@@ -48,7 +45,7 @@ class TestHealthEndpoint:
         assert response.status_code == 200
 
         data = response.json()
-        assert data['status'] == 'healthy'
+        assert data["status"] == "healthy"
 
 
 class TestListEndpoint:
@@ -60,21 +57,21 @@ class TestListEndpoint:
         assert response.status_code == 200
 
         data = response.json()
-        assert 'models' in data
-        assert len(data['models']) == 0
+        assert "models" in data
+        assert len(data["models"]) == 0
 
     def test_list_models_after_training(self, client):
         """Should list models after training."""
         # Train a model first
         train_request = {
-            'model_id': 'test-model',
-            'platform_info': {
-                'software_name': 'pytorch',
-                'software_version': '2.0',
-                'hardware_name': 'cpu'
+            "model_id": "test-model",
+            "platform_info": {
+                "software_name": "pytorch",
+                "software_version": "2.0",
+                "hardware_name": "cpu",
             },
-            'prediction_type': 'expect_error',
-            'features_list': generate_training_data(20)
+            "prediction_type": "expect_error",
+            "features_list": generate_training_data(20),
         }
 
         train_response = client.post("/train", json=train_request)
@@ -85,12 +82,12 @@ class TestListEndpoint:
         assert list_response.status_code == 200
 
         data = list_response.json()
-        assert len(data['models']) == 1
+        assert len(data["models"]) == 1
 
-        model = data['models'][0]
-        assert model['model_id'] == 'test-model'
-        assert model['prediction_type'] == 'expect_error'
-        assert model['samples_count'] == 20
+        model = data["models"][0]
+        assert model["model_id"] == "test-model"
+        assert model["prediction_type"] == "expect_error"
+        assert model["samples_count"] == 20
 
 
 class TestTrainEndpoint:
@@ -99,77 +96,77 @@ class TestTrainEndpoint:
     def test_train_expect_error_model(self, client):
         """Should successfully train expect_error model."""
         request = {
-            'model_id': 'test-model',
-            'platform_info': {
-                'software_name': 'pytorch',
-                'software_version': '2.0',
-                'hardware_name': 'cpu'
+            "model_id": "test-model",
+            "platform_info": {
+                "software_name": "pytorch",
+                "software_version": "2.0",
+                "hardware_name": "cpu",
             },
-            'prediction_type': 'expect_error',
-            'features_list': generate_training_data(20),
-            'training_config': {'epochs': 100}
+            "prediction_type": "expect_error",
+            "features_list": generate_training_data(20),
+            "training_config": {"epochs": 100},
         }
 
         response = client.post("/train", json=request)
         assert response.status_code == 200
 
         data = response.json()
-        assert data['status'] == 'success'
-        assert data['samples_trained'] == 20
-        assert 'model_key' in data
-        assert 'test-model' in data['model_key']
+        assert data["status"] == "success"
+        assert data["samples_trained"] == 20
+        assert "model_key" in data
+        assert "test-model" in data["model_key"]
 
     def test_train_quantile_model(self, client):
         """Should successfully train quantile model."""
         request = {
-            'model_id': 'quantile-model',
-            'platform_info': {
-                'software_name': 'tensorflow',
-                'software_version': '2.10',
-                'hardware_name': 'gpu'
+            "model_id": "quantile-model",
+            "platform_info": {
+                "software_name": "tensorflow",
+                "software_version": "2.10",
+                "hardware_name": "gpu",
             },
-            'prediction_type': 'quantile',
-            'features_list': generate_training_data(25),
-            'training_config': {'epochs': 100, 'quantiles': [0.5, 0.9, 0.99]}
+            "prediction_type": "quantile",
+            "features_list": generate_training_data(25),
+            "training_config": {"epochs": 100, "quantiles": [0.5, 0.9, 0.99]},
         }
 
         response = client.post("/train", json=request)
         assert response.status_code == 200
 
         data = response.json()
-        assert data['status'] == 'success'
-        assert data['samples_trained'] == 25
+        assert data["status"] == "success"
+        assert data["samples_trained"] == 25
 
     def test_train_with_insufficient_samples(self, client):
         """Should fail with less than 10 samples."""
         request = {
-            'model_id': 'insufficient-model',
-            'platform_info': {
-                'software_name': 'pytorch',
-                'software_version': '2.0',
-                'hardware_name': 'cpu'
+            "model_id": "insufficient-model",
+            "platform_info": {
+                "software_name": "pytorch",
+                "software_version": "2.0",
+                "hardware_name": "cpu",
             },
-            'prediction_type': 'expect_error',
-            'features_list': generate_training_data(5)
+            "prediction_type": "expect_error",
+            "features_list": generate_training_data(5),
         }
 
         response = client.post("/train", json=request)
         assert response.status_code == 400
 
         data = response.json()
-        assert 'detail' in data
+        assert "detail" in data
 
     def test_train_with_invalid_prediction_type(self, client):
         """Should fail with invalid prediction_type."""
         request = {
-            'model_id': 'invalid-model',
-            'platform_info': {
-                'software_name': 'pytorch',
-                'software_version': '2.0',
-                'hardware_name': 'cpu'
+            "model_id": "invalid-model",
+            "platform_info": {
+                "software_name": "pytorch",
+                "software_version": "2.0",
+                "hardware_name": "cpu",
             },
-            'prediction_type': 'invalid_type',
-            'features_list': generate_training_data(20)
+            "prediction_type": "invalid_type",
+            "features_list": generate_training_data(20),
         }
 
         response = client.post("/train", json=request)
@@ -178,14 +175,14 @@ class TestTrainEndpoint:
     def test_train_updates_existing_model(self, client):
         """Should update model when training with same model_id and platform."""
         request = {
-            'model_id': 'update-model',
-            'platform_info': {
-                'software_name': 'pytorch',
-                'software_version': '2.0',
-                'hardware_name': 'cpu'
+            "model_id": "update-model",
+            "platform_info": {
+                "software_name": "pytorch",
+                "software_version": "2.0",
+                "hardware_name": "cpu",
             },
-            'prediction_type': 'expect_error',
-            'features_list': generate_training_data(20)
+            "prediction_type": "expect_error",
+            "features_list": generate_training_data(20),
         }
 
         # Train first time
@@ -193,41 +190,39 @@ class TestTrainEndpoint:
         assert response1.status_code == 200
 
         # Train again with more samples
-        request['features_list'] = generate_training_data(30)
+        request["features_list"] = generate_training_data(30)
         response2 = client.post("/train", json=request)
         assert response2.status_code == 200
 
         data = response2.json()
-        assert data['samples_trained'] == 30
+        assert data["samples_trained"] == 30
 
         # Should still have only one model
         list_response = client.get("/list")
-        assert len(list_response.json()['models']) == 1
+        assert len(list_response.json()["models"]) == 1
 
     @requires_semantic_model
     def test_train_with_preprocessor(self, client):
         """Should successfully train with preprocessor."""
         request = {
-            'model_id': 'preprocessor-model',
-            'platform_info': {
-                'software_name': 'pytorch',
-                'software_version': '2.0',
-                'hardware_name': 'cpu'
+            "model_id": "preprocessor-model",
+            "platform_info": {
+                "software_name": "pytorch",
+                "software_version": "2.0",
+                "hardware_name": "cpu",
             },
-            'prediction_type': 'expect_error',
-            'features_list': generate_training_data(20, include_sentence=True),
-            'enable_preprocessors': ['semantic'],
-            'preprocessor_mappings': {
-                'semantic': ['sentence']
-            }
+            "prediction_type": "expect_error",
+            "features_list": generate_training_data(20, include_sentence=True),
+            "enable_preprocessors": ["semantic"],
+            "preprocessor_mappings": {"semantic": ["sentence"]},
         }
 
         response = client.post("/train", json=request)
         assert response.status_code == 200, response.text
 
         data = response.json()
-        assert data['status'] == 'success'
-        assert data['samples_trained'] == 20
+        assert data["status"] == "success"
+        assert data["samples_trained"] == 20
 
 
 class TestPredictEndpoint:
@@ -237,15 +232,15 @@ class TestPredictEndpoint:
     def trained_model(self, client):
         """Train a model for prediction tests."""
         request = {
-            'model_id': 'pred-test-model',
-            'platform_info': {
-                'software_name': 'pytorch',
-                'software_version': '2.0',
-                'hardware_name': 'cpu'
+            "model_id": "pred-test-model",
+            "platform_info": {
+                "software_name": "pytorch",
+                "software_version": "2.0",
+                "hardware_name": "cpu",
             },
-            'prediction_type': 'expect_error',
-            'features_list': generate_training_data(20),
-            'training_config': {'epochs': 200}
+            "prediction_type": "expect_error",
+            "features_list": generate_training_data(20),
+            "training_config": {"epochs": 200},
         }
         response = client.post("/train", json=request)
         assert response.status_code == 200
@@ -254,47 +249,41 @@ class TestPredictEndpoint:
     def test_predict_with_trained_model(self, client, trained_model):
         """Should make predictions with trained model."""
         request = {
-            'model_id': 'pred-test-model',
-            'platform_info': {
-                'software_name': 'pytorch',
-                'software_version': '2.0',
-                'hardware_name': 'cpu'
+            "model_id": "pred-test-model",
+            "platform_info": {
+                "software_name": "pytorch",
+                "software_version": "2.0",
+                "hardware_name": "cpu",
             },
-            'prediction_type': 'expect_error',
-            'features': {
-                'batch_size': 25,
-                'sequence_length': 128
-            }
+            "prediction_type": "expect_error",
+            "features": {"batch_size": 25, "sequence_length": 128},
         }
 
         response = client.post("/predict", json=request)
         assert response.status_code == 200
 
         data = response.json()
-        assert data['model_id'] == 'pred-test-model'
-        assert data['prediction_type'] == 'expect_error'
-        assert 'result' in data
+        assert data["model_id"] == "pred-test-model"
+        assert data["prediction_type"] == "expect_error"
+        assert "result" in data
 
-        result = data['result']
-        assert 'expected_runtime_ms' in result
-        assert 'error_margin_ms' in result
-        assert result['expected_runtime_ms'] > 0
-        assert result['error_margin_ms'] >= 0
+        result = data["result"]
+        assert "expected_runtime_ms" in result
+        assert "error_margin_ms" in result
+        assert result["expected_runtime_ms"] > 0
+        assert result["error_margin_ms"] >= 0
 
     def test_predict_with_nonexistent_model(self, client):
         """Should return 404 for nonexistent model."""
         request = {
-            'model_id': 'nonexistent-model',
-            'platform_info': {
-                'software_name': 'pytorch',
-                'software_version': '2.0',
-                'hardware_name': 'cpu'
+            "model_id": "nonexistent-model",
+            "platform_info": {
+                "software_name": "pytorch",
+                "software_version": "2.0",
+                "hardware_name": "cpu",
             },
-            'prediction_type': 'expect_error',
-            'features': {
-                'batch_size': 25,
-                'sequence_length': 128
-            }
+            "prediction_type": "expect_error",
+            "features": {"batch_size": 25, "sequence_length": 128},
         }
 
         response = client.post("/predict", json=request)
@@ -303,17 +292,17 @@ class TestPredictEndpoint:
     def test_predict_with_missing_features(self, client, trained_model):
         """Should fail when features are missing."""
         request = {
-            'model_id': 'pred-test-model',
-            'platform_info': {
-                'software_name': 'pytorch',
-                'software_version': '2.0',
-                'hardware_name': 'cpu'
+            "model_id": "pred-test-model",
+            "platform_info": {
+                "software_name": "pytorch",
+                "software_version": "2.0",
+                "hardware_name": "cpu",
             },
-            'prediction_type': 'expect_error',
-            'features': {
-                'batch_size': 25
+            "prediction_type": "expect_error",
+            "features": {
+                "batch_size": 25
                 # Missing sequence_length
-            }
+            },
         }
 
         response = client.post("/predict", json=request)
@@ -326,82 +315,81 @@ class TestExperimentMode:
     def test_experiment_mode_with_exp_runtime(self, client):
         """Should use experiment mode when exp_runtime in features."""
         request = {
-            'model_id': 'any-model',
-            'platform_info': {
-                'software_name': 'pytorch',
-                'software_version': '2.0',
-                'hardware_name': 'cpu'
+            "model_id": "any-model",
+            "platform_info": {
+                "software_name": "pytorch",
+                "software_version": "2.0",
+                "hardware_name": "cpu",
             },
-            'prediction_type': 'expect_error',
-            'features': {
-                'exp_runtime': 150.0,
-                'batch_size': 32
-            }
+            "prediction_type": "expect_error",
+            "features": {"exp_runtime": 150.0, "batch_size": 32},
         }
 
         response = client.post("/predict", json=request)
         assert response.status_code == 200
 
         data = response.json()
-        result = data['result']
-        assert result['expected_runtime_ms'] == 150.0
-        assert result['error_margin_ms'] == 45.0  # 30% of 150 (default CV)
+        result = data["result"]
+        assert result["expected_runtime_ms"] == 150.0
+        assert result["error_margin_ms"] == 45.0  # 30% of 150 (default CV)
 
     def test_experiment_mode_with_exp_platform(self, client):
         """Should use experiment mode when platform is all 'exp'."""
         request = {
-            'model_id': 'any-model',
-            'platform_info': {
-                'software_name': 'exp',
-                'software_version': 'exp',
-                'hardware_name': 'exp'
+            "model_id": "any-model",
+            "platform_info": {
+                "software_name": "exp",
+                "software_version": "exp",
+                "hardware_name": "exp",
             },
-            'prediction_type': 'expect_error',
-            'features': {
-                'exp_runtime': 200.0,
-                'batch_size': 32
-            }
+            "prediction_type": "expect_error",
+            "features": {"exp_runtime": 200.0, "batch_size": 32},
         }
 
         response = client.post("/predict", json=request)
         assert response.status_code == 200
 
         data = response.json()
-        result = data['result']
-        assert result['expected_runtime_ms'] == 200.0
+        result = data["result"]
+        assert result["expected_runtime_ms"] == 200.0
 
     def test_experiment_mode_quantile(self, client):
         """Should generate quantile predictions in experiment mode."""
         request = {
-            'model_id': 'any-model',
-            'platform_info': {
-                'software_name': 'exp',
-                'software_version': 'exp',
-                'hardware_name': 'exp'
+            "model_id": "any-model",
+            "platform_info": {
+                "software_name": "exp",
+                "software_version": "exp",
+                "hardware_name": "exp",
             },
-            'prediction_type': 'quantile',
-            'features': {
-                'exp_runtime': 100.0,
-                'batch_size': 32
-            }
+            "prediction_type": "quantile",
+            "features": {"exp_runtime": 100.0, "batch_size": 32},
         }
 
         response = client.post("/predict", json=request)
         assert response.status_code == 200
 
         data = response.json()
-        result = data['result']
-        assert 'quantiles' in result
+        result = data["result"]
+        assert "quantiles" in result
 
-        quantiles = result['quantiles']
+        quantiles = result["quantiles"]
         # Default CV is 30% in experiment mode, so quantiles spread more
-        # With CV=0.3, σ=30 for exp_runtime=100
+        # With CV=0.3, sigma=30 for exp_runtime=100
         # q50 ≈ 100 (median), q90 ≈ 138, q95 ≈ 149, q99 ≈ 170
         # Use larger tolerance due to random sampling
-        assert quantiles['0.5'] == pytest.approx(100.0, rel=0.05)  # 5% tolerance for median
-        assert quantiles['0.9'] == pytest.approx(138.0, rel=0.10)  # 10% tolerance
-        assert quantiles['0.95'] == pytest.approx(149.0, rel=0.10)  # 10% tolerance
-        assert quantiles['0.99'] == pytest.approx(170.0, rel=0.10)  # 10% tolerance
+        assert quantiles["0.5"] == pytest.approx(
+            100.0, rel=0.05
+        )  # 5% tolerance for median
+        assert quantiles["0.9"] == pytest.approx(
+            138.0, rel=0.10
+        )  # 10% tolerance
+        assert quantiles["0.95"] == pytest.approx(
+            149.0, rel=0.10
+        )  # 10% tolerance
+        assert quantiles["0.99"] == pytest.approx(
+            170.0, rel=0.10
+        )  # 10% tolerance
 
 
 class TestQuantilePrediction:
@@ -411,15 +399,15 @@ class TestQuantilePrediction:
     def trained_quantile_model(self, client):
         """Train a quantile model."""
         request = {
-            'model_id': 'quantile-pred-model',
-            'platform_info': {
-                'software_name': 'pytorch',
-                'software_version': '2.0',
-                'hardware_name': 'cpu'
+            "model_id": "quantile-pred-model",
+            "platform_info": {
+                "software_name": "pytorch",
+                "software_version": "2.0",
+                "hardware_name": "cpu",
             },
-            'prediction_type': 'quantile',
-            'features_list': generate_training_data(30),
-            'training_config': {'epochs': 300, 'quantiles': [0.5, 0.9, 0.99]}
+            "prediction_type": "quantile",
+            "features_list": generate_training_data(30),
+            "training_config": {"epochs": 300, "quantiles": [0.5, 0.9, 0.99]},
         }
         response = client.post("/train", json=request)
         assert response.status_code == 200
@@ -428,45 +416,39 @@ class TestQuantilePrediction:
     def test_predict_quantiles(self, client, trained_quantile_model):
         """Should return quantile predictions."""
         request = {
-            'model_id': 'quantile-pred-model',
-            'platform_info': {
-                'software_name': 'pytorch',
-                'software_version': '2.0',
-                'hardware_name': 'cpu'
+            "model_id": "quantile-pred-model",
+            "platform_info": {
+                "software_name": "pytorch",
+                "software_version": "2.0",
+                "hardware_name": "cpu",
             },
-            'prediction_type': 'quantile',
-            'features': {
-                'batch_size': 25,
-                'sequence_length': 128
-            }
+            "prediction_type": "quantile",
+            "features": {"batch_size": 25, "sequence_length": 128},
         }
 
         response = client.post("/predict", json=request)
         assert response.status_code == 200
 
         data = response.json()
-        result = data['result']
-        assert 'quantiles' in result
+        result = data["result"]
+        assert "quantiles" in result
 
-        quantiles = result['quantiles']
-        assert '0.5' in quantiles
-        assert '0.9' in quantiles
-        assert '0.99' in quantiles
+        quantiles = result["quantiles"]
+        assert "0.5" in quantiles
+        assert "0.9" in quantiles
+        assert "0.99" in quantiles
 
     def test_prediction_type_mismatch(self, client, trained_quantile_model):
         """Should return 404 when requesting prediction_type that wasn't trained."""
         request = {
-            'model_id': 'quantile-pred-model',
-            'platform_info': {
-                'software_name': 'pytorch',
-                'software_version': '2.0',
-                'hardware_name': 'cpu'
+            "model_id": "quantile-pred-model",
+            "platform_info": {
+                "software_name": "pytorch",
+                "software_version": "2.0",
+                "hardware_name": "cpu",
             },
-            'prediction_type': 'expect_error',  # Model was trained with 'quantile' only
-            'features': {
-                'batch_size': 25,
-                'sequence_length': 128
-            }
+            "prediction_type": "expect_error",  # Model was trained with 'quantile' only
+            "features": {"batch_size": 25, "sequence_length": 128},
         }
 
         response = client.post("/predict", json=request)
@@ -481,59 +463,62 @@ class TestLogTransformAPI:
     def generate_skewed_data(self, n_samples=30):
         """Generate right-skewed runtime data."""
         import numpy as np
+
         np.random.seed(42)
         data = []
         for i in range(n_samples):
             batch_size = 16 + i
             base_runtime = 50 + batch_size * 2
             skewed_runtime = base_runtime * np.random.lognormal(0, 0.3)
-            data.append({
-                'batch_size': batch_size,
-                'sequence_length': 128,
-                'runtime_ms': max(10.0, float(skewed_runtime))
-            })
+            data.append(
+                {
+                    "batch_size": batch_size,
+                    "sequence_length": 128,
+                    "runtime_ms": max(10.0, float(skewed_runtime)),
+                }
+            )
         return data
 
     def test_train_with_log_transform_enabled(self, client):
         """Should successfully train quantile model with log_transform enabled."""
         request = {
-            'model_id': 'log-transform-model',
-            'platform_info': {
-                'software_name': 'pytorch',
-                'software_version': '2.0',
-                'hardware_name': 'cpu'
+            "model_id": "log-transform-model",
+            "platform_info": {
+                "software_name": "pytorch",
+                "software_version": "2.0",
+                "hardware_name": "cpu",
             },
-            'prediction_type': 'quantile',
-            'features_list': self.generate_skewed_data(30),
-            'training_config': {
-                'epochs': 100,
-                'log_transform': {'enabled': True}
-            }
+            "prediction_type": "quantile",
+            "features_list": self.generate_skewed_data(30),
+            "training_config": {
+                "epochs": 100,
+                "log_transform": {"enabled": True},
+            },
         }
 
         response = client.post("/train", json=request)
         assert response.status_code == 200
 
         data = response.json()
-        assert data['status'] == 'success'
-        assert data['samples_trained'] == 30
+        assert data["status"] == "success"
+        assert data["samples_trained"] == 30
 
     def test_predict_with_log_transform_model(self, client):
         """Should make predictions with log_transform model."""
         # Train with log_transform
         train_request = {
-            'model_id': 'log-transform-pred-model',
-            'platform_info': {
-                'software_name': 'pytorch',
-                'software_version': '2.0',
-                'hardware_name': 'cpu'
+            "model_id": "log-transform-pred-model",
+            "platform_info": {
+                "software_name": "pytorch",
+                "software_version": "2.0",
+                "hardware_name": "cpu",
             },
-            'prediction_type': 'quantile',
-            'features_list': self.generate_skewed_data(30),
-            'training_config': {
-                'epochs': 200,
-                'log_transform': {'enabled': True}
-            }
+            "prediction_type": "quantile",
+            "features_list": self.generate_skewed_data(30),
+            "training_config": {
+                "epochs": 200,
+                "log_transform": {"enabled": True},
+            },
         }
 
         train_response = client.post("/train", json=train_request)
@@ -541,49 +526,46 @@ class TestLogTransformAPI:
 
         # Make prediction
         predict_request = {
-            'model_id': 'log-transform-pred-model',
-            'platform_info': {
-                'software_name': 'pytorch',
-                'software_version': '2.0',
-                'hardware_name': 'cpu'
+            "model_id": "log-transform-pred-model",
+            "platform_info": {
+                "software_name": "pytorch",
+                "software_version": "2.0",
+                "hardware_name": "cpu",
             },
-            'prediction_type': 'quantile',
-            'features': {
-                'batch_size': 25,
-                'sequence_length': 128
-            }
+            "prediction_type": "quantile",
+            "features": {"batch_size": 25, "sequence_length": 128},
         }
 
         predict_response = client.post("/predict", json=predict_request)
         assert predict_response.status_code == 200
 
         data = predict_response.json()
-        result = data['result']
-        assert 'quantiles' in result
+        result = data["result"]
+        assert "quantiles" in result
 
         # Verify predictions are positive (after applying exponential)
-        for q, value in result['quantiles'].items():
+        for q, value in result["quantiles"].items():
             assert value > 0, f"Quantile {q} should be positive, got {value}"
 
     def test_log_transform_disabled_by_default(self, client):
         """Should train without log_transform when not specified."""
         request = {
-            'model_id': 'no-log-transform-model',
-            'platform_info': {
-                'software_name': 'pytorch',
-                'software_version': '2.0',
-                'hardware_name': 'cpu'
+            "model_id": "no-log-transform-model",
+            "platform_info": {
+                "software_name": "pytorch",
+                "software_version": "2.0",
+                "hardware_name": "cpu",
             },
-            'prediction_type': 'quantile',
-            'features_list': self.generate_skewed_data(30),
-            'training_config': {'epochs': 100}  # No log_transform specified
+            "prediction_type": "quantile",
+            "features_list": self.generate_skewed_data(30),
+            "training_config": {"epochs": 100},  # No log_transform specified
         }
 
         response = client.post("/train", json=request)
         assert response.status_code == 200
 
         data = response.json()
-        assert data['status'] == 'success'
+        assert data["status"] == "success"
 
 
 class TestCacheEndpoints:
@@ -595,13 +577,13 @@ class TestCacheEndpoints:
         assert response.status_code == 200
 
         data = response.json()
-        assert 'cache_stats' in data
-        stats = data['cache_stats']
-        assert 'size' in stats
-        assert 'max_size' in stats
-        assert 'hits' in stats
-        assert 'misses' in stats
-        assert 'hit_rate_percent' in stats
+        assert "cache_stats" in data
+        stats = data["cache_stats"]
+        assert "size" in stats
+        assert "max_size" in stats
+        assert "hits" in stats
+        assert "misses" in stats
+        assert "hit_rate_percent" in stats
 
     def test_cache_clear_endpoint(self, client):
         """Should clear the cache successfully."""
@@ -609,8 +591,8 @@ class TestCacheEndpoints:
         assert response.status_code == 200
 
         data = response.json()
-        assert data['status'] == 'success'
-        assert 'cache cleared' in data['message'].lower()
+        assert data["status"] == "success"
+        assert "cache cleared" in data["message"].lower()
 
     def test_cache_stats_after_clear(self, client):
         """Should show zero size after clearing cache."""
@@ -622,9 +604,9 @@ class TestCacheEndpoints:
         assert response.status_code == 200
 
         data = response.json()
-        assert data['cache_stats']['size'] == 0
-        assert data['cache_stats']['hits'] == 0
-        assert data['cache_stats']['misses'] == 0
+        assert data["cache_stats"]["size"] == 0
+        assert data["cache_stats"]["hits"] == 0
+        assert data["cache_stats"]["misses"] == 0
 
 
 class TestModelCache:
@@ -634,15 +616,15 @@ class TestModelCache:
         """Cache should be used for repeated predictions."""
         # Train a model
         train_request = {
-            'model_id': 'cache-test-model',
-            'platform_info': {
-                'software_name': 'pytorch',
-                'software_version': '2.0',
-                'hardware_name': 'cpu'
+            "model_id": "cache-test-model",
+            "platform_info": {
+                "software_name": "pytorch",
+                "software_version": "2.0",
+                "hardware_name": "cpu",
             },
-            'prediction_type': 'expect_error',
-            'features_list': generate_training_data(20),
-            'training_config': {'epochs': 100}
+            "prediction_type": "expect_error",
+            "features_list": generate_training_data(20),
+            "training_config": {"epochs": 100},
         }
         client.post("/train", json=train_request)
 
@@ -651,30 +633,30 @@ class TestModelCache:
 
         # First prediction - cache miss
         predict_request = {
-            'model_id': 'cache-test-model',
-            'platform_info': {
-                'software_name': 'pytorch',
-                'software_version': '2.0',
-                'hardware_name': 'cpu'
+            "model_id": "cache-test-model",
+            "platform_info": {
+                "software_name": "pytorch",
+                "software_version": "2.0",
+                "hardware_name": "cpu",
             },
-            'prediction_type': 'expect_error',
-            'features': {'batch_size': 25, 'sequence_length': 128}
+            "prediction_type": "expect_error",
+            "features": {"batch_size": 25, "sequence_length": 128},
         }
 
         response1 = client.post("/predict", json=predict_request)
         assert response1.status_code == 200
 
         # Check cache stats - should have 1 miss
-        stats1 = client.get("/cache/stats").json()['cache_stats']
-        assert stats1['misses'] >= 1
+        stats1 = client.get("/cache/stats").json()["cache_stats"]
+        assert stats1["misses"] >= 1
 
         # Second prediction - should be cache hit
         response2 = client.post("/predict", json=predict_request)
         assert response2.status_code == 200
 
         # Check cache stats - should have at least 1 hit now
-        stats2 = client.get("/cache/stats").json()['cache_stats']
-        assert stats2['hits'] >= 1
+        stats2 = client.get("/cache/stats").json()["cache_stats"]
+        assert stats2["hits"] >= 1
 
 
 class TestWebSocketPrediction:
@@ -684,82 +666,82 @@ class TestWebSocketPrediction:
         """Should make WebSocket predictions with trained model."""
         # Train a model first
         train_request = {
-            'model_id': 'ws-test-model',
-            'platform_info': {
-                'software_name': 'pytorch',
-                'software_version': '2.0',
-                'hardware_name': 'cpu'
+            "model_id": "ws-test-model",
+            "platform_info": {
+                "software_name": "pytorch",
+                "software_version": "2.0",
+                "hardware_name": "cpu",
             },
-            'prediction_type': 'expect_error',
-            'features_list': generate_training_data(20)
+            "prediction_type": "expect_error",
+            "features_list": generate_training_data(20),
         }
         client.post("/train", json=train_request)
 
         # Make WebSocket prediction
         predict_request = {
-            'model_id': 'ws-test-model',
-            'platform_info': {
-                'software_name': 'pytorch',
-                'software_version': '2.0',
-                'hardware_name': 'cpu'
+            "model_id": "ws-test-model",
+            "platform_info": {
+                "software_name": "pytorch",
+                "software_version": "2.0",
+                "hardware_name": "cpu",
             },
-            'prediction_type': 'expect_error',
-            'features': {'batch_size': 25, 'sequence_length': 128}
+            "prediction_type": "expect_error",
+            "features": {"batch_size": 25, "sequence_length": 128},
         }
 
         with client.websocket_connect("/ws/predict") as websocket:
             import json
+
             websocket.send_text(json.dumps(predict_request))
             response = websocket.receive_json()
 
-            assert 'result' in response
-            assert 'expected_runtime_ms' in response['result']
-            assert 'error_margin_ms' in response['result']
+            assert "result" in response
+            assert "expected_runtime_ms" in response["result"]
+            assert "error_margin_ms" in response["result"]
 
     def test_websocket_experiment_mode(self, client):
         """Should use experiment mode via WebSocket."""
         predict_request = {
-            'model_id': 'any-model',
-            'platform_info': {
-                'software_name': 'exp',
-                'software_version': 'exp',
-                'hardware_name': 'exp'
+            "model_id": "any-model",
+            "platform_info": {
+                "software_name": "exp",
+                "software_version": "exp",
+                "hardware_name": "exp",
             },
-            'prediction_type': 'expect_error',
-            'features': {
-                'exp_runtime': 150.0,
-                'batch_size': 32
-            }
+            "prediction_type": "expect_error",
+            "features": {"exp_runtime": 150.0, "batch_size": 32},
         }
 
         with client.websocket_connect("/ws/predict") as websocket:
             import json
+
             websocket.send_text(json.dumps(predict_request))
             response = websocket.receive_json()
 
-            assert 'result' in response
-            assert response['result']['expected_runtime_ms'] == 150.0
+            assert "result" in response
+            assert response["result"]["expected_runtime_ms"] == 150.0
 
     def test_websocket_model_not_found(self, client):
         """Should return error for nonexistent model via WebSocket."""
         predict_request = {
-            'model_id': 'nonexistent-ws-model',
-            'platform_info': {
-                'software_name': 'pytorch',
-                'software_version': '2.0',
-                'hardware_name': 'cpu'
+            "model_id": "nonexistent-ws-model",
+            "platform_info": {
+                "software_name": "pytorch",
+                "software_version": "2.0",
+                "hardware_name": "cpu",
             },
-            'prediction_type': 'expect_error',
-            'features': {'batch_size': 25, 'sequence_length': 128}
+            "prediction_type": "expect_error",
+            "features": {"batch_size": 25, "sequence_length": 128},
         }
 
         with client.websocket_connect("/ws/predict") as websocket:
             import json
+
             websocket.send_text(json.dumps(predict_request))
             response = websocket.receive_json()
 
-            assert 'error' in response
-            assert 'Model not found' in response['error']
+            assert "error" in response
+            assert "Model not found" in response["error"]
 
     def test_websocket_invalid_json(self, client):
         """Should handle invalid JSON via WebSocket."""
@@ -767,33 +749,34 @@ class TestWebSocketPrediction:
             websocket.send_text("not valid json{")
             response = websocket.receive_json()
 
-            assert 'error' in response
-            assert 'Invalid JSON' in response['error']
+            assert "error" in response
+            assert "Invalid JSON" in response["error"]
 
     def test_websocket_invalid_request(self, client):
         """Should handle invalid request format via WebSocket."""
         with client.websocket_connect("/ws/predict") as websocket:
             import json
+
             # Missing required fields
-            invalid_request = {'model_id': 'test'}
+            invalid_request = {"model_id": "test"}
             websocket.send_text(json.dumps(invalid_request))
             response = websocket.receive_json()
 
-            assert 'error' in response
-            assert 'Invalid request' in response['error']
+            assert "error" in response
+            assert "Invalid request" in response["error"]
 
     def test_websocket_multiple_predictions(self, client):
         """Should handle multiple sequential predictions via WebSocket."""
         # Train a model first
         train_request = {
-            'model_id': 'ws-multi-model',
-            'platform_info': {
-                'software_name': 'pytorch',
-                'software_version': '2.0',
-                'hardware_name': 'cpu'
+            "model_id": "ws-multi-model",
+            "platform_info": {
+                "software_name": "pytorch",
+                "software_version": "2.0",
+                "hardware_name": "cpu",
             },
-            'prediction_type': 'expect_error',
-            'features_list': generate_training_data(20)
+            "prediction_type": "expect_error",
+            "features_list": generate_training_data(20),
         }
         client.post("/train", json=train_request)
 
@@ -803,55 +786,59 @@ class TestWebSocketPrediction:
             # Make multiple predictions on same connection
             for i in range(3):
                 predict_request = {
-                    'model_id': 'ws-multi-model',
-                    'platform_info': {
-                        'software_name': 'pytorch',
-                        'software_version': '2.0',
-                        'hardware_name': 'cpu'
+                    "model_id": "ws-multi-model",
+                    "platform_info": {
+                        "software_name": "pytorch",
+                        "software_version": "2.0",
+                        "hardware_name": "cpu",
                     },
-                    'prediction_type': 'expect_error',
-                    'features': {'batch_size': 20 + i * 5, 'sequence_length': 128}
+                    "prediction_type": "expect_error",
+                    "features": {
+                        "batch_size": 20 + i * 5,
+                        "sequence_length": 128,
+                    },
                 }
                 websocket.send_text(json.dumps(predict_request))
                 response = websocket.receive_json()
 
-                assert 'result' in response
-                assert 'expected_runtime_ms' in response['result']
+                assert "result" in response
+                assert "expected_runtime_ms" in response["result"]
 
     def test_websocket_quantile_prediction(self, client):
         """Should make quantile predictions via WebSocket."""
         # Train a quantile model
         train_request = {
-            'model_id': 'ws-quantile-model',
-            'platform_info': {
-                'software_name': 'pytorch',
-                'software_version': '2.0',
-                'hardware_name': 'cpu'
+            "model_id": "ws-quantile-model",
+            "platform_info": {
+                "software_name": "pytorch",
+                "software_version": "2.0",
+                "hardware_name": "cpu",
             },
-            'prediction_type': 'quantile',
-            'features_list': generate_training_data(30),
-            'training_config': {'epochs': 200, 'quantiles': [0.5, 0.9]}
+            "prediction_type": "quantile",
+            "features_list": generate_training_data(30),
+            "training_config": {"epochs": 200, "quantiles": [0.5, 0.9]},
         }
         client.post("/train", json=train_request)
 
         predict_request = {
-            'model_id': 'ws-quantile-model',
-            'platform_info': {
-                'software_name': 'pytorch',
-                'software_version': '2.0',
-                'hardware_name': 'cpu'
+            "model_id": "ws-quantile-model",
+            "platform_info": {
+                "software_name": "pytorch",
+                "software_version": "2.0",
+                "hardware_name": "cpu",
             },
-            'prediction_type': 'quantile',
-            'features': {'batch_size': 25, 'sequence_length': 128}
+            "prediction_type": "quantile",
+            "features": {"batch_size": 25, "sequence_length": 128},
         }
 
         with client.websocket_connect("/ws/predict") as websocket:
             import json
+
             websocket.send_text(json.dumps(predict_request))
             response = websocket.receive_json()
 
-            assert 'result' in response
-            assert 'quantiles' in response['result']
+            assert "result" in response
+            assert "quantiles" in response["result"]
 
 
 class TestTrainValidation:
@@ -860,14 +847,14 @@ class TestTrainValidation:
     def test_train_with_empty_features_list(self, client):
         """Should fail when features_list is empty."""
         request = {
-            'model_id': 'empty-model',
-            'platform_info': {
-                'software_name': 'pytorch',
-                'software_version': '2.0',
-                'hardware_name': 'cpu'
+            "model_id": "empty-model",
+            "platform_info": {
+                "software_name": "pytorch",
+                "software_version": "2.0",
+                "hardware_name": "cpu",
             },
-            'prediction_type': 'expect_error',
-            'features_list': []
+            "prediction_type": "expect_error",
+            "features_list": [],
         }
 
         response = client.post("/train", json=request)
@@ -877,14 +864,14 @@ class TestTrainValidation:
     def test_train_with_few_samples(self, client):
         """Should fail when too few samples provided."""
         request = {
-            'model_id': 'few-samples-model',
-            'platform_info': {
-                'software_name': 'pytorch',
-                'software_version': '2.0',
-                'hardware_name': 'cpu'
+            "model_id": "few-samples-model",
+            "platform_info": {
+                "software_name": "pytorch",
+                "software_version": "2.0",
+                "hardware_name": "cpu",
             },
-            'prediction_type': 'expect_error',
-            'features_list': generate_training_data(3)  # Very few samples
+            "prediction_type": "expect_error",
+            "features_list": generate_training_data(3),  # Very few samples
         }
 
         response = client.post("/train", json=request)
@@ -895,14 +882,14 @@ class TestTrainValidation:
     def test_train_with_invalid_prediction_type(self, client):
         """Should fail with invalid prediction_type."""
         request = {
-            'model_id': 'invalid-type-model',
-            'platform_info': {
-                'software_name': 'pytorch',
-                'software_version': '2.0',
-                'hardware_name': 'cpu'
+            "model_id": "invalid-type-model",
+            "platform_info": {
+                "software_name": "pytorch",
+                "software_version": "2.0",
+                "hardware_name": "cpu",
             },
-            'prediction_type': 'invalid_type',
-            'features_list': generate_training_data(20)
+            "prediction_type": "invalid_type",
+            "features_list": generate_training_data(20),
         }
 
         response = client.post("/train", json=request)
@@ -924,4 +911,4 @@ class TestInfoEndpoint:
         # Either returns info or 404
         if response.status_code == 200:
             data = response.json()
-            assert 'storage_dir' in data or 'model_count' in data
+            assert "storage_dir" in data or "model_count" in data

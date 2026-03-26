@@ -20,14 +20,14 @@ class TestPlannerInput:
         assert planner_input.a == 0.5
         assert planner_input.algorithm == "simulated_annealing"
 
-    def test_invalid_M(self, sample_planner_input):
+    def test_invalid_M(self, sample_planner_input):  # noqa: N802
         """Test validation fails for M <= 0."""
         sample_planner_input["M"] = 0
         with pytest.raises(ValidationError) as exc_info:
             PlannerInput(**sample_planner_input)
         assert "M" in str(exc_info.value)
 
-    def test_invalid_N(self, sample_planner_input):
+    def test_invalid_N(self, sample_planner_input):  # noqa: N802
         """Test validation fails for N <= 0."""
         sample_planner_input["N"] = -1
         with pytest.raises(ValidationError) as exc_info:
@@ -50,7 +50,10 @@ class TestPlannerInput:
 
     def test_batch_capacity_wrong_rows(self, sample_planner_input):
         """Test validation fails when B has wrong number of rows."""
-        sample_planner_input["B"] = [[10, 5, 0], [8, 6, 4]]  # Only 2 rows, need 4
+        sample_planner_input["B"] = [
+            [10, 5, 0],
+            [8, 6, 4],
+        ]  # Only 2 rows, need 4
         with pytest.raises(ValidationError) as exc_info:
             PlannerInput(**sample_planner_input)
         assert "must have 4 rows" in str(exc_info.value)
@@ -61,7 +64,7 @@ class TestPlannerInput:
             [10, 5],  # Only 2 columns, need 3
             [8, 6],
             [0, 10],
-            [6, 0]
+            [6, 0],
         ]
         with pytest.raises(ValidationError) as exc_info:
             PlannerInput(**sample_planner_input)
@@ -83,7 +86,12 @@ class TestPlannerInput:
 
     def test_initial_invalid_model_id(self, sample_planner_input):
         """Test validation fails for invalid model IDs in initial."""
-        sample_planner_input["initial"] = [0, 1, 2, 5]  # 5 is out of range [0, 2]
+        sample_planner_input["initial"] = [
+            0,
+            1,
+            2,
+            5,
+        ]  # 5 is out of range [0, 2]
         with pytest.raises(ValidationError) as exc_info:
             PlannerInput(**sample_planner_input)
         assert "invalid" in str(exc_info.value)
@@ -131,7 +139,7 @@ class TestPlannerInput:
             "B": [[1, 0], [0, 1]],
             "initial": [0, 1],
             "a": 0.5,
-            "target": [10, 10]
+            "target": [10, 10],
         }
         planner_input = PlannerInput(**minimal_input)
         assert planner_input.algorithm == "simulated_annealing"
@@ -151,7 +159,7 @@ class TestPlannerOutput:
             score=0.0667,
             stats={"algorithm": "simulated_annealing", "iterations": 100},
             service_capacity=[10.0, 16.0, 12.0],
-            changes_count=1
+            changes_count=1,
         )
         assert output.deployment == [0, 1, 1, 2]
         assert output.score == 0.0667

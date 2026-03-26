@@ -1,5 +1,4 @@
-"""
-End-to-end tests to verify API behavior consistency after loguru migration.
+"""End-to-end tests to verify API behavior consistency after loguru migration.
 
 These tests ensure that the API responses and behavior are identical
 to the original implementation, confirming no breaking changes.

@@ -12,7 +12,9 @@ from swarmpilot.scheduler.algorithms.base import SchedulingStrategy
 from swarmpilot.scheduler.clients.models import Prediction
 
 if TYPE_CHECKING:
-    from swarmpilot.scheduler.clients.predictor_library_client import PredictorClient
+    from swarmpilot.scheduler.clients.predictor_library_client import (
+        PredictorClient,
+    )
     from swarmpilot.scheduler.models import InstanceQueueBase
     from swarmpilot.scheduler.registry.instance_registry import InstanceRegistry
 

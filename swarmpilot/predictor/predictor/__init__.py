@@ -7,7 +7,6 @@ from swarmpilot.predictor.predictor.base import BasePredictor
 from swarmpilot.predictor.predictor.expect_error import ExpectErrorPredictor
 from swarmpilot.predictor.predictor.quantile import QuantilePredictor
 
-
 __all__ = [
     "BasePredictor",
     "ExpectErrorPredictor",

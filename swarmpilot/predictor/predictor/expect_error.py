@@ -9,13 +9,11 @@ from typing import Any
 
 import numpy as np
 import torch
-from torch import nn
-from torch import optim
+from torch import nn, optim
 
 from swarmpilot.predictor.predictor.base import BasePredictor
 from swarmpilot.predictor.predictor.mlp import MLP
 from swarmpilot.predictor.utils.logging import get_logger
-
 
 logger = get_logger()
 
@@ -102,9 +100,9 @@ class ExpectErrorPredictor(BasePredictor):
         # Get training hyperparameters from config
         if config is None:
             config = {}
-        epochs = config.get('epochs', 500)
-        learning_rate = config.get('learning_rate', 0.01)
-        hidden_layers = config.get('hidden_layers', [64, 32])
+        epochs = config.get("epochs", 500)
+        learning_rate = config.get("learning_rate", 0.01)
+        hidden_layers = config.get("hidden_layers", [64, 32])
 
         # Create and train model
         input_dim = len(feature_names)
@@ -119,7 +117,7 @@ class ExpectErrorPredictor(BasePredictor):
 
         # Training loop
         self.model.train()
-        for epoch in range(epochs):
+        for _epoch in range(epochs):
             optimizer.zero_grad()
             predictions = self.model(X_tensor)
             loss = criterion(predictions, y_tensor)
@@ -134,10 +132,10 @@ class ExpectErrorPredictor(BasePredictor):
             self.mean_error = float(np.mean(residuals))
 
         return {
-            'feature_names': self.feature_names,
-            'samples_count': len(features_list),
-            'mean_error': self.mean_error,
-            'final_loss': float(loss.item()),
+            "feature_names": self.feature_names,
+            "samples_count": len(features_list),
+            "mean_error": self.mean_error,
+            "final_loss": float(loss.item()),
         }
 
     def predict(self, features: dict[str, Any]) -> dict[str, Any]:
@@ -175,8 +173,8 @@ class ExpectErrorPredictor(BasePredictor):
             prediction = self.model(X_tensor).item()
 
         return {
-            'expected_runtime_ms': float(prediction),
-            'error_margin_ms': float(self.mean_error),
+            "expected_runtime_ms": float(prediction),
+            "error_margin_ms": float(self.mean_error),
         }
 
     def get_model_state(self) -> dict[str, Any]:
@@ -196,12 +194,12 @@ class ExpectErrorPredictor(BasePredictor):
             raise ValueError(error_msg)
 
         return {
-            'model_config': self.model.get_config(),
-            'model_state_dict': self.model.state_dict(),
-            'feature_names': self.feature_names,
-            'mean_error': self.mean_error,
-            'feature_mean': self.feature_mean.tolist(),
-            'feature_std': self.feature_std.tolist(),
+            "model_config": self.model.get_config(),
+            "model_state_dict": self.model.state_dict(),
+            "feature_names": self.feature_names,
+            "mean_error": self.mean_error,
+            "feature_mean": self.feature_mean.tolist(),
+            "feature_std": self.feature_std.tolist(),
         }
 
     def load_model_state(self, state: dict[str, Any]) -> None:
@@ -211,12 +209,12 @@ class ExpectErrorPredictor(BasePredictor):
             state: Model state dict from get_model_state().
         """
         # Recreate model architecture
-        self.model = MLP.from_config(state['model_config'])
-        self.model.load_state_dict(state['model_state_dict'])
+        self.model = MLP.from_config(state["model_config"])
+        self.model.load_state_dict(state["model_state_dict"])
         _set_model_inference_mode(self.model)
 
         # Restore metadata
-        self.feature_names = state['feature_names']
-        self.mean_error = state['mean_error']
-        self.feature_mean = np.array(state['feature_mean'])
-        self.feature_std = np.array(state['feature_std'])
+        self.feature_names = state["feature_names"]
+        self.mean_error = state["mean_error"]
+        self.feature_mean = np.array(state["feature_mean"])
+        self.feature_std = np.array(state["feature_std"])

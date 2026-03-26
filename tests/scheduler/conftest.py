@@ -11,7 +11,9 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from swarmpilot.scheduler.clients.models import Prediction
-from swarmpilot.scheduler.clients.predictor_library_client import PredictorClient
+from swarmpilot.scheduler.clients.predictor_library_client import (
+    PredictorClient,
+)
 
 # Import models
 from swarmpilot.scheduler.models import (

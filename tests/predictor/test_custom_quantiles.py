@@ -1,6 +1,4 @@
-"""
-Integration tests for custom quantiles functionality.
-"""
+"""Integration tests for custom quantiles functionality."""
 
 import pytest
 
@@ -14,15 +12,11 @@ def test_custom_quantiles_experiment_mode(client):
         "platform_info": {
             "software_name": "exp",
             "software_version": "exp",
-            "hardware_name": "exp"
+            "hardware_name": "exp",
         },
         "prediction_type": "quantile",
-        "features": {
-            "exp_runtime": 1000.0,
-            "feature1": 10,
-            "feature2": 20
-        },
-        "quantiles": custom_quantiles
+        "features": {"exp_runtime": 1000.0, "feature1": 10, "feature2": 20},
+        "quantiles": custom_quantiles,
     }
 
     response = client.post("/predict", json=request_data)
@@ -49,13 +43,13 @@ def test_custom_quantiles_ignored_in_normal_mode(client):
         "platform_info": {
             "software_name": "python",
             "software_version": "3.9",
-            "hardware_name": "cpu"
+            "hardware_name": "cpu",
         },
         "prediction_type": "quantile",
         "features_list": [
-            {"feature1": i, "feature2": i*2, "runtime_ms": 100 + i*5}
+            {"feature1": i, "feature2": i * 2, "runtime_ms": 100 + i * 5}
             for i in range(50)
-        ]
+        ],
     }
 
     train_response = client.post("/train", json=train_request)
@@ -68,14 +62,11 @@ def test_custom_quantiles_ignored_in_normal_mode(client):
         "platform_info": {
             "software_name": "python",
             "software_version": "3.9",
-            "hardware_name": "cpu"
+            "hardware_name": "cpu",
         },
         "prediction_type": "quantile",
-        "features": {
-            "feature1": 25,
-            "feature2": 50
-        },
-        "quantiles": custom_quantiles  # These should be ignored
+        "features": {"feature1": 25, "feature2": 50},
+        "quantiles": custom_quantiles,  # These should be ignored
     }
 
     response = client.post("/predict", json=predict_request)
@@ -107,17 +98,17 @@ def test_invalid_quantile_values(client):
             "platform_info": {
                 "software_name": "exp",
                 "software_version": "exp",
-                "hardware_name": "exp"
+                "hardware_name": "exp",
             },
             "prediction_type": "quantile",
-            "features": {
-                "exp_runtime": 1000.0
-            },
-            "quantiles": quantiles
+            "features": {"exp_runtime": 1000.0},
+            "quantiles": quantiles,
         }
 
         response = client.post("/predict", json=request_data)
-        assert response.status_code == 422, f"Should reject quantiles {description}: {quantiles}"
+        assert response.status_code == 422, (
+            f"Should reject quantiles {description}: {quantiles}"
+        )
 
 
 def test_empty_quantiles_list(client):
@@ -127,13 +118,11 @@ def test_empty_quantiles_list(client):
         "platform_info": {
             "software_name": "exp",
             "software_version": "exp",
-            "hardware_name": "exp"
+            "hardware_name": "exp",
         },
         "prediction_type": "quantile",
-        "features": {
-            "exp_runtime": 1000.0
-        },
-        "quantiles": []  # Empty list
+        "features": {"exp_runtime": 1000.0},
+        "quantiles": [],  # Empty list
     }
 
     response = client.post("/predict", json=request_data)
@@ -151,12 +140,10 @@ def test_no_quantiles_field(client):
         "platform_info": {
             "software_name": "exp",
             "software_version": "exp",
-            "hardware_name": "exp"
+            "hardware_name": "exp",
         },
         "prediction_type": "quantile",
-        "features": {
-            "exp_runtime": 1000.0
-        }
+        "features": {"exp_runtime": 1000.0},
         # No quantiles field
     }
 
@@ -174,20 +161,20 @@ def test_no_quantiles_field(client):
 def test_many_quantiles(client):
     """Test with many quantiles to ensure performance is acceptable."""
     # Generate 20 quantiles
-    many_quantiles = [i/100 for i in range(5, 100, 5)]  # 0.05, 0.10, ..., 0.95
+    many_quantiles = [
+        i / 100 for i in range(5, 100, 5)
+    ]  # 0.05, 0.10, ..., 0.95
 
     request_data = {
         "model_id": "test_model",
         "platform_info": {
             "software_name": "exp",
             "software_version": "exp",
-            "hardware_name": "exp"
+            "hardware_name": "exp",
         },
         "prediction_type": "quantile",
-        "features": {
-            "exp_runtime": 500.0
-        },
-        "quantiles": many_quantiles
+        "features": {"exp_runtime": 500.0},
+        "quantiles": many_quantiles,
     }
 
     response = client.post("/predict", json=request_data)
@@ -211,13 +198,11 @@ def test_quantiles_ordering(client):
         "platform_info": {
             "software_name": "exp",
             "software_version": "exp",
-            "hardware_name": "exp"
+            "hardware_name": "exp",
         },
         "prediction_type": "quantile",
-        "features": {
-            "exp_runtime": 1000.0
-        },
-        "quantiles": quantiles
+        "features": {"exp_runtime": 1000.0},
+        "quantiles": quantiles,
     }
 
     response = client.post("/predict", json=request_data)
@@ -231,7 +216,9 @@ def test_quantiles_ordering(client):
 
     # Check that values are monotonically increasing (allowing small tolerance for numerical issues)
     for i in range(1, len(values)):
-        assert values[i] >= values[i-1] * 0.99, f"Quantile values should be monotonic: {values}"
+        assert values[i] >= values[i - 1] * 0.99, (
+            f"Quantile values should be monotonic: {values}"
+        )
 
 
 @pytest.mark.asyncio
@@ -246,14 +233,11 @@ async def test_websocket_custom_quantiles(client):
         "platform_info": {
             "software_name": "exp",
             "software_version": "exp",
-            "hardware_name": "exp"
+            "hardware_name": "exp",
         },
         "prediction_type": "quantile",
-        "features": {
-            "exp_runtime": 750.0,
-            "feature1": 10
-        },
-        "quantiles": custom_quantiles
+        "features": {"exp_runtime": 750.0, "feature1": 10},
+        "quantiles": custom_quantiles,
     }
 
     with client.websocket_connect("/ws/predict") as websocket:

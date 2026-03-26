@@ -8,7 +8,6 @@ from __future__ import annotations
 import torch
 from torch import nn
 
-
 torch.use_deterministic_algorithms(True)
 
 
@@ -37,7 +36,7 @@ class MLP(nn.Module):
                 len(quantiles) for quantile).
             hidden_layers: List of hidden layer sizes (default: [64, 32]).
         """
-        super(MLP, self).__init__()
+        super().__init__()
 
         if hidden_layers is None:
             hidden_layers = [64, 32]
@@ -79,9 +78,9 @@ class MLP(nn.Module):
             Dict with model architecture parameters.
         """
         return {
-            'input_dim': self.input_dim,
-            'output_dim': self.output_dim,
-            'hidden_layers': self.hidden_layers,
+            "input_dim": self.input_dim,
+            "output_dim": self.output_dim,
+            "hidden_layers": self.hidden_layers,
         }
 
     @classmethod
@@ -95,7 +94,7 @@ class MLP(nn.Module):
             New MLP instance with the same architecture.
         """
         return cls(
-            input_dim=config['input_dim'],
-            output_dim=config['output_dim'],
-            hidden_layers=config['hidden_layers'],
+            input_dim=config["input_dim"],
+            output_dim=config["output_dim"],
+            hidden_layers=config["hidden_layers"],
         )

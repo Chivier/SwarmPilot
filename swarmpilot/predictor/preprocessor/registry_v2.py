@@ -9,11 +9,15 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from swarmpilot.predictor.preprocessor.base_preprocessor_v2 import BasePreprocessorV2
+from swarmpilot.predictor.preprocessor.base_preprocessor_v2 import (
+    BasePreprocessorV2,
+)
 from swarmpilot.predictor.preprocessor.chain_v2 import PreprocessorChainV2
-from swarmpilot.predictor.preprocessor.preprocessors_v2 import MultiplyPreprocessor
-from swarmpilot.predictor.preprocessor.preprocessors_v2 import RemoveFeaturePreprocessor
-from swarmpilot.predictor.preprocessor.preprocessors_v2 import TokenLengthPreprocessor
+from swarmpilot.predictor.preprocessor.preprocessors_v2 import (
+    MultiplyPreprocessor,
+    RemoveFeaturePreprocessor,
+    TokenLengthPreprocessor,
+)
 
 
 class PreprocessorsRegistryV2:

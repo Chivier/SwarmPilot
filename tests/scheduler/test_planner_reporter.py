@@ -107,9 +107,13 @@ class TestPlannerReporterStart:
         """Test start when already running logs warning."""
         await reporter.start()
 
-        with patch("swarmpilot.scheduler.utils.planner_reporter.logger") as mock_logger:
+        with patch(
+            "swarmpilot.scheduler.utils.planner_reporter.logger"
+        ) as mock_logger:
             await reporter.start()
-            mock_logger.warning.assert_called_with("Planner reporter already running")
+            mock_logger.warning.assert_called_with(
+                "Planner reporter already running"
+            )
 
         # Cleanup
         await reporter.shutdown()
@@ -120,6 +124,7 @@ class TestPlannerReporterShutdown:
 
     @pytest.fixture
     def reporter(self):
+        """Create a PlannerReporter test instance."""
         return PlannerReporter(
             task_registry=MagicMock(),
             planner_url="http://planner:8000",
@@ -161,12 +166,14 @@ class TestPlannerReporterReportLoop:
 
     @pytest.fixture
     def mock_registry(self):
+        """Create a mocked task registry."""
         registry = MagicMock()
         registry.get_count_by_status = AsyncMock(return_value=0)
         return registry
 
     @pytest.fixture
     def reporter(self, mock_registry):
+        """Create a reporter with mocked registry."""
         return PlannerReporter(
             task_registry=mock_registry,
             planner_url="http://planner:8000",
@@ -213,7 +220,9 @@ class TestPlannerReporterReportLoop:
                 raise Exception("Test error")
             # Second call succeeds silently
 
-        with patch.object(reporter, "_report_to_planner", side_effect=side_effect):
+        with patch.object(
+            reporter, "_report_to_planner", side_effect=side_effect
+        ):
             await reporter.start()
             await asyncio.sleep(0.15)  # Let it run a couple cycles
             await reporter.shutdown()
@@ -227,12 +236,14 @@ class TestPlannerReporterReportToPlanner:
 
     @pytest.fixture
     def mock_registry(self):
+        """Create a mocked task registry with load."""
         registry = MagicMock()
         registry.get_count_by_status = AsyncMock(return_value=5)
         return registry
 
     @pytest.fixture
     def reporter(self, mock_registry):
+        """Create a reporter configured with model id."""
         reporter = PlannerReporter(
             task_registry=mock_registry,
             planner_url="http://planner:8000",
@@ -261,7 +272,9 @@ class TestPlannerReporterReportToPlanner:
         assert call_args[1]["json"]["value"] == 10.0  # 5 pending + 5 running
 
     @pytest.mark.asyncio
-    async def test_report_to_planner_http_status_error(self, reporter, mock_registry):
+    async def test_report_to_planner_http_status_error(
+        self, reporter, mock_registry
+    ):
         """Test handling of HTTP status error."""
         mock_response = MagicMock()
         mock_response.status_code = 500
@@ -277,7 +290,9 @@ class TestPlannerReporterReportToPlanner:
         reporter._http_client.post = AsyncMock(side_effect=error)
 
         # Should not raise
-        with patch("swarmpilot.scheduler.utils.planner_reporter.log_http_error"):
+        with patch(
+            "swarmpilot.scheduler.utils.planner_reporter.log_http_error"
+        ):
             await reporter._report_to_planner()
 
     @pytest.mark.asyncio
@@ -289,7 +304,9 @@ class TestPlannerReporterReportToPlanner:
         )
 
         # Should not raise
-        with patch("swarmpilot.scheduler.utils.planner_reporter.log_http_error"):
+        with patch(
+            "swarmpilot.scheduler.utils.planner_reporter.log_http_error"
+        ):
             await reporter._report_to_planner()
 
     @pytest.mark.asyncio
@@ -324,12 +341,14 @@ class TestPlannerReporterReportThroughput:
 
     @pytest.fixture
     def mock_registry(self):
+        """Create a mocked task registry with zero counts."""
         registry = MagicMock()
         registry.get_count_by_status = AsyncMock(return_value=0)
         return registry
 
     @pytest.fixture
     def mock_tracker(self):
+        """Create a mocked throughput tracker."""
         tracker = MagicMock()
         tracker.get_averages_for_recent_instances_seconds = AsyncMock(
             return_value={
@@ -341,6 +360,7 @@ class TestPlannerReporterReportThroughput:
 
     @pytest.fixture
     def reporter(self, mock_registry, mock_tracker):
+        """Create a reporter with mocked registry and tracker."""
         reporter = PlannerReporter(
             task_registry=mock_registry,
             planner_url="http://planner:8000",
@@ -404,7 +424,9 @@ class TestPlannerReporterReportThroughput:
         assert all("/v1/submit_throughput" in url for url in urls)
 
     @pytest.mark.asyncio
-    async def test_report_throughput_http_error_continues(self, reporter, mock_tracker):
+    async def test_report_throughput_http_error_continues(
+        self, reporter, mock_tracker
+    ):
         """Test throughput reporting continues after HTTP error."""
         call_count = 0
 
@@ -447,6 +469,7 @@ class TestPlannerReporterIntegration:
 
     @pytest.fixture
     def mock_registry(self):
+        """Create a mocked registry with pending/running counts."""
         registry = MagicMock()
         registry.get_count_by_status = AsyncMock(
             side_effect=lambda status: {

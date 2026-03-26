@@ -588,7 +588,7 @@ class InstanceManager:
             # Log termination failure
             logger.warning(
                 f"[INSTANCE_TERMINATE] pylet_id={pylet_id} "
-                f"action=complete success=false error={str(e)}"
+                f"action=complete success=false error={e!s}"
             )
             managed.error = str(e)
             return False

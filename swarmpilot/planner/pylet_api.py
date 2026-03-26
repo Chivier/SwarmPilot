@@ -37,10 +37,16 @@ from .models import (
     PyLetScaleOutput,
     PyLetStatusOutput,
 )
+
 try:
     from .pylet.deployment_service import get_pylet_service_optional
 except ImportError:
-    get_pylet_service_optional = lambda: None  # type: ignore[assignment]
+
+    def get_pylet_service_optional():
+        """Return no PyLet service when optional dependency is missing."""
+        return None
+
+
 from .scheduler_registry import get_scheduler_registry
 from .services.model_validation import ModelValidationService
 
@@ -140,7 +146,9 @@ async def pylet_deploy_manually(input_data: PyLetDeploymentInput):
             wait_for_ready=input_data.wait_for_ready,
         )
 
-        active_statuses = [_instance_to_status(i) for i in result.active_instances]
+        active_statuses = [
+            _instance_to_status(i) for i in result.active_instances
+        ]
 
         return PyLetDeploymentOutput(
             success=result.success,
@@ -148,7 +156,9 @@ async def pylet_deploy_manually(input_data: PyLetDeploymentInput):
             removed_count=result.total_removed,
             active_instances=active_statuses,
             failed_adds=(
-                result.deployment_result.failed_adds if result.deployment_result else []
+                result.deployment_result.failed_adds
+                if result.deployment_result
+                else []
             ),
             failed_removes=(
                 result.deployment_result.failed_removes
@@ -162,7 +172,7 @@ async def pylet_deploy_manually(input_data: PyLetDeploymentInput):
         logger.error(f"PyLet deploy_manually failed: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Deployment failed: {str(e)}",
+            detail=f"Deployment failed: {e!s}",
         )
 
 
@@ -296,13 +306,13 @@ async def pylet_deploy(input_data: PyLetDeployWithPlanInput):
         logger.error(f"PyLet deploy failed - ValueError: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid input: {str(e)}",
+            detail=f"Invalid input: {e!s}",
         )
     except Exception as e:
         logger.error(f"PyLet deploy failed: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Deployment failed: {str(e)}",
+            detail=f"Deployment failed: {e!s}",
         )
 
 
@@ -333,7 +343,9 @@ async def pylet_scale(input_data: PyLetScaleInput):
             wait_for_ready=input_data.wait_for_ready,
         )
 
-        active_statuses = [_instance_to_status(i) for i in result.active_instances]
+        active_statuses = [
+            _instance_to_status(i) for i in result.active_instances
+        ]
         current = len(result.active_instances)
 
         return PyLetScaleOutput(
@@ -351,7 +363,7 @@ async def pylet_scale(input_data: PyLetScaleInput):
         logger.error(f"PyLet scale failed: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Scale failed: {str(e)}",
+            detail=f"Scale failed: {e!s}",
         )
 
 
@@ -407,7 +419,7 @@ async def pylet_migrate(input_data: PyLetMigrateInput):
         logger.error(f"PyLet migrate failed: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Migration failed: {str(e)}",
+            detail=f"Migration failed: {e!s}",
         )
 
 
@@ -519,7 +531,7 @@ async def pylet_optimize(input_data: PyLetOptimizeInput):
         logger.error(f"PyLet optimize failed: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Optimization failed: {str(e)}",
+            detail=f"Optimization failed: {e!s}",
         )
 
 
@@ -535,7 +547,9 @@ async def pylet_terminate_all(wait_for_drain: bool = False):
     """
     service = _ensure_pylet_enabled()
 
-    logger.info(f"PyLet terminate-all request (wait_for_drain={wait_for_drain})")
+    logger.info(
+        f"PyLet terminate-all request (wait_for_drain={wait_for_drain})"
+    )
 
     try:
         results = service.terminate_all(wait_for_drain=wait_for_drain)
@@ -555,5 +569,5 @@ async def pylet_terminate_all(wait_for_drain: bool = False):
         logger.error(f"PyLet terminate-all failed: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Termination failed: {str(e)}",
+            detail=f"Termination failed: {e!s}",
         )

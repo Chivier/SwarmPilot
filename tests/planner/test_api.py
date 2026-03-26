@@ -1,9 +1,10 @@
 """Tests for FastAPI endpoints."""
 
-import pytest
-from unittest.mock import patch, AsyncMock, MagicMock
-from fastapi.testclient import TestClient
+from unittest.mock import MagicMock, patch
+
 import numpy as np
+import pytest
+from fastapi.testclient import TestClient
 
 from swarmpilot.planner.api import app
 

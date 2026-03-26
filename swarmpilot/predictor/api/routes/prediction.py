@@ -6,17 +6,16 @@ import random
 import traceback
 
 import numpy as np
-from fastapi import APIRouter
-from fastapi import HTTPException
-from fastapi import status
+from fastapi import APIRouter, HTTPException, status
 
 from swarmpilot.predictor.api import dependencies
-from swarmpilot.predictor.models import PredictionRequest
-from swarmpilot.predictor.models import PredictionResponse
+from swarmpilot.predictor.models import PredictionRequest, PredictionResponse
 from swarmpilot.predictor.predictor.expect_error import ExpectErrorPredictor
 from swarmpilot.predictor.predictor.quantile import QuantilePredictor
-from swarmpilot.predictor.utils.experiment import generate_experiment_prediction
-from swarmpilot.predictor.utils.experiment import is_experiment_mode
+from swarmpilot.predictor.utils.experiment import (
+    generate_experiment_prediction,
+    is_experiment_mode,
+)
 from swarmpilot.predictor.utils.logging import get_logger
 
 logger = get_logger()

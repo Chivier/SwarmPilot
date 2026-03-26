@@ -1,12 +1,12 @@
 """Shared test fixtures for planner tests."""
 
+
 import pytest
-from typing import Dict, List
 from fastapi.testclient import TestClient
 
 
 @pytest.fixture
-def sample_planner_input() -> Dict:
+def sample_planner_input() -> dict:
     """Sample valid PlannerInput data."""
     return {
         "M": 4,
@@ -28,7 +28,7 @@ def sample_planner_input() -> Dict:
 
 
 @pytest.fixture
-def sample_instances() -> List[Dict]:
+def sample_instances() -> list[dict]:
     """Sample instance information."""
     return [
         {"endpoint": "http://instance-1:8080", "current_model": "model_0"},
@@ -39,7 +39,7 @@ def sample_instances() -> List[Dict]:
 
 
 @pytest.fixture
-def mock_instance_responses() -> Dict:
+def mock_instance_responses() -> dict:
     """Mock HTTP responses from instance API."""
     return {
         "info": {

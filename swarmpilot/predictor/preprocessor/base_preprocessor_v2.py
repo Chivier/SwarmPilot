@@ -9,11 +9,9 @@ This module provides the foundation for the V2 preprocessing system that allows:
 
 from __future__ import annotations
 
-from abc import ABC
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 from collections.abc import Iterator
-from dataclasses import dataclass
-from dataclasses import field
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 

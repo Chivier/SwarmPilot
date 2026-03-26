@@ -9,9 +9,7 @@ import re
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel
-from pydantic import Field
-from pydantic import field_validator
+from pydantic import BaseModel, Field, field_validator
 
 
 class PlatformInfo(BaseModel):
@@ -53,13 +51,15 @@ class PlatformInfo(BaseModel):
             >>> platform = PlatformInfo(
             ...     software_name="PyTorch",
             ...     software_version="2.0",
-            ...     hardware_name="NVIDIA Tesla V100-PCIE-16GB"
+            ...     hardware_name="NVIDIA Tesla V100-PCIE-16GB",
             ... )
             >>> specs = platform.extract_gpu_specs()
-            >>> specs['cuda_cores']
+            >>> specs["cuda_cores"]
             5120
         """
-        from swarmpilot.predictor.utils.hardware_perf_info import NVIDIA_TESLA_SPECS
+        from swarmpilot.predictor.utils.hardware_perf_info import (
+            NVIDIA_TESLA_SPECS,
+        )
 
         # Normalize hardware_name for matching
         hardware_name_upper = self.hardware_name.upper()
@@ -89,9 +89,11 @@ class PlatformInfo(BaseModel):
 
         # Try to match each pattern
         for pattern, gpu_key in gpu_patterns:
-            if re.search(pattern, hardware_name_upper):
-                if gpu_key in NVIDIA_TESLA_SPECS:
-                    return NVIDIA_TESLA_SPECS[gpu_key].copy()
+            if (
+                re.search(pattern, hardware_name_upper)
+                and gpu_key in NVIDIA_TESLA_SPECS
+            ):
+                return NVIDIA_TESLA_SPECS[gpu_key].copy()
 
         # No match found
         return None
@@ -174,7 +176,9 @@ class TrainingRequest(BaseModel):
                 )
 
             if not isinstance(sample["runtime_ms"], (int, float)):
-                raise ValueError(f"Sample at index {idx}: 'runtime_ms' must be numeric")
+                raise ValueError(
+                    f"Sample at index {idx}: 'runtime_ms' must be numeric"
+                )
 
         return v
 
@@ -273,7 +277,9 @@ class PredictionRequest(BaseModel):
         if v is not None:
             for q in v:
                 if not isinstance(q, (int, float)) or not (0 < q < 1):
-                    raise ValueError(f"All quantiles must be between 0 and 1, got {q}")
+                    raise ValueError(
+                        f"All quantiles must be between 0 and 1, got {q}"
+                    )
         return v
 
 

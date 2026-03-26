@@ -30,21 +30,22 @@ Example:
 
 from __future__ import annotations
 
+import contextlib
 import os
 import time
-from typing import Any, Dict, Optional
+from typing import Any
 
 import httpx
 from loguru import logger
 
 
 def get_instance_info(
-    instance_id: Optional[str] = None,
-    model_id: Optional[str] = None,
-    endpoint: Optional[str] = None,
-    backend: Optional[str] = None,
-    gpu_count: Optional[int] = None,
-) -> Dict[str, Any]:
+    instance_id: str | None = None,
+    model_id: str | None = None,
+    endpoint: str | None = None,
+    backend: str | None = None,
+    gpu_count: int | None = None,
+) -> dict[str, Any]:
     """Get instance information from arguments or environment.
 
     This function collects instance metadata for registration. Values can be
@@ -113,7 +114,7 @@ def register_with_scheduler(
     instance_id: str,
     model_id: str,
     endpoint: str,
-    platform_info: Optional[Dict[str, str]] = None,
+    platform_info: dict[str, str] | None = None,
     retries: int = 5,
     initial_backoff: float = 1.0,
 ) -> bool:
@@ -146,7 +147,9 @@ def register_with_scheduler(
     register_url = f"{scheduler_url.rstrip('/')}/instance/register"
 
     # Normalize endpoint to include http:// if not present
-    if not endpoint.startswith("http://") and not endpoint.startswith("https://"):
+    if not endpoint.startswith("http://") and not endpoint.startswith(
+        "https://"
+    ):
         endpoint = f"http://{endpoint}"
 
     # Default platform info if not provided
@@ -164,7 +167,9 @@ def register_with_scheduler(
         "platform_info": platform_info,
     }
 
-    logger.info(f"Registering instance {instance_id} with scheduler at {scheduler_url}")
+    logger.info(
+        f"Registering instance {instance_id} with scheduler at {scheduler_url}"
+    )
 
     backoff = initial_backoff
     for attempt in range(retries):
@@ -195,7 +200,9 @@ def register_with_scheduler(
             time.sleep(backoff)
             backoff *= 2  # Exponential backoff
 
-    logger.error(f"Failed to register instance {instance_id} after {retries} attempts")
+    logger.error(
+        f"Failed to register instance {instance_id} after {retries} attempts"
+    )
     return False
 
 
@@ -280,7 +287,9 @@ def deregister_from_scheduler(
                         logger.info("Drain complete, ready for removal")
                         break
                     pending = data.get("pending_tasks", 0)
-                    logger.debug(f"Drain in progress, {pending} tasks remaining")
+                    logger.debug(
+                        f"Drain in progress, {pending} tasks remaining"
+                    )
 
             except httpx.RequestError as e:
                 logger.warning(f"Drain status check failed: {e}")
@@ -335,15 +344,13 @@ def force_remove_from_scheduler(
 
     logger.warning(f"Force removing instance {instance_id} (skipping drain)")
 
-    try:
+    with contextlib.suppress(httpx.RequestError):
         # First try to drain (to change status)
         httpx.post(
             f"{base_url}/instance/drain",
             json={"instance_id": instance_id},
             timeout=5.0,
         )
-    except httpx.RequestError:
-        pass  # Ignore errors
 
     # Then remove immediately
     try:

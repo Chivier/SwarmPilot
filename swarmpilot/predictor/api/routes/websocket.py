@@ -5,16 +5,16 @@ from __future__ import annotations
 import json
 import traceback
 
-from fastapi import WebSocket
-from fastapi import WebSocketDisconnect
+from fastapi import WebSocket, WebSocketDisconnect
 
 from swarmpilot.predictor.api import dependencies
-from swarmpilot.predictor.models import PredictionRequest
-from swarmpilot.predictor.models import PredictionResponse
+from swarmpilot.predictor.models import PredictionRequest, PredictionResponse
 from swarmpilot.predictor.predictor.expect_error import ExpectErrorPredictor
 from swarmpilot.predictor.predictor.quantile import QuantilePredictor
-from swarmpilot.predictor.utils.experiment import generate_experiment_prediction
-from swarmpilot.predictor.utils.experiment import is_experiment_mode
+from swarmpilot.predictor.utils.experiment import (
+    generate_experiment_prediction,
+    is_experiment_mode,
+)
 from swarmpilot.predictor.utils.logging import get_logger
 
 logger = get_logger()
@@ -40,7 +40,7 @@ async def websocket_predict(websocket: WebSocket):
             except json.JSONDecodeError as e:
                 error_detail = {
                     "error": "Invalid JSON",
-                    "message": f"Failed to parse JSON: {str(e)}",
+                    "message": f"Failed to parse JSON: {e!s}",
                     "traceback": traceback.format_exc(),
                 }
                 dependencies._log_error(
@@ -70,7 +70,7 @@ async def websocket_predict(websocket: WebSocket):
             except Exception as e:
                 error_detail = {
                     "error": "Invalid request",
-                    "message": f"Failed to validate request: {str(e)}",
+                    "message": f"Failed to validate request: {e!s}",
                     "traceback": traceback.format_exc(),
                 }
                 dependencies._log_error(

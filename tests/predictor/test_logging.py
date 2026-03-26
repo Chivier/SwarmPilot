@@ -1,20 +1,17 @@
-"""
-Tests for logging utilities.
-"""
+"""Tests for logging utilities."""
 
+import contextlib
 import logging
 import os
 import tempfile
-from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
-import pytest
 from loguru import logger
 
 from swarmpilot.predictor.utils.logging import (
     InterceptHandler,
-    setup_logging,
     get_logger,
+    setup_logging,
 )
 
 
@@ -71,12 +68,8 @@ class TestInterceptHandler:
         # Should not raise an exception
         # The emit method routes to loguru which may have different behavior
         # but should handle the record
-        try:
+        with contextlib.suppress(Exception):
             handler.emit(record)
-        except Exception as e:
-            # Some environments may not have loguru fully set up
-            # but the method should at least be callable
-            pass
 
 
 class TestSetupLogging:
@@ -109,10 +102,13 @@ class TestSetupLogging:
         with tempfile.TemporaryDirectory() as tmpdir:
             env_log_dir = os.path.join(tmpdir, "env_logs")
 
-            with patch.dict(os.environ, {
-                "PREDICTOR_LOG_DIR": env_log_dir,
-                "PREDICTOR_LOGURU_LEVEL": "DEBUG"
-            }):
+            with patch.dict(
+                os.environ,
+                {
+                    "PREDICTOR_LOG_DIR": env_log_dir,
+                    "PREDICTOR_LOGURU_LEVEL": "DEBUG",
+                },
+            ):
                 setup_logging()
 
                 # Should have created the directory from env var
@@ -127,7 +123,7 @@ class TestSetupLogging:
                 log_level="INFO",
                 rotation="50 MB",
                 retention="7 days",
-                compression="gz"
+                compression="gz",
             )
 
     def test_setup_logging_intercepts_uvicorn_logs(self):
@@ -138,8 +134,7 @@ class TestSetupLogging:
             # Check that uvicorn logger has InterceptHandler
             uvicorn_logger = logging.getLogger("uvicorn")
             has_intercept_handler = any(
-                isinstance(h, InterceptHandler)
-                for h in uvicorn_logger.handlers
+                isinstance(h, InterceptHandler) for h in uvicorn_logger.handlers
             )
             assert has_intercept_handler
 
@@ -151,8 +146,7 @@ class TestSetupLogging:
             # Check that fastapi logger has InterceptHandler
             fastapi_logger = logging.getLogger("fastapi")
             has_intercept_handler = any(
-                isinstance(h, InterceptHandler)
-                for h in fastapi_logger.handlers
+                isinstance(h, InterceptHandler) for h in fastapi_logger.handlers
             )
             assert has_intercept_handler
 

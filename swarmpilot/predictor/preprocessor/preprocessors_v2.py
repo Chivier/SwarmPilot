@@ -11,9 +11,11 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from swarmpilot.predictor.preprocessor.base_preprocessor_v2 import BasePreprocessorV2
-from swarmpilot.predictor.preprocessor.base_preprocessor_v2 import FeatureContext
-from swarmpilot.predictor.preprocessor.base_preprocessor_v2 import OperationType
+from swarmpilot.predictor.preprocessor.base_preprocessor_v2 import (
+    BasePreprocessorV2,
+    FeatureContext,
+    OperationType,
+)
 
 
 class MultiplyPreprocessor(BasePreprocessorV2):
