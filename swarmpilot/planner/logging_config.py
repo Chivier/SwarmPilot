@@ -11,12 +11,8 @@ Environment Variables:
 """
 
 import os
-import sys
-from pathlib import Path
 
-from loguru import logger
-
-from swarmpilot.shared.logging import intercept_standard_logging
+from swarmpilot.shared.logging import configure_loguru
 
 
 def setup_logging() -> None:
@@ -44,47 +40,10 @@ def setup_logging() -> None:
     if log_level not in valid_levels:
         log_level = "INFO"
 
-    # Create log directory if it doesn't exist
-    log_path = Path(log_dir)
-    log_path.mkdir(parents=True, exist_ok=True)
-
-    # Remove default logger
-    logger.remove()
-
-    # Add console handler without colorization
-    logger.add(
-        sys.stderr,
-        format="{time:YYYY-MM-DD HH:mm:ss.SSS} | "
-        "{level: <8} | "
-        "{name}:{function}:{line} - "
-        "{message}",
-        level=log_level,
-        colorize=False,
+    configure_loguru(
+        log_dir=log_dir,
+        log_level=log_level,
+        file_pattern="planner_{time:YYYY-MM-DD}.log",
+        error_log_file_pattern="planner_error_{time:YYYY-MM-DD}.log",
+        error_retention="90 days",
     )
-
-    # Add file handler with rotation
-    logger.add(
-        log_path / "planner_{time:YYYY-MM-DD}.log",
-        format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} - {message}",
-        level=log_level,
-        rotation="00:00",  # Rotate at midnight
-        retention="30 days",  # Keep logs for 30 days
-        compression="zip",  # Compress old logs
-        encoding="utf-8",
-    )
-
-    # Add error-only file handler
-    logger.add(
-        log_path / "planner_error_{time:YYYY-MM-DD}.log",
-        format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} - {message}",
-        level="ERROR",
-        rotation="00:00",
-        retention="90 days",  # Keep error logs longer
-        compression="zip",
-        encoding="utf-8",
-    )
-
-    # Intercept standard library logging
-    intercept_standard_logging()
-
-    logger.info(f"Logging configured: level={log_level}, log_dir={log_dir}")

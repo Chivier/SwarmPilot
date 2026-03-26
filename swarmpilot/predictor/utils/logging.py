@@ -11,14 +11,12 @@ variables:
 from __future__ import annotations
 
 import os
-import sys
-from pathlib import Path
 
 from loguru import logger
 
 from swarmpilot.shared.logging import (
     InterceptHandler,  # noqa: F401
-    intercept_standard_logging,
+    configure_loguru,
 )
 
 
@@ -52,52 +50,16 @@ def setup_logging(
         log_level or os.getenv("PREDICTOR_LOGURU_LEVEL", "INFO")
     ).upper()
 
-    # Ensure log directory exists
-    log_path = Path(log_dir)
-    log_path.mkdir(parents=True, exist_ok=True)
-
-    # Remove default loguru handler
-    logger.remove()
-
-    # Add console handler (stderr) without colors
-    logger.add(
-        sys.stderr,
-        format=(
-            "{time:YYYY-MM-DD HH:mm:ss.SSS} | "
-            "{level: <8} | "
-            "{name}:{function}:{line} | "
-            "{message}"
-        ),
-        level=log_level,
-        colorize=False,
-        backtrace=True,
-        diagnose=True,
-    )
-
-    # Add file handler with rotation and compression
-    log_file = log_path / "predictor_{time}.log"
-    logger.add(
-        str(log_file),
-        format=(
-            "{time:YYYY-MM-DD HH:mm:ss.SSS} | "
-            "{level: <8} | "
-            "{name}:{function}:{line} | "
-            "{message}"
-        ),
-        level=log_level,
+    configure_loguru(
+        log_dir=log_dir,
+        log_level=log_level,
+        file_pattern="predictor_{time}.log",
         rotation=rotation,
         retention=retention,
         compression=compression,
+        enqueue=True,
         backtrace=True,
         diagnose=True,
-        enqueue=True,  # Thread-safe
-    )
-
-    # Intercept standard library logging
-    intercept_standard_logging()
-
-    logger.info(
-        f"Logging initialized: level={log_level}, dir={log_path.absolute()}"
     )
 
 
