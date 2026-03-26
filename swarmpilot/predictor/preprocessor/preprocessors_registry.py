@@ -78,9 +78,8 @@ class PreprocessorsRegistry:
             The preprocessor instance.
 
         Raises:
-            AssertionError: If preprocessor name not found.
+            KeyError: If preprocessor name not found.
         """
-        assert preprocessor_name in self.preprocessors, (
-            f"Preprocessor {preprocessor_name} not found"
-        )
+        if preprocessor_name not in self.preprocessors:
+            raise KeyError(f"Preprocessor {preprocessor_name} not found")
         return self.preprocessors[preprocessor_name]

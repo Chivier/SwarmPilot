@@ -70,6 +70,19 @@ def test_semantic_predictor():
     )
 
 
+def test_semantic_predictor_multiple_inputs_without_model_files():
+    """Test multiple input rejection without requiring model checkpoints."""
+    from swarmpilot.predictor.preprocessor.semantic_predictor import (
+        SemanticPredictor,
+    )
+
+    predictor = SemanticPredictor.__new__(SemanticPredictor)
+    with pytest.raises(
+        ValueError, match="SemanticPredictor only supports one input text"
+    ):
+        predictor.predict(["Hello, world!", "Hello, world!"])
+
+
 @requires_semantic_model
 def test_semantic_predictor_multiple_inputs():
     """Test that SemanticPredictor rejects multiple inputs."""
@@ -80,12 +93,12 @@ def test_semantic_predictor_multiple_inputs():
     predictor = SemanticPredictor(
         model_path=str(MODEL_PATH), model_config_path=str(CONFIG_PATH)
     )
-    with pytest.raises(AssertionError) as exc_info:
+    with pytest.raises(ValueError) as exc_info:
         predictor.predict(["Hello, world!", "Hello, world!"])
     assert "SemanticPredictor only supports one input text" in str(
         exc_info.value
     )
-    print("Correctly raised AssertionError for multiple inputs")
+    print("Correctly raised ValueError for multiple inputs")
 
 
 @requires_semantic_model

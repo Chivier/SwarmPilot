@@ -424,7 +424,7 @@ class TestValidation:
         target = np.array([100.0, 100.0])
 
         with pytest.raises(
-            AssertionError, match="Batch capacity matrix dimension error"
+            ValueError, match="Batch capacity matrix dimension error"
         ):
             SimulatedAnnealingOptimizer(
                 M=2, N=2, B=B, initial=initial, a=0.5, target=target
@@ -437,7 +437,7 @@ class TestValidation:
         target = np.array([100.0, 100.0])
 
         with pytest.raises(
-            AssertionError, match="Initial state vector length error"
+            ValueError, match="Initial state vector length error"
         ):
             SimulatedAnnealingOptimizer(
                 M=2, N=2, B=B, initial=initial, a=0.5, target=target
@@ -450,7 +450,7 @@ class TestValidation:
         target = np.array([100.0])  # Wrong length
 
         with pytest.raises(
-            AssertionError, match="Target distribution vector length error"
+            ValueError, match="Target distribution vector length error"
         ):
             SimulatedAnnealingOptimizer(
                 M=2, N=2, B=B, initial=initial, a=0.5, target=target
@@ -462,7 +462,7 @@ class TestValidation:
         initial = np.array([0, 1])
         target = np.array([100.0, 100.0])
 
-        with pytest.raises(AssertionError, match="Change factor out of range"):
+        with pytest.raises(ValueError, match="Change factor out of range"):
             SimulatedAnnealingOptimizer(
                 M=2,
                 N=2,
@@ -479,7 +479,7 @@ class TestValidation:
         target = np.array([100.0, 100.0])
 
         with pytest.raises(
-            AssertionError, match="Initial state contains invalid model ID"
+            ValueError, match="Initial state contains invalid model ID"
         ):
             SimulatedAnnealingOptimizer(
                 M=2, N=2, B=B, initial=initial, a=0.5, target=target
@@ -497,7 +497,7 @@ class TestValidation:
         target = np.array([100.0, 100.0])
 
         with pytest.raises(
-            AssertionError, match="Initial state contains invalid deployment"
+            ValueError, match="Initial state contains invalid deployment"
         ):
             SimulatedAnnealingOptimizer(
                 M=2, N=2, B=B, initial=initial, a=0.5, target=target

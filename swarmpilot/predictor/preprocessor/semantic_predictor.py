@@ -238,11 +238,10 @@ class SemanticPredictor(BasePreprocessor):
             Tuple of (predictions dict, remove_origin flag).
 
         Raises:
-            AssertionError: If input_text does not contain exactly one string.
+            ValueError: If input_text does not contain exactly one string.
         """
-        assert len(input_text) == 1, (
-            "SemanticPredictor only supports one input text"
-        )
+        if len(input_text) != 1:
+            raise ValueError("SemanticPredictor only supports one input text")
         input_ids, attention_mask = self.process_input(input_text[0])
         with torch.no_grad():
             predictions = self.model(input_ids, attention_mask)
