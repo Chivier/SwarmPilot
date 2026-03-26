@@ -11,8 +11,7 @@ import numpy as np
 from swarmpilot.predictor.api import dependencies
 from swarmpilot.predictor.models import PredictionRequest, PredictionResponse
 from swarmpilot.predictor.predictor.base import BasePredictor
-from swarmpilot.predictor.predictor.expect_error import ExpectErrorPredictor
-from swarmpilot.predictor.predictor.quantile import QuantilePredictor
+from swarmpilot.predictor.predictor.registry import create_predictor
 from swarmpilot.predictor.utils.experiment import (
     generate_experiment_prediction,
     is_experiment_mode,
@@ -20,11 +19,6 @@ from swarmpilot.predictor.utils.experiment import (
 from swarmpilot.predictor.utils.logging import get_logger
 
 logger = get_logger()
-
-PREDICTOR_CLASSES: dict[str, type[BasePredictor]] = {
-    "expect_error": ExpectErrorPredictor,
-    "quantile": QuantilePredictor,
-}
 
 
 class PredictionServiceError(Exception):
@@ -139,8 +133,9 @@ def resolve_predictor(request: PredictionRequest) -> BasePredictor:
             status_code=400,
         )
 
-    predictor_class = PREDICTOR_CLASSES.get(request.prediction_type)
-    if predictor_class is None:
+    try:
+        predictor = create_predictor(request.prediction_type)
+    except ValueError:
         raise PredictionServiceError(
             error_detail={
                 "error": "Invalid prediction type",
@@ -151,12 +146,57 @@ def resolve_predictor(request: PredictionRequest) -> BasePredictor:
             },
             status_code=400,
         )
-
-    predictor = predictor_class()
     predictor.load_model_state(model_data["predictor_state"])
     dependencies.model_cache.put(model_key, predictor, stored_prediction_type)
     logger.info(f"Loaded and cached model: {model_key}")
     return predictor
+
+
+def apply_v1_preprocessors(
+    features: dict[str, Any],
+    enable_preprocessors: list[str],
+    preprocessor_mappings: dict[str, list[str]] | None,
+) -> dict[str, Any]:
+    """Apply V1 preprocessor chain to a feature dict (in-place copy).
+
+    Args:
+        features: Mutable feature dict (will be modified).
+        enable_preprocessors: Ordered list of preprocessor names to apply.
+        preprocessor_mappings: Maps preprocessor name → list of feature keys.
+
+    Returns:
+        The mutated features dict.
+
+    Raises:
+        ValueError: If mappings are missing or required feature keys absent.
+    """
+    if preprocessor_mappings is None:
+        raise ValueError(
+            "preprocessor_mappings is required when preprocessors enabled"
+        )
+
+    for preprocessor_name in enable_preprocessors:
+        preprocessor = dependencies.preprocessors_registry.get_preprocessor(
+            preprocessor_name
+        )
+        target_feature_keys = preprocessor_mappings[preprocessor_name]
+
+        if not all(key in features for key in target_feature_keys):
+            raise ValueError(
+                f"Feature keys {target_feature_keys} not all found in features"
+            )
+
+        target_feature_values = [features[key] for key in target_feature_keys]
+        processed_features, remove_origin = preprocessor(target_feature_values)
+
+        for key, value in processed_features.items():
+            features[key] = value
+
+        if remove_origin:
+            for key in target_feature_keys:
+                del features[key]
+
+    return features
 
 
 def prepare_features(request: PredictionRequest) -> dict[str, Any]:
@@ -164,44 +204,14 @@ def prepare_features(request: PredictionRequest) -> dict[str, Any]:
     all_features = request.features.copy()
     hardware_features = request.platform_info.extract_gpu_specs()
     if hardware_features:
-        for key, value in hardware_features.items():
-            all_features[key] = value
+        all_features.update(hardware_features)
 
-    if (
-        request.enable_preprocessors is not None
-        and request.enable_preprocessors
-    ):
-        if request.preprocessor_mappings is None:
-            raise ValueError(
-                "preprocessor_mappings is required when preprocessors enabled"
-            )
-
-        for preprocessor_name in request.enable_preprocessors:
-            preprocessor = dependencies.preprocessors_registry.get_preprocessor(
-                preprocessor_name
-            )
-            target_feature_keys = request.preprocessor_mappings[
-                preprocessor_name
-            ]
-
-            if not all(key in all_features for key in target_feature_keys):
-                raise ValueError(
-                    f"Feature keys {target_feature_keys} not all found in features"
-                )
-
-            target_feature_values = [
-                all_features[key] for key in target_feature_keys
-            ]
-            processed_features, remove_origin = preprocessor(
-                target_feature_values
-            )
-
-            for key, value in processed_features.items():
-                all_features[key] = value
-
-            if remove_origin:
-                for key in target_feature_keys:
-                    del all_features[key]
+    if request.enable_preprocessors:
+        apply_v1_preprocessors(
+            all_features,
+            request.enable_preprocessors,
+            request.preprocessor_mappings,
+        )
 
     return all_features
 

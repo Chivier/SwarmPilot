@@ -7,9 +7,11 @@ import traceback
 from fastapi import APIRouter, HTTPException, status
 
 from swarmpilot.predictor.api import dependencies
+from swarmpilot.predictor.api.services.prediction_service import (
+    apply_v1_preprocessors,
+)
 from swarmpilot.predictor.models import TrainingRequest, TrainingResponse
-from swarmpilot.predictor.predictor.expect_error import ExpectErrorPredictor
-from swarmpilot.predictor.predictor.quantile import QuantilePredictor
+from swarmpilot.predictor.predictor.registry import create_predictor
 from swarmpilot.predictor.utils.logging import get_logger
 
 logger = get_logger()
@@ -34,7 +36,6 @@ async def train_model(request: TrainingRequest):
         HTTPException: If validation fails or training errors occur.
     """
     try:
-        # Validate minimum samples
         if len(request.features_list) < 10:
             error_detail = {
                 "error": "Insufficient training data",
@@ -56,18 +57,12 @@ async def train_model(request: TrainingRequest):
                 detail=error_detail,
             )
 
-        # Create appropriate predictor
-        if request.prediction_type == "expect_error":
-            predictor = ExpectErrorPredictor()
-        elif request.prediction_type == "quantile":
-            predictor = QuantilePredictor()
-        else:
+        try:
+            predictor = create_predictor(request.prediction_type)
+        except ValueError as e:
             error_detail = {
                 "error": "Invalid prediction type",
-                "message": (
-                    f"prediction_type must be 'expect_error' or 'quantile', "
-                    f"got '{request.prediction_type}'"
-                ),
+                "message": str(e),
             }
             dependencies._log_error(
                 error_context=(
@@ -83,54 +78,18 @@ async def train_model(request: TrainingRequest):
             )
 
         try:
-            processed_features_list = []
             if request.enable_preprocessors:
-                # Process each sample
+                processed_features_list = []
                 for features in request.features_list:
-                    # Make a copy to avoid modifying the original
-                    processed_features_dict = dict(features)
-
-                    # Apply each preprocessor
-                    for preprocessor_name in request.enable_preprocessors:
-                        preprocessor = dependencies.preprocessors_registry.get_preprocessor(
-                            preprocessor_name
-                        )
-                        target_feature_keys = request.preprocessor_mappings[
-                            preprocessor_name
-                        ]
-
-                        # Validate all required features exist
-                        assert all(
-                            key in processed_features_dict
-                            for key in target_feature_keys
-                        ), (
-                            f"Feature keys {target_feature_keys} not all found in features"
-                        )
-
-                        # Extract target feature values
-                        target_feature_values = [
-                            processed_features_dict[key]
-                            for key in target_feature_keys
-                        ]
-
-                        # Apply preprocessor
-                        processed_features, remove_origin = preprocessor(
-                            target_feature_values
-                        )
-
-                        # Add processed features to the dict
-                        for k, v in processed_features.items():
-                            processed_features_dict[k] = v
-
-                        # Remove original features if requested
-                        if remove_origin:
-                            for key in target_feature_keys:
-                                del processed_features_dict[key]
-
-                    processed_features_list.append(processed_features_dict)
+                    processed = dict(features)
+                    apply_v1_preprocessors(
+                        processed,
+                        request.enable_preprocessors,
+                        request.preprocessor_mappings,
+                    )
+                    processed_features_list.append(processed)
             else:
                 processed_features_list = request.features_list
-
         except Exception as e:
             error_detail = {
                 "error": "Preprocessor error",
@@ -149,7 +108,6 @@ async def train_model(request: TrainingRequest):
                 detail=error_detail,
             )
 
-        # Train the model
         try:
             predictor.train(
                 features_list=processed_features_list,
@@ -188,14 +146,12 @@ async def train_model(request: TrainingRequest):
                 detail=error_detail,
             )
 
-        # Generate model key with prediction_type
         model_key = dependencies.storage.generate_model_key(
             model_id=request.model_id,
             platform_info=request.platform_info.model_dump(),
             prediction_type=request.prediction_type,
         )
 
-        # Save model
         try:
             predictor_state = predictor.get_model_state()
             metadata = {
@@ -208,11 +164,8 @@ async def train_model(request: TrainingRequest):
             dependencies.storage.save_model(
                 model_key, predictor_state, metadata
             )
-
-            # Invalidate cache for this model (it has been retrained)
             dependencies.model_cache.invalidate(model_key)
             logger.info(f"Invalidated cache for retrained model: {model_key}")
-
         except Exception as e:
             error_detail = {
                 "error": "Model save failed",

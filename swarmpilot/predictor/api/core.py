@@ -15,12 +15,14 @@ Example:
     >>> platform = PlatformInfo(
     ...     software_name="PyTorch",
     ...     software_version="2.0",
-    ...     hardware_name="NVIDIA A100"
+    ...     hardware_name="NVIDIA A100",
     ... )
     >>>
     >>> # Collect samples
     >>> for i in range(10):
-    ...     core.collect("model", platform, "quantile", {"x": i}, runtime_ms=i*10)
+    ...     core.collect(
+    ...         "model", platform, "quantile", {"x": i}, runtime_ms=i * 10
+    ...     )
     >>>
     >>> # Train on accumulated data
     >>> result = core.train("model", platform, "quantile")
@@ -52,8 +54,9 @@ from swarmpilot.predictor.models import (
     TrainingResult,
 )
 from swarmpilot.predictor.predictor.base import BasePredictor
-from swarmpilot.predictor.predictor.expect_error import ExpectErrorPredictor
-from swarmpilot.predictor.predictor.quantile import QuantilePredictor
+from swarmpilot.predictor.predictor.registry import (
+    create_predictor,
+)
 from swarmpilot.predictor.preprocessor.chain_v2 import PreprocessorChainV2
 from swarmpilot.predictor.preprocessor.preprocessors_registry import (
     PreprocessorsRegistry,
@@ -62,16 +65,6 @@ from swarmpilot.predictor.storage.model_storage import ModelStorage
 from swarmpilot.predictor.utils.logging import get_logger
 
 logger = get_logger()
-
-# =============================================================================
-# Constants
-# =============================================================================
-
-
-PREDICTOR_CLASSES: dict[str, type[BasePredictor]] = {
-    "expect_error": ExpectErrorPredictor,
-    "quantile": QuantilePredictor,
-}
 
 MIN_TRAINING_SAMPLES = 10
 
@@ -142,20 +135,16 @@ class PredictorLowLevel:
             ValidationError: If training data is invalid or insufficient.
             TrainingError: If training fails.
         """
-        if prediction_type not in PREDICTOR_CLASSES:
-            raise ValidationError(
-                f"Invalid prediction_type: {prediction_type}. "
-                f"Must be one of: {list(PREDICTOR_CLASSES.keys())}"
-            )
+        try:
+            predictor = create_predictor(prediction_type)
+        except ValueError as exc:
+            raise ValidationError(str(exc)) from exc
 
         if len(features_list) < MIN_TRAINING_SAMPLES:
             raise ValidationError(
                 f"Insufficient training data. Got {len(features_list)} samples, "
                 f"but minimum {MIN_TRAINING_SAMPLES} samples required."
             )
-
-        predictor_class = PREDICTOR_CLASSES[prediction_type]
-        predictor = predictor_class()
 
         try:
             predictor.train(features_list, config)
@@ -250,13 +239,10 @@ class PredictorLowLevel:
             if model_data is None:
                 raise ModelNotFoundError(f"Model not found: {model_key}")
 
-            if prediction_type not in PREDICTOR_CLASSES:
-                raise ValidationError(
-                    f"Invalid prediction_type: {prediction_type}"
-                )
-
-            predictor_class = PREDICTOR_CLASSES[prediction_type]
-            predictor = predictor_class()
+            try:
+                predictor = create_predictor(prediction_type)
+            except ValueError as exc:
+                raise ValidationError(str(exc)) from exc
             predictor.load_model_state(model_data["predictor_state"])
 
             self._cache.put(model_key, predictor, prediction_type)
@@ -635,7 +621,7 @@ class PredictorCore:
     Example:
         >>> core = PredictorCore()
         >>> for i in range(10):
-        ...     core.collect("model", platform, "quantile", {"x": i}, i*10)
+        ...     core.collect("model", platform, "quantile", {"x": i}, i * 10)
         >>> result = core.train("model", platform, "quantile")
         >>> pred = core.predict("model", platform, "quantile", {"x": 5})
     """

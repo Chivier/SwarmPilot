@@ -90,7 +90,6 @@ def test_resolve_predictor_cache_miss_loads_from_storage():
     """Predictor resolution should load from storage and cache on miss."""
     request = _make_request(prediction_type="quantile")
     predictor_instance = MagicMock()
-    predictor_class = MagicMock(return_value=predictor_instance)
     model_data = {
         "metadata": {"prediction_type": "quantile"},
         "predictor_state": {"weights": [1, 2, 3]},
@@ -112,9 +111,9 @@ def test_resolve_predictor_cache_miss_loads_from_storage():
         patch(
             "swarmpilot.predictor.api.dependencies.model_cache.put",
         ) as mock_cache_put,
-        patch.dict(
-            "swarmpilot.predictor.api.services.prediction_service.PREDICTOR_CLASSES",
-            {"quantile": predictor_class},
+        patch(
+            "swarmpilot.predictor.api.services.prediction_service.create_predictor",
+            return_value=predictor_instance,
         ),
     ):
         resolved = resolve_predictor(request)
