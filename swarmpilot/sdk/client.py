@@ -123,18 +123,13 @@ class SwarmPilotClient:
 
         if response.status_code == 404:
             # Determine which error to raise based on the URL
-            if (
-                self._scheduler_url
-                and url.startswith(self._scheduler_url)
-            ):
+            if self._scheduler_url and url.startswith(self._scheduler_url):
                 raise SchedulerNotFound(model=url)
             raise ModelNotDeployed(model=url)
 
         if response.status_code == 400:
             detail = response.text
-            raise ValueError(
-                f"Bad request: {detail}"
-            )
+            raise ValueError(f"Bad request: {detail}")
 
         # Let httpx raise for any other non-2xx status
         response.raise_for_status()
@@ -296,9 +291,7 @@ class SwarmPilotClient:
         )
         groups: dict[str, InstanceGroup] = {}
         for model_name, group_data in data.get("groups", {}).items():
-            groups[model_name] = self._parse_instance_group(
-                group_data
-            )
+            groups[model_name] = self._parse_instance_group(group_data)
         return DeploymentResult(
             plan=data.get("plan", {}),
             groups=groups,
@@ -330,10 +323,7 @@ class SwarmPilotClient:
             raw_instances = data.get("instances", [])
             raw_processes = data.get("processes", [])
             raw_groups = data.get("groups", [])
-        instances_list = [
-            self._parse_instance(inst)
-            for inst in raw_instances
-        ]
+        instances_list = [self._parse_instance(inst) for inst in raw_instances]
         processes_list = [
             Process(
                 name=p["name"],
@@ -345,19 +335,14 @@ class SwarmPilotClient:
             )
             for p in raw_processes
         ]
-        groups_list = [
-            self._parse_instance_group(g)
-            for g in raw_groups
-        ]
+        groups_list = [self._parse_instance_group(g) for g in raw_groups]
         return ClusterState(
             instances=instances_list,
             processes=processes_list,
             groups=groups_list,
         )
 
-    async def scale(
-        self, model: str, replicas: int
-    ) -> InstanceGroup:
+    async def scale(self, model: str, replicas: int) -> InstanceGroup:
         """Scale a model to a target replica count.
 
         Sends a ``POST /v1/scale`` request to the Planner.

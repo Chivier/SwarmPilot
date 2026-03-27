@@ -172,7 +172,10 @@ class TestProxyForwarding:
         client = TestClient(app)
         response = client.post(
             "/v1/chat/completions",
-            json={"model": "test", "messages": [{"role": "user", "content": "Hi"}]},
+            json={
+                "model": "test",
+                "messages": [{"role": "user", "content": "Hi"}],
+            },
         )
 
         assert response.status_code == 200
@@ -333,7 +336,9 @@ class TestProxyErrors:
             loop = asyncio.get_running_loop()
             return loop.create_future()
 
-        mock_callback.register_future = MagicMock(side_effect=create_pending_future)
+        mock_callback.register_future = MagicMock(
+            side_effect=create_pending_future
+        )
 
         client = TestClient(app)
         response = client.post(
@@ -505,6 +510,7 @@ class TestBackendErrorForwarding:
         assert response.status_code == 502
         error_msg = response.json()["error"]["message"]
         assert (
-            "Connection refused" in error_msg or "Backend request failed" in error_msg
+            "Connection refused" in error_msg
+            or "Backend request failed" in error_msg
         )
         loop.close()

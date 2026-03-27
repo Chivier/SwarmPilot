@@ -36,7 +36,9 @@ class V1PreprocessorAdapter(BasePreprocessorV2):
         Output: Modifies FeatureContext in place
 
     Example:
-        >>> from swarmpilot.predictor.preprocessor.semantic_predictor import SemanticPredictor
+        >>> from swarmpilot.predictor.preprocessor.semantic_predictor import (
+        ...     SemanticPredictor,
+        ... )
         >>> v1_prep = SemanticPredictor(model_path, config_path)
         >>> adapter = V1PreprocessorAdapter(v1_prep, input_feature="prompt")
         >>> context = FeatureContext(features={"prompt": "Hello world"})
@@ -62,7 +64,9 @@ class V1PreprocessorAdapter(BasePreprocessorV2):
             input_feature: Name of the feature containing text to process.
             name: Optional custom name. Defaults to class name of V1 preprocessor.
         """
-        adapter_name = name or f"v1_adapter_{v1_preprocessor.__class__.__name__}"
+        adapter_name = (
+            name or f"v1_adapter_{v1_preprocessor.__class__.__name__}"
+        )
         super().__init__(
             name=adapter_name,
             operation_type=OperationType.TRANSFORM,

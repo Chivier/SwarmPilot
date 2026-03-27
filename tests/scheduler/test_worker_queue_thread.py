@@ -130,7 +130,9 @@ class TestWorkerQueueThreadBasic:
         assert worker_thread.queue_size() == 0
         assert not worker_thread.has_running_task()
 
-    def test_start_and_stop_empty_queue(self, worker_thread: WorkerQueueThread) -> None:
+    def test_start_and_stop_empty_queue(
+        self, worker_thread: WorkerQueueThread
+    ) -> None:
         """Test starting and stopping with empty queue."""
         worker_thread.start()
 
@@ -150,7 +152,9 @@ class TestWorkerQueueThreadBasic:
         finally:
             worker_thread.stop()
 
-    def test_enqueue_returns_queue_size(self, worker_thread: WorkerQueueThread) -> None:
+    def test_enqueue_returns_queue_size(
+        self, worker_thread: WorkerQueueThread
+    ) -> None:
         """Test that enqueue returns current queue size."""
         task1 = QueuedTask(
             task_id="task-1",
@@ -405,7 +409,9 @@ class TestWorkerQueueThreadRetry:
                 response=MagicMock(status_code=400, text="Bad request"),
             )
 
-        with patch.object(worker_thread, "_call_worker_api", side_effect=mock_api):
+        with patch.object(
+            worker_thread, "_call_worker_api", side_effect=mock_api
+        ):
             worker_thread.start()
 
             task = QueuedTask(
@@ -437,7 +443,9 @@ class TestWorkerQueueThreadRetry:
             call_count += 1
             raise httpx.TimeoutException("Request timed out")
 
-        with patch.object(worker_thread, "_call_worker_api", side_effect=mock_api):
+        with patch.object(
+            worker_thread, "_call_worker_api", side_effect=mock_api
+        ):
             worker_thread.start()
 
             task = QueuedTask(
@@ -474,7 +482,9 @@ class TestWorkerQueueThreadEstimation:
         self, worker_thread: WorkerQueueThread
     ) -> None:
         """Test wait time estimation with empty queue."""
-        wait_time = worker_thread.get_estimated_wait_time(avg_exec_time_ms=100.0)
+        wait_time = worker_thread.get_estimated_wait_time(
+            avg_exec_time_ms=100.0
+        )
         assert wait_time == 0.0
 
     def test_estimated_wait_time_with_queued_tasks(
@@ -493,7 +503,9 @@ class TestWorkerQueueThreadEstimation:
             worker_thread.enqueue(task)
 
         # With avg 100ms per task and 3 tasks, expect 300ms wait
-        wait_time = worker_thread.get_estimated_wait_time(avg_exec_time_ms=100.0)
+        wait_time = worker_thread.get_estimated_wait_time(
+            avg_exec_time_ms=100.0
+        )
         assert wait_time == 300.0
 
 
@@ -537,7 +549,9 @@ class TestWorkerQueueThreadFIFO:
             processed_order.append(task.task_id)
             return {"task_id": task.task_id}
 
-        with patch.object(worker_thread, "_call_worker_api", side_effect=mock_api):
+        with patch.object(
+            worker_thread, "_call_worker_api", side_effect=mock_api
+        ):
             # Enqueue tasks before starting
             for i in range(5):
                 task = QueuedTask(

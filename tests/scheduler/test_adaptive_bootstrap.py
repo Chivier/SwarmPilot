@@ -209,7 +209,9 @@ class TestColdToWarmTransition:
     """Tests for transitioning from cold to warm."""
 
     @pytest.mark.asyncio
-    async def test_transition_cold_to_warm(self, strategy, instances, mock_storage):
+    async def test_transition_cold_to_warm(
+        self, strategy, instances, mock_storage
+    ):
         """Strategy switches to probabilistic when model becomes available."""
         # Start cold
         mock_storage.model_exists.return_value = False
@@ -243,7 +245,9 @@ class TestRoundRobinThreadSafety:
     """Tests for thread-safe round-robin counter."""
 
     @pytest.mark.asyncio
-    async def test_round_robin_thread_safety(self, strategy, instances, mock_storage):
+    async def test_round_robin_thread_safety(
+        self, strategy, instances, mock_storage
+    ):
         """Concurrent calls should produce distinct selections."""
         mock_storage.model_exists.return_value = False
 
@@ -275,7 +279,9 @@ class TestRoundRobinThreadSafety:
                 strategy._rr_counter += 1
             results.append(val)
 
-        threads = [threading.Thread(target=increment) for _ in range(num_threads)]
+        threads = [
+            threading.Thread(target=increment) for _ in range(num_threads)
+        ]
         for t in threads:
             t.start()
         for t in threads:

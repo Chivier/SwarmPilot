@@ -105,7 +105,9 @@ def deploy_model(
     if env:
         instance_env.update(env)
 
-    logger.info(f"Deploying model: {model_id} (backend={backend}, gpu={gpu_count})")
+    logger.info(
+        f"Deploying model: {model_id} (backend={backend}, gpu={gpu_count})"
+    )
 
     # Build submit kwargs
     submit_kwargs: dict[str, Any] = {
@@ -158,7 +160,9 @@ async def wait_model_ready(
 
     endpoint = instance.endpoint
     if endpoint is None:
-        raise RuntimeError(f"Instance {instance.id} is RUNNING but has no endpoint")
+        raise RuntimeError(
+            f"Instance {instance.id} is RUNNING but has no endpoint"
+        )
 
     logger.info(f"Instance running at endpoint: {endpoint}")
 
@@ -184,7 +188,9 @@ async def wait_model_ready(
 
             await asyncio.sleep(poll_interval)
 
-    raise TimeoutError(f"Model at {endpoint} did not become healthy within {timeout}s")
+    raise TimeoutError(
+        f"Model at {endpoint} did not become healthy within {timeout}s"
+    )
 
 
 def wait_model_ready_sync(
@@ -218,7 +224,9 @@ def wait_model_ready_sync(
 
     endpoint = instance.endpoint
     if endpoint is None:
-        raise RuntimeError(f"Instance {instance.id} is RUNNING but has no endpoint")
+        raise RuntimeError(
+            f"Instance {instance.id} is RUNNING but has no endpoint"
+        )
 
     logger.info(f"Instance running at endpoint: {endpoint}")
 
@@ -242,4 +250,6 @@ def wait_model_ready_sync(
 
             time.sleep(poll_interval)
 
-    raise TimeoutError(f"Model at {endpoint} did not become healthy within {timeout}s")
+    raise TimeoutError(
+        f"Model at {endpoint} did not become healthy within {timeout}s"
+    )

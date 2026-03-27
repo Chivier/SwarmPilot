@@ -141,7 +141,6 @@ class TestQueueBehavior:
         manager.shutdown(timeout=1.0)
 
 
-
 class TestWorkerRegistrationDeregistration:
     """Tests for worker lifecycle management."""
 
@@ -290,7 +289,6 @@ class TestInstanceSyncIntegration:
                 worker_queue_manager=mock_manager,
                 scheduling_strategy=mock_strategy,
             )
-
 
 
 class TestTaskResultCallback:

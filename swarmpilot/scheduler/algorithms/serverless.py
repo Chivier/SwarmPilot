@@ -124,7 +124,9 @@ class MinimumExpectedTimeServerlessStrategy(SchedulingStrategy):
             error_margin_ms=new_error,
         )
 
-        await self.instance_registry.update_queue_info(instance_id, updated_queue)
+        await self.instance_registry.update_queue_info(
+            instance_id, updated_queue
+        )
         logger.debug(
             f"Updated queue (expect_error) for {instance_id}: "
             f"expected_time_ms={new_expected:.2f}, error_margin_ms={new_error:.2f}"

@@ -302,9 +302,16 @@ class PredictorClient:
                         f"Please train the model first or use "
                         f"experiment mode."
                     ) from e
-                elif "Invalid features" in error_msg or "Invalid request" in error_msg:
-                    logger.error(f"Invalid features for prediction: {error_msg}")
-                    raise ValueError(f"Invalid task metadata: {error_msg}") from e
+                elif (
+                    "Invalid features" in error_msg
+                    or "Invalid request" in error_msg
+                ):
+                    logger.error(
+                        f"Invalid features for prediction: {error_msg}"
+                    )
+                    raise ValueError(
+                        f"Invalid task metadata: {error_msg}"
+                    ) from e
                 else:
                     logger.error(f"Prediction validation error: {error_msg}")
                     raise

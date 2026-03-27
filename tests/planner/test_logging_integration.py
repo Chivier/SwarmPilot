@@ -244,7 +244,9 @@ class TestBackwardCompatibility:
             setup_logging()
 
             # These patterns are used in the existing codebase
-            logger.info("Received /plan request: M=4, N=3, algorithm=simulated_annealing")
+            logger.info(
+                "Received /plan request: M=4, N=3, algorithm=simulated_annealing"
+            )
             logger.error("Optimization failed: error", exc_info=True)
             logger.warning("Deployment partially failed: 2 instances failed")
 

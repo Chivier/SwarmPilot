@@ -182,7 +182,9 @@ class TestLogHttpError:
             "Server error", request=request, response=response
         )
 
-        log_http_error(error, request_body={"data": "test"}, context="test context")
+        log_http_error(
+            error, request_body={"data": "test"}, context="test context"
+        )
 
         mock_logger.error.assert_called_once()
         log_message = mock_logger.error.call_args[0][0]
@@ -302,7 +304,9 @@ class TestLogHttpError:
         response.headers = httpx.Headers({})
         response.text = "Not found"
 
-        error = httpx.HTTPStatusError("Not found", request=request, response=response)
+        error = httpx.HTTPStatusError(
+            "Not found", request=request, response=response
+        )
 
         # Don't provide request_url or request_method - should be extracted
         log_http_error(error, context="auto-extract test")
@@ -338,7 +342,9 @@ class TestLogHttpError:
         assert "Response Status" not in log_message
 
     @patch("swarmpilot.scheduler.utils.http_error_logger.logger")
-    def test_http_status_error_request_property_raises_runtime_error(self, mock_logger):
+    def test_http_status_error_request_property_raises_runtime_error(
+        self, mock_logger
+    ):
         """Test handling when HTTPStatusError.request raises RuntimeError."""
 
         # Create an HTTPStatusError subclass that raises RuntimeError on property access

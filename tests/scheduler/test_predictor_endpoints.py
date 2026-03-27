@@ -323,8 +323,8 @@ class TestPredictEndpoint:
     ) -> None:
         """Returns 404 when model is not trained."""
         mock_predictor = MagicMock()
-        mock_predictor._predict_single_platform.side_effect = (
-            ValueError("Model not found: test-model")
+        mock_predictor._predict_single_platform.side_effect = ValueError(
+            "Model not found: test-model"
         )
 
         mock_get_clients.return_value = (mock_predictor, None)
@@ -351,8 +351,8 @@ class TestPredictEndpoint:
     ) -> None:
         """Returns 400 on feature validation error."""
         mock_predictor = MagicMock()
-        mock_predictor._predict_single_platform.side_effect = (
-            ValueError("Invalid features")
+        mock_predictor._predict_single_platform.side_effect = ValueError(
+            "Invalid features"
         )
 
         mock_get_clients.return_value = (mock_predictor, None)
@@ -467,8 +467,7 @@ class TestTrainStrategySwitching:
     """Strategy auto-switch after successful predictor training."""
 
     @patch(
-        "swarmpilot.scheduler.routes.predictor"
-        "._maybe_switch_to_probabilistic",
+        "swarmpilot.scheduler.routes.predictor._maybe_switch_to_probabilistic",
         return_value="probabilistic",
     )
     @patch("swarmpilot.scheduler.routes.predictor._get_clients")
@@ -481,9 +480,7 @@ class TestTrainStrategySwitching:
         """Successful train with enough samples triggers switch."""
         mock_get_clients.return_value = (
             MagicMock(),
-            _make_training_client(
-                flush_result=True, buffer_size=20
-            ),
+            _make_training_client(flush_result=True, buffer_size=20),
         )
 
         resp = client.post(
@@ -498,8 +495,7 @@ class TestTrainStrategySwitching:
         mock_switch.assert_called_once_with(20)
 
     @patch(
-        "swarmpilot.scheduler.routes.predictor"
-        "._maybe_switch_to_probabilistic",
+        "swarmpilot.scheduler.routes.predictor._maybe_switch_to_probabilistic",
         return_value=None,
     )
     @patch("swarmpilot.scheduler.routes.predictor._get_clients")
@@ -512,9 +508,7 @@ class TestTrainStrategySwitching:
         """Train with too few samples does NOT switch strategy."""
         mock_get_clients.return_value = (
             MagicMock(),
-            _make_training_client(
-                flush_result=True, buffer_size=5
-            ),
+            _make_training_client(flush_result=True, buffer_size=5),
         )
 
         resp = client.post(
@@ -529,8 +523,7 @@ class TestTrainStrategySwitching:
         mock_switch.assert_called_once_with(5)
 
     @patch(
-        "swarmpilot.scheduler.routes.predictor"
-        "._maybe_switch_to_probabilistic",
+        "swarmpilot.scheduler.routes.predictor._maybe_switch_to_probabilistic",
     )
     @patch("swarmpilot.scheduler.routes.predictor._get_clients")
     def test_failed_training_keeps_strategy(
@@ -542,9 +535,7 @@ class TestTrainStrategySwitching:
         """Failed training (success=False) must not attempt switch."""
         mock_get_clients.return_value = (
             MagicMock(),
-            _make_training_client(
-                flush_result=False, buffer_size=0
-            ),
+            _make_training_client(flush_result=False, buffer_size=0),
         )
 
         resp = client.post(
@@ -559,8 +550,7 @@ class TestTrainStrategySwitching:
         mock_switch.assert_not_called()
 
     @patch(
-        "swarmpilot.scheduler.routes.predictor"
-        "._maybe_switch_to_probabilistic",
+        "swarmpilot.scheduler.routes.predictor._maybe_switch_to_probabilistic",
         return_value="probabilistic",
     )
     @patch("swarmpilot.scheduler.routes.predictor._get_clients")
@@ -573,9 +563,7 @@ class TestTrainStrategySwitching:
         """Retrain also switches strategy on success."""
         mock_get_clients.return_value = (
             MagicMock(),
-            _make_training_client(
-                flush_result=True, buffer_size=15
-            ),
+            _make_training_client(flush_result=True, buffer_size=15),
         )
 
         resp = client.post(
@@ -614,9 +602,7 @@ class TestMaybeSwitchToProbabilistic:
 
         # Fake the current strategy as non-probabilistic.
         mock_old_strategy = MagicMock()
-        mock_old_strategy.__class__ = type(
-            "RoundRobinStrategy", (), {}
-        )
+        mock_old_strategy.__class__ = type("RoundRobinStrategy", (), {})
         mock_old_strategy._worker_queue_manager = MagicMock()
 
         mock_new_strategy = MagicMock()

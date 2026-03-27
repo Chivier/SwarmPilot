@@ -42,7 +42,9 @@ class FeatureContext:
 
     Example:
         >>> context = FeatureContext(features={"width": 100, "height": 200})
-        >>> context.set("pixel_num", context.get("width") * context.get("height"))
+        >>> context.set(
+        ...     "pixel_num", context.get("width") * context.get("height")
+        ... )
         >>> context.remove("width")
         >>> context.remove("height")
         >>> context.features
@@ -142,9 +144,11 @@ class BasePreprocessorV2(ABC):
         ...     @property
         ...     def input_features(self) -> list[str]:
         ...         return ["value"]
+        ...
         ...     @property
         ...     def output_features(self) -> list[str]:
         ...         return ["doubled"]
+        ...
         ...     def transform(self, context: FeatureContext) -> None:
         ...         context.set("doubled", context.get("value") * 2)
     """

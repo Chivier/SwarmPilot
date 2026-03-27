@@ -100,19 +100,27 @@ class TestSchedulingStrategies:
         metadata = {"task_type": "test", "complexity": 1}
 
         # Schedule first task - should select instance-0
-        result1 = await strategy.schedule_task("test-model", metadata, test_instances)
+        result1 = await strategy.schedule_task(
+            "test-model", metadata, test_instances
+        )
         assert result1.selected_instance_id == "instance-0"
 
         # Schedule second task - should select instance-1
-        result2 = await strategy.schedule_task("test-model", metadata, test_instances)
+        result2 = await strategy.schedule_task(
+            "test-model", metadata, test_instances
+        )
         assert result2.selected_instance_id == "instance-1"
 
         # Schedule third task - should select instance-2
-        result3 = await strategy.schedule_task("test-model", metadata, test_instances)
+        result3 = await strategy.schedule_task(
+            "test-model", metadata, test_instances
+        )
         assert result3.selected_instance_id == "instance-2"
 
         # Schedule fourth task - should wrap around to instance-0
-        result4 = await strategy.schedule_task("test-model", metadata, test_instances)
+        result4 = await strategy.schedule_task(
+            "test-model", metadata, test_instances
+        )
         assert result4.selected_instance_id == "instance-0"
 
         # Verify predictor was called with correct parameters
@@ -182,7 +190,9 @@ class TestSchedulingStrategies:
 
         # Schedule task
         metadata = {"task_type": "compute", "size": "medium"}
-        result = await strategy.schedule_task("test-model", metadata, test_instances)
+        result = await strategy.schedule_task(
+            "test-model", metadata, test_instances
+        )
 
         # Should select instance-1 (50 + 5 + 50 = 105, lowest total)
         assert result.selected_instance_id == "instance-1"
@@ -208,9 +218,13 @@ class TestSchedulingStrategies:
         assert updated_queue.error_margin_ms == pytest.approx(expected_error)
 
         # Other queues should remain unchanged
-        queue0 = await instance_registry_expect_error.get_queue_info("instance-0")
+        queue0 = await instance_registry_expect_error.get_queue_info(
+            "instance-0"
+        )
         assert queue0.expected_time_ms == 0.0
-        queue2 = await instance_registry_expect_error.get_queue_info("instance-2")
+        queue2 = await instance_registry_expect_error.get_queue_info(
+            "instance-2"
+        )
         assert queue2.expected_time_ms == 100.0
 
     @pytest.mark.asyncio
@@ -368,7 +382,9 @@ class TestSchedulingStrategies:
 
         # Test each strategy
         strategies = [
-            RoundRobinStrategy(mock_predictor_client, instance_registry_probabilistic),
+            RoundRobinStrategy(
+                mock_predictor_client, instance_registry_probabilistic
+            ),
             MinimumExpectedTimeStrategy(
                 mock_predictor_client, instance_registry_probabilistic
             ),
@@ -431,7 +447,9 @@ class TestSchedulingStrategies:
             mock_predictor_client.predict.side_effect = mock_error
 
             with pytest.raises(expected_exception) as exc_info:
-                await strategy.schedule_task("test-model", metadata, test_instances)
+                await strategy.schedule_task(
+                    "test-model", metadata, test_instances
+                )
 
             assert expected_message in str(exc_info.value)
 
@@ -475,7 +493,9 @@ class TestSchedulingStrategies:
 
             # Schedule task
             metadata = {"task_id": f"task-{i}"}
-            _result = await strategy.schedule_task("test-model", metadata, [instance])
+            _result = await strategy.schedule_task(
+                "test-model", metadata, [instance]
+            )
 
             # Update expected values
             accumulated_time += 100.0
@@ -483,7 +503,9 @@ class TestSchedulingStrategies:
             expected_error = math.sqrt(accumulated_error_sq)
 
             # Verify queue accumulation
-            queue = await instance_registry_expect_error.get_queue_info("instance-0")
+            queue = await instance_registry_expect_error.get_queue_info(
+                "instance-0"
+            )
             assert isinstance(queue, InstanceQueueExpectError)
             assert queue.expected_time_ms == pytest.approx(accumulated_time)
             assert queue.error_margin_ms == pytest.approx(expected_error)
@@ -542,7 +564,9 @@ class TestSchedulingStrategies:
 
         np.random.seed(42)
 
-        _result = await strategy.schedule_task("test-model", metadata, [instance])
+        _result = await strategy.schedule_task(
+            "test-model", metadata, [instance]
+        )
 
         # Verify queue was updated
         updated_queue = await instance_registry_probabilistic.get_queue_info(
@@ -573,21 +597,31 @@ class TestStrategyFactory:
         """Create an instance registry."""
         return InstanceRegistry()
 
-    def test_get_strategy_min_time(self, mock_predictor_client, instance_registry):
+    def test_get_strategy_min_time(
+        self, mock_predictor_client, instance_registry
+    ):
         """Test getting min_time strategy."""
-        strategy = get_strategy("min_time", mock_predictor_client, instance_registry)
+        strategy = get_strategy(
+            "min_time", mock_predictor_client, instance_registry
+        )
         assert isinstance(strategy, MinimumExpectedTimeStrategy)
 
-    def test_get_strategy_probabilistic(self, mock_predictor_client, instance_registry):
+    def test_get_strategy_probabilistic(
+        self, mock_predictor_client, instance_registry
+    ):
         """Test getting probabilistic strategy."""
         strategy = get_strategy(
             "probabilistic", mock_predictor_client, instance_registry
         )
         assert isinstance(strategy, ProbabilisticSchedulingStrategy)
 
-    def test_get_strategy_round_robin(self, mock_predictor_client, instance_registry):
+    def test_get_strategy_round_robin(
+        self, mock_predictor_client, instance_registry
+    ):
         """Test getting round-robin strategy."""
-        strategy = get_strategy("round_robin", mock_predictor_client, instance_registry)
+        strategy = get_strategy(
+            "round_robin", mock_predictor_client, instance_registry
+        )
         assert isinstance(strategy, RoundRobinStrategy)
 
     def test_get_strategy_unknown_defaults_to_adaptive_bootstrap(

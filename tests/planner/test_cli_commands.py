@@ -47,9 +47,7 @@ class TestServeCommand:
     """Tests for ``splanner serve``."""
 
     @patch("swarmpilot.planner.cli.httpx.request")
-    def test_serve_sends_correct_payload(
-        self, mock_req: MagicMock
-    ) -> None:
+    def test_serve_sends_correct_payload(self, mock_req: MagicMock) -> None:
         """Serve command posts model_or_command, gpu, replicas."""
         mock_req.return_value = _mock_response(
             {
@@ -85,9 +83,7 @@ class TestServeCommand:
         assert "http://sched:8000" in result.output
 
     @patch("swarmpilot.planner.cli.httpx.request")
-    def test_serve_scheduler_none(
-        self, mock_req: MagicMock
-    ) -> None:
+    def test_serve_scheduler_none(self, mock_req: MagicMock) -> None:
         """``--scheduler none`` sends null scheduler value."""
         mock_req.return_value = _mock_response(
             {
@@ -118,9 +114,7 @@ class TestServeCommand:
         assert body["scheduler"] is None
 
     @patch("swarmpilot.planner.cli.httpx.request")
-    def test_serve_with_name(
-        self, mock_req: MagicMock
-    ) -> None:
+    def test_serve_with_name(self, mock_req: MagicMock) -> None:
         """``--name`` is forwarded in the payload."""
         mock_req.return_value = _mock_response(
             {
@@ -160,9 +154,7 @@ class TestRunCommand:
     """Tests for ``splanner run``."""
 
     @patch("swarmpilot.planner.cli.httpx.request")
-    def test_run_sends_correct_payload(
-        self, mock_req: MagicMock
-    ) -> None:
+    def test_run_sends_correct_payload(self, mock_req: MagicMock) -> None:
         """Run command posts command, name, and gpu_count."""
         mock_req.return_value = _mock_response(
             {
@@ -206,9 +198,7 @@ class TestRegisterDeployFlow:
     """Tests for ``splanner register`` and ``splanner deploy``."""
 
     @patch("swarmpilot.planner.cli.httpx.request")
-    def test_register_sends_correct_payload(
-        self, mock_req: MagicMock
-    ) -> None:
+    def test_register_sends_correct_payload(self, mock_req: MagicMock) -> None:
         """Register posts model, gpu_count, replicas."""
         mock_req.return_value = _mock_response(
             {"status": "registered", "model": "Qwen/Qwen3-0.6B"}
@@ -235,9 +225,7 @@ class TestRegisterDeployFlow:
         assert "registered" in result.output
 
     @patch("swarmpilot.planner.cli.httpx.request")
-    def test_deploy_sends_post(
-        self, mock_req: MagicMock
-    ) -> None:
+    def test_deploy_sends_post(self, mock_req: MagicMock) -> None:
         """Deploy issues a POST with no payload."""
         mock_req.return_value = _mock_response(
             {
@@ -268,9 +256,7 @@ class TestPsCommand:
     """Tests for ``splanner ps``."""
 
     @patch("swarmpilot.planner.cli.httpx.request")
-    def test_ps_lists_instances(
-        self, mock_req: MagicMock
-    ) -> None:
+    def test_ps_lists_instances(self, mock_req: MagicMock) -> None:
         """Ps renders a table of active instances."""
         mock_req.return_value = _mock_response(
             [
@@ -304,9 +290,7 @@ class TestPsCommand:
         assert "meta/Llama-3" in result.output
 
     @patch("swarmpilot.planner.cli.httpx.request")
-    def test_ps_empty(
-        self, mock_req: MagicMock
-    ) -> None:
+    def test_ps_empty(self, mock_req: MagicMock) -> None:
         """Ps prints a message when no instances exist."""
         mock_req.return_value = _mock_response([])
 
@@ -325,9 +309,7 @@ class TestScaleCommand:
     """Tests for ``splanner scale``."""
 
     @patch("swarmpilot.planner.cli.httpx.request")
-    def test_scale_sends_correct_payload(
-        self, mock_req: MagicMock
-    ) -> None:
+    def test_scale_sends_correct_payload(self, mock_req: MagicMock) -> None:
         """Scale posts model and target replicas."""
         mock_req.return_value = _mock_response(
             {
@@ -362,9 +344,7 @@ class TestTerminateCommand:
     """Tests for ``splanner terminate``."""
 
     @patch("swarmpilot.planner.cli.httpx.request")
-    def test_terminate_by_name(
-        self, mock_req: MagicMock
-    ) -> None:
+    def test_terminate_by_name(self, mock_req: MagicMock) -> None:
         """Terminate with a positional name argument."""
         mock_req.return_value = _mock_response(
             {
@@ -386,9 +366,7 @@ class TestTerminateCommand:
         assert "Terminated: 1" in result.output
 
     @patch("swarmpilot.planner.cli.httpx.request")
-    def test_terminate_by_model(
-        self, mock_req: MagicMock
-    ) -> None:
+    def test_terminate_by_model(self, mock_req: MagicMock) -> None:
         """Terminate by --model flag."""
         mock_req.return_value = _mock_response(
             {
@@ -399,9 +377,7 @@ class TestTerminateCommand:
             }
         )
 
-        result = runner.invoke(
-            app, ["terminate", "--model", "Qwen"]
-        )
+        result = runner.invoke(app, ["terminate", "--model", "Qwen"])
 
         assert result.exit_code == 0, result.output
         body = mock_req.call_args[1]["json"]
@@ -409,9 +385,7 @@ class TestTerminateCommand:
         assert "name" not in body
 
     @patch("swarmpilot.planner.cli.httpx.request")
-    def test_terminate_all(
-        self, mock_req: MagicMock
-    ) -> None:
+    def test_terminate_all(self, mock_req: MagicMock) -> None:
         """Terminate with --all flag."""
         mock_req.return_value = _mock_response(
             {
@@ -440,9 +414,7 @@ class TestSchedulersCommand:
     """Tests for ``splanner schedulers``."""
 
     @patch("swarmpilot.planner.cli.httpx.request")
-    def test_schedulers_returns_mapping(
-        self, mock_req: MagicMock
-    ) -> None:
+    def test_schedulers_returns_mapping(self, mock_req: MagicMock) -> None:
         """Schedulers prints model-to-URL mapping."""
         mock_req.return_value = _mock_response(
             {
@@ -463,13 +435,9 @@ class TestSchedulersCommand:
         assert "(2)" in result.output
 
     @patch("swarmpilot.planner.cli.httpx.request")
-    def test_schedulers_empty(
-        self, mock_req: MagicMock
-    ) -> None:
+    def test_schedulers_empty(self, mock_req: MagicMock) -> None:
         """Empty scheduler map prints informational message."""
-        mock_req.return_value = _mock_response(
-            {"schedulers": {}, "total": 0}
-        )
+        mock_req.return_value = _mock_response({"schedulers": {}, "total": 0})
 
         result = runner.invoke(app, ["schedulers"])
 
@@ -486,13 +454,9 @@ class TestPlannerUrlOption:
     """Tests for the ``--planner-url`` override."""
 
     @patch("swarmpilot.planner.cli.httpx.request")
-    def test_planner_url_overrides_default(
-        self, mock_req: MagicMock
-    ) -> None:
+    def test_planner_url_overrides_default(self, mock_req: MagicMock) -> None:
         """Explicit --planner-url is used for the request."""
-        mock_req.return_value = _mock_response(
-            {"schedulers": {}, "total": 0}
-        )
+        mock_req.return_value = _mock_response({"schedulers": {}, "total": 0})
 
         result = runner.invoke(
             app,
@@ -513,9 +477,7 @@ class TestPlannerUrlOption:
     ) -> None:
         """PLANNER_URL env var is respected."""
         monkeypatch.setenv("PLANNER_URL", "http://env:7777")
-        mock_req.return_value = _mock_response(
-            {"schedulers": {}, "total": 0}
-        )
+        mock_req.return_value = _mock_response({"schedulers": {}, "total": 0})
 
         result = runner.invoke(app, ["schedulers"])
 
@@ -524,13 +486,9 @@ class TestPlannerUrlOption:
         assert url.startswith("http://env:7777/")
 
     @patch("swarmpilot.planner.cli.httpx.request")
-    def test_planner_url_default(
-        self, mock_req: MagicMock
-    ) -> None:
+    def test_planner_url_default(self, mock_req: MagicMock) -> None:
         """Default URL is http://localhost:8002."""
-        mock_req.return_value = _mock_response(
-            {"schedulers": {}, "total": 0}
-        )
+        mock_req.return_value = _mock_response({"schedulers": {}, "total": 0})
 
         result = runner.invoke(app, ["schedulers"])
 
@@ -548,13 +506,9 @@ class TestErrorHandling:
     """Tests for HTTP error handling in _request."""
 
     @patch("swarmpilot.planner.cli.httpx.request")
-    def test_connection_error(
-        self, mock_req: MagicMock
-    ) -> None:
+    def test_connection_error(self, mock_req: MagicMock) -> None:
         """Connection failures produce a readable message."""
-        mock_req.side_effect = httpx.ConnectError(
-            "Connection refused"
-        )
+        mock_req.side_effect = httpx.ConnectError("Connection refused")
 
         result = runner.invoke(app, ["ps"])
 
@@ -562,9 +516,7 @@ class TestErrorHandling:
         assert "cannot connect" in result.output
 
     @patch("swarmpilot.planner.cli.httpx.request")
-    def test_http_error(
-        self, mock_req: MagicMock
-    ) -> None:
+    def test_http_error(self, mock_req: MagicMock) -> None:
         """HTTP errors surface the detail from the response."""
         mock_req.return_value = _mock_response(
             {"detail": "PyLet is not enabled"},

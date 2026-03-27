@@ -87,8 +87,12 @@ class TestConfigShowCommand:
                 os.chdir(tmpdir)
                 result = runner.invoke(app, ["config", "show"])
                 # Should show key fields
-                assert "Host" in result.output or "host" in result.output.lower()
-                assert "Port" in result.output or "port" in result.output.lower()
+                assert (
+                    "Host" in result.output or "host" in result.output.lower()
+                )
+                assert (
+                    "Port" in result.output or "port" in result.output.lower()
+                )
             finally:
                 os.chdir(original_cwd)
 
@@ -101,7 +105,9 @@ class TestConfigShowCommand:
 host = "custom.host.com"
 port = 9999
 """)
-            result = runner.invoke(app, ["config", "show", "--config", str(config_file)])
+            result = runner.invoke(
+                app, ["config", "show", "--config", str(config_file)]
+            )
             assert result.exit_code == 0
             assert "custom.host.com" in result.output or "9999" in result.output
 
@@ -114,7 +120,9 @@ class TestConfigInitCommand:
         with tempfile.TemporaryDirectory() as tmpdir:
             output_file = Path(tmpdir) / "test_config.toml"
 
-            result = runner.invoke(app, ["config", "init", "--output", str(output_file)])
+            result = runner.invoke(
+                app, ["config", "init", "--output", str(output_file)]
+            )
 
             assert result.exit_code == 0
             assert output_file.exists()
@@ -138,7 +146,9 @@ class TestConfigInitCommand:
             output_file = Path(tmpdir) / "test_config.toml"
             output_file.write_text("existing content")
 
-            result = runner.invoke(app, ["config", "init", "--output", str(output_file)])
+            result = runner.invoke(
+                app, ["config", "init", "--output", str(output_file)]
+            )
 
             assert result.exit_code == 1
             assert "already exists" in result.output
@@ -151,7 +161,9 @@ class TestConfigInitCommand:
             output_file = Path(tmpdir) / "test_config.toml"
             output_file.write_text("existing content")
 
-            result = runner.invoke(app, ["config", "init", "--output", str(output_file), "--force"])
+            result = runner.invoke(
+                app, ["config", "init", "--output", str(output_file), "--force"]
+            )
 
             assert result.exit_code == 0
             assert "Created configuration file" in result.output
@@ -166,7 +178,9 @@ class TestHealthCommand:
     def test_health_command_connection_error(self):
         """Should handle connection error gracefully."""
         # Use a port that's unlikely to have a service
-        result = runner.invoke(app, ["health", "--host", "localhost", "--port", "59999"])
+        result = runner.invoke(
+            app, ["health", "--host", "localhost", "--port", "59999"]
+        )
 
         assert result.exit_code == 1
         assert "Cannot connect" in result.output or "Error" in result.output
@@ -179,7 +193,7 @@ class TestHealthCommand:
             mock_response.json.return_value = {
                 "status": "healthy",
                 "message": "Service is running",
-                "timestamp": "2024-01-01T00:00:00Z"
+                "timestamp": "2024-01-01T00:00:00Z",
             }
             mock_get.return_value = mock_response
 
@@ -210,7 +224,10 @@ class TestHealthCommand:
             result = runner.invoke(app, ["health"])
 
             assert result.exit_code == 1
-            assert "timed out" in result.output.lower() or "timeout" in result.output.lower()
+            assert (
+                "timed out" in result.output.lower()
+                or "timeout" in result.output.lower()
+            )
 
 
 class TestAppMetadata:
@@ -224,10 +241,16 @@ class TestAppMetadata:
         """Should have help text."""
         result = runner.invoke(app, ["--help"])
         assert result.exit_code == 0
-        assert "Runtime Predictor Service" in result.output or "predictor" in result.output.lower()
+        assert (
+            "Runtime Predictor Service" in result.output
+            or "predictor" in result.output.lower()
+        )
 
     def test_subcommand_help(self):
         """Should show help for subcommands."""
         result = runner.invoke(app, ["config", "--help"])
         assert result.exit_code == 0
-        assert "Configuration" in result.output or "config" in result.output.lower()
+        assert (
+            "Configuration" in result.output
+            or "config" in result.output.lower()
+        )

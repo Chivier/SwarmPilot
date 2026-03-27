@@ -221,9 +221,7 @@ class SchedulerClient:
             logger.error(f"Drain request failed for {instance_id}: {e}")
             return False
 
-    def check_drain_status(
-        self, instance_id: str
-    ) -> tuple[bool, int]:
+    def check_drain_status(self, instance_id: str) -> tuple[bool, int]:
         """Check if instance can be safely removed.
 
         Args:
@@ -240,7 +238,9 @@ class SchedulerClient:
 
             if response.status_code == 200:
                 data = response.json()
-                return data.get("can_remove", False), data.get("pending_tasks", 0)
+                return data.get("can_remove", False), data.get(
+                    "pending_tasks", 0
+                )
             else:
                 return False, -1
 
@@ -278,9 +278,7 @@ class SchedulerClient:
                 return True  # Already gone is OK
             else:
                 error_detail = response.json().get("detail", {})
-                logger.error(
-                    f"Remove failed for {instance_id}: {error_detail}"
-                )
+                logger.error(f"Remove failed for {instance_id}: {error_detail}")
                 return False
 
         except httpx.RequestError as e:

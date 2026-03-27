@@ -72,7 +72,9 @@ class TestTask:
 
     def test_empty_dicts(self):
         """Test task with empty input and metadata."""
-        task = Task(task_id="task-1", model_id="model-1", task_input={}, metadata={})
+        task = Task(
+            task_id="task-1", model_id="model-1", task_input={}, metadata={}
+        )
         assert task.task_input == {}
         assert task.metadata == {}
 
@@ -115,7 +117,9 @@ class TestInstance:
     def test_wrong_type(self):
         """Test wrong field type."""
         with pytest.raises(ValidationError):
-            Instance(instance_id=123, model_id="model-1", endpoint="http://test")
+            Instance(
+                instance_id=123, model_id="model-1", endpoint="http://test"
+            )
 
 
 class TestInstanceQueueBase:
@@ -311,14 +315,18 @@ class TestInstanceStats:
 
     def test_valid_stats(self):
         """Test valid instance stats."""
-        stats = InstanceStats(pending_tasks=5, completed_tasks=10, failed_tasks=2)
+        stats = InstanceStats(
+            pending_tasks=5, completed_tasks=10, failed_tasks=2
+        )
         assert stats.pending_tasks == 5
         assert stats.completed_tasks == 10
         assert stats.failed_tasks == 2
 
     def test_zero_stats(self):
         """Test stats with zero values."""
-        stats = InstanceStats(pending_tasks=0, completed_tasks=0, failed_tasks=0)
+        stats = InstanceStats(
+            pending_tasks=0, completed_tasks=0, failed_tasks=0
+        )
         assert stats.pending_tasks == 0
 
 
@@ -342,7 +350,9 @@ class TestInstanceInfoResponse:
             quantiles=[0.5, 0.9, 0.95],
             values=[100.0, 200.0, 300.0],
         )
-        stats = InstanceStats(pending_tasks=1, completed_tasks=2, failed_tasks=0)
+        stats = InstanceStats(
+            pending_tasks=1, completed_tasks=2, failed_tasks=0
+        )
 
         resp = InstanceInfoResponse(
             success=True, instance=instance, queue_info=queue_info, stats=stats
@@ -681,13 +691,14 @@ class TestWSMessageType:
             WSMessageType("invalid")
 
 
-
 class TestWSAckMessage:
     """Tests for WSAckMessage model."""
 
     def test_valid_ack(self):
         """Test valid ACK message."""
-        msg = WSAckMessage(message="Subscribed", subscribed_tasks=["task-1", "task-2"])
+        msg = WSAckMessage(
+            message="Subscribed", subscribed_tasks=["task-1", "task-2"]
+        )
         assert msg.type == WSMessageType.ACK
         assert msg.message == "Subscribed"
         assert len(msg.subscribed_tasks) == 2
@@ -806,7 +817,9 @@ class TestSerialization:
             quantiles=[0.5, 0.9, 0.95],
             values=[100.0, 200.0, 300.0],
         )
-        stats = InstanceStats(pending_tasks=1, completed_tasks=2, failed_tasks=0)
+        stats = InstanceStats(
+            pending_tasks=1, completed_tasks=2, failed_tasks=0
+        )
 
         resp = InstanceInfoResponse(
             success=True, instance=instance, queue_info=queue, stats=stats

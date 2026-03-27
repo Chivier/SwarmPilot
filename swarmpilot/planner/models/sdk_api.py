@@ -110,9 +110,7 @@ class RegisterRequest(BaseModel):
     replicas: int = Field(1, ge=1, description="Desired replicas")
     gpu_count: int = Field(1, ge=0, description="GPUs per replica")
     backend: str = Field("vllm", description="Model backend")
-    priority: float = Field(
-        1.0, ge=0, description="Scheduling priority"
-    )
+    priority: float = Field(1.0, ge=0, description="Scheduling priority")
 
 
 class DeployResponse(BaseModel):
@@ -204,12 +202,8 @@ class TerminateRequest(BaseModel):
         all: Terminate all instances.
     """
 
-    name: str | None = Field(
-        None, description="Terminate by deployment name"
-    )
-    model: str | None = Field(
-        None, description="Terminate by model identifier"
-    )
+    name: str | None = Field(None, description="Terminate by deployment name")
+    model: str | None = Field(None, description="Terminate by model identifier")
     all: bool = Field(False, description="Terminate all instances")
 
 

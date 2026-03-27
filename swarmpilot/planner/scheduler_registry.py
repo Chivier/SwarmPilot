@@ -62,8 +62,7 @@ class SchedulerRegistry:
             )
             action = "replaced" if replaced else "registered"
             logger.info(
-                f"Scheduler {action}: model_id={model_id} "
-                f"url={scheduler_url}"
+                f"Scheduler {action}: model_id={model_id} url={scheduler_url}"
             )
             return replaced
 
@@ -139,9 +138,7 @@ class SchedulerRegistry:
         with self._lock:
             return model_id in self._schedulers
 
-    def reassign(
-        self, old_model_id: str, new_model_id: str
-    ) -> bool:
+    def reassign(self, old_model_id: str, new_model_id: str) -> bool:
         """Remap a scheduler from one model to another.
 
         Moves the SchedulerInfo entry from old_model_id to

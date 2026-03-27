@@ -83,7 +83,10 @@ class TestUpdateMetadataValidation:
         )
 
         # Submit a task
-        with patch("swarmpilot.scheduler.api.predictor_client.predict", new=AsyncMock(return_value=[])):
+        with patch(
+            "swarmpilot.scheduler.api.predictor_client.predict",
+            new=AsyncMock(return_value=[]),
+        ):
             test_client.post(
                 "/v1/task/submit",
                 json={
@@ -95,7 +98,10 @@ class TestUpdateMetadataValidation:
             )
 
         # Update metadata
-        with patch("swarmpilot.scheduler.api.predictor_client.predict", new=AsyncMock(return_value=[])):
+        with patch(
+            "swarmpilot.scheduler.api.predictor_client.predict",
+            new=AsyncMock(return_value=[]),
+        ):
             response = test_client.post(
                 "/v1/task/update_metadata", json=sample_metadata_update
             )
@@ -107,7 +113,9 @@ class TestUpdateMetadataValidation:
 
     def test_empty_list_returns_zero_count(self, test_client):
         """Test that an empty updates list returns zero count."""
-        response = test_client.post("/v1/task/update_metadata", json={"updates": []})
+        response = test_client.post(
+            "/v1/task/update_metadata", json={"updates": []}
+        )
 
         # Empty list should either be accepted (0 updates) or rejected (validation)
         # Based on design, we accept empty list
@@ -123,7 +131,9 @@ class TestUpdateMetadataValidation:
         """Test that missing task_id returns validation error."""
         response = test_client.post(
             "/v1/task/update_metadata",
-            json={"updates": [{"metadata": {"key": "value"}}]},  # Missing task_id
+            json={
+                "updates": [{"metadata": {"key": "value"}}]
+            },  # Missing task_id
         )
 
         assert response.status_code == 422
@@ -173,7 +183,10 @@ class TestUpdateMetadataBasic:
         )
 
         # Submit task (will be assigned but not yet in queue for this test)
-        with patch("swarmpilot.scheduler.api.predictor_client.predict", new=AsyncMock(return_value=[])):
+        with patch(
+            "swarmpilot.scheduler.api.predictor_client.predict",
+            new=AsyncMock(return_value=[]),
+        ):
             test_client.post(
                 "/v1/task/submit",
                 json={
@@ -185,7 +198,9 @@ class TestUpdateMetadataBasic:
             )
 
         # Update metadata - should succeed without predictor call
-        with patch("swarmpilot.scheduler.api.predictor_client.predict", new=AsyncMock()):
+        with patch(
+            "swarmpilot.scheduler.api.predictor_client.predict", new=AsyncMock()
+        ):
             response = test_client.post(
                 "/v1/task/update_metadata",
                 json={
@@ -205,7 +220,9 @@ class TestUpdateMetadataBasic:
         data = response.json()
         assert data["succeeded"] >= 0  # Either succeeded or task not found
 
-    def test_update_multiple_tasks(self, test_client, sample_batch_metadata_update):
+    def test_update_multiple_tasks(
+        self, test_client, sample_batch_metadata_update
+    ):
         """Test batch update of multiple tasks."""
         # Register instance
         test_client.post(
@@ -223,7 +240,10 @@ class TestUpdateMetadataBasic:
         )
 
         # Submit multiple tasks
-        with patch("swarmpilot.scheduler.api.predictor_client.predict", new=AsyncMock(return_value=[])):
+        with patch(
+            "swarmpilot.scheduler.api.predictor_client.predict",
+            new=AsyncMock(return_value=[]),
+        ):
             for i in range(1, 4):
                 test_client.post(
                     "/v1/task/submit",
@@ -236,7 +256,10 @@ class TestUpdateMetadataBasic:
                 )
 
         # Update all tasks
-        with patch("swarmpilot.scheduler.api.predictor_client.predict", new=AsyncMock(return_value=[])):
+        with patch(
+            "swarmpilot.scheduler.api.predictor_client.predict",
+            new=AsyncMock(return_value=[]),
+        ):
             response = test_client.post(
                 "/v1/task/update_metadata", json=sample_batch_metadata_update
             )
@@ -281,7 +304,10 @@ class TestUpdateMetadataBasic:
             },
         )
 
-        with patch("swarmpilot.scheduler.api.predictor_client.predict", new=AsyncMock(return_value=[])):
+        with patch(
+            "swarmpilot.scheduler.api.predictor_client.predict",
+            new=AsyncMock(return_value=[]),
+        ):
             test_client.post(
                 "/v1/task/submit",
                 json={
@@ -293,10 +319,15 @@ class TestUpdateMetadataBasic:
             )
 
         # Update with empty metadata
-        with patch("swarmpilot.scheduler.api.predictor_client.predict", new=AsyncMock(return_value=[])):
+        with patch(
+            "swarmpilot.scheduler.api.predictor_client.predict",
+            new=AsyncMock(return_value=[]),
+        ):
             response = test_client.post(
                 "/v1/task/update_metadata",
-                json={"updates": [{"task_id": "task-empty-meta", "metadata": {}}]},
+                json={
+                    "updates": [{"task_id": "task-empty-meta", "metadata": {}}]
+                },
             )
 
         assert response.status_code == 200
@@ -332,7 +363,10 @@ class TestUpdateMetadataSkipBehavior:
             },
         )
 
-        with patch("swarmpilot.scheduler.api.predictor_client.predict", new=AsyncMock(return_value=[])):
+        with patch(
+            "swarmpilot.scheduler.api.predictor_client.predict",
+            new=AsyncMock(return_value=[]),
+        ):
             test_client.post(
                 "/v1/task/submit",
                 json={
@@ -354,7 +388,10 @@ class TestUpdateMetadataSkipBehavior:
         asyncio.run(set_completed())
 
         # Try to update - should be skipped
-        with patch("swarmpilot.scheduler.api.predictor_client.predict", new=AsyncMock(return_value=[])):
+        with patch(
+            "swarmpilot.scheduler.api.predictor_client.predict",
+            new=AsyncMock(return_value=[]),
+        ):
             response = test_client.post(
                 "/v1/task/update_metadata",
                 json={
@@ -391,7 +428,10 @@ class TestUpdateMetadataSkipBehavior:
             },
         )
 
-        with patch("swarmpilot.scheduler.api.predictor_client.predict", new=AsyncMock(return_value=[])):
+        with patch(
+            "swarmpilot.scheduler.api.predictor_client.predict",
+            new=AsyncMock(return_value=[]),
+        ):
             test_client.post(
                 "/v1/task/submit",
                 json={
@@ -413,7 +453,10 @@ class TestUpdateMetadataSkipBehavior:
         asyncio.run(set_failed())
 
         # Try to update - should be skipped
-        with patch("swarmpilot.scheduler.api.predictor_client.predict", new=AsyncMock(return_value=[])):
+        with patch(
+            "swarmpilot.scheduler.api.predictor_client.predict",
+            new=AsyncMock(return_value=[]),
+        ):
             response = test_client.post(
                 "/v1/task/update_metadata",
                 json={
@@ -839,10 +882,15 @@ class TestUpdateMetadataEdgeCases:
             )
 
         # Remove the instance
-        test_client.post("/v1/instance/remove", json={"instance_id": "inst-to-remove"})
+        test_client.post(
+            "/v1/instance/remove", json={"instance_id": "inst-to-remove"}
+        )
 
         # Try to update metadata - should still work but skip queue update
-        with patch("swarmpilot.scheduler.api.predictor_client.predict", new=AsyncMock(return_value=[])):
+        with patch(
+            "swarmpilot.scheduler.api.predictor_client.predict",
+            new=AsyncMock(return_value=[]),
+        ):
             response = test_client.post(
                 "/v1/task/update_metadata",
                 json={
@@ -874,7 +922,10 @@ class TestUpdateMetadataEdgeCases:
             },
         )
 
-        with patch("swarmpilot.scheduler.api.predictor_client.predict", new=AsyncMock(return_value=[])):
+        with patch(
+            "swarmpilot.scheduler.api.predictor_client.predict",
+            new=AsyncMock(return_value=[]),
+        ):
             test_client.post(
                 "/v1/task/submit",
                 json={
@@ -890,7 +941,10 @@ class TestUpdateMetadataEdgeCases:
             )
 
         # Update with partial metadata (only key1)
-        with patch("swarmpilot.scheduler.api.predictor_client.predict", new=AsyncMock(return_value=[])):
+        with patch(
+            "swarmpilot.scheduler.api.predictor_client.predict",
+            new=AsyncMock(return_value=[]),
+        ):
             response = test_client.post(
                 "/v1/task/update_metadata",
                 json={
@@ -910,7 +964,9 @@ class TestUpdateMetadataEdgeCases:
             task = await task_registry.get("task-replace")
             if task:
                 # key2 and key3 should NOT be present if replace semantics
-                return "key2" not in task.metadata and "key3" not in task.metadata
+                return (
+                    "key2" not in task.metadata and "key3" not in task.metadata
+                )
             return True
 
         # Note: This assertion depends on implementation
@@ -939,7 +995,9 @@ class TestTaskRegistryUpdateMethods:
         )
 
         # Update metadata
-        task = await task_registry.update_metadata("test-task", {"new": "metadata"})
+        task = await task_registry.update_metadata(
+            "test-task", {"new": "metadata"}
+        )
 
         assert task.metadata == {"new": "metadata"}
         # Other fields should be unchanged

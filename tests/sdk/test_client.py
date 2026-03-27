@@ -70,9 +70,7 @@ class TestServe:
             )
         )
 
-        group = await client.serve(
-            "llama-7b", gpu=1, replicas=1
-        )
+        group = await client.serve("llama-7b", gpu=1, replicas=1)
 
         assert isinstance(group, InstanceGroup)
         assert group.name == "llama-group"
@@ -129,9 +127,7 @@ class TestRun:
     """run() sends POST /v1/run and returns Process."""
 
     @respx.mock
-    async def test_run_returns_process(
-        self, client: SwarmPilotClient
-    ) -> None:
+    async def test_run_returns_process(self, client: SwarmPilotClient) -> None:
         """Successful run returns a Process."""
         respx.post(f"{PLANNER}/v1/run").mock(
             return_value=httpx.Response(
@@ -146,9 +142,7 @@ class TestRun:
             )
         )
 
-        proc = await client.run(
-            "python etl.py", name="etl-job", gpu=0
-        )
+        proc = await client.run("python etl.py", name="etl-job", gpu=0)
 
         assert isinstance(proc, Process)
         assert proc.name == "etl-job"
@@ -209,9 +203,7 @@ class TestRegister:
             )
         )
 
-        await client.register(
-            "llama-7b", gpu=1, replicas=3
-        )
+        await client.register("llama-7b", gpu=1, replicas=3)
 
         assert route.called
         import json
@@ -381,9 +373,7 @@ class TestTerminate:
     """terminate() sends POST /v1/terminate."""
 
     @respx.mock
-    async def test_terminate_by_name(
-        self, client: SwarmPilotClient
-    ) -> None:
+    async def test_terminate_by_name(self, client: SwarmPilotClient) -> None:
         """terminate(name=...) sends the correct payload."""
         route = respx.post(f"{PLANNER}/v1/terminate").mock(
             return_value=httpx.Response(
@@ -401,9 +391,7 @@ class TestTerminate:
         assert payload["name"] == "w-0"
 
     @respx.mock
-    async def test_terminate_all(
-        self, client: SwarmPilotClient
-    ) -> None:
+    async def test_terminate_all(self, client: SwarmPilotClient) -> None:
         """terminate(all=True) sends all=True."""
         route = respx.post(f"{PLANNER}/v1/terminate").mock(
             return_value=httpx.Response(
@@ -491,9 +479,7 @@ class TestTrain:
         self, client: SwarmPilotClient
     ) -> None:
         """train() sends to the scheduler, not the planner."""
-        route = respx.post(
-            f"{SCHEDULER}/v1/predictor/train"
-        ).mock(
+        route = respx.post(f"{SCHEDULER}/v1/predictor/train").mock(
             return_value=httpx.Response(
                 200,
                 json={
@@ -505,9 +491,7 @@ class TestTrain:
             )
         )
 
-        await client.train(
-            "llama-7b", prediction_type="quantile"
-        )
+        await client.train("llama-7b", prediction_type="quantile")
 
         assert route.called
         import json
@@ -558,9 +542,7 @@ class TestPredict:
         self, client: SwarmPilotClient
     ) -> None:
         """predict() sends to the scheduler, not the planner."""
-        route = respx.post(
-            f"{SCHEDULER}/v1/predictor/predict"
-        ).mock(
+        route = respx.post(f"{SCHEDULER}/v1/predictor/predict").mock(
             return_value=httpx.Response(
                 200,
                 json={
@@ -595,13 +577,9 @@ class TestPredictorStatus:
     """predictor_status() sends GET to scheduler."""
 
     @respx.mock
-    async def test_returns_model_status(
-        self, client: SwarmPilotClient
-    ) -> None:
+    async def test_returns_model_status(self, client: SwarmPilotClient) -> None:
         """Successful call returns a ModelStatus."""
-        respx.get(
-            f"{SCHEDULER}/v1/predictor/status/llama-7b"
-        ).mock(
+        respx.get(f"{SCHEDULER}/v1/predictor/status/llama-7b").mock(
             return_value=httpx.Response(
                 200,
                 json={
@@ -783,9 +761,7 @@ class TestSchedulerUrlValidation:
                 ValueError,
                 match="scheduler_url is required",
             ):
-                await sp.predict(
-                    "model", features={"x": 1}
-                )
+                await sp.predict("model", features={"x": 1})
         finally:
             await sp.close()
 

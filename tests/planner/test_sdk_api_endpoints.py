@@ -86,10 +86,7 @@ def _make_deployment_result(
 class TestServeEndpoint:
     """Tests for POST /v1/serve."""
 
-    @patch(
-        "swarmpilot.planner.routes.sdk_api"
-        ".get_pylet_service_optional"
-    )
+    @patch("swarmpilot.planner.routes.sdk_api.get_pylet_service_optional")
     @patch("swarmpilot.planner.routes.sdk_api.config")
     def test_serve_auto_command_generation(
         self, mock_config, mock_get_svc, client
@@ -99,8 +96,8 @@ class TestServeEndpoint:
         inst = _make_managed_instance()
         svc = MagicMock()
         svc.initialized = True
-        svc.apply_deployment.return_value = (
-            _make_deployment_result(active_instances=[inst])
+        svc.apply_deployment.return_value = _make_deployment_result(
+            active_instances=[inst]
         )
         mock_get_svc.return_value = svc
 
@@ -126,10 +123,7 @@ class TestServeEndpoint:
             wait_for_ready=True,
         )
 
-    @patch(
-        "swarmpilot.planner.routes.sdk_api"
-        ".get_pylet_service_optional"
-    )
+    @patch("swarmpilot.planner.routes.sdk_api.get_pylet_service_optional")
     @patch("swarmpilot.planner.routes.sdk_api.config")
     def test_serve_scheduler_auto_resolution(
         self, mock_config, mock_get_svc, client
@@ -138,9 +132,7 @@ class TestServeEndpoint:
         mock_config.pylet_enabled = True
         svc = MagicMock()
         svc.initialized = True
-        svc.apply_deployment.return_value = (
-            _make_deployment_result()
-        )
+        svc.apply_deployment.return_value = _make_deployment_result()
         mock_get_svc.return_value = svc
 
         # Register a scheduler for the model
@@ -149,9 +141,7 @@ class TestServeEndpoint:
         )
 
         registry = get_scheduler_registry()
-        registry.register(
-            "Qwen/Qwen3-0.6B", "http://scheduler:8000"
-        )
+        registry.register("Qwen/Qwen3-0.6B", "http://scheduler:8000")
 
         try:
             response = client.post(
@@ -164,17 +154,11 @@ class TestServeEndpoint:
 
             assert response.status_code == 200
             data = response.json()
-            assert (
-                data["scheduler_url"]
-                == "http://scheduler:8000"
-            )
+            assert data["scheduler_url"] == "http://scheduler:8000"
         finally:
             registry.deregister("Qwen/Qwen3-0.6B")
 
-    @patch(
-        "swarmpilot.planner.routes.sdk_api"
-        ".get_pylet_service_optional"
-    )
+    @patch("swarmpilot.planner.routes.sdk_api.get_pylet_service_optional")
     @patch("swarmpilot.planner.routes.sdk_api.config")
     def test_serve_scheduler_none_skips(
         self, mock_config, mock_get_svc, client
@@ -183,9 +167,7 @@ class TestServeEndpoint:
         mock_config.pylet_enabled = True
         svc = MagicMock()
         svc.initialized = True
-        svc.apply_deployment.return_value = (
-            _make_deployment_result()
-        )
+        svc.apply_deployment.return_value = _make_deployment_result()
         mock_get_svc.return_value = svc
 
         response = client.post(
@@ -217,23 +199,16 @@ class TestServeEndpoint:
 class TestRunEndpoint:
     """Tests for POST /v1/run."""
 
-    @patch(
-        "swarmpilot.planner.routes.sdk_api"
-        ".get_pylet_service_optional"
-    )
+    @patch("swarmpilot.planner.routes.sdk_api.get_pylet_service_optional")
     @patch("swarmpilot.planner.routes.sdk_api.config")
-    def test_run_custom_command(
-        self, mock_config, mock_get_svc, client
-    ):
+    def test_run_custom_command(self, mock_config, mock_get_svc, client):
         """Deploy with a custom command."""
         mock_config.pylet_enabled = True
-        inst = _make_managed_instance(
-            model_id="python train.py"
-        )
+        inst = _make_managed_instance(model_id="python train.py")
         svc = MagicMock()
         svc.initialized = True
-        svc.apply_deployment.return_value = (
-            _make_deployment_result(active_instances=[inst])
+        svc.apply_deployment.return_value = _make_deployment_result(
+            active_instances=[inst]
         )
         mock_get_svc.return_value = svc
 
@@ -302,10 +277,7 @@ class TestRegisterEndpoints:
         assert data["total"] == 1
         assert "meta-llama/Llama-3-8B" in data["models"]
         assert data["models"]["meta-llama/Llama-3-8B"]["replicas"] == 3
-        assert (
-            data["models"]["meta-llama/Llama-3-8B"]["gpu_count"]
-            == 2
-        )
+        assert data["models"]["meta-llama/Llama-3-8B"]["gpu_count"] == 2
 
     def test_register_overwrites(self, client):
         """Re-registering the same model overwrites."""
@@ -340,14 +312,9 @@ class TestRegisterEndpoints:
 class TestTerminateEndpoint:
     """Tests for POST /v1/terminate."""
 
-    @patch(
-        "swarmpilot.planner.routes.sdk_api"
-        ".get_pylet_service_optional"
-    )
+    @patch("swarmpilot.planner.routes.sdk_api.get_pylet_service_optional")
     @patch("swarmpilot.planner.routes.sdk_api.config")
-    def test_terminate_all(
-        self, mock_config, mock_get_svc, client
-    ):
+    def test_terminate_all(self, mock_config, mock_get_svc, client):
         """Terminate all instances."""
         mock_config.pylet_enabled = True
         svc = MagicMock()
@@ -358,53 +325,35 @@ class TestTerminateEndpoint:
         }
         mock_get_svc.return_value = svc
 
-        response = client.post(
-            "/v1/terminate", json={"all": True}
-        )
+        response = client.post("/v1/terminate", json={"all": True})
 
         assert response.status_code == 200
         data = response.json()
         assert data["success"] is True
         assert data["terminated_count"] == 2
 
-    @patch(
-        "swarmpilot.planner.routes.sdk_api"
-        ".get_pylet_service_optional"
-    )
+    @patch("swarmpilot.planner.routes.sdk_api.get_pylet_service_optional")
     @patch("swarmpilot.planner.routes.sdk_api.config")
-    def test_terminate_by_model(
-        self, mock_config, mock_get_svc, client
-    ):
+    def test_terminate_by_model(self, mock_config, mock_get_svc, client):
         """Terminate instances by model."""
         mock_config.pylet_enabled = True
-        inst = _make_managed_instance(
-            pylet_id="p1", model_id="model-a"
-        )
+        inst = _make_managed_instance(pylet_id="p1", model_id="model-a")
         svc = MagicMock()
         svc.initialized = True
         svc.get_instances_by_model.return_value = [inst]
-        svc.instance_manager.terminate_instances.return_value = {
-            "p1": True
-        }
+        svc.instance_manager.terminate_instances.return_value = {"p1": True}
         mock_get_svc.return_value = svc
 
-        response = client.post(
-            "/v1/terminate", json={"model": "model-a"}
-        )
+        response = client.post("/v1/terminate", json={"model": "model-a"})
 
         assert response.status_code == 200
         data = response.json()
         assert data["success"] is True
         assert data["terminated_count"] == 1
 
-    @patch(
-        "swarmpilot.planner.routes.sdk_api"
-        ".get_pylet_service_optional"
-    )
+    @patch("swarmpilot.planner.routes.sdk_api.get_pylet_service_optional")
     @patch("swarmpilot.planner.routes.sdk_api.config")
-    def test_terminate_no_criteria(
-        self, mock_config, mock_get_svc, client
-    ):
+    def test_terminate_no_criteria(self, mock_config, mock_get_svc, client):
         """Returns failure message when no criteria given."""
         mock_config.pylet_enabled = True
         svc = MagicMock()
@@ -420,9 +369,7 @@ class TestTerminateEndpoint:
 
     def test_terminate_pylet_disabled(self, client):
         """Returns 503 when PyLet is disabled."""
-        response = client.post(
-            "/v1/terminate", json={"all": True}
-        )
+        response = client.post("/v1/terminate", json={"all": True})
         assert response.status_code == 503
 
 
@@ -434,22 +381,13 @@ class TestTerminateEndpoint:
 class TestInstancesEndpoint:
     """Tests for GET /v1/instances."""
 
-    @patch(
-        "swarmpilot.planner.routes.sdk_api"
-        ".get_pylet_service_optional"
-    )
+    @patch("swarmpilot.planner.routes.sdk_api.get_pylet_service_optional")
     @patch("swarmpilot.planner.routes.sdk_api.config")
-    def test_list_instances(
-        self, mock_config, mock_get_svc, client
-    ):
+    def test_list_instances(self, mock_config, mock_get_svc, client):
         """List active instances."""
         mock_config.pylet_enabled = True
-        inst1 = _make_managed_instance(
-            pylet_id="p1", model_id="model-a"
-        )
-        inst2 = _make_managed_instance(
-            pylet_id="p2", model_id="model-b"
-        )
+        inst1 = _make_managed_instance(pylet_id="p1", model_id="model-a")
+        inst2 = _make_managed_instance(pylet_id="p2", model_id="model-b")
         svc = MagicMock()
         svc.initialized = True
         svc.get_active_instances.return_value = [inst1, inst2]
@@ -463,14 +401,9 @@ class TestInstancesEndpoint:
         assert data[0]["pylet_id"] == "p1"
         assert data[1]["pylet_id"] == "p2"
 
-    @patch(
-        "swarmpilot.planner.routes.sdk_api"
-        ".get_pylet_service_optional"
-    )
+    @patch("swarmpilot.planner.routes.sdk_api.get_pylet_service_optional")
     @patch("swarmpilot.planner.routes.sdk_api.config")
-    def test_get_instance_by_name(
-        self, mock_config, mock_get_svc, client
-    ):
+    def test_get_instance_by_name(self, mock_config, mock_get_svc, client):
         """Get single instance by pylet_id."""
         mock_config.pylet_enabled = True
         inst = _make_managed_instance(pylet_id="target-id")
@@ -485,14 +418,9 @@ class TestInstancesEndpoint:
         data = response.json()
         assert data["pylet_id"] == "target-id"
 
-    @patch(
-        "swarmpilot.planner.routes.sdk_api"
-        ".get_pylet_service_optional"
-    )
+    @patch("swarmpilot.planner.routes.sdk_api.get_pylet_service_optional")
     @patch("swarmpilot.planner.routes.sdk_api.config")
-    def test_get_instance_not_found(
-        self, mock_config, mock_get_svc, client
-    ):
+    def test_get_instance_not_found(self, mock_config, mock_get_svc, client):
         """404 when instance not found."""
         mock_config.pylet_enabled = True
         svc = MagicMock()
@@ -542,10 +470,7 @@ class TestSchedulersEndpoint:
             assert response.status_code == 200
             data = response.json()
             assert "model-x" in data["schedulers"]
-            assert (
-                data["schedulers"]["model-x"]
-                == "http://sched-x:8000"
-            )
+            assert data["schedulers"]["model-x"] == "http://sched-x:8000"
         finally:
             registry.deregister("model-x")
 
@@ -558,24 +483,17 @@ class TestSchedulersEndpoint:
 class TestScaleEndpoint:
     """Tests for POST /v1/scale."""
 
-    @patch(
-        "swarmpilot.planner.routes.sdk_api"
-        ".get_pylet_service_optional"
-    )
+    @patch("swarmpilot.planner.routes.sdk_api.get_pylet_service_optional")
     @patch("swarmpilot.planner.routes.sdk_api.config")
-    def test_scale_model(
-        self, mock_config, mock_get_svc, client
-    ):
+    def test_scale_model(self, mock_config, mock_get_svc, client):
         """Scale a model to target count."""
         mock_config.pylet_enabled = True
         inst = _make_managed_instance()
         svc = MagicMock()
         svc.initialized = True
         svc.get_instances_by_model.return_value = [inst]
-        svc.scale_model.return_value = (
-            _make_deployment_result(
-                active_instances=[inst, _make_managed_instance()]
-            )
+        svc.scale_model.return_value = _make_deployment_result(
+            active_instances=[inst, _make_managed_instance()]
         )
         mock_get_svc.return_value = svc
 

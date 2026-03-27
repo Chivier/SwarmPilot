@@ -58,7 +58,9 @@ class TestQueueTypeMismatch:
         await instance_registry.register(instance)
 
         # Create min_time strategy
-        strategy = MinimumExpectedTimeStrategy(predictor_client, instance_registry)
+        strategy = MinimumExpectedTimeStrategy(
+            predictor_client, instance_registry
+        )
 
         # Create a prediction
         prediction = Prediction(
@@ -68,7 +70,9 @@ class TestQueueTypeMismatch:
         )
 
         # Try to update queue - this should trigger the mismatch warning and skip update
-        with patch("swarmpilot.scheduler.algorithms.min_expected_time.logger") as mock_logger:
+        with patch(
+            "swarmpilot.scheduler.algorithms.min_expected_time.logger"
+        ) as mock_logger:
             await strategy.update_queue("test-instance-1", prediction)
 
             # Verify that warning was logged
@@ -80,7 +84,9 @@ class TestQueueTypeMismatch:
             assert "Skipping update" in warning_msg
 
         # After the update attempt, the queue should remain unchanged (still wrong type)
-        updated_queue = await instance_registry.get_queue_info("test-instance-1")
+        updated_queue = await instance_registry.get_queue_info(
+            "test-instance-1"
+        )
         assert isinstance(updated_queue, InstanceQueueProbabilistic)
         # Values should be unchanged from initial state
         assert updated_queue.quantiles == [0.5, 0.9, 0.95, 0.99]
@@ -116,7 +122,9 @@ class TestQueueTypeMismatch:
         await instance_registry.register(instance)
 
         # Create probabilistic strategy
-        strategy = ProbabilisticSchedulingStrategy(predictor_client, instance_registry)
+        strategy = ProbabilisticSchedulingStrategy(
+            predictor_client, instance_registry
+        )
 
         # Create a prediction with quantiles
         prediction = Prediction(
@@ -126,7 +134,9 @@ class TestQueueTypeMismatch:
         )
 
         # Try to update queue - this should trigger the mismatch warning and skip update
-        with patch("swarmpilot.scheduler.algorithms.probabilistic.logger") as mock_logger:
+        with patch(
+            "swarmpilot.scheduler.algorithms.probabilistic.logger"
+        ) as mock_logger:
             await strategy.update_queue("test-instance-2", prediction)
 
             # Verify that warning was logged
@@ -138,7 +148,9 @@ class TestQueueTypeMismatch:
             assert "Skipping update" in warning_msg
 
         # After the update attempt, the queue should remain unchanged (still wrong type)
-        updated_queue = await instance_registry.get_queue_info("test-instance-2")
+        updated_queue = await instance_registry.get_queue_info(
+            "test-instance-2"
+        )
         assert isinstance(updated_queue, InstanceQueueExpectError)
         # Values should be unchanged from initial state
         assert updated_queue.expected_time_ms == 0.0
@@ -173,7 +185,9 @@ class TestQueueTypeMismatch:
 
         # Verify initial queue types are InstanceQueueProbabilistic
         for instance in instances:
-            queue_info = await instance_registry.get_queue_info(instance.instance_id)
+            queue_info = await instance_registry.get_queue_info(
+                instance.instance_id
+            )
             assert isinstance(queue_info, InstanceQueueProbabilistic)
 
         # Switch to min_time strategy (simulate reinitialize_instance_queues)
@@ -187,15 +201,21 @@ class TestQueueTypeMismatch:
                 expected_time_ms=0.0,
                 error_margin_ms=0.0,
             )
-            await instance_registry.update_queue_info(instance.instance_id, new_queue)
+            await instance_registry.update_queue_info(
+                instance.instance_id, new_queue
+            )
 
         # Verify queue types are now InstanceQueueExpectError
         for instance in instances:
-            queue_info = await instance_registry.get_queue_info(instance.instance_id)
+            queue_info = await instance_registry.get_queue_info(
+                instance.instance_id
+            )
             assert isinstance(queue_info, InstanceQueueExpectError)
 
         # Create min_time strategy
-        strategy = MinimumExpectedTimeStrategy(predictor_client, instance_registry)
+        strategy = MinimumExpectedTimeStrategy(
+            predictor_client, instance_registry
+        )
 
         # Create predictions
         predictions = [
@@ -208,7 +228,9 @@ class TestQueueTypeMismatch:
         ]
 
         # Update queues - should work without warnings
-        with patch("swarmpilot.scheduler.algorithms.min_expected_time.logger") as mock_logger:
+        with patch(
+            "swarmpilot.scheduler.algorithms.min_expected_time.logger"
+        ) as mock_logger:
             for prediction in predictions:
                 await strategy.update_queue(prediction.instance_id, prediction)
 
@@ -217,7 +239,9 @@ class TestQueueTypeMismatch:
 
         # Verify queues were updated correctly
         for i, instance in enumerate(instances):
-            queue_info = await instance_registry.get_queue_info(instance.instance_id)
+            queue_info = await instance_registry.get_queue_info(
+                instance.instance_id
+            )
             assert isinstance(queue_info, InstanceQueueExpectError)
             assert queue_info.expected_time_ms == 100.0 * (i + 1)
             # Error margin should be updated based on the error accumulation formula
@@ -251,7 +275,9 @@ class TestQueueTypeMismatch:
         instance_registry._queue_info.pop(instance.instance_id, None)
 
         # Create min_time strategy
-        strategy = MinimumExpectedTimeStrategy(predictor_client, instance_registry)
+        strategy = MinimumExpectedTimeStrategy(
+            predictor_client, instance_registry
+        )
 
         # Create a prediction
         prediction = Prediction(
@@ -264,7 +290,9 @@ class TestQueueTypeMismatch:
         await strategy.update_queue("test-instance-no-queue", prediction)
 
         # Verify queue was created and updated
-        updated_queue = await instance_registry.get_queue_info("test-instance-no-queue")
+        updated_queue = await instance_registry.get_queue_info(
+            "test-instance-no-queue"
+        )
         assert isinstance(updated_queue, InstanceQueueExpectError)
         assert updated_queue.expected_time_ms == 150.0
         assert updated_queue.error_margin_ms == 15.0
@@ -306,7 +334,9 @@ class TestQueueTypeMismatch:
             expected_time_ms=0.0,
             error_margin_ms=0.0,
         )
-        await instance_registry.update_queue_info(instance1.instance_id, new_queue1)
+        await instance_registry.update_queue_info(
+            instance1.instance_id, new_queue1
+        )
 
         # Register NEW instance after switch
         instance2 = Instance(
@@ -323,14 +353,18 @@ class TestQueueTypeMismatch:
         await instance_registry.register(instance2)
 
         # Verify BOTH instances have correct queue type
-        queue1_after = await instance_registry.get_queue_info(instance1.instance_id)
+        queue1_after = await instance_registry.get_queue_info(
+            instance1.instance_id
+        )
         assert isinstance(queue1_after, InstanceQueueExpectError)
 
         queue2 = await instance_registry.get_queue_info(instance2.instance_id)
         assert isinstance(queue2, InstanceQueueExpectError)
 
         # Test that min_time strategy works with both instances
-        strategy = MinimumExpectedTimeStrategy(predictor_client, instance_registry)
+        strategy = MinimumExpectedTimeStrategy(
+            predictor_client, instance_registry
+        )
 
         predictions = [
             Prediction(
@@ -346,7 +380,9 @@ class TestQueueTypeMismatch:
         ]
 
         # Update queues - should work without warnings
-        with patch("swarmpilot.scheduler.algorithms.min_expected_time.logger") as mock_logger:
+        with patch(
+            "swarmpilot.scheduler.algorithms.min_expected_time.logger"
+        ) as mock_logger:
             for pred in predictions:
                 await strategy.update_queue(pred.instance_id, pred)
 

@@ -46,24 +46,30 @@ class InstanceRegistry:
         """
         async with self._lock:
             if instance.instance_id in self._instances:
-                raise ValueError(f"Instance {instance.instance_id} already exists")
+                raise ValueError(
+                    f"Instance {instance.instance_id} already exists"
+                )
 
             self._instances[instance.instance_id] = instance
 
             # Initialize queue info based on scheduling strategy type
             if self._queue_info_type == "expect_error":
-                self._queue_info[instance.instance_id] = InstanceQueueExpectError(
-                    instance_id=instance.instance_id,
-                    expected_time_ms=0.0,
-                    error_margin_ms=0.0,
+                self._queue_info[instance.instance_id] = (
+                    InstanceQueueExpectError(
+                        instance_id=instance.instance_id,
+                        expected_time_ms=0.0,
+                        error_margin_ms=0.0,
+                    )
                 )
             else:  # Default to probabilistic
                 # Use stored quantiles configuration
                 values = [0.0] * len(self._quantiles)
-                self._queue_info[instance.instance_id] = InstanceQueueProbabilistic(
-                    instance_id=instance.instance_id,
-                    quantiles=self._quantiles.copy(),
-                    values=values,
+                self._queue_info[instance.instance_id] = (
+                    InstanceQueueProbabilistic(
+                        instance_id=instance.instance_id,
+                        quantiles=self._quantiles.copy(),
+                        values=values,
+                    )
                 )
 
             # Initialize statistics
@@ -107,7 +113,9 @@ class InstanceRegistry:
         async with self._lock:
             return self._instances.get(instance_id)
 
-    async def update_status(self, instance_id: str, status: InstanceStatus) -> None:
+    async def update_status(
+        self, instance_id: str, status: InstanceStatus
+    ) -> None:
         """Update the status of an instance.
 
         Args:
@@ -125,7 +133,10 @@ class InstanceRegistry:
             instance.status = status
 
             # Update drain_initiated_at timestamp if transitioning to DRAINING
-            if status == InstanceStatus.DRAINING and not instance.drain_initiated_at:
+            if (
+                status == InstanceStatus.DRAINING
+                and not instance.drain_initiated_at
+            ):
                 instance.drain_initiated_at = (
                     datetime.now(UTC).isoformat().replace("+00:00", "Z")
                 )
@@ -147,7 +158,9 @@ class InstanceRegistry:
 
             return instances
 
-    async def get_queue_info(self, instance_id: str) -> InstanceQueueBase | None:
+    async def get_queue_info(
+        self, instance_id: str
+    ) -> InstanceQueueBase | None:
         """Get queue information for an instance.
 
         Args:
@@ -312,7 +325,8 @@ class InstanceRegistry:
                 }
 
             can_remove = (
-                instance.status == InstanceStatus.DRAINING and stats.pending_tasks == 0
+                instance.status == InstanceStatus.DRAINING
+                and stats.pending_tasks == 0
             )
 
             return {
@@ -335,7 +349,9 @@ class InstanceRegistry:
         """
         async with self._lock:
             instances = [
-                i for i in self._instances.values() if i.status == InstanceStatus.ACTIVE
+                i
+                for i in self._instances.values()
+                if i.status == InstanceStatus.ACTIVE
             ]
 
             if model_id:
@@ -490,7 +506,8 @@ class InstanceRegistry:
             return [
                 inst
                 for inst in self._instances.values()
-                if inst.model_id == model_id and inst.status == InstanceStatus.ACTIVE
+                if inst.model_id == model_id
+                and inst.status == InstanceStatus.ACTIVE
             ]
 
     async def clear_all(self) -> int:

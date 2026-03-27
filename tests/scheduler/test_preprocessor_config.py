@@ -25,7 +25,9 @@ def mock_registry_v1():
     """Create a mock V1 PreprocessorsRegistry."""
     registry = MagicMock()
     mock_preprocessor = MagicMock()
-    mock_preprocessor.__call__ = MagicMock(return_value=({"output_length": 42}, True))
+    mock_preprocessor.__call__ = MagicMock(
+        return_value=({"output_length": 42}, True)
+    )
     registry.get_preprocessor.return_value = mock_preprocessor
     return registry
 
@@ -182,7 +184,9 @@ class TestRuleMatching:
         finally:
             os.unlink(path)
 
-    def test_first_matching_rule_wins(self, mock_registry_v1, multi_rule_config):
+    def test_first_matching_rule_wins(
+        self, mock_registry_v1, multi_rule_config
+    ):
         """First matching rule should be used."""
         path = _write_config(multi_rule_config)
         try:
@@ -236,7 +240,9 @@ class TestStrictValidation:
     def test_strict_validation_fails_on_missing_model(self, sample_config):
         """RuntimeError when strict=True and preprocessor unavailable."""
         registry = MagicMock()
-        registry.get_preprocessor.side_effect = RuntimeError("Model file not found")
+        registry.get_preprocessor.side_effect = RuntimeError(
+            "Model file not found"
+        )
 
         path = _write_config(sample_config)
         try:
@@ -252,7 +258,9 @@ class TestStrictValidation:
     def test_non_strict_logs_warning_on_missing(self, sample_config):
         """Non-strict mode should not raise on missing preprocessor."""
         registry = MagicMock()
-        registry.get_preprocessor.side_effect = RuntimeError("Model file not found")
+        registry.get_preprocessor.side_effect = RuntimeError(
+            "Model file not found"
+        )
 
         path = _write_config(sample_config)
         try:

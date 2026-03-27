@@ -136,7 +136,7 @@ def get_gpu_spec(gpu_name: str) -> dict[str, int | float]:
     """
     if gpu_name not in NVIDIA_TESLA_SPECS:
         available = list(NVIDIA_TESLA_SPECS.keys())
-        raise KeyError(f"GPU model '{gpu_name}' not found. Available: {available}")
+        raise KeyError(
+            f"GPU model '{gpu_name}' not found. Available: {available}"
+        )
     return NVIDIA_TESLA_SPECS[gpu_name]
-
-

@@ -82,10 +82,7 @@ class Instance:
             SwarmPilotError: If no client is attached.
         """
         client = self._require_client()
-        url = (
-            f"{client.planner_url}"
-            f"/v1/instances/{self.name}"
-        )
+        url = f"{client.planner_url}/v1/instances/{self.name}"
         deadline = asyncio.get_event_loop().time() + timeout
         while asyncio.get_event_loop().time() < deadline:
             resp = await client._client.get(url)
@@ -96,13 +93,9 @@ class Instance:
                 self.endpoint = data.get("endpoint", self.endpoint)
                 return
             if status == "failed":
-                raise DeployError(
-                    f"Instance '{self.name}' failed"
-                )
+                raise DeployError(f"Instance '{self.name}' failed")
             await asyncio.sleep(2)
-        raise SwarmPilotTimeoutError(
-            timeout=timeout, name=self.name
-        )
+        raise SwarmPilotTimeoutError(timeout=timeout, name=self.name)
 
     async def terminate(self) -> None:
         """Terminate this instance.
@@ -115,9 +108,7 @@ class Instance:
         """
         client = self._require_client()
         url = f"{client.planner_url}/v1/terminate"
-        await client._client.post(
-            url, json={"name": self.name}
-        )
+        await client._client.post(url, json={"name": self.name})
 
 
 @dataclass
@@ -222,9 +213,7 @@ class InstanceGroup:
         """
         client = self._require_client()
         url = f"{client.planner_url}/v1/terminate"
-        await client._client.post(
-            url, json={"model": self.model}
-        )
+        await client._client.post(url, json={"model": self.model})
 
 
 @dataclass
@@ -279,9 +268,7 @@ class Process:
         """
         client = self._require_client()
         url = f"{client.planner_url}/v1/terminate"
-        await client._client.post(
-            url, json={"name": self.name}
-        )
+        await client._client.post(url, json={"name": self.name})
 
 
 @dataclass
@@ -393,9 +380,7 @@ class ModelStatus:
     prediction_types: list[str] = field(default_factory=list)
     metrics: dict = field(default_factory=dict)
     strategy: str = "expect_error"
-    preprocessors: list[PreprocessorInfo] = field(
-        default_factory=list
-    )
+    preprocessors: list[PreprocessorInfo] = field(default_factory=list)
 
 
 @dataclass

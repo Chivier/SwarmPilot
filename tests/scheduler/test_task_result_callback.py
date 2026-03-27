@@ -237,7 +237,9 @@ class TestSuccessHandling:
 
         await callback_handler.handle_result(success_result)
 
-        mock_instance_registry.increment_completed.assert_called_once_with("worker-1")
+        mock_instance_registry.increment_completed.assert_called_once_with(
+            "worker-1"
+        )
 
     @pytest.mark.asyncio
     async def test_records_throughput_on_success(
@@ -323,7 +325,9 @@ class TestFailureHandling:
 
         await callback_handler.handle_result(failure_result)
 
-        mock_instance_registry.increment_failed.assert_called_once_with("worker-1")
+        mock_instance_registry.increment_failed.assert_called_once_with(
+            "worker-1"
+        )
 
 
 # ============================================================================
@@ -712,7 +716,9 @@ class TestTrainingIntegration:
     ):
         """Test training sample added on successful task completion."""
         mock_task_registry.get.return_value = sample_task_record
-        callback_with_training.instance_registry.get.return_value = sample_instance
+        callback_with_training.instance_registry.get.return_value = (
+            sample_instance
+        )
 
         await callback_with_training.handle_result(success_result)
 
@@ -735,7 +741,9 @@ class TestTrainingIntegration:
     ):
         """Test flush_if_ready called after adding sample."""
         mock_task_registry.get.return_value = sample_task_record
-        callback_with_training.instance_registry.get.return_value = sample_instance
+        callback_with_training.instance_registry.get.return_value = (
+            sample_instance
+        )
 
         await callback_with_training.handle_result(success_result)
 
@@ -753,7 +761,9 @@ class TestTrainingIntegration:
     ):
         """Test no training sample added on failure."""
         mock_task_registry.get.return_value = sample_task_record
-        callback_with_training.instance_registry.get.return_value = sample_instance
+        callback_with_training.instance_registry.get.return_value = (
+            sample_instance
+        )
 
         await callback_with_training.handle_result(failure_result)
 
@@ -771,8 +781,12 @@ class TestTrainingIntegration:
     ):
         """Test training errors don't break task completion."""
         mock_task_registry.get.return_value = sample_task_record
-        callback_with_training.instance_registry.get.return_value = sample_instance
-        mock_training_client.add_sample.side_effect = RuntimeError("Training error")
+        callback_with_training.instance_registry.get.return_value = (
+            sample_instance
+        )
+        mock_training_client.add_sample.side_effect = RuntimeError(
+            "Training error"
+        )
 
         # Should not raise
         await callback_with_training.handle_result(success_result)
@@ -850,7 +864,9 @@ class TestTaskStartedCallback:
             loop.close()
 
     @pytest.mark.asyncio
-    async def test_thread_start_callback_schedules_on_loop(self, callback_handler):
+    async def test_thread_start_callback_schedules_on_loop(
+        self, callback_handler
+    ):
         """Test start callback from thread schedules on event loop."""
         loop = asyncio.get_running_loop()
         start_callback = callback_handler.create_thread_start_callback(loop)

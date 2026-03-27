@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 def client():
     """Create a test client for the FastAPI application."""
     from swarmpilot.planner.api import app
+
     return TestClient(app)
 
 
@@ -140,7 +141,9 @@ class TestLoggingDoesNotAffectResponses:
         }
 
         # Make multiple requests
-        responses = [client.post("/v1/plan", json=request_data) for _ in range(3)]
+        responses = [
+            client.post("/v1/plan", json=request_data) for _ in range(3)
+        ]
 
         # All should succeed
         assert all(r.status_code == 200 for r in responses)
@@ -207,7 +210,11 @@ class TestOriginalFunctionalityPreserved:
 
     def test_objective_methods_work(self, client):
         """Test that all objective methods still work."""
-        objective_methods = ["relative_error", "ratio_difference", "weighted_squared"]
+        objective_methods = [
+            "relative_error",
+            "ratio_difference",
+            "weighted_squared",
+        ]
 
         for method in objective_methods:
             request_data = {
@@ -223,7 +230,9 @@ class TestOriginalFunctionalityPreserved:
             }
 
             response = client.post("/v1/plan", json=request_data)
-            assert response.status_code == 200, f"Failed for objective method: {method}"
+            assert response.status_code == 200, (
+                f"Failed for objective method: {method}"
+            )
 
     def test_service_capacity_calculation_preserved(self, client):
         """Test that service capacity calculation still works correctly."""

@@ -287,7 +287,9 @@ class TestTaskScheduleInfoEndpoint:
                 metadata={},
                 assigned_instance="inst-1",
             )
-            await task_registry.update_status("task-running", TaskStatus.RUNNING)
+            await task_registry.update_status(
+                "task-running", TaskStatus.RUNNING
+            )
 
             _task_completed = await task_registry.create_task(
                 task_id="task-completed",
@@ -296,7 +298,9 @@ class TestTaskScheduleInfoEndpoint:
                 metadata={},
                 assigned_instance="inst-1",
             )
-            await task_registry.update_status("task-completed", TaskStatus.COMPLETED)
+            await task_registry.update_status(
+                "task-completed", TaskStatus.COMPLETED
+            )
 
         asyncio.run(setup())
 
@@ -523,7 +527,9 @@ class TestTaskScheduleInfoEndpoint:
         asyncio.run(setup())
 
         # Filter by non-existent model
-        response = test_client.get("/v1/task/schedule_info?model_id=non-existent")
+        response = test_client.get(
+            "/v1/task/schedule_info?model_id=non-existent"
+        )
         assert response.status_code == 200
 
         data = response.json()
@@ -533,7 +539,9 @@ class TestTaskScheduleInfoEndpoint:
 
     def test_schedule_info_invalid_status(self, test_client):
         """Test schedule_info with invalid status filter returns 400."""
-        response = test_client.get("/v1/task/schedule_info?status=invalid_status")
+        response = test_client.get(
+            "/v1/task/schedule_info?status=invalid_status"
+        )
         assert response.status_code == 400
 
         data = response.json()

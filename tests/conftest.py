@@ -52,10 +52,9 @@ def pytest_collection_modifyitems(config, items):
             reason="Need --run-integration flag and PyLet cluster"
         )
         for item in items:
-            if (
-                item.get_closest_marker("integration")
-                or item.get_closest_marker("performance")
-            ):
+            if item.get_closest_marker(
+                "integration"
+            ) or item.get_closest_marker("performance"):
                 item.add_marker(skip_marker)
 
 
@@ -63,6 +62,3 @@ def pytest_collection_modifyitems(config, items):
 def pylet_head_address(request):
     """Get PyLet head address from command line or environment."""
     return request.config.getoption("--pylet-head")
-
-
-

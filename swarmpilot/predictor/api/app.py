@@ -80,7 +80,9 @@ def _register_routes(application: FastAPI) -> None:
     application.include_router(prediction.router)
 
     # Add WebSocket endpoint
-    application.add_api_websocket_route("/ws/predict", websocket.websocket_predict)
+    application.add_api_websocket_route(
+        "/ws/predict", websocket.websocket_predict
+    )
 
 
 # Create the app instance

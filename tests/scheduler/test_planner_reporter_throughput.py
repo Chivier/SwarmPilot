@@ -34,7 +34,9 @@ class TestPlannerReporterThroughputIntegration:
         return tracker
 
     @pytest.fixture
-    def reporter_with_tracker(self, mock_task_registry, mock_throughput_tracker):
+    def reporter_with_tracker(
+        self, mock_task_registry, mock_throughput_tracker
+    ):
         """Create PlannerReporter with throughput tracker."""
         reporter = PlannerReporter(
             task_registry=mock_task_registry,
@@ -68,7 +70,9 @@ class TestPlannerReporterThroughputIntegration:
         mock_response.raise_for_status = MagicMock()
 
         reporter_with_tracker._http_client = MagicMock()
-        reporter_with_tracker._http_client.post = AsyncMock(return_value=mock_response)
+        reporter_with_tracker._http_client.post = AsyncMock(
+            return_value=mock_response
+        )
 
         # Call _report_to_planner
         await reporter_with_tracker._report_to_planner()
@@ -87,7 +91,9 @@ class TestPlannerReporterThroughputIntegration:
         assert "/v1/submit_target" in str(submit_target_call)
 
         # Check submit_throughput calls
-        throughput_calls = [c for c in calls if "/v1/submit_throughput" in str(c)]
+        throughput_calls = [
+            c for c in calls if "/v1/submit_throughput" in str(c)
+        ]
         assert len(throughput_calls) == 2
 
     @pytest.mark.asyncio
@@ -121,7 +127,9 @@ class TestPlannerReporterThroughputIntegration:
         mock_response.raise_for_status = MagicMock()
 
         reporter_with_tracker._http_client = MagicMock()
-        reporter_with_tracker._http_client.post = AsyncMock(return_value=mock_response)
+        reporter_with_tracker._http_client.post = AsyncMock(
+            return_value=mock_response
+        )
 
         await reporter_with_tracker._report_to_planner()
 
@@ -146,7 +154,9 @@ class TestPlannerReporterThroughputIntegration:
         async def side_effect(*args, **kwargs):
             nonlocal call_count
             call_count += 1
-            if "/v1/submit_throughput" in str(args) or "/v1/submit_throughput" in str(kwargs):
+            if "/v1/submit_throughput" in str(
+                args
+            ) or "/v1/submit_throughput" in str(kwargs):
                 raise httpx.HTTPError("Connection refused")
             mock_resp = MagicMock()
             mock_resp.status_code = 200
@@ -154,7 +164,9 @@ class TestPlannerReporterThroughputIntegration:
             return mock_resp
 
         reporter_with_tracker._http_client = MagicMock()
-        reporter_with_tracker._http_client.post = AsyncMock(side_effect=side_effect)
+        reporter_with_tracker._http_client.post = AsyncMock(
+            side_effect=side_effect
+        )
 
         # Should not raise even with HTTP errors
         await reporter_with_tracker._report_to_planner()
@@ -167,8 +179,8 @@ class TestPlannerReporterThroughputIntegration:
         self, reporter_with_tracker, mock_throughput_tracker
     ):
         """When tracker returns empty data, no /submit_throughput calls are made."""
-        mock_throughput_tracker.get_averages_for_recent_instances_seconds = AsyncMock(
-            return_value={}
+        mock_throughput_tracker.get_averages_for_recent_instances_seconds = (
+            AsyncMock(return_value={})
         )
 
         mock_response = MagicMock()
@@ -176,7 +188,9 @@ class TestPlannerReporterThroughputIntegration:
         mock_response.raise_for_status = MagicMock()
 
         reporter_with_tracker._http_client = MagicMock()
-        reporter_with_tracker._http_client.post = AsyncMock(return_value=mock_response)
+        reporter_with_tracker._http_client.post = AsyncMock(
+            return_value=mock_response
+        )
 
         await reporter_with_tracker._report_to_planner()
 
@@ -192,12 +206,14 @@ class TestPlannerReporterThroughputIntegration:
     ):
         """Each instance's throughput is reported separately."""
         # Set up 3 instances
-        mock_throughput_tracker.get_averages_for_recent_instances_seconds = AsyncMock(
-            return_value={
-                "http://inst1:8080": 0.5,
-                "http://inst2:8080": 1.0,
-                "http://inst3:8080": 2.0,
-            }
+        mock_throughput_tracker.get_averages_for_recent_instances_seconds = (
+            AsyncMock(
+                return_value={
+                    "http://inst1:8080": 0.5,
+                    "http://inst2:8080": 1.0,
+                    "http://inst3:8080": 2.0,
+                }
+            )
         )
 
         mock_response = MagicMock()
@@ -205,7 +221,9 @@ class TestPlannerReporterThroughputIntegration:
         mock_response.raise_for_status = MagicMock()
 
         reporter_with_tracker._http_client = MagicMock()
-        reporter_with_tracker._http_client.post = AsyncMock(return_value=mock_response)
+        reporter_with_tracker._http_client.post = AsyncMock(
+            return_value=mock_response
+        )
 
         await reporter_with_tracker._report_to_planner()
 
@@ -214,7 +232,9 @@ class TestPlannerReporterThroughputIntegration:
         # 1 submit_target + 3 submit_throughput = 4 total
         assert len(calls) == 4
 
-        throughput_calls = [c for c in calls if "/v1/submit_throughput" in str(c)]
+        throughput_calls = [
+            c for c in calls if "/v1/submit_throughput" in str(c)
+        ]
         assert len(throughput_calls) == 3
 
 

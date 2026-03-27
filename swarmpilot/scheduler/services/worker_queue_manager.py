@@ -195,9 +195,7 @@ class WorkerQueueManager:
 
         return thread.enqueue(task)
 
-    def enqueue_priority_task(
-        self, worker_id: str, task: QueuedTask
-    ) -> None:
+    def enqueue_priority_task(self, worker_id: str, task: QueuedTask) -> None:
         """Enqueue a lightweight task to the front of a worker's queue.
 
         Priority tasks skip ahead of normal tasks and do not affect

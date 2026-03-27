@@ -77,10 +77,12 @@ class AdaptiveBootstrapStrategy(SchedulingStrategy):
         Returns:
             True if a trained quantile model exists on disk.
         """
-        model_key = self.predictor_client._low_level._storage.generate_model_key(
-            model_id=model_id,
-            platform_info=platform_info,
-            prediction_type="quantile",
+        model_key = (
+            self.predictor_client._low_level._storage.generate_model_key(
+                model_id=model_id,
+                platform_info=platform_info,
+                prediction_type="quantile",
+            )
         )
         return self.predictor_client._low_level._storage.model_exists(model_key)
 

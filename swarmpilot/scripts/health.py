@@ -69,7 +69,9 @@ def wait_for_health(
     endpoints_to_try = health_endpoints or HEALTH_ENDPOINTS
 
     # Normalize endpoint
-    if not endpoint.startswith("http://") and not endpoint.startswith("https://"):
+    if not endpoint.startswith("http://") and not endpoint.startswith(
+        "https://"
+    ):
         base_url = f"http://{endpoint}"
     else:
         base_url = endpoint
@@ -197,7 +199,8 @@ class HeartbeatSender:
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
         logger.info(
-            f"Heartbeat started for {self.instance_id} " f"(interval: {self.interval}s)"
+            f"Heartbeat started for {self.instance_id} "
+            f"(interval: {self.interval}s)"
         )
 
     def stop(self, timeout: float = 5.0) -> None:
@@ -217,7 +220,9 @@ class HeartbeatSender:
             if self._thread.is_alive():
                 logger.warning("Heartbeat thread did not stop cleanly")
 
-        logger.info(f"Heartbeat stopped after {self._heartbeat_count} heartbeats")
+        logger.info(
+            f"Heartbeat stopped after {self._heartbeat_count} heartbeats"
+        )
 
     def _run(self) -> None:
         """Heartbeat loop (runs in background thread)."""
@@ -239,7 +244,9 @@ class HeartbeatSender:
 
             if response.status_code == 200:
                 self._last_success = True
-                logger.debug(f"Heartbeat #{self._heartbeat_count} sent successfully")
+                logger.debug(
+                    f"Heartbeat #{self._heartbeat_count} sent successfully"
+                )
             else:
                 self._last_success = False
                 logger.warning(

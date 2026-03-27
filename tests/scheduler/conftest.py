@@ -348,7 +348,9 @@ def freeze_time(monkeypatch):
         def now():
             return fixed_time
 
-    monkeypatch.setattr("swarmpilot.scheduler.registry.task_registry.datetime", MockDatetime)
+    monkeypatch.setattr(
+        "swarmpilot.scheduler.registry.task_registry.datetime", MockDatetime
+    )
     return fixed_time
 
 

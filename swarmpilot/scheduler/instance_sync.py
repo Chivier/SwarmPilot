@@ -12,8 +12,12 @@ Example:
     ```python
     request = InstanceSyncRequest(
         instances=[
-            InstanceInfo(instance_id="worker-1", endpoint="http://...", model_id="gpt-4"),
-            InstanceInfo(instance_id="worker-2", endpoint="http://...", model_id="gpt-4"),
+            InstanceInfo(
+                instance_id="worker-1", endpoint="http://...", model_id="gpt-4"
+            ),
+            InstanceInfo(
+                instance_id="worker-2", endpoint="http://...", model_id="gpt-4"
+            ),
         ]
     )
     result = await handle_instance_sync(

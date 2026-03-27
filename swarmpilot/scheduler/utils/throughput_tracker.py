@@ -67,7 +67,9 @@ class ThroughputTracker:
                     instance_endpoint=instance_endpoint,
                     window_size=self._window_size,
                 )
-            self._instances[instance_endpoint].add_execution_time(execution_time_ms)
+            self._instances[instance_endpoint].add_execution_time(
+                execution_time_ms
+            )
             # Mark this instance as having new data since last report
             self._instances_with_new_data.add(instance_endpoint)
 

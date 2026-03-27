@@ -34,8 +34,9 @@ class PreprocessorsRegistryV2:
 
     Example:
         >>> registry = PreprocessorsRegistryV2()
-        >>> prep = registry.get("multiply", feature_a="a", feature_b="b",
-        ...                     output_feature="c")
+        >>> prep = registry.get(
+        ...     "multiply", feature_a="a", feature_b="b", output_feature="c"
+        ... )
         >>> chain = registry.create_chain_from_config([
         ...     {"name": "multiply", "params": {"feature_a": "a", ...}}
         ... ])

@@ -49,9 +49,7 @@ class ModelValidationService:
         """
         self._registry = registry
 
-    def validate_models(
-        self, requested_models: list[str]
-    ) -> ValidationResult:
+    def validate_models(self, requested_models: list[str]) -> ValidationResult:
         """Validate that all requested models have registered schedulers.
 
         If no schedulers are registered at all (legacy/backward-compatible
@@ -67,9 +65,7 @@ class ModelValidationService:
 
         # If no schedulers registered, skip validation (backward compat)
         if not registered:
-            logger.debug(
-                "No schedulers registered, skipping model validation"
-            )
+            logger.debug("No schedulers registered, skipping model validation")
             return ValidationResult(
                 valid=True,
                 registered_models=[],

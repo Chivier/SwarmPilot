@@ -115,7 +115,11 @@ class TestWorkerRegistration:
             )
 
         assert manager.get_worker_count() == 3
-        assert set(manager.get_worker_ids()) == {"worker-0", "worker-1", "worker-2"}
+        assert set(manager.get_worker_ids()) == {
+            "worker-0",
+            "worker-1",
+            "worker-2",
+        }
 
         # Cleanup
         manager.shutdown()
@@ -287,7 +291,8 @@ class TestQueueDepth:
 
         assert len(depths) == 3
         assert all(
-            worker_id in depths for worker_id in ["worker-0", "worker-1", "worker-2"]
+            worker_id in depths
+            for worker_id in ["worker-0", "worker-1", "worker-2"]
         )
         assert all(isinstance(d, int) for d in depths.values())
 

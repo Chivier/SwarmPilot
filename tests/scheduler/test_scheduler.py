@@ -30,7 +30,9 @@ class TestMinimumExpectedTimeStrategy:
         self, mock_predictor_client, instance_registry
     ):
         """Test selecting instance with minimum predicted time (no queue)."""
-        strategy = MinimumExpectedTimeStrategy(mock_predictor_client, instance_registry)
+        strategy = MinimumExpectedTimeStrategy(
+            mock_predictor_client, instance_registry
+        )
 
         predictions = [
             Prediction(
@@ -69,7 +71,9 @@ class TestMinimumExpectedTimeStrategy:
         self, mock_predictor_client, instance_registry
     ):
         """Test selecting instance considering queue state."""
-        strategy = MinimumExpectedTimeStrategy(mock_predictor_client, instance_registry)
+        strategy = MinimumExpectedTimeStrategy(
+            mock_predictor_client, instance_registry
+        )
 
         predictions = [
             Prediction(
@@ -116,7 +120,9 @@ class TestMinimumExpectedTimeStrategy:
         self, mock_predictor_client, instance_registry
     ):
         """Test selection with empty predictions list."""
-        strategy = MinimumExpectedTimeStrategy(mock_predictor_client, instance_registry)
+        strategy = MinimumExpectedTimeStrategy(
+            mock_predictor_client, instance_registry
+        )
 
         selected = strategy.select_instance([], {})
         assert selected is None
@@ -125,7 +131,9 @@ class TestMinimumExpectedTimeStrategy:
         self, mock_predictor_client, instance_registry
     ):
         """Test selection with single prediction."""
-        strategy = MinimumExpectedTimeStrategy(mock_predictor_client, instance_registry)
+        strategy = MinimumExpectedTimeStrategy(
+            mock_predictor_client, instance_registry
+        )
 
         predictions = [
             Prediction(
@@ -197,7 +205,9 @@ class TestProbabilisticSchedulingStrategy:
         selected = strategy.select_instance(predictions, {})
         assert selected in ["inst-1", "inst-2", "inst-3"]
 
-    async def test_select_empty_list(self, mock_predictor_client, instance_registry):
+    async def test_select_empty_list(
+        self, mock_predictor_client, instance_registry
+    ):
         """Test selection with empty predictions list."""
         strategy = ProbabilisticSchedulingStrategy(
             mock_predictor_client, instance_registry
@@ -206,7 +216,9 @@ class TestProbabilisticSchedulingStrategy:
         selected = strategy.select_instance([], {})
         assert selected is None
 
-    async def test_fallback_to_min_time(self, mock_predictor_client, instance_registry):
+    async def test_fallback_to_min_time(
+        self, mock_predictor_client, instance_registry
+    ):
         """Test fallback to minimum expected time when quantile not available."""
         strategy = ProbabilisticSchedulingStrategy(
             mock_predictor_client, instance_registry
@@ -253,7 +265,9 @@ class TestProbabilisticSchedulingStrategy:
         selected = strategy.select_instance(predictions, {})
         assert selected in ["inst-1", "inst-2", "inst-3"]
 
-    async def test_quantile_not_in_dict(self, mock_predictor_client, instance_registry):
+    async def test_quantile_not_in_dict(
+        self, mock_predictor_client, instance_registry
+    ):
         """Test when quantiles exist but target quantile not in them."""
         strategy = ProbabilisticSchedulingStrategy(
             mock_predictor_client, instance_registry
@@ -371,7 +385,9 @@ class TestProbabilisticSchedulingStrategy:
 class TestRoundRobinStrategy:
     """Tests for RoundRobinStrategy."""
 
-    async def test_round_robin_cycling(self, mock_predictor_client, instance_registry):
+    async def test_round_robin_cycling(
+        self, mock_predictor_client, instance_registry
+    ):
         """Test that strategy cycles through instances."""
         strategy = RoundRobinStrategy(mock_predictor_client, instance_registry)
 
@@ -453,8 +469,12 @@ class TestRoundRobinStrategy:
             Prediction(instance_id="inst-3", predicted_time_ms=100.0),
         ]
 
-        strategy.select_instance(predictions_3, {})  # counter = 0, select inst-1
-        strategy.select_instance(predictions_3, {})  # counter = 1, select inst-2
+        strategy.select_instance(
+            predictions_3, {}
+        )  # counter = 0, select inst-1
+        strategy.select_instance(
+            predictions_3, {}
+        )  # counter = 1, select inst-2
 
         # Now use 2 instances
         predictions_2 = [
@@ -479,7 +499,9 @@ class TestGetStrategy:
         self, mock_predictor_client, instance_registry
     ):
         """Test getting MinimumExpectedTimeStrategy."""
-        strategy = get_strategy("min_time", mock_predictor_client, instance_registry)
+        strategy = get_strategy(
+            "min_time", mock_predictor_client, instance_registry
+        )
         assert isinstance(strategy, MinimumExpectedTimeStrategy)
 
     async def test_get_probabilistic_strategy(
@@ -495,7 +517,9 @@ class TestGetStrategy:
         self, mock_predictor_client, instance_registry
     ):
         """Test getting RoundRobinStrategy."""
-        strategy = get_strategy("round_robin", mock_predictor_client, instance_registry)
+        strategy = get_strategy(
+            "round_robin", mock_predictor_client, instance_registry
+        )
         assert isinstance(strategy, RoundRobinStrategy)
 
     async def test_unknown_strategy_defaults_to_adaptive_bootstrap(
@@ -507,10 +531,14 @@ class TestGetStrategy:
         )
         assert isinstance(strategy, AdaptiveBootstrapStrategy)
 
-    async def test_case_sensitivity(self, mock_predictor_client, instance_registry):
+    async def test_case_sensitivity(
+        self, mock_predictor_client, instance_registry
+    ):
         """Test that strategy names are case-sensitive."""
         # "MIN_TIME" should not match "min_time"
-        strategy = get_strategy("MIN_TIME", mock_predictor_client, instance_registry)
+        strategy = get_strategy(
+            "MIN_TIME", mock_predictor_client, instance_registry
+        )
         # Should default to adaptive bootstrap
         assert isinstance(strategy, AdaptiveBootstrapStrategy)
 
@@ -523,14 +551,18 @@ class TestGetStrategy:
 class TestMinimumExpectedTimeStrategyUpdate:
     """Additional tests for MinimumExpectedTimeStrategy update_queue."""
 
-    async def test_update_queue_success(self, mock_predictor_client, instance_registry):
+    async def test_update_queue_success(
+        self, mock_predictor_client, instance_registry
+    ):
         """Test successful queue update with error accumulation."""
         from swarmpilot.scheduler.models import (
             Instance,
             InstanceQueueExpectError,
         )
 
-        strategy = MinimumExpectedTimeStrategy(mock_predictor_client, instance_registry)
+        strategy = MinimumExpectedTimeStrategy(
+            mock_predictor_client, instance_registry
+        )
 
         # Register an instance with initial queue state
         instance = Instance(
@@ -576,7 +608,9 @@ class TestMinimumExpectedTimeStrategyUpdate:
             Instance,
         )
 
-        strategy = MinimumExpectedTimeStrategy(mock_predictor_client, instance_registry)
+        strategy = MinimumExpectedTimeStrategy(
+            mock_predictor_client, instance_registry
+        )
 
         # Register instance with probabilistic queue (wrong type)
         instance = Instance(
@@ -664,7 +698,8 @@ class TestProbabilisticStrategyUpdate:
         assert isinstance(updated_queue, InstanceQueueProbabilistic)
         # Values should be sum of queue + task samples
         assert all(
-            v > initial_queue.values[i] for i, v in enumerate(updated_queue.values)
+            v > initial_queue.values[i]
+            for i, v in enumerate(updated_queue.values)
         )
 
     async def test_update_queue_without_quantiles(
@@ -867,7 +902,9 @@ class TestSchedulingStrategyErrors:
         """Test get_predictions when model is not found."""
         from swarmpilot.scheduler.models import Instance
 
-        strategy = MinimumExpectedTimeStrategy(mock_predictor_client, instance_registry)
+        strategy = MinimumExpectedTimeStrategy(
+            mock_predictor_client, instance_registry
+        )
 
         # Library client raises ValueError for model not found
         mock_predictor_client.predict.side_effect = ValueError(
@@ -896,7 +933,9 @@ class TestSchedulingStrategyErrors:
         """Test get_predictions with invalid metadata."""
         from swarmpilot.scheduler.models import Instance
 
-        strategy = MinimumExpectedTimeStrategy(mock_predictor_client, instance_registry)
+        strategy = MinimumExpectedTimeStrategy(
+            mock_predictor_client, instance_registry
+        )
 
         # Library client raises ValueError for invalid features
         mock_predictor_client.predict.side_effect = ValueError(
@@ -923,7 +962,9 @@ class TestSchedulingStrategyErrors:
 class TestRoundRobinStrategyUpdate:
     """Additional tests for RoundRobinStrategy."""
 
-    async def test_update_queue_noop(self, mock_predictor_client, instance_registry):
+    async def test_update_queue_noop(
+        self, mock_predictor_client, instance_registry
+    ):
         """Test that RoundRobinStrategy update_queue is a no-op."""
         from swarmpilot.scheduler.models import Instance
 
@@ -979,7 +1020,9 @@ class TestRoundRobinStrategySelect:
         """Test select_instance with single prediction."""
         strategy = RoundRobinStrategy(mock_predictor_client, instance_registry)
 
-        predictions = [Prediction(instance_id="inst-1", predicted_time_ms=100.0)]
+        predictions = [
+            Prediction(instance_id="inst-1", predicted_time_ms=100.0)
+        ]
 
         selected = strategy.select_instance(predictions, {})
         assert selected == "inst-1"
@@ -1307,15 +1350,21 @@ class TestMinimumExpectedTimeServerlessStrategy:
 class TestGetStrategyAdditional:
     """Additional tests for get_strategy factory function."""
 
-    async def test_get_random_strategy(self, mock_predictor_client, instance_registry):
+    async def test_get_random_strategy(
+        self, mock_predictor_client, instance_registry
+    ):
         """Test get_strategy returns RandomStrategy."""
         from swarmpilot.scheduler.algorithms import RandomStrategy
 
-        strategy = get_strategy("random", mock_predictor_client, instance_registry)
+        strategy = get_strategy(
+            "random", mock_predictor_client, instance_registry
+        )
 
         assert isinstance(strategy, RandomStrategy)
 
-    async def test_get_po2_strategy(self, mock_predictor_client, instance_registry):
+    async def test_get_po2_strategy(
+        self, mock_predictor_client, instance_registry
+    ):
         """Test get_strategy returns PowerOfTwoStrategy."""
         from swarmpilot.scheduler.algorithms import PowerOfTwoStrategy
 
@@ -1331,6 +1380,8 @@ class TestGetStrategyAdditional:
             MinimumExpectedTimeServerlessStrategy,
         )
 
-        strategy = get_strategy("serverless", mock_predictor_client, instance_registry)
+        strategy = get_strategy(
+            "serverless", mock_predictor_client, instance_registry
+        )
 
         assert isinstance(strategy, MinimumExpectedTimeServerlessStrategy)

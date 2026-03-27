@@ -45,7 +45,9 @@ def new_prediction():
     )
 
 
-def setup_instance_and_task(test_client, task_id: str, model_id: str = "model-1"):
+def setup_instance_and_task(
+    test_client, task_id: str, model_id: str = "model-1"
+):
     """Helper to register instance and submit a task."""
     # Register instance (idempotent)
     test_client.post(
@@ -63,7 +65,10 @@ def setup_instance_and_task(test_client, task_id: str, model_id: str = "model-1"
     )
 
     # Submit task
-    with patch("swarmpilot.scheduler.api.predictor_client.predict", new=AsyncMock(return_value=[])):
+    with patch(
+        "swarmpilot.scheduler.api.predictor_client.predict",
+        new=AsyncMock(return_value=[]),
+    ):
         test_client.post(
             "/v1/task/submit",
             json={

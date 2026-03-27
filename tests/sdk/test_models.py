@@ -179,9 +179,7 @@ class TestDeploymentResult:
             status="deployed",
         )
 
-    def test_getitem_returns_group(
-        self, result: DeploymentResult
-    ) -> None:
+    def test_getitem_returns_group(self, result: DeploymentResult) -> None:
         """Subscript access returns the correct InstanceGroup."""
         group = result["llama-7b"]
         assert group.name == "llama-group"

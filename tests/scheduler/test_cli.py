@@ -165,7 +165,9 @@ class TestLoadConfigFile:
             with patch(
                 "builtins.__import__",
                 side_effect=lambda name, *args, **kwargs: (
-                    (_ for _ in ()).throw(ImportError(f"No module named '{name}'"))
+                    (_ for _ in ()).throw(
+                        ImportError(f"No module named '{name}'")
+                    )
                     if name == "yaml"
                     else __import__(name, *args, **kwargs)
                 ),
@@ -306,7 +308,9 @@ class TestStartCommand:
             assert call_args[1]["port"]  # Some port value
             assert "swarmpilot.scheduler.api:app" in call_args[0]
 
-    def test_start_with_config_file(self, runner, temp_config_files, monkeypatch):
+    def test_start_with_config_file(
+        self, runner, temp_config_files, monkeypatch
+    ):
         """Test starting with configuration file."""
         with patch("swarmpilot.scheduler.cli.uvicorn.run") as mock_run:
             result = runner.invoke(
@@ -335,7 +339,10 @@ class TestStartCommand:
 
     def test_start_keyboard_interrupt(self, runner, monkeypatch):
         """Test handling of keyboard interrupt during start."""
-        with patch("swarmpilot.scheduler.cli.uvicorn.run", side_effect=KeyboardInterrupt):
+        with patch(
+            "swarmpilot.scheduler.cli.uvicorn.run",
+            side_effect=KeyboardInterrupt,
+        ):
             result = runner.invoke(app, ["start"])
 
             assert result.exit_code == 0
@@ -343,7 +350,10 @@ class TestStartCommand:
 
     def test_start_exception_handling(self, runner, monkeypatch):
         """Test handling of exceptions during start."""
-        with patch("swarmpilot.scheduler.cli.uvicorn.run", side_effect=Exception("Test error")):
+        with patch(
+            "swarmpilot.scheduler.cli.uvicorn.run",
+            side_effect=Exception("Test error"),
+        ):
             result = runner.invoke(app, ["start"], catch_exceptions=False)
 
             # The exception should be raised

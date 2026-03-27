@@ -56,7 +56,9 @@ class TestTaskClearAPI:
         )
 
         # Call clear endpoint
-        with patch("swarmpilot.scheduler.api.httpx.AsyncClient") as mock_client_class:
+        with patch(
+            "swarmpilot.scheduler.api.httpx.AsyncClient"
+        ) as mock_client_class:
             mock_client = AsyncMock()
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock()
@@ -83,7 +85,8 @@ class TestTaskClearAPI:
     async def test_clearing_flag_reset_after_error(self, test_client):
         """Test that clear recovers gracefully from errors."""
         with patch(
-            "swarmpilot.scheduler.api.task_registry.clear_all", new_callable=AsyncMock
+            "swarmpilot.scheduler.api.task_registry.clear_all",
+            new_callable=AsyncMock,
         ) as mock_clear:
             mock_clear.side_effect = Exception("Test error")
 
@@ -105,7 +108,9 @@ class TestTaskClearIntegration:
         """Test clear -> submit -> clear cycle works correctly."""
         from swarmpilot.scheduler.api import task_registry
 
-        with patch("swarmpilot.scheduler.api.httpx.AsyncClient") as mock_client_class:
+        with patch(
+            "swarmpilot.scheduler.api.httpx.AsyncClient"
+        ) as mock_client_class:
             mock_client = AsyncMock()
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock()
@@ -135,7 +140,9 @@ class TestTaskClearIntegration:
             assigned_instance="",
         )
 
-        with patch("swarmpilot.scheduler.api.httpx.AsyncClient") as mock_client_class:
+        with patch(
+            "swarmpilot.scheduler.api.httpx.AsyncClient"
+        ) as mock_client_class:
             mock_client = AsyncMock()
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock()
@@ -170,7 +177,9 @@ class TestTaskClearIntegration:
             assigned_instance="",
         )
 
-        with patch("swarmpilot.scheduler.api.httpx.AsyncClient") as mock_client_class:
+        with patch(
+            "swarmpilot.scheduler.api.httpx.AsyncClient"
+        ) as mock_client_class:
             mock_client = AsyncMock()
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock()

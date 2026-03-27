@@ -41,24 +41,18 @@ class TestServeRequest:
 
     def test_scheduler_accepts_auto(self) -> None:
         """Test scheduler field accepts 'auto'."""
-        req = ServeRequest(
-            model_or_command="model-a", scheduler="auto"
-        )
+        req = ServeRequest(model_or_command="model-a", scheduler="auto")
         assert req.scheduler == "auto"
 
     def test_scheduler_accepts_none(self) -> None:
         """Test scheduler field accepts None."""
-        req = ServeRequest(
-            model_or_command="model-a", scheduler=None
-        )
+        req = ServeRequest(model_or_command="model-a", scheduler=None)
         assert req.scheduler is None
 
     def test_scheduler_accepts_url(self) -> None:
         """Test scheduler field accepts a URL string."""
         url = "http://scheduler:8000"
-        req = ServeRequest(
-            model_or_command="model-a", scheduler=url
-        )
+        req = ServeRequest(model_or_command="model-a", scheduler=url)
         assert req.scheduler == url
 
     def test_replicas_defaults_to_one(self) -> None:
@@ -131,9 +125,7 @@ class TestRegisterRequest:
 
     def test_valid_creation(self) -> None:
         """Test valid RegisterRequest creation."""
-        req = RegisterRequest(
-            model="llama-7b", replicas=3, gpu_count=2
-        )
+        req = RegisterRequest(model="llama-7b", replicas=3, gpu_count=2)
         assert req.model == "llama-7b"
         assert req.replicas == 3
         assert req.gpu_count == 2
@@ -312,17 +304,13 @@ class TestRegisteredModelsResponse:
     def test_models_dict(self) -> None:
         """Test models mapping contains RegisterRequest values."""
         reg = RegisterRequest(model="llama-7b", gpu_count=2)
-        resp = RegisteredModelsResponse(
-            models={"llama-7b": reg}, total=1
-        )
+        resp = RegisteredModelsResponse(models={"llama-7b": reg}, total=1)
         assert resp.models["llama-7b"].gpu_count == 2
         assert resp.total == 1
 
     def test_serialization(self) -> None:
         """Test nested RegisterRequest serialises correctly."""
         reg = RegisterRequest(model="mistral-7b", gpu_count=4)
-        resp = RegisteredModelsResponse(
-            models={"mistral-7b": reg}, total=1
-        )
+        resp = RegisteredModelsResponse(models={"mistral-7b": reg}, total=1)
         data = resp.model_dump()
         assert data["models"]["mistral-7b"]["gpu_count"] == 4

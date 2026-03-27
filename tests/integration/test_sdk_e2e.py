@@ -72,9 +72,7 @@ def _make_deployment_result(
     result.success = success
     result.active_instances = active_instances or []
     result.error = error
-    result.total_added = (
-        len(active_instances) if active_instances else 0
-    )
+    result.total_added = len(active_instances) if active_instances else 0
     result.total_removed = 0
     return result
 
@@ -95,15 +93,13 @@ def _mock_pylet_service(
     svc.initialized = True
     svc.get_active_instances.return_value = instances
     svc.get_instances_by_model.return_value = instances
-    svc.apply_deployment.return_value = (
-        _make_deployment_result(active_instances=instances)
+    svc.apply_deployment.return_value = _make_deployment_result(
+        active_instances=instances
     )
-    svc.scale_model.return_value = (
-        _make_deployment_result(active_instances=instances)
+    svc.scale_model.return_value = _make_deployment_result(
+        active_instances=instances
     )
-    svc.terminate_all.return_value = {
-        i.pylet_id: True for i in instances
-    }
+    svc.terminate_all.return_value = {i.pylet_id: True for i in instances}
     svc.instance_manager.terminate_instances.return_value = {
         i.pylet_id: True for i in instances
     }
@@ -174,10 +170,7 @@ def _clear_scheduler_registry():
 class TestServeFlow:
     """POST /v1/serve with mocked PyLet -> verify response."""
 
-    @patch(
-        "swarmpilot.planner.routes.sdk_api"
-        ".get_pylet_service_optional"
-    )
+    @patch("swarmpilot.planner.routes.sdk_api.get_pylet_service_optional")
     @patch("swarmpilot.planner.routes.sdk_api.config")
     async def test_serve_returns_correct_structure(
         self,
@@ -188,9 +181,7 @@ class TestServeFlow:
         """Serve a model and verify the response shape."""
         mock_config.pylet_enabled = True
         inst = _make_managed_instance()
-        mock_get_svc.return_value = _mock_pylet_service(
-            active_instances=[inst]
-        )
+        mock_get_svc.return_value = _mock_pylet_service(active_instances=[inst])
 
         resp = await planner_client.post(
             "/v1/serve",
@@ -218,10 +209,7 @@ class TestServeFlow:
 class TestRegisterDeployFlow:
     """Register models -> POST /v1/deploy -> verify plan."""
 
-    @patch(
-        "swarmpilot.planner.routes.sdk_api"
-        ".get_pylet_service_optional"
-    )
+    @patch("swarmpilot.planner.routes.sdk_api.get_pylet_service_optional")
     @patch("swarmpilot.planner.routes.sdk_api.config")
     async def test_register_then_deploy(
         self,
@@ -231,12 +219,8 @@ class TestRegisterDeployFlow:
     ) -> None:
         """Register two models, deploy, and verify response."""
         mock_config.pylet_enabled = True
-        inst_a = _make_managed_instance(
-            pylet_id="p-a", model_id="model-a"
-        )
-        inst_b = _make_managed_instance(
-            pylet_id="p-b", model_id="model-b"
-        )
+        inst_a = _make_managed_instance(pylet_id="p-a", model_id="model-a")
+        inst_b = _make_managed_instance(pylet_id="p-b", model_id="model-b")
         mock_get_svc.return_value = _mock_pylet_service(
             active_instances=[inst_a, inst_b]
         )
@@ -284,10 +268,7 @@ class TestRegisterDeployFlow:
 class TestRunFlow:
     """POST /v1/run -> verify no scheduler association."""
 
-    @patch(
-        "swarmpilot.planner.routes.sdk_api"
-        ".get_pylet_service_optional"
-    )
+    @patch("swarmpilot.planner.routes.sdk_api.get_pylet_service_optional")
     @patch("swarmpilot.planner.routes.sdk_api.config")
     async def test_run_custom_command(
         self,
@@ -297,12 +278,8 @@ class TestRunFlow:
     ) -> None:
         """Run a custom command and verify response."""
         mock_config.pylet_enabled = True
-        inst = _make_managed_instance(
-            model_id="python train.py"
-        )
-        mock_get_svc.return_value = _mock_pylet_service(
-            active_instances=[inst]
-        )
+        inst = _make_managed_instance(model_id="python train.py")
+        mock_get_svc.return_value = _mock_pylet_service(active_instances=[inst])
 
         resp = await planner_client.post(
             "/v1/run",
@@ -329,10 +306,7 @@ class TestRunFlow:
 class TestListInstancesFlow:
     """Deploy -> GET /v1/instances -> verify listing."""
 
-    @patch(
-        "swarmpilot.planner.routes.sdk_api"
-        ".get_pylet_service_optional"
-    )
+    @patch("swarmpilot.planner.routes.sdk_api.get_pylet_service_optional")
     @patch("swarmpilot.planner.routes.sdk_api.config")
     async def test_list_instances_after_deploy(
         self,
@@ -342,12 +316,8 @@ class TestListInstancesFlow:
     ) -> None:
         """List instances and verify the returned details."""
         mock_config.pylet_enabled = True
-        inst1 = _make_managed_instance(
-            pylet_id="p1", model_id="model-a"
-        )
-        inst2 = _make_managed_instance(
-            pylet_id="p2", model_id="model-b"
-        )
+        inst1 = _make_managed_instance(pylet_id="p1", model_id="model-a")
+        inst2 = _make_managed_instance(pylet_id="p2", model_id="model-b")
         mock_get_svc.return_value = _mock_pylet_service(
             active_instances=[inst1, inst2]
         )
@@ -360,10 +330,7 @@ class TestListInstancesFlow:
         ids = {item["pylet_id"] for item in data}
         assert ids == {"p1", "p2"}
 
-    @patch(
-        "swarmpilot.planner.routes.sdk_api"
-        ".get_pylet_service_optional"
-    )
+    @patch("swarmpilot.planner.routes.sdk_api.get_pylet_service_optional")
     @patch("swarmpilot.planner.routes.sdk_api.config")
     async def test_get_single_instance(
         self,
@@ -374,13 +341,9 @@ class TestListInstancesFlow:
         """Get a single instance by pylet_id."""
         mock_config.pylet_enabled = True
         inst = _make_managed_instance(pylet_id="target-id")
-        mock_get_svc.return_value = _mock_pylet_service(
-            active_instances=[inst]
-        )
+        mock_get_svc.return_value = _mock_pylet_service(active_instances=[inst])
 
-        resp = await planner_client.get(
-            "/v1/instances/target-id"
-        )
+        resp = await planner_client.get("/v1/instances/target-id")
 
         assert resp.status_code == 200
         data = resp.json()
@@ -396,10 +359,7 @@ class TestListInstancesFlow:
 class TestScaleFlow:
     """Deploy -> POST /v1/scale -> verify count changes."""
 
-    @patch(
-        "swarmpilot.planner.routes.sdk_api"
-        ".get_pylet_service_optional"
-    )
+    @patch("swarmpilot.planner.routes.sdk_api.get_pylet_service_optional")
     @patch("swarmpilot.planner.routes.sdk_api.config")
     async def test_scale_model_replica_count(
         self,
@@ -410,17 +370,14 @@ class TestScaleFlow:
         """Scale from 1 to 3 replicas and verify counts."""
         mock_config.pylet_enabled = True
         original = _make_managed_instance(pylet_id="p1")
-        scaled = [
-            _make_managed_instance(pylet_id=f"p{i}")
-            for i in range(3)
-        ]
+        scaled = [_make_managed_instance(pylet_id=f"p{i}") for i in range(3)]
 
         svc = _mock_pylet_service(active_instances=[original])
         # get_instances_by_model returns 1 (previous count)
         svc.get_instances_by_model.return_value = [original]
         # scale_model returns 3 (new count)
-        svc.scale_model.return_value = (
-            _make_deployment_result(active_instances=scaled)
+        svc.scale_model.return_value = _make_deployment_result(
+            active_instances=scaled
         )
         mock_get_svc.return_value = svc
 
@@ -448,10 +405,7 @@ class TestScaleFlow:
 class TestTerminateFlow:
     """Deploy -> POST /v1/terminate -> verify termination."""
 
-    @patch(
-        "swarmpilot.planner.routes.sdk_api"
-        ".get_pylet_service_optional"
-    )
+    @patch("swarmpilot.planner.routes.sdk_api.get_pylet_service_optional")
     @patch("swarmpilot.planner.routes.sdk_api.config")
     async def test_terminate_all_instances(
         self,
@@ -467,19 +421,14 @@ class TestTerminateFlow:
             active_instances=[inst1, inst2]
         )
 
-        resp = await planner_client.post(
-            "/v1/terminate", json={"all": True}
-        )
+        resp = await planner_client.post("/v1/terminate", json={"all": True})
 
         assert resp.status_code == 200
         data = resp.json()
         assert data["success"] is True
         assert data["terminated_count"] == 2
 
-    @patch(
-        "swarmpilot.planner.routes.sdk_api"
-        ".get_pylet_service_optional"
-    )
+    @patch("swarmpilot.planner.routes.sdk_api.get_pylet_service_optional")
     @patch("swarmpilot.planner.routes.sdk_api.config")
     async def test_terminate_by_model(
         self,
@@ -489,9 +438,7 @@ class TestTerminateFlow:
     ) -> None:
         """Terminate instances by model identifier."""
         mock_config.pylet_enabled = True
-        inst = _make_managed_instance(
-            pylet_id="p1", model_id="model-a"
-        )
+        inst = _make_managed_instance(pylet_id="p1", model_id="model-a")
         svc = _mock_pylet_service(active_instances=[inst])
         mock_get_svc.return_value = svc
 
@@ -535,10 +482,7 @@ class TestSchedulerMapping:
         assert resp.status_code == 200
         data = resp.json()
         assert "llama-7b" in data["schedulers"]
-        assert (
-            data["schedulers"]["llama-7b"]
-            == "http://sched:8000"
-        )
+        assert data["schedulers"]["llama-7b"] == "http://sched:8000"
         assert data["total"] >= 1
 
     async def test_empty_scheduler_map(
@@ -562,9 +506,7 @@ class TestSchedulerMapping:
 class TestPredictorTrainFlow:
     """POST /v1/predictor/train with mocked training client."""
 
-    @patch(
-        "swarmpilot.scheduler.routes.predictor._get_clients"
-    )
+    @patch("swarmpilot.scheduler.routes.predictor._get_clients")
     async def test_predictor_train_success(
         self,
         mock_get_clients: MagicMock,
@@ -612,9 +554,7 @@ class TestPredictorTrainFlow:
         assert data["samples_trained"] == 5
         assert "Training completed" in data["message"]
 
-    @patch(
-        "swarmpilot.scheduler.routes.predictor._get_clients"
-    )
+    @patch("swarmpilot.scheduler.routes.predictor._get_clients")
     async def test_predictor_train_no_client_returns_503(
         self,
         mock_get_clients: MagicMock,

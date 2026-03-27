@@ -99,7 +99,9 @@ class ProbabilisticSchedulingStrategy(SchedulingStrategy):
             if pred.quantiles and len(pred.quantiles) > 0:
                 # Convert dict to sorted arrays for interpolation
                 pred_quantiles = np.array(sorted(pred.quantiles.keys()))
-                pred_values = np.array([pred.quantiles[q] for q in pred_quantiles])
+                pred_values = np.array(
+                    [pred.quantiles[q] for q in pred_quantiles]
+                )
 
                 # Vectorized prediction time sampling
                 prediction_times = np.interp(
@@ -183,7 +185,9 @@ class ProbabilisticSchedulingStrategy(SchedulingStrategy):
                 quantiles=current_queue.quantiles,
                 values=updated_values,
             )
-            await self.instance_registry.update_queue_info(instance_id, updated_queue)
+            await self.instance_registry.update_queue_info(
+                instance_id, updated_queue
+            )
             logger.debug(
                 f"Updated queue (probabilistic, fallback) for {instance_id}: "
                 f"quantiles={current_queue.quantiles}, "
@@ -203,7 +207,9 @@ class ProbabilisticSchedulingStrategy(SchedulingStrategy):
         # Sample from task distribution
         task_quantiles = sorted(prediction.quantiles.keys())
         task_values = [prediction.quantiles[q] for q in task_quantiles]
-        task_samples = np.interp(random_percentiles, task_quantiles, task_values)
+        task_samples = np.interp(
+            random_percentiles, task_quantiles, task_values
+        )
 
         # Compute total time samples
         total_samples = queue_samples + task_samples
@@ -220,7 +226,9 @@ class ProbabilisticSchedulingStrategy(SchedulingStrategy):
             values=updated_values,
         )
 
-        await self.instance_registry.update_queue_info(instance_id, updated_queue)
+        await self.instance_registry.update_queue_info(
+            instance_id, updated_queue
+        )
         logger.debug(
             f"Updated queue (probabilistic, Monte Carlo) for {instance_id}: "
             f"quantiles={current_queue.quantiles}, "

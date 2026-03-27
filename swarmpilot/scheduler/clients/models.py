@@ -15,7 +15,9 @@ class Prediction:
     instance_id: str
     predicted_time_ms: float
     confidence: float | None = None
-    quantiles: dict[float, float] | None = None  # e.g., {0.5: 120.5, 0.9: 250.3}
+    quantiles: dict[float, float] | None = (
+        None  # e.g., {0.5: 120.5, 0.9: 250.3}
+    )
     error_margin_ms: float | None = None
 
 

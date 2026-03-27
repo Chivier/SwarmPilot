@@ -41,7 +41,9 @@ class InstanceRedeployRequest(BaseModel):
     """Request model for instance redeployment."""
 
     instance_id: str = Field(..., description="ID of the instance to redeploy")
-    redeploy_reason: str | None = Field(None, description="Reason for redeployment")
+    redeploy_reason: str | None = Field(
+        None, description="Reason for redeployment"
+    )
     target_model_id: str | None = Field(
         None, description="Optional target model ID for redeployment"
     )
@@ -59,7 +61,6 @@ class TaskSubmitRequest(BaseModel):
     model_id: str
     task_input: dict[str, Any]
     metadata: dict[str, Any]
-
 
 
 class TaskResubmitRequest(BaseModel):
@@ -121,35 +122,27 @@ class StrategySetRequest(BaseModel):
 class PredictorTrainRequest(BaseModel):
     """Request model for triggering predictor training."""
 
-    model_id: str = Field(
-        ..., description="Model identifier to train"
-    )
+    model_id: str = Field(..., description="Model identifier to train")
     platform_info: dict[str, str] | None = Field(
         None,
         description=(
-            "Platform info (software_name, software_version,"
-            " hardware_name)"
+            "Platform info (software_name, software_version, hardware_name)"
         ),
     )
     prediction_type: str = Field(
         "expect_error",
-        description=(
-            "Prediction type: 'expect_error' or 'quantile'"
-        ),
+        description=("Prediction type: 'expect_error' or 'quantile'"),
     )
 
 
 class PredictorPredictRequest(BaseModel):
     """Request model for manual prediction via the scheduler."""
 
-    model_id: str = Field(
-        ..., description="Model identifier"
-    )
+    model_id: str = Field(..., description="Model identifier")
     platform_info: dict[str, str] = Field(
         ...,
         description=(
-            "Platform info (software_name, software_version,"
-            " hardware_name)"
+            "Platform info (software_name, software_version, hardware_name)"
         ),
     )
     features: dict[str, Any] = Field(
@@ -157,9 +150,7 @@ class PredictorPredictRequest(BaseModel):
     )
     prediction_type: str = Field(
         "expect_error",
-        description=(
-            "Prediction type: 'expect_error' or 'quantile'"
-        ),
+        description=("Prediction type: 'expect_error' or 'quantile'"),
     )
 
 

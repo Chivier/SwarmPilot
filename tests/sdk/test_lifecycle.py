@@ -79,21 +79,13 @@ class TestInstanceWaitReady:
     """Instance.wait_ready() polls until status is ready."""
 
     @respx.mock
-    async def test_polls_until_running(
-        self, client: SwarmPilotClient
-    ) -> None:
+    async def test_polls_until_running(self, client: SwarmPilotClient) -> None:
         """wait_ready returns once status becomes 'running'."""
         # First call returns pending, second returns running.
-        respx.get(
-            f"{PLANNER}/v1/instances/worker-0"
-        ).mock(
+        respx.get(f"{PLANNER}/v1/instances/worker-0").mock(
             side_effect=[
-                httpx.Response(
-                    200, json={"status": "pending"}
-                ),
-                httpx.Response(
-                    200, json={"status": "running"}
-                ),
+                httpx.Response(200, json={"status": "pending"}),
+                httpx.Response(200, json={"status": "running"}),
             ]
         )
 
@@ -112,12 +104,8 @@ class TestInstanceWaitReady:
         self, client: SwarmPilotClient
     ) -> None:
         """wait_ready returns for 'active' status too."""
-        respx.get(
-            f"{PLANNER}/v1/instances/worker-0"
-        ).mock(
-            return_value=httpx.Response(
-                200, json={"status": "active"}
-            )
+        respx.get(f"{PLANNER}/v1/instances/worker-0").mock(
+            return_value=httpx.Response(200, json={"status": "active"})
         )
 
         inst = _make_instance(client=client)
@@ -135,12 +123,8 @@ class TestInstanceWaitReady:
         self, client: SwarmPilotClient
     ) -> None:
         """wait_ready raises SwarmPilotTimeoutError on timeout."""
-        respx.get(
-            f"{PLANNER}/v1/instances/worker-0"
-        ).mock(
-            return_value=httpx.Response(
-                200, json={"status": "pending"}
-            )
+        respx.get(f"{PLANNER}/v1/instances/worker-0").mock(
+            return_value=httpx.Response(200, json={"status": "pending"})
         )
 
         inst = _make_instance(client=client)
@@ -177,12 +161,8 @@ class TestInstanceWaitReady:
         self, client: SwarmPilotClient
     ) -> None:
         """wait_ready raises DeployError on 'failed' status."""
-        respx.get(
-            f"{PLANNER}/v1/instances/worker-0"
-        ).mock(
-            return_value=httpx.Response(
-                200, json={"status": "failed"}
-            )
+        respx.get(f"{PLANNER}/v1/instances/worker-0").mock(
+            return_value=httpx.Response(200, json={"status": "failed"})
         )
 
         inst = _make_instance(client=client)
@@ -192,9 +172,7 @@ class TestInstanceWaitReady:
                 "swarmpilot.sdk.models.asyncio.sleep",
                 new_callable=AsyncMock,
             ),
-            pytest.raises(
-                DeployError, match="worker-0"
-            ),
+            pytest.raises(DeployError, match="worker-0"),
         ):
             await inst.wait_ready(timeout=300)
 
@@ -212,12 +190,8 @@ class TestInstanceTerminate:
         self, client: SwarmPilotClient
     ) -> None:
         """Terminate sends name in the payload."""
-        route = respx.post(
-            f"{PLANNER}/v1/terminate"
-        ).mock(
-            return_value=httpx.Response(
-                200, json={"status": "terminated"}
-            )
+        route = respx.post(f"{PLANNER}/v1/terminate").mock(
+            return_value=httpx.Response(200, json={"status": "terminated"})
         )
 
         inst = _make_instance(client=client)
@@ -268,19 +242,11 @@ class TestInstanceGroupWaitReady:
     ) -> None:
         """wait_ready calls each instance's wait_ready."""
         # Both instances return running immediately.
-        respx.get(
-            f"{PLANNER}/v1/instances/w-0"
-        ).mock(
-            return_value=httpx.Response(
-                200, json={"status": "running"}
-            )
+        respx.get(f"{PLANNER}/v1/instances/w-0").mock(
+            return_value=httpx.Response(200, json={"status": "running"})
         )
-        respx.get(
-            f"{PLANNER}/v1/instances/w-1"
-        ).mock(
-            return_value=httpx.Response(
-                200, json={"status": "running"}
-            )
+        respx.get(f"{PLANNER}/v1/instances/w-1").mock(
+            return_value=httpx.Response(200, json={"status": "running"})
         )
 
         instances = [
@@ -318,12 +284,8 @@ class TestInstanceGroupTerminate:
         self, client: SwarmPilotClient
     ) -> None:
         """Terminate sends model in the payload."""
-        route = respx.post(
-            f"{PLANNER}/v1/terminate"
-        ).mock(
-            return_value=httpx.Response(
-                200, json={"status": "terminated"}
-            )
+        route = respx.post(f"{PLANNER}/v1/terminate").mock(
+            return_value=httpx.Response(200, json={"status": "terminated"})
         )
 
         group = InstanceGroup(
@@ -337,9 +299,7 @@ class TestInstanceGroupTerminate:
         assert route.called
         import json
 
-        body = json.loads(
-            route.calls[0].request.content
-        )
+        body = json.loads(route.calls[0].request.content)
         assert body == {"model": "llama-7b"}
 
 
@@ -357,9 +317,7 @@ class TestInstanceGroupScale:
     ) -> None:
         """Scale sends model and replicas in the payload."""
         route = respx.post(f"{PLANNER}/v1/scale").mock(
-            return_value=httpx.Response(
-                200, json={"status": "scaled"}
-            )
+            return_value=httpx.Response(200, json={"status": "scaled"})
         )
 
         group = InstanceGroup(
@@ -373,9 +331,7 @@ class TestInstanceGroupScale:
         assert route.called
         import json
 
-        body = json.loads(
-            route.calls[0].request.content
-        )
+        body = json.loads(route.calls[0].request.content)
         assert body == {
             "model": "llama-7b",
             "replicas": 3,
@@ -391,16 +347,10 @@ class TestProcessTerminate:
     """Process.terminate() calls POST /v1/terminate."""
 
     @respx.mock
-    async def test_terminate_sends_name(
-        self, client: SwarmPilotClient
-    ) -> None:
+    async def test_terminate_sends_name(self, client: SwarmPilotClient) -> None:
         """Terminate sends process name in the payload."""
-        route = respx.post(
-            f"{PLANNER}/v1/terminate"
-        ).mock(
-            return_value=httpx.Response(
-                200, json={"status": "terminated"}
-            )
+        route = respx.post(f"{PLANNER}/v1/terminate").mock(
+            return_value=httpx.Response(200, json={"status": "terminated"})
         )
 
         proc = Process(
@@ -416,9 +366,7 @@ class TestProcessTerminate:
         assert route.called
         import json
 
-        body = json.loads(
-            route.calls[0].request.content
-        )
+        body = json.loads(route.calls[0].request.content)
         assert body == {"name": "etl-job"}
 
 
@@ -477,9 +425,7 @@ class TestClientInjection:
             )
         )
 
-        proc = await client.run(
-            "python etl.py", name="etl-job", gpu=0
-        )
+        proc = await client.run("python etl.py", name="etl-job", gpu=0)
 
         assert proc._client is client
 

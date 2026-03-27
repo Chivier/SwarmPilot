@@ -51,15 +51,19 @@ class TestPlanEndpoint:
         sample_planner_input["max_iterations"] = 10
         sample_planner_input["verbose"] = False
 
-        with patch("swarmpilot.planner.api.SimulatedAnnealingOptimizer") as mock_optimizer_class:
+        with patch(
+            "swarmpilot.planner.api.SimulatedAnnealingOptimizer"
+        ) as mock_optimizer_class:
             # Mock optimizer instance and its methods
             mock_optimizer = MagicMock()
             mock_optimizer.optimize.return_value = (
                 np.array([0, 1, 1, 2]),  # deployment
                 0.0667,  # score
-                {"algorithm": "simulated_annealing", "iterations": 10}  # stats
+                {"algorithm": "simulated_annealing", "iterations": 10},  # stats
             )
-            mock_optimizer.compute_service_capacity.return_value = np.array([10.0, 16.0, 12.0])
+            mock_optimizer.compute_service_capacity.return_value = np.array(
+                [10.0, 16.0, 12.0]
+            )
             mock_optimizer.compute_changes.return_value = 1
             mock_optimizer_class.return_value = mock_optimizer
 
@@ -82,14 +86,21 @@ class TestPlanEndpoint:
         sample_planner_input["algorithm"] = "integer_programming"
         sample_planner_input["verbose"] = False
 
-        with patch("swarmpilot.planner.api.IntegerProgrammingOptimizer") as mock_optimizer_class:
+        with patch(
+            "swarmpilot.planner.api.IntegerProgrammingOptimizer"
+        ) as mock_optimizer_class:
             mock_optimizer = MagicMock()
             mock_optimizer.optimize.return_value = (
                 np.array([0, 1, 1, 2]),
                 0.05,
-                {"algorithm": "integer_programming", "solver_status": "optimal"}
+                {
+                    "algorithm": "integer_programming",
+                    "solver_status": "optimal",
+                },
             )
-            mock_optimizer.compute_service_capacity.return_value = np.array([10.0, 16.0, 12.0])
+            mock_optimizer.compute_service_capacity.return_value = np.array(
+                [10.0, 16.0, 12.0]
+            )
             mock_optimizer.compute_changes.return_value = 1
             mock_optimizer_class.return_value = mock_optimizer
 
@@ -116,7 +127,9 @@ class TestPlanEndpoint:
         """Test /plan handles optimization failures."""
         sample_planner_input["max_iterations"] = 10
 
-        with patch("swarmpilot.planner.api.SimulatedAnnealingOptimizer") as mock_optimizer_class:
+        with patch(
+            "swarmpilot.planner.api.SimulatedAnnealingOptimizer"
+        ) as mock_optimizer_class:
             mock_optimizer_class.side_effect = ValueError("Optimization failed")
 
             response = client.post("/v1/plan", json=sample_planner_input)
@@ -137,8 +150,8 @@ class TestInstanceRegisterEndpoint:
             "platform_info": {
                 "software_name": "pytorch",
                 "software_version": "2.0",
-                "hardware_name": "nvidia-a100"
-            }
+                "hardware_name": "nvidia-a100",
+            },
         }
 
         response = client.post("/v1/instance/register", json=request_data)
@@ -155,7 +168,7 @@ class TestInstanceRegisterEndpoint:
             "instance_id": "test-instance-2",
             "model_id": "model_1",
             "endpoint": "http://test:8081",
-            "platform_info": {}
+            "platform_info": {},
         }
 
         response = client.post("/v1/instance/register", json=request_data)
@@ -171,7 +184,7 @@ class TestInstanceRegisterEndpoint:
             "instance_id": "instance-1",
             "model_id": "shared_model",
             "endpoint": "http://instance1:8080",
-            "platform_info": {}
+            "platform_info": {},
         }
         response1 = client.post("/v1/instance/register", json=request_data1)
         assert response1.status_code == 200
@@ -181,7 +194,7 @@ class TestInstanceRegisterEndpoint:
             "instance_id": "instance-2",
             "model_id": "shared_model",
             "endpoint": "http://instance2:8080",
-            "platform_info": {}
+            "platform_info": {},
         }
         response2 = client.post("/v1/instance/register", json=request_data2)
         assert response2.status_code == 200
@@ -194,7 +207,7 @@ class TestInstanceRegisterEndpoint:
         # Missing model_id
         request_data = {
             "instance_id": "test-instance",
-            "endpoint": "http://test:8080"
+            "endpoint": "http://test:8080",
         }
 
         response = client.post("/v1/instance/register", json=request_data)
@@ -203,10 +216,7 @@ class TestInstanceRegisterEndpoint:
 
     def test_register_instance_missing_endpoint(self, client):
         """Test registration fails without endpoint."""
-        request_data = {
-            "instance_id": "test-instance",
-            "model_id": "model_0"
-        }
+        request_data = {"instance_id": "test-instance", "model_id": "model_0"}
 
         response = client.post("/v1/instance/register", json=request_data)
 
@@ -218,9 +228,7 @@ class TestDummyEndpoints:
 
     def test_instance_drain_success(self, client):
         """Test /instance/drain dummy endpoint returns success."""
-        request_data = {
-            "instance_id": "test-instance"
-        }
+        request_data = {"instance_id": "test-instance"}
 
         response = client.post("/v1/instance/drain", json=request_data)
 
@@ -234,7 +242,9 @@ class TestDummyEndpoints:
 
     def test_instance_drain_status_success(self, client):
         """Test /instance/drain/status dummy endpoint returns can_remove=True."""
-        response = client.get("/v1/instance/drain/status", params={"instance_id": "test-instance"})
+        response = client.get(
+            "/v1/instance/drain/status", params={"instance_id": "test-instance"}
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -244,9 +254,7 @@ class TestDummyEndpoints:
 
     def test_instance_remove_success(self, client):
         """Test /instance/remove dummy endpoint returns success."""
-        request_data = {
-            "instance_id": "test-instance"
-        }
+        request_data = {"instance_id": "test-instance"}
 
         response = client.post("/v1/instance/remove", json=request_data)
 
@@ -259,7 +267,7 @@ class TestDummyEndpoints:
         """Test /task/resubmit dummy endpoint returns success."""
         request_data = {
             "task_id": "task-123",
-            "original_instance_id": "instance-1"
+            "original_instance_id": "instance-1",
         }
 
         response = client.post("/v1/task/resubmit", json=request_data)
