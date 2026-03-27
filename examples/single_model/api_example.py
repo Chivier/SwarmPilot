@@ -37,10 +37,10 @@ def main() -> None:
         task_resp.raise_for_status()
         print(json.dumps(task_resp.json(), indent=2))
 
-        print("\n=== 3. Check task status ===")
-        status_resp = client.get(f"{SCHEDULER_URL}/v1/task/status/task-001")
-        status_resp.raise_for_status()
-        print(json.dumps(status_resp.json(), indent=2))
+        print("\n=== 3. Check task list ===")
+        list_resp = client.get(f"{SCHEDULER_URL}/v1/task/list")
+        list_resp.raise_for_status()
+        print(json.dumps(list_resp.json(), indent=2))
 
 
 if __name__ == "__main__":
