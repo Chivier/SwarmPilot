@@ -60,7 +60,8 @@ class PreprocessorChainBuilder:
 
         if self._rules:
             logger.info(
-                f"Loaded {len(self._rules)} preprocessor rules " f"from {config_file}"
+                f"Loaded {len(self._rules)} preprocessor rules "
+                f"from {config_file}"
             )
             self._validate_all()
         else:
@@ -87,7 +88,9 @@ class PreprocessorChainBuilder:
             logger.warning(f"Preprocessor config file not found: {config_file}")
             return []
         except json.JSONDecodeError as e:
-            logger.error(f"Invalid JSON in preprocessor config: {config_file}: {e}")
+            logger.error(
+                f"Invalid JSON in preprocessor config: {config_file}: {e}"
+            )
             return []
 
     def _validate_all(self) -> None:
@@ -109,8 +112,11 @@ class PreprocessorChainBuilder:
 
                 if step_type == "v1_adapter":
                     try:
-                        self._registry_v1.get_preprocessor(step_name)
-                    except Exception as e:
+                        try:
+                            self._registry_v1.get_preprocessor(step_name)
+                        except BaseException as e:
+                            raise ValueError(str(e)) from e
+                    except (KeyError, ValueError) as e:
                         msg = (
                             f"Preprocessor '{step_name}' configured in "
                             f"rule {rule_idx}, step {step_idx} but "

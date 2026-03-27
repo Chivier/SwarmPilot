@@ -16,6 +16,7 @@ Flow:
 """
 
 import asyncio
+import json
 import time
 import uuid
 from typing import TYPE_CHECKING, Any
@@ -89,7 +90,15 @@ class ProxyRouter:
         self.router.add_api_route(
             "/{path:path}",
             self._proxy_handler,
-            methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"],
+            methods=[
+                "GET",
+                "POST",
+                "PUT",
+                "DELETE",
+                "PATCH",
+                "OPTIONS",
+                "HEAD",
+            ],
         )
 
     async def _proxy_handler(self, path: str, request: Request) -> Response:
@@ -111,7 +120,9 @@ class ProxyRouter:
         # Get all active instances (proxy doesn't filter by model_id)
         all_instances = await self._instance_registry.list_active()
         if not all_instances:
-            logger.warning(f"[PROXY] No instances available for {method} /{path}")
+            logger.warning(
+                f"[PROXY] No instances available for {method} /{path}"
+            )
             return JSONResponse(
                 status_code=503,
                 content={
@@ -127,7 +138,7 @@ class ProxyRouter:
         if method in ("POST", "PUT", "PATCH"):
             try:
                 body = await request.json()
-            except Exception:
+            except (json.JSONDecodeError, ValueError, UnicodeDecodeError):
                 # Non-JSON body or empty body
                 body = {}
 
@@ -162,14 +173,18 @@ class ProxyRouter:
             selected_instance_id = schedule_result.selected_instance_id
 
         except Exception as e:
-            logger.error(f"[PROXY] Scheduling failed: {e}", exc_info=True)
+            logger.opt(exception=True).error(f"[PROXY] Scheduling failed: {e}")
             # Fallback: pick first instance
             selected_instance_id = all_instances[0].instance_id
-            logger.info(f"[PROXY] Falling back to instance {selected_instance_id}")
+            logger.info(
+                f"[PROXY] Falling back to instance {selected_instance_id}"
+            )
 
         # 5. Verify selected instance has a worker queue
         if not self._queue_manager.has_worker(selected_instance_id):
-            logger.error(f"[PROXY] Instance {selected_instance_id} has no worker queue")
+            logger.error(
+                f"[PROXY] Instance {selected_instance_id} has no worker queue"
+            )
             return JSONResponse(
                 status_code=503,
                 content={

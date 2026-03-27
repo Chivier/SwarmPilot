@@ -85,8 +85,12 @@ class GracefulShutdown:
         After calling this method, SIGTERM and SIGINT will trigger graceful
         shutdown instead of the default behavior.
         """
-        self._original_sigterm = signal.signal(signal.SIGTERM, self._handle_signal)
-        self._original_sigint = signal.signal(signal.SIGINT, self._handle_signal)
+        self._original_sigterm = signal.signal(
+            signal.SIGTERM, self._handle_signal
+        )
+        self._original_sigint = signal.signal(
+            signal.SIGINT, self._handle_signal
+        )
         logger.info(
             f"Signal handlers installed for graceful shutdown "
             f"(grace_period={self.grace_period}s)"
@@ -114,7 +118,9 @@ class GracefulShutdown:
 
         self._shutdown_requested = True
         signal_name = signal.Signals(signum).name
-        logger.warning(f"Received {signal_name}, initiating graceful shutdown...")
+        logger.warning(
+            f"Received {signal_name}, initiating graceful shutdown..."
+        )
 
         self._graceful_shutdown()
 
@@ -141,8 +147,10 @@ class GracefulShutdown:
                         break
                     callback()
                     logger.debug(f"Callback {i + 1} completed")
-                except Exception as e:
-                    logger.error(f"Cleanup callback {i + 1} error: {e}")
+                except Exception:
+                    logger.opt(exception=True).error(
+                        f"Cleanup callback {i + 1} failed"
+                    )
         else:
             logger.info("Step 2/3: No cleanup callbacks registered")
 
@@ -165,7 +173,9 @@ class GracefulShutdown:
             if response.status_code == 200:
                 logger.debug("Instance draining started")
             elif response.status_code == 404:
-                logger.debug("Instance not found in scheduler (already removed?)")
+                logger.debug(
+                    "Instance not found in scheduler (already removed?)"
+                )
                 return
         except httpx.RequestError as e:
             logger.warning(f"Drain request failed: {e}")

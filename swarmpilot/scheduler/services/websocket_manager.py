@@ -55,7 +55,9 @@ class ConnectionManager:
             if websocket in self._connections:
                 del self._connections[websocket]
 
-    async def subscribe(self, websocket: WebSocket, task_ids: list[str]) -> None:
+    async def subscribe(
+        self, websocket: WebSocket, task_ids: list[str]
+    ) -> None:
         """Subscribe a WebSocket connection to task result updates.
 
         Args:
@@ -77,7 +79,9 @@ class ConnectionManager:
                 # Add to websocket -> task mapping
                 self._connections[websocket].add(task_id)
 
-    async def unsubscribe(self, websocket: WebSocket, task_ids: list[str]) -> None:
+    async def unsubscribe(
+        self, websocket: WebSocket, task_ids: list[str]
+    ) -> None:
         """Unsubscribe a WebSocket connection from task result updates.
 
         Args:
@@ -176,12 +180,15 @@ class ConnectionManager:
         # Send to all subscribers
         for websocket in subscribers:
             try:
-                await websocket.send_json(message.model_dump())
+                try:
+                    await websocket.send_json(message.model_dump())
+                except BaseException as e:
+                    raise RuntimeError(f"WebSocket send failed: {e}") from e
                 sent_count += 1
                 logger.debug(
                     f"Successfully sent {task_id} result to websocket {id(websocket)}"
                 )
-            except Exception as e:
+            except (RuntimeError, ConnectionError) as e:
                 # FIX: Log the specific error instead of silent catch
                 failed_count += 1
                 logger.error(

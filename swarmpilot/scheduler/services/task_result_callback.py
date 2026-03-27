@@ -157,14 +157,21 @@ class TaskResultCallback:
 
         def thread_safe_callback(result: "TaskResult") -> None:
             """Callback function safe to call from any thread."""
+            coro = self.handle_result(result)
             try:
-                asyncio.run_coroutine_threadsafe(
-                    self.handle_result(result),
-                    loop,
-                )
-                # Don't wait for result - fire and forget
-                # Errors are logged in handle_result
-            except Exception as e:
+                try:
+                    asyncio.run_coroutine_threadsafe(
+                        coro,
+                        loop,
+                    )
+                    # Don't wait for result - fire and forget
+                    # Errors are logged in handle_result
+                except BaseException as e:
+                    coro.close()
+                    raise RuntimeError(
+                        f"Failed to schedule callback for task {result.task_id}: {e}"
+                    ) from e
+            except RuntimeError as e:
                 logger.error(
                     f"Failed to schedule callback for task {result.task_id}: {e}"
                 )
@@ -189,12 +196,19 @@ class TaskResultCallback:
 
         def thread_safe_start_callback(task_id: str) -> None:
             """Callback for task start, safe to call from any thread."""
+            coro = self._handle_task_started(task_id)
             try:
-                asyncio.run_coroutine_threadsafe(
-                    self._handle_task_started(task_id),
-                    loop,
-                )
-            except Exception as e:
+                try:
+                    asyncio.run_coroutine_threadsafe(
+                        coro,
+                        loop,
+                    )
+                except BaseException as e:
+                    coro.close()
+                    raise RuntimeError(
+                        f"Failed to schedule start callback for task {task_id}: {e}"
+                    ) from e
+            except RuntimeError as e:
                 logger.error(
                     f"Failed to schedule start callback for task {task_id}: {e}"
                 )
@@ -212,7 +226,7 @@ class TaskResultCallback:
             logger.debug(f"Task {task_id} status set to RUNNING")
         except KeyError:
             logger.warning(f"Task {task_id} not found when setting RUNNING")
-        except Exception as e:
+        except ValueError as e:
             logger.error(f"Error setting task {task_id} to RUNNING: {e}")
 
     async def handle_result(self, result: "TaskResult") -> None:
@@ -250,9 +264,8 @@ class TaskResultCallback:
             self._resolve_future(task_id, result)
 
         except Exception as e:
-            logger.error(
-                f"Error handling result for task {task_id}: {e}",
-                exc_info=True,
+            logger.opt(exception=True).error(
+                f"Error handling result for task {task_id}: {e}"
             )
             # Still try to resolve the future on error so proxy doesn't hang
             self._resolve_future(task_id, result)
@@ -301,7 +314,9 @@ class TaskResultCallback:
 
         # Update instance statistics
         if instance:
-            await self.instance_registry.increment_completed(instance.instance_id)
+            await self.instance_registry.increment_completed(
+                instance.instance_id
+            )
 
         # Record throughput for planner
         if self.throughput_tracker and instance:
@@ -320,7 +335,7 @@ class TaskResultCallback:
                     actual_runtime_ms=result.execution_time_ms,
                 )
                 await self.training_client.flush_if_ready()
-            except Exception as e:
+            except (ValueError, RuntimeError, OSError) as e:
                 logger.warning(
                     f"Training sample recording failed for task {task_id}: {e}"
                 )

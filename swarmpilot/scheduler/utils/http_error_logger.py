@@ -76,7 +76,10 @@ def _truncate_body(body: str | bytes | dict[str, Any] | None) -> str:
         body_str = str(body)
 
     if len(body_str) > MAX_BODY_LENGTH:
-        return body_str[:MAX_BODY_LENGTH] + f"... [truncated, {len(body_str)} total]"
+        return (
+            body_str[:MAX_BODY_LENGTH]
+            + f"... [truncated, {len(body_str)} total]"
+        )
 
     return body_str
 
@@ -158,7 +161,9 @@ def log_http_error(
 
     # Request details
     if request_method or request_url:
-        parts.append(f"\n  Request: {request_method or '?'} {request_url or '?'}")
+        parts.append(
+            f"\n  Request: {request_method or '?'} {request_url or '?'}"
+        )
 
     # Sanitized headers
     if request_headers:
@@ -177,8 +182,11 @@ def log_http_error(
         )
 
         try:
-            response_body = response.text
-        except Exception:
+            try:
+                response_body = response.text
+            except BaseException as e:
+                raise RuntimeError("Failed to read response body") from e
+        except (UnicodeDecodeError, RuntimeError):
             response_body = "<unable to read response body>"
         parts.append(f"\n  Response Body: {_truncate_body(response_body)}")
 

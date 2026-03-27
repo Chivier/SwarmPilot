@@ -61,10 +61,14 @@ class TaskRecord:
         # Fallback to timestamp-based calculation
         if self.started_at and self.completed_at:
             try:
-                start = datetime.fromisoformat(self.started_at.replace("Z", "+00:00"))
-                end = datetime.fromisoformat(self.completed_at.replace("Z", "+00:00"))
+                start = datetime.fromisoformat(
+                    self.started_at.replace("Z", "+00:00")
+                )
+                end = datetime.fromisoformat(
+                    self.completed_at.replace("Z", "+00:00")
+                )
                 return (end - start).total_seconds() * 1000
-            except Exception:
+            except ValueError:
                 return None
         return None
 

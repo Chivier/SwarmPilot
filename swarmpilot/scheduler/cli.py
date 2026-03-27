@@ -5,6 +5,7 @@ This module provides a command-line interface using Typer for managing
 the scheduler service.
 """
 
+import json
 import os
 import sys
 from pathlib import Path
@@ -43,8 +44,6 @@ def load_config_file(config_path: Path) -> dict:
 
     try:
         if suffix == ".json":
-            import json
-
             with open(config_path) as f:
                 return json.load(f)
         elif suffix == ".toml":
@@ -66,8 +65,10 @@ def load_config_file(config_path: Path) -> dict:
                 f"Unsupported configuration file format: {suffix}. "
                 f"Supported formats: .json, .toml, .yaml, .yml"
             )
-    except Exception as e:
-        raise typer.BadParameter(f"Error loading configuration file: {e}") from e
+    except (json.JSONDecodeError, ValueError, OSError) as e:
+        raise typer.BadParameter(
+            f"Error loading configuration file: {e}"
+        ) from e
 
 
 def apply_config(config_dict: dict, host: str | None, port: int | None) -> None:
@@ -187,16 +188,21 @@ def start(
 
     # Start the server
     try:
-        uvicorn.run(
-            "swarmpilot.scheduler.api:app",
-            host=final_host,
-            port=final_port,
-            log_config=None,  # Disable uvicorn's default logging, use loguru instead
-        )
+        try:
+            uvicorn.run(
+                "swarmpilot.scheduler.api:app",
+                host=final_host,
+                port=final_port,
+                log_config=None,  # Disable uvicorn's default logging, use loguru instead
+            )
+        except BaseException as e:
+            if isinstance(e, KeyboardInterrupt):
+                raise
+            raise RuntimeError(f"Scheduler startup failed: {e}") from e
     except KeyboardInterrupt:
         typer.echo("\nShutting down scheduler service...")
         sys.exit(0)
-    except Exception as e:
+    except (RuntimeError, OSError) as e:
         typer.echo(f"Error starting scheduler service: {e}", err=True)
         sys.exit(1)
 

@@ -701,7 +701,7 @@ async def _redistribute_tasks_on_registration(
                     },
                 )
                 return {"success": False, "error": True, "donor": donor}
-            except Exception as e:
+            except httpx.RequestError as e:
                 logger.warning(
                     f"Failed to fetch task from donor {donor.instance_id}: "
                     f"{type(e).__name__}: {e}"
@@ -820,7 +820,7 @@ async def _redistribute_tasks_on_registration(
                         f"from {task_data['donor_instance_id']} to {new_instance.instance_id}"
                     )
 
-                except Exception as e:
+                except (ValueError, KeyError, RuntimeError) as e:
                     logger.error(
                         f"Failed to enqueue stolen task {task_id} "
                         f"to {new_instance.instance_id}: {type(e).__name__}: {e}"
@@ -974,9 +974,8 @@ async def register_instance(request: InstanceRegisterRequest):
 
     except ValueError as e:
         error_msg = str(e)
-        logger.error(
-            f"[register_instance] Failed to register instance | instance_id={request.instance_id} | error={error_msg}",
-            exc_info=True,
+        logger.opt(exception=True).error(
+            f"[register_instance] Failed to register instance | instance_id={request.instance_id} | error={error_msg}"
         )
         raise HTTPException(
             status_code=400, detail={"success": False, "error": error_msg}
@@ -1117,9 +1116,8 @@ async def drain_instance(request: InstanceDrainRequest):
 
     except ValueError as e:
         error_msg = str(e)
-        logger.error(
-            f"[drain_instance] Failed to drain instance | instance_id={request.instance_id} | error={error_msg}",
-            exc_info=True,
+        logger.opt(exception=True).error(
+            f"[drain_instance] Failed to drain instance | instance_id={request.instance_id} | error={error_msg}"
         )
         raise HTTPException(
             status_code=400, detail={"success": False, "error": error_msg}
@@ -1167,9 +1165,8 @@ async def get_drain_status(
 
     except KeyError as e:
         error_msg = "Instance not found"
-        logger.error(
-            f"[get_drain_status] Attempted to check drain status for non-existent instance | instance_id={instance_id}",
-            exc_info=True,
+        logger.opt(exception=True).error(
+            f"[get_drain_status] Attempted to check drain status for non-existent instance | instance_id={instance_id}"
         )
         raise HTTPException(
             status_code=404, detail={"success": False, "error": error_msg}
@@ -1227,11 +1224,10 @@ async def start_instance_redeploy(request: InstanceRedeployRequest):
         await instance_registry.update_status(
             request.instance_id, InstanceStatus.REDEPLOYING
         )
-    except Exception as e:
+    except (KeyError, ValueError) as e:
         error_msg = f"Failed to update instance status: {e!s}"
-        logger.error(
-            f"[start_instance_redeploy] {error_msg} | instance_id={request.instance_id}",
-            exc_info=True,
+        logger.opt(exception=True).error(
+            f"[start_instance_redeploy] {error_msg} | instance_id={request.instance_id}"
         )
         raise HTTPException(
             status_code=500, detail={"success": False, "error": error_msg}
@@ -1278,9 +1274,8 @@ async def start_instance_redeploy(request: InstanceRedeployRequest):
             extra={"instance_id": request.instance_id},
         )
         error_msg = f"Instance redeploy request failed: {e.response.text}"
-        logger.error(
-            f"[start_instance_redeploy] Instance redeploy request failed with status {e.response.status_code} | instance_id={request.instance_id} | error={error_msg}",
-            exc_info=True,
+        logger.opt(exception=True).error(
+            f"[start_instance_redeploy] Instance redeploy request failed with status {e.response.status_code} | instance_id={request.instance_id} | error={error_msg}"
         )
         # Revert instance status
         await instance_registry.update_status(
@@ -1289,7 +1284,7 @@ async def start_instance_redeploy(request: InstanceRedeployRequest):
         raise HTTPException(
             status_code=500, detail={"success": False, "error": error_msg}
         ) from e
-    except Exception as e:
+    except httpx.RequestError as e:
         log_http_error(
             e,
             request_url=f"{instance.endpoint}/redeploy/start",
@@ -1303,9 +1298,8 @@ async def start_instance_redeploy(request: InstanceRedeployRequest):
             extra={"instance_id": request.instance_id},
         )
         error_msg = f"Failed to communicate with instance: {e!s}"
-        logger.error(
+        logger.opt(exception=True).error(
             f"[start_instance_redeploy] Failed to communicate with instance | instance_id={request.instance_id} | error={error_msg}",
-            exc_info=True,
         )
         # Revert instance status
         await instance_registry.update_status(
@@ -1365,7 +1359,7 @@ async def start_instance_redeploy(request: InstanceRedeployRequest):
                     failed_redistributions.append(task_id)
                     logger.warning(f"Failed to redistribute task {task_id}")
 
-            except Exception as e:
+            except (KeyError, ValueError, RuntimeError) as e:
                 task_id = task_data.get("task_id", "unknown")
                 failed_redistributions.append(task_id)
                 logger.error(f"Error redistributing task {task_id}: {e}")
@@ -1484,11 +1478,10 @@ async def complete_instance_redeploy(request: InstanceRegisterRequest):
             f"New model: {request.model_id}, Status: ACTIVE"
         )
 
-    except Exception as e:
+    except (KeyError, ValueError) as e:
         error_msg = f"Failed to complete redeployment: {e!s}"
-        logger.error(
+        logger.opt(exception=True).error(
             f"[complete_instance_redeploy] Failed to complete redeployment | instance_id={request.instance_id} | error={error_msg}",
-            exc_info=True,
         )
         raise HTTPException(
             status_code=500, detail={"success": False, "error": error_msg}
@@ -1641,9 +1634,8 @@ async def submit_task(request: TaskSubmitRequest):
         )
     except ValueError as e:
         error_msg = str(e)
-        logger.error(
-            f"[submit_task] Failed to create task | task_id={request.task_id} | error={error_msg}",
-            exc_info=True,
+        logger.opt(exception=True).error(
+            f"[submit_task] Failed to create task | task_id={request.task_id} | error={error_msg}"
         )
         raise HTTPException(
             status_code=400, detail={"success": False, "error": error_msg}
@@ -1678,7 +1670,7 @@ async def submit_task(request: TaskSubmitRequest):
                 selected_id, queued_task
             )
         except Exception as e:
-            logger.warning(
+            logger.opt(exception=True).warning(
                 f"[submit_task] Scheduling failed for task {request.task_id}: {e}. "
                 f"Task remains in PENDING status."
             )
@@ -1838,7 +1830,7 @@ async def clear_tasks():
                     "success": True,
                     "cleared": result.get("cleared_count", {}).get("total", 0),
                 }
-            except Exception as e:
+            except httpx.RequestError as e:
                 log_http_error(
                     e,
                     request_url=f"{instance.endpoint}/task/clear",
@@ -1966,7 +1958,7 @@ async def resubmit_task(request: TaskResubmitRequest):
         logger.debug(
             f"Decremented pending count for instance {request.original_instance_id}"
         )
-    except Exception as e:
+    except KeyError as e:
         logger.warning(
             f"Failed to decrement pending count for {request.original_instance_id}: {e}"
         )
@@ -1978,9 +1970,8 @@ async def resubmit_task(request: TaskResubmitRequest):
         logger.debug(f"Reset task {request.task_id} for resubmission")
     except KeyError as e:
         error_msg = "Task not found"
-        logger.error(
-            f"[resubmit_task] Task not found during reset | task_id={request.task_id}",
-            exc_info=True,
+        logger.opt(exception=True).error(
+            f"[resubmit_task] Task not found during reset | task_id={request.task_id}"
         )
         raise HTTPException(
             status_code=404,
@@ -2016,7 +2007,7 @@ async def resubmit_task(request: TaskResubmitRequest):
                 schedule_result.selected_instance_id, queued_task
             )
         except Exception as e:
-            logger.warning(
+            logger.opt(exception=True).warning(
                 f"[resubmit_task] Scheduling failed for task {request.task_id}: {e}. "
                 f"Task remains in PENDING status."
             )
@@ -2075,7 +2066,7 @@ async def update_task_metadata(request: TaskUpdateMetadataRequest):
                 failed += 1
 
         except Exception as e:
-            logger.error(
+            logger.opt(exception=True).error(
                 f"Error updating metadata for task {update.task_id}: {e}"
             )
             results.append(
@@ -2210,13 +2201,16 @@ async def _update_single_task_metadata(
                     scheduling_strategy, "quantiles", [0.5, 0.9, 0.95, 0.99]
                 )
 
-            predictions = await predictor_client.predict(
-                model_id=task.model_id,
-                metadata=new_metadata,
-                instances=[instance],
-                prediction_type=prediction_type,
-                quantiles=quantiles,
-            )
+            try:
+                predictions = await predictor_client.predict(
+                    model_id=task.model_id,
+                    metadata=new_metadata,
+                    instances=[instance],
+                    prediction_type=prediction_type,
+                    quantiles=quantiles,
+                )
+            except BaseException as e:
+                raise RuntimeError(f"Predictor call failed: {e}") from e
 
             if not predictions:
                 raise ValueError("No predictions returned from predictor")
@@ -2224,7 +2218,7 @@ async def _update_single_task_metadata(
             new_pred = predictions[0]
             new_prediction_ms = new_pred.predicted_time_ms
 
-        except Exception as pred_error:
+        except (ValueError, KeyError, RuntimeError) as pred_error:
             # Prediction failed - rollback
             logger.error(
                 f"Prediction failed for task {task_id}, rolling back: {pred_error}"
@@ -2284,7 +2278,7 @@ async def _update_single_task_metadata(
 
     except Exception as e:
         # General error - attempt rollback
-        logger.error(f"Error updating task {task_id}: {e}")
+        logger.opt(exception=True).error(f"Error updating task {task_id}: {e}")
 
         # Attempt to rollback metadata (best effort)
         with suppress(Exception):
@@ -2359,7 +2353,9 @@ async def repredict_all_tasks():
                 failed += 1
 
         except Exception as e:
-            logger.error(f"Error re-predicting task {task.task_id}: {e}")
+            logger.opt(exception=True).error(
+                f"Error re-predicting task {task.task_id}: {e}"
+            )
             failed += 1
 
     return TaskRepredictResponse(
@@ -2423,20 +2419,23 @@ async def _repredict_single_task(task) -> bool:
                     scheduling_strategy, "quantiles", [0.5, 0.9, 0.95, 0.99]
                 )
 
-            predictions = await predictor_client.predict(
-                model_id=task.model_id,
-                metadata=task.metadata,  # Use existing metadata (no change)
-                instances=[instance],
-                prediction_type=prediction_type,
-                quantiles=quantiles,
-            )
+            try:
+                predictions = await predictor_client.predict(
+                    model_id=task.model_id,
+                    metadata=task.metadata,  # Use existing metadata (no change)
+                    instances=[instance],
+                    prediction_type=prediction_type,
+                    quantiles=quantiles,
+                )
+            except BaseException as e:
+                raise RuntimeError(f"Predictor call failed: {e}") from e
 
             if not predictions:
                 raise ValueError("No predictions returned from predictor")
 
             new_pred = predictions[0]
 
-        except Exception as pred_error:
+        except (ValueError, KeyError, RuntimeError) as pred_error:
             # Prediction failed - rollback queue
             logger.error(
                 f"Re-prediction failed for task {task_id}: {pred_error}"
@@ -2480,7 +2479,9 @@ async def _repredict_single_task(task) -> bool:
 
     except Exception as e:
         # General error - attempt to restore queue
-        logger.error(f"Error re-predicting task {task_id}: {e}")
+        logger.opt(exception=True).error(
+            f"Error re-predicting task {task_id}: {e}"
+        )
 
         try:
             # Attempt to restore queue
@@ -2491,7 +2492,7 @@ async def _repredict_single_task(task) -> bool:
                     predicted_error_margin_ms=old_error_margin_ms,
                     predicted_quantiles=old_quantiles,
                 )
-        except Exception:
+        except (KeyError, ValueError):
             pass  # Best effort rollback
 
         return False
@@ -2665,7 +2666,7 @@ async def websocket_get_result(websocket: WebSocket):
             # Task was cancelled, exit gracefully
             pass
         except Exception as e:
-            logger.warning(f"Keepalive task error: {e}")
+            logger.opt(exception=True).warning(f"Keepalive task error: {e}")
 
     # Start keepalive task
     keepalive_task = asyncio.create_task(send_keepalive())
@@ -2814,7 +2815,7 @@ async def websocket_get_result(websocket: WebSocket):
 
     except Exception as e:
         # Log the error
-        logger.error(f"WebSocket error: {e}", exc_info=True)
+        logger.opt(exception=True).error(f"WebSocket error: {e}")
         # Send error message to client
         with suppress(Exception):
             error_msg = WSErrorMessage(error=f"Server error: {e!s}")
@@ -3030,19 +3031,21 @@ async def set_strategy_endpoint(request: StrategySetRequest):
             else 0.9
         )
 
-        new_strategy = get_strategy(
-            strategy_name=request.strategy_name.value,
-            predictor_client=predictor_client,
-            instance_registry=instance_registry,
-            target_quantile=target_quantile,
-        )
+        try:
+            new_strategy = get_strategy(
+                strategy_name=request.strategy_name.value,
+                predictor_client=predictor_client,
+                instance_registry=instance_registry,
+                target_quantile=target_quantile,
+            )
+        except BaseException as e:
+            raise RuntimeError(f"Strategy initialization failed: {e}") from e
         logger.info(
             f"Created new scheduling strategy: {request.strategy_name.value}"
         )
-    except Exception as e:
-        logger.error(
+    except (ValueError, ImportError, RuntimeError) as e:
+        logger.opt(exception=True).error(
             f"Failed to initialize strategy '{request.strategy_name.value}': {e}",
-            exc_info=True,
         )
         raise HTTPException(
             status_code=500,
@@ -3128,9 +3131,8 @@ async def health_check():
     except Exception as e:
         # Log the health check failure
         error_msg = str(e)
-        logger.error(
+        logger.opt(exception=True).error(
             f"[health_check] Health check failed | error={error_msg}",
-            exc_info=True,
         )
         raise HTTPException(
             status_code=503,

@@ -121,9 +121,8 @@ class PlannerReporter:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error(
-                    f"[planner_reporter] Error in planner report loop: {e}",
-                    exc_info=True,
+                logger.opt(exception=True).error(
+                    f"[planner_reporter] Error in planner report loop: {e}"
                 )
                 # Continue running despite errors
 
@@ -133,18 +132,27 @@ class PlannerReporter:
         """Report current uncompleted task count to planner."""
         try:
             # Get uncompleted task count (pending + running)
-            pending = await self._task_registry.get_count_by_status(TaskStatus.PENDING)
-            running = await self._task_registry.get_count_by_status(TaskStatus.RUNNING)
+            pending = await self._task_registry.get_count_by_status(
+                TaskStatus.PENDING
+            )
+            running = await self._task_registry.get_count_by_status(
+                TaskStatus.RUNNING
+            )
             total_uncompleted = pending + running
 
             # POST to planner's /submit_target endpoint
-            response = await self._http_client.post(
-                f"{self._planner_url}/v1/submit_target",
-                json={
-                    "model_id": self._model_id,
-                    "value": float(total_uncompleted),
-                },
-            )
+            try:
+                response = await self._http_client.post(
+                    f"{self._planner_url}/v1/submit_target",
+                    json={
+                        "model_id": self._model_id,
+                        "value": float(total_uncompleted),
+                    },
+                )
+            except BaseException as e:
+                raise RuntimeError(
+                    f"Planner submit_target call failed: {e}"
+                ) from e
             response.raise_for_status()
 
             logger.debug(
@@ -180,8 +188,10 @@ class PlannerReporter:
                 context="planner report connection error",
             )
             logger.warning(f"Planner report HTTP error: {e}")
-        except Exception as e:
-            logger.error(f"[planner_reporter] Planner report error: {e}", exc_info=True)
+        except (RuntimeError, TimeoutError) as e:
+            logger.opt(exception=True).error(
+                f"[planner_reporter] Planner report error: {e}"
+            )
 
     async def _report_throughput(self) -> None:
         """Report throughput data for instances with recent data to planner.
@@ -194,9 +204,12 @@ class PlannerReporter:
 
         try:
             # Only get averages for instances with new data since last report
-            averages = (
-                await self._throughput_tracker.get_averages_for_recent_instances_seconds()
-            )
+            try:
+                averages = await self._throughput_tracker.get_averages_for_recent_instances_seconds()
+            except BaseException as e:
+                raise RuntimeError(
+                    f"Failed to fetch recent throughput averages: {e}"
+                ) from e
 
             if not averages:
                 logger.debug(
@@ -228,8 +241,7 @@ class PlannerReporter:
             logger.debug(
                 f"[PlannerReporter] Reported throughput for {len(averages)} instance(s) with recent data"
             )
-        except Exception as e:
-            logger.error(
-                f"[planner_reporter] Throughput report error: {e}",
-                exc_info=True,
+        except (RuntimeError, TimeoutError) as e:
+            logger.opt(exception=True).error(
+                f"[planner_reporter] Throughput report error: {e}"
             )

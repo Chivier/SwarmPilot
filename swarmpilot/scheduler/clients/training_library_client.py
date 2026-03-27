@@ -136,7 +136,9 @@ class TrainingClient:
             return False
 
         # Group samples by (model_id, platform_info)
-        grouped_samples: dict[tuple[str, str], list[TrainingSample]] = defaultdict(list)
+        grouped_samples: dict[tuple[str, str], list[TrainingSample]] = (
+            defaultdict(list)
+        )
         for sample in self._samples_buffer:
             platform_key = json.dumps(sample.platform_info, sort_keys=True)
             key = (sample.model_id, platform_key)
@@ -173,17 +175,17 @@ class TrainingClient:
                     success_count += 1
 
                 except Exception as e:
-                    logger.error(
+                    logger.opt(exception=True).error(
                         f"Failed to train {model_id} ({prediction_type}) "
-                        f"on {platform_info.get('hardware_name', '?')}: {e}",
-                        exc_info=True,
+                        f"on {platform_info.get('hardware_name', '?')}: {e}"
                     )
                     failure_count += 1
 
         self._samples_buffer.clear()
 
         logger.info(
-            f"Training complete: {success_count} succeeded, " f"{failure_count} failed"
+            f"Training complete: {success_count} succeeded, "
+            f"{failure_count} failed"
         )
 
         return failure_count == 0

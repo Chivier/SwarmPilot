@@ -69,7 +69,9 @@ class PlannerRegistrar:
 
         for attempt in range(1, self._config.max_retries + 1):
             try:
-                async with httpx.AsyncClient(timeout=self._config.timeout) as client:
+                async with httpx.AsyncClient(
+                    timeout=self._config.timeout
+                ) as client:
                     response = await client.post(
                         f"{self._config.planner_url.rstrip('/')}"
                         f"/v1/scheduler/register",
@@ -96,7 +98,8 @@ class PlannerRegistrar:
                         f"- {response.text}"
                     )
                     logger.warning(
-                        f"Attempt {attempt}/{self._config.max_retries}: " f"{error_msg}"
+                        f"Attempt {attempt}/{self._config.max_retries}: "
+                        f"{error_msg}"
                     )
                     last_error = RuntimeError(error_msg)
 
@@ -125,12 +128,17 @@ class PlannerRegistrar:
         if not self._registered:
             return
 
-        logger.info(f"Deregistering from planner: model_id={self._config.model_id}")
+        logger.info(
+            f"Deregistering from planner: model_id={self._config.model_id}"
+        )
 
         try:
-            async with httpx.AsyncClient(timeout=self._config.timeout) as client:
+            async with httpx.AsyncClient(
+                timeout=self._config.timeout
+            ) as client:
                 response = await client.post(
-                    f"{self._config.planner_url.rstrip('/')}" f"/v1/scheduler/deregister",
+                    f"{self._config.planner_url.rstrip('/')}"
+                    f"/v1/scheduler/deregister",
                     json={"model_id": self._config.model_id},
                 )
 
@@ -143,7 +151,9 @@ class PlannerRegistrar:
                     )
 
         except Exception as e:
-            logger.warning(f"Deregistration failed (best-effort): {e}")
+            logger.opt(exception=True).warning(
+                f"Deregistration failed (best-effort): {e}"
+            )
 
         self._registered = False
 

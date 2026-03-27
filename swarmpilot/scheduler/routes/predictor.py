@@ -70,9 +70,7 @@ def _maybe_switch_to_probabilistic(
     import swarmpilot.scheduler.api as api_module
     from swarmpilot.scheduler.algorithms import get_strategy
 
-    current_name = (
-        api_module.scheduling_strategy.__class__.__name__
-    )
+    current_name = api_module.scheduling_strategy.__class__.__name__
     if current_name == "ProbabilisticSchedulingStrategy":
         logger.info(
             "[auto-switch] Already using probabilistic "
@@ -86,8 +84,7 @@ def _maybe_switch_to_probabilistic(
             predictor_client=api_module.predictor_client,
             instance_registry=api_module.instance_registry,
             target_quantile=(
-                api_module.config.scheduling
-                .probabilistic_quantile
+                api_module.config.scheduling.probabilistic_quantile
             ),
         )
         # Preserve the worker queue manager reference.
@@ -106,7 +103,7 @@ def _maybe_switch_to_probabilistic(
             f"({samples_trained} samples)."
         )
         return "probabilistic"
-    except Exception:
+    except (ValueError, ImportError, RuntimeError):
         logger.opt(exception=True).error(
             "[auto-switch] Failed to switch strategy to "
             "'probabilistic'; keeping current strategy."
@@ -146,8 +143,7 @@ async def train_model(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=(
-                "Training client not configured. "
-                "Set TRAINING_ENABLE_AUTO=true."
+                "Training client not configured. Set TRAINING_ENABLE_AUTO=true."
             ),
         )
 
@@ -175,10 +171,8 @@ async def train_model(
             strategy=strategy_name,
         )
     except Exception as exc:
-        logger.error(
-            f"Training failed for model_id={request.model_id}: "
-            f"{exc}",
-            exc_info=True,
+        logger.opt(exception=True).error(
+            f"Training failed for model_id={request.model_id}: {exc}",
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -246,17 +240,13 @@ async def get_model_status(
 
     # Collect trained-model entries for this model_id
     all_models = storage.list_models()
-    matched = [
-        m for m in all_models if m.get("model_id") == model_id
-    ]
+    matched = [m for m in all_models if m.get("model_id") == model_id]
 
     # Count buffered samples for this model_id
     buffer_count = 0
     if training_client is not None:
         buffer_count = sum(
-            1
-            for s in training_client._samples_buffer
-            if s.model_id == model_id
+            1 for s in training_client._samples_buffer if s.model_id == model_id
         )
 
     if not matched and buffer_count == 0:
@@ -316,9 +306,7 @@ async def predict(
 
         quantiles_out: dict[str, float] | None = None
         if pred.quantiles:
-            quantiles_out = {
-                str(k): v for k, v in pred.quantiles.items()
-            }
+            quantiles_out = {str(k): v for k, v in pred.quantiles.items()}
 
         return PredictorPredictResponse(
             success=True,
@@ -340,10 +328,8 @@ async def predict(
             detail=error_msg,
         ) from exc
     except Exception as exc:
-        logger.error(
-            f"Prediction failed for model_id="
-            f"{request.model_id}: {exc}",
-            exc_info=True,
+        logger.opt(exception=True).error(
+            f"Prediction failed for model_id={request.model_id}: {exc}",
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
