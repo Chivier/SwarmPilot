@@ -19,6 +19,8 @@ from .available_instance_store import (
     get_available_instance_store,
 )
 from .config import config
+from .core import optimizer_factory
+from .core.optimizer_factory import run_optimization
 from .core.swarm_optimizer import (
     IntegerProgrammingOptimizer,
     SimulatedAnnealingOptimizer,
@@ -276,9 +278,16 @@ async def plan_deployment(input_data: PlannerInput):
         initial = np.array(input_data.initial)
         target = np.array(input_data.target)
 
-        # Select optimizer based on algorithm
-        if input_data.algorithm == "simulated_annealing":
-            optimizer = SimulatedAnnealingOptimizer(
+        optimizer_factory.SimulatedAnnealingOptimizer = (
+            SimulatedAnnealingOptimizer
+        )
+        optimizer_factory.IntegerProgrammingOptimizer = (
+            IntegerProgrammingOptimizer
+        )
+
+        try:
+            optimizer = optimizer_factory.create_optimizer(
+                input_data.algorithm,
                 M=input_data.M,
                 N=input_data.N,
                 B=B,
@@ -286,43 +295,24 @@ async def plan_deployment(input_data: PlannerInput):
                 a=input_data.a,
                 target=target,
             )
-
-            deployment, score, stats = optimizer.optimize(
-                objective_method=input_data.objective_method,
-                initial_temp=input_data.initial_temp,
-                final_temp=input_data.final_temp,
-                cooling_rate=input_data.cooling_rate,
-                max_iterations=input_data.max_iterations,
-                iterations_per_temp=input_data.iterations_per_temp,
-                verbose=input_data.verbose,
-            )
-
-        elif input_data.algorithm == "integer_programming":
-            optimizer = IntegerProgrammingOptimizer(
-                M=input_data.M,
-                N=input_data.N,
-                B=B,
-                initial=initial,
-                a=input_data.a,
-                target=target,
-            )
-
-            deployment, score, stats = optimizer.optimize(
-                objective_method=input_data.objective_method,
-                solver_name=input_data.solver_name,
-                time_limit=input_data.time_limit,
-                verbose=input_data.verbose,
-            )
-
-        else:
-            error_msg = f"Unknown algorithm: {input_data.algorithm}"
-            client_msg = error_msg
-            logger.error(
-                f"/plan request failed: {error_msg}. Returning HTTP 400. Client will receive: {client_msg}"
-            )
+        except ValueError as e:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail=client_msg
-            )
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid input: {e!s}",
+            ) from e
+
+        deployment, score, stats = run_optimization(
+            optimizer,
+            objective_method=input_data.objective_method,
+            initial_temp=input_data.initial_temp,
+            final_temp=input_data.final_temp,
+            cooling_rate=input_data.cooling_rate,
+            max_iterations=input_data.max_iterations,
+            iterations_per_temp=input_data.iterations_per_temp,
+            solver_name=input_data.solver_name,
+            time_limit=input_data.time_limit,
+            verbose=input_data.verbose,
+        )
 
         # Compute service capacity and changes
         service_capacity = optimizer.compute_service_capacity(deployment)
@@ -357,6 +347,8 @@ async def plan_deployment(input_data: PlannerInput):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=client_msg
         ) from e
+    except HTTPException:
+        raise
     except Exception as e:
         client_msg = f"Optimization failed: {e!s}"
         logger.opt(exception=True).error(

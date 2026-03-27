@@ -20,10 +20,7 @@ from fastapi import APIRouter, HTTPException, status
 from loguru import logger
 
 from .config import config
-from .core.swarm_optimizer import (
-    IntegerProgrammingOptimizer,
-    SimulatedAnnealingOptimizer,
-)
+from .core.optimizer_factory import create_optimizer, run_optimization
 from .models import (
     PyLetDeploymentInput,
     PyLetDeploymentOutput,
@@ -218,9 +215,9 @@ async def pylet_deploy(input_data: PyLetDeployWithPlanInput):
         )
         target = np.array(input_data.target)
 
-        # Select optimizer based on algorithm (same logic as /plan)
-        if input_data.algorithm == "simulated_annealing":
-            optimizer = SimulatedAnnealingOptimizer(
+        try:
+            optimizer = create_optimizer(
+                input_data.algorithm,
                 M=input_data.M,
                 N=input_data.N,
                 B=B,
@@ -228,39 +225,24 @@ async def pylet_deploy(input_data: PyLetDeployWithPlanInput):
                 a=input_data.a,
                 target=target,
             )
-
-            deployment, score, stats = optimizer.optimize(
-                objective_method=input_data.objective_method,
-                initial_temp=input_data.initial_temp,
-                final_temp=input_data.final_temp,
-                cooling_rate=input_data.cooling_rate,
-                max_iterations=input_data.max_iterations,
-                iterations_per_temp=input_data.iterations_per_temp,
-                verbose=input_data.verbose,
-            )
-
-        elif input_data.algorithm == "integer_programming":
-            optimizer = IntegerProgrammingOptimizer(
-                M=input_data.M,
-                N=input_data.N,
-                B=B,
-                initial=initial,
-                a=input_data.a,
-                target=target,
-            )
-
-            deployment, score, stats = optimizer.optimize(
-                objective_method=input_data.objective_method,
-                solver_name=input_data.solver_name,
-                time_limit=input_data.time_limit,
-                verbose=input_data.verbose,
-            )
-
-        else:
+        except ValueError as e:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Unknown algorithm: {input_data.algorithm}",
-            )
+                detail=str(e),
+            ) from e
+
+        deployment, score, stats = run_optimization(
+            optimizer,
+            objective_method=input_data.objective_method,
+            initial_temp=input_data.initial_temp,
+            final_temp=input_data.final_temp,
+            cooling_rate=input_data.cooling_rate,
+            max_iterations=input_data.max_iterations,
+            iterations_per_temp=input_data.iterations_per_temp,
+            solver_name=input_data.solver_name,
+            time_limit=input_data.time_limit,
+            verbose=input_data.verbose,
+        )
 
         # Convert deployment array to target_state dict using model_ids
         target_state: dict[str, int] = {}
@@ -456,41 +438,27 @@ async def pylet_optimize(input_data: PyLetOptimizeInput):
         B = np.array(input_data.B)
         target = np.array(input_data.target)
 
-        # For PyLet, the "initial" represents current model distribution
-        # We'll compute optimal counts per model
-        if input_data.algorithm == "simulated_annealing":
-            optimizer = SimulatedAnnealingOptimizer(
+        initial = np.array([-1] * M)
+        try:
+            optimizer = create_optimizer(
+                input_data.algorithm,
                 M=M,
                 N=N,
                 B=B,
-                initial=np.array([-1] * M),  # Start fresh
+                initial=initial,
                 a=input_data.a,
                 target=target,
             )
-
-            deployment, score, stats = optimizer.optimize(
-                objective_method=input_data.objective_method,
-            )
-
-        elif input_data.algorithm == "integer_programming":
-            optimizer = IntegerProgrammingOptimizer(
-                M=M,
-                N=N,
-                B=B,
-                initial=np.array([-1] * M),
-                a=input_data.a,
-                target=target,
-            )
-
-            deployment, score, stats = optimizer.optimize(
-                objective_method=input_data.objective_method,
-            )
-
-        else:
+        except ValueError as e:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Unknown algorithm: {input_data.algorithm}",
-            )
+                detail=str(e),
+            ) from e
+
+        deployment, score, stats = run_optimization(
+            optimizer,
+            objective_method=input_data.objective_method,
+        )
 
         # Convert deployment array to model counts
         target_state: dict[str, int] = {}
