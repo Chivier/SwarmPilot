@@ -56,7 +56,9 @@ class PreprocessorsRegistry:
                 )
                 logger.info("Loaded semantic preprocessor successfully")
             except Exception as e:
-                logger.warning(f"Failed to load semantic preprocessor: {e}")
+                logger.opt(exception=True).warning(
+                    f"Failed to load semantic preprocessor: {e}"
+                )
         else:
             logger.info(
                 f"Semantic preprocessor model not found at {model_path}, skipping"

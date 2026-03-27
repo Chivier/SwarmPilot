@@ -197,13 +197,12 @@ def health(
         )
         typer.echo(f"❌ {error_msg}", err=True)
         sys.exit(1)
-    except Exception as e:
-        logger.error(
+    except httpx.HTTPError as e:
+        logger.opt(exception=True).error(
             f"CLI health check failed\n"
             f"Error: {e!s}\n"
             f"URL: {url}\n"
-            f"Exception: {type(e).__name__}\n"
-            f"Traceback:\n{traceback.format_exc()}"
+            f"Exception: {type(e).__name__}"
         )
         typer.echo(f"❌ Error: {e}", err=True)
         sys.exit(1)
@@ -289,12 +288,11 @@ def list_models(
                         typer.echo(f"   Config: {config_info}")
                     typer.echo("")
 
-        except Exception as e:
-            logger.warning(
+        except (OSError, KeyError, RuntimeError) as e:
+            logger.opt(exception=True).warning(
                 f"Failed to load model metadata\n"
                 f"Model ID: {model_id}\n"
-                f"Exception: {type(e).__name__}: {e!s}\n"
-                f"Traceback:\n{traceback.format_exc()}"
+                f"Exception: {type(e).__name__}: {e!s}"
             )
             typer.echo(f"{model_id:<30} {'Error':<20} {e!s}")
 
@@ -385,13 +383,12 @@ app_version = "0.1.0"
         typer.echo(
             f"  2. Start the service with: spredictor start --config {output}"
         )
-    except Exception as e:
-        logger.error(
+    except OSError as e:
+        logger.opt(exception=True).error(
             f"Failed to create configuration file\n"
             f"Output path: {output}\n"
             f"Force overwrite: {force}\n"
-            f"Exception: {type(e).__name__}: {e!s}\n"
-            f"Traceback:\n{traceback.format_exc()}"
+            f"Exception: {type(e).__name__}: {e!s}"
         )
         typer.echo(f"❌ Error creating configuration file: {e}", err=True)
         sys.exit(1)

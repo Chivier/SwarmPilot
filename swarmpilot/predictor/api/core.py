@@ -153,7 +153,7 @@ class PredictorLowLevel:
                 f"{len(features_list)} samples"
             )
             return predictor
-        except Exception as e:
+        except (RuntimeError, ValueError) as e:
             raise TrainingError(f"Training failed: {e}") from e
 
     def save_model(
@@ -353,7 +353,7 @@ class PredictorLowLevel:
 
         try:
             return predictor.predict(filtered)
-        except Exception as e:
+        except (RuntimeError, ValueError) as e:
             raise PredictionError(f"Prediction failed: {e}") from e
 
     # -------------------------------------------------------------------------

@@ -38,6 +38,21 @@ async def list_models():
 
         return ModelListResponse(models=models)
 
+    except OSError as e:
+        error_detail = {
+            "error": "Failed to list models",
+            "message": str(e),
+            "traceback": traceback.format_exc(),
+        }
+        dependencies._log_error(
+            error_context="List models operation failed",
+            error_detail=error_detail,
+            exception=e,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=error_detail,
+        ) from e
     except Exception as e:
         error_detail = {
             "error": "Failed to list models",
@@ -52,4 +67,4 @@ async def list_models():
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=error_detail,
-        )
+        ) from e

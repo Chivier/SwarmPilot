@@ -31,6 +31,21 @@ async def get_cache_stats():
                 "message": "Cache statistics retrieved successfully",
             },
         )
+    except (RuntimeError, AttributeError) as e:
+        error_detail = {
+            "error": "Failed to get cache stats",
+            "message": str(e),
+            "traceback": traceback.format_exc(),
+        }
+        dependencies._log_error(
+            error_context="Cache stats retrieval failed",
+            error_detail=error_detail,
+            exception=e,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=error_detail,
+        ) from e
     except Exception as e:
         error_detail = {
             "error": "Failed to get cache stats",
@@ -45,7 +60,7 @@ async def get_cache_stats():
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=error_detail,
-        )
+        ) from e
 
 
 @router.post("/clear", tags=["Cache"])
@@ -67,6 +82,21 @@ async def clear_cache():
                 "message": "Model cache cleared successfully",
             },
         )
+    except RuntimeError as e:
+        error_detail = {
+            "error": "Failed to clear cache",
+            "message": str(e),
+            "traceback": traceback.format_exc(),
+        }
+        dependencies._log_error(
+            error_context="Cache clear operation failed",
+            error_detail=error_detail,
+            exception=e,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=error_detail,
+        ) from e
     except Exception as e:
         error_detail = {
             "error": "Failed to clear cache",
@@ -81,4 +111,4 @@ async def clear_cache():
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=error_detail,
-        )
+        ) from e

@@ -90,7 +90,7 @@ async def train_model(request: TrainingRequest):
                     processed_features_list.append(processed)
             else:
                 processed_features_list = request.features_list
-        except Exception as e:
+        except (ValueError, KeyError, TypeError) as e:
             error_detail = {
                 "error": "Preprocessor error",
                 "message": str(e),
@@ -106,7 +106,7 @@ async def train_model(request: TrainingRequest):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=error_detail,
-            )
+            ) from e
 
         try:
             predictor.train(
@@ -130,7 +130,7 @@ async def train_model(request: TrainingRequest):
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=error_detail,
             )
-        except Exception as e:
+        except RuntimeError as e:
             error_detail = {
                 "error": "Training failed",
                 "message": str(e),
@@ -144,7 +144,7 @@ async def train_model(request: TrainingRequest):
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=error_detail,
-            )
+            ) from e
 
         model_key = dependencies.storage.generate_model_key(
             model_id=request.model_id,
@@ -166,7 +166,7 @@ async def train_model(request: TrainingRequest):
             )
             dependencies.model_cache.invalidate(model_key)
             logger.info(f"Invalidated cache for retrained model: {model_key}")
-        except Exception as e:
+        except (OSError, RuntimeError) as e:
             error_detail = {
                 "error": "Model save failed",
                 "message": str(e),
@@ -183,7 +183,7 @@ async def train_model(request: TrainingRequest):
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=error_detail,
-            )
+            ) from e
 
         return TrainingResponse(
             status="success",
@@ -214,4 +214,4 @@ async def train_model(request: TrainingRequest):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=error_detail,
-        )
+        ) from e

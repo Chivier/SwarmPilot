@@ -6,7 +6,6 @@ Uses joblib for serialization and local filesystem for storage.
 from __future__ import annotations
 
 import os
-import traceback
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -57,7 +56,7 @@ class ModelStorage:
             Unique model key string.
         """
         software = f"{platform_info['software_name']}-{platform_info['software_version']}"
-        hardware = platform_info['hardware_name']
+        hardware = platform_info["hardware_name"]
         return f"{model_id}__{software}__{hardware}__{prediction_type}"
 
     def save_model(
@@ -78,9 +77,9 @@ class ModelStorage:
         """
         # Create complete state with metadata
         complete_state = {
-            'predictor_state': predictor_state,
-            'metadata': metadata,
-            'saved_at': datetime.now(UTC).isoformat()
+            "predictor_state": predictor_state,
+            "metadata": metadata,
+            "saved_at": datetime.now(UTC).isoformat(),
         }
 
         # Save to disk
@@ -89,14 +88,13 @@ class ModelStorage:
         try:
             joblib.dump(complete_state, model_path)
             logger.debug(f"Model saved successfully: {model_path}")
-        except Exception as e:
-            logger.error(
+        except (OSError, RuntimeError) as e:
+            logger.opt(exception=True).error(
                 f"Failed to save model\n"
                 f"Model key: {model_key}\n"
                 f"Model path: {model_path}\n"
                 f"Metadata: {metadata}\n"
-                f"Exception: {type(e).__name__}: {e!s}\n"
-                f"Traceback:\n{traceback.format_exc()}"
+                f"Exception: {type(e).__name__}: {e!s}"
             )
             raise
 
@@ -122,13 +120,12 @@ class ModelStorage:
             result = joblib.load(model_path)
             logger.debug(f"Model loaded successfully: {model_path}")
             return result
-        except Exception as e:
-            logger.error(
+        except (OSError, EOFError, RuntimeError) as e:
+            logger.opt(exception=True).error(
                 f"Failed to load model\n"
                 f"Model key: {model_key}\n"
                 f"Model path: {model_path}\n"
-                f"Exception: {type(e).__name__}: {e!s}\n"
-                f"Traceback:\n{traceback.format_exc()}"
+                f"Exception: {type(e).__name__}: {e!s}"
             )
             raise
 
@@ -155,26 +152,25 @@ class ModelStorage:
         for model_file in self.storage_dir.glob("*.joblib"):
             try:
                 complete_state = joblib.load(model_file)
-                metadata = complete_state.get('metadata', {})
+                metadata = complete_state.get("metadata", {})
 
                 # Extract key information
                 model_info = {
-                    'model_id': metadata.get('model_id'),
-                    'platform_info': metadata.get('platform_info'),
-                    'prediction_type': metadata.get('prediction_type'),
-                    'samples_count': metadata.get('samples_count'),
-                    'last_trained': complete_state.get('saved_at')
+                    "model_id": metadata.get("model_id"),
+                    "platform_info": metadata.get("platform_info"),
+                    "prediction_type": metadata.get("prediction_type"),
+                    "samples_count": metadata.get("samples_count"),
+                    "last_trained": complete_state.get("saved_at"),
                 }
 
                 models.append(model_info)
 
-            except Exception as e:
+            except (OSError, EOFError, RuntimeError, KeyError) as e:
                 # Log corrupted files with full details
-                logger.warning(
+                logger.opt(exception=True).warning(
                     f"Failed to load model file (skipping)\n"
                     f"File: {model_file}\n"
-                    f"Exception: {type(e).__name__}: {e!s}\n"
-                    f"Traceback:\n{traceback.format_exc()}"
+                    f"Exception: {type(e).__name__}: {e!s}"
                 )
                 continue
 
@@ -207,8 +203,9 @@ class ModelStorage:
         total_size = sum(f.stat().st_size for f in model_files)
 
         return {
-            'storage_dir': str(self.storage_dir.absolute()),
-            'model_count': len(model_files),
-            'total_size_bytes': total_size,
-            'is_accessible': self.storage_dir.exists() and os.access(self.storage_dir, os.W_OK)
+            "storage_dir": str(self.storage_dir.absolute()),
+            "model_count": len(model_files),
+            "total_size_bytes": total_size,
+            "is_accessible": self.storage_dir.exists()
+            and os.access(self.storage_dir, os.W_OK),
         }

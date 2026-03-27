@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import traceback
 
+import pydantic
 from fastapi import WebSocket, WebSocketDisconnect
 
 from swarmpilot.predictor.api import dependencies
@@ -36,7 +37,7 @@ async def _receive_request(websocket: WebSocket) -> PredictionRequest | None:
         )
         await websocket.send_json(error_detail)
         return None
-    except Exception as exc:
+    except (RuntimeError, ConnectionError) as exc:
         error_detail = {
             "error": "Receive error",
             "message": str(exc),
@@ -52,7 +53,7 @@ async def _receive_request(websocket: WebSocket) -> PredictionRequest | None:
 
     try:
         return PredictionRequest(**request_data)
-    except Exception as exc:
+    except (pydantic.ValidationError, TypeError) as exc:
         error_detail = {
             "error": "Invalid request",
             "message": f"Failed to validate request: {exc!s}",
