@@ -25,6 +25,8 @@ from loguru import logger
 from pylet import Instance
 from pylet.errors import NotFoundError, PyletError
 
+from swarmpilot.errors import PartialDeploymentError
+
 
 @dataclass
 class InstanceInfo:
@@ -78,21 +80,6 @@ class PartialDeploymentResult:
 
     succeeded: list[InstanceInfo]
     failed: list[tuple[int, str]]
-
-
-class PartialDeploymentError(Exception):
-    """Raised when some but not all deployments fail.
-
-    Attributes:
-        result: PartialDeploymentResult with details of succeeded and failed.
-    """
-
-    def __init__(self, result: PartialDeploymentResult):
-        self.result = result
-        super().__init__(
-            f"Partial deployment: {len(result.succeeded)} succeeded, "
-            f"{len(result.failed)} failed"
-        )
 
 
 # Model launch command templates
@@ -161,7 +148,9 @@ class PyLetClient:
             try:
                 # Check if PyLet is already initialized by listing workers
                 # Use a timeout to avoid hanging if PyLet is unresponsive
-                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                with concurrent.futures.ThreadPoolExecutor(
+                    max_workers=1
+                ) as executor:
                     future = executor.submit(pylet.workers)
                     workers = future.result(timeout=timeout)
                 logger.info(
@@ -176,7 +165,9 @@ class PyLetClient:
                 )
             except Exception as e:
                 # Not initialized yet, proceed with normal init
-                logger.debug(f"PyLet not initialized ({e}), will initialize now")
+                logger.opt(exception=True).debug(
+                    f"PyLet not initialized ({e}), will initialize now"
+                )
 
         logger.info(f"Initializing PyLet client with head: {self.head_url}")
         pylet.init(self.head_url)
@@ -299,7 +290,10 @@ class PyLetClient:
                     f"pylet_id={instance.id}, name={instance_name}"
                 )
                 succeeded.append(InstanceInfo.from_pylet_instance(instance))
-            except Exception as e:
+            except PyletError as e:
+                failed.append((i, str(e)))
+                logger.warning(f"Failed to submit replica {i}: {e}")
+            except (RuntimeError, ConnectionError, TimeoutError) as e:
                 failed.append((i, str(e)))
                 logger.warning(f"Failed to submit replica {i}: {e}")
 
@@ -315,7 +309,12 @@ class PyLetClient:
                 f"{len(failed)} failed"
             )
             raise PartialDeploymentError(
-                PartialDeploymentResult(succeeded=succeeded, failed=failed)
+                message=(
+                    f"Partial deployment: {len(succeeded)} succeeded, "
+                    f"{len(failed)} failed"
+                ),
+                succeeded=succeeded,
+                failed=failed,
             )
 
         # All succeeded
@@ -369,7 +368,9 @@ class PyLetClient:
 
         instance.wait_running(timeout=timeout)
 
-        logger.info(f"Instance {pylet_id} running at endpoint: {instance.endpoint}")
+        logger.info(
+            f"Instance {pylet_id} running at endpoint: {instance.endpoint}"
+        )
         return InstanceInfo.from_pylet_instance(instance)
 
     def cancel_instance(
@@ -472,7 +473,9 @@ class PyLetClient:
             RuntimeError: If client not initialized.
         """
         if not self._initialized:
-            raise RuntimeError("PyLet client not initialized. Call init() first.")
+            raise RuntimeError(
+                "PyLet client not initialized. Call init() first."
+            )
 
 
 # Global client singleton

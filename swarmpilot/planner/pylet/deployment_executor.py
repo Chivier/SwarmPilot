@@ -219,7 +219,9 @@ class DeploymentExecutor:
                     instances_by_model[instance.model_id] = []
                 instances_by_model[instance.model_id].append(instance)
 
-        return DeploymentPlan.from_diff(current_state, target_state, instances_by_model)
+        return DeploymentPlan.from_diff(
+            current_state, target_state, instances_by_model
+        )
 
     def execute_plan(
         self,
@@ -264,12 +266,16 @@ class DeploymentExecutor:
                 )
                 for pylet_id in action.pylet_ids:
                     try:
-                        success = self.instance_manager.terminate_instance(pylet_id)
+                        success = self.instance_manager.terminate_instance(
+                            pylet_id
+                        )
                         if success:
                             removed_instances.append(pylet_id)
                         else:
-                            failed_removes.append((pylet_id, "Termination failed"))
-                    except Exception as e:
+                            failed_removes.append(
+                                (pylet_id, "Termination failed")
+                            )
+                    except (RuntimeError, ConnectionError, TimeoutError) as e:
                         failed_removes.append((pylet_id, str(e)))
                         logger.error(f"Failed to remove {pylet_id}: {e}")
 
@@ -303,7 +309,9 @@ class DeploymentExecutor:
                 if instance.status == ManagedInstanceStatus.ACTIVE:
                     added_instances.append(instance)
                 else:
-                    failed_adds.append((instance.model_id, instance.error or "Failed"))
+                    failed_adds.append(
+                        (instance.model_id, instance.error or "Failed")
+                    )
         else:
             added_instances.extend(pending_instances)
 
@@ -375,9 +383,13 @@ class DeploymentExecutor:
             model_id = instance.model_id
             current_state[model_id] = current_state.get(model_id, 0) + 1
 
-        logger.info(f"Reconciling: current={current_state}, target={target_state}")
+        logger.info(
+            f"Reconciling: current={current_state}, target={target_state}"
+        )
 
-        return self.execute(current_state, target_state, wait_for_ready=wait_for_ready)
+        return self.execute(
+            current_state, target_state, wait_for_ready=wait_for_ready
+        )
 
     def scale_model(
         self,
@@ -396,7 +408,9 @@ class DeploymentExecutor:
             ExecutionResult with success/failure details.
         """
         # Get current count for this model
-        current_count = len(self.instance_manager.get_instances_by_model(model_id))
+        current_count = len(
+            self.instance_manager.get_instances_by_model(model_id)
+        )
 
         logger.info(f"Scaling {model_id}: {current_count} -> {target_count}")
 

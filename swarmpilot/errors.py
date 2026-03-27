@@ -7,6 +7,8 @@ catch broad or narrow slices of the hierarchy as needed.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 
 class SwarmPilotError(Exception):
     """Base exception for all SwarmPilot errors.
@@ -38,6 +40,18 @@ class DeployError(SwarmPilotError):
         self.succeeded: list = succeeded if succeeded is not None else []
         self.failed: list = failed if failed is not None else []
         super().__init__(message)
+
+
+class PartialDeploymentError(DeployError):
+    """Raised when some replicas in a batch deployment failed."""
+
+    @property
+    def result(self) -> SimpleNamespace:
+        """Return legacy ``result`` shape for backward compatibility."""
+        return SimpleNamespace(
+            succeeded=self.succeeded,
+            failed=self.failed,
+        )
 
 
 class SchedulerNotFound(SwarmPilotError):  # noqa: N818
@@ -128,5 +142,5 @@ class SwarmPilotTimeoutError(SwarmPilotError):
         self.timeout = timeout
         self.name = name
         super().__init__(
-            f"Instance '{name}' did not become ready " f"within {timeout}s"
+            f"Instance '{name}' did not become ready within {timeout}s"
         )

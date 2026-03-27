@@ -713,7 +713,9 @@ class IntegerProgrammingOptimizer(SwarmOptimizer):
                 return self.initial.copy(), initial_score, stats
 
         except Exception as e:
-            logger.error(f"Error during integer programming solve: {e!s}")
+            logger.opt(exception=True).error(
+                f"Error during integer programming solve: {e!s}"
+            )
             initial_score = self.objective_function(
                 self.initial, objective_method
             )

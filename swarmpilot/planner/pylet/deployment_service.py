@@ -240,7 +240,7 @@ class PyLetDeploymentService:
             )
 
         except Exception as e:
-            logger.error(f"Deployment failed: {e}")
+            logger.opt(exception=True).error(f"Deployment failed: {e}")
             return DeploymentServiceResult(
                 success=False,
                 error=str(e),
@@ -280,7 +280,9 @@ class PyLetDeploymentService:
             )
 
         except Exception as e:
-            logger.error(f"Scale failed for {model_id}: {e}")
+            logger.opt(exception=True).error(
+                f"Scale failed for {model_id}: {e}"
+            )
             return DeploymentServiceResult(
                 success=False,
                 error=str(e),
@@ -317,7 +319,9 @@ class PyLetDeploymentService:
             )
 
         except Exception as e:
-            logger.error(f"Migration failed for {pylet_id}: {e}")
+            logger.opt(exception=True).error(
+                f"Migration failed for {pylet_id}: {e}"
+            )
             return DeploymentServiceResult(
                 success=False,
                 error=str(e),

@@ -168,12 +168,12 @@ async def pylet_deploy_manually(input_data: PyLetDeploymentInput):
             error=result.error,
         )
 
-    except Exception as e:
-        logger.error(f"PyLet deploy_manually failed: {e}")
+    except (ValueError, RuntimeError, OSError) as e:
+        logger.opt(exception=True).error(f"PyLet deploy_manually failed: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Deployment failed: {e!s}",
-        )
+        ) from e
 
 
 @router.post("/deploy", response_model=PyLetOptimizeOutput)
@@ -303,17 +303,19 @@ async def pylet_deploy(input_data: PyLetDeployWithPlanInput):
     except HTTPException:
         raise
     except ValueError as e:
-        logger.error(f"PyLet deploy failed - ValueError: {e}", exc_info=True)
+        logger.opt(exception=True).error(
+            f"PyLet deploy failed - ValueError: {e}"
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid input: {e!s}",
-        )
-    except Exception as e:
-        logger.error(f"PyLet deploy failed: {e}", exc_info=True)
+        ) from e
+    except (RuntimeError, OSError) as e:
+        logger.opt(exception=True).error(f"PyLet deploy failed: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Deployment failed: {e!s}",
-        )
+        ) from e
 
 
 @router.post("/scale", response_model=PyLetScaleOutput)
@@ -359,12 +361,12 @@ async def pylet_scale(input_data: PyLetScaleInput):
             error=result.error,
         )
 
-    except Exception as e:
-        logger.error(f"PyLet scale failed: {e}")
+    except (ValueError, RuntimeError, KeyError) as e:
+        logger.opt(exception=True).error(f"PyLet scale failed: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Scale failed: {e!s}",
-        )
+        ) from e
 
 
 @router.post("/migrate", response_model=PyLetMigrateOutput)
@@ -415,12 +417,12 @@ async def pylet_migrate(input_data: PyLetMigrateInput):
             error=result.error,
         )
 
-    except Exception as e:
-        logger.error(f"PyLet migrate failed: {e}")
+    except (ValueError, RuntimeError, KeyError) as e:
+        logger.opt(exception=True).error(f"PyLet migrate failed: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Migration failed: {e!s}",
-        )
+        ) from e
 
 
 @router.post("/optimize", response_model=PyLetOptimizeOutput)
@@ -527,12 +529,12 @@ async def pylet_optimize(input_data: PyLetOptimizeInput):
 
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"PyLet optimize failed: {e}")
+    except (RuntimeError, OSError) as e:
+        logger.opt(exception=True).error(f"PyLet optimize failed: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Optimization failed: {e!s}",
-        )
+        ) from e
 
 
 @router.post("/terminate-all")
@@ -565,9 +567,9 @@ async def pylet_terminate_all(wait_for_drain: bool = False):
             "details": results,
         }
 
-    except Exception as e:
-        logger.error(f"PyLet terminate-all failed: {e}")
+    except (RuntimeError, KeyError) as e:
+        logger.opt(exception=True).error(f"PyLet terminate-all failed: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Termination failed: {e!s}",
-        )
+        ) from e

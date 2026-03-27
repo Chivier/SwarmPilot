@@ -7,6 +7,7 @@ management via the Planner REST API.
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 
@@ -41,11 +42,7 @@ def _get_planner_url(url: str | None) -> str:
     Returns:
         The resolved planner base URL (no trailing slash).
     """
-    resolved = (
-        url
-        or os.environ.get("PLANNER_URL")
-        or _DEFAULT_PLANNER_URL
-    )
+    resolved = url or os.environ.get("PLANNER_URL") or _DEFAULT_PLANNER_URL
     return resolved.rstrip("/")
 
 
@@ -83,14 +80,14 @@ def _request(
         try:
             body = exc.response.json()
             detail = body.get("detail", "")
-        except Exception:
+        except (json.JSONDecodeError, ValueError):
             detail = exc.response.text
         typer.echo(
             f"Error ({exc.response.status_code}): {detail}",
             err=True,
         )
         raise typer.Exit(code=1)
-    except Exception as exc:
+    except httpx.HTTPError as exc:
         typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(code=1)
 
@@ -133,9 +130,7 @@ def start(
     final_host = config.planner_host
     final_port = config.planner_port
 
-    typer.echo(
-        f"Server will start at: http://{final_host}:{final_port}"
-    )
+    typer.echo(f"Server will start at: http://{final_host}:{final_port}")
     typer.echo("")
 
     try:
@@ -148,10 +143,8 @@ def start(
     except KeyboardInterrupt:
         typer.echo("\nShutting down planner service...")
         sys.exit(0)
-    except Exception as e:
-        typer.echo(
-            f"Error starting planner service: {e}", err=True
-        )
+    except (RuntimeError, OSError) as e:
+        typer.echo(f"Error starting planner service: {e}", err=True)
         sys.exit(1)
 
 
@@ -173,15 +166,9 @@ def serve(
     model_or_command: str = typer.Argument(
         ..., help="Model name or shell command to deploy"
     ),
-    gpu: int = typer.Option(
-        1, "--gpu", help="GPUs per replica"
-    ),
-    replicas: int = typer.Option(
-        1, "--replicas", help="Number of replicas"
-    ),
-    name: str | None = typer.Option(
-        None, "--name", help="Deployment name"
-    ),
+    gpu: int = typer.Option(1, "--gpu", help="GPUs per replica"),
+    replicas: int = typer.Option(1, "--replicas", help="Number of replicas"),
+    name: str | None = typer.Option(None, "--name", help="Deployment name"),
     scheduler: str | None = typer.Option(
         "auto",
         "--scheduler",
@@ -230,15 +217,9 @@ def serve(
 
 @app.command()
 def run(
-    command: str = typer.Argument(
-        ..., help="Shell command to execute"
-    ),
-    name: str = typer.Option(
-        ..., "--name", help="Deployment name"
-    ),
-    gpu: int = typer.Option(
-        1, "--gpu", help="GPUs per replica"
-    ),
+    command: str = typer.Argument(..., help="Shell command to execute"),
+    name: str = typer.Option(..., "--name", help="Deployment name"),
+    gpu: int = typer.Option(1, "--gpu", help="GPUs per replica"),
     planner_url: str | None = typer.Option(
         None,
         "--planner-url",
@@ -273,15 +254,9 @@ def run(
 
 @app.command()
 def register(
-    model: str = typer.Argument(
-        ..., help="Model identifier"
-    ),
-    gpu: int = typer.Option(
-        1, "--gpu", help="GPUs per replica"
-    ),
-    replicas: int = typer.Option(
-        1, "--replicas", help="Desired replica count"
-    ),
+    model: str = typer.Argument(..., help="Model identifier"),
+    gpu: int = typer.Option(1, "--gpu", help="GPUs per replica"),
+    replicas: int = typer.Option(1, "--replicas", help="Desired replica count"),
     planner_url: str | None = typer.Option(
         None,
         "--planner-url",
@@ -301,9 +276,7 @@ def register(
         "gpu_count": gpu,
         "replicas": replicas,
     }
-    data = _request(
-        "POST", f"{base}/v1/register", json=payload
-    )
+    data = _request("POST", f"{base}/v1/register", json=payload)
 
     typer.echo(f"Status: {data.get('status', '')}")
     typer.echo(f"Model:  {data.get('model', '')}")
@@ -330,9 +303,7 @@ def deploy(
     models = data.get("deployed_models", [])
     if models:
         typer.echo(f"Models:    {', '.join(models)}")
-    typer.echo(
-        f"Instances: {data.get('total_instances', 0)}"
-    )
+    typer.echo(f"Instances: {data.get('total_instances', 0)}")
     error = data.get("error")
     if error:
         typer.echo(f"Error:     {error}")
@@ -380,9 +351,7 @@ def ps(
 
 @app.command()
 def scale(
-    model: str = typer.Argument(
-        ..., help="Model identifier to scale"
-    ),
+    model: str = typer.Argument(..., help="Model identifier to scale"),
     replicas: int = typer.Option(
         ..., "--replicas", help="Target replica count"
     ),
@@ -448,14 +417,10 @@ def terminate(
     if all_instances:
         payload["all"] = True
 
-    data = _request(
-        "POST", f"{base}/v1/terminate", json=payload
-    )
+    data = _request("POST", f"{base}/v1/terminate", json=payload)
 
     typer.echo(f"Success:    {data.get('success', '')}")
-    typer.echo(
-        f"Terminated: {data.get('terminated_count', 0)}"
-    )
+    typer.echo(f"Terminated: {data.get('terminated_count', 0)}")
     msg = data.get("message", "")
     if msg:
         typer.echo(f"Message:    {msg}")

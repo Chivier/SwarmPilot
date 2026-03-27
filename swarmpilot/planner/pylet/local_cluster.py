@@ -136,9 +136,7 @@ class LocalPyLetCluster:
             self.stop()
             return False
 
-        logger.success(
-            f"Local PyLet cluster ready at {self.head_url}"
-        )
+        logger.success(f"Local PyLet cluster ready at {self.head_url}")
         return True
 
     def stop(self) -> None:
@@ -174,10 +172,8 @@ class LocalPyLetCluster:
             try:
                 db_file.unlink()
                 logger.debug(f"Removed stale PyLet state: {db_file.name}")
-            except Exception as exc:
-                logger.warning(
-                    f"Could not remove {db_file}: {exc}"
-                )
+            except OSError as exc:
+                logger.warning(f"Could not remove {db_file}: {exc}")
 
     def _start_head(self) -> bool:
         """Start the head node subprocess.
@@ -217,9 +213,7 @@ class LocalPyLetCluster:
         Returns:
             True if the worker process is alive after a brief wait.
         """
-        worker_http_port = (
-            self.worker_port_start + index * self.worker_port_gap
-        )
+        worker_http_port = self.worker_port_start + index * self.worker_port_gap
         instance_port_start = worker_http_port + 1
         instance_port_end = worker_http_port + 100
 
@@ -255,8 +249,7 @@ class LocalPyLetCluster:
             return False
 
         logger.info(
-            f"Worker {index} started "
-            f"(PID {proc.pid}, port {worker_http_port})"
+            f"Worker {index} started (PID {proc.pid}, port {worker_http_port})"
         )
         return True
 
@@ -272,11 +265,12 @@ class LocalPyLetCluster:
         verify_code = f"""\
 import httpx
 import pylet
+from loguru import logger
 
 try:
     resp = httpx.delete("http://localhost:{self.port}/api/workers/offline")
-except Exception:
-    pass
+except Exception as exc:
+    logger.debug(f"Cleanup failed for offline worker: {{exc}}")
 
 pylet.init("http://localhost:{self.port}")
 workers = pylet.workers()

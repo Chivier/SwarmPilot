@@ -35,7 +35,8 @@ from enum import Enum
 
 from loguru import logger
 
-from swarmpilot.planner.pylet.client import PartialDeploymentError, PyLetClient
+from swarmpilot.errors import PartialDeploymentError
+from swarmpilot.planner.pylet.client import PyLetClient
 from swarmpilot.planner.pylet.scheduler_client import SchedulerClient
 from swarmpilot.planner.scheduler_registry import get_scheduler_registry
 
@@ -202,8 +203,7 @@ class InstanceManager:
         # Use cached client or create new one
         if scheduler_url not in self._scheduler_clients:
             logger.info(
-                f"Creating scheduler client for {model_id} "
-                f"at {scheduler_url}"
+                f"Creating scheduler client for {model_id} at {scheduler_url}"
             )
             self._scheduler_clients[scheduler_url] = SchedulerClient(
                 scheduler_url
@@ -359,7 +359,7 @@ class InstanceManager:
 
         except PartialDeploymentError as e:
             # Handle partial success - some instances deployed, some failed
-            for info in e.result.succeeded:
+            for info in e.succeeded:
                 managed = ManagedInstance(
                     pylet_id=info.pylet_id,
                     instance_id=info.pylet_id,
@@ -371,7 +371,7 @@ class InstanceManager:
                 self._instances[info.pylet_id] = managed
                 deployed.append(managed)
 
-            for idx, error in e.result.failed:
+            for idx, error in e.failed:
                 failed.append((f"{model_id}-{idx}", error))
 
             logger.warning(
@@ -383,7 +383,9 @@ class InstanceManager:
             # If all deployments failed, record all as failed
             for i in range(count):
                 failed.append((f"{model_id}-{i}", str(e)))
-            logger.error(f"All deployments failed for {model_id}: {e}")
+            logger.opt(exception=True).error(
+                f"All deployments failed for {model_id}: {e}"
+            )
 
         return DeploymentResult(
             model_id=model_id,
@@ -428,7 +430,9 @@ class InstanceManager:
                 f"old_status={old_status} new_status={managed.status}"
             )
 
-            info = self.pylet_client.wait_instance_running(pylet_id, timeout=timeout)
+            info = self.pylet_client.wait_instance_running(
+                pylet_id, timeout=timeout
+            )
 
             managed.endpoint = info.endpoint
             logger.debug(
@@ -476,7 +480,7 @@ class InstanceManager:
         except Exception as e:
             managed.status = ManagedInstanceStatus.FAILED
             managed.error = str(e)
-            logger.error(f"Instance {pylet_id} failed: {e}")
+            logger.opt(exception=True).error(f"Instance {pylet_id} failed: {e}")
             raise
 
         return managed
@@ -508,7 +512,9 @@ class InstanceManager:
                 # Instance already marked as failed in wait_instance_ready
                 if pylet_id in self._instances:
                     results.append(self._instances[pylet_id])
-                logger.error(f"Instance {pylet_id} failed during wait: {e}")
+                logger.opt(exception=True).error(
+                    f"Instance {pylet_id} failed during wait: {e}"
+                )
         return results
 
     def terminate_instance(
@@ -586,7 +592,7 @@ class InstanceManager:
 
         except Exception as e:
             # Log termination failure
-            logger.warning(
+            logger.opt(exception=True).warning(
                 f"[INSTANCE_TERMINATE] pylet_id={pylet_id} "
                 f"action=complete success=false error={e!s}"
             )
@@ -702,7 +708,9 @@ class InstanceManager:
     def _ensure_initialized(self) -> None:
         """Ensure manager is initialized."""
         if not self._initialized:
-            raise RuntimeError("InstanceManager not initialized. Call init() first.")
+            raise RuntimeError(
+                "InstanceManager not initialized. Call init() first."
+            )
 
 
 # Global manager singleton
@@ -740,6 +748,6 @@ def get_instance_manager() -> InstanceManager:
     """
     if _instance_manager is None:
         raise RuntimeError(
-            "InstanceManager not created. " "Call create_instance_manager() first."
+            "InstanceManager not created. Call create_instance_manager() first."
         )
     return _instance_manager

@@ -248,7 +248,9 @@ class MigrationExecutor:
             op.status = MigrationStatus.FAILED
             op.error = str(e)
             op.completed_at = time.time()
-            logger.error(f"Migration failed for {pylet_id}: {e}")
+            logger.opt(exception=True).error(
+                f"Migration failed for {pylet_id}: {e}"
+            )
 
         return op
 
@@ -316,7 +318,8 @@ class MigrationExecutor:
 
         # Find all instances on the worker
         instances_to_migrate = [
-            i for i in self.instance_manager.instances.values()
+            i
+            for i in self.instance_manager.instances.values()
             if i.worker_id == worker_id
             and i.status == ManagedInstanceStatus.ACTIVE
         ]
@@ -382,9 +385,7 @@ class MigrationExecutor:
                 for instance in to_migrate:
                     target_worker = None
                     for tw, tc in target_distribution.items():
-                        tw_current = len(
-                            current_distribution.get(tw, [])
-                        )
+                        tw_current = len(current_distribution.get(tw, []))
                         if tw_current < tc and tw != worker_id:
                             target_worker = tw
                             break

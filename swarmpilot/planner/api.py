@@ -108,7 +108,9 @@ async def lifespan(app: FastAPI):
                     f"Local PyLet cluster started at {local_cluster.head_url}"
                 )
         except Exception as e:
-            logger.error(f"Failed to start local PyLet cluster: {e}")
+            logger.opt(exception=True).error(
+                f"Failed to start local PyLet cluster: {e}"
+            )
             local_cluster = None
 
     # Startup: Initialize PyLet service (connects to cluster)
@@ -133,7 +135,9 @@ async def lifespan(app: FastAPI):
             )
             logger.info("PyLet service initialized successfully")
         except Exception as e:
-            logger.error(f"Failed to initialize PyLet service: {e}")
+            logger.opt(exception=True).error(
+                f"Failed to initialize PyLet service: {e}"
+            )
             logger.warning(
                 "Continuing without PyLet - endpoints will be unavailable"
             )
@@ -181,7 +185,7 @@ app.include_router(sdk_router, prefix="/v1")
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
     """Global exception handler for unhandled errors."""
-    logger.error(f"Unhandled exception: {exc}", exc_info=True)
+    logger.opt(exception=True).error(f"Unhandled exception: {exc}")
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={
@@ -339,31 +343,28 @@ async def plan_deployment(input_data: PlannerInput):
 
     except ImportError as e:
         client_msg = f"Algorithm dependency not available: {e!s}"
-        logger.error(
-            f"/plan request failed - ImportError: {e}. Returning HTTP 500. Client will receive: {client_msg}",
-            exc_info=True,
+        logger.opt(exception=True).error(
+            f"/plan request failed - ImportError: {e}. Returning HTTP 500. Client will receive: {client_msg}"
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=client_msg
-        )
+        ) from e
     except ValueError as e:
         client_msg = f"Invalid input: {e!s}"
-        logger.error(
-            f"/plan request failed - ValueError: {e}. Returning HTTP 400. Client will receive: {client_msg}",
-            exc_info=True,
+        logger.opt(exception=True).error(
+            f"/plan request failed - ValueError: {e}. Returning HTTP 400. Client will receive: {client_msg}"
         )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=client_msg
-        )
+        ) from e
     except Exception as e:
         client_msg = f"Optimization failed: {e!s}"
-        logger.error(
-            f"/plan request failed - Unexpected error: {e}. Returning HTTP 500. Client will receive: {client_msg}",
-            exc_info=True,
+        logger.opt(exception=True).error(
+            f"/plan request failed - Unexpected error: {e}. Returning HTTP 500. Client will receive: {client_msg}"
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=client_msg
-        )
+        ) from e
 
 
 # ============================================================================
@@ -516,15 +517,14 @@ async def register_available_instance(request: InstanceRegisterRequest):
             message=f"Instance {request.instance_id} registered successfully for model {request.model_id}",
         )
 
-    except Exception as e:
+    except (ValueError, RuntimeError) as e:
         client_msg = f"Failed to register instance: {e!s}"
-        logger.error(
-            f"/instance/register failed - Error: {e}. Returning HTTP 500. Client will receive: {client_msg}",
-            exc_info=True,
+        logger.opt(exception=True).error(
+            f"/instance/register failed - Error: {e}. Returning HTTP 500. Client will receive: {client_msg}"
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=client_msg
-        )
+        ) from e
 
 
 # ============================================================================

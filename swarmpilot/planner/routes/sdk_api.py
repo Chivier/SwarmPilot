@@ -256,12 +256,12 @@ async def serve_model(request: ServeRequest):
             scheduler_url=scheduler_url,
             error=result.error,
         )
-    except Exception as e:
-        logger.error(f"[SDK] serve failed: {e}")
+    except (ValueError, RuntimeError, OSError) as e:
+        logger.opt(exception=True).error(f"[SDK] serve failed: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Serve failed: {e!s}",
-        )
+        ) from e
 
 
 @router.post("/run", response_model=RunResponse)
@@ -302,12 +302,12 @@ async def run_workload(request: RunRequest):
             instances=instance_ids,
             error=result.error,
         )
-    except Exception as e:
-        logger.error(f"[SDK] run failed: {e}")
+    except (ValueError, RuntimeError, OSError) as e:
+        logger.opt(exception=True).error(f"[SDK] run failed: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Run failed: {e!s}",
-        )
+        ) from e
 
 
 @router.post("/register")
@@ -376,12 +376,12 @@ async def deploy_registered():
             total_instances=len(result.active_instances),
             error=result.error,
         )
-    except Exception as e:
-        logger.error(f"[SDK] deploy failed: {e}")
+    except (ValueError, RuntimeError, OSError) as e:
+        logger.opt(exception=True).error(f"[SDK] deploy failed: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Deploy failed: {e!s}",
-        )
+        ) from e
 
 
 @router.get("/registered", response_model=RegisteredModelsResponse)
@@ -488,12 +488,12 @@ async def scale_model(request: ScaleRequest):
             current_count=current,
             error=result.error,
         )
-    except Exception as e:
-        logger.error(f"[SDK] scale failed: {e}")
+    except (ValueError, RuntimeError, KeyError) as e:
+        logger.opt(exception=True).error(f"[SDK] scale failed: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Scale failed: {e!s}",
-        )
+        ) from e
 
 
 @router.post("/terminate", response_model=TerminateResponse)
@@ -575,12 +575,12 @@ async def terminate_instances(request: TerminateRequest):
             ),
         )
 
-    except Exception as e:
-        logger.error(f"[SDK] terminate failed: {e}")
+    except (ValueError, RuntimeError, KeyError) as e:
+        logger.opt(exception=True).error(f"[SDK] terminate failed: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Terminate failed: {e!s}",
-        )
+        ) from e
 
 
 @router.get("/schedulers", response_model=SchedulerMapResponse)
