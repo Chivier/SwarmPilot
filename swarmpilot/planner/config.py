@@ -88,6 +88,15 @@ class PlannerConfig:
             os.getenv("PYLET_LOCAL_MEMORY_PER_WORKER", "65536")
         )
 
+        # Auto-activate local mode when PyLet is enabled without
+        # an explicit head URL, so a local cluster is started.
+        if self.pylet_enabled and not self.pylet_head_url:
+            self.pylet_local_mode = True
+            logger.info(
+                "PYLET_ENABLED is set without PYLET_HEAD_URL; "
+                "auto-activating PYLET_LOCAL_MODE"
+            )
+
         # Auto-derive PyLet settings when local mode is enabled
         if self.pylet_local_mode:
             self.pylet_enabled = True

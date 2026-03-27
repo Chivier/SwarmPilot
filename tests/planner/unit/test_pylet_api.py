@@ -359,24 +359,29 @@ class TestPyLetAPIEndpoints:
 class TestPyLetConfigValidation:
     """Tests for PyLet configuration validation."""
 
-    def test_pylet_enabled_without_url(self):
-        """Test that enabling PyLet without URL raises error."""
+    def test_pylet_enabled_without_url_activates_local_mode(self):
+        """Test that enabling PyLet without URL auto-activates local mode."""
         import os
         from unittest.mock import patch
 
         with patch.dict(
             os.environ,
-            {"PYLET_ENABLED": "true", "PYLET_HEAD_URL": ""},
+            {
+                "PYLET_ENABLED": "true",
+                "PYLET_HEAD_URL": "",
+                "PYLET_LOCAL_MODE": "false",
+            },
             clear=False,
         ):
             from swarmpilot.planner.config import PlannerConfig
 
             config = PlannerConfig()
-            config.pylet_enabled = True
-            config.pylet_head_url = None
-
-            with pytest.raises(ValueError, match="PYLET_HEAD_URL is required"):
-                config.validate()
+            assert config.pylet_local_mode is True
+            assert config.pylet_head_url == (
+                f"http://localhost:{config.pylet_local_port}"
+            )
+            # Validation should pass — head_url was auto-derived
+            config.validate()
 
     def test_pylet_invalid_backend(self):
         """Test that invalid backend raises error."""
