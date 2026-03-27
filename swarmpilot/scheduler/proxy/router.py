@@ -164,6 +164,10 @@ class ProxyRouter:
                 "method": method,
                 "proxy": True,
             }
+            # Forward experiment mode fields from body to scheduling metadata
+            for _exp_key in ("exp_runtime", "exp_cv", "exp_modes", "exp_skewness"):
+                if _exp_key in body:
+                    metadata[_exp_key] = body[_exp_key]
 
             schedule_result = await self._scheduling_strategy.schedule_task(
                 model_id=model_id,
