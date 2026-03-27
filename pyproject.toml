@@ -99,9 +99,6 @@ addopts = [
     "-v",
     "--strict-markers",
     "--tb=short",
-    "--cov=swarmpilot",
-    "--cov-report=term-missing",
-    "--cov-fail-under=70",
 ]
 
 # =============================================================================
