@@ -1,13 +1,14 @@
 #!/bin/bash
 # Deploy all model instances via PyLet.
-# Usage: ./scripts/deploy.sh
+# Usage: ./scripts_deploy/deploy.sh
 #
-# Reads models + replicas from cluster.yaml and calls
-# Planner's /v1/pylet/deploy_manually endpoint.
+# Deploys each model separately via `splanner serve` to support
+# per-model GPU count (e.g. 1 GPU for 8B, 2 GPUs for 80B).
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 CFG="python3 $SCRIPT_DIR/_config.py"
 
 # Colors
@@ -21,7 +22,6 @@ NC='\033[0m'
 HEAD_NODE=$($CFG head_node)
 PLANNER_PORT=$($CFG planner_port)
 PLANNER_URL="http://$HEAD_NODE:$PLANNER_PORT"
-MODELS_JSON=$($CFG models_json)
 MODEL_COUNT=$($CFG model_count)
 
 echo -e "${BLUE}╔══════════════════════════════════════════════════╗${NC}"
@@ -38,8 +38,7 @@ fi
 echo -e "${GREEN}Planner is healthy${NC}"
 
 echo "Checking PyLet status..."
-PYLET_STATUS=$(curl -s "$PLANNER_URL/v1/pylet/status" 2>/dev/null)
-PYLET_ENABLED=$(echo "$PYLET_STATUS" | python3 -c "
+PYLET_ENABLED=$(curl -s "$PLANNER_URL/v1/pylet/status" 2>/dev/null | python3 -c "
 import sys, json
 d = json.load(sys.stdin)
 print('true' if d.get('pylet_enabled') else 'false')
@@ -47,7 +46,6 @@ print('true' if d.get('pylet_enabled') else 'false')
 
 if [ "$PYLET_ENABLED" != "true" ]; then
     echo -e "${RED}Error: PyLet is not enabled on the Planner.${NC}"
-    echo "  Check PYLET_ENABLED and PYLET_HEAD_URL in start_head.sh"
     exit 1
 fi
 echo -e "${GREEN}PyLet is enabled${NC}"
@@ -55,42 +53,42 @@ echo ""
 
 # ── Show deployment plan ──────────────────────────────────────
 echo "Deployment plan:"
-TOTAL=0
+TOTAL_GPU=0
 for i in $(seq 0 $((MODEL_COUNT - 1))); do
     MODEL_ID=$($CFG model_id.$i)
     REPLICAS=$($CFG replicas.$i)
-    TOTAL=$((TOTAL + REPLICAS))
-    echo "  $MODEL_ID: $REPLICAS replicas"
+    GPU=$($CFG gpu.$i)
+    MODEL_GPU=$((REPLICAS * GPU))
+    TOTAL_GPU=$((TOTAL_GPU + MODEL_GPU))
+    echo "  $MODEL_ID: $REPLICAS replicas × $GPU GPU = $MODEL_GPU GPUs"
 done
-echo "  Total: $TOTAL instances"
+echo "  Total GPU usage: $TOTAL_GPU"
 echo ""
 
-# ── Deploy via PyLet ──────────────────────────────────────────
-echo -e "${BLUE}Deploying via /v1/pylet/deploy_manually ...${NC}"
-echo "  target_state: $MODELS_JSON"
-echo ""
+# ── Deploy each model separately ──────────────────────────────
+cd "$PROJECT_ROOT"
 
-RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
-    "$PLANNER_URL/v1/pylet/deploy_manually" \
-    -H "Content-Type: application/json" \
-    -d "{
-        \"target_state\": $MODELS_JSON,
-        \"wait_for_ready\": true
-    }")
+for i in $(seq 0 $((MODEL_COUNT - 1))); do
+    MODEL_ID=$($CFG model_id.$i)
+    REPLICAS=$($CFG replicas.$i)
+    GPU=$($CFG gpu.$i)
+    STEP=$((i + 1))
 
-HTTP_CODE=$(echo "$RESPONSE" | tail -1)
-BODY=$(echo "$RESPONSE" | head -n -1)
+    echo -e "${BLUE}[$STEP/$MODEL_COUNT] Deploying $MODEL_ID ($REPLICAS replicas, $GPU GPU each)...${NC}"
 
-if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
-    echo -e "${GREEN}Deployment successful (HTTP $HTTP_CODE)${NC}"
-    echo "$BODY" | python3 -m json.tool 2>/dev/null || echo "$BODY"
-else
-    echo -e "${RED}Deployment failed (HTTP $HTTP_CODE)${NC}"
-    echo "$BODY" | python3 -m json.tool 2>/dev/null || echo "$BODY"
-    exit 1
-fi
+    uv run splanner serve "$MODEL_ID" \
+        --gpu "$GPU" \
+        --replicas "$REPLICAS" \
+        --planner-url "$PLANNER_URL"
 
-echo ""
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}  $MODEL_ID deployed${NC}"
+    else
+        echo -e "${RED}  $MODEL_ID deployment failed${NC}"
+        exit 1
+    fi
+    echo ""
+done
 
 # ── Verify all instances are active ────────────────────────────
 echo "Running verification..."

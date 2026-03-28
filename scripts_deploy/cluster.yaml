@@ -10,7 +10,6 @@ cluster:
     head_port: 5100               # PyLet head listen port
     head_url: "http://10.0.0.1:5100"
     backend: "vllm"               # vllm | sglang
-    gpu_per_instance: 1
     cpu_per_instance: 1
     deploy_timeout: 600           # seconds
 
@@ -27,13 +26,15 @@ cluster:
 
   # Models to deploy (one Scheduler per model)
   models:
-    - model_id: "Qwen/Qwen2.5-7B"
+    - model_id: "Qwen/Qwen3-VL-8B-Instruct"
       scheduler_port: 8010
+      gpu_per_instance: 1
       replicas: 16
 
-    - model_id: "meta-llama/Llama-3.1-8B"
+    - model_id: "Qwen/Qwen3-Next-80B-A3B-Instruct-FP8"
       scheduler_port: 8020
-      replicas: 16
+      gpu_per_instance: 2         # tensor parallel across 2 GPUs
+      replicas: 8                 # 4 nodes × 8 GPU ÷ (16×1 + 8×2) = 32 GPU total
 
   # Cluster nodes (for reference / status checks)
   nodes:

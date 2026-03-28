@@ -10,7 +10,6 @@ Keys:
     planner_url         Full Planner URL (http://head:port)
     pylet_head_url      PyLet head URL
     pylet_backend       PyLet backend (vllm/sglang)
-    pylet_gpu           GPUs per instance
     pylet_cpu           CPUs per instance
     pylet_timeout       Deploy timeout (seconds)
     model_count         Number of models
@@ -18,6 +17,7 @@ Keys:
     model_id.<N>        Model ID at index N (0-based)
     scheduler_port.<N>  Scheduler port at index N
     replicas.<N>        Replica count at index N
+    gpu.<N>             GPU per instance at index N
     node_count          Number of nodes
     node_host.<N>       Node host at index N
     node_gpus.<N>       Node GPU count at index N
@@ -69,7 +69,6 @@ def get_value(cfg: dict, key: str) -> str:
         "planner_url": f"http://{head}:{planner_port}",
         "pylet_head_url": pylet.get("head_url", ""),
         "pylet_backend": pylet.get("backend", "vllm"),
-        "pylet_gpu": pylet.get("gpu_per_instance", 1),
         "pylet_cpu": pylet.get("cpu_per_instance", 1),
         "pylet_timeout": pylet.get("deploy_timeout", 600),
         "pylet_head_port": pylet.get("head_port", 5100),
@@ -106,6 +105,8 @@ def get_value(cfg: dict, key: str) -> str:
             return str(models[idx]["scheduler_port"])
         elif prefix == "replicas" and idx < len(models):
             return str(models[idx]["replicas"])
+        elif prefix == "gpu" and idx < len(models):
+            return str(models[idx].get("gpu_per_instance", 1))
         elif prefix == "node_host" and idx < len(nodes):
             return str(nodes[idx]["host"])
         elif prefix == "node_gpus" and idx < len(nodes):
