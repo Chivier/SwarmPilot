@@ -1,0 +1,39 @@
+# SwarmPilot Cluster Configuration
+# Copy this file to each node and edit as needed.
+
+cluster:
+  # Head node IP (runs Planner + Schedulers)
+  head_node: "10.0.0.1"
+
+  # PyLet configuration
+  pylet:
+    head_url: "http://10.0.0.1:5100"
+    backend: "vllm"               # vllm | sglang
+    gpu_per_instance: 1
+    cpu_per_instance: 1
+    deploy_timeout: 600           # seconds
+
+  # Planner service
+  planner:
+    port: 8002
+
+  # Models to deploy (one Scheduler per model)
+  models:
+    - model_id: "Qwen/Qwen2.5-7B"
+      scheduler_port: 8010
+      replicas: 16
+
+    - model_id: "meta-llama/Llama-3.1-8B"
+      scheduler_port: 8020
+      replicas: 16
+
+  # Cluster nodes (for reference / status checks)
+  nodes:
+    - host: "10.0.0.1"
+      gpus: 8
+    - host: "10.0.0.2"
+      gpus: 8
+    - host: "10.0.0.3"
+      gpus: 8
+    - host: "10.0.0.4"
+      gpus: 8
