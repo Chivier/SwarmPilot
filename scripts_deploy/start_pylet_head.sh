@@ -49,18 +49,16 @@ pylet.start(port=$PYLET_PORT, block=True)
 PYLET_PID=$!
 echo $PYLET_PID > "$LOG_DIR/pylet-head.pid"
 
-# Wait for head to be ready
+# Wait for head to be ready (GET /workers is PyLet's status endpoint)
 echo "  Waiting for PyLet head..."
 for attempt in $(seq 1 30); do
-    if curl -sf "http://localhost:$PYLET_PORT" > /dev/null 2>&1 || \
-       curl -sf "http://localhost:$PYLET_PORT/health" > /dev/null 2>&1 || \
-       kill -0 $PYLET_PID 2>/dev/null; then
-        # Give it a moment to fully initialize
-        sleep 2
-        if kill -0 $PYLET_PID 2>/dev/null; then
-            echo -e "${GREEN}  PyLet head started (PID: $PYLET_PID)${NC}"
-            break
-        fi
+    if curl -sf "http://localhost:$PYLET_PORT/workers" > /dev/null 2>&1; then
+        echo -e "${GREEN}  PyLet head started (PID: $PYLET_PID)${NC}"
+        break
+    fi
+    if ! kill -0 $PYLET_PID 2>/dev/null; then
+        echo -e "${RED}Error: PyLet head process died. Check $LOG_DIR/pylet-head.log${NC}"
+        exit 1
     fi
     if [ "$attempt" -eq 30 ]; then
         echo -e "${RED}Error: PyLet head failed to start. Check $LOG_DIR/pylet-head.log${NC}"

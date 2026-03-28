@@ -41,12 +41,11 @@ echo "  Worker port:  $WORKER_PORT"
 echo "  Resources:    ${WORKER_CPU} CPU, ${WORKER_GPU} GPU, ${WORKER_MEM} MB RAM"
 echo ""
 
-# ── Check head reachability ───────────────────────────────────
+# ── Check head reachability (GET /workers is PyLet's status endpoint)
 echo "Checking PyLet head at $PYLET_HEAD_URL ..."
 HEAD_OK=false
 for attempt in $(seq 1 10); do
-    if curl -sf "$PYLET_HEAD_URL" > /dev/null 2>&1 || \
-       curl -sf "$PYLET_HEAD_URL/health" > /dev/null 2>&1; then
+    if curl -sf "$PYLET_HEAD_URL/workers" > /dev/null 2>&1; then
         HEAD_OK=true
         break
     fi

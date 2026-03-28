@@ -92,30 +92,7 @@ fi
 
 echo ""
 
-# ── Verify instances ──────────────────────────────────────────
-echo -e "${BLUE}Verifying instances per model...${NC}"
-for i in $(seq 0 $((MODEL_COUNT - 1))); do
-    MODEL_ID=$($CFG model_id.$i)
-    SCHED_PORT=$($CFG scheduler_port.$i)
-    EXPECTED=$($CFG replicas.$i)
-
-    COUNT=$(curl -s "http://$HEAD_NODE:$SCHED_PORT/v1/instance/list" 2>/dev/null \
-        | python3 -c "
-import sys, json
-d = json.load(sys.stdin)
-print(len(d.get('instances', [])))
-" 2>/dev/null || echo "?")
-
-    if [ "$COUNT" = "$EXPECTED" ]; then
-        echo -e "  ${GREEN}$MODEL_ID: $COUNT/$EXPECTED instances${NC}"
-    else
-        echo -e "  ${YELLOW}$MODEL_ID: $COUNT/$EXPECTED instances (may still be starting)${NC}"
-    fi
-done
-
+# ── Verify all instances are active ────────────────────────────
+echo "Running verification..."
 echo ""
-echo -e "${GREEN}╔══════════════════════════════════════════════════╗${NC}"
-echo -e "${GREEN}║   Deployment Complete                            ║${NC}"
-echo -e "${GREEN}╚══════════════════════════════════════════════════╝${NC}"
-echo ""
-echo "Run ./scripts/status.sh to monitor the cluster."
+exec "$SCRIPT_DIR/verify.sh" --timeout 600 --interval 10
