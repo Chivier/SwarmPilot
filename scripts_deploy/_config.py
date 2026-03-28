@@ -23,6 +23,11 @@ Keys:
     node_gpus.<N>       Node GPU count at index N
     models_json         JSON dict {model_id: replicas} for deploy API
     scheduler_ports     Space-separated scheduler ports
+    pylet_head_port     PyLet head listen port
+    pylet_worker_port   PyLet worker port start
+    pylet_worker_cpu    CPU cores per worker
+    pylet_worker_gpu    GPUs per worker
+    pylet_worker_mem    RAM (MB) per worker
 """
 
 import json
@@ -67,6 +72,15 @@ def get_value(cfg: dict, key: str) -> str:
         "pylet_gpu": pylet.get("gpu_per_instance", 1),
         "pylet_cpu": pylet.get("cpu_per_instance", 1),
         "pylet_timeout": pylet.get("deploy_timeout", 600),
+        "pylet_head_port": pylet.get("head_port", 5100),
+        "pylet_worker_port": pylet.get("worker", {}).get(
+            "port_start", 5300
+        ),
+        "pylet_worker_cpu": pylet.get("worker", {}).get("cpu", 8),
+        "pylet_worker_gpu": pylet.get("worker", {}).get("gpu", 8),
+        "pylet_worker_mem": pylet.get("worker", {}).get(
+            "memory", 65536
+        ),
         "model_count": len(models),
         "model_ids": " ".join(m["model_id"] for m in models),
         "scheduler_ports": " ".join(

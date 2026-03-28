@@ -5,13 +5,21 @@ cluster:
   # Head node IP (runs Planner + Schedulers)
   head_node: "10.0.0.1"
 
-  # PyLet configuration
+  # PyLet cluster configuration
   pylet:
+    head_port: 5100               # PyLet head listen port
     head_url: "http://10.0.0.1:5100"
     backend: "vllm"               # vllm | sglang
     gpu_per_instance: 1
     cpu_per_instance: 1
     deploy_timeout: 600           # seconds
+
+    # Worker resources (advertised to PyLet scheduler)
+    worker:
+      port_start: 5300            # first worker HTTP port
+      cpu: 8                      # CPU cores per worker
+      gpu: 8                      # GPUs per worker
+      memory: 65536               # RAM (MB) per worker
 
   # Planner service
   planner:

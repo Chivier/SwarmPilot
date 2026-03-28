@@ -1,8 +1,9 @@
 #!/bin/bash
-# Stop all SwarmPilot services on the head node.
-# Usage: ./scripts/stop.sh
+# Stop all SwarmPilot services on this node.
+# Usage: ./scripts_deploy/stop.sh
 #
-# Order: terminate PyLet instances -> stop Schedulers -> stop Planner.
+# Order: terminate PyLet instances -> stop Schedulers -> stop Planner
+#        -> stop PyLet worker -> stop PyLet head.
 
 set -e
 
@@ -80,6 +81,15 @@ stop_process "Planner" "planner"
 # Clean up dummy health PID if lingering
 if [ -f "$LOG_DIR/dummy_health.pid" ]; then
     stop_process "Dummy Health" "dummy_health"
+fi
+
+# ── Stop PyLet processes (worker + head) ──────────────────────
+echo -e "${BLUE}Stopping PyLet processes...${NC}"
+if [ -f "$LOG_DIR/pylet-worker.pid" ]; then
+    stop_process "PyLet Worker" "pylet-worker"
+fi
+if [ -f "$LOG_DIR/pylet-head.pid" ]; then
+    stop_process "PyLet Head" "pylet-head"
 fi
 
 echo ""
