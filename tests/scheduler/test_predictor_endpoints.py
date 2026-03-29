@@ -460,6 +460,7 @@ def _make_training_client(
 
     mock.flush = _flush
     mock.get_buffer_size = MagicMock(return_value=buffer_size)
+    mock.get_last_flush_samples = MagicMock(return_value=buffer_size)
     return mock
 
 

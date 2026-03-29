@@ -148,8 +148,16 @@ async def train_model(
         )
 
     try:
+        samples_before = training_client.get_buffer_size()
         success = await training_client.flush(force=True)
-        samples = training_client.get_buffer_size()
+
+        # After flush, use last_flush_samples for accurate count
+        # (get_buffer_size is 0 after flush clears the buffer).
+        samples = (
+            int(training_client.get_last_flush_samples())
+            if success
+            else int(samples_before)
+        )
 
         # Auto-switch to probabilistic strategy when training
         # succeeds with enough samples.

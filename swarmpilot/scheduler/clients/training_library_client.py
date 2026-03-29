@@ -66,6 +66,7 @@ class TrainingClient:
         ]
 
         self._samples_buffer: list[TrainingSample] = []
+        self._last_flush_samples: int = 0
 
         logger.info(
             f"TrainingClient initialized "
@@ -181,13 +182,15 @@ class TrainingClient:
                     )
                     failure_count += 1
 
+        total_samples = len(self._samples_buffer)
         self._samples_buffer.clear()
 
         logger.info(
             f"Training complete: {success_count} succeeded, "
-            f"{failure_count} failed"
+            f"{failure_count} failed, {total_samples} samples consumed"
         )
 
+        self._last_flush_samples = total_samples
         return failure_count == 0
 
     def _train_model(
@@ -266,6 +269,10 @@ class TrainingClient:
     def get_buffer_size(self) -> int:
         """Get current number of buffered training samples."""
         return len(self._samples_buffer)
+
+    def get_last_flush_samples(self) -> int:
+        """Get the number of samples consumed in the last flush."""
+        return self._last_flush_samples
 
     def clear_buffer(self) -> None:
         """Clear all buffered training samples without training."""
