@@ -88,6 +88,7 @@ def get_value(cfg: dict, key: str) -> str:
             str(m["scheduler_port"]) for m in models
         ),
         "node_count": len(nodes),
+        "node_hosts": " ".join(n["host"] for n in nodes),
         "models_json": json.dumps(
             {m["model_id"]: m["replicas"] for m in models}
         ),

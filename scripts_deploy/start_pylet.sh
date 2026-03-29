@@ -42,6 +42,7 @@ fi
 # Always include localhost
 LOCAL_IPS="$LOCAL_IPS 127.0.0.1"
 
+# Check if this machine is the head node
 IS_HEAD=false
 for ip in $LOCAL_IPS; do
     if [ "$ip" = "$HEAD_NODE" ]; then
@@ -50,13 +51,38 @@ for ip in $LOCAL_IPS; do
     fi
 done
 
+# Check if this machine is in the cluster node list
+NODE_HOSTS=$($CFG node_hosts)
+# Also include head_node (head may not be listed in nodes separately)
+ALLOWED_IPS="$NODE_HOSTS $HEAD_NODE"
+
+IN_CLUSTER=false
+MATCHED_IP=""
+for local_ip in $LOCAL_IPS; do
+    for allowed_ip in $ALLOWED_IPS; do
+        if [ "$local_ip" = "$allowed_ip" ]; then
+            IN_CLUSTER=true
+            MATCHED_IP="$local_ip"
+            break 2
+        fi
+    done
+done
+
 THIS_HOST=$(hostname -I 2>/dev/null | awk '{print $1}' || hostname)
+
+if [ "$IN_CLUSTER" = false ]; then
+    echo -e "${RED}Error: This node ($THIS_HOST) is not in the cluster config.${NC}"
+    echo "  Local IPs:    $LOCAL_IPS"
+    echo "  Allowed nodes: $ALLOWED_IPS"
+    echo "  Edit cluster.yaml to add this node, or run on a configured node."
+    exit 1
+fi
 
 echo -e "${BLUE}╔══════════════════════════════════════════════════╗${NC}"
 echo -e "${BLUE}║   PyLet Cluster — Auto Start                     ║${NC}"
 echo -e "${BLUE}╚══════════════════════════════════════════════════╝${NC}"
 echo ""
-echo "  This node:  $THIS_HOST"
+echo "  This node:  $THIS_HOST ($MATCHED_IP)"
 echo "  Head node:  $HEAD_NODE"
 if [ "$IS_HEAD" = true ]; then
     echo -e "  Role:       ${GREEN}HEAD + WORKER${NC}"
