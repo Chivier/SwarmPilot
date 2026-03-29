@@ -25,25 +25,24 @@ cluster:
     port: 8002
 
   # Models to deploy (one Scheduler per model)
+  # Layout: 2 nodes for 8B (16 instances), 1 node for 80B (4 instances)
   models:
     - model_id: "Qwen/Qwen3-VL-8B-Instruct"
       scheduler_port: 8010
       gpu_per_instance: 1
-      replicas: 16
+      replicas: 16                # 2 nodes × 8 GPU = 16
 
     - model_id: "Qwen/Qwen3-Next-80B-A3B-Instruct-FP8"
       scheduler_port: 8020
       gpu_per_instance: 2         # tensor parallel across 2 GPUs
-      replicas: 8                 # 4 nodes × 8 GPU ÷ (16×1 + 8×2) = 32 GPU total
+      replicas: 4                 # 1 node × 8 GPU ÷ 2 = 4
       extra_args: "--max-model-len 8192"
 
-  # Cluster nodes (for reference / status checks)
+  # Cluster nodes (3 active, 1 has conflicting vLLM processes)
   nodes:
     - host: "10.0.0.1"
       gpus: 8
     - host: "10.0.0.2"
       gpus: 8
     - host: "10.0.0.3"
-      gpus: 8
-    - host: "10.0.0.4"
       gpus: 8
