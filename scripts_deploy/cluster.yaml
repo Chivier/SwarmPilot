@@ -35,6 +35,7 @@ cluster:
       scheduler_port: 8020
       gpu_per_instance: 2         # tensor parallel across 2 GPUs
       replicas: 8                 # 4 nodes × 8 GPU ÷ (16×1 + 8×2) = 32 GPU total
+      extra_args: "--max-model-len 8192"
 
   # Cluster nodes (for reference / status checks)
   nodes:

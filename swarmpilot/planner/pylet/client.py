@@ -190,6 +190,7 @@ class PyLetClient:
         labels: dict[str, str] | None = None,
         target_worker: str | None = None,
         count: int = 1,
+        extra_args: str | None = None,
     ) -> list[InstanceInfo]:
         """Deploy model instance(s) via PyLet.
 
@@ -207,6 +208,8 @@ class PyLetClient:
             labels: Additional instance labels.
             target_worker: Target specific worker for placement.
             count: Number of instances to deploy (default 1).
+            extra_args: Additional CLI arguments appended to the launch command
+                (e.g., "--max-model-len 8192").
 
         Returns:
             List of InstanceInfo for all successfully deployed instances.
@@ -237,6 +240,10 @@ class PyLetClient:
             # Auto-enable tensor parallelism when multiple GPUs
             if gpu_count > 1:
                 command += f" --tensor-parallel-size {gpu_count}"
+
+            # Append per-model extra arguments (e.g., --max-model-len)
+            if extra_args:
+                command += f" {extra_args}"
 
         # Build labels with SwarmPilot metadata
         instance_labels = {

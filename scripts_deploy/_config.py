@@ -18,6 +18,8 @@ Keys:
     scheduler_port.<N>  Scheduler port at index N
     replicas.<N>        Replica count at index N
     gpu.<N>             GPU per instance at index N
+    extra_args.<N>      Extra CLI args at index N (empty if unset)
+    model_configs_json  JSON for PYLET_MODEL_CONFIGS env var
     node_count          Number of nodes
     node_host.<N>       Node host at index N
     node_gpus.<N>       Node GPU count at index N
@@ -89,6 +91,20 @@ def get_value(cfg: dict, key: str) -> str:
         "models_json": json.dumps(
             {m["model_id"]: m["replicas"] for m in models}
         ),
+        "model_configs_json": json.dumps(
+            {
+                m["model_id"]: {
+                    k: v
+                    for k, v in [
+                        ("gpu_count", m.get("gpu_per_instance")),
+                        ("extra_args", m.get("extra_args")),
+                    ]
+                    if v is not None
+                }
+                for m in models
+                if m.get("gpu_per_instance") or m.get("extra_args")
+            }
+        ),
     }
 
     # Indexed access: model_id.0, scheduler_port.1, etc.
@@ -107,6 +123,8 @@ def get_value(cfg: dict, key: str) -> str:
             return str(models[idx]["replicas"])
         elif prefix == "gpu" and idx < len(models):
             return str(models[idx].get("gpu_per_instance", 1))
+        elif prefix == "extra_args" and idx < len(models):
+            return str(models[idx].get("extra_args", ""))
         elif prefix == "node_host" and idx < len(nodes):
             return str(nodes[idx]["host"])
         elif prefix == "node_gpus" and idx < len(nodes):

@@ -62,6 +62,14 @@ class PlannerConfig:
         self.pylet_reuse_cluster: bool = os.getenv(
             "PYLET_REUSE_CLUSTER", "false"
         ).lower() in ("true", "1", "yes")
+        # Per-model deployment overrides as JSON.
+        # Example: '{"Qwen/Qwen3-Next-80B": {"gpu_count": 2, "extra_args": "--max-model-len 8192"}}'
+        self.pylet_model_configs: dict[str, dict] = {}
+        _raw_model_configs = os.getenv("PYLET_MODEL_CONFIGS")
+        if _raw_model_configs:
+            import json
+
+            self.pylet_model_configs = json.loads(_raw_model_configs)
 
         # Local PyLet mode — Planner starts its own PyLet cluster
         # as subprocesses (head + workers) and auto-stops on shutdown.

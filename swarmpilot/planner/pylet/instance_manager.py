@@ -232,6 +232,7 @@ class InstanceManager:
         target_worker: str | None = None,
         env: dict[str, str] | None = None,
         labels: dict[str, str] | None = None,
+        extra_args: str | None = None,
     ) -> ManagedInstance:
         """Deploy a single model instance.
 
@@ -246,6 +247,7 @@ class InstanceManager:
             target_worker: Target specific worker.
             env: Additional environment variables.
             labels: Additional labels.
+            extra_args: Additional CLI arguments for the launch command.
 
         Returns:
             ManagedInstance in DEPLOYING status.
@@ -265,6 +267,7 @@ class InstanceManager:
             labels=labels,
             target_worker=target_worker,
             count=1,
+            extra_args=extra_args,
         )
         info = infos[0]  # Get the single deployed instance
 
@@ -296,6 +299,7 @@ class InstanceManager:
         backend: str = "vllm",
         gpu_count: int = 1,
         target_worker: str | None = None,
+        extra_args: str | None = None,
     ) -> DeploymentResult:
         """Deploy multiple model instances.
 
@@ -307,6 +311,7 @@ class InstanceManager:
             backend: Model backend.
             gpu_count: GPUs per instance.
             target_worker: Target worker (all instances go to same worker).
+            extra_args: Additional CLI arguments for the launch command.
 
         Returns:
             DeploymentResult with deployed and failed instances.
@@ -336,6 +341,7 @@ class InstanceManager:
                 gpu_count=gpu_count,
                 target_worker=target_worker,
                 count=count,
+                extra_args=extra_args,
             )
 
             # deploy_model always returns list now

@@ -134,6 +134,7 @@ async def lifespan(app: FastAPI):
                 drain_timeout=config.pylet_drain_timeout,
                 custom_command=config.pylet_custom_command,
                 reuse_cluster=config.pylet_reuse_cluster,
+                model_configs=config.pylet_model_configs,
             )
             logger.info("PyLet service initialized successfully")
         except Exception as e:

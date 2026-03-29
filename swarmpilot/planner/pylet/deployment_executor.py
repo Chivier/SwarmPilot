@@ -185,6 +185,7 @@ class DeploymentExecutor:
         instance_manager: InstanceManager,
         default_backend: str = "vllm",
         default_gpu_count: int = 1,
+        model_configs: dict[str, dict] | None = None,
     ):
         """Initialize deployment executor.
 
@@ -192,10 +193,13 @@ class DeploymentExecutor:
             instance_manager: InstanceManager for operations.
             default_backend: Default model backend.
             default_gpu_count: Default GPUs per instance.
+            model_configs: Per-model overrides, keyed by model_id.
+                Each value may contain ``gpu_count`` and ``extra_args``.
         """
         self.instance_manager = instance_manager
         self.default_backend = default_backend
         self.default_gpu_count = default_gpu_count
+        self.model_configs: dict[str, dict] = model_configs or {}
 
     def plan(
         self,
@@ -288,13 +292,17 @@ class DeploymentExecutor:
                     f"[DEPLOY_ACTION] action=add model_id={action.model_id} "
                     f"count={action.count}"
                 )
-                # Deploy instances via PyLet
+                # Deploy instances via PyLet (per-model overrides)
+                mcfg = self.model_configs.get(action.model_id, {})
                 result = self.instance_manager.deploy_instances(
                     model_id=action.model_id,
                     count=action.count,
-                    backend=self.default_backend,
-                    gpu_count=self.default_gpu_count,
+                    backend=mcfg.get("backend", self.default_backend),
+                    gpu_count=mcfg.get(
+                        "gpu_count", self.default_gpu_count
+                    ),
                     target_worker=action.target_worker,
+                    extra_args=mcfg.get("extra_args"),
                 )
                 pending_instances.extend(result.deployed)
                 failed_adds.extend(result.failed)

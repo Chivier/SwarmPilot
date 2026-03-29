@@ -26,6 +26,7 @@ PYLET_HEAD_URL=$($CFG pylet_head_url)
 PYLET_BACKEND=$($CFG pylet_backend)
 PYLET_CPU=$($CFG pylet_cpu)
 PYLET_TIMEOUT=$($CFG pylet_timeout)
+MODEL_CONFIGS_JSON=$($CFG model_configs_json)
 MODEL_COUNT=$($CFG model_count)
 
 echo -e "${BLUE}╔══════════════════════════════════════════════════╗${NC}"
@@ -97,6 +98,7 @@ PYLET_HEAD_URL="$PYLET_HEAD_URL" \
 PYLET_BACKEND="$PYLET_BACKEND" \
 PYLET_CPU_COUNT="$PYLET_CPU" \
 PYLET_DEPLOY_TIMEOUT="$PYLET_TIMEOUT" \
+PYLET_MODEL_CONFIGS="$MODEL_CONFIGS_JSON" \
 SCHEDULER_URL="http://localhost:$DUMMY_PORT" \
     uv run splanner start --port "$PLANNER_PORT" \
     > "$LOG_DIR/planner.log" 2>&1 &

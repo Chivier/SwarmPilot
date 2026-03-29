@@ -117,6 +117,7 @@ class PyLetDeploymentService:
         drain_timeout: float = 30.0,
         custom_command: str | None = None,
         reuse_cluster: bool = False,
+        model_configs: dict[str, dict] | None = None,
     ):
         """Initialize PyLet deployment service.
 
@@ -130,6 +131,8 @@ class PyLetDeploymentService:
             drain_timeout: Timeout for instance drain.
             custom_command: Optional custom command template (overrides backend).
             reuse_cluster: If True, reuse existing PyLet connection.
+            model_configs: Per-model overrides keyed by model_id.
+                Each value may contain ``gpu_count`` and ``extra_args``.
         """
         self._instance_manager = InstanceManager(
             pylet_head_url=pylet_head_url,
@@ -144,6 +147,7 @@ class PyLetDeploymentService:
         self._default_cpu_count = default_cpu_count
         self._deploy_timeout = deploy_timeout
         self._drain_timeout = drain_timeout
+        self._model_configs = model_configs or {}
         self._initialized = False
 
     def init(self) -> None:
@@ -160,6 +164,7 @@ class PyLetDeploymentService:
             self._instance_manager,
             default_backend=self._default_backend,
             default_gpu_count=self._default_gpu_count,
+            model_configs=self._model_configs,
         )
         self._migration_executor = MigrationExecutor(self._instance_manager)
         self._initialized = True
@@ -460,6 +465,7 @@ def create_pylet_service(
     drain_timeout: float = 30.0,
     custom_command: str | None = None,
     reuse_cluster: bool = False,
+    model_configs: dict[str, dict] | None = None,
 ) -> PyLetDeploymentService:
     """Create and initialize the global PyLet deployment service.
 
@@ -473,6 +479,8 @@ def create_pylet_service(
         drain_timeout: Timeout for instance drain.
         custom_command: Optional custom command template (overrides backend).
         reuse_cluster: If True, reuse existing PyLet connection.
+        model_configs: Per-model overrides keyed by model_id.
+            Each value may contain ``gpu_count`` and ``extra_args``.
 
     Returns:
         Initialized PyLetDeploymentService.
@@ -489,6 +497,7 @@ def create_pylet_service(
         drain_timeout=drain_timeout,
         custom_command=custom_command,
         reuse_cluster=reuse_cluster,
+        model_configs=model_configs,
     )
     _pylet_service.init()
     return _pylet_service
