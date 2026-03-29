@@ -199,10 +199,24 @@ class ProxyRouter:
                 },
             )
 
-        # 6. Register Future for this task
+        # 6. Register task in TaskRegistry so that handle_result
+        #    can find it for stats, training-sample collection, etc.
+        await self._task_registry.create_task(
+            task_id=task_id,
+            model_id=model_id,
+            task_input=body,
+            metadata={
+                "path": path,
+                "method": method,
+                "proxy": True,
+            },
+            assigned_instance=selected_instance_id,
+        )
+
+        # 7. Register Future for this task
         future = self._callback.register_future(task_id)
 
-        # 7. Create and enqueue the task
+        # 9. Create and enqueue the task
         queued_task = QueuedTask(
             task_id=task_id,
             model_id=model_id,
@@ -245,7 +259,7 @@ class ProxyRouter:
             f"(task_id={task_id})"
         )
 
-        # 8. Await the Future with timeout
+        # 10. Await the Future with timeout
         try:
             result = await asyncio.wait_for(
                 future,
@@ -267,7 +281,7 @@ class ProxyRouter:
                 },
             )
 
-        # 9. Return the backend's response
+        # 11. Return the backend's response
         status_code = result.http_status_code or 200
         response_body = result.result or {}
 
