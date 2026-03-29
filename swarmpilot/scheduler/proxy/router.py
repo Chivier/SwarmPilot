@@ -159,11 +159,24 @@ class ProxyRouter:
         try:
             # Use model_id from first instance (all instances serve same model)
             model_id = all_instances[0].model_id
-            metadata = {
+            metadata: dict[str, Any] = {
                 "path": path,
                 "method": method,
                 "proxy": True,
             }
+            # Extract predictor features from request body so the
+            # scheduling strategy can call the trained predictor.
+            if "max_tokens" in body:
+                metadata["max_tokens"] = body["max_tokens"]
+            messages = body.get("messages")
+            if isinstance(messages, list):
+                metadata["prompt_length"] = sum(
+                    len(m.get("content", ""))
+                    for m in messages
+                    if isinstance(m, dict)
+                )
+            elif "prompt" in body:
+                metadata["prompt_length"] = len(body["prompt"])
             # Forward experiment mode fields from body to scheduling metadata
             for _exp_key in ("exp_runtime", "exp_cv", "exp_modes", "exp_skewness"):
                 if _exp_key in body:
@@ -205,11 +218,7 @@ class ProxyRouter:
             task_id=task_id,
             model_id=model_id,
             task_input=body,
-            metadata={
-                "path": path,
-                "method": method,
-                "proxy": True,
-            },
+            metadata=metadata,
             assigned_instance=selected_instance_id,
         )
 
