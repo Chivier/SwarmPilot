@@ -147,10 +147,10 @@ class ConnectionManager:
         subscribers = await self.get_subscribers(task_id)
 
         if not subscribers:
-            # FIX: Add logging for no subscribers case (may indicate issue)
+            # Normal for proxy-mode tasks — no WebSocket client is subscribed.
             from loguru import logger
 
-            logger.warning(
+            logger.debug(
                 f"No subscribers for task {task_id} when broadcasting result"
             )
             return
