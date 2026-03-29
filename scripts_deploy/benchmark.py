@@ -17,6 +17,7 @@ Requires: datasets, huggingface-hub, pyyaml, httpx
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import statistics
 import sys
@@ -98,89 +99,81 @@ def build_prompt(case: dict) -> str:
     )
 
 
-# ── Synchronous proxy inference ────────────────────────────────
+# ── Async proxy inference with concurrency control ────────────
+
+DEFAULT_CONCURRENCY = 16
 
 
-def run_inference(
-    client: httpx.Client,
+async def run_inference(
+    client: httpx.AsyncClient,
+    semaphore: asyncio.Semaphore,
     scheduler_url: str,
     model_id: str,
     prompt: str,
     max_tokens: int,
+    idx: int,
 ) -> dict:
-    """Send a single synchronous inference request via the Scheduler proxy.
+    """Send a single inference request via the Scheduler proxy.
 
-    The Scheduler's catch-all transparent proxy forwards the request to
-    an instance selected by the scheduling algorithm, waits for the
-    response, and returns it synchronously. Runtime data is auto-collected
-    by the Scheduler for predictor training.
+    Concurrency is bounded by the semaphore so at most N requests
+    are in-flight at the same time.
 
     Args:
-        client: httpx Client.
+        client: httpx AsyncClient.
+        semaphore: Concurrency-limiting semaphore.
         scheduler_url: Base URL of the Scheduler.
         model_id: Model identifier.
         prompt: User prompt text.
         max_tokens: Maximum tokens to generate.
+        idx: Prompt index (for result ordering).
 
     Returns:
-        Dict with 'status', 'latency_ms', and optionally 'error'.
+        Dict with 'idx', 'status', 'latency_ms', and optionally 'error'.
     """
-    t0 = time.time()
-    try:
-        resp = client.post(
-            f"{scheduler_url}/v1/chat/completions",
-            json={
-                "model": model_id,
-                "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": max_tokens,
-            },
-        )
-        latency_ms = (time.time() - t0) * 1000.0
+    async with semaphore:
+        t0 = time.time()
+        try:
+            resp = await client.post(
+                f"{scheduler_url}/v1/chat/completions",
+                json={
+                    "model": model_id,
+                    "messages": [
+                        {"role": "user", "content": prompt}
+                    ],
+                    "max_tokens": max_tokens,
+                },
+            )
+            latency_ms = (time.time() - t0) * 1000.0
 
-        if resp.status_code >= 500:
+            if resp.status_code >= 500:
+                return {
+                    "idx": idx,
+                    "status": "FAILED",
+                    "latency_ms": latency_ms,
+                    "error": resp.text[:200],
+                }
+
+            resp.raise_for_status()
             return {
-                "status": "FAILED",
+                "idx": idx,
+                "status": "COMPLETED",
                 "latency_ms": latency_ms,
-                "error": resp.text[:200],
+            }
+        except httpx.TimeoutException:
+            return {
+                "idx": idx,
+                "status": "TIMEOUT",
+                "latency_ms": (time.time() - t0) * 1000.0,
+                "error": "Request timed out",
+            }
+        except Exception as e:
+            return {
+                "idx": idx,
+                "status": "FAILED",
+                "latency_ms": (time.time() - t0) * 1000.0,
+                "error": str(e),
             }
 
-        resp.raise_for_status()
-        return {
-            "status": "COMPLETED",
-            "latency_ms": latency_ms,
-            "response": resp.json(),
-        }
-    except httpx.TimeoutException:
-        return {
-            "status": "TIMEOUT",
-            "latency_ms": (time.time() - t0) * 1000.0,
-            "error": "Request timed out",
-        }
-    except Exception as e:
-        return {
-            "status": "FAILED",
-            "latency_ms": (time.time() - t0) * 1000.0,
-            "error": str(e),
-        }
-
-
-# ── Predictor training ────────────────────────────────────────
-
-
-def train_predictor(
-    client: httpx.Client,
-    scheduler_url: str,
-    model_id: str,
-) -> dict:
-    """Trigger predictor training on a scheduler."""
-    resp = client.post(
-        f"{scheduler_url}/v1/predictor/train",
-        json={"model_id": model_id},
-    )
-    if resp.status_code == 503:
-        return {"success": False, "message": "Training not enabled"}
-    resp.raise_for_status()
-    return resp.json()
 
 
 # ── Statistics ────────────────────────────────────────────────
@@ -217,7 +210,7 @@ def print_table(rows: list[list[str]], header: list[str]) -> None:
 # ── Main ──────────────────────────────────────────────────────
 
 
-def main() -> None:
+async def main() -> None:
     """Run the benchmark pipeline."""
     parser = argparse.ArgumentParser(
         description="Benchmark models with SWE-bench Pro prompts"
@@ -240,6 +233,12 @@ def main() -> None:
         default=600.0,
         help="Per-task timeout in seconds (default: 600)",
     )
+    parser.add_argument(
+        "--concurrency",
+        type=int,
+        default=DEFAULT_CONCURRENCY,
+        help=f"Max concurrent requests per model (default: {DEFAULT_CONCURRENCY})",
+    )
     args = parser.parse_args()
 
     # ── Load config ───────────────────────────────────────────
@@ -250,9 +249,10 @@ def main() -> None:
     print("=" * 60)
     print("  SwarmPilot Benchmark")
     print("=" * 60)
-    print(f"  Prompts:    {args.count}")
-    print(f"  Max tokens: {args.max_tokens}")
-    print(f"  Models:     {len(models)}")
+    print(f"  Prompts:     {args.count}")
+    print(f"  Max tokens:  {args.max_tokens}")
+    print(f"  Concurrency: {args.concurrency}")
+    print(f"  Models:      {len(models)}")
     for m in models:
         print(f"    - {m['model_id']} (scheduler :{m['scheduler_port']})")
     print()
@@ -267,14 +267,18 @@ def main() -> None:
     # ── Build prompts ─────────────────────────────────────────
     prompts = [build_prompt(c) for c in cases]
 
-    # ── Run inference serially per model ──────────────────────
-    print("[2/4] Running inference (serial, via Scheduler proxy)...")
+    # ── Run inference with bounded concurrency per model ─────
+    print(
+        f"[2/4] Running inference "
+        f"(concurrency={args.concurrency}, via Scheduler proxy)..."
+    )
     print()
 
     # results[model_id] = list of result dicts with status/latency_ms
     results: dict[str, list[dict]] = {}
+    semaphore = asyncio.Semaphore(args.concurrency)
 
-    with httpx.Client(timeout=args.timeout) as client:
+    async with httpx.AsyncClient(timeout=args.timeout) as client:
         for model_cfg in models:
             model_id = model_cfg["model_id"]
             sched_port = model_cfg["scheduler_port"]
@@ -283,9 +287,9 @@ def main() -> None:
             print(f"  Model: {model_id}")
             print(f"  Scheduler: {sched_url}")
 
-            # Check scheduler health
+            # Check scheduler health (quick sync-style check)
             try:
-                health = client.get(f"{sched_url}/v1/health")
+                health = await client.get(f"{sched_url}/v1/health")
                 health.raise_for_status()
             except Exception as e:
                 print(f"  ERROR: Scheduler not reachable: {e}")
@@ -293,47 +297,66 @@ def main() -> None:
                 print()
                 continue
 
-            model_results = []
-            completed = 0
-            failed = 0
-
-            for idx, prompt in enumerate(prompts):
-                progress = f"[{idx + 1}/{len(prompts)}]"
-
-                result = run_inference(
+            # Launch all prompts as concurrent tasks
+            tasks = [
+                run_inference(
                     client,
+                    semaphore,
                     sched_url,
                     model_id,
                     prompt,
                     args.max_tokens,
+                    idx,
                 )
-                model_results.append(result)
+                for idx, prompt in enumerate(prompts)
+            ]
 
-                st = result["status"]
-                t = result["latency_ms"]
-                if st == "COMPLETED":
-                    completed += 1
-                    if (idx + 1) % 10 == 0 or idx == 0:
-                        print(f"  {progress} {t:.0f}ms")
-                else:
-                    failed += 1
-                    err = result.get("error", st)
-                    print(f"  {progress} {st}: {err}")
+            t0 = time.time()
+            model_results = await asyncio.gather(*tasks)
+            wall_time = time.time() - t0
+
+            # Sort by original index for consistent ordering
+            model_results = sorted(model_results, key=lambda r: r["idx"])
+
+            completed = sum(
+                1 for r in model_results if r["status"] == "COMPLETED"
+            )
+            failed = len(model_results) - completed
+
+            # Print failures
+            for r in model_results:
+                if r["status"] != "COMPLETED":
+                    print(
+                        f"  [{r['idx'] + 1}/{len(prompts)}] "
+                        f"{r['status']}: {r.get('error', '')}"
+                    )
 
             results[model_id] = model_results
+            throughput = (
+                completed / wall_time if wall_time > 0 else 0
+            )
             print(
-                f"  Done: {completed} completed, {failed} failed"
+                f"  Done: {completed} completed, {failed} failed "
+                f"in {wall_time:.1f}s ({throughput:.1f} req/s)"
             )
             print()
 
         # ── Train predictor ───────────────────────────────────
+        # Use a sync client for the simple training calls
         print("[3/4] Training predictor...")
         for model_cfg in models:
             model_id = model_cfg["model_id"]
             sched_port = model_cfg["scheduler_port"]
             sched_url = f"http://{head}:{sched_port}"
 
-            train_resp = train_predictor(client, sched_url, model_id)
+            resp = await client.post(
+                f"{sched_url}/v1/predictor/train",
+                json={"model_id": model_id},
+            )
+            if resp.status_code == 503:
+                print(f"  {model_id}: Training not enabled")
+                continue
+            train_resp = resp.json()
             success = train_resp.get("success", False)
             samples = train_resp.get("samples_trained", 0)
             msg = train_resp.get("message", "")
@@ -344,7 +367,9 @@ def main() -> None:
                     f"  {model_id}: trained ({samples} samples)"
                 )
                 if strategy:
-                    print(f"    Strategy auto-switched to: {strategy}")
+                    print(
+                        f"    Strategy auto-switched to: {strategy}"
+                    )
             else:
                 print(f"  {model_id}: {msg}")
         print()
@@ -431,4 +456,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
