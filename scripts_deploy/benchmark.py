@@ -2,6 +2,11 @@
 """Benchmark script: download SWE-bench Pro, run inference on both models,
 collect timing data, train predictor, and report statistics.
 
+Uses the Scheduler's transparent proxy (synchronous API) to send requests.
+Each request goes through: Scheduler → scheduling algorithm → instance →
+response returned synchronously. The Scheduler auto-collects runtime
+samples for predictor training.
+
 Usage:
     python3 scripts_deploy/benchmark.py [--count 100] [--max-tokens 512]
 
@@ -93,59 +98,70 @@ def build_prompt(case: dict) -> str:
     )
 
 
-# ── Task submission ───────────────────────────────────────────
+# ── Synchronous proxy inference ────────────────────────────────
 
 
-def submit_task(
+def run_inference(
     client: httpx.Client,
     scheduler_url: str,
-    task_id: str,
     model_id: str,
     prompt: str,
     max_tokens: int,
 ) -> dict:
-    """Submit a single task and return the response."""
-    resp = client.post(
-        f"{scheduler_url}/v1/task/submit",
-        json={
-            "task_id": task_id,
-            "model_id": model_id,
-            "task_input": {
+    """Send a single synchronous inference request via the Scheduler proxy.
+
+    The Scheduler's catch-all transparent proxy forwards the request to
+    an instance selected by the scheduling algorithm, waits for the
+    response, and returns it synchronously. Runtime data is auto-collected
+    by the Scheduler for predictor training.
+
+    Args:
+        client: httpx Client.
+        scheduler_url: Base URL of the Scheduler.
+        model_id: Model identifier.
+        prompt: User prompt text.
+        max_tokens: Maximum tokens to generate.
+
+    Returns:
+        Dict with 'status', 'latency_ms', and optionally 'error'.
+    """
+    t0 = time.time()
+    try:
+        resp = client.post(
+            f"{scheduler_url}/v1/chat/completions",
+            json={
                 "model": model_id,
                 "messages": [{"role": "user", "content": prompt}],
                 "max_tokens": max_tokens,
             },
-            "metadata": {
-                "path": "v1/chat/completions",
-                "method": "POST",
-            },
-        },
-    )
-    resp.raise_for_status()
-    return resp.json()
-
-
-def wait_task(
-    client: httpx.Client,
-    scheduler_url: str,
-    task_id: str,
-    timeout: float = 600.0,
-    poll_interval: float = 2.0,
-) -> dict:
-    """Poll until task completes or fails. Returns task info dict."""
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        resp = client.get(
-            f"{scheduler_url}/v1/task/info",
-            params={"task_id": task_id},
         )
+        latency_ms = (time.time() - t0) * 1000.0
+
+        if resp.status_code >= 500:
+            return {
+                "status": "FAILED",
+                "latency_ms": latency_ms,
+                "error": resp.text[:200],
+            }
+
         resp.raise_for_status()
-        task = resp.json().get("task", {})
-        status = task.get("status", "")
-        if status in ("COMPLETED", "FAILED"):
-            return task
-        time.sleep(poll_interval)
-    return {"task_id": task_id, "status": "TIMEOUT"}
+        return {
+            "status": "COMPLETED",
+            "latency_ms": latency_ms,
+            "response": resp.json(),
+        }
+    except httpx.TimeoutException:
+        return {
+            "status": "TIMEOUT",
+            "latency_ms": (time.time() - t0) * 1000.0,
+            "error": "Request timed out",
+        }
+    except Exception as e:
+        return {
+            "status": "FAILED",
+            "latency_ms": (time.time() - t0) * 1000.0,
+            "error": str(e),
+        }
 
 
 # ── Predictor training ────────────────────────────────────────
@@ -252,18 +268,17 @@ def main() -> None:
     prompts = [build_prompt(c) for c in cases]
 
     # ── Run inference serially per model ──────────────────────
-    print("[2/4] Running inference (serial)...")
+    print("[2/4] Running inference (serial, via Scheduler proxy)...")
     print()
 
-    # results[model_id] = list of task info dicts
+    # results[model_id] = list of result dicts with status/latency_ms
     results: dict[str, list[dict]] = {}
 
-    with httpx.Client(timeout=max(args.timeout + 30, 60.0)) as client:
+    with httpx.Client(timeout=args.timeout) as client:
         for model_cfg in models:
             model_id = model_cfg["model_id"]
             sched_port = model_cfg["scheduler_port"]
             sched_url = f"http://{head}:{sched_port}"
-            short_name = model_id.split("/")[-1]
 
             print(f"  Model: {model_id}")
             print(f"  Scheduler: {sched_url}")
@@ -283,50 +298,26 @@ def main() -> None:
             failed = 0
 
             for idx, prompt in enumerate(prompts):
-                task_id = f"bench-{short_name}-{idx:04d}"
                 progress = f"[{idx + 1}/{len(prompts)}]"
 
-                try:
-                    submit_task(
-                        client,
-                        sched_url,
-                        task_id,
-                        model_id,
-                        prompt,
-                        args.max_tokens,
-                    )
-                except Exception as e:
-                    print(f"  {progress} SUBMIT ERROR: {e}")
-                    failed += 1
-                    model_results.append(
-                        {
-                            "task_id": task_id,
-                            "status": "SUBMIT_FAILED",
-                            "error": str(e),
-                        }
-                    )
-                    continue
-
-                # Wait for result
-                task_info = wait_task(
+                result = run_inference(
                     client,
                     sched_url,
-                    task_id,
-                    timeout=args.timeout,
+                    model_id,
+                    prompt,
+                    args.max_tokens,
                 )
-                model_results.append(task_info)
+                model_results.append(result)
 
-                st = task_info.get("status", "?")
-                t = task_info.get("execution_time_ms")
-                if st == "COMPLETED" and t is not None:
+                st = result["status"]
+                t = result["latency_ms"]
+                if st == "COMPLETED":
                     completed += 1
                     if (idx + 1) % 10 == 0 or idx == 0:
-                        print(
-                            f"  {progress} {t:.0f}ms"
-                        )
+                        print(f"  {progress} {t:.0f}ms")
                 else:
                     failed += 1
-                    err = task_info.get("error", st)
+                    err = result.get("error", st)
                     print(f"  {progress} {st}: {err}")
 
             results[model_id] = model_results
@@ -373,7 +364,6 @@ def main() -> None:
             t
             for t in model_tasks
             if t.get("status") == "COMPLETED"
-            and t.get("execution_time_ms") is not None
         ]
         failed_tasks = [
             t
@@ -381,7 +371,7 @@ def main() -> None:
             if t.get("status") != "COMPLETED"
         ]
 
-        times = [t["execution_time_ms"] for t in completed_tasks]
+        times = [t["latency_ms"] for t in completed_tasks]
         stats = compute_stats(times)
 
         output_data[model_id] = {
