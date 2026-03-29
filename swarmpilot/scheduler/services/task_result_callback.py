@@ -326,6 +326,11 @@ class TaskResultCallback:
             )
 
         # Record training sample for auto-training
+        if self.training_client and not instance:
+            logger.warning(
+                f"Skipping training sample for task {task_id}: "
+                f"instance {result.worker_id} not found in registry"
+            )
         if self.training_client and instance and task:
             try:
                 self.training_client.add_sample(
