@@ -267,56 +267,75 @@ async def main() -> None:
     # ── Build prompts ─────────────────────────────────────────
     prompts = [build_prompt(c) for c in cases]
 
-    # ── Run inference with bounded concurrency per model ─────
+    # ── Run inference on all models in parallel ─────────────
     print(
         f"[2/4] Running inference "
-        f"(concurrency={args.concurrency}, via Scheduler proxy)..."
+        f"(concurrency={args.concurrency} per model, "
+        f"{len(models)} models in parallel)..."
     )
     print()
 
     # results[model_id] = list of result dicts with status/latency_ms
     results: dict[str, list[dict]] = {}
-    semaphore = asyncio.Semaphore(args.concurrency)
+
+    async def bench_one_model(
+        client: httpx.AsyncClient,
+        model_cfg: dict,
+    ) -> tuple[str, list[dict], float]:
+        """Benchmark a single model. Returns (model_id, results, wall_time)."""
+        model_id = model_cfg["model_id"]
+        sched_port = model_cfg["scheduler_port"]
+        sched_url = f"http://{head}:{sched_port}"
+        # Per-model semaphore so each model gets its own concurrency limit
+        sem = asyncio.Semaphore(args.concurrency)
+
+        print(f"  Model: {model_id}")
+        print(f"  Scheduler: {sched_url}")
+
+        # Check scheduler health
+        try:
+            health = await client.get(f"{sched_url}/v1/health")
+            health.raise_for_status()
+        except Exception as e:
+            print(f"  ERROR: Scheduler ({model_id}) not reachable: {e}")
+            return model_id, [], 0.0
+
+        # Launch all prompts as concurrent tasks
+        tasks = [
+            run_inference(
+                client,
+                sem,
+                sched_url,
+                model_id,
+                prompt,
+                args.max_tokens,
+                idx,
+            )
+            for idx, prompt in enumerate(prompts)
+        ]
+
+        t0 = time.time()
+        model_results = list(await asyncio.gather(*tasks))
+        wall_time = time.time() - t0
+
+        return model_id, model_results, wall_time
 
     async with httpx.AsyncClient(timeout=args.timeout) as client:
-        for model_cfg in models:
-            model_id = model_cfg["model_id"]
-            sched_port = model_cfg["scheduler_port"]
-            sched_url = f"http://{head}:{sched_port}"
+        # Run all models concurrently
+        model_outputs = await asyncio.gather(
+            *(bench_one_model(client, m) for m in models)
+        )
 
-            print(f"  Model: {model_id}")
-            print(f"  Scheduler: {sched_url}")
-
-            # Check scheduler health (quick sync-style check)
-            try:
-                health = await client.get(f"{sched_url}/v1/health")
-                health.raise_for_status()
-            except Exception as e:
-                print(f"  ERROR: Scheduler not reachable: {e}")
+        for model_id, model_results, wall_time in model_outputs:
+            if not model_results:
                 results[model_id] = []
                 print()
                 continue
 
-            # Launch all prompts as concurrent tasks
-            tasks = [
-                run_inference(
-                    client,
-                    semaphore,
-                    sched_url,
-                    model_id,
-                    prompt,
-                    args.max_tokens,
-                    idx,
-                )
-                for idx, prompt in enumerate(prompts)
-            ]
-
-            t0 = time.time()
-            model_results = await asyncio.gather(*tasks)
-            wall_time = time.time() - t0
-
-            # Sort by original index for consistent ordering
-            model_results = sorted(model_results, key=lambda r: r["idx"])
+            # Sort by original index
+            model_results = sorted(
+                model_results, key=lambda r: r["idx"]
+            )
 
             completed = sum(
                 1 for r in model_results if r["status"] == "COMPLETED"
@@ -324,10 +343,11 @@ async def main() -> None:
             failed = len(model_results) - completed
 
             # Print failures
+            short = model_id.split("/")[-1]
             for r in model_results:
                 if r["status"] != "COMPLETED":
                     print(
-                        f"  [{r['idx'] + 1}/{len(prompts)}] "
+                        f"  [{short} #{r['idx'] + 1}] "
                         f"{r['status']}: {r.get('error', '')}"
                     )
 
@@ -336,10 +356,11 @@ async def main() -> None:
                 completed / wall_time if wall_time > 0 else 0
             )
             print(
-                f"  Done: {completed} completed, {failed} failed "
+                f"  {model_id}: {completed} ok, {failed} fail "
                 f"in {wall_time:.1f}s ({throughput:.1f} req/s)"
             )
-            print()
+
+        print()
 
         # ── Train predictor ───────────────────────────────────
         # Use a sync client for the simple training calls
