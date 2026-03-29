@@ -11,7 +11,7 @@ cluster:
     head_url: "http://10.0.0.1:5100"
     backend: "vllm"               # vllm | sglang
     cpu_per_instance: 1
-    deploy_timeout: 600           # seconds
+    deploy_timeout: 1800          # seconds (30min, 80B models need longer to load)
 
     # Worker resources (advertised to PyLet scheduler)
     worker:
