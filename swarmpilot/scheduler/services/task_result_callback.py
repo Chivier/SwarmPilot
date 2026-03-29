@@ -333,10 +333,31 @@ class TaskResultCallback:
             )
         if self.training_client and instance and task:
             try:
+                # Build training features from metadata + task_input.
+                # Metadata alone may be constant across proxy requests
+                # (e.g., always {"path": "v1/chat/completions"}), so we
+                # extract numeric/variable features from task_input too.
+                features = dict(task.metadata)
+                task_input = task.task_input or {}
+                if "max_tokens" in task_input:
+                    features["max_tokens"] = task_input["max_tokens"]
+                # Compute prompt length as a useful numeric feature
+                messages = task_input.get("messages")
+                if isinstance(messages, list):
+                    prompt_len = sum(
+                        len(m.get("content", ""))
+                        for m in messages
+                        if isinstance(m, dict)
+                    )
+                    features["prompt_length"] = prompt_len
+                elif "prompt" in task_input:
+                    features["prompt_length"] = len(
+                        task_input["prompt"]
+                    )
                 self.training_client.add_sample(
                     model_id=task.model_id,
                     platform_info=instance.platform_info,
-                    features=task.metadata,
+                    features=features,
                     actual_runtime_ms=result.execution_time_ms,
                 )
                 await self.training_client.flush_if_ready()
