@@ -139,6 +139,7 @@ for i in $(seq 0 $((MODEL_COUNT - 1))); do
     PLANNER_REGISTRATION_URL="http://$HEAD_NODE:$PLANNER_PORT" \
     SCHEDULER_SELF_URL="http://$HEAD_NODE:$SCHED_PORT" \
     PREDICTOR_MODE="library" \
+    TRAINING_ENABLE_AUTO="true" \
         uv run sscheduler start --port "$SCHED_PORT" \
         > "$LOG_DIR/scheduler-$i.log" 2>&1 &
     SCHED_PID=$!
