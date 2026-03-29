@@ -385,11 +385,16 @@ class DeploymentExecutor:
         Returns:
             ExecutionResult with success/failure details.
         """
-        # Compute current state from active instances
+        # Compute current state only for models in the target.
+        # Models not mentioned in target_state are left untouched so
+        # that per-model ``splanner serve`` calls don't remove instances
+        # belonging to other models.
         current_state: dict[str, int] = {}
         for instance in self.instance_manager.get_active_instances():
-            model_id = instance.model_id
-            current_state[model_id] = current_state.get(model_id, 0) + 1
+            if instance.model_id in target_state:
+                current_state[instance.model_id] = (
+                    current_state.get(instance.model_id, 0) + 1
+                )
 
         logger.info(
             f"Reconciling: current={current_state}, target={target_state}"

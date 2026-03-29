@@ -213,6 +213,8 @@ def serve(
     error = data.get("error")
     if error:
         typer.echo(f"Error:     {error}")
+    if not data.get("success"):
+        raise SystemExit(1)
 
 
 @app.command()
