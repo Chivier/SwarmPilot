@@ -528,6 +528,7 @@ class TestPredictorTrainFlow:
         future.set_result(True)
         mock_training.flush.return_value = future
         mock_training.get_buffer_size.return_value = 5
+        mock_training.get_last_flush_samples.return_value = 5
 
         # Build mock predictor client
         mock_predictor = MagicMock()
