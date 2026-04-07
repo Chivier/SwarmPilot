@@ -298,9 +298,7 @@ class DeploymentExecutor:
                     model_id=action.model_id,
                     count=action.count,
                     backend=mcfg.get("backend", self.default_backend),
-                    gpu_count=mcfg.get(
-                        "gpu_count", self.default_gpu_count
-                    ),
+                    gpu_count=mcfg.get("gpu_count", self.default_gpu_count),
                     target_worker=action.target_worker,
                     extra_args=mcfg.get("extra_args"),
                 )

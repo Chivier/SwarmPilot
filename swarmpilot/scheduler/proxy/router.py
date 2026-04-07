@@ -178,7 +178,12 @@ class ProxyRouter:
             elif "prompt" in body:
                 metadata["prompt_length"] = len(body["prompt"])
             # Forward experiment mode fields from body to scheduling metadata
-            for _exp_key in ("exp_runtime", "exp_cv", "exp_modes", "exp_skewness"):
+            for _exp_key in (
+                "exp_runtime",
+                "exp_cv",
+                "exp_modes",
+                "exp_skewness",
+            ):
                 if _exp_key in body:
                     metadata[_exp_key] = body[_exp_key]
 

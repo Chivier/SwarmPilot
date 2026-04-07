@@ -351,9 +351,7 @@ class TaskResultCallback:
                     )
                     features["prompt_length"] = prompt_len
                 elif "prompt" in task_input:
-                    features["prompt_length"] = len(
-                        task_input["prompt"]
-                    )
+                    features["prompt_length"] = len(task_input["prompt"])
                 self.training_client.add_sample(
                     model_id=task.model_id,
                     platform_info=instance.platform_info,
