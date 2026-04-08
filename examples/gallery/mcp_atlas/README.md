@@ -30,33 +30,13 @@ HuggingFace Dataset
 
 ### 1. Start SwarmPilot Cluster
 
-Start the cluster using the benchmark startup script (Planner with PyLet + two Schedulers):
-
 ```bash
 bash examples/gallery/replay/benchmark/start_cluster.sh
 ```
 
-### 2. Deploy Models via Planner
+### 2. Prepare Dataset
 
-Deploy real vLLM instances through the Planner SDK:
-
-```bash
-# Using the CLI
-splanner serve Qwen/Qwen3-Next-80B-A3B-Instruct --gpu 4 --replicas 2
-splanner serve Qwen/Qwen3-VL-8B-Instruct --gpu 1 --replicas 2
-```
-
-Or via the Python SDK:
-
-```python
-from swarmpilot.sdk import SwarmPilotClient
-
-async with SwarmPilotClient("http://localhost:8002") as sp:
-    await sp.serve("Qwen/Qwen3-Next-80B-A3B-Instruct", gpu=4, replicas=2)
-    await sp.serve("Qwen/Qwen3-VL-8B-Instruct", gpu=1, replicas=2)
-```
-
-### 3. Prepare Dataset
+Models are deployed automatically when the `planner` section is present in the config (see `config.example.yaml`). No manual deployment needed.
 
 ```bash
 cd examples/gallery

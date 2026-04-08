@@ -9,16 +9,13 @@ Dataclaw conversations contain user/assistant turns with model size assignment:
 
 ## Deployment
 
-Deploy models via the Planner SDK (see [MCP-Atlas README](../mcp_atlas/README.md) for full instructions):
+Start the cluster, then run — models are deployed automatically via the Planner (configured in `config.example.yaml`):
 
 ```bash
-# Start cluster
 bash examples/gallery/replay/benchmark/start_cluster.sh
-
-# Deploy models via Planner
-splanner serve Qwen/Qwen3-Next-80B-A3B-Instruct --gpu 4 --replicas 2
-splanner serve Qwen/Qwen3-VL-8B-Instruct --gpu 1 --replicas 2
 ```
+
+See [MCP-Atlas README](../mcp_atlas/README.md) for full details.
 
 ## Usage
 
