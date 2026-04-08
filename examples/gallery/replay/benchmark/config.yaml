@@ -1,0 +1,56 @@
+# Real-model benchmark configuration
+#
+# Usage:
+#   1. Prepare data:   uv run python -m replay.cli prepare --dataset mcp-atlas --limit 50 --output data/mcp-atlas.jsonl
+#   2. Start cluster:  bash examples/gallery/replay/benchmark/start_cluster.sh
+#   3. Deploy models:  bash examples/gallery/replay/benchmark/deploy_models.sh
+#   4. Run benchmark:  uv run python examples/gallery/replay/benchmark/benchmark_runner.py \
+#                        --data data/mcp-atlas.jsonl --config examples/gallery/replay/benchmark/config.yaml
+#   5. Stop cluster:   bash examples/gallery/replay/benchmark/stop_cluster.sh
+
+# ── Cluster ports ─────────────────────────────────────────────────
+planner_port: 8002
+scheduler_large_port: 8010
+scheduler_small_port: 8020
+
+# ── Model identifiers ────────────────────────────────────────────
+large_model_id: "Qwen/Qwen3-Next-80B-A3B-Instruct"
+small_model_id: "Qwen/Qwen3-VL-8B-Instruct"
+
+# ── Real model deployment ─────────────────────────────────────────
+gpu_per_instance_large: 4
+gpu_per_instance_small: 1
+replicas_large: 2
+replicas_small: 2
+
+# ── PyLet local cluster ──────────────────────────────────────────
+pylet_local_port: 5100
+pylet_local_worker_port_start: 5300
+pylet_local_num_workers: 1
+pylet_local_gpu_per_worker: 8
+pylet_local_cpu_per_worker: 16
+pylet_deploy_timeout: 600
+
+# ── Scheduling ────────────────────────────────────────────────────
+scheduling_algorithm: "probabilistic"
+
+# ── Benchmark parameters ─────────────────────────────────────────
+poisson_qps: 0.1
+global_qps_large: 5.0
+global_qps_small: 10.0
+agent_delay_ms: 100
+user_delay_ms: 5000
+timeout_s: 300.0
+max_tokens: 1
+
+# ── Token estimation (for exp_runtime prediction) ─────────────────
+chars_per_token: 4
+large_prefill_tps: 2000.0
+large_decode_s: 0.025
+large_overhead_s: 0.050
+small_prefill_tps: 5000.0
+small_decode_s: 0.010
+small_overhead_s: 0.030
+
+# ── SwarmPilot project root (auto-detected if omitted) ────────────
+# swarmpilot_root: "~/Project/swarmpilot-refresh"
