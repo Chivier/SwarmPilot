@@ -33,6 +33,8 @@ from typing import Any
 import httpx
 import yaml
 
+from swarmpilot.sdk import SwarmPilotClient
+
 # Thread pool for sending HTTP requests — each request gets its own thread
 # so that long-running proxy calls never block other groups.
 _REQUEST_POOL = concurrent.futures.ThreadPoolExecutor(max_workers=256)
@@ -729,6 +731,66 @@ def _print_progress(
             pass
 
 
+# ── Planner-Based Deployment ──────────────────────────────────────
+
+
+async def deploy_models(config: dict) -> None:
+    """Deploy large and small models via the Planner SDK.
+
+    Uses ``SwarmPilotClient.serve()`` to request real vLLM
+    instances through the Planner's PyLet integration.
+
+    Args:
+        config: Benchmark config with model IDs, GPU counts,
+            replica counts, and planner_port.
+    """
+    planner_url = f"http://localhost:{config.get('planner_port', 8002)}"
+    large_model = config.get(
+        "large_model_id", "Qwen/Qwen3-Next-80B-A3B-Instruct"
+    )
+    small_model = config.get("small_model_id", "Qwen/Qwen3-VL-8B-Instruct")
+    large_gpu = config.get("gpu_per_instance_large", 4)
+    small_gpu = config.get("gpu_per_instance_small", 1)
+    large_replicas = config.get("replicas_large", 2)
+    small_replicas = config.get("replicas_small", 2)
+
+    async with SwarmPilotClient(planner_url) as sp:
+        print(
+            f"Deploying {large_model}"
+            f" (gpu={large_gpu}, replicas={large_replicas})..."
+        )
+        group = await sp.serve(
+            large_model, gpu=large_gpu, replicas=large_replicas
+        )
+        print(f"  Large model deployed: {len(group.instances)} instances")
+
+        print(
+            f"Deploying {small_model}"
+            f" (gpu={small_gpu}, replicas={small_replicas})..."
+        )
+        group = await sp.serve(
+            small_model, gpu=small_gpu, replicas=small_replicas
+        )
+        print(f"  Small model deployed: {len(group.instances)} instances")
+
+        # Verify deployment
+        state = await sp.instances()
+        print(f"Cluster: {len(state.instances)} total instances")
+
+
+async def teardown_models(config: dict) -> None:
+    """Terminate all model instances via the Planner SDK.
+
+    Args:
+        config: Benchmark config with planner_port.
+    """
+    planner_url = f"http://localhost:{config.get('planner_port', 8002)}"
+    async with SwarmPilotClient(planner_url) as sp:
+        print("Terminating all model instances...")
+        await sp.terminate(all=True)
+        print("  All instances terminated")
+
+
 # ── Orchestration ─────────────────────────────────────────────────
 
 _STRATEGY_ALIASES: dict[str, str] = {
@@ -787,24 +849,29 @@ async def run_benchmark(
     limit: int | None = None,
     warmup: int = 0,
     progress_file: str | None = None,
+    no_deploy: bool = False,
+    no_teardown: bool = False,
 ) -> None:
     """Run the full real-model benchmark with optional warmup phase.
 
-    Loads replay groups, configures the schedulers, launches all groups
-    concurrently with Poisson arrival offsets, streams results to JSONL
-    files, and prints a final summary when the measurement target is
-    reached.
+    By default, deploys models via the Planner SDK before the benchmark
+    and tears them down after.  Use ``no_deploy`` / ``no_teardown`` to
+    skip these steps when models are managed externally.
 
     Args:
         data_path: Path to the replay JSONL data file.
         config_path: Path to the benchmark YAML configuration file.
         output_path: Base path for output files; creates
-            ``{output_path}-large.jsonl``, ``-small.jsonl``, ``-e2e.jsonl``.
-        limit: Stop measuring after this many groups complete (remaining
-            groups are cancelled).
-        warmup: Number of warmup groups to run before measurement starts.
-        progress_file: If set, write machine-readable JSON progress here
-            for external monitoring.
+            ``{output_path}-large.jsonl``, ``-small.jsonl``,
+            ``-e2e.jsonl``.
+        limit: Stop measuring after this many groups complete
+            (remaining groups are cancelled).
+        warmup: Number of warmup groups to run before measurement
+            starts.
+        progress_file: If set, write machine-readable JSON progress
+            here for external monitoring.
+        no_deploy: Skip automatic model deployment via Planner.
+        no_teardown: Skip automatic model teardown after benchmark.
     """
     global _PROGRESS_FILE
     if progress_file:
@@ -812,6 +879,13 @@ async def run_benchmark(
         Path(progress_file).parent.mkdir(parents=True, exist_ok=True)
 
     config = load_config(config_path)
+
+    # Deploy models via Planner SDK unless --no-deploy is set.
+    if not no_deploy:
+        print("Deploying models via Planner...")
+        await deploy_models(config)
+        print()
+
     all_groups = load_replay_groups(data_path)
     if not all_groups:
         print("No replay groups found.")
@@ -1036,6 +1110,11 @@ async def run_benchmark(
     )
     print(f"Results streamed to {output_path}-{{large,small,e2e}}.jsonl")
 
+    # Teardown models via Planner SDK unless --no-teardown is set.
+    if not no_teardown:
+        print()
+        await teardown_models(config)
+
 
 # ── Reporting ─────────────────────────────────────────────────────
 
@@ -1183,6 +1262,16 @@ def main() -> None:
         default=None,
         help="Write JSON progress for external monitoring",
     )
+    parser.add_argument(
+        "--no-deploy",
+        action="store_true",
+        help="Skip automatic model deployment via Planner",
+    )
+    parser.add_argument(
+        "--no-teardown",
+        action="store_true",
+        help="Skip automatic model teardown after benchmark",
+    )
     args = parser.parse_args()
 
     asyncio.run(
@@ -1193,6 +1282,8 @@ def main() -> None:
             args.limit,
             args.warmup,
             args.progress_file,
+            args.no_deploy,
+            args.no_teardown,
         )
     )
 

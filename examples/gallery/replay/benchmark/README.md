@@ -22,10 +22,7 @@ uv run python -m replay.cli prepare \
 # 2. Start the SwarmPilot cluster (Planner + 2 Schedulers)
 bash examples/gallery/replay/benchmark/start_cluster.sh
 
-# 3. Deploy real vLLM model instances
-bash examples/gallery/replay/benchmark/deploy_models.sh
-
-# 4. Run the benchmark
+# 3. Run the benchmark (auto-deploys and tears down models via Planner)
 uv run python examples/gallery/replay/benchmark/benchmark_runner.py \
     --data data/mcp-atlas.jsonl \
     --config examples/gallery/replay/benchmark/config.yaml \
@@ -33,9 +30,13 @@ uv run python examples/gallery/replay/benchmark/benchmark_runner.py \
     --warmup 5 \
     --limit 50
 
-# 5. Stop the cluster
+# 4. Stop the cluster
 bash examples/gallery/replay/benchmark/stop_cluster.sh
 ```
+
+The runner automatically deploys models via `SwarmPilotClient.serve()` and
+terminates them after the benchmark. Use `--no-deploy` / `--no-teardown`
+to skip these steps when models are managed externally.
 
 ## Configuration
 
@@ -85,5 +86,5 @@ Each file ends with a summary line containing percentile statistics.
 | Model instances | Sleep servers (simulated) | Real vLLM (GPU inference) |
 | Request content | `sleep_time_ms:523.0` | Real conversation history |
 | Latency source | Controlled sleep duration | Actual model inference |
-| Deployment | `sleep_server.py` processes | `splanner serve` via PyLet |
+| Deployment | `sleep_server.py` processes | Auto via `SwarmPilotClient.serve()` |
 | Runtime prediction | Exact (from mock data) | Estimated from token count |
