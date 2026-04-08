@@ -1,6 +1,6 @@
 #!/bin/bash
 # Multi-Model Direct — Deploy Instances & Register with Schedulers
-# Usage: ./examples/multi_model_direct/deploy_model.sh
+# Usage: ./examples/3.multi_model_direct/deploy_model.sh
 #
 # Launches 4 mock vLLM instances (2 Qwen, 2 Llama) and registers each
 # with the correct per-model scheduler.  No Planner involved.
@@ -9,7 +9,7 @@ set -e
 
 SCHEDULER_QWEN_PORT=${SCHEDULER_QWEN_PORT:-8010}
 SCHEDULER_LLAMA_PORT=${SCHEDULER_LLAMA_PORT:-8020}
-LOG_DIR="/tmp/multi_model_direct"
+LOG_DIR="/tmp/3.multi_model_direct"
 
 GREEN='\033[0;32m'
 RED='\033[0;31m'
@@ -118,4 +118,4 @@ echo "Verify:"
 echo "  curl http://localhost:$SCHEDULER_QWEN_PORT/v1/instance/list | python3 -m json.tool"
 echo "  curl http://localhost:$SCHEDULER_LLAMA_PORT/v1/instance/list | python3 -m json.tool"
 echo ""
-echo "Next: python examples/multi_model_direct/api_example.py"
+echo "Next: python examples/3.multi_model_direct/api_example.py"

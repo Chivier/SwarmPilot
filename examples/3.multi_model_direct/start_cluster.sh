@@ -1,6 +1,6 @@
 #!/bin/bash
 # Multi-Model Direct — Start Per-Model Schedulers (No Planner)
-# Usage: ./examples/multi_model_direct/start_cluster.sh
+# Usage: ./examples/3.multi_model_direct/start_cluster.sh
 #
 # Starts two independent schedulers — one per model:
 #   Scheduler A (:8010) → Qwen/Qwen3-8B-VL
@@ -13,7 +13,7 @@ set -e
 # --- Configuration -----------------------------------------------------------
 SCHEDULER_QWEN_PORT=${SCHEDULER_QWEN_PORT:-8010}
 SCHEDULER_LLAMA_PORT=${SCHEDULER_LLAMA_PORT:-8020}
-LOG_DIR="/tmp/multi_model_direct"
+LOG_DIR="/tmp/3.multi_model_direct"
 
 # --- Colors ------------------------------------------------------------------
 GREEN='\033[0;32m'
@@ -31,7 +31,7 @@ check_port() {
     local name=$2
     if lsof -i:"$port" &>/dev/null 2>&1; then
         echo -e "${RED}Error: Port $port ($name) already in use.${NC}"
-        echo "Run ./examples/multi_model_direct/stop_cluster.sh first."
+        echo "Run ./examples/3.multi_model_direct/stop_cluster.sh first."
         return 1
     fi
     return 0
@@ -93,4 +93,4 @@ echo "  Scheduler A (Qwen):  http://localhost:${SCHEDULER_QWEN_PORT}"
 echo "  Scheduler B (Llama): http://localhost:${SCHEDULER_LLAMA_PORT}"
 echo "  Logs: $LOG_DIR/"
 echo ""
-echo "Next: ./examples/multi_model_direct/deploy_model.sh"
+echo "Next: ./examples/3.multi_model_direct/deploy_model.sh"

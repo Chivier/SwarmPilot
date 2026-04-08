@@ -1,6 +1,6 @@
 #!/bin/bash
 # Single Model Example - Start Scheduler
-# Usage: ./examples/single_model/start_cluster.sh
+# Usage: ./examples/1.single_model/start_cluster.sh
 #
 # Starts one Scheduler for Qwen/Qwen3-8B-VL on port 8000.
 # No Planner needed — instances are registered manually via deploy_model.sh.
@@ -10,7 +10,7 @@ set -e
 # Configuration
 SCHEDULER_PORT=${SCHEDULER_PORT:-8000}
 MODEL_ID=${MODEL_ID:-"Qwen/Qwen3-8B-VL"}
-LOG_DIR="/tmp/single_model"
+LOG_DIR="/tmp/1.single_model"
 
 # Colors
 GREEN='\033[0;32m'
@@ -20,7 +20,7 @@ YELLOW='\033[1;33m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-# Project root (script is in examples/single_model/)
+# Project root (script is in examples/1.single_model/)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
 
@@ -37,7 +37,7 @@ check_port() {
     local name=$2
     if lsof -i:"$port" &> /dev/null 2>&1; then
         echo -e "${YELLOW}Warning: Port $port ($name) already in use.${NC}"
-        echo "Run ./examples/single_model/stop_cluster.sh first."
+        echo "Run ./examples/1.single_model/stop_cluster.sh first."
         return 1
     fi
     return 0
@@ -85,4 +85,4 @@ echo "  Scheduler: http://localhost:$SCHEDULER_PORT"
 echo "  Model:     $MODEL_ID"
 echo "  Logs:      $LOG_DIR/scheduler.log"
 echo ""
-echo -e "${YELLOW}Next:${NC} ./examples/single_model/deploy_model.sh"
+echo -e "${YELLOW}Next:${NC} ./examples/1.single_model/deploy_model.sh"

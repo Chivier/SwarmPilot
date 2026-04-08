@@ -39,25 +39,25 @@ The simplest SwarmPilot deployment pattern:
 ### 1. Start Scheduler
 
 ```bash
-./examples/single_model/start_cluster.sh
+./examples/1.single_model/start_cluster.sh
 ```
 
 ### 2. Deploy 3 Mock Instances
 
 ```bash
-./examples/single_model/deploy_model.sh
+./examples/1.single_model/deploy_model.sh
 ```
 
 ### 3. Try the API
 
 ```bash
-python examples/single_model/api_example.py
+python examples/1.single_model/api_example.py
 ```
 
 ### 4. Stop Everything
 
 ```bash
-./examples/single_model/stop_cluster.sh
+./examples/1.single_model/stop_cluster.sh
 ```
 
 ## Scripts
@@ -91,7 +91,7 @@ python examples/single_model/api_example.py
 
 ### Logs & PID Files
 
-All stored in `/tmp/single_model/`:
+All stored in `/tmp/1.single_model/`:
 - `scheduler.log`, `scheduler.pid`
 - `instance-{0,1,2}.log`, `instance-{0,1,2}.pid`
 
@@ -116,7 +116,7 @@ Each instance needs a GPU. Adjust `--gpu-memory-utilization` for your hardware.
 ### Scheduler not starting
 
 ```bash
-tail -f /tmp/single_model/scheduler.log
+tail -f /tmp/1.single_model/scheduler.log
 ```
 
 Check if port 8000 is already in use:
@@ -127,7 +127,7 @@ lsof -i:8000
 ### Instances fail health check
 
 ```bash
-tail -f /tmp/single_model/instance-0.log
+tail -f /tmp/1.single_model/instance-0.log
 ```
 
 Verify manually:
@@ -151,11 +151,11 @@ curl http://localhost:8000/v1/strategy/current
 
 Stop existing services first:
 ```bash
-./examples/single_model/stop_cluster.sh
+./examples/1.single_model/stop_cluster.sh
 ```
 
 ## Related Examples
 
-- [`multi_model_direct/`](../multi_model_direct/) — Multiple models, one Scheduler per model, no Planner
-- [`multi_model_planner/`](../multi_model_planner/) — Multiple models, Planner-managed deployment
+- [`3.multi_model_direct/`](../3.multi_model_direct/) — Multiple models, one Scheduler per model, no Planner
+- [`5.multi_model_planner/`](../5.multi_model_planner/) — Multiple models, Planner-managed deployment
 - [`llm_cluster/`](../llm_cluster/) — Full LLM cluster with PyLet orchestration

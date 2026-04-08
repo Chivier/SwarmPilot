@@ -1,6 +1,6 @@
 #!/bin/bash
 # Single Model Example - Deploy 3 Mock Instances
-# Usage: ./examples/single_model/deploy_model.sh
+# Usage: ./examples/1.single_model/deploy_model.sh
 #
 # Starts 3 mock vLLM servers on ports 8100-8102, waits for health,
 # then registers each with the Scheduler on port 8000.
@@ -11,7 +11,7 @@ SCHEDULER_PORT=${SCHEDULER_PORT:-8000}
 SCHEDULER_URL="http://localhost:$SCHEDULER_PORT"
 MODEL_ID="Qwen/Qwen3-8B-VL"
 INSTANCE_PORTS=(8100 8101 8102)
-LOG_DIR="/tmp/single_model"
+LOG_DIR="/tmp/1.single_model"
 
 GREEN='\033[0;32m'
 RED='\033[0;31m'
@@ -29,7 +29,7 @@ echo ""
 
 if ! curl -sf "$SCHEDULER_URL/v1/health" > /dev/null 2>&1; then
     echo -e "${RED}Error: Scheduler not running on $SCHEDULER_URL${NC}"
-    echo "Run ./examples/single_model/start_cluster.sh first."
+    echo "Run ./examples/1.single_model/start_cluster.sh first."
     exit 1
 fi
 
@@ -101,4 +101,4 @@ echo ""
 echo "Instance list:"
 curl -s "$SCHEDULER_URL/v1/instance/list" | python3 -m json.tool 2>/dev/null || true
 echo ""
-echo -e "${YELLOW}Next:${NC} python examples/single_model/api_example.py"
+echo -e "${YELLOW}Next:${NC} python examples/1.single_model/api_example.py"

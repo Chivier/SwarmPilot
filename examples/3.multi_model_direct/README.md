@@ -41,16 +41,16 @@ and direct HTTP calls.
 
 ```bash
 # 1. Start both schedulers
-./examples/multi_model_direct/start_cluster.sh
+./examples/3.multi_model_direct/start_cluster.sh
 
 # 2. Launch mock instances and register them
-./examples/multi_model_direct/deploy_model.sh
+./examples/3.multi_model_direct/deploy_model.sh
 
 # 3. Send requests
-python examples/multi_model_direct/api_example.py
+python examples/3.multi_model_direct/api_example.py
 
 # 4. Tear down
-./examples/multi_model_direct/stop_cluster.sh
+./examples/3.multi_model_direct/stop_cluster.sh
 ```
 
 ## Scripts
@@ -72,7 +72,7 @@ python examples/multi_model_direct/api_example.py
 
 Instance ports are hardcoded: 8100–8101 (Qwen), 8200–8201 (Llama).
 
-Logs and PID files are written to `/tmp/multi_model_direct/`.
+Logs and PID files are written to `/tmp/3.multi_model_direct/`.
 
 ## Troubleshooting
 
@@ -81,8 +81,8 @@ Logs and PID files are written to `/tmp/multi_model_direct/`.
 Check logs:
 
 ```bash
-tail -f /tmp/multi_model_direct/scheduler-qwen.log
-tail -f /tmp/multi_model_direct/scheduler-llama.log
+tail -f /tmp/3.multi_model_direct/scheduler-qwen.log
+tail -f /tmp/3.multi_model_direct/scheduler-llama.log
 ```
 
 ### Registration fails (HTTP 4xx)
@@ -98,7 +98,7 @@ curl http://localhost:8020/v1/instance/list | python3 -m json.tool
 ### Port already in use
 
 ```bash
-./examples/multi_model_direct/stop_cluster.sh
+./examples/3.multi_model_direct/stop_cluster.sh
 # Then retry
 ```
 
@@ -123,4 +123,4 @@ scale instances, the manual approach becomes painful:
 | Scaling | Edit scripts, re-run | `POST /v1/scale` |
 | Optimal placement | You decide replica counts | Optimizer computes allocation |
 
-See `examples/multi_model_planner/` for the Planner-managed version.
+See `examples/5.multi_model_planner/` for the Planner-managed version.

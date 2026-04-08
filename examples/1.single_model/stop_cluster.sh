@@ -1,10 +1,10 @@
 #!/bin/bash
 # Single Model Example - Stop All Services
-# Usage: ./examples/single_model/stop_cluster.sh
+# Usage: ./examples/1.single_model/stop_cluster.sh
 
 set -e
 
-LOG_DIR="/tmp/single_model"
+LOG_DIR="/tmp/1.single_model"
 
 GREEN='\033[0;32m'
 RED='\033[0;31m'

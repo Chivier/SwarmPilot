@@ -1,7 +1,7 @@
 """SDK example for multi-model planner-managed deployment.
 
 Requires running Planner with PyLet. For no-planner usage,
-see examples/single_model/ and examples/multi_model_direct/.
+see examples/1.single_model/ and examples/3.multi_model_direct/.
 """
 
 import asyncio

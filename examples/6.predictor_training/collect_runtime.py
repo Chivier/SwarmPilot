@@ -1,28 +1,19 @@
 #!/usr/bin/env python3
-"""Collect runtime data for Qwen3-VL-8B-Instruct and train a quantile predictor.
+"""Collect runtime data by sending inference requests directly to a vLLM endpoint.
 
-Before deploying, checks for existing instances on the cluster.
-If instances exist, terminates them and deploys the same number of
-Qwen3-VL-8B-Instruct instances. Otherwise, deploys the default count.
-
-Phases:
-    A. Check existing deployments; terminate if present.
-    B. Deploy Qwen3-VL-8B-Instruct instances via SwarmPilot SDK.
-    C. Wait for scheduler backend to be ready.
-    D. Send chat-completion requests through the Scheduler proxy.
-    E. Save collected runtime data to a JSON file.
-    F. Train a QuantilePredictor MLP and save the model.
+Loads captions from a JSONL file, sends chat-completion requests to the
+vLLM endpoint, records timing, and saves results to a JSON file.
 
 Usage:
-    # Default: 4 instances, collect 200 samples and train
-    uv run python examples/predictor_training_playground/collect_and_train_qwen3vl.py --train
+    # Default: 200 requests to 127.0.1.1:5301
+    uv run python examples/6.predictor_training/collect_runtime.py
 
-    # Collect only
-    uv run python examples/predictor_training_playground/collect_and_train_qwen3vl.py
+    # Custom endpoint and count
+    uv run python examples/6.predictor_training/collect_runtime.py \
+        --endpoint http://127.0.1.1:5301 --num-requests 100
 
-    # Train from existing data
-    uv run python examples/predictor_training_playground/collect_and_train_qwen3vl.py \
-        --load-json qwen3vl_runtime_data.json --train
+    # With training
+    uv run python examples/6.predictor_training/collect_runtime.py --train
 """
 
 from __future__ import annotations
@@ -39,20 +30,15 @@ import httpx
 from loguru import logger
 
 # ── Defaults ─────────────────────────────────────────────────────
-DEFAULT_MODEL_ID = "Qwen/Qwen3-VL-8B-Instruct"
-DEFAULT_PLANNER_URL = "http://localhost:8002"
-DEFAULT_SCHEDULER_URL = "http://localhost:8000"
+DEFAULT_MODEL_ID = "Qwen/Qwen3-Next-80B-A3B-Instruct"
+DEFAULT_ENDPOINT = "http://127.0.1.1:5301"
 DEFAULT_CAPTIONS_FILE = "captions_10k.jsonl"
-DEFAULT_OUTPUT_JSON = "qwen3vl_runtime_data.json"
+DEFAULT_OUTPUT_JSON = "qwen_runtime_data.json"
 DEFAULT_STORAGE_DIR = "models"
 DEFAULT_NUM_REQUESTS = 200
 DEFAULT_MAX_CONCURRENT = 5
-DEFAULT_GPU = 1
-DEFAULT_REPLICAS = 4
 DEFAULT_TIMEOUT = 600.0
 DEFAULT_HEALTH_TIMEOUT = 300.0
-DEFAULT_RETRY_DELAY = 5.0
-MAX_RETRIES_PER_REQUEST = 60
 
 PLATFORM_INFO = {
     "software_name": "vllm",
@@ -104,159 +90,56 @@ def load_captions(path: str, limit: int) -> list[str]:
 # ── Health check ─────────────────────────────────────────────────
 
 
-async def wait_scheduler_ready(
-    scheduler_url: str,
-    model_id: str,
+async def wait_endpoint_ready(
+    endpoint: str,
     timeout: float = DEFAULT_HEALTH_TIMEOUT,
 ) -> None:
-    """Wait until the scheduler proxy can reach the vLLM backend.
-
-    Sends a minimal chat-completion probe through the scheduler proxy
-    and waits until it returns HTTP 200.
+    """Poll the vLLM endpoint until it responds to /v1/models.
 
     Args:
-        scheduler_url: Scheduler service URL.
-        model_id: Model identifier for the probe request.
+        endpoint: vLLM base URL (e.g. http://127.0.1.1:5301).
         timeout: Maximum seconds to wait.
 
     Raises:
-        TimeoutError: If the backend is not ready within timeout.
+        TimeoutError: If the endpoint is not ready within timeout.
     """
-    probe_payload = {
-        "model": model_id,
-        "messages": [{"role": "user", "content": "hi"}],
-        "max_tokens": 1,
-    }
+    url = f"{endpoint}/v1/models"
     start = time.time()
     attempt = 0
-    async with httpx.AsyncClient(
-        timeout=httpx.Timeout(30.0),
-    ) as client:
+    async with httpx.AsyncClient(timeout=httpx.Timeout(10.0)) as client:
         while time.time() - start < timeout:
             attempt += 1
             try:
-                resp = await client.post(
-                    f"{scheduler_url}/v1/chat/completions",
-                    json=probe_payload,
-                )
+                resp = await client.get(url)
                 if resp.status_code == 200:
                     elapsed = time.time() - start
                     logger.success(
-                        f"Scheduler backend ready after "
-                        f"{elapsed:.1f}s ({attempt} probes)"
+                        f"Endpoint ready after {elapsed:.1f}s "
+                        f"({attempt} attempts)"
                     )
                     return
-                logger.info(
-                    f"Probe {attempt}: HTTP {resp.status_code}, "
-                    f"retrying in {DEFAULT_RETRY_DELAY}s..."
-                )
+            except httpx.ConnectError:
+                pass
             except Exception as exc:
+                logger.debug(f"Health check attempt {attempt}: {exc}")
+            if attempt % 10 == 0:
+                elapsed = time.time() - start
                 logger.info(
-                    f"Probe {attempt}: {exc}, "
-                    f"retrying in {DEFAULT_RETRY_DELAY}s..."
+                    f"Waiting for endpoint... "
+                    f"({elapsed:.0f}s / {timeout:.0f}s)"
                 )
-            await asyncio.sleep(DEFAULT_RETRY_DELAY)
+            await asyncio.sleep(2)
     raise TimeoutError(
-        f"Scheduler backend not ready after {timeout}s"
+        f"Endpoint {endpoint} not ready after {timeout}s"
     )
 
 
-# ── Phase A: Check & teardown existing deployments ───────────────
-
-
-async def check_and_teardown(
-    planner_url: str,
-    fallback_replicas: int,
-) -> int:
-    """Check for existing instances, terminate them, and return the count.
-
-    Queries the planner for all running instances. If any exist,
-    terminates them all and returns the count so the new deployment
-    matches the existing cluster scale. Otherwise falls back to
-    the caller-provided replica count.
-
-    Args:
-        planner_url: Planner service URL.
-        fallback_replicas: Replica count to use if no existing
-            instances are found.
-
-    Returns:
-        Number of replicas to deploy.
-    """
-    from swarmpilot.sdk import SwarmPilotClient
-
-    async with SwarmPilotClient(planner_url=planner_url) as sp:
-        state = await sp.instances()
-        existing = state.instances
-        if not existing:
-            logger.info(
-                "No existing instances found, will deploy "
-                f"{fallback_replicas} replica(s) from --replicas"
-            )
-            return fallback_replicas
-
-        count = len(existing)
-        models = {inst.model or "unknown" for inst in existing}
-        logger.info(
-            f"Found {count} existing instance(s) "
-            f"(models: {models}), terminating..."
-        )
-        await sp.terminate(all=True)
-        logger.success("All existing instances terminated")
-
-        # Wait a moment for cluster resources to release
-        await asyncio.sleep(3)
-        return count
-
-
-# ── Phase B: Deploy ──────────────────────────────────────────────
-
-
-async def deploy_instances(
-    planner_url: str,
-    scheduler_url: str,
-    model_id: str,
-    gpu: int,
-    replicas: int,
-) -> None:
-    """Deploy vLLM instances via SwarmPilot SDK.
-
-    Args:
-        planner_url: Planner service URL.
-        scheduler_url: Scheduler service URL.
-        model_id: HuggingFace model identifier.
-        gpu: GPUs per instance.
-        replicas: Number of instances to deploy.
-    """
-    from swarmpilot.sdk import SwarmPilotClient
-
-    logger.info(
-        f"Deploying {replicas} instance(s) of {model_id} "
-        f"(gpu={gpu})"
-    )
-
-    async with SwarmPilotClient(
-        planner_url=planner_url,
-        scheduler_url=scheduler_url,
-    ) as sp:
-        group = await sp.serve(
-            model_id,
-            gpu=gpu,
-            replicas=replicas,
-        )
-        logger.info("Deployment submitted, waiting for instances...")
-        await group.wait_ready(timeout=DEFAULT_TIMEOUT)
-        logger.success(
-            f"{replicas} instance(s) ready: {group.endpoints}"
-        )
-
-
-# ── Phase D: Collect ─────────────────────────────────────────────
+# ── Collect ──────────────────────────────────────────────────────
 
 
 async def collect_single(
     client: httpx.AsyncClient,
-    scheduler_url: str,
+    endpoint: str,
     model_id: str,
     caption: str,
     max_tokens: int,
@@ -265,7 +148,7 @@ async def collect_single(
 
     Args:
         client: Reusable async HTTP client.
-        scheduler_url: Scheduler proxy URL.
+        endpoint: vLLM base URL.
         model_id: Model identifier for the request.
         caption: User prompt text.
         max_tokens: Maximum tokens to generate.
@@ -289,7 +172,7 @@ async def collect_single(
     start = time.time()
     try:
         response = await client.post(
-            f"{scheduler_url}/v1/chat/completions",
+            f"{endpoint}/v1/chat/completions",
             json=payload,
         )
         elapsed_ms = (time.time() - start) * 1000
@@ -326,15 +209,15 @@ async def collect_single(
 
 
 async def collect_samples(
-    scheduler_url: str,
+    endpoint: str,
     model_id: str,
     captions: list[str],
     max_concurrent: int,
 ) -> list[dict]:
-    """Send requests through the scheduler proxy and collect timing.
+    """Send requests to the vLLM endpoint and collect timing.
 
     Args:
-        scheduler_url: Scheduler proxy URL.
+        endpoint: vLLM base URL.
         model_id: Model identifier.
         captions: List of prompt texts.
         max_concurrent: Concurrency limit.
@@ -354,18 +237,11 @@ async def collect_samples(
         async def worker(caption: str) -> None:
             nonlocal completed
             max_tokens = random.choice(MAX_TOKENS_CHOICES)
-            for retry in range(MAX_RETRIES_PER_REQUEST):
-                async with semaphore:
-                    sample = await collect_single(
-                        client, scheduler_url, model_id,
-                        caption, max_tokens,
-                    )
-                if sample is not None:
-                    break
-                logger.debug(
-                    f"Retry {retry + 1}/{MAX_RETRIES_PER_REQUEST}"
+            async with semaphore:
+                sample = await collect_single(
+                    client, endpoint, model_id,
+                    caption, max_tokens,
                 )
-                await asyncio.sleep(DEFAULT_RETRY_DELAY)
             completed += 1
             if sample is not None:
                 samples.append(sample)
@@ -384,7 +260,7 @@ async def collect_samples(
     return samples
 
 
-# ── Phase E: Save ────────────────────────────────────────────────
+# ── Save ─────────────────────────────────────────────────────────
 
 
 def save_to_json(
@@ -404,7 +280,6 @@ def save_to_json(
             "model_id": model_id,
             "platform_info": PLATFORM_INFO,
             "num_samples": len(samples),
-            "strategy": "round_robin",
             "collected_at": datetime.now(UTC).isoformat(),
         },
         "features_list": samples,
@@ -433,7 +308,7 @@ def load_from_json(path: str) -> tuple[dict, list[dict]]:
     return metadata, features_list
 
 
-# ── Phase F: Train ───────────────────────────────────────────────
+# ── Train ────────────────────────────────────────────────────────
 
 
 def train_quantile_predictor(
@@ -521,25 +396,17 @@ def parse_args() -> argparse.Namespace:
         Parsed argument namespace.
     """
     parser = argparse.ArgumentParser(
-        description=(
-            "Collect Qwen3-VL-8B-Instruct runtime data and train "
-            "a quantile predictor."
-        ),
+        description="Collect LLM runtime data from a vLLM endpoint.",
     )
     parser.add_argument(
-        "--planner-url",
-        default=DEFAULT_PLANNER_URL,
-        help="Planner service URL",
-    )
-    parser.add_argument(
-        "--scheduler-url",
-        default=DEFAULT_SCHEDULER_URL,
-        help="Scheduler service URL",
+        "--endpoint",
+        default=DEFAULT_ENDPOINT,
+        help="vLLM endpoint URL (default: %(default)s)",
     )
     parser.add_argument(
         "--model-id",
         default=DEFAULT_MODEL_ID,
-        help="HuggingFace model identifier",
+        help="Model identifier",
     )
     parser.add_argument(
         "--num-requests",
@@ -564,6 +431,11 @@ def parse_args() -> argparse.Namespace:
         help="JSONL file with caption prompts",
     )
     parser.add_argument(
+        "--load-json",
+        default="",
+        help="Load existing data (skip collection)",
+    )
+    parser.add_argument(
         "--train",
         action="store_true",
         help="Train quantile predictor after collection",
@@ -574,90 +446,57 @@ def parse_args() -> argparse.Namespace:
         help="Model storage directory",
     )
     parser.add_argument(
-        "--gpu",
-        type=int,
-        default=DEFAULT_GPU,
-        help="GPUs per instance",
-    )
-    parser.add_argument(
-        "--replicas",
-        type=int,
-        default=DEFAULT_REPLICAS,
-        help="Fallback replica count when no existing instances",
-    )
-    parser.add_argument(
-        "--load-json",
-        default="",
-        help="Load existing data (skip collection)",
-    )
-    parser.add_argument(
-        "--skip-deploy",
+        "--skip-health-check",
         action="store_true",
-        help="Skip instance deployment (already deployed)",
+        help="Skip initial endpoint health check",
     )
     parser.add_argument(
-        "--terminate",
-        action="store_true",
-        help="Terminate instances after collection",
+        "--health-timeout",
+        type=float,
+        default=DEFAULT_HEALTH_TIMEOUT,
+        help="Max seconds to wait for endpoint health",
     )
     return parser.parse_args()
 
 
 async def main() -> None:
-    """Run the full collection and training pipeline."""
+    """Run the collection (and optional training) pipeline."""
     args = parse_args()
-
-    # Phase A: Check existing deployments and teardown
-    if not args.load_json and not args.skip_deploy:
-        replicas = await check_and_teardown(
-            planner_url=args.planner_url,
-            fallback_replicas=args.replicas,
-        )
-        logger.info(f"Will deploy {replicas} instance(s)")
-    else:
-        replicas = args.replicas
-
-    # Phase B: Deploy
-    if not args.load_json and not args.skip_deploy:
-        await deploy_instances(
-            planner_url=args.planner_url,
-            scheduler_url=args.scheduler_url,
-            model_id=args.model_id,
-            gpu=args.gpu,
-            replicas=replicas,
-        )
-
-    # Phase C: Wait for backend
-    if not args.load_json and not args.skip_deploy:
-        logger.info("Waiting for scheduler backend to be ready...")
-        await wait_scheduler_ready(
-            scheduler_url=args.scheduler_url,
-            model_id=args.model_id,
-        )
 
     if args.load_json:
         _metadata, features_list = load_from_json(args.load_json)
     else:
-        # Phase D: Collect
+        # Wait for vLLM to be ready
+        if not args.skip_health_check:
+            logger.info(
+                f"Checking endpoint health: {args.endpoint}"
+            )
+            await wait_endpoint_ready(
+                args.endpoint, timeout=args.health_timeout
+            )
+
+        # Load captions
         captions_path = Path(args.captions_file)
         if not captions_path.is_absolute():
             captions_path = Path(__file__).parent / captions_path
         captions = load_captions(
             str(captions_path), args.num_requests
         )
+
+        # Collect
         features_list = await collect_samples(
-            scheduler_url=args.scheduler_url,
+            endpoint=args.endpoint,
             model_id=args.model_id,
             captions=captions,
             max_concurrent=args.max_concurrent,
         )
 
-        # Phase E: Save
+        # Save
         save_to_json(
             features_list, args.model_id, args.output_json
         )
 
-    # Phase F: Train
+    # Train
     if args.train:
         if len(features_list) < 10:
             logger.error(
@@ -671,41 +510,6 @@ async def main() -> None:
                 storage_dir=args.storage_dir,
             )
 
-    # Cleanup
-    if args.terminate:
-        from swarmpilot.sdk import SwarmPilotClient
-
-        async with SwarmPilotClient(
-            planner_url=args.planner_url,
-            scheduler_url=args.scheduler_url,
-        ) as sp:
-            await sp.terminate(model=args.model_id)
-            logger.info("Instances terminated")
-
-
-async def cleanup(planner_url: str, model_id: str) -> None:
-    """Terminate deployed instances on exit.
-
-    Args:
-        planner_url: Planner service URL.
-        model_id: Model to terminate.
-    """
-    from swarmpilot.sdk import SwarmPilotClient
-
-    try:
-        async with SwarmPilotClient(planner_url=planner_url) as sp:
-            await sp.terminate(model=model_id)
-            logger.info(f"Cleanup: terminated {model_id} instances")
-    except Exception as e:
-        logger.warning(f"Cleanup failed: {e}")
-
 
 if __name__ == "__main__":
-    args = parse_args()
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        logger.info("Interrupted by user, cleaning up...")
-    finally:
-        if not args.load_json and not args.skip_deploy:
-            asyncio.run(cleanup(args.planner_url, args.model_id))
+    asyncio.run(main())

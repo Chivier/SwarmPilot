@@ -1,11 +1,11 @@
 #!/bin/bash
 # Multi-Model Planner Example - Stop Cluster
-# Usage: ./examples/multi_model_planner/stop_cluster.sh
+# Usage: ./examples/5.multi_model_planner/stop_cluster.sh
 
 set -e
 
 PLANNER_PORT=${PLANNER_PORT:-8002}
-LOG_DIR="/tmp/multi_model_planner"
+LOG_DIR="/tmp/5.multi_model_planner"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'

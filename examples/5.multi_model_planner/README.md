@@ -45,12 +45,12 @@ This example demonstrates the full SwarmPilot workflow: a central **Planner** ma
 
 ```bash
 # 1. Start cluster (Planner + 2 Schedulers)
-./examples/multi_model_planner/start_cluster.sh
+./examples/5.multi_model_planner/start_cluster.sh
 
 # 2. Deploy instances
 #    With PyLet:  automated via splanner serve
 #    Without:     mock instances + manual registration
-./examples/multi_model_planner/deploy_model.sh
+./examples/5.multi_model_planner/deploy_model.sh
 
 # 3. Query scheduler mapping
 curl http://localhost:8002/v1/schedulers
@@ -60,7 +60,7 @@ curl http://localhost:8010/v1/instance/list   # Qwen
 curl http://localhost:8020/v1/instance/list   # Llama
 
 # 5. Stop everything
-./examples/multi_model_planner/stop_cluster.sh
+./examples/5.multi_model_planner/stop_cluster.sh
 ```
 
 ## Scripts
@@ -93,7 +93,7 @@ curl http://localhost:8020/v1/instance/list   # Llama
 
 ## Comparison with Direct Deployment
 
-| Feature | Direct (`multi_model_direct/`) | Planner (this example) |
+| Feature | Direct (`3.multi_model_direct/`) | Planner (this example) |
 |---------|-------------------------------|------------------------|
 | Scheduler discovery | Manual (know each port) | `GET /v1/schedulers` |
 | Instance deployment | Manual curl registration | `splanner serve` or manual |
@@ -113,8 +113,8 @@ curl http://localhost:8002/v1/schedulers | python3 -m json.tool
 
 Check scheduler logs for registration errors:
 ```bash
-tail -f /tmp/multi_model_planner/scheduler-qwen.log
-tail -f /tmp/multi_model_planner/scheduler-llama.log
+tail -f /tmp/5.multi_model_planner/scheduler-qwen.log
+tail -f /tmp/5.multi_model_planner/scheduler-llama.log
 ```
 
 Ensure `PLANNER_REGISTRATION_URL` (not `PLANNER_URL`) is set correctly.
@@ -122,7 +122,7 @@ Ensure `PLANNER_REGISTRATION_URL` (not `PLANNER_URL`) is set correctly.
 ### Port already in use
 
 ```bash
-./examples/multi_model_planner/stop_cluster.sh
+./examples/5.multi_model_planner/stop_cluster.sh
 # or manually:
 lsof -i:8002 -i:8010 -i:8020
 ```
@@ -136,7 +136,7 @@ curl http://localhost:8200/health
 
 Check mock server logs:
 ```bash
-tail -f /tmp/multi_model_planner/mock-qwen-inst-001.log
+tail -f /tmp/5.multi_model_planner/mock-qwen-inst-001.log
 ```
 
 ### deploy_model.sh fails in Mode A
@@ -156,6 +156,6 @@ Mode A requires a running PyLet cluster. If PyLet is unavailable, the script fal
 
 ## Related
 
-- Single model: `examples/single_model/` (no Planner, one Scheduler)
-- Multi-model direct: `examples/multi_model_direct/` (no Planner, manual Schedulers)
+- Single model: `examples/1.single_model/` (no Planner, one Scheduler)
+- Multi-model direct: `examples/3.multi_model_direct/` (no Planner, manual Schedulers)
 - LLM cluster: `examples/llm_cluster/` (3 models, PyLet, optimizer)

@@ -49,7 +49,7 @@ When `PYLET_LOCAL_MODE=true`, `PYLET_ENABLED` is automatically set and `PYLET_HE
 
 The Scheduler starts **without** `SCHEDULER_MODEL_ID` -- the Planner assigns the model dynamically on the first `serve()` call via `/v1/model/reassign`.
 
-> **One-click start:** `bash examples/predictor_training_playground/start_qwen_cluster.sh` handles the full startup sequence including a temporary dummy health server needed for PyLet initialization.
+> **One-click start:** `bash examples/6.predictor_training/start_qwen_cluster.sh` handles the full startup sequence including a temporary dummy health server needed for PyLet initialization.
 
 ### External PyLet Cluster (Production)
 
@@ -290,7 +290,7 @@ splanner terminate --all
 # 3. Stop Planner (auto-stops local PyLet if PYLET_LOCAL_MODE)
 ```
 
-> **One-click stop:** `bash examples/predictor_training_playground/stop_qwen_cluster.sh`
+> **One-click stop:** `bash examples/6.predictor_training/stop_qwen_cluster.sh`
 
 ---
 
@@ -406,6 +406,6 @@ Source: `swarmpilot/planner/config.py`
 
 | Directory | Description |
 |-----------|-------------|
-| `examples/predictor_training_playground/` | Full cluster with Planner + local PyLet + predictor training |
-| `examples/multi_model_planner/` | Multi-model with Planner optimizer and PyLet |
-| `examples/multi_model_direct/` | Multi-model with direct registration (no Planner) |
+| `examples/6.predictor_training/` | Full cluster with Planner + local PyLet + predictor training |
+| `examples/5.multi_model_planner/` | Multi-model with Planner optimizer and PyLet |
+| `examples/3.multi_model_direct/` | Multi-model with direct registration (no Planner) |

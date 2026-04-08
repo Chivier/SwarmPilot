@@ -1,6 +1,6 @@
 #!/bin/bash
 # Predictor Training Playground — Start Cluster
-# Usage: ./examples/predictor_training_playground/start_qwen_cluster.sh
+# Usage: ./examples/6.predictor_training/start_qwen_cluster.sh
 #
 # Starts Planner (with local PyLet cluster) + Scheduler for
 # runtime data collection and predictor training.
@@ -56,7 +56,7 @@ check_port() {
     local name=$2
     if lsof -i:"$port" > /dev/null 2>&1; then
         echo -e "${YELLOW}Warning: Port $port ($name) is already in use.${NC}"
-        echo "Run ./examples/predictor_training_playground/stop_qwen_cluster.sh first."
+        echo "Run ./examples/6.predictor_training/stop_qwen_cluster.sh first."
         return 1
     fi
     return 0
@@ -205,4 +205,4 @@ echo "  Strategy:  round_robin"
 echo "  Model:     (assigned on first deploy)"
 echo "  Logs:      $LOG_DIR/"
 echo ""
-echo -e "${YELLOW}Next:${NC} uv run python examples/predictor_training_playground/collect_and_train_qwen.py --train"
+echo -e "${YELLOW}Next:${NC} uv run python examples/6.predictor_training/collect_and_train_qwen.py --train"

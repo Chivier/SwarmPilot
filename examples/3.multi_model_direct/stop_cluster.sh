@@ -1,10 +1,10 @@
 #!/bin/bash
 # Multi-Model Direct — Stop All Services
-# Usage: ./examples/multi_model_direct/stop_cluster.sh
+# Usage: ./examples/3.multi_model_direct/stop_cluster.sh
 
 set -e
 
-LOG_DIR="/tmp/multi_model_direct"
+LOG_DIR="/tmp/3.multi_model_direct"
 GREEN='\033[0;32m'
 BOLD='\033[1m'
 NC='\033[0m'

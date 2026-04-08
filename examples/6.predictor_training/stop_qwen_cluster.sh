@@ -1,6 +1,6 @@
 #!/bin/bash
 # Qwen3-Next-80B-A3B Runtime Collection — Stop Cluster
-# Usage: ./examples/predictor_training_playground/stop_qwen_cluster.sh
+# Usage: ./examples/6.predictor_training/stop_qwen_cluster.sh
 
 set -e
 

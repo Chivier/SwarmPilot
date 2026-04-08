@@ -1,6 +1,6 @@
 #!/bin/bash
 # Multi-Model Planner Example - Start Cluster
-# Usage: ./examples/multi_model_planner/start_cluster.sh
+# Usage: ./examples/5.multi_model_planner/start_cluster.sh
 #
 # Starts Planner + 2 per-model Schedulers (Qwen, Llama).
 # Schedulers auto-register with the Planner on startup.
@@ -14,7 +14,7 @@ SCHEDULER_LLAMA_PORT=${SCHEDULER_LLAMA_PORT:-8020}
 DUMMY_HEALTH_PORT=${DUMMY_HEALTH_PORT:-9999}
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-LOG_DIR="/tmp/multi_model_planner"
+LOG_DIR="/tmp/5.multi_model_planner"
 
 # Colors
 RED='\033[0;31m'
@@ -34,7 +34,7 @@ check_port() {
     local name=$2
     if lsof -i:"$port" > /dev/null 2>&1; then
         echo -e "${YELLOW}Warning: Port $port ($name) is already in use.${NC}"
-        echo "Run ./examples/multi_model_planner/stop_cluster.sh first."
+        echo "Run ./examples/5.multi_model_planner/stop_cluster.sh first."
         return 1
     fi
     return 0
@@ -176,4 +176,4 @@ echo "  Scheduler (Qwen): http://localhost:$SCHEDULER_QWEN_PORT"
 echo "  Scheduler (Llama):http://localhost:$SCHEDULER_LLAMA_PORT"
 echo "  Logs:             $LOG_DIR/"
 echo ""
-echo "Next: ./examples/multi_model_planner/deploy_model.sh"
+echo "Next: ./examples/5.multi_model_planner/deploy_model.sh"

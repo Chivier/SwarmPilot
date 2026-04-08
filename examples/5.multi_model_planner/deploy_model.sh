@@ -1,6 +1,6 @@
 #!/bin/bash
 # Multi-Model Planner Example - Deploy Models
-# Usage: ./examples/multi_model_planner/deploy_model.sh
+# Usage: ./examples/5.multi_model_planner/deploy_model.sh
 #
 # Two modes:
 #   Mode A (PyLet): Uses `splanner serve` for automated deployment
@@ -13,8 +13,8 @@ SCHEDULER_QWEN_PORT=${SCHEDULER_QWEN_PORT:-8010}
 SCHEDULER_LLAMA_PORT=${SCHEDULER_LLAMA_PORT:-8020}
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-LOG_DIR="/tmp/multi_model_planner"
-MOCK_SERVER="$PROJECT_ROOT/examples/multi_model_planner/mock_vllm_server.py"
+LOG_DIR="/tmp/5.multi_model_planner"
+MOCK_SERVER="$PROJECT_ROOT/examples/5.multi_model_planner/mock_vllm_server.py"
 VENV_PYTHON="$PROJECT_ROOT/.venv/bin/python"
 
 RED='\033[0;31m'
