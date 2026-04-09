@@ -56,7 +56,9 @@ class TestPlatformInfoFromOnlineEndpoint:
 
     def test_hardware_name_is_cloud(self):
         """hardware_name is always 'cloud'."""
-        info = platform_info_from_online_endpoint("https://example.com", "any-key")
+        info = platform_info_from_online_endpoint(
+            "https://example.com", "any-key"
+        )
         assert info["hardware_name"] == "cloud"
 
     def test_hash_length(self):

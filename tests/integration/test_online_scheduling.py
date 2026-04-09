@@ -48,7 +48,9 @@ class TestOnlineEndpointRegistration:
             retry_delay=0.01,
         )
 
-    async def test_register_two_online_endpoints(self, instance_registry, manager):
+    async def test_register_two_online_endpoints(
+        self, instance_registry, manager
+    ):
         """Two endpoints for the same model register correctly."""
         url = "https://api.anthropic.com"
         key1, key2 = "sk-key-tier-1", "sk-key-tier-2"
@@ -86,10 +88,14 @@ class TestOnlineEndpointRegistration:
         i1 = await instance_registry.get("online-claude-key-1")
         i2 = await instance_registry.get("online-claude-key-2")
         assert (
-            i1.platform_info["software_version"] != i2.platform_info["software_version"]
+            i1.platform_info["software_version"]
+            != i2.platform_info["software_version"]
         )
         # Same provider
-        assert i1.platform_info["software_name"] == i2.platform_info["software_name"]
+        assert (
+            i1.platform_info["software_name"]
+            == i2.platform_info["software_name"]
+        )
 
         manager.shutdown()
 
@@ -110,7 +116,9 @@ class TestOnlineEndpointRegistration:
         retrieved = await instance_registry.get("online-openai")
         assert retrieved.status == InstanceStatus.ACTIVE
 
-    async def test_online_endpoint_hardware_name_is_cloud(self, instance_registry):
+    async def test_online_endpoint_hardware_name_is_cloud(
+        self, instance_registry
+    ):
         """Online endpoint platform_info has hardware_name=cloud."""
         pinfo = platform_info_from_online_endpoint(
             "https://api.anthropic.com", "sk-key"

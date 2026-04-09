@@ -170,7 +170,9 @@ class WorkerQueueThread:
             RuntimeError: If thread is already started.
         """
         if self._thread is not None:
-            raise RuntimeError(f"Worker {self.worker_id} thread already started")
+            raise RuntimeError(
+                f"Worker {self.worker_id} thread already started"
+            )
 
         self._shutdown.clear()
         self._thread = Thread(
@@ -205,7 +207,9 @@ class WorkerQueueThread:
 
         self._thread.join(timeout=timeout)
         if self._thread.is_alive():
-            logger.warning(f"Worker {self.worker_id} thread did not stop gracefully")
+            logger.warning(
+                f"Worker {self.worker_id} thread did not stop gracefully"
+            )
 
         self._thread = None
 
@@ -250,7 +254,9 @@ class WorkerQueueThread:
         task.priority = True
         with self._priority_lock:
             self._priority_deque.append(task)
-        logger.debug(f"Priority task {task.task_id} enqueued to {self.worker_id}")
+        logger.debug(
+            f"Priority task {task.task_id} enqueued to {self.worker_id}"
+        )
 
     def queue_size(self) -> int:
         """Get current queue size (approximate)."""
@@ -339,9 +345,13 @@ class WorkerQueueThread:
 
         try:
             body, status_code, headers = self._call_worker_api(task)
-            execution_time_ms = (time.time() - self._current_task_started) * 1000
+            execution_time_ms = (
+                time.time() - self._current_task_started
+            ) * 1000
 
-            logger.info(f"Task {task.task_id} completed in {execution_time_ms:.2f}ms")
+            logger.info(
+                f"Task {task.task_id} completed in {execution_time_ms:.2f}ms"
+            )
 
             self._callback(
                 TaskResult(
@@ -356,7 +366,9 @@ class WorkerQueueThread:
             )
 
         except httpx.HTTPStatusError as e:
-            execution_time_ms = (time.time() - self._current_task_started) * 1000
+            execution_time_ms = (
+                time.time() - self._current_task_started
+            ) * 1000
             # Propagate the upstream HTTP status and body
             status_code = e.response.status_code
             try:
@@ -384,7 +396,9 @@ class WorkerQueueThread:
             )
 
         except Exception as e:
-            execution_time_ms = (time.time() - self._current_task_started) * 1000
+            execution_time_ms = (
+                time.time() - self._current_task_started
+            ) * 1000
 
             logger.opt(exception=True).error(
                 f"Task {task.task_id} failed after {execution_time_ms:.2f}ms: {e}"

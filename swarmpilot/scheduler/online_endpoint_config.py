@@ -80,6 +80,6 @@ def load_online_endpoints_config(
 
     parsed = OnlineEndpointsConfig.model_validate(raw)
     logger.info(
-        f"Loaded {len(parsed.endpoints)} online endpoint(s) " f"from {resolved}"
+        f"Loaded {len(parsed.endpoints)} online endpoint(s) from {resolved}"
     )
     return parsed.endpoints
