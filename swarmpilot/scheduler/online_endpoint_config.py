@@ -22,8 +22,10 @@ class OnlineEndpointEntry(BaseModel):
         base_url: API base URL (e.g. "https://api.anthropic.com").
         api_key_env: Environment variable holding the API key.
         model_id: Model identifier for scheduling.
-        concurrency_limit: Max concurrent requests (for Planner
-            capacity matrix; not enforced by Predictor).
+        concurrency_limit: Number of virtual instances (concurrent
+            request slots) for this endpoint. Each virtual instance
+            runs a serial queue, so the total concurrent requests
+            equals concurrency_limit.
     """
 
     name: str

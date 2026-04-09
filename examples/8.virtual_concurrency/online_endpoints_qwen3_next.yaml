@@ -1,0 +1,21 @@
+# Qwen3-Next-80B-A3B — 3 providers with concurrency 1, 2, 3
+# Total virtual instances: 1 + 2 + 3 = 6
+
+endpoints:
+  - name: "together-qwen3-next"
+    base_url: "http://localhost:9210"
+    api_key_env: "TOGETHER_API_KEY"
+    model_id: "Qwen/Qwen3-Next-80B-A3B"
+    concurrency_limit: 1
+
+  - name: "fireworks-qwen3-next"
+    base_url: "http://localhost:9211"
+    api_key_env: "FIREWORKS_API_KEY"
+    model_id: "Qwen/Qwen3-Next-80B-A3B"
+    concurrency_limit: 2
+
+  - name: "lepton-qwen3-next"
+    base_url: "http://localhost:9212"
+    api_key_env: "LEPTON_API_KEY"
+    model_id: "Qwen/Qwen3-Next-80B-A3B"
+    concurrency_limit: 3

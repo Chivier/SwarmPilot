@@ -135,35 +135,45 @@ async def _register_online_endpoints(
         api_key = os.environ.get(ep.api_key_env, "")
         if not api_key:
             logger.warning(
-                f"Skipping online endpoint {ep.name}: {ep.api_key_env} not set"
+                f"Skipping online endpoint {ep.name}: "
+                f"{ep.api_key_env} not set"
             )
             continue
 
-        instance_id = f"online-{ep.name}"
-        instance = Instance(
-            instance_id=instance_id,
-            model_id=ep.model_id,
-            endpoint=ep.base_url,
-            platform_info=platform_info_from_online_endpoint(
-                ep.base_url, api_key
-            ),
-            status=InstanceStatus.ACTIVE,
+        # Compute once per endpoint — shared by all virtual instances
+        pinfo = platform_info_from_online_endpoint(
+            ep.base_url, api_key
         )
+        auth_headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
 
-        await instance_registry.register(instance)
-        wqm.register_worker(
-            worker_id=instance_id,
-            worker_endpoint=ep.base_url,
-            model_id=ep.model_id,
-            extra_headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-        )
+        for slot in range(ep.concurrency_limit):
+            instance_id = f"online-{ep.name}-{slot}"
+            instance = Instance(
+                instance_id=instance_id,
+                model_id=ep.model_id,
+                endpoint=ep.base_url,
+                platform_info=pinfo,
+                status=InstanceStatus.ACTIVE,
+                endpoint_group=ep.name,
+            )
+
+            await instance_registry.register(instance)
+            wqm.register_worker(
+                worker_id=instance_id,
+                worker_endpoint=ep.base_url,
+                model_id=ep.model_id,
+                extra_headers=auth_headers,
+            )
+            registered += 1
+
         logger.info(
-            f"Registered online endpoint: {instance_id} -> {ep.base_url}"
+            f"Registered online endpoint: {ep.name} -> "
+            f"{ep.base_url} ({ep.concurrency_limit} virtual "
+            f"instances)"
         )
-        registered += 1
 
     return registered
 
@@ -203,7 +213,9 @@ async def lifespan(app: FastAPI):
     # Register online API endpoints from config (if configured)
     n_online = await _register_online_endpoints(worker_queue_manager)
     if n_online:
-        logger.info(f"Registered {n_online} online API endpoint(s)")
+        logger.info(
+            f"Registered {n_online} online API virtual instance(s)"
+        )
 
     # Start planner reporter (if configured)
     if planner_reporter:

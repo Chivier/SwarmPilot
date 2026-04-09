@@ -1,0 +1,21 @@
+# Gemma4-41B — 3 providers with concurrency 1, 2, 3
+# Total virtual instances: 1 + 2 + 3 = 6
+
+endpoints:
+  - name: "together-gemma4"
+    base_url: "http://localhost:9220"
+    api_key_env: "TOGETHER_API_KEY"
+    model_id: "google/gemma-4-41b-it"
+    concurrency_limit: 1
+
+  - name: "fireworks-gemma4"
+    base_url: "http://localhost:9221"
+    api_key_env: "FIREWORKS_API_KEY"
+    model_id: "google/gemma-4-41b-it"
+    concurrency_limit: 2
+
+  - name: "lepton-gemma4"
+    base_url: "http://localhost:9222"
+    api_key_env: "LEPTON_API_KEY"
+    model_id: "google/gemma-4-41b-it"
+    concurrency_limit: 3

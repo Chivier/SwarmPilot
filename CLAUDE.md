@@ -34,6 +34,11 @@ spredictor start --port 8001
 sscheduler start --port 8000
 splanner start --port 8002
 
+# Online API mode (cloud providers, no local GPU)
+SCHEDULER_MODEL_ID="Qwen/Qwen3-8B" \
+  ONLINE_ENDPOINTS_CONFIG="./online_endpoints.yaml" \
+  sscheduler start --port 8000
+
 # SDK usage (async)
 from swarmpilot.sdk import SwarmPilotClient
 async with SwarmPilotClient("http://localhost:8002") as sp:

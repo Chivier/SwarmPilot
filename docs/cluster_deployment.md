@@ -152,6 +152,99 @@ curl http://localhost:8002/v1/pylet/status
 splanner ps
 ```
 
+### Online API Endpoints (Cloud Providers)
+
+Deploy against cloud inference APIs (Together AI, Fireworks AI, OpenAI, etc.) without running any local GPU instances. The Scheduler registers remote endpoints as virtual instances and load-balances across them.
+
+**Step 1: Create a YAML config** listing your providers:
+
+```yaml
+# online_endpoints.yaml
+endpoints:
+  - name: "together-qwen3-8b"
+    base_url: "https://api.together.xyz"
+    api_key_env: "TOGETHER_API_KEY"       # reads key from this env var
+    model_id: "Qwen/Qwen3-8B"
+    concurrency_limit: 10                 # max concurrent requests to this provider
+
+  - name: "fireworks-qwen3-8b"
+    base_url: "https://api.fireworks.ai/inference"
+    api_key_env: "FIREWORKS_API_KEY"
+    model_id: "Qwen/Qwen3-8B"
+    concurrency_limit: 5
+```
+
+**Step 2: Set API keys and start the Scheduler:**
+
+```bash
+export TOGETHER_API_KEY="your-key"
+export FIREWORKS_API_KEY="your-key"
+
+SCHEDULER_MODEL_ID="Qwen/Qwen3-8B" \
+  ONLINE_ENDPOINTS_CONFIG="./online_endpoints.yaml" \
+  sscheduler start --port 8000
+```
+
+The Scheduler auto-registers all endpoints at startup. No Planner needed.
+
+**Step 3: Send requests** — same as local instances:
+
+```bash
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "Qwen/Qwen3-8B",
+    "messages": [{"role": "user", "content": "Hello"}],
+    "max_tokens": 100
+  }'
+```
+
+The Scheduler picks a provider, injects the `Authorization: Bearer` header, and forwards the request. The client never sees which provider served the response.
+
+#### How `concurrency_limit` Works
+
+Each endpoint's `concurrency_limit` creates that many **virtual instances**, each with its own serial task queue. For example, `concurrency_limit: 10` creates 10 virtual instances (`online-together-qwen3-8b-0` through `online-together-qwen3-8b-9`), each processing one request at a time — bounding total concurrent requests to that provider at 10.
+
+The scheduling algorithms see all virtual instances and route tasks using the same strategies as local instances. The Predictor learns a single latency model per provider (all virtual instances share the same `platform_info`), and differentiation between virtual instances comes from their queue state.
+
+```
+concurrency_limit: 3  →  3 virtual instances, each with serial queue
+                          ┌─── online-provider-0 ─── [task] ──→ Provider API
+                          ├─── online-provider-1 ─── [task] ──→ Provider API
+                          └─── online-provider-2 ─── [task] ──→ Provider API
+                          Max 3 concurrent requests to this provider
+```
+
+Traffic distribution is proportional to `concurrency_limit`. If Provider A has `concurrency_limit: 5` and Provider B has `concurrency_limit: 15`, Provider B receives ~75% of traffic (15 out of 20 total virtual instances).
+
+#### YAML Config Reference
+
+| Field | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `name` | Yes | — | Unique endpoint name. Becomes part of instance IDs: `online-{name}-{slot}` |
+| `base_url` | Yes | — | Provider API base URL |
+| `api_key_env` | Yes | — | Environment variable name holding the API key |
+| `model_id` | Yes | — | Model identifier for scheduling (must match across endpoints sharing a scheduler) |
+| `concurrency_limit` | No | `10` | Number of virtual instances (concurrent request slots) |
+
+#### Multi-Model with Online APIs
+
+Each model needs its own Scheduler. Start multiple schedulers with separate YAML configs:
+
+```bash
+# Scheduler A — Qwen3-8B across 3 providers
+SCHEDULER_MODEL_ID="Qwen/Qwen3-8B" \
+  ONLINE_ENDPOINTS_CONFIG="./online_qwen3_8b.yaml" \
+  sscheduler start --port 8010
+
+# Scheduler B — GPT-4o across 2 providers
+SCHEDULER_MODEL_ID="gpt-4o" \
+  ONLINE_ENDPOINTS_CONFIG="./online_gpt4o.yaml" \
+  sscheduler start --port 8020
+```
+
+See `examples/7.online_api/` for a full 3-model x 3-provider working example, and `examples/8.virtual_concurrency/` for concurrency testing.
+
 ### Direct Instance Deployment
 
 For full manual control without the Planner. Start an instance process yourself, then register it with the Scheduler.
@@ -367,6 +460,7 @@ Source: `swarmpilot/scheduler/config.py`
 | `PLANNER_REGISTRATION_URL` | _(empty)_ | Planner URL for multi-scheduler registration |
 | `SCHEDULER_MODEL_ID` | _(empty)_ | Initial model ID (optional, Planner assigns dynamically) |
 | `SCHEDULER_SELF_URL` | _(empty)_ | Advertised scheduler URL |
+| `ONLINE_ENDPOINTS_CONFIG` | _(empty)_ | Path to online endpoints YAML config file |
 
 ### Planner
 
@@ -409,3 +503,5 @@ Source: `swarmpilot/planner/config.py`
 | `examples/6.predictor_training/` | Full cluster with Planner + local PyLet + predictor training |
 | `examples/5.multi_model_planner/` | Multi-model with Planner optimizer and PyLet |
 | `examples/3.multi_model_direct/` | Multi-model with direct registration (no Planner) |
+| `examples/7.online_api/` | Online API multi-provider (3 models x 3 cloud providers) |
+| `examples/8.virtual_concurrency/` | Virtual concurrency testing (concurrency 1/2/3 per provider) |
