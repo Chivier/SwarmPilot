@@ -1,0 +1,6009 @@
+{
+  "metadata": {
+    "model_id": "Qwen/Qwen3-Next-80B-A3B-Instruct",
+    "platform_info": {
+      "software_name": "vllm",
+      "software_version": "0.11.0",
+      "hardware_name": "NVIDIA RTX A6000"
+    },
+    "num_samples": 666,
+    "collected_at": "2026-04-09T02:27:53.402553+00:00",
+    "source": "profile_models.py"
+  },
+  "features_list": [
+    {
+      "prompt_tokens": 3036.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 91069.53883171082,
+      "_completion_tokens": 64,
+      "_total_tokens": 3100,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fa9"
+    },
+    {
+      "prompt_tokens": 21460.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 3742.365837097168,
+      "_completion_tokens": 38,
+      "_total_tokens": 21498,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68925f01db31fe35560e3e97"
+    },
+    {
+      "prompt_tokens": 3279.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 958.111047744751,
+      "_completion_tokens": 33,
+      "_total_tokens": 3312,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68940d8355faa0b720f0b499"
+    },
+    {
+      "prompt_tokens": 87.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 233.84714126586914,
+      "_completion_tokens": 17,
+      "_total_tokens": 104,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689a373e148a49f91233dff0"
+    },
+    {
+      "prompt_tokens": 27361.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 4784.417152404785,
+      "_completion_tokens": 59,
+      "_total_tokens": 27420,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcad"
+    },
+    {
+      "prompt_tokens": 91.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 662.8758907318115,
+      "_completion_tokens": 64,
+      "_total_tokens": 155,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c901"
+    },
+    {
+      "prompt_tokens": 8266.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 1951.3061046600342,
+      "_completion_tokens": 64,
+      "_total_tokens": 8330,
+      "_dataset": "mcp-atlas",
+      "_group_id": "688ba1b3e95696e72dd93e8d"
+    },
+    {
+      "prompt_tokens": 7689.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 2190.5298233032227,
+      "_completion_tokens": 111,
+      "_total_tokens": 7800,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 99.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 452.96573638916016,
+      "_completion_tokens": 40,
+      "_total_tokens": 139,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68940d8355faa0b720f0b499"
+    },
+    {
+      "prompt_tokens": 452.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 405.1327705383301,
+      "_completion_tokens": 31,
+      "_total_tokens": 483,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68925f01db31fe35560e3e9f"
+    },
+    {
+      "prompt_tokens": 857.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 427.77252197265625,
+      "_completion_tokens": 28,
+      "_total_tokens": 885,
+      "_dataset": "mcp-atlas",
+      "_group_id": "688ba1b3e95696e72dd93e8a"
+    },
+    {
+      "prompt_tokens": 4824.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 1904.3164253234863,
+      "_completion_tokens": 128,
+      "_total_tokens": 4952,
+      "_dataset": "dataclaw",
+      "_group_id": "1f145f0d-02f0-4290-91fb-035243959ea7"
+    },
+    {
+      "prompt_tokens": 20873.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 3530.758857727051,
+      "_completion_tokens": 30,
+      "_total_tokens": 20903,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68940d8355faa0b720f0b4b4"
+    },
+    {
+      "prompt_tokens": 1331.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 815.0365352630615,
+      "_completion_tokens": 64,
+      "_total_tokens": 1395,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef3390707"
+    },
+    {
+      "prompt_tokens": 177.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 472.14698791503906,
+      "_completion_tokens": 42,
+      "_total_tokens": 219,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef3390720"
+    },
+    {
+      "prompt_tokens": 2894.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 669.6321964263916,
+      "_completion_tokens": 20,
+      "_total_tokens": 2914,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689cd6f8522029b7ad7b200a"
+    },
+    {
+      "prompt_tokens": 8285.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 1494.3931102752686,
+      "_completion_tokens": 16,
+      "_total_tokens": 8301,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689cd6f8522029b7ad7b1fe7"
+    },
+    {
+      "prompt_tokens": 17485.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 7636.051416397095,
+      "_completion_tokens": 512,
+      "_total_tokens": 17997,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689a373e148a49f91233dfe4"
+    },
+    {
+      "prompt_tokens": 28626.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 4785.523414611816,
+      "_completion_tokens": 41,
+      "_total_tokens": 28667,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcf4"
+    },
+    {
+      "prompt_tokens": 428.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 470.6389904022217,
+      "_completion_tokens": 40,
+      "_total_tokens": 468,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c8f7"
+    },
+    {
+      "prompt_tokens": 3866.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 815.190315246582,
+      "_completion_tokens": 22,
+      "_total_tokens": 3888,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c8f7"
+    },
+    {
+      "prompt_tokens": 1479.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 517.2224044799805,
+      "_completion_tokens": 29,
+      "_total_tokens": 1508,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c901"
+    },
+    {
+      "prompt_tokens": 1821.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 931.8270683288574,
+      "_completion_tokens": 70,
+      "_total_tokens": 1891,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689e0b1d9c8e2ac413c1f25c"
+    },
+    {
+      "prompt_tokens": 14608.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 4062.945604324341,
+      "_completion_tokens": 193,
+      "_total_tokens": 14801,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fa3"
+    },
+    {
+      "prompt_tokens": 1701.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 1449.3799209594727,
+      "_completion_tokens": 128,
+      "_total_tokens": 1829,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c8f7"
+    },
+    {
+      "prompt_tokens": 4547.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 858.7315082550049,
+      "_completion_tokens": 16,
+      "_total_tokens": 4563,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 936.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 506.67500495910645,
+      "_completion_tokens": 35,
+      "_total_tokens": 971,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef3390720"
+    },
+    {
+      "prompt_tokens": 2426.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 842.5517082214355,
+      "_completion_tokens": 47,
+      "_total_tokens": 2473,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689cd6f8522029b7ad7b1fe5"
+    },
+    {
+      "prompt_tokens": 3087.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 1077.0411491394043,
+      "_completion_tokens": 64,
+      "_total_tokens": 3151,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 81.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 676.5186786651611,
+      "_completion_tokens": 64,
+      "_total_tokens": 145,
+      "_dataset": "dataclaw",
+      "_group_id": "24408fbc-089b-4955-9613-9084e4c652de"
+    },
+    {
+      "prompt_tokens": 4269.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 1983.9060306549072,
+      "_completion_tokens": 139,
+      "_total_tokens": 4408,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef3390731"
+    },
+    {
+      "prompt_tokens": 13026.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 2241.729974746704,
+      "_completion_tokens": 28,
+      "_total_tokens": 13054,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68824c643e6ff020bc33994b"
+    },
+    {
+      "prompt_tokens": 160.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 409.71946716308594,
+      "_completion_tokens": 36,
+      "_total_tokens": 196,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcf4"
+    },
+    {
+      "prompt_tokens": 163.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 666.0754680633545,
+      "_completion_tokens": 64,
+      "_total_tokens": 227,
+      "_dataset": "mcp-atlas",
+      "_group_id": "688a441c1a0d2e5c93853e76"
+    },
+    {
+      "prompt_tokens": 1218.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 732.8689098358154,
+      "_completion_tokens": 57,
+      "_total_tokens": 1275,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fd5"
+    },
+    {
+      "prompt_tokens": 298.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 230.68904876708984,
+      "_completion_tokens": 16,
+      "_total_tokens": 314,
+      "_dataset": "dataclaw",
+      "_group_id": "04f2303d-2b0f-4a33-92a7-26fc6e9f3bef"
+    },
+    {
+      "prompt_tokens": 83.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 3758.756637573242,
+      "_completion_tokens": 403,
+      "_total_tokens": 486,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fd5"
+    },
+    {
+      "prompt_tokens": 2560.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 976.1135578155518,
+      "_completion_tokens": 60,
+      "_total_tokens": 2620,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68a398aa2f58036e8d45ede8"
+    },
+    {
+      "prompt_tokens": 23566.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 6108.1225872039795,
+      "_completion_tokens": 256,
+      "_total_tokens": 23822,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcc1"
+    },
+    {
+      "prompt_tokens": 109.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 2427.307605743408,
+      "_completion_tokens": 256,
+      "_total_tokens": 365,
+      "_dataset": "mcp-atlas",
+      "_group_id": "688ba1b3e95696e72dd93e8d"
+    },
+    {
+      "prompt_tokens": 16631.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 2834.7909450531006,
+      "_completion_tokens": 32,
+      "_total_tokens": 16663,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 2667.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 1042.858362197876,
+      "_completion_tokens": 64,
+      "_total_tokens": 2731,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6886306b5ed4da6b2c381189"
+    },
+    {
+      "prompt_tokens": 185.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 152.9858112335205,
+      "_completion_tokens": 7,
+      "_total_tokens": 192,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689e0b1d9c8e2ac413c1f25c"
+    },
+    {
+      "prompt_tokens": 135.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 1261.6450786590576,
+      "_completion_tokens": 128,
+      "_total_tokens": 263,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689a373e148a49f91233dfe4"
+    },
+    {
+      "prompt_tokens": 2790.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 2796.4184284210205,
+      "_completion_tokens": 256,
+      "_total_tokens": 3046,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 16477.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 2743.0105209350586,
+      "_completion_tokens": 19,
+      "_total_tokens": 16496,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 7207.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 2317.9843425750732,
+      "_completion_tokens": 128,
+      "_total_tokens": 7335,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fd5"
+    },
+    {
+      "prompt_tokens": 17527.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 7594.45595741272,
+      "_completion_tokens": 512,
+      "_total_tokens": 18039,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 2963.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 2860.546827316284,
+      "_completion_tokens": 256,
+      "_total_tokens": 3219,
+      "_dataset": "mcp-atlas",
+      "_group_id": "688a441c1a0d2e5c93853e76"
+    },
+    {
+      "prompt_tokens": 182.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 266.33572578430176,
+      "_completion_tokens": 19,
+      "_total_tokens": 201,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef339071f"
+    },
+    {
+      "prompt_tokens": 146.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 2459.0349197387695,
+      "_completion_tokens": 256,
+      "_total_tokens": 402,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689e0b1d9c8e2ac413c1f211"
+    },
+    {
+      "prompt_tokens": 2304.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 555.9346675872803,
+      "_completion_tokens": 17,
+      "_total_tokens": 2321,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c8f0"
+    },
+    {
+      "prompt_tokens": 16563.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 3294.5754528045654,
+      "_completion_tokens": 70,
+      "_total_tokens": 16633,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcbb"
+    },
+    {
+      "prompt_tokens": 4657.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 2076.4245986938477,
+      "_completion_tokens": 145,
+      "_total_tokens": 4802,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 5401.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 1125.136375427246,
+      "_completion_tokens": 28,
+      "_total_tokens": 5429,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689af4e653c3905e7b5b258e"
+    },
+    {
+      "prompt_tokens": 243.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 664.6738052368164,
+      "_completion_tokens": 62,
+      "_total_tokens": 305,
+      "_dataset": "dataclaw",
+      "_group_id": "04f2303d-2b0f-4a33-92a7-26fc6e9f3bef"
+    },
+    {
+      "prompt_tokens": 2479.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 1028.9607048034668,
+      "_completion_tokens": 64,
+      "_total_tokens": 2543,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c8f0"
+    },
+    {
+      "prompt_tokens": 74.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 1253.7298202514648,
+      "_completion_tokens": 128,
+      "_total_tokens": 202,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689e0b1d9c8e2ac413c1f25c"
+    },
+    {
+      "prompt_tokens": 2811.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 1648.9732265472412,
+      "_completion_tokens": 128,
+      "_total_tokens": 2939,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689e0b1d9c8e2ac413c1f211"
+    },
+    {
+      "prompt_tokens": 4199.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 1889.6756172180176,
+      "_completion_tokens": 128,
+      "_total_tokens": 4327,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c8f7"
+    },
+    {
+      "prompt_tokens": 19254.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 3445.02329826355,
+      "_completion_tokens": 40,
+      "_total_tokens": 19294,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689a373e148a49f91233dfe4"
+    },
+    {
+      "prompt_tokens": 2707.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 763.3435726165771,
+      "_completion_tokens": 33,
+      "_total_tokens": 2740,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fe3"
+    },
+    {
+      "prompt_tokens": 10657.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 1897.204875946045,
+      "_completion_tokens": 27,
+      "_total_tokens": 10684,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcad"
+    },
+    {
+      "prompt_tokens": 94.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 256.0141086578369,
+      "_completion_tokens": 19,
+      "_total_tokens": 113,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcbb"
+    },
+    {
+      "prompt_tokens": 1025.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 438.61889839172363,
+      "_completion_tokens": 27,
+      "_total_tokens": 1052,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcc4"
+    },
+    {
+      "prompt_tokens": 585.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 327.18682289123535,
+      "_completion_tokens": 21,
+      "_total_tokens": 606,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68a398aa2f58036e8d45ede8"
+    },
+    {
+      "prompt_tokens": 6407.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 1588.6509418487549,
+      "_completion_tokens": 64,
+      "_total_tokens": 6471,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef339071f"
+    },
+    {
+      "prompt_tokens": 6029.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 1157.608985900879,
+      "_completion_tokens": 23,
+      "_total_tokens": 6052,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c8f0"
+    },
+    {
+      "prompt_tokens": 409.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 335.1147174835205,
+      "_completion_tokens": 25,
+      "_total_tokens": 434,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef339071f"
+    },
+    {
+      "prompt_tokens": 12273.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 4245.513916015625,
+      "_completion_tokens": 256,
+      "_total_tokens": 12529,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 23165.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 4001.0321140289307,
+      "_completion_tokens": 41,
+      "_total_tokens": 23206,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcc1"
+    },
+    {
+      "prompt_tokens": 2725.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 1638.2830142974854,
+      "_completion_tokens": 128,
+      "_total_tokens": 2853,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 12962.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 4423.255920410156,
+      "_completion_tokens": 256,
+      "_total_tokens": 13218,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 958.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 709.7961902618408,
+      "_completion_tokens": 57,
+      "_total_tokens": 1015,
+      "_dataset": "dataclaw",
+      "_group_id": "23346621-eb05-4916-8b76-34ad66ea4ada"
+    },
+    {
+      "prompt_tokens": 7601.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 1326.0595798492432,
+      "_completion_tokens": 18,
+      "_total_tokens": 7619,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 54.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 183.25042724609375,
+      "_completion_tokens": 10,
+      "_total_tokens": 64,
+      "_dataset": "dataclaw",
+      "_group_id": "04f2303d-2b0f-4a33-92a7-26fc6e9f3bef"
+    },
+    {
+      "prompt_tokens": 4217.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 940.6125545501709,
+      "_completion_tokens": 23,
+      "_total_tokens": 4240,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 4639.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 965.980052947998,
+      "_completion_tokens": 22,
+      "_total_tokens": 4661,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fd5"
+    },
+    {
+      "prompt_tokens": 5545.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 2060.8885288238525,
+      "_completion_tokens": 128,
+      "_total_tokens": 5673,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6886306b5ed4da6b2c381189"
+    },
+    {
+      "prompt_tokens": 4108.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 23840.151071548462,
+      "_completion_tokens": 49,
+      "_total_tokens": 4157,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fe3"
+    },
+    {
+      "prompt_tokens": 942.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 894.240140914917,
+      "_completion_tokens": 77,
+      "_total_tokens": 1019,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fa9"
+    },
+    {
+      "prompt_tokens": 72.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 462.0692729949951,
+      "_completion_tokens": 41,
+      "_total_tokens": 113,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fa9"
+    },
+    {
+      "prompt_tokens": 17232.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 5638.323783874512,
+      "_completion_tokens": 316,
+      "_total_tokens": 17548,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 3854.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 814.0628337860107,
+      "_completion_tokens": 23,
+      "_total_tokens": 3877,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fd5"
+    },
+    {
+      "prompt_tokens": 296.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 326.3413906097412,
+      "_completion_tokens": 26,
+      "_total_tokens": 322,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef339071f"
+    },
+    {
+      "prompt_tokens": 27198.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 5415.246963500977,
+      "_completion_tokens": 128,
+      "_total_tokens": 27326,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcad"
+    },
+    {
+      "prompt_tokens": 320.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 354.694128036499,
+      "_completion_tokens": 29,
+      "_total_tokens": 349,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcc4"
+    },
+    {
+      "prompt_tokens": 3571.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 866.1165237426758,
+      "_completion_tokens": 32,
+      "_total_tokens": 3603,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c8f7"
+    },
+    {
+      "prompt_tokens": 106.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 665.5006408691406,
+      "_completion_tokens": 64,
+      "_total_tokens": 170,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68824c643e6ff020bc33994b"
+    },
+    {
+      "prompt_tokens": 1731.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 870.2695369720459,
+      "_completion_tokens": 64,
+      "_total_tokens": 1795,
+      "_dataset": "mcp-atlas",
+      "_group_id": "688a441c1a0d2e5c93853e76"
+    },
+    {
+      "prompt_tokens": 152.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 1252.5601387023926,
+      "_completion_tokens": 128,
+      "_total_tokens": 280,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6880e844943a73a8c5e412c3"
+    },
+    {
+      "prompt_tokens": 323.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 261.4161968231201,
+      "_completion_tokens": 19,
+      "_total_tokens": 342,
+      "_dataset": "dataclaw",
+      "_group_id": "23346621-eb05-4916-8b76-34ad66ea4ada"
+    },
+    {
+      "prompt_tokens": 27373.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 4512.479782104492,
+      "_completion_tokens": 16,
+      "_total_tokens": 27389,
+      "_dataset": "mcp-atlas",
+      "_group_id": "688ba1b3e95696e72dd93e8d"
+    },
+    {
+      "prompt_tokens": 1161.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 480.3454875946045,
+      "_completion_tokens": 30,
+      "_total_tokens": 1191,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6897a6002b64a8c831efa2f6"
+    },
+    {
+      "prompt_tokens": 438.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 289.811372756958,
+      "_completion_tokens": 21,
+      "_total_tokens": 459,
+      "_dataset": "dataclaw",
+      "_group_id": "04f2303d-2b0f-4a33-92a7-26fc6e9f3bef"
+    },
+    {
+      "prompt_tokens": 11391.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 5879.68111038208,
+      "_completion_tokens": 439,
+      "_total_tokens": 11830,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6887c6d4614f06dc73af243e"
+    },
+    {
+      "prompt_tokens": 2875.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 1232.738971710205,
+      "_completion_tokens": 82,
+      "_total_tokens": 2957,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6897a6002b64a8c831efa2f6"
+    },
+    {
+      "prompt_tokens": 1138.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 959.2082500457764,
+      "_completion_tokens": 81,
+      "_total_tokens": 1219,
+      "_dataset": "mcp-atlas",
+      "_group_id": "688ba1b3e95696e72dd93e8a"
+    },
+    {
+      "prompt_tokens": 14130.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 2823.546886444092,
+      "_completion_tokens": 64,
+      "_total_tokens": 14194,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcc4"
+    },
+    {
+      "prompt_tokens": 4910.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 1391.0980224609375,
+      "_completion_tokens": 64,
+      "_total_tokens": 4974,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689cd6f8522029b7ad7b1fe7"
+    },
+    {
+      "prompt_tokens": 1634.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 2613.1742000579834,
+      "_completion_tokens": 256,
+      "_total_tokens": 1890,
+      "_dataset": "mcp-atlas",
+      "_group_id": "688a441c1a0d2e5c93853e76"
+    },
+    {
+      "prompt_tokens": 1274.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 505.40876388549805,
+      "_completion_tokens": 31,
+      "_total_tokens": 1305,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c901"
+    },
+    {
+      "prompt_tokens": 87.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 694.4890022277832,
+      "_completion_tokens": 64,
+      "_total_tokens": 151,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689cd6f8522029b7ad7b1fe7"
+    },
+    {
+      "prompt_tokens": 2535.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 612.2386455535889,
+      "_completion_tokens": 21,
+      "_total_tokens": 2556,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fe3"
+    },
+    {
+      "prompt_tokens": 3174.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 1173.2871532440186,
+      "_completion_tokens": 72,
+      "_total_tokens": 3246,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689e0b1d9c8e2ac413c1f25c"
+    },
+    {
+      "prompt_tokens": 155.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 294.48437690734863,
+      "_completion_tokens": 23,
+      "_total_tokens": 178,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c8f0"
+    },
+    {
+      "prompt_tokens": 16287.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 6406.574964523315,
+      "_completion_tokens": 415,
+      "_total_tokens": 16702,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 99.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 347.9142189025879,
+      "_completion_tokens": 29,
+      "_total_tokens": 128,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68925f01db31fe35560e3e97"
+    },
+    {
+      "prompt_tokens": 116.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 2451.610565185547,
+      "_completion_tokens": 256,
+      "_total_tokens": 372,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689cd6f8522029b7ad7b200a"
+    },
+    {
+      "prompt_tokens": 29852.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 5873.151779174805,
+      "_completion_tokens": 128,
+      "_total_tokens": 29980,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcf4"
+    },
+    {
+      "prompt_tokens": 1188.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 452.68988609313965,
+      "_completion_tokens": 25,
+      "_total_tokens": 1213,
+      "_dataset": "dataclaw",
+      "_group_id": "2463b579-820e-4dc9-90c8-be8fafeb656f"
+    },
+    {
+      "prompt_tokens": 106.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 220.93796730041504,
+      "_completion_tokens": 15,
+      "_total_tokens": 121,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fe3"
+    },
+    {
+      "prompt_tokens": 541.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 563.5097026824951,
+      "_completion_tokens": 46,
+      "_total_tokens": 587,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689cd6f8522029b7ad7b1fe5"
+    },
+    {
+      "prompt_tokens": 7063.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 1381.36887550354,
+      "_completion_tokens": 25,
+      "_total_tokens": 7088,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcc4"
+    },
+    {
+      "prompt_tokens": 18509.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 3565.8280849456787,
+      "_completion_tokens": 58,
+      "_total_tokens": 18567,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef3390720"
+    },
+    {
+      "prompt_tokens": 1332.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 832.5440883636475,
+      "_completion_tokens": 64,
+      "_total_tokens": 1396,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68925f01db31fe35560e3e9f"
+    },
+    {
+      "prompt_tokens": 10997.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 1956.902027130127,
+      "_completion_tokens": 22,
+      "_total_tokens": 11019,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68925f01db31fe35560e3e97"
+    },
+    {
+      "prompt_tokens": 18115.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 7685.2867603302,
+      "_completion_tokens": 512,
+      "_total_tokens": 18627,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 21742.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 3706.296682357788,
+      "_completion_tokens": 26,
+      "_total_tokens": 21768,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68925f01db31fe35560e3e97"
+    },
+    {
+      "prompt_tokens": 9864.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 1899.794578552246,
+      "_completion_tokens": 37,
+      "_total_tokens": 9901,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689af4e653c3905e7b5b258e"
+    },
+    {
+      "prompt_tokens": 5231.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 3203.388214111328,
+      "_completion_tokens": 256,
+      "_total_tokens": 5487,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef3390720"
+    },
+    {
+      "prompt_tokens": 3899.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 1435.0547790527344,
+      "_completion_tokens": 89,
+      "_total_tokens": 3988,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689e0b1d9c8e2ac413c1f211"
+    },
+    {
+      "prompt_tokens": 3401.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 1032.5348377227783,
+      "_completion_tokens": 52,
+      "_total_tokens": 3453,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68940d8355faa0b720f0b499"
+    },
+    {
+      "prompt_tokens": 123.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 424.76820945739746,
+      "_completion_tokens": 37,
+      "_total_tokens": 160,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68a398aa2f58036e8d45ede8"
+    },
+    {
+      "prompt_tokens": 84.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 621.1779117584229,
+      "_completion_tokens": 59,
+      "_total_tokens": 143,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fa3"
+    },
+    {
+      "prompt_tokens": 4740.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 1328.977346420288,
+      "_completion_tokens": 64,
+      "_total_tokens": 4804,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 19530.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 6171.871185302734,
+      "_completion_tokens": 317,
+      "_total_tokens": 19847,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689a373e148a49f91233dfe4"
+    },
+    {
+      "prompt_tokens": 74.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 352.9088497161865,
+      "_completion_tokens": 28,
+      "_total_tokens": 102,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68834223448b8fe04df2a592"
+    },
+    {
+      "prompt_tokens": 10418.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 2018.9225673675537,
+      "_completion_tokens": 38,
+      "_total_tokens": 10456,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68940d8355faa0b720f0b4b4"
+    },
+    {
+      "prompt_tokens": 3679.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 792.8690910339355,
+      "_completion_tokens": 22,
+      "_total_tokens": 3701,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c8f7"
+    },
+    {
+      "prompt_tokens": 16927.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 7043.25008392334,
+      "_completion_tokens": 462,
+      "_total_tokens": 17389,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 2586.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 669.3265438079834,
+      "_completion_tokens": 23,
+      "_total_tokens": 2609,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fe3"
+    },
+    {
+      "prompt_tokens": 747.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 913.353443145752,
+      "_completion_tokens": 81,
+      "_total_tokens": 828,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef3390720"
+    },
+    {
+      "prompt_tokens": 1759.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 626.0857582092285,
+      "_completion_tokens": 37,
+      "_total_tokens": 1796,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef3390731"
+    },
+    {
+      "prompt_tokens": 28636.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 5188.182592391968,
+      "_completion_tokens": 79,
+      "_total_tokens": 28715,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68940d8355faa0b720f0b499"
+    },
+    {
+      "prompt_tokens": 3081.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 757.0836544036865,
+      "_completion_tokens": 27,
+      "_total_tokens": 3108,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6880e844943a73a8c5e412c3"
+    },
+    {
+      "prompt_tokens": 27182.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 6832.781553268433,
+      "_completion_tokens": 256,
+      "_total_tokens": 27438,
+      "_dataset": "mcp-atlas",
+      "_group_id": "688ba1b3e95696e72dd93e8d"
+    },
+    {
+      "prompt_tokens": 6109.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 1177.3781776428223,
+      "_completion_tokens": 24,
+      "_total_tokens": 6133,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcbb"
+    },
+    {
+      "prompt_tokens": 1305.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 429.0356636047363,
+      "_completion_tokens": 20,
+      "_total_tokens": 1325,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689a373e148a49f91233dff0"
+    },
+    {
+      "prompt_tokens": 1038.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 1555.5446147918701,
+      "_completion_tokens": 148,
+      "_total_tokens": 1186,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef3390707"
+    },
+    {
+      "prompt_tokens": 10903.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 2271.390914916992,
+      "_completion_tokens": 55,
+      "_total_tokens": 10958,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68925f01db31fe35560e3e97"
+    },
+    {
+      "prompt_tokens": 17064.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 3866.1017417907715,
+      "_completion_tokens": 128,
+      "_total_tokens": 17192,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 18779.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 3588.280200958252,
+      "_completion_tokens": 64,
+      "_total_tokens": 18843,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcbb"
+    },
+    {
+      "prompt_tokens": 27780.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 7009.698152542114,
+      "_completion_tokens": 256,
+      "_total_tokens": 28036,
+      "_dataset": "mcp-atlas",
+      "_group_id": "688ba1b3e95696e72dd93e8d"
+    },
+    {
+      "prompt_tokens": 6015.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 1193.6872005462646,
+      "_completion_tokens": 25,
+      "_total_tokens": 6040,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcbb"
+    },
+    {
+      "prompt_tokens": 11751.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 2191.0150051116943,
+      "_completion_tokens": 38,
+      "_total_tokens": 11789,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcf4"
+    },
+    {
+      "prompt_tokens": 73.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 1275.4371166229248,
+      "_completion_tokens": 128,
+      "_total_tokens": 201,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef339071f"
+    },
+    {
+      "prompt_tokens": 16683.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 3288.9342308044434,
+      "_completion_tokens": 64,
+      "_total_tokens": 16747,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689af4e653c3905e7b5b258e"
+    },
+    {
+      "prompt_tokens": 7799.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 1775.5331993103027,
+      "_completion_tokens": 64,
+      "_total_tokens": 7863,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 1308.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 818.7534809112549,
+      "_completion_tokens": 64,
+      "_total_tokens": 1372,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689a373e148a49f91233e021"
+    },
+    {
+      "prompt_tokens": 1587.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 1449.4600296020508,
+      "_completion_tokens": 128,
+      "_total_tokens": 1715,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6886306b5ed4da6b2c381189"
+    },
+    {
+      "prompt_tokens": 17378.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 3269.1311836242676,
+      "_completion_tokens": 64,
+      "_total_tokens": 17442,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 280.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 379.3778419494629,
+      "_completion_tokens": 31,
+      "_total_tokens": 311,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689cd6f8522029b7ad7b1fe5"
+    },
+    {
+      "prompt_tokens": 102.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 2452.8744220733643,
+      "_completion_tokens": 256,
+      "_total_tokens": 358,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6886306b5ed4da6b2c381189"
+    },
+    {
+      "prompt_tokens": 2830.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 1002.9668807983398,
+      "_completion_tokens": 57,
+      "_total_tokens": 2887,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fe3"
+    },
+    {
+      "prompt_tokens": 684.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 880.3133964538574,
+      "_completion_tokens": 79,
+      "_total_tokens": 763,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef3390731"
+    },
+    {
+      "prompt_tokens": 192.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 284.5773696899414,
+      "_completion_tokens": 21,
+      "_total_tokens": 213,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c8f7"
+    },
+    {
+      "prompt_tokens": 104.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 4083.256959915161,
+      "_completion_tokens": 433,
+      "_total_tokens": 537,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689cd6f8522029b7ad7b1fe5"
+    },
+    {
+      "prompt_tokens": 7840.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 2379.3444633483887,
+      "_completion_tokens": 128,
+      "_total_tokens": 7968,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 308.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 266.2463188171387,
+      "_completion_tokens": 19,
+      "_total_tokens": 327,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c8f7"
+    },
+    {
+      "prompt_tokens": 136.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 268.4361934661865,
+      "_completion_tokens": 20,
+      "_total_tokens": 156,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689a373e148a49f91233e021"
+    },
+    {
+      "prompt_tokens": 4682.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 825.2933025360107,
+      "_completion_tokens": 9,
+      "_total_tokens": 4691,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 1149.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 4922.325849533081,
+      "_completion_tokens": 512,
+      "_total_tokens": 1661,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689af4e653c3905e7b5b258e"
+    },
+    {
+      "prompt_tokens": 197.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 4809.874057769775,
+      "_completion_tokens": 512,
+      "_total_tokens": 709,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68925f01db31fe35560e3e9f"
+    },
+    {
+      "prompt_tokens": 2438.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 636.9495391845703,
+      "_completion_tokens": 25,
+      "_total_tokens": 2463,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6897a6002b64a8c831efa2f6"
+    },
+    {
+      "prompt_tokens": 18175.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 3138.813257217407,
+      "_completion_tokens": 40,
+      "_total_tokens": 18215,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 3284.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 992.2354221343994,
+      "_completion_tokens": 49,
+      "_total_tokens": 3333,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68834223448b8fe04df2a592"
+    },
+    {
+      "prompt_tokens": 121.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 264.68729972839355,
+      "_completion_tokens": 20,
+      "_total_tokens": 141,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6897a6002b64a8c831efa2f6"
+    },
+    {
+      "prompt_tokens": 6284.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 1218.5137271881104,
+      "_completion_tokens": 21,
+      "_total_tokens": 6305,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c8f0"
+    },
+    {
+      "prompt_tokens": 1595.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 531.6593647003174,
+      "_completion_tokens": 29,
+      "_total_tokens": 1624,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689a373e148a49f91233e021"
+    },
+    {
+      "prompt_tokens": 17953.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 5861.855506896973,
+      "_completion_tokens": 328,
+      "_total_tokens": 18281,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 185.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 4797.041654586792,
+      "_completion_tokens": 512,
+      "_total_tokens": 697,
+      "_dataset": "dataclaw",
+      "_group_id": "1f145f0d-02f0-4290-91fb-035243959ea7"
+    },
+    {
+      "prompt_tokens": 483.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 701.7860412597656,
+      "_completion_tokens": 64,
+      "_total_tokens": 547,
+      "_dataset": "dataclaw",
+      "_group_id": "24408fbc-089b-4955-9613-9084e4c652de"
+    },
+    {
+      "prompt_tokens": 3385.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 1094.1710472106934,
+      "_completion_tokens": 59,
+      "_total_tokens": 3444,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68a398aa2f58036e8d45ede8"
+    },
+    {
+      "prompt_tokens": 14200.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 2483.030319213867,
+      "_completion_tokens": 35,
+      "_total_tokens": 14235,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fa3"
+    },
+    {
+      "prompt_tokens": 1560.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 455.63745498657227,
+      "_completion_tokens": 21,
+      "_total_tokens": 1581,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689a373e148a49f91233dff0"
+    },
+    {
+      "prompt_tokens": 2018.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 653.1095504760742,
+      "_completion_tokens": 36,
+      "_total_tokens": 2054,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689cd6f8522029b7ad7b1fe5"
+    },
+    {
+      "prompt_tokens": 4256.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 853.3625602722168,
+      "_completion_tokens": 18,
+      "_total_tokens": 4274,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 2974.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 1648.1614112854004,
+      "_completion_tokens": 128,
+      "_total_tokens": 3102,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 78.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 271.85654640197754,
+      "_completion_tokens": 21,
+      "_total_tokens": 99,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcc4"
+    },
+    {
+      "prompt_tokens": 12501.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 2240.0927543640137,
+      "_completion_tokens": 36,
+      "_total_tokens": 12537,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 13784.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 2409.562349319458,
+      "_completion_tokens": 32,
+      "_total_tokens": 13816,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fa3"
+    },
+    {
+      "prompt_tokens": 1465.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 638.9377117156982,
+      "_completion_tokens": 42,
+      "_total_tokens": 1507,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689a373e148a49f91233e021"
+    },
+    {
+      "prompt_tokens": 6645.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 2215.709447860718,
+      "_completion_tokens": 128,
+      "_total_tokens": 6773,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef339071f"
+    },
+    {
+      "prompt_tokens": 77.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 2419.074773788452,
+      "_completion_tokens": 256,
+      "_total_tokens": 333,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef3390731"
+    },
+    {
+      "prompt_tokens": 13904.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 2884.953022003174,
+      "_completion_tokens": 79,
+      "_total_tokens": 13983,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68940d8355faa0b720f0b499"
+    },
+    {
+      "prompt_tokens": 23375.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 4198.746204376221,
+      "_completion_tokens": 61,
+      "_total_tokens": 23436,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcc1"
+    },
+    {
+      "prompt_tokens": 4028.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 1012.7577781677246,
+      "_completion_tokens": 40,
+      "_total_tokens": 4068,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c8f7"
+    },
+    {
+      "prompt_tokens": 12189.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 1971.5383052825928,
+      "_completion_tokens": 15,
+      "_total_tokens": 12204,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 202.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 377.64596939086914,
+      "_completion_tokens": 31,
+      "_total_tokens": 233,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcad"
+    },
+    {
+      "prompt_tokens": 23355.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 3958.45103263855,
+      "_completion_tokens": 39,
+      "_total_tokens": 23394,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcad"
+    },
+    {
+      "prompt_tokens": 19198.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 3149.956464767456,
+      "_completion_tokens": 21,
+      "_total_tokens": 19219,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 20737.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 3979.376792907715,
+      "_completion_tokens": 64,
+      "_total_tokens": 20801,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689a373e148a49f91233dfe4"
+    },
+    {
+      "prompt_tokens": 130.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 509.05585289001465,
+      "_completion_tokens": 46,
+      "_total_tokens": 176,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6887c6d4614f06dc73af243e"
+    },
+    {
+      "prompt_tokens": 566.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 1330.9998512268066,
+      "_completion_tokens": 128,
+      "_total_tokens": 694,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689e0b1d9c8e2ac413c1f25c"
+    },
+    {
+      "prompt_tokens": 84.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 4858.553886413574,
+      "_completion_tokens": 512,
+      "_total_tokens": 596,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 17667.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 6491.995573043823,
+      "_completion_tokens": 394,
+      "_total_tokens": 18061,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 17819.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 6668.639183044434,
+      "_completion_tokens": 406,
+      "_total_tokens": 18225,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 76.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 1286.555528640747,
+      "_completion_tokens": 128,
+      "_total_tokens": 204,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689af4e653c3905e7b5b258e"
+    },
+    {
+      "prompt_tokens": 4038.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 5435.890197753906,
+      "_completion_tokens": 512,
+      "_total_tokens": 4550,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689e0b1d9c8e2ac413c1f211"
+    },
+    {
+      "prompt_tokens": 4299.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 1349.5399951934814,
+      "_completion_tokens": 64,
+      "_total_tokens": 4363,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef3390720"
+    },
+    {
+      "prompt_tokens": 20242.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 4457.786321640015,
+      "_completion_tokens": 128,
+      "_total_tokens": 20370,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689cd6f8522029b7ad7b1fe7"
+    },
+    {
+      "prompt_tokens": 106.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 3475.8658409118652,
+      "_completion_tokens": 367,
+      "_total_tokens": 473,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68940d8355faa0b720f0b4b4"
+    },
+    {
+      "prompt_tokens": 134.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 674.901008605957,
+      "_completion_tokens": 64,
+      "_total_tokens": 198,
+      "_dataset": "mcp-atlas",
+      "_group_id": "688ba1b3e95696e72dd93e8a"
+    },
+    {
+      "prompt_tokens": 434.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 329.6337127685547,
+      "_completion_tokens": 23,
+      "_total_tokens": 457,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689cd6f8522029b7ad7b1fe5"
+    },
+    {
+      "prompt_tokens": 10326.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 5114.598035812378,
+      "_completion_tokens": 365,
+      "_total_tokens": 10691,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68940d8355faa0b720f0b4b4"
+    },
+    {
+      "prompt_tokens": 110.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 381.26158714294434,
+      "_completion_tokens": 31,
+      "_total_tokens": 141,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcad"
+    },
+    {
+      "prompt_tokens": 12605.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 6795.8807945251465,
+      "_completion_tokens": 512,
+      "_total_tokens": 13117,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 16083.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 2731.9984436035156,
+      "_completion_tokens": 17,
+      "_total_tokens": 16100,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689cd6f8522029b7ad7b1fe7"
+    },
+    {
+      "prompt_tokens": 146.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 168.63155364990234,
+      "_completion_tokens": 9,
+      "_total_tokens": 155,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c8f7"
+    },
+    {
+      "prompt_tokens": 100.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 1277.7140140533447,
+      "_completion_tokens": 128,
+      "_total_tokens": 228,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef3390707"
+    },
+    {
+      "prompt_tokens": 456.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 763.0903720855713,
+      "_completion_tokens": 70,
+      "_total_tokens": 526,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689e0b1d9c8e2ac413c1f25c"
+    },
+    {
+      "prompt_tokens": 6516.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 1326.0672092437744,
+      "_completion_tokens": 29,
+      "_total_tokens": 6545,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c8f0"
+    },
+    {
+      "prompt_tokens": 16778.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 3213.670492172241,
+      "_completion_tokens": 64,
+      "_total_tokens": 16842,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 804.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 338.78159523010254,
+      "_completion_tokens": 19,
+      "_total_tokens": 823,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fa9"
+    },
+    {
+      "prompt_tokens": 1173.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 1471.9047546386719,
+      "_completion_tokens": 136,
+      "_total_tokens": 1309,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef3390707"
+    },
+    {
+      "prompt_tokens": 13034.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 2580.8494091033936,
+      "_completion_tokens": 64,
+      "_total_tokens": 13098,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 317.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 322.10540771484375,
+      "_completion_tokens": 25,
+      "_total_tokens": 342,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689e0b1d9c8e2ac413c1f25c"
+    },
+    {
+      "prompt_tokens": 5792.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 1266.8251991271973,
+      "_completion_tokens": 39,
+      "_total_tokens": 5831,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fd5"
+    },
+    {
+      "prompt_tokens": 10002.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 2087.4955654144287,
+      "_completion_tokens": 64,
+      "_total_tokens": 10066,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68824c643e6ff020bc33994b"
+    },
+    {
+      "prompt_tokens": 2641.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 1037.6455783843994,
+      "_completion_tokens": 64,
+      "_total_tokens": 2705,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c901"
+    },
+    {
+      "prompt_tokens": 1426.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 597.9351997375488,
+      "_completion_tokens": 38,
+      "_total_tokens": 1464,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689a373e148a49f91233dff0"
+    },
+    {
+      "prompt_tokens": 153.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 164.5653247833252,
+      "_completion_tokens": 9,
+      "_total_tokens": 162,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689cd6f8522029b7ad7b1fe5"
+    },
+    {
+      "prompt_tokens": 1731.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 677.9885292053223,
+      "_completion_tokens": 43,
+      "_total_tokens": 1774,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689a373e148a49f91233dff0"
+    },
+    {
+      "prompt_tokens": 3383.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 812.8585815429688,
+      "_completion_tokens": 29,
+      "_total_tokens": 3412,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef3390731"
+    },
+    {
+      "prompt_tokens": 1267.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 496.83403968811035,
+      "_completion_tokens": 30,
+      "_total_tokens": 1297,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fe3"
+    },
+    {
+      "prompt_tokens": 979.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 525.439977645874,
+      "_completion_tokens": 37,
+      "_total_tokens": 1016,
+      "_dataset": "mcp-atlas",
+      "_group_id": "688ba1b3e95696e72dd93e8a"
+    },
+    {
+      "prompt_tokens": 1164.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 538.2440090179443,
+      "_completion_tokens": 35,
+      "_total_tokens": 1199,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcf4"
+    },
+    {
+      "prompt_tokens": 1267.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 663.3350849151611,
+      "_completion_tokens": 47,
+      "_total_tokens": 1314,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcf4"
+    },
+    {
+      "prompt_tokens": 120.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 672.2044944763184,
+      "_completion_tokens": 64,
+      "_total_tokens": 184,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcc1"
+    },
+    {
+      "prompt_tokens": 3746.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 935.9836578369141,
+      "_completion_tokens": 37,
+      "_total_tokens": 3783,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689e0b1d9c8e2ac413c1f211"
+    },
+    {
+      "prompt_tokens": 1518.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 966.7644500732422,
+      "_completion_tokens": 77,
+      "_total_tokens": 1595,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689cd6f8522029b7ad7b1fe5"
+    },
+    {
+      "prompt_tokens": 1802.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 920.1064109802246,
+      "_completion_tokens": 68,
+      "_total_tokens": 1870,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689a373e148a49f91233e021"
+    },
+    {
+      "prompt_tokens": 1220.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 1396.0025310516357,
+      "_completion_tokens": 128,
+      "_total_tokens": 1348,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6887c6d4614f06dc73af243e"
+    },
+    {
+      "prompt_tokens": 3036.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 1844.4957733154297,
+      "_completion_tokens": 146,
+      "_total_tokens": 3182,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fa9"
+    },
+    {
+      "prompt_tokens": 21460.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 3796.126365661621,
+      "_completion_tokens": 42,
+      "_total_tokens": 21502,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68925f01db31fe35560e3e97"
+    },
+    {
+      "prompt_tokens": 3279.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 803.5075664520264,
+      "_completion_tokens": 29,
+      "_total_tokens": 3308,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68940d8355faa0b720f0b499"
+    },
+    {
+      "prompt_tokens": 87.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 239.1829490661621,
+      "_completion_tokens": 17,
+      "_total_tokens": 104,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689a373e148a49f91233dff0"
+    },
+    {
+      "prompt_tokens": 27361.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 5840.689897537231,
+      "_completion_tokens": 167,
+      "_total_tokens": 27528,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcad"
+    },
+    {
+      "prompt_tokens": 91.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 677.330732345581,
+      "_completion_tokens": 64,
+      "_total_tokens": 155,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c901"
+    },
+    {
+      "prompt_tokens": 8266.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 3758.382797241211,
+      "_completion_tokens": 256,
+      "_total_tokens": 8522,
+      "_dataset": "mcp-atlas",
+      "_group_id": "688ba1b3e95696e72dd93e8d"
+    },
+    {
+      "prompt_tokens": 7689.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 1772.301435470581,
+      "_completion_tokens": 64,
+      "_total_tokens": 7753,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 99.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 491.1956787109375,
+      "_completion_tokens": 44,
+      "_total_tokens": 143,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68940d8355faa0b720f0b499"
+    },
+    {
+      "prompt_tokens": 452.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 386.98434829711914,
+      "_completion_tokens": 30,
+      "_total_tokens": 482,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68925f01db31fe35560e3e9f"
+    },
+    {
+      "prompt_tokens": 857.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 342.2367572784424,
+      "_completion_tokens": 19,
+      "_total_tokens": 876,
+      "_dataset": "mcp-atlas",
+      "_group_id": "688ba1b3e95696e72dd93e8a"
+    },
+    {
+      "prompt_tokens": 4824.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 1320.8792209625244,
+      "_completion_tokens": 64,
+      "_total_tokens": 4888,
+      "_dataset": "dataclaw",
+      "_group_id": "1f145f0d-02f0-4290-91fb-035243959ea7"
+    },
+    {
+      "prompt_tokens": 20873.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 3776.979923248291,
+      "_completion_tokens": 55,
+      "_total_tokens": 20928,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68940d8355faa0b720f0b4b4"
+    },
+    {
+      "prompt_tokens": 1331.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 2061.5594387054443,
+      "_completion_tokens": 199,
+      "_total_tokens": 1530,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef3390707"
+    },
+    {
+      "prompt_tokens": 177.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 1245.948076248169,
+      "_completion_tokens": 126,
+      "_total_tokens": 303,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef3390720"
+    },
+    {
+      "prompt_tokens": 2894.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 909.7201824188232,
+      "_completion_tokens": 46,
+      "_total_tokens": 2940,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689cd6f8522029b7ad7b200a"
+    },
+    {
+      "prompt_tokens": 8285.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 1501.8014907836914,
+      "_completion_tokens": 16,
+      "_total_tokens": 8301,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689cd6f8522029b7ad7b1fe7"
+    },
+    {
+      "prompt_tokens": 17485.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 3997.2681999206543,
+      "_completion_tokens": 128,
+      "_total_tokens": 17613,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689a373e148a49f91233dfe4"
+    },
+    {
+      "prompt_tokens": 28626.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 5192.926406860352,
+      "_completion_tokens": 81,
+      "_total_tokens": 28707,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcf4"
+    },
+    {
+      "prompt_tokens": 428.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 475.47435760498047,
+      "_completion_tokens": 40,
+      "_total_tokens": 468,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c8f7"
+    },
+    {
+      "prompt_tokens": 3866.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 819.1556930541992,
+      "_completion_tokens": 22,
+      "_total_tokens": 3888,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c8f7"
+    },
+    {
+      "prompt_tokens": 1479.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 456.2385082244873,
+      "_completion_tokens": 22,
+      "_total_tokens": 1501,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c901"
+    },
+    {
+      "prompt_tokens": 1821.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 945.12939453125,
+      "_completion_tokens": 71,
+      "_total_tokens": 1892,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689e0b1d9c8e2ac413c1f25c"
+    },
+    {
+      "prompt_tokens": 14608.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 2855.374336242676,
+      "_completion_tokens": 64,
+      "_total_tokens": 14672,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fa3"
+    },
+    {
+      "prompt_tokens": 1701.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 1455.7671546936035,
+      "_completion_tokens": 128,
+      "_total_tokens": 1829,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c8f7"
+    },
+    {
+      "prompt_tokens": 4547.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 1304.7573566436768,
+      "_completion_tokens": 64,
+      "_total_tokens": 4611,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 936.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 415.6913757324219,
+      "_completion_tokens": 25,
+      "_total_tokens": 961,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef3390720"
+    },
+    {
+      "prompt_tokens": 2426.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 907.8054428100586,
+      "_completion_tokens": 54,
+      "_total_tokens": 2480,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689cd6f8522029b7ad7b1fe5"
+    },
+    {
+      "prompt_tokens": 3087.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 879.0247440338135,
+      "_completion_tokens": 42,
+      "_total_tokens": 3129,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 81.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 702.5384902954102,
+      "_completion_tokens": 67,
+      "_total_tokens": 148,
+      "_dataset": "dataclaw",
+      "_group_id": "24408fbc-089b-4955-9613-9084e4c652de"
+    },
+    {
+      "prompt_tokens": 4269.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 1895.0750827789307,
+      "_completion_tokens": 128,
+      "_total_tokens": 4397,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef3390731"
+    },
+    {
+      "prompt_tokens": 13026.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 4399.038553237915,
+      "_completion_tokens": 256,
+      "_total_tokens": 13282,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68824c643e6ff020bc33994b"
+    },
+    {
+      "prompt_tokens": 160.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 470.03984451293945,
+      "_completion_tokens": 42,
+      "_total_tokens": 202,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcf4"
+    },
+    {
+      "prompt_tokens": 163.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 2431.642770767212,
+      "_completion_tokens": 256,
+      "_total_tokens": 419,
+      "_dataset": "mcp-atlas",
+      "_group_id": "688a441c1a0d2e5c93853e76"
+    },
+    {
+      "prompt_tokens": 1218.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 766.3912773132324,
+      "_completion_tokens": 60,
+      "_total_tokens": 1278,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fd5"
+    },
+    {
+      "prompt_tokens": 298.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 230.6358814239502,
+      "_completion_tokens": 16,
+      "_total_tokens": 314,
+      "_dataset": "dataclaw",
+      "_group_id": "04f2303d-2b0f-4a33-92a7-26fc6e9f3bef"
+    },
+    {
+      "prompt_tokens": 83.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 219.58208084106445,
+      "_completion_tokens": 15,
+      "_total_tokens": 98,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fd5"
+    },
+    {
+      "prompt_tokens": 2560.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 724.3587970733643,
+      "_completion_tokens": 32,
+      "_total_tokens": 2592,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68a398aa2f58036e8d45ede8"
+    },
+    {
+      "prompt_tokens": 23566.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 4259.27734375,
+      "_completion_tokens": 64,
+      "_total_tokens": 23630,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcc1"
+    },
+    {
+      "prompt_tokens": 109.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 670.0966358184814,
+      "_completion_tokens": 64,
+      "_total_tokens": 173,
+      "_dataset": "mcp-atlas",
+      "_group_id": "688ba1b3e95696e72dd93e8d"
+    },
+    {
+      "prompt_tokens": 16631.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 7458.5559368133545,
+      "_completion_tokens": 510,
+      "_total_tokens": 17141,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 2667.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 2826.7202377319336,
+      "_completion_tokens": 256,
+      "_total_tokens": 2923,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6886306b5ed4da6b2c381189"
+    },
+    {
+      "prompt_tokens": 185.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 156.19921684265137,
+      "_completion_tokens": 7,
+      "_total_tokens": 192,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689e0b1d9c8e2ac413c1f25c"
+    },
+    {
+      "prompt_tokens": 135.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 681.1070442199707,
+      "_completion_tokens": 64,
+      "_total_tokens": 199,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689a373e148a49f91233dfe4"
+    },
+    {
+      "prompt_tokens": 2790.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 2839.2951488494873,
+      "_completion_tokens": 256,
+      "_total_tokens": 3046,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 16477.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 3774.437665939331,
+      "_completion_tokens": 128,
+      "_total_tokens": 16605,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 7207.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 3119.4353103637695,
+      "_completion_tokens": 213,
+      "_total_tokens": 7420,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fd5"
+    },
+    {
+      "prompt_tokens": 17527.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 2853.9834022521973,
+      "_completion_tokens": 18,
+      "_total_tokens": 17545,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 2963.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 5208.089828491211,
+      "_completion_tokens": 512,
+      "_total_tokens": 3475,
+      "_dataset": "mcp-atlas",
+      "_group_id": "688a441c1a0d2e5c93853e76"
+    },
+    {
+      "prompt_tokens": 182.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 239.97855186462402,
+      "_completion_tokens": 17,
+      "_total_tokens": 199,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef339071f"
+    },
+    {
+      "prompt_tokens": 146.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 692.5005912780762,
+      "_completion_tokens": 64,
+      "_total_tokens": 210,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689e0b1d9c8e2ac413c1f211"
+    },
+    {
+      "prompt_tokens": 2304.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 571.3152885437012,
+      "_completion_tokens": 18,
+      "_total_tokens": 2322,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c8f0"
+    },
+    {
+      "prompt_tokens": 16563.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 3138.9269828796387,
+      "_completion_tokens": 55,
+      "_total_tokens": 16618,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcbb"
+    },
+    {
+      "prompt_tokens": 4657.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 1325.4306316375732,
+      "_completion_tokens": 64,
+      "_total_tokens": 4721,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 5401.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 1092.4272537231445,
+      "_completion_tokens": 26,
+      "_total_tokens": 5427,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689af4e653c3905e7b5b258e"
+    },
+    {
+      "prompt_tokens": 243.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 654.958963394165,
+      "_completion_tokens": 62,
+      "_total_tokens": 305,
+      "_dataset": "dataclaw",
+      "_group_id": "04f2303d-2b0f-4a33-92a7-26fc6e9f3bef"
+    },
+    {
+      "prompt_tokens": 2479.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 1315.345287322998,
+      "_completion_tokens": 96,
+      "_total_tokens": 2575,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c8f0"
+    },
+    {
+      "prompt_tokens": 74.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 1261.5962028503418,
+      "_completion_tokens": 128,
+      "_total_tokens": 202,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689e0b1d9c8e2ac413c1f25c"
+    },
+    {
+      "prompt_tokens": 2811.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 1063.6200904846191,
+      "_completion_tokens": 64,
+      "_total_tokens": 2875,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689e0b1d9c8e2ac413c1f211"
+    },
+    {
+      "prompt_tokens": 4199.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 3107.9044342041016,
+      "_completion_tokens": 256,
+      "_total_tokens": 4455,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c8f7"
+    },
+    {
+      "prompt_tokens": 19254.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 3435.959577560425,
+      "_completion_tokens": 38,
+      "_total_tokens": 19292,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689a373e148a49f91233dfe4"
+    },
+    {
+      "prompt_tokens": 2707.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 798.231840133667,
+      "_completion_tokens": 36,
+      "_total_tokens": 2743,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fe3"
+    },
+    {
+      "prompt_tokens": 10657.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 1898.0443477630615,
+      "_completion_tokens": 27,
+      "_total_tokens": 10684,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcad"
+    },
+    {
+      "prompt_tokens": 94.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 253.34596633911133,
+      "_completion_tokens": 19,
+      "_total_tokens": 113,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcbb"
+    },
+    {
+      "prompt_tokens": 1025.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 459.120512008667,
+      "_completion_tokens": 29,
+      "_total_tokens": 1054,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcc4"
+    },
+    {
+      "prompt_tokens": 585.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 327.79455184936523,
+      "_completion_tokens": 21,
+      "_total_tokens": 606,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68a398aa2f58036e8d45ede8"
+    },
+    {
+      "prompt_tokens": 6407.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 5757.175445556641,
+      "_completion_tokens": 512,
+      "_total_tokens": 6919,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef339071f"
+    },
+    {
+      "prompt_tokens": 6029.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 1150.092601776123,
+      "_completion_tokens": 23,
+      "_total_tokens": 6052,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c8f0"
+    },
+    {
+      "prompt_tokens": 409.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 259.2339515686035,
+      "_completion_tokens": 17,
+      "_total_tokens": 426,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef339071f"
+    },
+    {
+      "prompt_tokens": 12273.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 3034.7495079040527,
+      "_completion_tokens": 128,
+      "_total_tokens": 12401,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 23165.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 3945.4243183135986,
+      "_completion_tokens": 38,
+      "_total_tokens": 23203,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcc1"
+    },
+    {
+      "prompt_tokens": 2725.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 5177.557945251465,
+      "_completion_tokens": 512,
+      "_total_tokens": 3237,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 12962.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 2568.2437419891357,
+      "_completion_tokens": 64,
+      "_total_tokens": 13026,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 958.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 554.3358325958252,
+      "_completion_tokens": 41,
+      "_total_tokens": 999,
+      "_dataset": "dataclaw",
+      "_group_id": "23346621-eb05-4916-8b76-34ad66ea4ada"
+    },
+    {
+      "prompt_tokens": 7601.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 1332.705020904541,
+      "_completion_tokens": 19,
+      "_total_tokens": 7620,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 54.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 171.05746269226074,
+      "_completion_tokens": 10,
+      "_total_tokens": 64,
+      "_dataset": "dataclaw",
+      "_group_id": "04f2303d-2b0f-4a33-92a7-26fc6e9f3bef"
+    },
+    {
+      "prompt_tokens": 4217.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 1003.943920135498,
+      "_completion_tokens": 34,
+      "_total_tokens": 4251,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 4639.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 1038.7203693389893,
+      "_completion_tokens": 31,
+      "_total_tokens": 4670,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fd5"
+    },
+    {
+      "prompt_tokens": 5545.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 1470.9782600402832,
+      "_completion_tokens": 64,
+      "_total_tokens": 5609,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6886306b5ed4da6b2c381189"
+    },
+    {
+      "prompt_tokens": 4108.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 1153.3622741699219,
+      "_completion_tokens": 49,
+      "_total_tokens": 4157,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fe3"
+    },
+    {
+      "prompt_tokens": 942.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 630.6836605072021,
+      "_completion_tokens": 49,
+      "_total_tokens": 991,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fa9"
+    },
+    {
+      "prompt_tokens": 72.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 646.3589668273926,
+      "_completion_tokens": 62,
+      "_total_tokens": 134,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fa9"
+    },
+    {
+      "prompt_tokens": 17232.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 2778.599977493286,
+      "_completion_tokens": 16,
+      "_total_tokens": 17248,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 3854.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 814.0950202941895,
+      "_completion_tokens": 23,
+      "_total_tokens": 3877,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fd5"
+    },
+    {
+      "prompt_tokens": 296.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 306.6592216491699,
+      "_completion_tokens": 24,
+      "_total_tokens": 320,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef339071f"
+    },
+    {
+      "prompt_tokens": 27198.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 6685.294628143311,
+      "_completion_tokens": 256,
+      "_total_tokens": 27454,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcad"
+    },
+    {
+      "prompt_tokens": 320.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 357.1135997772217,
+      "_completion_tokens": 29,
+      "_total_tokens": 349,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcc4"
+    },
+    {
+      "prompt_tokens": 3571.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 866.0080432891846,
+      "_completion_tokens": 32,
+      "_total_tokens": 3603,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c8f7"
+    },
+    {
+      "prompt_tokens": 106.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 261.4481449127197,
+      "_completion_tokens": 20,
+      "_total_tokens": 126,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68824c643e6ff020bc33994b"
+    },
+    {
+      "prompt_tokens": 1731.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 872.0035552978516,
+      "_completion_tokens": 64,
+      "_total_tokens": 1795,
+      "_dataset": "mcp-atlas",
+      "_group_id": "688a441c1a0d2e5c93853e76"
+    },
+    {
+      "prompt_tokens": 152.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 723.6433029174805,
+      "_completion_tokens": 70,
+      "_total_tokens": 222,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6880e844943a73a8c5e412c3"
+    },
+    {
+      "prompt_tokens": 323.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 608.7489128112793,
+      "_completion_tokens": 57,
+      "_total_tokens": 380,
+      "_dataset": "dataclaw",
+      "_group_id": "23346621-eb05-4916-8b76-34ad66ea4ada"
+    },
+    {
+      "prompt_tokens": 27373.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 4512.36367225647,
+      "_completion_tokens": 16,
+      "_total_tokens": 27389,
+      "_dataset": "mcp-atlas",
+      "_group_id": "688ba1b3e95696e72dd93e8d"
+    },
+    {
+      "prompt_tokens": 1161.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 488.2526397705078,
+      "_completion_tokens": 30,
+      "_total_tokens": 1191,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6897a6002b64a8c831efa2f6"
+    },
+    {
+      "prompt_tokens": 438.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 291.78404808044434,
+      "_completion_tokens": 21,
+      "_total_tokens": 459,
+      "_dataset": "dataclaw",
+      "_group_id": "04f2303d-2b0f-4a33-92a7-26fc6e9f3bef"
+    },
+    {
+      "prompt_tokens": 11391.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 4145.831108093262,
+      "_completion_tokens": 256,
+      "_total_tokens": 11647,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6887c6d4614f06dc73af243e"
+    },
+    {
+      "prompt_tokens": 2875.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 1456.0508728027344,
+      "_completion_tokens": 106,
+      "_total_tokens": 2981,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6897a6002b64a8c831efa2f6"
+    },
+    {
+      "prompt_tokens": 1138.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 876.7530918121338,
+      "_completion_tokens": 72,
+      "_total_tokens": 1210,
+      "_dataset": "mcp-atlas",
+      "_group_id": "688ba1b3e95696e72dd93e8a"
+    },
+    {
+      "prompt_tokens": 14130.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 4271.818161010742,
+      "_completion_tokens": 219,
+      "_total_tokens": 14349,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcc4"
+    },
+    {
+      "prompt_tokens": 4910.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 1391.3681507110596,
+      "_completion_tokens": 64,
+      "_total_tokens": 4974,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689cd6f8522029b7ad7b1fe7"
+    },
+    {
+      "prompt_tokens": 1634.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 863.3432388305664,
+      "_completion_tokens": 64,
+      "_total_tokens": 1698,
+      "_dataset": "mcp-atlas",
+      "_group_id": "688a441c1a0d2e5c93853e76"
+    },
+    {
+      "prompt_tokens": 1274.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 514.3542289733887,
+      "_completion_tokens": 32,
+      "_total_tokens": 1306,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c901"
+    },
+    {
+      "prompt_tokens": 87.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 1250.749111175537,
+      "_completion_tokens": 128,
+      "_total_tokens": 215,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689cd6f8522029b7ad7b1fe7"
+    },
+    {
+      "prompt_tokens": 2535.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 616.3532733917236,
+      "_completion_tokens": 21,
+      "_total_tokens": 2556,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fe3"
+    },
+    {
+      "prompt_tokens": 3174.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 1104.8035621643066,
+      "_completion_tokens": 64,
+      "_total_tokens": 3238,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689e0b1d9c8e2ac413c1f25c"
+    },
+    {
+      "prompt_tokens": 155.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 294.5899963378906,
+      "_completion_tokens": 23,
+      "_total_tokens": 178,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c8f0"
+    },
+    {
+      "prompt_tokens": 16287.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 2625.3533363342285,
+      "_completion_tokens": 19,
+      "_total_tokens": 16306,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 99.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 345.4437255859375,
+      "_completion_tokens": 29,
+      "_total_tokens": 128,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68925f01db31fe35560e3e97"
+    },
+    {
+      "prompt_tokens": 116.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 458.0113887786865,
+      "_completion_tokens": 41,
+      "_total_tokens": 157,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689cd6f8522029b7ad7b200a"
+    },
+    {
+      "prompt_tokens": 29852.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 8273.110628128052,
+      "_completion_tokens": 371,
+      "_total_tokens": 30223,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcf4"
+    },
+    {
+      "prompt_tokens": 1188.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 441.81203842163086,
+      "_completion_tokens": 25,
+      "_total_tokens": 1213,
+      "_dataset": "dataclaw",
+      "_group_id": "2463b579-820e-4dc9-90c8-be8fafeb656f"
+    },
+    {
+      "prompt_tokens": 106.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 457.1964740753174,
+      "_completion_tokens": 41,
+      "_total_tokens": 147,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fe3"
+    },
+    {
+      "prompt_tokens": 541.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 419.7051525115967,
+      "_completion_tokens": 32,
+      "_total_tokens": 573,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689cd6f8522029b7ad7b1fe5"
+    },
+    {
+      "prompt_tokens": 7063.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 1349.1156101226807,
+      "_completion_tokens": 24,
+      "_total_tokens": 7087,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcc4"
+    },
+    {
+      "prompt_tokens": 18509.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 3535.5007648468018,
+      "_completion_tokens": 58,
+      "_total_tokens": 18567,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef3390720"
+    },
+    {
+      "prompt_tokens": 1332.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 824.2063522338867,
+      "_completion_tokens": 64,
+      "_total_tokens": 1396,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68925f01db31fe35560e3e9f"
+    },
+    {
+      "prompt_tokens": 10997.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 1950.5689144134521,
+      "_completion_tokens": 22,
+      "_total_tokens": 11019,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68925f01db31fe35560e3e97"
+    },
+    {
+      "prompt_tokens": 18115.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 5207.382678985596,
+      "_completion_tokens": 256,
+      "_total_tokens": 18371,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 21742.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 3701.3094425201416,
+      "_completion_tokens": 29,
+      "_total_tokens": 21771,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68925f01db31fe35560e3e97"
+    },
+    {
+      "prompt_tokens": 9864.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 1755.0361156463623,
+      "_completion_tokens": 21,
+      "_total_tokens": 9885,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689af4e653c3905e7b5b258e"
+    },
+    {
+      "prompt_tokens": 5231.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 3217.869520187378,
+      "_completion_tokens": 256,
+      "_total_tokens": 5487,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef3390720"
+    },
+    {
+      "prompt_tokens": 3899.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 1569.1256523132324,
+      "_completion_tokens": 101,
+      "_total_tokens": 4000,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689e0b1d9c8e2ac413c1f211"
+    },
+    {
+      "prompt_tokens": 3401.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 806.3900470733643,
+      "_completion_tokens": 27,
+      "_total_tokens": 3428,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68940d8355faa0b720f0b499"
+    },
+    {
+      "prompt_tokens": 123.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 425.9772300720215,
+      "_completion_tokens": 37,
+      "_total_tokens": 160,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68a398aa2f58036e8d45ede8"
+    },
+    {
+      "prompt_tokens": 84.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 699.2578506469727,
+      "_completion_tokens": 68,
+      "_total_tokens": 152,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fa3"
+    },
+    {
+      "prompt_tokens": 4740.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 5478.636741638184,
+      "_completion_tokens": 512,
+      "_total_tokens": 5252,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 19530.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 6451.943397521973,
+      "_completion_tokens": 345,
+      "_total_tokens": 19875,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689a373e148a49f91233dfe4"
+    },
+    {
+      "prompt_tokens": 74.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 340.2526378631592,
+      "_completion_tokens": 28,
+      "_total_tokens": 102,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68834223448b8fe04df2a592"
+    },
+    {
+      "prompt_tokens": 10418.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 2017.8914070129395,
+      "_completion_tokens": 40,
+      "_total_tokens": 10458,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68940d8355faa0b720f0b4b4"
+    },
+    {
+      "prompt_tokens": 3679.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 797.6095676422119,
+      "_completion_tokens": 22,
+      "_total_tokens": 3701,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c8f7"
+    },
+    {
+      "prompt_tokens": 16927.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 4649.940252304077,
+      "_completion_tokens": 216,
+      "_total_tokens": 17143,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 2586.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 672.5037097930908,
+      "_completion_tokens": 24,
+      "_total_tokens": 2610,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fe3"
+    },
+    {
+      "prompt_tokens": 747.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 643.6748504638672,
+      "_completion_tokens": 52,
+      "_total_tokens": 799,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef3390720"
+    },
+    {
+      "prompt_tokens": 1759.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 433.2423210144043,
+      "_completion_tokens": 16,
+      "_total_tokens": 1775,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef3390731"
+    },
+    {
+      "prompt_tokens": 28636.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 5179.375648498535,
+      "_completion_tokens": 78,
+      "_total_tokens": 28714,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68940d8355faa0b720f0b499"
+    },
+    {
+      "prompt_tokens": 3081.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 757.667064666748,
+      "_completion_tokens": 27,
+      "_total_tokens": 3108,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6880e844943a73a8c5e412c3"
+    },
+    {
+      "prompt_tokens": 27182.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 6837.4011516571045,
+      "_completion_tokens": 256,
+      "_total_tokens": 27438,
+      "_dataset": "mcp-atlas",
+      "_group_id": "688ba1b3e95696e72dd93e8d"
+    },
+    {
+      "prompt_tokens": 6109.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 1268.3155536651611,
+      "_completion_tokens": 34,
+      "_total_tokens": 6143,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcbb"
+    },
+    {
+      "prompt_tokens": 1305.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 434.76104736328125,
+      "_completion_tokens": 22,
+      "_total_tokens": 1327,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689a373e148a49f91233dff0"
+    },
+    {
+      "prompt_tokens": 1038.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 1245.6872463226318,
+      "_completion_tokens": 114,
+      "_total_tokens": 1152,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef3390707"
+    },
+    {
+      "prompt_tokens": 10903.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 2054.579019546509,
+      "_completion_tokens": 33,
+      "_total_tokens": 10936,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68925f01db31fe35560e3e97"
+    },
+    {
+      "prompt_tokens": 17064.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 2862.031936645508,
+      "_completion_tokens": 27,
+      "_total_tokens": 17091,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 18779.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 3446.746587753296,
+      "_completion_tokens": 53,
+      "_total_tokens": 18832,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcbb"
+    },
+    {
+      "prompt_tokens": 27780.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 7894.397020339966,
+      "_completion_tokens": 354,
+      "_total_tokens": 28134,
+      "_dataset": "mcp-atlas",
+      "_group_id": "688ba1b3e95696e72dd93e8d"
+    },
+    {
+      "prompt_tokens": 6015.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 1126.648187637329,
+      "_completion_tokens": 19,
+      "_total_tokens": 6034,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcbb"
+    },
+    {
+      "prompt_tokens": 11751.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 2158.0686569213867,
+      "_completion_tokens": 36,
+      "_total_tokens": 11787,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcf4"
+    },
+    {
+      "prompt_tokens": 73.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 2451.1520862579346,
+      "_completion_tokens": 256,
+      "_total_tokens": 329,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef339071f"
+    },
+    {
+      "prompt_tokens": 16683.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 5081.067085266113,
+      "_completion_tokens": 256,
+      "_total_tokens": 16939,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689af4e653c3905e7b5b258e"
+    },
+    {
+      "prompt_tokens": 7799.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 1369.4732189178467,
+      "_completion_tokens": 20,
+      "_total_tokens": 7819,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 1308.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 452.52108573913574,
+      "_completion_tokens": 24,
+      "_total_tokens": 1332,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689a373e148a49f91233e021"
+    },
+    {
+      "prompt_tokens": 1587.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 2611.0715866088867,
+      "_completion_tokens": 256,
+      "_total_tokens": 1843,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6886306b5ed4da6b2c381189"
+    },
+    {
+      "prompt_tokens": 17378.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 3885.7545852661133,
+      "_completion_tokens": 128,
+      "_total_tokens": 17506,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 280.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 326.4296054840088,
+      "_completion_tokens": 26,
+      "_total_tokens": 306,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689cd6f8522029b7ad7b1fe5"
+    },
+    {
+      "prompt_tokens": 102.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 1255.0785541534424,
+      "_completion_tokens": 128,
+      "_total_tokens": 230,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6886306b5ed4da6b2c381189"
+    },
+    {
+      "prompt_tokens": 2830.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 999.6652603149414,
+      "_completion_tokens": 57,
+      "_total_tokens": 2887,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fe3"
+    },
+    {
+      "prompt_tokens": 684.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 733.6924076080322,
+      "_completion_tokens": 64,
+      "_total_tokens": 748,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef3390731"
+    },
+    {
+      "prompt_tokens": 192.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 280.03549575805664,
+      "_completion_tokens": 21,
+      "_total_tokens": 213,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c8f7"
+    },
+    {
+      "prompt_tokens": 104.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 2725.271463394165,
+      "_completion_tokens": 288,
+      "_total_tokens": 392,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689cd6f8522029b7ad7b1fe5"
+    },
+    {
+      "prompt_tokens": 7840.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 1782.3166847229004,
+      "_completion_tokens": 64,
+      "_total_tokens": 7904,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 308.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 302.0319938659668,
+      "_completion_tokens": 23,
+      "_total_tokens": 331,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c8f7"
+    },
+    {
+      "prompt_tokens": 136.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 3047.20401763916,
+      "_completion_tokens": 323,
+      "_total_tokens": 459,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689a373e148a49f91233e021"
+    },
+    {
+      "prompt_tokens": 4682.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 856.8539619445801,
+      "_completion_tokens": 13,
+      "_total_tokens": 4695,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 1149.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 4919.213056564331,
+      "_completion_tokens": 512,
+      "_total_tokens": 1661,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689af4e653c3905e7b5b258e"
+    },
+    {
+      "prompt_tokens": 197.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 4804.778337478638,
+      "_completion_tokens": 512,
+      "_total_tokens": 709,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68925f01db31fe35560e3e9f"
+    },
+    {
+      "prompt_tokens": 2438.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 645.8954811096191,
+      "_completion_tokens": 25,
+      "_total_tokens": 2463,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6897a6002b64a8c831efa2f6"
+    },
+    {
+      "prompt_tokens": 18175.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 3978.714942932129,
+      "_completion_tokens": 128,
+      "_total_tokens": 18303,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 3284.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 900.9435176849365,
+      "_completion_tokens": 39,
+      "_total_tokens": 3323,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68834223448b8fe04df2a592"
+    },
+    {
+      "prompt_tokens": 121.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 265.63501358032227,
+      "_completion_tokens": 20,
+      "_total_tokens": 141,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6897a6002b64a8c831efa2f6"
+    },
+    {
+      "prompt_tokens": 6284.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 1224.0662574768066,
+      "_completion_tokens": 21,
+      "_total_tokens": 6305,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c8f0"
+    },
+    {
+      "prompt_tokens": 1595.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 583.0981731414795,
+      "_completion_tokens": 34,
+      "_total_tokens": 1629,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689a373e148a49f91233e021"
+    },
+    {
+      "prompt_tokens": 17953.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 3979.0914058685303,
+      "_completion_tokens": 128,
+      "_total_tokens": 18081,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 185.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 1291.2533283233643,
+      "_completion_tokens": 128,
+      "_total_tokens": 313,
+      "_dataset": "dataclaw",
+      "_group_id": "1f145f0d-02f0-4290-91fb-035243959ea7"
+    },
+    {
+      "prompt_tokens": 483.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 670.032262802124,
+      "_completion_tokens": 61,
+      "_total_tokens": 544,
+      "_dataset": "dataclaw",
+      "_group_id": "24408fbc-089b-4955-9613-9084e4c652de"
+    },
+    {
+      "prompt_tokens": 3385.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 1048.0256080627441,
+      "_completion_tokens": 54,
+      "_total_tokens": 3439,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68a398aa2f58036e8d45ede8"
+    },
+    {
+      "prompt_tokens": 14200.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 2457.4530124664307,
+      "_completion_tokens": 32,
+      "_total_tokens": 14232,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fa3"
+    },
+    {
+      "prompt_tokens": 1560.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 457.77106285095215,
+      "_completion_tokens": 21,
+      "_total_tokens": 1581,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689a373e148a49f91233dff0"
+    },
+    {
+      "prompt_tokens": 2018.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 562.1941089630127,
+      "_completion_tokens": 26,
+      "_total_tokens": 2044,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689cd6f8522029b7ad7b1fe5"
+    },
+    {
+      "prompt_tokens": 4256.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 808.2594871520996,
+      "_completion_tokens": 13,
+      "_total_tokens": 4269,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 2974.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 685.2951049804688,
+      "_completion_tokens": 23,
+      "_total_tokens": 2997,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 78.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 505.7492256164551,
+      "_completion_tokens": 46,
+      "_total_tokens": 124,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcc4"
+    },
+    {
+      "prompt_tokens": 12501.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 2155.2352905273438,
+      "_completion_tokens": 26,
+      "_total_tokens": 12527,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 13784.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 2404.352903366089,
+      "_completion_tokens": 32,
+      "_total_tokens": 13816,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fa3"
+    },
+    {
+      "prompt_tokens": 1465.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 1095.043659210205,
+      "_completion_tokens": 91,
+      "_total_tokens": 1556,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689a373e148a49f91233e021"
+    },
+    {
+      "prompt_tokens": 6645.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 2412.248373031616,
+      "_completion_tokens": 148,
+      "_total_tokens": 6793,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef339071f"
+    },
+    {
+      "prompt_tokens": 77.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 3745.448589324951,
+      "_completion_tokens": 395,
+      "_total_tokens": 472,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef3390731"
+    },
+    {
+      "prompt_tokens": 13904.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 2788.8832092285156,
+      "_completion_tokens": 68,
+      "_total_tokens": 13972,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68940d8355faa0b720f0b499"
+    },
+    {
+      "prompt_tokens": 23375.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 3963.2463455200195,
+      "_completion_tokens": 36,
+      "_total_tokens": 23411,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcc1"
+    },
+    {
+      "prompt_tokens": 4028.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 1009.540319442749,
+      "_completion_tokens": 40,
+      "_total_tokens": 4068,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c8f7"
+    },
+    {
+      "prompt_tokens": 12189.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 2051.3577461242676,
+      "_completion_tokens": 25,
+      "_total_tokens": 12214,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 202.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 381.26230239868164,
+      "_completion_tokens": 31,
+      "_total_tokens": 233,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcad"
+    },
+    {
+      "prompt_tokens": 23355.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 3968.636989593506,
+      "_completion_tokens": 40,
+      "_total_tokens": 23395,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcad"
+    },
+    {
+      "prompt_tokens": 19198.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 3120.002508163452,
+      "_completion_tokens": 17,
+      "_total_tokens": 19215,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 20737.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 3947.711229324341,
+      "_completion_tokens": 64,
+      "_total_tokens": 20801,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689a373e148a49f91233dfe4"
+    },
+    {
+      "prompt_tokens": 130.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 436.97643280029297,
+      "_completion_tokens": 38,
+      "_total_tokens": 168,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6887c6d4614f06dc73af243e"
+    },
+    {
+      "prompt_tokens": 566.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 1332.221508026123,
+      "_completion_tokens": 128,
+      "_total_tokens": 694,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689e0b1d9c8e2ac413c1f25c"
+    },
+    {
+      "prompt_tokens": 84.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 2468.406915664673,
+      "_completion_tokens": 256,
+      "_total_tokens": 340,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 17667.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 5140.771865844727,
+      "_completion_tokens": 256,
+      "_total_tokens": 17923,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 17819.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 5160.8076095581055,
+      "_completion_tokens": 256,
+      "_total_tokens": 18075,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 76.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 673.1507778167725,
+      "_completion_tokens": 64,
+      "_total_tokens": 140,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689af4e653c3905e7b5b258e"
+    },
+    {
+      "prompt_tokens": 4038.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 1823.3332633972168,
+      "_completion_tokens": 128,
+      "_total_tokens": 4166,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689e0b1d9c8e2ac413c1f211"
+    },
+    {
+      "prompt_tokens": 4299.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 1279.6709537506104,
+      "_completion_tokens": 59,
+      "_total_tokens": 4358,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef3390720"
+    },
+    {
+      "prompt_tokens": 20242.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 4432.786703109741,
+      "_completion_tokens": 128,
+      "_total_tokens": 20370,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689cd6f8522029b7ad7b1fe7"
+    },
+    {
+      "prompt_tokens": 106.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 2681.466817855835,
+      "_completion_tokens": 284,
+      "_total_tokens": 390,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68940d8355faa0b720f0b4b4"
+    },
+    {
+      "prompt_tokens": 134.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 1253.807544708252,
+      "_completion_tokens": 128,
+      "_total_tokens": 262,
+      "_dataset": "mcp-atlas",
+      "_group_id": "688ba1b3e95696e72dd93e8a"
+    },
+    {
+      "prompt_tokens": 434.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 331.240177154541,
+      "_completion_tokens": 24,
+      "_total_tokens": 458,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689cd6f8522029b7ad7b1fe5"
+    },
+    {
+      "prompt_tokens": 10326.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 1904.6237468719482,
+      "_completion_tokens": 29,
+      "_total_tokens": 10355,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68940d8355faa0b720f0b4b4"
+    },
+    {
+      "prompt_tokens": 110.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 379.5480728149414,
+      "_completion_tokens": 31,
+      "_total_tokens": 141,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcad"
+    },
+    {
+      "prompt_tokens": 12605.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 4324.17631149292,
+      "_completion_tokens": 256,
+      "_total_tokens": 12861,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 16083.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 2694.863796234131,
+      "_completion_tokens": 16,
+      "_total_tokens": 16099,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689cd6f8522029b7ad7b1fe7"
+    },
+    {
+      "prompt_tokens": 146.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 164.3075942993164,
+      "_completion_tokens": 9,
+      "_total_tokens": 155,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c8f7"
+    },
+    {
+      "prompt_tokens": 100.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 583.402156829834,
+      "_completion_tokens": 55,
+      "_total_tokens": 155,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef3390707"
+    },
+    {
+      "prompt_tokens": 456.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 731.9042682647705,
+      "_completion_tokens": 68,
+      "_total_tokens": 524,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689e0b1d9c8e2ac413c1f25c"
+    },
+    {
+      "prompt_tokens": 6516.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 1315.2189254760742,
+      "_completion_tokens": 29,
+      "_total_tokens": 6545,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c8f0"
+    },
+    {
+      "prompt_tokens": 16778.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 7496.314764022827,
+      "_completion_tokens": 512,
+      "_total_tokens": 17290,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 804.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 363.9645576477051,
+      "_completion_tokens": 22,
+      "_total_tokens": 826,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fa9"
+    },
+    {
+      "prompt_tokens": 1173.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 1475.6417274475098,
+      "_completion_tokens": 137,
+      "_total_tokens": 1310,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef3390707"
+    },
+    {
+      "prompt_tokens": 13034.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 2580.103874206543,
+      "_completion_tokens": 64,
+      "_total_tokens": 13098,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 317.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 349.41768646240234,
+      "_completion_tokens": 28,
+      "_total_tokens": 345,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689e0b1d9c8e2ac413c1f25c"
+    },
+    {
+      "prompt_tokens": 5792.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 1078.1362056732178,
+      "_completion_tokens": 19,
+      "_total_tokens": 5811,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fd5"
+    },
+    {
+      "prompt_tokens": 10002.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 2374.539852142334,
+      "_completion_tokens": 95,
+      "_total_tokens": 10097,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68824c643e6ff020bc33994b"
+    },
+    {
+      "prompt_tokens": 2641.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 2187.0059967041016,
+      "_completion_tokens": 189,
+      "_total_tokens": 2830,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c901"
+    },
+    {
+      "prompt_tokens": 1426.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 439.1050338745117,
+      "_completion_tokens": 21,
+      "_total_tokens": 1447,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689a373e148a49f91233dff0"
+    },
+    {
+      "prompt_tokens": 153.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 165.48609733581543,
+      "_completion_tokens": 9,
+      "_total_tokens": 162,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689cd6f8522029b7ad7b1fe5"
+    },
+    {
+      "prompt_tokens": 1731.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 596.3184833526611,
+      "_completion_tokens": 34,
+      "_total_tokens": 1765,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689a373e148a49f91233dff0"
+    },
+    {
+      "prompt_tokens": 3383.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 662.5015735626221,
+      "_completion_tokens": 13,
+      "_total_tokens": 3396,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef3390731"
+    },
+    {
+      "prompt_tokens": 1267.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 498.80194664001465,
+      "_completion_tokens": 30,
+      "_total_tokens": 1297,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fe3"
+    },
+    {
+      "prompt_tokens": 979.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 386.1274719238281,
+      "_completion_tokens": 22,
+      "_total_tokens": 1001,
+      "_dataset": "mcp-atlas",
+      "_group_id": "688ba1b3e95696e72dd93e8a"
+    },
+    {
+      "prompt_tokens": 1164.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 804.7857284545898,
+      "_completion_tokens": 64,
+      "_total_tokens": 1228,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcf4"
+    },
+    {
+      "prompt_tokens": 1267.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 587.756872177124,
+      "_completion_tokens": 39,
+      "_total_tokens": 1306,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcf4"
+    },
+    {
+      "prompt_tokens": 120.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 2423.311471939087,
+      "_completion_tokens": 256,
+      "_total_tokens": 376,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcc1"
+    },
+    {
+      "prompt_tokens": 3746.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 954.8275470733643,
+      "_completion_tokens": 39,
+      "_total_tokens": 3785,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689e0b1d9c8e2ac413c1f211"
+    },
+    {
+      "prompt_tokens": 1518.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 950.1476287841797,
+      "_completion_tokens": 75,
+      "_total_tokens": 1593,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689cd6f8522029b7ad7b1fe5"
+    },
+    {
+      "prompt_tokens": 1802.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 478.945255279541,
+      "_completion_tokens": 20,
+      "_total_tokens": 1822,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689a373e148a49f91233e021"
+    },
+    {
+      "prompt_tokens": 1220.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 1405.5390357971191,
+      "_completion_tokens": 128,
+      "_total_tokens": 1348,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6887c6d4614f06dc73af243e"
+    },
+    {
+      "prompt_tokens": 3036.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 1088.7954235076904,
+      "_completion_tokens": 64,
+      "_total_tokens": 3100,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fa9"
+    },
+    {
+      "prompt_tokens": 21460.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 3647.6693153381348,
+      "_completion_tokens": 27,
+      "_total_tokens": 21487,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68925f01db31fe35560e3e97"
+    },
+    {
+      "prompt_tokens": 3279.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 839.0867710113525,
+      "_completion_tokens": 33,
+      "_total_tokens": 3312,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68940d8355faa0b720f0b499"
+    },
+    {
+      "prompt_tokens": 87.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 239.09616470336914,
+      "_completion_tokens": 17,
+      "_total_tokens": 104,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689a373e148a49f91233dff0"
+    },
+    {
+      "prompt_tokens": 27361.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 4751.7571449279785,
+      "_completion_tokens": 55,
+      "_total_tokens": 27416,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcad"
+    },
+    {
+      "prompt_tokens": 91.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 732.7530384063721,
+      "_completion_tokens": 71,
+      "_total_tokens": 162,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c901"
+    },
+    {
+      "prompt_tokens": 8266.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 2548.0568408966064,
+      "_completion_tokens": 128,
+      "_total_tokens": 8394,
+      "_dataset": "mcp-atlas",
+      "_group_id": "688ba1b3e95696e72dd93e8d"
+    },
+    {
+      "prompt_tokens": 7689.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 1764.6093368530273,
+      "_completion_tokens": 64,
+      "_total_tokens": 7753,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 99.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 450.6103992462158,
+      "_completion_tokens": 40,
+      "_total_tokens": 139,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68940d8355faa0b720f0b499"
+    },
+    {
+      "prompt_tokens": 452.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 281.069278717041,
+      "_completion_tokens": 19,
+      "_total_tokens": 471,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68925f01db31fe35560e3e9f"
+    },
+    {
+      "prompt_tokens": 857.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 388.9915943145752,
+      "_completion_tokens": 24,
+      "_total_tokens": 881,
+      "_dataset": "mcp-atlas",
+      "_group_id": "688ba1b3e95696e72dd93e8a"
+    },
+    {
+      "prompt_tokens": 4824.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 1923.5000610351562,
+      "_completion_tokens": 128,
+      "_total_tokens": 4952,
+      "_dataset": "dataclaw",
+      "_group_id": "1f145f0d-02f0-4290-91fb-035243959ea7"
+    },
+    {
+      "prompt_tokens": 20873.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 3650.9363651275635,
+      "_completion_tokens": 41,
+      "_total_tokens": 20914,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68940d8355faa0b720f0b4b4"
+    },
+    {
+      "prompt_tokens": 1331.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 2069.57745552063,
+      "_completion_tokens": 199,
+      "_total_tokens": 1530,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef3390707"
+    },
+    {
+      "prompt_tokens": 177.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 631.0203075408936,
+      "_completion_tokens": 59,
+      "_total_tokens": 236,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef3390720"
+    },
+    {
+      "prompt_tokens": 2894.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 1267.9448127746582,
+      "_completion_tokens": 85,
+      "_total_tokens": 2979,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689cd6f8522029b7ad7b200a"
+    },
+    {
+      "prompt_tokens": 8285.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 1536.9787216186523,
+      "_completion_tokens": 20,
+      "_total_tokens": 8305,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689cd6f8522029b7ad7b1fe7"
+    },
+    {
+      "prompt_tokens": 17485.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 7682.13963508606,
+      "_completion_tokens": 512,
+      "_total_tokens": 17997,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689a373e148a49f91233dfe4"
+    },
+    {
+      "prompt_tokens": 28626.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 4820.579051971436,
+      "_completion_tokens": 43,
+      "_total_tokens": 28669,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcf4"
+    },
+    {
+      "prompt_tokens": 428.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 458.52160453796387,
+      "_completion_tokens": 38,
+      "_total_tokens": 466,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c8f7"
+    },
+    {
+      "prompt_tokens": 3866.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 910.8705520629883,
+      "_completion_tokens": 32,
+      "_total_tokens": 3898,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c8f7"
+    },
+    {
+      "prompt_tokens": 1479.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 461.0590934753418,
+      "_completion_tokens": 22,
+      "_total_tokens": 1501,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c901"
+    },
+    {
+      "prompt_tokens": 1821.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 888.275146484375,
+      "_completion_tokens": 64,
+      "_total_tokens": 1885,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689e0b1d9c8e2ac413c1f25c"
+    },
+    {
+      "prompt_tokens": 14608.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 3977.0820140838623,
+      "_completion_tokens": 182,
+      "_total_tokens": 14790,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fa3"
+    },
+    {
+      "prompt_tokens": 1701.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 1458.827257156372,
+      "_completion_tokens": 128,
+      "_total_tokens": 1829,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c8f7"
+    },
+    {
+      "prompt_tokens": 4547.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 1303.9352893829346,
+      "_completion_tokens": 64,
+      "_total_tokens": 4611,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 936.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 414.64924812316895,
+      "_completion_tokens": 25,
+      "_total_tokens": 961,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef3390720"
+    },
+    {
+      "prompt_tokens": 2426.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 809.0424537658691,
+      "_completion_tokens": 43,
+      "_total_tokens": 2469,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689cd6f8522029b7ad7b1fe5"
+    },
+    {
+      "prompt_tokens": 3087.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 1669.785737991333,
+      "_completion_tokens": 128,
+      "_total_tokens": 3215,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 81.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 676.5615940093994,
+      "_completion_tokens": 64,
+      "_total_tokens": 145,
+      "_dataset": "dataclaw",
+      "_group_id": "24408fbc-089b-4955-9613-9084e4c652de"
+    },
+    {
+      "prompt_tokens": 4269.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 1878.2036304473877,
+      "_completion_tokens": 126,
+      "_total_tokens": 4395,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef3390731"
+    },
+    {
+      "prompt_tokens": 13026.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 3192.530632019043,
+      "_completion_tokens": 128,
+      "_total_tokens": 13154,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68824c643e6ff020bc33994b"
+    },
+    {
+      "prompt_tokens": 160.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 1268.6915397644043,
+      "_completion_tokens": 128,
+      "_total_tokens": 288,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcf4"
+    },
+    {
+      "prompt_tokens": 163.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 4809.561491012573,
+      "_completion_tokens": 512,
+      "_total_tokens": 675,
+      "_dataset": "mcp-atlas",
+      "_group_id": "688a441c1a0d2e5c93853e76"
+    },
+    {
+      "prompt_tokens": 1218.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 416.8260097503662,
+      "_completion_tokens": 22,
+      "_total_tokens": 1240,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fd5"
+    },
+    {
+      "prompt_tokens": 298.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 230.19862174987793,
+      "_completion_tokens": 16,
+      "_total_tokens": 314,
+      "_dataset": "dataclaw",
+      "_group_id": "04f2303d-2b0f-4a33-92a7-26fc6e9f3bef"
+    },
+    {
+      "prompt_tokens": 83.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 227.74863243103027,
+      "_completion_tokens": 16,
+      "_total_tokens": 99,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fd5"
+    },
+    {
+      "prompt_tokens": 2560.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 963.024377822876,
+      "_completion_tokens": 58,
+      "_total_tokens": 2618,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68a398aa2f58036e8d45ede8"
+    },
+    {
+      "prompt_tokens": 23566.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 6114.439249038696,
+      "_completion_tokens": 256,
+      "_total_tokens": 23822,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcc1"
+    },
+    {
+      "prompt_tokens": 109.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 1254.030704498291,
+      "_completion_tokens": 128,
+      "_total_tokens": 237,
+      "_dataset": "mcp-atlas",
+      "_group_id": "688ba1b3e95696e72dd93e8d"
+    },
+    {
+      "prompt_tokens": 16631.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 3152.759552001953,
+      "_completion_tokens": 64,
+      "_total_tokens": 16695,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 2667.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 1630.5274963378906,
+      "_completion_tokens": 128,
+      "_total_tokens": 2795,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6886306b5ed4da6b2c381189"
+    },
+    {
+      "prompt_tokens": 185.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 638.909101486206,
+      "_completion_tokens": 58,
+      "_total_tokens": 243,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689e0b1d9c8e2ac413c1f25c"
+    },
+    {
+      "prompt_tokens": 135.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 690.3364658355713,
+      "_completion_tokens": 64,
+      "_total_tokens": 199,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689a373e148a49f91233dfe4"
+    },
+    {
+      "prompt_tokens": 2790.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 1039.3469333648682,
+      "_completion_tokens": 64,
+      "_total_tokens": 2854,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 16477.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 2702.2502422332764,
+      "_completion_tokens": 18,
+      "_total_tokens": 16495,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 7207.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 3095.975399017334,
+      "_completion_tokens": 211,
+      "_total_tokens": 7418,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fd5"
+    },
+    {
+      "prompt_tokens": 17527.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 2973.0563163757324,
+      "_completion_tokens": 24,
+      "_total_tokens": 17551,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 2963.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 1088.9716148376465,
+      "_completion_tokens": 64,
+      "_total_tokens": 3027,
+      "_dataset": "mcp-atlas",
+      "_group_id": "688a441c1a0d2e5c93853e76"
+    },
+    {
+      "prompt_tokens": 182.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 259.4759464263916,
+      "_completion_tokens": 19,
+      "_total_tokens": 201,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef339071f"
+    },
+    {
+      "prompt_tokens": 146.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 668.5965061187744,
+      "_completion_tokens": 64,
+      "_total_tokens": 210,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689e0b1d9c8e2ac413c1f211"
+    },
+    {
+      "prompt_tokens": 2304.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 908.3497524261475,
+      "_completion_tokens": 56,
+      "_total_tokens": 2360,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c8f0"
+    },
+    {
+      "prompt_tokens": 16563.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 3217.9129123687744,
+      "_completion_tokens": 64,
+      "_total_tokens": 16627,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcbb"
+    },
+    {
+      "prompt_tokens": 4657.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 1323.7159252166748,
+      "_completion_tokens": 64,
+      "_total_tokens": 4721,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 5401.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 1014.2908096313477,
+      "_completion_tokens": 18,
+      "_total_tokens": 5419,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689af4e653c3905e7b5b258e"
+    },
+    {
+      "prompt_tokens": 243.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 646.91162109375,
+      "_completion_tokens": 62,
+      "_total_tokens": 305,
+      "_dataset": "dataclaw",
+      "_group_id": "04f2303d-2b0f-4a33-92a7-26fc6e9f3bef"
+    },
+    {
+      "prompt_tokens": 2479.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 794.797420501709,
+      "_completion_tokens": 40,
+      "_total_tokens": 2519,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c8f0"
+    },
+    {
+      "prompt_tokens": 74.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 665.9848690032959,
+      "_completion_tokens": 64,
+      "_total_tokens": 138,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689e0b1d9c8e2ac413c1f25c"
+    },
+    {
+      "prompt_tokens": 2811.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 2829.197406768799,
+      "_completion_tokens": 256,
+      "_total_tokens": 3067,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689e0b1d9c8e2ac413c1f211"
+    },
+    {
+      "prompt_tokens": 4199.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 1305.5291175842285,
+      "_completion_tokens": 64,
+      "_total_tokens": 4263,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c8f7"
+    },
+    {
+      "prompt_tokens": 19254.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 3433.250904083252,
+      "_completion_tokens": 38,
+      "_total_tokens": 19292,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689a373e148a49f91233dfe4"
+    },
+    {
+      "prompt_tokens": 2707.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 804.6596050262451,
+      "_completion_tokens": 37,
+      "_total_tokens": 2744,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fe3"
+    },
+    {
+      "prompt_tokens": 10657.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 1898.4386920928955,
+      "_completion_tokens": 27,
+      "_total_tokens": 10684,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcad"
+    },
+    {
+      "prompt_tokens": 94.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 254.5785903930664,
+      "_completion_tokens": 19,
+      "_total_tokens": 113,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcbb"
+    },
+    {
+      "prompt_tokens": 1025.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 431.0736656188965,
+      "_completion_tokens": 26,
+      "_total_tokens": 1051,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcc4"
+    },
+    {
+      "prompt_tokens": 585.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 340.32368659973145,
+      "_completion_tokens": 22,
+      "_total_tokens": 607,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68a398aa2f58036e8d45ede8"
+    },
+    {
+      "prompt_tokens": 6407.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 5779.566526412964,
+      "_completion_tokens": 512,
+      "_total_tokens": 6919,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef339071f"
+    },
+    {
+      "prompt_tokens": 6029.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 1151.155710220337,
+      "_completion_tokens": 23,
+      "_total_tokens": 6052,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c8f0"
+    },
+    {
+      "prompt_tokens": 409.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 257.62391090393066,
+      "_completion_tokens": 17,
+      "_total_tokens": 426,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef339071f"
+    },
+    {
+      "prompt_tokens": 12273.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 6711.428165435791,
+      "_completion_tokens": 512,
+      "_total_tokens": 12785,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 23165.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 4081.031084060669,
+      "_completion_tokens": 53,
+      "_total_tokens": 23218,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcc1"
+    },
+    {
+      "prompt_tokens": 2725.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 4068.2878494262695,
+      "_completion_tokens": 394,
+      "_total_tokens": 3119,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 12962.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 2162.348985671997,
+      "_completion_tokens": 21,
+      "_total_tokens": 12983,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 958.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 865.4134273529053,
+      "_completion_tokens": 75,
+      "_total_tokens": 1033,
+      "_dataset": "dataclaw",
+      "_group_id": "23346621-eb05-4916-8b76-34ad66ea4ada"
+    },
+    {
+      "prompt_tokens": 7601.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 1350.389003753662,
+      "_completion_tokens": 21,
+      "_total_tokens": 7622,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 54.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 169.33345794677734,
+      "_completion_tokens": 10,
+      "_total_tokens": 64,
+      "_dataset": "dataclaw",
+      "_group_id": "04f2303d-2b0f-4a33-92a7-26fc6e9f3bef"
+    },
+    {
+      "prompt_tokens": 4217.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 1362.6317977905273,
+      "_completion_tokens": 73,
+      "_total_tokens": 4290,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 4639.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 963.7479782104492,
+      "_completion_tokens": 23,
+      "_total_tokens": 4662,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fd5"
+    },
+    {
+      "prompt_tokens": 5545.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 4191.263914108276,
+      "_completion_tokens": 352,
+      "_total_tokens": 5897,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6886306b5ed4da6b2c381189"
+    },
+    {
+      "prompt_tokens": 4108.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 1219.9695110321045,
+      "_completion_tokens": 56,
+      "_total_tokens": 4164,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fe3"
+    },
+    {
+      "prompt_tokens": 942.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 2580.6078910827637,
+      "_completion_tokens": 256,
+      "_total_tokens": 1198,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fa9"
+    },
+    {
+      "prompt_tokens": 72.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 543.508768081665,
+      "_completion_tokens": 49,
+      "_total_tokens": 121,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fa9"
+    },
+    {
+      "prompt_tokens": 17232.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 7532.578706741333,
+      "_completion_tokens": 512,
+      "_total_tokens": 17744,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 3854.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 834.6681594848633,
+      "_completion_tokens": 24,
+      "_total_tokens": 3878,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fd5"
+    },
+    {
+      "prompt_tokens": 296.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 259.13453102111816,
+      "_completion_tokens": 17,
+      "_total_tokens": 313,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef339071f"
+    },
+    {
+      "prompt_tokens": 27198.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 9249.027967453003,
+      "_completion_tokens": 512,
+      "_total_tokens": 27710,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcad"
+    },
+    {
+      "prompt_tokens": 320.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 376.13606452941895,
+      "_completion_tokens": 29,
+      "_total_tokens": 349,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcc4"
+    },
+    {
+      "prompt_tokens": 3571.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 883.0058574676514,
+      "_completion_tokens": 32,
+      "_total_tokens": 3603,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c8f7"
+    },
+    {
+      "prompt_tokens": 106.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 281.0847759246826,
+      "_completion_tokens": 20,
+      "_total_tokens": 126,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68824c643e6ff020bc33994b"
+    },
+    {
+      "prompt_tokens": 1731.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 2644.8497772216797,
+      "_completion_tokens": 256,
+      "_total_tokens": 1987,
+      "_dataset": "mcp-atlas",
+      "_group_id": "688a441c1a0d2e5c93853e76"
+    },
+    {
+      "prompt_tokens": 152.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 2442.1896934509277,
+      "_completion_tokens": 256,
+      "_total_tokens": 408,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6880e844943a73a8c5e412c3"
+    },
+    {
+      "prompt_tokens": 323.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 266.0045623779297,
+      "_completion_tokens": 19,
+      "_total_tokens": 342,
+      "_dataset": "dataclaw",
+      "_group_id": "23346621-eb05-4916-8b76-34ad66ea4ada"
+    },
+    {
+      "prompt_tokens": 27373.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 4510.27774810791,
+      "_completion_tokens": 16,
+      "_total_tokens": 27389,
+      "_dataset": "mcp-atlas",
+      "_group_id": "688ba1b3e95696e72dd93e8d"
+    },
+    {
+      "prompt_tokens": 1161.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 484.0102195739746,
+      "_completion_tokens": 30,
+      "_total_tokens": 1191,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6897a6002b64a8c831efa2f6"
+    },
+    {
+      "prompt_tokens": 438.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 293.24889183044434,
+      "_completion_tokens": 21,
+      "_total_tokens": 459,
+      "_dataset": "dataclaw",
+      "_group_id": "04f2303d-2b0f-4a33-92a7-26fc6e9f3bef"
+    },
+    {
+      "prompt_tokens": 11391.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 2950.479030609131,
+      "_completion_tokens": 128,
+      "_total_tokens": 11519,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6887c6d4614f06dc73af243e"
+    },
+    {
+      "prompt_tokens": 2875.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 5196.715354919434,
+      "_completion_tokens": 512,
+      "_total_tokens": 3387,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6897a6002b64a8c831efa2f6"
+    },
+    {
+      "prompt_tokens": 1138.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 877.9580593109131,
+      "_completion_tokens": 72,
+      "_total_tokens": 1210,
+      "_dataset": "mcp-atlas",
+      "_group_id": "688ba1b3e95696e72dd93e8a"
+    },
+    {
+      "prompt_tokens": 14130.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 3428.87282371521,
+      "_completion_tokens": 128,
+      "_total_tokens": 14258,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcc4"
+    },
+    {
+      "prompt_tokens": 4910.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 5538.866996765137,
+      "_completion_tokens": 512,
+      "_total_tokens": 5422,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689cd6f8522029b7ad7b1fe7"
+    },
+    {
+      "prompt_tokens": 1634.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 4995.822429656982,
+      "_completion_tokens": 512,
+      "_total_tokens": 2146,
+      "_dataset": "mcp-atlas",
+      "_group_id": "688a441c1a0d2e5c93853e76"
+    },
+    {
+      "prompt_tokens": 1274.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 571.1712837219238,
+      "_completion_tokens": 38,
+      "_total_tokens": 1312,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c901"
+    },
+    {
+      "prompt_tokens": 87.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 665.5013561248779,
+      "_completion_tokens": 64,
+      "_total_tokens": 151,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689cd6f8522029b7ad7b1fe7"
+    },
+    {
+      "prompt_tokens": 2535.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 616.1470413208008,
+      "_completion_tokens": 21,
+      "_total_tokens": 2556,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fe3"
+    },
+    {
+      "prompt_tokens": 3174.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 1048.8550662994385,
+      "_completion_tokens": 58,
+      "_total_tokens": 3232,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689e0b1d9c8e2ac413c1f25c"
+    },
+    {
+      "prompt_tokens": 155.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 182.41596221923828,
+      "_completion_tokens": 11,
+      "_total_tokens": 166,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c8f0"
+    },
+    {
+      "prompt_tokens": 16287.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 2718.419313430786,
+      "_completion_tokens": 29,
+      "_total_tokens": 16316,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 99.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 623.8951683044434,
+      "_completion_tokens": 59,
+      "_total_tokens": 158,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68925f01db31fe35560e3e97"
+    },
+    {
+      "prompt_tokens": 116.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 456.79259300231934,
+      "_completion_tokens": 41,
+      "_total_tokens": 157,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689cd6f8522029b7ad7b200a"
+    },
+    {
+      "prompt_tokens": 29852.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 7137.603521347046,
+      "_completion_tokens": 256,
+      "_total_tokens": 30108,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcf4"
+    },
+    {
+      "prompt_tokens": 1188.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 4931.156396865845,
+      "_completion_tokens": 512,
+      "_total_tokens": 1700,
+      "_dataset": "dataclaw",
+      "_group_id": "2463b579-820e-4dc9-90c8-be8fafeb656f"
+    },
+    {
+      "prompt_tokens": 106.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 445.09434700012207,
+      "_completion_tokens": 39,
+      "_total_tokens": 145,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fe3"
+    },
+    {
+      "prompt_tokens": 541.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 471.85754776000977,
+      "_completion_tokens": 37,
+      "_total_tokens": 578,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689cd6f8522029b7ad7b1fe5"
+    },
+    {
+      "prompt_tokens": 7063.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 1348.4878540039062,
+      "_completion_tokens": 24,
+      "_total_tokens": 7087,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcc4"
+    },
+    {
+      "prompt_tokens": 18509.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 3566.9238567352295,
+      "_completion_tokens": 62,
+      "_total_tokens": 18571,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef3390720"
+    },
+    {
+      "prompt_tokens": 1332.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 2585.7975482940674,
+      "_completion_tokens": 256,
+      "_total_tokens": 1588,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68925f01db31fe35560e3e9f"
+    },
+    {
+      "prompt_tokens": 10997.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 1952.3084163665771,
+      "_completion_tokens": 22,
+      "_total_tokens": 11019,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68925f01db31fe35560e3e97"
+    },
+    {
+      "prompt_tokens": 18115.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 5193.182706832886,
+      "_completion_tokens": 256,
+      "_total_tokens": 18371,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 21742.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 3693.068504333496,
+      "_completion_tokens": 29,
+      "_total_tokens": 21771,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68925f01db31fe35560e3e97"
+    },
+    {
+      "prompt_tokens": 9864.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 1737.9627227783203,
+      "_completion_tokens": 21,
+      "_total_tokens": 9885,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689af4e653c3905e7b5b258e"
+    },
+    {
+      "prompt_tokens": 5231.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 2027.3323059082031,
+      "_completion_tokens": 128,
+      "_total_tokens": 5359,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef3390720"
+    },
+    {
+      "prompt_tokens": 3899.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 1484.2300415039062,
+      "_completion_tokens": 94,
+      "_total_tokens": 3993,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689e0b1d9c8e2ac413c1f211"
+    },
+    {
+      "prompt_tokens": 3401.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 1023.9157676696777,
+      "_completion_tokens": 52,
+      "_total_tokens": 3453,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68940d8355faa0b720f0b499"
+    },
+    {
+      "prompt_tokens": 123.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 436.39063835144043,
+      "_completion_tokens": 38,
+      "_total_tokens": 161,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68a398aa2f58036e8d45ede8"
+    },
+    {
+      "prompt_tokens": 84.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 885.7083320617676,
+      "_completion_tokens": 85,
+      "_total_tokens": 169,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fa3"
+    },
+    {
+      "prompt_tokens": 4740.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 1934.5762729644775,
+      "_completion_tokens": 128,
+      "_total_tokens": 4868,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 19530.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 5603.119373321533,
+      "_completion_tokens": 256,
+      "_total_tokens": 19786,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689a373e148a49f91233dfe4"
+    },
+    {
+      "prompt_tokens": 74.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 2323.801279067993,
+      "_completion_tokens": 240,
+      "_total_tokens": 314,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68834223448b8fe04df2a592"
+    },
+    {
+      "prompt_tokens": 10418.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 1978.6701202392578,
+      "_completion_tokens": 35,
+      "_total_tokens": 10453,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68940d8355faa0b720f0b4b4"
+    },
+    {
+      "prompt_tokens": 3679.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 987.7610206604004,
+      "_completion_tokens": 43,
+      "_total_tokens": 3722,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c8f7"
+    },
+    {
+      "prompt_tokens": 16927.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 5041.229486465454,
+      "_completion_tokens": 256,
+      "_total_tokens": 17183,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 2586.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 663.9528274536133,
+      "_completion_tokens": 24,
+      "_total_tokens": 2610,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fe3"
+    },
+    {
+      "prompt_tokens": 747.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 593.5521125793457,
+      "_completion_tokens": 47,
+      "_total_tokens": 794,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef3390720"
+    },
+    {
+      "prompt_tokens": 1759.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 440.02461433410645,
+      "_completion_tokens": 16,
+      "_total_tokens": 1775,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef3390731"
+    },
+    {
+      "prompt_tokens": 28636.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 5053.003549575806,
+      "_completion_tokens": 64,
+      "_total_tokens": 28700,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68940d8355faa0b720f0b499"
+    },
+    {
+      "prompt_tokens": 3081.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 758.3260536193848,
+      "_completion_tokens": 27,
+      "_total_tokens": 3108,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6880e844943a73a8c5e412c3"
+    },
+    {
+      "prompt_tokens": 27182.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 4813.874006271362,
+      "_completion_tokens": 50,
+      "_total_tokens": 27232,
+      "_dataset": "mcp-atlas",
+      "_group_id": "688ba1b3e95696e72dd93e8d"
+    },
+    {
+      "prompt_tokens": 6109.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 1277.7748107910156,
+      "_completion_tokens": 35,
+      "_total_tokens": 6144,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcbb"
+    },
+    {
+      "prompt_tokens": 1305.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 407.9406261444092,
+      "_completion_tokens": 19,
+      "_total_tokens": 1324,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689a373e148a49f91233dff0"
+    },
+    {
+      "prompt_tokens": 1038.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 1379.2724609375,
+      "_completion_tokens": 129,
+      "_total_tokens": 1167,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef3390707"
+    },
+    {
+      "prompt_tokens": 10903.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 2078.955888748169,
+      "_completion_tokens": 36,
+      "_total_tokens": 10939,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68925f01db31fe35560e3e97"
+    },
+    {
+      "prompt_tokens": 17064.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 2756.8013668060303,
+      "_completion_tokens": 16,
+      "_total_tokens": 17080,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 18779.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 3346.094846725464,
+      "_completion_tokens": 42,
+      "_total_tokens": 18821,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcbb"
+    },
+    {
+      "prompt_tokens": 27780.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 6896.045923233032,
+      "_completion_tokens": 254,
+      "_total_tokens": 28034,
+      "_dataset": "mcp-atlas",
+      "_group_id": "688ba1b3e95696e72dd93e8d"
+    },
+    {
+      "prompt_tokens": 6015.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 1154.151439666748,
+      "_completion_tokens": 23,
+      "_total_tokens": 6038,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcbb"
+    },
+    {
+      "prompt_tokens": 11751.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 2343.3997631073,
+      "_completion_tokens": 56,
+      "_total_tokens": 11807,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcf4"
+    },
+    {
+      "prompt_tokens": 73.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 3401.7813205718994,
+      "_completion_tokens": 360,
+      "_total_tokens": 433,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef339071f"
+    },
+    {
+      "prompt_tokens": 16683.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 5083.590984344482,
+      "_completion_tokens": 256,
+      "_total_tokens": 16939,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689af4e653c3905e7b5b258e"
+    },
+    {
+      "prompt_tokens": 7799.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 2368.879795074463,
+      "_completion_tokens": 128,
+      "_total_tokens": 7927,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 1308.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 817.7812099456787,
+      "_completion_tokens": 64,
+      "_total_tokens": 1372,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689a373e148a49f91233e021"
+    },
+    {
+      "prompt_tokens": 1587.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 2608.320713043213,
+      "_completion_tokens": 256,
+      "_total_tokens": 1843,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6886306b5ed4da6b2c381189"
+    },
+    {
+      "prompt_tokens": 17378.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 5666.6319370269775,
+      "_completion_tokens": 317,
+      "_total_tokens": 17695,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 280.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 322.9086399078369,
+      "_completion_tokens": 26,
+      "_total_tokens": 306,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689cd6f8522029b7ad7b1fe5"
+    },
+    {
+      "prompt_tokens": 102.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 668.4584617614746,
+      "_completion_tokens": 64,
+      "_total_tokens": 166,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6886306b5ed4da6b2c381189"
+    },
+    {
+      "prompt_tokens": 2830.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 979.7391891479492,
+      "_completion_tokens": 55,
+      "_total_tokens": 2885,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fe3"
+    },
+    {
+      "prompt_tokens": 684.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 805.6440353393555,
+      "_completion_tokens": 72,
+      "_total_tokens": 756,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef3390731"
+    },
+    {
+      "prompt_tokens": 192.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 281.0647487640381,
+      "_completion_tokens": 21,
+      "_total_tokens": 213,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c8f7"
+    },
+    {
+      "prompt_tokens": 104.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 669.5423126220703,
+      "_completion_tokens": 64,
+      "_total_tokens": 168,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689cd6f8522029b7ad7b1fe5"
+    },
+    {
+      "prompt_tokens": 7840.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 2377.4356842041016,
+      "_completion_tokens": 128,
+      "_total_tokens": 7968,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 308.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 265.08355140686035,
+      "_completion_tokens": 19,
+      "_total_tokens": 327,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c8f7"
+    },
+    {
+      "prompt_tokens": 136.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 2111.5691661834717,
+      "_completion_tokens": 221,
+      "_total_tokens": 357,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689a373e148a49f91233e021"
+    },
+    {
+      "prompt_tokens": 4682.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 1325.578212738037,
+      "_completion_tokens": 64,
+      "_total_tokens": 4746,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 1149.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 1381.0763359069824,
+      "_completion_tokens": 128,
+      "_total_tokens": 1277,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689af4e653c3905e7b5b258e"
+    },
+    {
+      "prompt_tokens": 197.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 681.2143325805664,
+      "_completion_tokens": 64,
+      "_total_tokens": 261,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68925f01db31fe35560e3e9f"
+    },
+    {
+      "prompt_tokens": 2438.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 643.4905529022217,
+      "_completion_tokens": 25,
+      "_total_tokens": 2463,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6897a6002b64a8c831efa2f6"
+    },
+    {
+      "prompt_tokens": 18175.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 3985.582113265991,
+      "_completion_tokens": 128,
+      "_total_tokens": 18303,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 3284.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 1012.2804641723633,
+      "_completion_tokens": 51,
+      "_total_tokens": 3335,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68834223448b8fe04df2a592"
+    },
+    {
+      "prompt_tokens": 121.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 273.78106117248535,
+      "_completion_tokens": 20,
+      "_total_tokens": 141,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6897a6002b64a8c831efa2f6"
+    },
+    {
+      "prompt_tokens": 6284.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 1225.3639698028564,
+      "_completion_tokens": 21,
+      "_total_tokens": 6305,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c8f0"
+    },
+    {
+      "prompt_tokens": 1595.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 583.1425189971924,
+      "_completion_tokens": 34,
+      "_total_tokens": 1629,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689a373e148a49f91233e021"
+    },
+    {
+      "prompt_tokens": 17953.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 6550.155878067017,
+      "_completion_tokens": 400,
+      "_total_tokens": 18353,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 185.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 2467.597723007202,
+      "_completion_tokens": 256,
+      "_total_tokens": 441,
+      "_dataset": "dataclaw",
+      "_group_id": "1f145f0d-02f0-4290-91fb-035243959ea7"
+    },
+    {
+      "prompt_tokens": 483.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 673.5928058624268,
+      "_completion_tokens": 61,
+      "_total_tokens": 544,
+      "_dataset": "dataclaw",
+      "_group_id": "24408fbc-089b-4955-9613-9084e4c652de"
+    },
+    {
+      "prompt_tokens": 3385.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 1059.4360828399658,
+      "_completion_tokens": 55,
+      "_total_tokens": 3440,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68a398aa2f58036e8d45ede8"
+    },
+    {
+      "prompt_tokens": 14200.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 2534.8541736602783,
+      "_completion_tokens": 41,
+      "_total_tokens": 14241,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fa3"
+    },
+    {
+      "prompt_tokens": 1560.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 455.87682723999023,
+      "_completion_tokens": 21,
+      "_total_tokens": 1581,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689a373e148a49f91233dff0"
+    },
+    {
+      "prompt_tokens": 2018.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 598.7386703491211,
+      "_completion_tokens": 30,
+      "_total_tokens": 2048,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689cd6f8522029b7ad7b1fe5"
+    },
+    {
+      "prompt_tokens": 4256.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 832.664966583252,
+      "_completion_tokens": 16,
+      "_total_tokens": 4272,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 2974.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 639.9564743041992,
+      "_completion_tokens": 18,
+      "_total_tokens": 2992,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 78.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 275.4237651824951,
+      "_completion_tokens": 21,
+      "_total_tokens": 99,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcc4"
+    },
+    {
+      "prompt_tokens": 12501.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 2135.7321739196777,
+      "_completion_tokens": 24,
+      "_total_tokens": 12525,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 13784.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 2399.3167877197266,
+      "_completion_tokens": 32,
+      "_total_tokens": 13816,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68993ef3cf3e953b8ab83fa3"
+    },
+    {
+      "prompt_tokens": 1465.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 554.3296337127686,
+      "_completion_tokens": 33,
+      "_total_tokens": 1498,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689a373e148a49f91233e021"
+    },
+    {
+      "prompt_tokens": 6645.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 2469.573974609375,
+      "_completion_tokens": 155,
+      "_total_tokens": 6800,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef339071f"
+    },
+    {
+      "prompt_tokens": 77.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 2121.049165725708,
+      "_completion_tokens": 222,
+      "_total_tokens": 299,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689f4d693e212e8ef3390731"
+    },
+    {
+      "prompt_tokens": 13904.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 3116.342306137085,
+      "_completion_tokens": 103,
+      "_total_tokens": 14007,
+      "_dataset": "mcp-atlas",
+      "_group_id": "68940d8355faa0b720f0b499"
+    },
+    {
+      "prompt_tokens": 23375.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 4081.2761783599854,
+      "_completion_tokens": 49,
+      "_total_tokens": 23424,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcc1"
+    },
+    {
+      "prompt_tokens": 4028.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 1004.4777393341064,
+      "_completion_tokens": 40,
+      "_total_tokens": 4068,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6896416f7b30e5d8ccd7c8f7"
+    },
+    {
+      "prompt_tokens": 12189.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 1950.666904449463,
+      "_completion_tokens": 15,
+      "_total_tokens": 12204,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 202.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 381.058931350708,
+      "_completion_tokens": 31,
+      "_total_tokens": 233,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcad"
+    },
+    {
+      "prompt_tokens": 23355.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 4472.954034805298,
+      "_completion_tokens": 93,
+      "_total_tokens": 23448,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689bd255c0422b257e7dfcad"
+    },
+    {
+      "prompt_tokens": 19198.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 3224.7419357299805,
+      "_completion_tokens": 30,
+      "_total_tokens": 19228,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 20737.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 3941.615581512451,
+      "_completion_tokens": 64,
+      "_total_tokens": 20801,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689a373e148a49f91233dfe4"
+    },
+    {
+      "prompt_tokens": 130.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 434.72790718078613,
+      "_completion_tokens": 38,
+      "_total_tokens": 168,
+      "_dataset": "mcp-atlas",
+      "_group_id": "6887c6d4614f06dc73af243e"
+    },
+    {
+      "prompt_tokens": 566.0,
+      "max_tokens": 256.0,
+      "runtime_ms": 1839.6058082580566,
+      "_completion_tokens": 186,
+      "_total_tokens": 752,
+      "_dataset": "mcp-atlas",
+      "_group_id": "689e0b1d9c8e2ac413c1f25c"
+    },
+    {
+      "prompt_tokens": 84.0,
+      "max_tokens": 128.0,
+      "runtime_ms": 1258.3444118499756,
+      "_completion_tokens": 128,
+      "_total_tokens": 212,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 17667.0,
+      "max_tokens": 512.0,
+      "runtime_ms": 6044.227600097656,
+      "_completion_tokens": 349,
+      "_total_tokens": 18016,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    },
+    {
+      "prompt_tokens": 17819.0,
+      "max_tokens": 64.0,
+      "runtime_ms": 3327.2364139556885,
+      "_completion_tokens": 64,
+      "_total_tokens": 17883,
+      "_dataset": "dataclaw",
+      "_group_id": "1176f3ef-0529-4f7f-9651-80e1fb1ff0fe"
+    }
+  ]
+}

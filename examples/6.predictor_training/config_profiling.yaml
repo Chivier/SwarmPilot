@@ -1,0 +1,23 @@
+# Profiling config for predictor training experiments.
+# Single replica per model for clean, uncontended timing.
+# Use all 4 GPUs: 80B gets tensor-parallel-4, 8B gets 1 GPU.
+
+replicas_large: 1
+replicas_small: 1
+gpu_per_instance_large: 4
+gpu_per_instance_small: 1
+pylet_local_gpu_per_worker: 4
+
+large_model_id: Qwen/Qwen3-Next-80B-A3B-Instruct
+small_model_id: Qwen/Qwen3-VL-8B-Instruct
+scheduling_algorithm: round_robin
+
+large_model:
+  base_url: http://localhost:8010/v1
+  api_key: dummy
+  model: Qwen/Qwen3-Next-80B-A3B-Instruct
+
+small_model:
+  base_url: http://localhost:8020/v1
+  api_key: dummy
+  model: Qwen/Qwen3-VL-8B-Instruct
