@@ -30,7 +30,9 @@ class Instance(BaseModel):
     ]  # Required: software_name, software_version, hardware_name
     status: InstanceStatus = InstanceStatus.ACTIVE  # Instance lifecycle status
     drain_initiated_at: str | None = None  # ISO timestamp when draining started
-    endpoint_group: str | None = None  # Groups virtual instances by source endpoint
+    endpoint_group: str | None = (
+        None  # Groups virtual instances by source endpoint
+    )
 
 
 class InstanceStats(BaseModel):

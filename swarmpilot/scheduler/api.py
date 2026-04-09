@@ -135,15 +135,12 @@ async def _register_online_endpoints(
         api_key = os.environ.get(ep.api_key_env, "")
         if not api_key:
             logger.warning(
-                f"Skipping online endpoint {ep.name}: "
-                f"{ep.api_key_env} not set"
+                f"Skipping online endpoint {ep.name}: {ep.api_key_env} not set"
             )
             continue
 
         # Compute once per endpoint — shared by all virtual instances
-        pinfo = platform_info_from_online_endpoint(
-            ep.base_url, api_key
-        )
+        pinfo = platform_info_from_online_endpoint(ep.base_url, api_key)
         auth_headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
@@ -213,9 +210,7 @@ async def lifespan(app: FastAPI):
     # Register online API endpoints from config (if configured)
     n_online = await _register_online_endpoints(worker_queue_manager)
     if n_online:
-        logger.info(
-            f"Registered {n_online} online API virtual instance(s)"
-        )
+        logger.info(f"Registered {n_online} online API virtual instance(s)")
 
     # Start planner reporter (if configured)
     if planner_reporter:
