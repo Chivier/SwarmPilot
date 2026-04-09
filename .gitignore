@@ -63,6 +63,8 @@ logs/
 *.ckpt
 *.pkl
 *.joblib
+# Track default predictor models
+!models/**/*.joblib
 
 results
 
