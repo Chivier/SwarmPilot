@@ -291,8 +291,7 @@ class TestQueueDepth:
 
         assert len(depths) == 3
         assert all(
-            worker_id in depths
-            for worker_id in ["worker-0", "worker-1", "worker-2"]
+            worker_id in depths for worker_id in ["worker-0", "worker-1", "worker-2"]
         )
         assert all(isinstance(d, int) for d in depths.values())
 
@@ -534,5 +533,40 @@ class TestOnTaskStartedPropagation:
 
         thread = mgr.get_worker("worker-1")
         assert thread._on_task_started is None
+
+        mgr.shutdown()
+
+    def test_extra_headers_propagated(self, mock_callback):
+        """Test extra_headers passed through to WorkerQueueThread."""
+        mgr = WorkerQueueManager(callback=mock_callback)
+        headers = {
+            "Authorization": "Bearer sk-test-key",
+            "Content-Type": "application/json",
+        }
+
+        mgr.register_worker(
+            worker_id="online-claude",
+            worker_endpoint="https://api.anthropic.com",
+            model_id="claude-sonnet",
+            extra_headers=headers,
+        )
+
+        thread = mgr.get_worker("online-claude")
+        assert thread._extra_headers == headers
+
+        mgr.shutdown()
+
+    def test_extra_headers_default_none(self, mock_callback):
+        """Test extra_headers defaults to empty dict on thread."""
+        mgr = WorkerQueueManager(callback=mock_callback)
+
+        mgr.register_worker(
+            worker_id="worker-1",
+            worker_endpoint="http://localhost:8001",
+            model_id="test-model",
+        )
+
+        thread = mgr.get_worker("worker-1")
+        assert thread._extra_headers == {}
 
         mgr.shutdown()

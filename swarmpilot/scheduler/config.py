@@ -32,9 +32,7 @@ class PreprocessorConfig:
     config_file: str = os.getenv("PREPROCESSOR_CONFIG_FILE", "")
 
     # Fail if configured preprocessor model unavailable
-    strict_validation: bool = (
-        os.getenv("PREPROCESSOR_STRICT", "true").lower() == "true"
-    )
+    strict_validation: bool = os.getenv("PREPROCESSOR_STRICT", "true").lower() == "true"
 
 
 @dataclass
@@ -42,9 +40,7 @@ class SchedulingConfig:
     """Configuration for scheduling behavior."""
 
     # Default scheduling strategy: "min_time", "probabilistic", "round_robin"
-    default_strategy: str = os.getenv(
-        "SCHEDULING_STRATEGY", "adaptive_bootstrap"
-    )
+    default_strategy: str = os.getenv("SCHEDULING_STRATEGY", "adaptive_bootstrap")
 
     # Target quantile for probabilistic scheduling (0.0 - 1.0)
     probabilistic_quantile: float = float(
@@ -65,9 +61,7 @@ class TrainingConfig:
     batch_size: int = int(os.getenv("TRAINING_BATCH_SIZE", "100"))
 
     # Training frequency in seconds
-    frequency_seconds: int = int(
-        os.getenv("TRAINING_FREQUENCY", "3600")
-    )  # 1 hour
+    frequency_seconds: int = int(os.getenv("TRAINING_FREQUENCY", "3600"))  # 1 hour
 
     # Minimum samples required before training
     min_samples: int = int(os.getenv("TRAINING_MIN_SAMPLES", "10"))
@@ -112,9 +106,7 @@ class ServerConfig:
     port: int = int(os.getenv("SCHEDULER_PORT", "8000"))
 
     # Enable CORS
-    enable_cors: bool = (
-        os.getenv("SCHEDULER_ENABLE_CORS", "true").lower() == "true"
-    )
+    enable_cors: bool = os.getenv("SCHEDULER_ENABLE_CORS", "true").lower() == "true"
 
     # API version
     version: str = "1.0.0"
@@ -148,9 +140,7 @@ class ProxyConfig:
     timeout: float = float(os.getenv("PROXY_TIMEOUT", "300.0"))
 
     # HTTP timeout for worker queue threads
-    worker_http_timeout: float = float(
-        os.getenv("WORKER_HTTP_TIMEOUT", "300.0")
-    )
+    worker_http_timeout: float = float(os.getenv("WORKER_HTTP_TIMEOUT", "300.0"))
 
 
 @dataclass
@@ -179,9 +169,7 @@ class PlannerRegistrationConfig:
     max_retries: int = int(os.getenv("PLANNER_REGISTRATION_MAX_RETRIES", "3"))
 
     # Delay between retries in seconds
-    retry_delay: float = float(
-        os.getenv("PLANNER_REGISTRATION_RETRY_DELAY", "5.0")
-    )
+    retry_delay: float = float(os.getenv("PLANNER_REGISTRATION_RETRY_DELAY", "5.0"))
 
     def __post_init__(self) -> None:
         """Auto-derive self_url from localhost:{port} when not set."""
@@ -193,6 +181,19 @@ class PlannerRegistrationConfig:
     def enabled(self) -> bool:
         """Check if planner registration is enabled."""
         return bool(self.planner_url and self.model_id and self.self_url)
+
+
+@dataclass
+class OnlineEndpointConfig:
+    """Configuration for online API endpoint registration.
+
+    When a config file path is set, the scheduler will load and
+    auto-register online API endpoints (e.g. Claude, OpenAI) at
+    startup.
+    """
+
+    # Path to the online endpoints YAML config file
+    config_path: str = os.getenv("ONLINE_ENDPOINTS_CONFIG", "")
 
 
 @dataclass
@@ -208,6 +209,7 @@ class Config:
     planner_report: PlannerReportConfig
     proxy: ProxyConfig
     planner_registration: PlannerRegistrationConfig
+    online_endpoints: OnlineEndpointConfig
 
     @classmethod
     def load(cls) -> "Config":
@@ -226,6 +228,7 @@ class Config:
             planner_report=PlannerReportConfig(),
             proxy=ProxyConfig(),
             planner_registration=PlannerRegistrationConfig(),
+            online_endpoints=OnlineEndpointConfig(),
         )
 
     def __repr__(self) -> str:

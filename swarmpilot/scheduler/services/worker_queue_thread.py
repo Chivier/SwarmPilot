@@ -118,6 +118,7 @@ class WorkerQueueThread:
         max_retries: int = 3,
         retry_delay: float = 1.0,
         on_task_started: Callable[[str], None] | None = None,
+        extra_headers: dict[str, str] | None = None,
     ):
         """Initialize worker queue thread.
 
@@ -130,6 +131,9 @@ class WorkerQueueThread:
             max_retries: Maximum retry attempts for transient errors.
             retry_delay: Initial delay between retries (uses exponential backoff).
             on_task_started: Optional callback when task begins execution.
+            extra_headers: Instance-level HTTP headers merged into every
+                request (e.g. Authorization for online API endpoints).
+                Per-request headers from task metadata take precedence.
         """
         self.worker_id = worker_id
         self.worker_endpoint = worker_endpoint
@@ -139,6 +143,7 @@ class WorkerQueueThread:
         self._max_retries = max_retries
         self._retry_delay = retry_delay
         self._on_task_started = on_task_started
+        self._extra_headers = extra_headers or {}
 
         # Thread-safe FIFO queue
         self._queue: Queue[QueuedTask] = Queue()
@@ -165,9 +170,7 @@ class WorkerQueueThread:
             RuntimeError: If thread is already started.
         """
         if self._thread is not None:
-            raise RuntimeError(
-                f"Worker {self.worker_id} thread already started"
-            )
+            raise RuntimeError(f"Worker {self.worker_id} thread already started")
 
         self._shutdown.clear()
         self._thread = Thread(
@@ -202,9 +205,7 @@ class WorkerQueueThread:
 
         self._thread.join(timeout=timeout)
         if self._thread.is_alive():
-            logger.warning(
-                f"Worker {self.worker_id} thread did not stop gracefully"
-            )
+            logger.warning(f"Worker {self.worker_id} thread did not stop gracefully")
 
         self._thread = None
 
@@ -249,9 +250,7 @@ class WorkerQueueThread:
         task.priority = True
         with self._priority_lock:
             self._priority_deque.append(task)
-        logger.debug(
-            f"Priority task {task.task_id} enqueued to {self.worker_id}"
-        )
+        logger.debug(f"Priority task {task.task_id} enqueued to {self.worker_id}")
 
     def queue_size(self) -> int:
         """Get current queue size (approximate)."""
@@ -340,13 +339,9 @@ class WorkerQueueThread:
 
         try:
             body, status_code, headers = self._call_worker_api(task)
-            execution_time_ms = (
-                time.time() - self._current_task_started
-            ) * 1000
+            execution_time_ms = (time.time() - self._current_task_started) * 1000
 
-            logger.info(
-                f"Task {task.task_id} completed in {execution_time_ms:.2f}ms"
-            )
+            logger.info(f"Task {task.task_id} completed in {execution_time_ms:.2f}ms")
 
             self._callback(
                 TaskResult(
@@ -361,9 +356,7 @@ class WorkerQueueThread:
             )
 
         except httpx.HTTPStatusError as e:
-            execution_time_ms = (
-                time.time() - self._current_task_started
-            ) * 1000
+            execution_time_ms = (time.time() - self._current_task_started) * 1000
             # Propagate the upstream HTTP status and body
             status_code = e.response.status_code
             try:
@@ -391,9 +384,7 @@ class WorkerQueueThread:
             )
 
         except Exception as e:
-            execution_time_ms = (
-                time.time() - self._current_task_started
-            ) * 1000
+            execution_time_ms = (time.time() - self._current_task_started) * 1000
 
             logger.opt(exception=True).error(
                 f"Task {task.task_id} failed after {execution_time_ms:.2f}ms: {e}"
@@ -435,15 +426,17 @@ class WorkerQueueThread:
         # Use method from metadata if available, otherwise default to POST
         method = task.metadata.get("method", "POST").upper()
 
-        # Use request headers from metadata if available
+        # Merge instance-level headers (e.g. auth) with per-request
+        # headers from task metadata. Per-request headers win on conflict.
         request_headers = task.metadata.get("headers", {})
+        merged_headers = {**self._extra_headers, **request_headers}
 
         last_error: Exception | None = None
 
         for attempt in range(self._max_retries):
             try:
                 response = self._http_client.request(
-                    method, url, json=payload, headers=request_headers
+                    method, url, json=payload, headers=merged_headers
                 )
                 response.raise_for_status()
                 return (

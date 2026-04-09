@@ -1,0 +1,22 @@
+# Online API endpoints for Qwen3-Next-80B-A3B.
+#
+# The same model hosted by three inference providers.
+
+endpoints:
+  - name: "together-qwen3-next"
+    base_url: "http://localhost:9110"        # mock; real: https://api.together.xyz
+    api_key_env: "TOGETHER_API_KEY"
+    model_id: "Qwen/Qwen3-Next-80B-A3B"
+    concurrency_limit: 15
+
+  - name: "fireworks-qwen3-next"
+    base_url: "http://localhost:9111"        # mock; real: https://api.fireworks.ai/inference
+    api_key_env: "FIREWORKS_API_KEY"
+    model_id: "Qwen/Qwen3-Next-80B-A3B"
+    concurrency_limit: 15
+
+  - name: "lepton-qwen3-next"
+    base_url: "http://localhost:9112"        # mock; real: https://lepton.ai/api
+    api_key_env: "LEPTON_API_KEY"
+    model_id: "Qwen/Qwen3-Next-80B-A3B"
+    concurrency_limit: 15

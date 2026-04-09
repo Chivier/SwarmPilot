@@ -1,0 +1,22 @@
+# Online API endpoints for Gemma4-41B.
+#
+# The same model hosted by three inference providers.
+
+endpoints:
+  - name: "together-gemma4"
+    base_url: "http://localhost:9120"        # mock; real: https://api.together.xyz
+    api_key_env: "TOGETHER_API_KEY"
+    model_id: "google/gemma-4-41b-it"
+    concurrency_limit: 10
+
+  - name: "fireworks-gemma4"
+    base_url: "http://localhost:9121"        # mock; real: https://api.fireworks.ai/inference
+    api_key_env: "FIREWORKS_API_KEY"
+    model_id: "google/gemma-4-41b-it"
+    concurrency_limit: 10
+
+  - name: "lepton-gemma4"
+    base_url: "http://localhost:9122"        # mock; real: https://lepton.ai/api
+    api_key_env: "LEPTON_API_KEY"
+    model_id: "google/gemma-4-41b-it"
+    concurrency_limit: 10

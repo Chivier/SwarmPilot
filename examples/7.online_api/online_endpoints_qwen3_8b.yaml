@@ -1,0 +1,28 @@
+# Online API endpoints for Qwen3-8B.
+#
+# The same model hosted by three inference providers.
+# The Scheduler load-balances across them and the Predictor
+# learns each provider's latency distribution independently
+# (each has a unique PlatformInfo via hashed base_url + api_key).
+#
+# For testing without real keys, start mock_online_api.py first
+# and set *_API_KEY env vars to any non-empty string.
+
+endpoints:
+  - name: "together-qwen3-8b"
+    base_url: "http://localhost:9100"        # mock; real: https://api.together.xyz
+    api_key_env: "TOGETHER_API_KEY"
+    model_id: "Qwen/Qwen3-8B"
+    concurrency_limit: 15
+
+  - name: "fireworks-qwen3-8b"
+    base_url: "http://localhost:9101"        # mock; real: https://api.fireworks.ai/inference
+    api_key_env: "FIREWORKS_API_KEY"
+    model_id: "Qwen/Qwen3-8B"
+    concurrency_limit: 15
+
+  - name: "lepton-qwen3-8b"
+    base_url: "http://localhost:9102"        # mock; real: https://lepton.ai/api
+    api_key_env: "LEPTON_API_KEY"
+    model_id: "Qwen/Qwen3-8B"
+    concurrency_limit: 15

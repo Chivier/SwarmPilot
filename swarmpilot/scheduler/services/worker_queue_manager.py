@@ -89,6 +89,7 @@ class WorkerQueueManager:
         worker_id: str,
         worker_endpoint: str,
         model_id: str,
+        extra_headers: dict[str, str] | None = None,
     ) -> None:
         """Register a new worker and start its queue thread.
 
@@ -96,6 +97,8 @@ class WorkerQueueManager:
             worker_id: Unique identifier for the worker.
             worker_endpoint: HTTP endpoint for worker's model API.
             model_id: Model ID running on this worker.
+            extra_headers: Instance-level HTTP headers merged into
+                every request (e.g. Authorization for online APIs).
 
         Raises:
             ValueError: If worker is already registered.
@@ -113,6 +116,7 @@ class WorkerQueueManager:
                 max_retries=self._max_retries,
                 retry_delay=self._retry_delay,
                 on_task_started=self._on_task_started,
+                extra_headers=extra_headers,
             )
             thread.start()
             self._workers[worker_id] = thread
