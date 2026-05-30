@@ -1,0 +1,50 @@
+name: Publish
+
+# Release-style pipeline. Triggered manually or by a version tag.
+# NOTE: Publishing is intentionally a placeholder for now — this workflow
+# only packages a single main.py and uploads it as a build artifact. No
+# package is pushed to PyPI or any external registry yet.
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+env:
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Pack placeholder main.py
+        run: |
+          mkdir -p dist
+          cp main.py dist/main.py
+          tar -czvf dist/swarmpilot-placeholder.tar.gz -C dist main.py
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: swarmpilot-placeholder
+          path: dist/swarmpilot-placeholder.tar.gz
+          if-no-files-found: error
+
+  publish:
+    needs: package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish (placeholder)
+        run: |
+          echo "Publishing is not configured yet."
+          echo "This step is a placeholder — nothing is published."
+          # TODO(swarmpilot): wire up real publishing (e.g. PyPI via
+          # pypa/gh-action-pypi-publish) once the package is ready.
