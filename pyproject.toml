@@ -12,6 +12,7 @@ dependencies = [
     "pydantic-settings>=2.0.0",
     # HTTP client
     "httpx>=0.25.0",
+    "aiohttp>=3.13.2",  # Scheduler -> engine dispatch hot path
     # ML / numeric
     "torch>=2.0.0",
     "numpy>=1.24.0,<2.3",
@@ -48,6 +49,10 @@ analysis = [
 sscheduler = "swarmpilot.scheduler.cli:app"
 spredictor = "swarmpilot.predictor.cli:main"
 splanner = "swarmpilot.planner.cli:app"
+
+[project.entry-points."swarmpilot.engines"]
+vllm = "swarmpilot.engines.vllm:VLLMAdapter"
+sglang = "swarmpilot.engines.sglang:SGLangAdapter"
 
 [build-system]
 requires = ["hatchling"]

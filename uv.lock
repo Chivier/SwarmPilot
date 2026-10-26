@@ -1873,7 +1873,7 @@ name = "mlx"
 version = "0.31.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "mlx-metal", marker = "sys_platform == 'darwin'" },
+    { name = "mlx-metal" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/75/32/25dc2eae1d6f867224ef2bca2c644e3e913fe8067991f8394c090b720e3e/mlx-0.31.1-cp311-cp311-macosx_14_0_arm64.whl", hash = "sha256:8863835fb36c7c4f65008b1426ddb9ff7931a13c975e0ef58a40002ae8048922", size = 574311, upload-time = "2026-03-12T02:16:02.651Z" },
@@ -1896,7 +1896,7 @@ version = "0.29.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "jinja2" },
-    { name = "mlx", marker = "sys_platform == 'darwin'" },
+    { name = "mlx" },
     { name = "numpy" },
     { name = "protobuf" },
     { name = "pyyaml" },
@@ -4333,6 +4333,7 @@ name = "swarmpilot"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "aiohttp" },
     { name = "fastapi" },
     { name = "httpx" },
     { name = "joblib" },
@@ -4381,6 +4382,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "aiohttp", specifier = ">=3.13.2" },
     { name = "datasets", marker = "extra == 'analysis'", specifier = ">=4.4.1" },
     { name = "fastapi", specifier = ">=0.104.0" },
     { name = "httpx", specifier = ">=0.25.0" },
