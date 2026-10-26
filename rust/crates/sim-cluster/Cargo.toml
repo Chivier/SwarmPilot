@@ -1,0 +1,21 @@
+[package]
+name = "swarmpilot-sim-cluster"
+description = "Virtual engines over HTTP and PyLet sim workers for the SwarmPilot cluster simulator"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+axum = "0.8.9"
+base64 = "0.23.1"
+futures-util = "0.3.34"
+rand.workspace = true
+reqwest = { version = "0.13.3", default-features = false, features = ["json"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+shell-words = "1.1.1"
+swarmpilot-sim-core = { path = "../sim-core" }
+thiserror.workspace = true
+tokio = { version = "1.53.3", features = ["rt-multi-thread", "macros", "net", "time", "sync", "signal"] }
+tokio-stream = "0.1.19"

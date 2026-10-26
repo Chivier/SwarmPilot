@@ -63,3 +63,11 @@ generic-small:
   concurrency: 4
   source: synthetic
   aliases: []
+
+qwen3-8b:
+  kind: llm
+  params_b: 8.19
+  layers: 36
+  kv_heads: 8
+  head_dim: 128
+  aliases: [Qwen/Qwen3-8B, Qwen/Qwen3-8B-Base]

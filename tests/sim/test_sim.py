@@ -106,3 +106,17 @@ def test_bad_spec_is_an_error(tmp_path):
     )
     with pytest.raises(RuntimeError, match="does not fit"):
         sim.plan(bad)
+
+
+def test_planner_sim_mode_implies_local_mode(monkeypatch):
+    from swarmpilot.planner.config import PlannerConfig
+
+    monkeypatch.setenv("PYLET_SIM_MODE", "true")
+    monkeypatch.setenv("PYLET_LOCAL_PORT", "5155")
+    monkeypatch.setenv("PYLET_SIM_TIME_SCALE", "0.1")
+    monkeypatch.delenv("PYLET_HEAD_URL", raising=False)
+    cfg = PlannerConfig()
+    assert cfg.pylet_sim_mode and cfg.pylet_local_mode and cfg.pylet_enabled
+    assert cfg.pylet_head_url == "http://localhost:5155"
+    assert cfg.pylet_sim_time_scale == 0.1
+    assert cfg.pylet_sim_spec is None
