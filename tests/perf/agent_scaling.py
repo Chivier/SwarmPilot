@@ -251,7 +251,9 @@ class Sim:
             )
         for m in self.machines:
             if m.done:
-                self.store.submit_throughput(m.endpoint, float(np.mean(m.done)))
+                self.store.submit_throughput(
+                    m.endpoint, float(np.mean(m.done)), model_id=m.model
+                )
                 m.done = []
         self.arrivals.clear()
         for c in self.calls.values():

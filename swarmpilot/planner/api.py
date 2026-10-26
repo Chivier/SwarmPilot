@@ -701,7 +701,9 @@ async def submit_throughput(request: SubmitThroughputRequest):
         The smoothed execution time now held for the instance.
     """
     smoothed = get_demand_store().submit_throughput(
-        request.instance_url, request.avg_execution_time
+        request.instance_url,
+        request.avg_execution_time,
+        model_id=request.model_id,
     )
     return DemandReportResponse(smoothed=smoothed)
 

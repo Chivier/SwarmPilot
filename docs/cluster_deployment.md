@@ -457,6 +457,8 @@ call ratios it plans from. In the agent-workload simulation
 7.0% of tasks against 40.4% for the `count` scaler with short agent steps,
 and 1.7% against 13.5% with long ones. Schedulers older than this release
 send no arrival rate; while any model lacks one the Planner uses `count`.
+`tests/integration/autoscale_e2e.py` checks the whole loop on a local PyLet
+cluster with fake LLM and diffusion engines.
 
 ---
 

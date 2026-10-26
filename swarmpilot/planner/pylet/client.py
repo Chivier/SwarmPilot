@@ -21,6 +21,7 @@ from __future__ import annotations
 import shlex
 from dataclasses import dataclass, field
 
+import httpx
 import pylet
 from loguru import logger
 from pylet import Instance
@@ -28,6 +29,32 @@ from pylet.errors import NotFoundError, PyletError
 
 from swarmpilot.engines import adapter_names, get_adapter
 from swarmpilot.errors import PartialDeploymentError
+
+
+def _submit(command: str, kwargs: dict) -> Instance:
+    """Submit an instance, retrying once if the connection drops.
+
+    The PyLet head may close a pooled keep-alive connection (seen right
+    after an instance is deleted), so the next request fails with a reset
+    before the head reads it. If the head did read it, the instance exists
+    under its unique name, and that instance is returned instead of
+    submitting a second one.
+
+    Args:
+        command: Launch command.
+        kwargs: Keyword arguments for ``pylet.submit``; ``name`` is set.
+
+    Returns:
+        The submitted instance.
+    """
+    try:
+        return pylet.submit(command, **kwargs)
+    except httpx.TransportError as e:
+        logger.warning(f"PyLet submit of {kwargs['name']} failed ({e}); retrying")
+    try:
+        return pylet.get(kwargs["name"])
+    except NotFoundError:
+        return pylet.submit(command, **kwargs)
 
 
 @dataclass
@@ -177,9 +204,7 @@ class PyLetClient:
             try:
                 # Check if PyLet is already initialized by listing workers
                 # Use a timeout to avoid hanging if PyLet is unresponsive
-                with concurrent.futures.ThreadPoolExecutor(
-                    max_workers=1
-                ) as executor:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
                     future = executor.submit(pylet.workers)
                     workers = future.result(timeout=timeout)
                 logger.info(
@@ -309,7 +334,7 @@ class PyLetClient:
                 submit_kwargs["target_worker"] = target_worker
 
             try:
-                instance = pylet.submit(command, **submit_kwargs)
+                instance = _submit(command, submit_kwargs)
                 logger.info(
                     f"Instance {i + 1}/{count} submitted: "
                     f"pylet_id={instance.id}, name={instance_name}"
@@ -318,7 +343,12 @@ class PyLetClient:
             except PyletError as e:
                 failed.append((i, str(e)))
                 logger.warning(f"Failed to submit replica {i}: {e}")
-            except (RuntimeError, ConnectionError, TimeoutError) as e:
+            except (
+                RuntimeError,
+                ConnectionError,
+                TimeoutError,
+                httpx.HTTPError,
+            ) as e:
                 failed.append((i, str(e)))
                 logger.warning(f"Failed to submit replica {i}: {e}")
 
@@ -393,9 +423,7 @@ class PyLetClient:
 
         instance.wait_running(timeout=timeout)
 
-        logger.info(
-            f"Instance {pylet_id} running at endpoint: {instance.endpoint}"
-        )
+        logger.info(f"Instance {pylet_id} running at endpoint: {instance.endpoint}")
         return InstanceInfo.from_pylet_instance(instance)
 
     def cancel_instance(
@@ -498,9 +526,7 @@ class PyLetClient:
             RuntimeError: If client not initialized.
         """
         if not self._initialized:
-            raise RuntimeError(
-                "PyLet client not initialized. Call init() first."
-            )
+            raise RuntimeError("PyLet client not initialized. Call init() first.")
 
 
 # Global client singleton

@@ -42,9 +42,12 @@ class SubmitThroughputRequest(BaseModel):
     Attributes:
         instance_url: Endpoint of the instance.
         avg_execution_time: Mean task execution time in seconds.
+        model_id: Model the instance served. Newer Schedulers send it so a
+            port PyLet reuses for another model starts a fresh reading.
     """
 
     instance_url: str = Field(..., min_length=1)
+    model_id: str | None = None
     avg_execution_time: float = Field(..., gt=0, allow_inf_nan=False)
 
 

@@ -286,6 +286,7 @@ class PlannerReporter:
                         json={
                             "instance_url": instance_endpoint,
                             "avg_execution_time": avg_execution_time_seconds,
+                            "model_id": self._model_id,
                         },
                     )
                     logger.debug(

@@ -34,7 +34,8 @@ Two scalers turn reports into each model's share of the machines:
   their current replicas serve. A caller's surge reaches its callees in the
   same round, while a caller that is the bottleneck keeps its machines.
   ``work[j]`` is the q0.9 of the outstanding work from the Scheduler's queue
-  sketches, so heavy-tailed models get headroom. The loop falls back to
+  sketches, so heavy-tailed models get headroom, and never less than the
+  outstanding tasks times ``s[j]``. The loop falls back to
   ``count`` while any reporting model sends no arrival rate (an older
   Scheduler).
 """
@@ -164,7 +165,11 @@ class AutoOptimizer:
         per_model: dict[str, list[float]] = {m: [] for m in models}
         for inst in instances:
             if inst.endpoint:
-                t = self._store.execution_time(inst.endpoint, max_age=self.stale_after)
+                t = self._store.execution_time(
+                    inst.endpoint,
+                    max_age=self.stale_after,
+                    model_id=inst.model_id,
+                )
                 if t is not None:
                     per_model[inst.model_id].append(t)
         known = [t for ts in per_model.values() for t in ts]
@@ -294,9 +299,12 @@ class AutoOptimizer:
             if settled:
                 break
 
+        # The sketches hold no work for tasks routed without a trained
+        # predictor, so the backlog is never taken below its mean.
         return {
             j: rate[j] * exec_times[j]
-            + work.get(j, outstanding.get(j, 0.0) * exec_times[j]) / self.horizon
+            + max(work.get(j, 0.0), outstanding.get(j, 0.0) * exec_times[j])
+            / self.horizon
             for j in models
         }
 

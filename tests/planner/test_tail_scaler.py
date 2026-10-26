@@ -36,9 +36,7 @@ class TestDemandStore:
     def test_call_ratio_is_calls_per_caller_task(self):
         store = DemandStore(alpha=1.0)
         store.submit_target("llm", 0, arrival_rate=2.0)
-        store.submit_target(
-            "tool", 0, arrival_rate=3.0, calls_from={"llm": 3.0}
-        )
+        store.submit_target("tool", 0, arrival_rate=3.0, calls_from={"llm": 3.0})
         assert store.call_ratios() == {"llm": {"tool": 1.5}}
 
     def test_caller_that_stops_calling_decays_to_zero(self):
@@ -137,18 +135,14 @@ class TestPlan:
         assert plan.target_state == {"a": 2, "b": 6}
 
     @pytest.mark.parametrize("llm_replicas,tool_need", [(6, 6.0), (2, 2.0)])
-    def test_callee_follows_what_callers_can_finish(
-        self, llm_replicas, tool_need
-    ):
+    def test_callee_follows_what_callers_can_finish(self, llm_replicas, tool_need):
         # llm: 3/s arriving, 40 queued. Each llm task calls tool once.
         # Over the 10 s horizon llm can finish 3 + 40/10 = 7/s, but no
         # more than its replicas serve (1 task/s each).
         service = _Service({"llm": llm_replicas, "tool": 4})
         store = _store(service, {"llm": 1.0, "tool": 1.0})
         store.submit_target("llm", 40, arrival_rate=3.0)
-        store.submit_target(
-            "tool", 0, arrival_rate=3.0, calls_from={"llm": 3.0}
-        )
+        store.submit_target("tool", 0, arrival_rate=3.0, calls_from={"llm": 3.0})
         demand = _opt(store, service)._tail_demand(
             store.targets(),
             store.arrival_rates(),
@@ -163,12 +157,8 @@ class TestPlan:
         service = _Service({"llm": 10, "tool": 10})
         store = _store(service, {"llm": 1.0, "tool": 2.0})
         llm, tool = 1 / (1 - 0.4), 0.8 / (1 - 0.4)
-        store.submit_target(
-            "llm", 0, arrival_rate=llm, calls_from={"tool": 0.5 * tool}
-        )
-        store.submit_target(
-            "tool", 0, arrival_rate=tool, calls_from={"llm": 0.8 * llm}
-        )
+        store.submit_target("llm", 0, arrival_rate=llm, calls_from={"tool": 0.5 * tool})
+        store.submit_target("tool", 0, arrival_rate=tool, calls_from={"llm": 0.8 * llm})
         opt = _opt(store, service)
         demand = opt._tail_demand(
             store.targets(),
@@ -210,3 +200,37 @@ def test_fewer_slo_misses_than_count_scaler(scenario):
         count,
         tail,
     )
+
+
+def test_backlog_never_below_outstanding_mean():
+    # No trained predictor yet: the sketches report no work.
+    service = _Service({"a": 2, "b": 2})
+    store = _store(service, {"a": 1.0, "b": 2.0})
+    store.submit_target("a", 0, arrival_rate=1.0, work_s=0.0)
+    store.submit_target("b", 10, arrival_rate=1.0, work_s=0.0)
+    demand = _opt(store, service)._tail_demand(
+        store.targets(),
+        store.arrival_rates(),
+        {"a": 1.0, "b": 2.0},
+        {"a": 2, "b": 2},
+    )
+    assert demand == pytest.approx({"a": 1.0, "b": 2.0 + 10 * 2.0 / 10})
+
+
+def test_reused_port_starts_a_fresh_execution_time():
+    # PyLet hands a port that served the diffusion model to the LLM.
+    store = DemandStore(alpha=0.5)
+    store.submit_throughput("http://w:15301", 0.8, model_id="diff")
+    assert store.execution_time("http://w:15301", model_id="llm") is None
+    assert store.submit_throughput("http://w:15301", 0.3, model_id="llm") == 0.3
+    assert store.execution_time("http://w:15301", model_id="llm") == 0.3
+    # Older Schedulers send no model: readings are averaged as before.
+    store.submit_throughput("http://w:1", 1.0)
+    assert store.submit_throughput("http://w:1", 2.0) == 1.5
+
+
+def test_pylet_endpoint_matches_scheduler_url():
+    # PyLet's endpoints carry no scheme; the Scheduler's reports do.
+    store = DemandStore(alpha=1.0)
+    store.submit_throughput("http://127.0.0.1:15301/", 0.3, model_id="llm")
+    assert store.execution_time("127.0.0.1:15301", model_id="llm") == 0.3
