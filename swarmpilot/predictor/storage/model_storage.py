@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -34,6 +35,9 @@ class ModelStorage:
         storage_dir: Path to the directory where models are stored.
     """
 
+    #: How long model_exists() trusts a miss before checking disk again.
+    MISSING_TTL_S: float = 2.0
+
     def __init__(self, storage_dir: str = "models") -> None:
         """Initialize model storage.
 
@@ -43,6 +47,8 @@ class ModelStorage:
         self.storage_dir = Path(storage_dir)
         self.storage_dir.mkdir(parents=True, exist_ok=True)
         self.loaded_models: dict[str, Any] = {}
+        self._known: set[str] = set()
+        self._missing: dict[str, float] = {}
 
     def generate_model_key(
         self,
@@ -107,6 +113,8 @@ class ModelStorage:
         model_path.parent.mkdir(parents=True, exist_ok=True)
         try:
             joblib.dump(complete_state, model_path)
+            self._known.add(model_key)
+            self._missing.pop(model_key, None)
             logger.debug(f"Model saved successfully: {model_path}")
         except (OSError, RuntimeError) as e:
             logger.opt(exception=True).error(
@@ -235,8 +243,23 @@ class ModelStorage:
         Returns:
             True if model exists, False otherwise.
         """
-        model_path = self.storage_dir / f"{model_key}.joblib"
-        return model_path.exists()
+        # Called for every instance on every routed request, so answers are
+        # cached: a model seen once stays known until delete_model, and a
+        # miss is remembered for MISSING_TTL_S so a cold platform does not
+        # cost a filesystem stat per request. Models written by another
+        # process show up within that TTL.
+        if model_key in self._known:
+            return True
+        now = time.monotonic()
+        expiry = self._missing.get(model_key)
+        if expiry is not None and now < expiry:
+            return False
+        if (self.storage_dir / f"{model_key}.joblib").exists():
+            self._known.add(model_key)
+            self._missing.pop(model_key, None)
+            return True
+        self._missing[model_key] = now + self.MISSING_TTL_S
+        return False
 
     def list_models(self) -> list[dict[str, Any]]:
         """List all stored models with their metadata.
@@ -283,6 +306,7 @@ class ModelStorage:
             True if model was deleted, False if not found.
         """
         model_path = self.storage_dir / f"{model_key}.joblib"
+        self._known.discard(model_key)
 
         if not model_path.exists():
             return False

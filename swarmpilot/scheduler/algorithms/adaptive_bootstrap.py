@@ -126,7 +126,7 @@ class AdaptiveBootstrapStrategy(SchedulingStrategy):
             self._rr_counter += 1
 
         selected = available_instances[idx]
-        logger.info(
+        logger.debug(
             f"[ADAPTIVE] Cold-start for model_id={model_id}, "
             f"round-robin selected instance={selected.instance_id} "
             f"(index={idx}/{len(available_instances)})"
