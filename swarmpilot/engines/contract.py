@@ -13,6 +13,7 @@ the same checks on its own adapter::
 
 from __future__ import annotations
 
+import json
 import math
 import shlex
 
@@ -116,6 +117,50 @@ def _check_features(adapter: EngineAdapter, spec: WorkloadSpec) -> list[str]:
     return problems
 
 
+# Values that probe each top-level field of an example body.
+_PROBES: tuple[object, ...] = (None, True, -1, 0, 2.5, "7", "x", [], {}, [1])
+
+
+def _variants(body: dict) -> list[dict]:
+    """Example body, empty body and one variant per field and probe."""
+    out = [body, {}]
+    for key in body:
+        out.append({k: v for k, v in body.items() if k != key})
+        out += [{**body, key: probe} for probe in _PROBES]
+    return out
+
+
+def _check_manifest(adapter: EngineAdapter, spec: WorkloadSpec) -> list[str]:
+    from swarmpilot.engines.extractors import ExtractorError
+    from swarmpilot.engines.manifest import EngineManifest, manifest_features
+
+    pairs = adapter.feature_extractors()
+    if pairs and [n for n, _ in pairs] != list(spec.feature_names):
+        return [
+            f"feature_extractors() names {[n for n, _ in pairs]} != "
+            f"workload.feature_names {list(spec.feature_names)}"
+        ]
+    try:
+        manifest = adapter.manifest()
+        EngineManifest.model_validate(json.loads(json.dumps(manifest)))
+    except (ExtractorError, ValidationError, TypeError, ValueError) as e:
+        return [f"manifest() is invalid: {e}"]
+    if not pairs:
+        return []
+    problems = []
+    for path, body in adapter.example_requests():
+        for variant in _variants(body):
+            want = adapter.features(path, variant)
+            got = manifest_features(manifest, variant)
+            if got != want:
+                problems.append(
+                    f"manifest features {got} != features() {want} "
+                    f"for {path} {variant}"
+                )
+                break
+    return problems
+
+
 def check_adapter(adapter: EngineAdapter) -> list[str]:
     """Return every contract violation of ``adapter`` (empty when it passes).
 
@@ -138,6 +183,7 @@ def check_adapter(adapter: EngineAdapter) -> list[str]:
     problems += _check_launch(adapter)
     problems += _check_routes(adapter)
     problems += _check_features(adapter, spec)
+    problems += _check_manifest(adapter, spec)
 
     cap = adapter.capacity()
     if not isinstance(cap, Capacity) or cap.max_in_flight < 1:

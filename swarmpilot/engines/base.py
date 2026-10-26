@@ -268,12 +268,25 @@ class EngineAdapter(abc.ABC):
     def routes(self) -> tuple[RouteSpec, ...]:
         """Return the public routes this engine serves."""
 
-    @abc.abstractmethod
+    def feature_extractors(self) -> tuple[tuple[str, str], ...]:
+        """Return ``(feature name, extractor expression)`` pairs.
+
+        The expressions (see :mod:`swarmpilot.engines.extractors`) go into
+        the adapter's :meth:`manifest`, so any gateway can compute the same
+        features without running Python. Return ``()`` when the features
+        need code the extractors cannot express; :meth:`features` is then
+        the only definition.
+        """
+        return ()
+
     def features(self, path: str, body: Mapping[str, Any]) -> dict[str, float]:
         """Turn a request into numeric predictor features.
 
         Must be cheap (it runs on every request) and must return exactly
-        ``workload.feature_names`` as keys.
+        ``workload.feature_names`` as keys. The default evaluates
+        :meth:`feature_extractors`. Adapters may override it with
+        hand-written code for speed, and the contract suite then checks
+        that both give the same values.
 
         Args:
             path: Route path without a leading slash.
@@ -282,6 +295,30 @@ class EngineAdapter(abc.ABC):
         Returns:
             Feature name to value.
         """
+        compiled = self.__dict__.get("_compiled_features")
+        if compiled is None:
+            from swarmpilot.engines.extractors import compile_extractor
+
+            pairs = self.feature_extractors()
+            if not pairs:
+                raise NotImplementedError(
+                    f"{type(self).__name__} declares no feature_extractors() "
+                    "and does not override features()"
+                )
+            compiled = tuple(
+                (name, compile_extractor(expr)) for name, expr in pairs
+            )
+            self.__dict__["_compiled_features"] = compiled
+        return {name: fn(body) for name, fn in compiled}
+
+    def manifest(self) -> dict[str, Any]:
+        """Return this adapter as plain data for non-Python data planes.
+
+        See :mod:`swarmpilot.engines.manifest` for the format.
+        """
+        from swarmpilot.engines.manifest import build_manifest
+
+        return build_manifest(self)
 
     def capacity(self) -> Capacity:
         """Return how many requests one instance takes at once."""

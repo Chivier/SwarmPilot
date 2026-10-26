@@ -8,18 +8,26 @@ each feature with a small expression over the request body instead:
 Expression                Value
 ========================  ==================================================
 ``field(max_tokens)``     The number at that path.
+``field(max_tokens, default=256)``  The same, with a default of its own.
 ``len(messages)``         Length of the list or string at that path.
 ``count(items[*].id)``    How many values the path matches.
 ``chars(messages[*].content)``  Total characters over every match.
 ``product(width, height)``  Product of its arguments.
 ``sum(a, b)``             Sum of its arguments.
 ``min(a, b)``, ``max(a, b)``  Smallest or largest argument.
+``coalesce(a, b, 1024)``  The first argument that has a value.
+``area(size)``            ``W*H`` from a ``"WxH"`` string such as ``"1024x768"``.
 ``42``                    A constant.
 ========================  ==================================================
 
 Paths use dots for keys, ``[N]`` for a list index and ``[*]`` for every
 element. A bare path as an argument means ``field(path)``. When a path is
 missing or not a number, the feature takes its ``default``.
+
+The same grammar is part of the adapter manifest (see
+:mod:`swarmpilot.engines.manifest`), so any implementation of it, such as
+a future Rust gateway, extracts identical features. ``tokens(...)`` is
+reserved for token counts and not implemented yet.
 
 Expressions are parsed once into closures, never evaluated with ``eval``,
 so a configuration file cannot run code, and the per-request cost is a few
@@ -30,11 +38,13 @@ from __future__ import annotations
 
 import math
 import re
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Mapping
 from typing import Any
 
 _MISSING = object()
-_TOKEN = re.compile(r"\s*(?:([A-Za-z_][\w.\[\]*-]*)|(-?\d+(?:\.\d+)?)|(.))")
+_TOKEN = re.compile(
+    r"\s*(?:([A-Za-z_][\w.\[\]*-]*)|(-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)|(.))"
+)
 
 Getter = Callable[[Mapping[str, Any]], Any]
 Extractor = Callable[[Mapping[str, Any]], float]
@@ -58,31 +68,67 @@ def _parse_path(path: str) -> tuple[str | int | None, ...]:
     return tuple(steps)
 
 
-def _walk(value: Any, steps: tuple[str | int | None, ...]) -> Iterator[Any]:
-    if not steps:
-        yield value
-        return
-    step, rest = steps[0], steps[1:]
-    if step is None:
-        if isinstance(value, list):
-            for item in value:
-                yield from _walk(item, rest)
-    elif isinstance(step, int):
-        if isinstance(value, list) and -len(value) <= step < len(value):
-            yield from _walk(value[step], rest)
-    elif isinstance(value, Mapping) and step in value:
-        yield from _walk(value[step], rest)
-
-
 def _number(value: Any) -> Any:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return _MISSING
     return float(value) if math.isfinite(value) else _MISSING
 
 
-def _path_getter(path: str) -> Callable[[Any], Iterator[Any]]:
+def _is_map(v: Any) -> bool:
+    return type(v) is dict or isinstance(v, Mapping)
+
+
+def _path_getter(path: str) -> Callable[[Any], list[Any]]:
+    """Compile a path into a function returning every value it matches.
+
+    Paths without ``[*]`` take a fast single-value route; this runs on
+    every request, so it avoids generators and recursion.
+    """
     steps = _parse_path(path)
-    return lambda body: _walk(body, steps)
+
+    if None not in steps:
+
+        def single(body: Any) -> list[Any]:
+            v = body
+            for step in steps:
+                if type(step) is int:
+                    if type(v) is not list or not -len(v) <= step < len(v):
+                        return []
+                    v = v[step]
+                elif _is_map(v):
+                    v = v.get(step, _MISSING)
+                    if v is _MISSING:
+                        return []
+                else:
+                    return []
+            return [v]
+
+        return single
+
+    def many(body: Any) -> list[Any]:
+        cur = [body]
+        for step in steps:
+            nxt: list[Any] = []
+            if step is None:
+                for v in cur:
+                    if type(v) is list:
+                        nxt.extend(v)
+            elif type(step) is int:
+                for v in cur:
+                    if type(v) is list and -len(v) <= step < len(v):
+                        nxt.append(v[step])
+            else:
+                for v in cur:
+                    if _is_map(v):
+                        x = v.get(step, _MISSING)
+                        if x is not _MISSING:
+                            nxt.append(x)
+            if not nxt:
+                return nxt
+            cur = nxt
+        return cur
+
+    return many
 
 
 def _first(path: str) -> Getter:
@@ -110,14 +156,49 @@ def _len(path: str) -> Getter:
 
 def _count(path: str) -> Getter:
     walk = _path_getter(path)
-    return lambda body: float(sum(1 for _ in walk(body)))
+    return lambda body: float(len(walk(body)))
 
 
 def _chars(path: str) -> Getter:
     walk = _path_getter(path)
-    return lambda body: float(
-        sum(len(v) for v in walk(body) if isinstance(v, str))
-    )
+
+    def get(body: Mapping[str, Any]) -> float:
+        n = 0
+        for v in walk(body):
+            if type(v) is str:
+                n += len(v)
+        return float(n)
+
+    return get
+
+
+def _area(path: str) -> Getter:
+    walk = _path_getter(path)
+
+    def get(body: Mapping[str, Any]) -> Any:
+        for v in walk(body):
+            if isinstance(v, str):
+                w, _, h = v.lower().partition("x")
+                if w.isdigit() and h.isdigit():
+                    return float(int(w) * int(h))
+            return _MISSING
+        return _MISSING
+
+    return get
+
+
+def _coalesce(*args: Getter) -> Getter:
+    if not args:
+        raise ExtractorError("needs at least one argument")
+
+    def get(body: Mapping[str, Any]) -> Any:
+        for a in args:
+            v = a(body)
+            if v is not _MISSING:
+                return v
+        return _MISSING
+
+    return get
 
 
 def _combine(fn: Callable[[list[float]], float]) -> Callable[..., Getter]:
@@ -126,9 +207,12 @@ def _combine(fn: Callable[[list[float]], float]) -> Callable[..., Getter]:
             raise ExtractorError("needs at least one argument")
 
         def get(body: Mapping[str, Any]) -> Any:
-            vals = [a(body) for a in args]
-            if any(v is _MISSING for v in vals):
-                return _MISSING
+            vals = []
+            for a in args:
+                v = a(body)
+                if v is _MISSING:
+                    return _MISSING
+                vals.append(v)
             return fn(vals)
 
         return get
@@ -141,12 +225,14 @@ _PATH_FUNCS: dict[str, Callable[[str], Getter]] = {
     "len": _len,
     "count": _count,
     "chars": _chars,
+    "area": _area,
 }
 _COMBINERS: dict[str, Callable[..., Getter]] = {
     "product": _combine(math.prod),
     "sum": _combine(math.fsum),
     "min": _combine(min),
     "max": _combine(max),
+    "coalesce": _coalesce,
 }
 
 
@@ -174,6 +260,17 @@ class _Parser:
         if self.take()[2] != op:
             raise ExtractorError(f"expected {op!r} in {self.text!r}")
 
+    def keyword_default(self) -> Getter:
+        self.take()
+        if self.take()[0] != "default":
+            raise ExtractorError(f"expected default= in {self.text!r}")
+        self.expect("=")
+        num = self.take()[1]
+        if not num:
+            raise ExtractorError(f"default must be a number in {self.text!r}")
+        value = float(num)
+        return lambda body: value
+
     def expr(self) -> Getter:
         name, num, op = self.take()
         if num:
@@ -189,8 +286,11 @@ class _Parser:
             path = self.take()[0]
             if not path:
                 raise ExtractorError(f"{name}() needs a path in {self.text!r}")
+            getter = _PATH_FUNCS[name](path)
+            if self.peek() == ("", "", ","):
+                getter = _coalesce(getter, self.keyword_default())
             self.expect(")")
-            return _PATH_FUNCS[name](path)
+            return getter
         if name in _COMBINERS:
             args = [self.expr()]
             while (tok := self.take())[2] == ",":

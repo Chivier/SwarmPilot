@@ -5,6 +5,7 @@ Uses joblib for serialization and local filesystem for storage.
 
 from __future__ import annotations
 
+import json
 import os
 from datetime import UTC, datetime
 from pathlib import Path
@@ -15,6 +16,13 @@ import joblib
 from swarmpilot.predictor.utils.logging import get_logger
 
 logger = get_logger()
+
+
+def _json_default(value: Any) -> Any:
+    """Convert numpy scalars and arrays for the JSON sidecar."""
+    if hasattr(value, "tolist"):
+        return value.tolist()
+    raise TypeError(f"{type(value).__name__} is not JSON serializable")
 
 
 class ModelStorage:
@@ -110,6 +118,83 @@ class ModelStorage:
             )
             raise
 
+        try:
+            self.export_portable(model_key, predictor_state, metadata)
+        except (OSError, RuntimeError, TypeError, ValueError, ImportError) as e:
+            # joblib stays the source of truth; the portable copy is for
+            # non-Python readers and must never block training.
+            logger.warning(f"Portable export failed for {model_key}: {e}")
+
+    def export_portable(
+        self,
+        model_key: str,
+        predictor_state: dict[str, Any],
+        metadata: dict[str, Any],
+    ) -> Path:
+        """Write the model as safetensors weights plus a JSON sidecar.
+
+        This is the predictor model file of the Rust migration plan: any
+        language can load it without unpickling. ``{key}.safetensors``
+        holds the network weights; ``{key}.json`` holds the model key, the
+        platform it was trained on (workload, engine, version, hardware,
+        feature schema), the architecture, the feature and target scaling
+        and every other non-tensor field of the predictor state, plus the
+        SHA-256 of the weights file (named relative to the sidecar's
+        directory). Both are written to temporary names
+        and renamed, weights first, so a reader that sees the sidecar
+        always finds matching weights.
+
+        Args:
+            model_key: Unique key for the model.
+            predictor_state: State from ``get_model_state()``.
+            metadata: Model metadata (model_id, platform_info, ...).
+
+        Returns:
+            Path of the JSON sidecar.
+
+        Raises:
+            TypeError: If a non-tensor state field is not JSON-serializable.
+        """
+        import hashlib
+
+        from safetensors.torch import save_file
+
+        tensors = {
+            name: t.detach().cpu().contiguous()
+            for name, t in predictor_state.get("model_state_dict", {}).items()
+        }
+        rest = {
+            k: v for k, v in predictor_state.items() if k != "model_state_dict"
+        }
+        weights = self.storage_dir / f"{model_key}.safetensors"
+        sidecar = self.storage_dir / f"{model_key}.json"
+        weights.parent.mkdir(parents=True, exist_ok=True)
+
+        tmp = weights.with_name(weights.name + ".tmp")
+        save_file(tensors, str(tmp), metadata={"model_key": model_key})
+        digest = hashlib.sha256(tmp.read_bytes()).hexdigest()
+        os.replace(tmp, weights)
+
+        doc = {
+            "format": "swarmpilot-predictor",
+            "format_version": 1,
+            "model_key": model_key,
+            "model_id": metadata.get("model_id"),
+            "prediction_type": metadata.get("prediction_type"),
+            "platform_info": metadata.get("platform_info"),
+            "samples_count": metadata.get("samples_count"),
+            "weights_file": weights.name,
+            "weights_sha256": digest,
+            "activation": "relu",
+            "state": rest,
+            "saved_at": datetime.now(UTC).isoformat(),
+        }
+        tmp = sidecar.with_name(sidecar.name + ".tmp")
+        tmp.write_text(json.dumps(doc, indent=2, default=_json_default))
+        os.replace(tmp, sidecar)
+        logger.debug(f"Portable model written: {sidecar}")
+        return sidecar
+
     def load_model(self, model_key: str) -> dict[str, Any] | None:
         """Load model and metadata from disk.
 
@@ -203,6 +288,8 @@ class ModelStorage:
             return False
 
         model_path.unlink()
+        for suffix in (".safetensors", ".json"):
+            (self.storage_dir / f"{model_key}{suffix}").unlink(missing_ok=True)
         return True
 
     def get_storage_info(self) -> dict[str, Any]:

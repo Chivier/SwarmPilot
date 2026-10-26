@@ -47,7 +47,7 @@ from swarmpilot.engines.base import (
     WorkloadSpec,
     WorkloadType,
 )
-from swarmpilot.engines.extractors import Extractor, compile_extractor
+from swarmpilot.engines.extractors import compile_extractor
 
 CONFIG_ENV = "SWARMPILOT_ENGINE_CONFIGS"
 
@@ -129,7 +129,7 @@ class GenericHTTPAdapter(EngineAdapter):
     """
 
     config: ClassVar[GenericEngineConfig]
-    _extractors: ClassVar[tuple[tuple[str, Extractor], ...]]
+    _extractors: ClassVar[tuple[tuple[str, str], ...]]
     _routes: ClassVar[tuple[RouteSpec, ...]]
 
     def launch_spec(
@@ -164,9 +164,12 @@ class GenericHTTPAdapter(EngineAdapter):
         """Return the configured routes."""
         return self._routes
 
-    def features(self, path: str, body: Mapping[str, Any]) -> dict[str, float]:
-        """Evaluate every configured feature expression."""
-        return {name: fn(body) for name, fn in self._extractors}
+    def feature_extractors(self) -> tuple[tuple[str, str], ...]:
+        """Return the configured feature expressions.
+
+        :meth:`features` evaluates them; there is no hand-written copy.
+        """
+        return self._extractors
 
     def capacity(self) -> Capacity:
         """Return the configured capacity."""
@@ -189,6 +192,13 @@ class GenericHTTPAdapter(EngineAdapter):
         except (httpx.HTTPError, ValueError, KeyError, TypeError):
             pass
         return "unknown"
+
+
+def _with_default(expr: str, default: float) -> str:
+    """Fold a feature's default into its expression, checking it parses."""
+    out = expr if default == 0 else f"coalesce({expr}, {default!r})"
+    compile_extractor(out)
+    return out
 
 
 def make_adapter_class(
@@ -223,8 +233,7 @@ def make_adapter_class(
             feature_schema_version=config.feature_schema_version,
         ),
         "_extractors": tuple(
-            (f.name, compile_extractor(f.expr, f.default))
-            for f in config.features
+            (f.name, _with_default(f.expr, f.default)) for f in config.features
         ),
         "_routes": tuple(
             RouteSpec(

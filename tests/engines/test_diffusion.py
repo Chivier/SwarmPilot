@@ -44,7 +44,7 @@ class TestFeatures:
 
     @pytest.mark.parametrize(
         "body",
-        [{"num_inference_steps": "x", "n": True}, {"n": 0}, {}],
+        [{"num_inference_steps": "x", "n": True}, {"n": None}, {}],
     )
     def test_bad_values_use_defaults(self, body):
         feats = diffusion_features(body, default_steps=25)

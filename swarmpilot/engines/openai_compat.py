@@ -11,6 +11,7 @@ so for now they only document the surface.
 
 from __future__ import annotations
 
+import math
 import re
 from collections.abc import Mapping
 from typing import Any, ClassVar
@@ -105,16 +106,26 @@ LLM_ROUTES: tuple[RouteSpec, ...] = (
 )
 
 
-def _text_length(content: Any) -> int:
-    if isinstance(content, str):
-        return len(content)
-    if isinstance(content, list):
-        return sum(
-            len(p.get("text", ""))
-            for p in content
-            if isinstance(p, dict) and isinstance(p.get("text"), str)
-        )
-    return 0
+def _number(value: Any) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    return float(value) if math.isfinite(value) else None
+
+
+def _chars(value: Any) -> int:
+    return len(value) if type(value) is str else 0
+
+
+#: Declarative form of :func:`llm_features`, for the adapter manifest.
+PROMPT_LENGTH_EXPR = (
+    "sum(chars(messages[*].content), chars(messages[*].content[*].text), "
+    "chars(prompt), chars(prompt[*]))"
+)
+
+
+def max_tokens_expr(default_max_tokens: int) -> str:
+    """Return the declarative form of the ``max_tokens`` feature."""
+    return f"coalesce(max_tokens, max_completion_tokens, {default_max_tokens})"
 
 
 def llm_features(
@@ -122,8 +133,12 @@ def llm_features(
 ) -> dict[str, float]:
     """Return ``prompt_length`` (characters) and ``max_tokens`` for a request.
 
-    ``prompt_length`` counts characters, as the proxy did before adapters,
-    so models trained on earlier data keep their meaning.
+    ``prompt_length`` counts the characters of every message text (plain
+    or in content parts) and of ``prompt`` (a string or a list of strings).
+    ``max_tokens`` falls back to ``max_completion_tokens`` and then to the
+    default. This is a hand-written copy of :data:`PROMPT_LENGTH_EXPR` and
+    :func:`max_tokens_expr`, kept for speed; the contract suite checks that
+    the two agree.
 
     Args:
         body: Chat or completion request body.
@@ -132,29 +147,28 @@ def llm_features(
     Returns:
         Feature dict with both keys always present.
     """
+    plen = 0
     messages = body.get("messages")
-    if isinstance(messages, list):
-        plen = sum(
-            _text_length(m.get("content"))
-            for m in messages
-            if isinstance(m, dict)
-        )
-    else:
-        prompt = body.get("prompt")
-        if isinstance(prompt, str):
-            plen = len(prompt)
-        elif isinstance(prompt, list):
-            plen = sum(
-                len(p) if isinstance(p, str | list) else 1 for p in prompt
-            )
-        else:
-            plen = 0
-    max_tokens = body.get("max_tokens")
-    if max_tokens is None:
-        max_tokens = body.get("max_completion_tokens")
-    try:
-        mt = float(max_tokens) if max_tokens is not None else default_max_tokens
-    except (TypeError, ValueError):
+    if type(messages) is list:
+        for m in messages:
+            if isinstance(m, Mapping):
+                content = m.get("content")
+                if type(content) is str:
+                    plen += len(content)
+                elif type(content) is list:
+                    for part in content:
+                        if isinstance(part, Mapping):
+                            plen += _chars(part.get("text"))
+    prompt = body.get("prompt")
+    if type(prompt) is str:
+        plen += len(prompt)
+    elif type(prompt) is list:
+        for p in prompt:
+            plen += _chars(p)
+    mt = _number(body.get("max_tokens"))
+    if mt is None:
+        mt = _number(body.get("max_completion_tokens"))
+    if mt is None:
         mt = float(default_max_tokens)
     return {"prompt_length": float(plen), "max_tokens": mt}
 
@@ -202,6 +216,13 @@ class OpenAICompatibleAdapter(EngineAdapter):
     def routes(self) -> tuple[RouteSpec, ...]:
         """Return the OpenAI routes the engine serves."""
         return LLM_ROUTES
+
+    def feature_extractors(self) -> tuple[tuple[str, str], ...]:
+        """Prompt characters and the output token limit."""
+        return (
+            ("prompt_length", PROMPT_LENGTH_EXPR),
+            ("max_tokens", max_tokens_expr(self.default_max_tokens)),
+        )
 
     def features(self, path: str, body: Mapping[str, Any]) -> dict[str, float]:
         """Return prompt length and max tokens."""

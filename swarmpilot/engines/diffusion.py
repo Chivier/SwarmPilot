@@ -15,6 +15,7 @@ overriding :meth:`DiffusersAdapter.launch_spec`.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 from typing import Any, ClassVar
 
@@ -59,8 +60,22 @@ DEFAULT_SIZE = (1024, 1024)
 DEFAULT_STEPS = 30
 
 
+def _number(value: Any) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    return float(value) if math.isfinite(value) else None
+
+
+def _area(size: Any) -> int | None:
+    if type(size) is str:
+        w, _, h = size.lower().partition("x")
+        if w.isdigit() and h.isdigit():
+            return int(w) * int(h)
+    return None
+
+
 def parse_size(body: Mapping[str, Any]) -> tuple[int, int]:
-    """Return (width, height) from ``size`` or ``width``/``height``.
+    """Return (width, height) from ``width``/``height`` or ``size``.
 
     Args:
         body: Image request body.
@@ -69,21 +84,37 @@ def parse_size(body: Mapping[str, Any]) -> tuple[int, int]:
         Width and height in pixels, or the default size when absent or
         malformed.
     """
-    width, height = body.get("width"), body.get("height")
-    if isinstance(width, int) and isinstance(height, int):
-        return width, height
+    width, height = _number(body.get("width")), _number(body.get("height"))
+    if width is not None and height is not None:
+        return int(width), int(height)
     size = body.get("size")
-    if isinstance(size, str):
+    if _area(size) is not None:
         w, _, h = size.lower().partition("x")
-        if w.isdigit() and h.isdigit():
-            return int(w), int(h)
+        return int(w), int(h)
     return DEFAULT_SIZE
+
+
+def feature_exprs(default_steps: int) -> tuple[tuple[str, str], ...]:
+    """Declarative form of :func:`diffusion_features`."""
+    pixels = DEFAULT_SIZE[0] * DEFAULT_SIZE[1]
+    return (
+        ("steps", f"coalesce(num_inference_steps, {default_steps})"),
+        (
+            "megapixels",
+            "product(coalesce(product(width, height), area(size), "
+            f"{pixels}), 0.000001)",
+        ),
+        ("n_images", "coalesce(n, 1)"),
+    )
 
 
 def diffusion_features(
     body: Mapping[str, Any], default_steps: int = DEFAULT_STEPS
 ) -> dict[str, float]:
     """Return steps, megapixels and image count for an image request.
+
+    A hand-written copy of :func:`feature_exprs`, kept for speed; the
+    contract suite checks that the two agree.
 
     Args:
         body: Image request body.
@@ -92,17 +123,22 @@ def diffusion_features(
     Returns:
         Feature dict with every feature present.
     """
-    steps = body.get("num_inference_steps")
-    if isinstance(steps, bool) or not isinstance(steps, int) or steps < 1:
-        steps = default_steps
-    n = body.get("n")
-    if isinstance(n, bool) or not isinstance(n, int) or n < 1:
-        n = 1
-    width, height = parse_size(body)
+    steps = _number(body.get("num_inference_steps"))
+    n = _number(body.get("n"))
+    width, height = _number(body.get("width")), _number(body.get("height"))
+    if width is not None and height is not None:
+        pixels: float = width * height
+    else:
+        area = _area(body.get("size"))
+        pixels = (
+            float(area)
+            if area is not None
+            else float(DEFAULT_SIZE[0] * DEFAULT_SIZE[1])
+        )
     return {
-        "steps": float(steps),
-        "megapixels": width * height / 1e6,
-        "n_images": float(n),
+        "steps": float(default_steps) if steps is None else steps,
+        "megapixels": pixels * 0.000001,
+        "n_images": 1.0 if n is None else n,
     }
 
 
@@ -147,6 +183,10 @@ class DiffusersAdapter(EngineAdapter):
                 request_model=ImageGenerationRequest,
             ),
         )
+
+    def feature_extractors(self) -> tuple[tuple[str, str], ...]:
+        """Steps, megapixels and image count as extractor expressions."""
+        return feature_exprs(self.default_steps)
 
     def features(self, path: str, body: Mapping[str, Any]) -> dict[str, float]:
         """Return steps, megapixels and image count."""
