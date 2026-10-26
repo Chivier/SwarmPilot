@@ -327,7 +327,9 @@ class TestManagerAsyncMode:
             callback=lambda r: None, async_dispatch=True, max_in_flight=8
         )
         mgr.register_worker("a", "http://x:1", "m", engine="vllm")
+        mgr.register_worker("b", "http://x:2", "m")  # online endpoint slot
         assert mgr.get_worker("a").max_in_flight == 8
+        assert mgr.get_worker("b").max_in_flight == 1
         mgr.shutdown()
         await mgr.aclose()
 

@@ -126,7 +126,9 @@ class WorkerQueueManager:
                 instead of one blocking thread per worker. Requires that
                 the manager is used from that event loop.
             max_in_flight: Requests in flight per instance in async mode.
-                0 takes the engine adapter's ``capacity()``.
+                0 takes the engine adapter's ``capacity()``. Applies only
+                to instances with a registered engine adapter; online
+                endpoint slots and unknown engines keep one at a time.
         """
         self._callback = callback
         self._http_timeout = http_timeout
@@ -204,6 +206,9 @@ class WorkerQueueManager:
 
             if self.async_dispatch:
                 adapter = resolve_adapter(engine)
+                limit = adapter.capacity().max_in_flight
+                if self._max_in_flight and adapter is not _PASSTHROUGH:
+                    limit = self._max_in_flight
                 queue = AsyncWorkerQueue(
                     worker_id=worker_id,
                     worker_endpoint=worker_endpoint,
@@ -211,8 +216,7 @@ class WorkerQueueManager:
                     callback=self._callback,
                     session=self._http_session(),
                     adapter=adapter,
-                    max_in_flight=self._max_in_flight
-                    or adapter.capacity().max_in_flight,
+                    max_in_flight=limit,
                     max_retries=self._max_retries,
                     retry_delay=self._retry_delay,
                     on_task_started=self._on_task_started,
