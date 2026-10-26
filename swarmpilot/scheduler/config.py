@@ -152,6 +152,14 @@ class ProxyConfig:
         os.getenv("WORKER_HTTP_TIMEOUT", "300.0")
     )
 
+    # "async": concurrent requests per instance on the event loop, with
+    # streaming. "thread": the original one-request-at-a-time thread.
+    dispatch_mode: str = os.getenv("SCHEDULER_DISPATCH_MODE", "async").lower()
+
+    # Requests in flight per instance in async mode; 0 = engine adapter's
+    # capacity() (256 for vLLM/SGLang, 1 for unknown engines).
+    max_in_flight: int = int(os.getenv("PROXY_MAX_IN_FLIGHT", "0"))
+
 
 @dataclass
 class PlannerRegistrationConfig:

@@ -168,7 +168,7 @@ class SchedulingStrategy(ABC):
             )
 
         # Log final scheduling result
-        logger.info(
+        logger.debug(
             f"[SCHEDULE_RESULT] model_id={model_id} "
             f"strategy={self.__class__.__name__} "
             f"selected_instance={selected_instance_id} "

@@ -13,6 +13,8 @@ import time
 from collections.abc import Callable
 from contextlib import asynccontextmanager, suppress
 from datetime import datetime
+from typing import ClassVar
+from urllib.parse import parse_qs
 
 import httpx
 import numpy as np
@@ -202,6 +204,8 @@ async def lifespan(app: FastAPI):
         callback=thread_callback,
         http_timeout=config.proxy.worker_http_timeout,
         on_task_started=start_callback,
+        async_dispatch=config.proxy.dispatch_mode != "thread",
+        max_in_flight=config.proxy.max_in_flight,
     )
     logger.info("WorkerQueueManager initialized")
 
@@ -248,6 +252,7 @@ async def lifespan(app: FastAPI):
     # Shutdown worker queue manager
     if worker_queue_manager:
         worker_queue_manager.shutdown()
+        await worker_queue_manager.aclose()
         logger.debug("WorkerQueueManager shutdown complete")
 
     # Close HTTP clients
@@ -274,47 +279,51 @@ app = FastAPI(
 logger.info("Initializing Scheduler API")
 
 
-@app.middleware("http")
-async def profile_request(request: Request, call_next: Callable):
-    """Profile the current request.
+class ProfileMiddleware:
+    """Profile a request when it carries ``?profile=<anything>``.
 
     Taken from pyinstrument documentation with small improvements.
     See: https://pyinstrument.readthedocs.io/en/latest/guide.html
 
-    Args:
-        request: The incoming HTTP request.
-        call_next: The next middleware or route handler.
-
-    Returns:
-        The response from the route handler.
+    A plain ASGI middleware rather than ``@app.middleware("http")``:
+    Starlette's BaseHTTPMiddleware costs about 0.5 ms on every request,
+    profiled or not.
     """
-    # we map a profile type to a file extension, as well as a pyinstrument profile renderer
-    profile_type_to_ext = {"html": "html", "speedscope": "speedscope.json"}
-    profile_type_to_renderer = {
-        "html": HTMLRenderer,
-        "speedscope": SpeedscopeRenderer,
+
+    _RENDERERS: ClassVar[dict[str, tuple[str, type]]] = {
+        "html": ("html", HTMLRenderer),
+        "speedscope": ("speedscope.json", SpeedscopeRenderer),
     }
 
-    # if the `profile=true` HTTP query argument is passed, we profile the request
-    if request.query_params.get("profile", False):
+    def __init__(self, app: Callable):
+        self.app = app
+
+    async def __call__(self, scope: dict, receive: Callable, send: Callable):
+        """Pass the request through, profiling it when asked."""
+        if scope["type"] != "http" or b"profile=" not in scope.get(
+            "query_string", b""
+        ):
+            await self.app(scope, receive, send)
+            return
+        params = parse_qs(scope["query_string"].decode(errors="replace"))
+        if not params.get("profile", [""])[0]:
+            await self.app(scope, receive, send)
+            return
+
         # The default profile format is speedscope
-        profile_type = request.query_params.get("profile_format", "speedscope")
-
-        # we profile the request along with all additional middlewares, by interrupting
-        # the program every 1ms1 and records the entire stack at that point
+        profile_type = params.get("profile_format", ["speedscope"])[0]
+        # Profile the request along with all inner middlewares, sampling
+        # the stack every 1 ms.
         with Profiler(interval=0.001, async_mode="enabled") as profiler:
-            response = await call_next(request)
+            await self.app(scope, receive, send)
 
-        # we dump the profiling into a file
-        extension = profile_type_to_ext[profile_type]
-        renderer = profile_type_to_renderer[profile_type]()
+        extension, renderer = self._RENDERERS[profile_type]
         with open(f"profile.{extension}", "w") as out:
-            out.write(profiler.output(renderer=renderer))
+            out.write(profiler.output(renderer=renderer()))
         profiler.print()
-        return response
 
-    # Proceed without profiling
-    return await call_next(request)
+
+app.add_middleware(ProfileMiddleware)
 
 
 # Determine queue info type based on scheduling strategy
@@ -1033,6 +1042,7 @@ async def register_instance(request: InstanceRegisterRequest):
                 worker_id=request.instance_id,
                 worker_endpoint=request.endpoint,
                 model_id=request.model_id,
+                engine=request.platform_info.get("software_name"),
             )
             logger.info(
                 f"Registered worker queue thread for instance {request.instance_id}"

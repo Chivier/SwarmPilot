@@ -14,12 +14,36 @@ Key features:
 import threading
 from collections.abc import Callable
 
+import aiohttp
 from loguru import logger
 
+from swarmpilot.engines import EngineAdapter, get_adapter
+from swarmpilot.engines.passthrough import PassthroughAdapter
+from swarmpilot.scheduler.services.async_worker_queue import AsyncWorkerQueue
 from swarmpilot.scheduler.services.worker_queue_thread import (
     QueuedTask,
     WorkerQueueThread,
 )
+
+_PASSTHROUGH = PassthroughAdapter()
+
+
+def resolve_adapter(engine: str | None) -> EngineAdapter:
+    """Return the adapter for ``engine``, or a plain HTTP pass-through.
+
+    Args:
+        engine: Platform ``software_name`` of the instance.
+
+    Returns:
+        The registered adapter, or the pass-through for unknown engines
+        (online endpoints, test servers).
+    """
+    if engine:
+        try:
+            return get_adapter(engine)
+        except KeyError:
+            pass
+    return _PASSTHROUGH
 
 
 class WorkerQueueManager:
@@ -64,6 +88,8 @@ class WorkerQueueManager:
         max_retries: int = 3,
         retry_delay: float = 1.0,
         on_task_started: Callable[[str], None] | None = None,
+        async_dispatch: bool = False,
+        max_in_flight: int = 0,
     ):
         """Initialize worker queue manager.
 
@@ -73,16 +99,56 @@ class WorkerQueueManager:
             max_retries: Max retries for transient errors.
             retry_delay: Initial retry delay (exponential backoff).
             on_task_started: Optional callback when task begins execution.
+            async_dispatch: Use one AsyncWorkerQueue per worker on the
+                running event loop, with concurrent requests and streaming,
+                instead of one blocking thread per worker. Requires that
+                the manager is used from that event loop.
+            max_in_flight: Requests in flight per instance in async mode.
+                0 takes the engine adapter's ``capacity()``.
         """
         self._callback = callback
         self._http_timeout = http_timeout
         self._max_retries = max_retries
         self._retry_delay = retry_delay
         self._on_task_started = on_task_started
+        self.async_dispatch = async_dispatch
+        self._max_in_flight = max_in_flight
+        self._session: aiohttp.ClientSession | None = None
 
-        # Worker ID -> WorkerQueueThread mapping
-        self._workers: dict[str, WorkerQueueThread] = {}
+        # Worker ID -> worker queue (thread or async)
+        self._workers: dict[str, WorkerQueueThread | AsyncWorkerQueue] = {}
         self._lock = threading.Lock()
+
+    @property
+    def supports_streaming(self) -> bool:
+        """Whether queued tasks may carry a ``stream_sink``."""
+        return self.async_dispatch
+
+    def _http_session(self) -> aiohttp.ClientSession:
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession(
+                connector=aiohttp.TCPConnector(
+                    limit=0,  # per-instance limits come from max_in_flight
+                    ssl=False,  # Internal network, as with the thread queue
+                ),
+                # No total timeout: streams may run long. The read timeout
+                # bounds silence between chunks.
+                timeout=aiohttp.ClientTimeout(
+                    total=None, sock_connect=30, sock_read=self._http_timeout
+                ),
+                # Each queue resolves HTTP(S)_PROXY/NO_PROXY once for its
+                # endpoint (see env_proxy_for), as the thread queue's httpx
+                # client honoured them.
+                trust_env=False,
+                auto_decompress=True,
+            )
+        return self._session
+
+    async def aclose(self) -> None:
+        """Close the shared HTTP session."""
+        if self._session is not None:
+            await self._session.close()
+            self._session = None
 
     def register_worker(
         self,
@@ -90,8 +156,9 @@ class WorkerQueueManager:
         worker_endpoint: str,
         model_id: str,
         extra_headers: dict[str, str] | None = None,
+        engine: str | None = None,
     ) -> None:
-        """Register a new worker and start its queue thread.
+        """Register a new worker and start its queue.
 
         Args:
             worker_id: Unique identifier for the worker.
@@ -99,6 +166,8 @@ class WorkerQueueManager:
             model_id: Model ID running on this worker.
             extra_headers: Instance-level HTTP headers merged into
                 every request (e.g. Authorization for online APIs).
+            engine: Engine adapter name (platform ``software_name``); picks
+                how requests are sent and how many run at once.
 
         Raises:
             ValueError: If worker is already registered.
@@ -106,6 +175,30 @@ class WorkerQueueManager:
         with self._lock:
             if worker_id in self._workers:
                 raise ValueError(f"Worker {worker_id} already registered")
+
+            if self.async_dispatch:
+                adapter = resolve_adapter(engine)
+                queue = AsyncWorkerQueue(
+                    worker_id=worker_id,
+                    worker_endpoint=worker_endpoint,
+                    model_id=model_id,
+                    callback=self._callback,
+                    session=self._http_session(),
+                    adapter=adapter,
+                    max_in_flight=self._max_in_flight
+                    or adapter.capacity().max_in_flight,
+                    max_retries=self._max_retries,
+                    retry_delay=self._retry_delay,
+                    on_task_started=self._on_task_started,
+                    extra_headers=extra_headers,
+                )
+                queue.start()
+                self._workers[worker_id] = queue
+                logger.info(
+                    f"Registered worker {worker_id} at {worker_endpoint} "
+                    f"(model: {model_id}, engine: {adapter.name})"
+                )
+                return
 
             thread = WorkerQueueThread(
                 worker_id=worker_id,
@@ -156,7 +249,9 @@ class WorkerQueueManager:
 
         return pending_tasks
 
-    def get_worker(self, worker_id: str) -> WorkerQueueThread | None:
+    def get_worker(
+        self, worker_id: str
+    ) -> WorkerQueueThread | AsyncWorkerQueue | None:
         """Get the WorkerQueueThread for a specific worker.
 
         Args:

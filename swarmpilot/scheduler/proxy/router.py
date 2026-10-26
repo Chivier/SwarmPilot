@@ -22,9 +22,11 @@ import uuid
 from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Request, Response
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from loguru import logger
+from starlette.background import BackgroundTask
 
+from swarmpilot.scheduler.services.async_worker_queue import StreamStart
 from swarmpilot.scheduler.services.worker_queue_thread import QueuedTask
 
 if TYPE_CHECKING:
@@ -227,8 +229,17 @@ class ProxyRouter:
             assigned_instance=selected_instance_id,
         )
 
-        # 7. Register Future for this task
-        future = self._callback.register_future(task_id)
+        # 7. Streamed requests get the engine's answer through a sink as
+        #    soon as it starts; the rest wait for the completed result.
+        stream = bool(body.get("stream")) and getattr(
+            self._queue_manager, "supports_streaming", False
+        )
+        sink: asyncio.Future | None = None
+        if stream:
+            sink = asyncio.get_running_loop().create_future()
+            future = sink
+        else:
+            future = self._callback.register_future(task_id)
 
         # 9. Create and enqueue the task
         queued_task = QueuedTask(
@@ -242,6 +253,7 @@ class ProxyRouter:
                 "proxy": True,
             },
             enqueue_time=time.time(),
+            stream_sink=sink,
         )
 
         is_priority = path in PRIORITY_PATHS
@@ -255,7 +267,7 @@ class ProxyRouter:
                 self._queue_manager.enqueue_task(
                     selected_instance_id, queued_task
                 )
-        except ValueError as e:
+        except (ValueError, RuntimeError) as e:
             self._callback.cleanup_future(task_id)
             logger.error(f"[PROXY] Failed to enqueue task: {e}")
             return JSONResponse(
@@ -268,7 +280,7 @@ class ProxyRouter:
                 },
             )
 
-        logger.info(
+        logger.debug(
             f"[PROXY] {method} /{path} enqueued to {selected_instance_id} "
             f"(task_id={task_id})"
         )
@@ -295,6 +307,9 @@ class ProxyRouter:
                 },
             )
 
+        if isinstance(result, StreamStart):
+            return self._stream_response(result)
+
         # 11. Return the backend's response
         status_code = result.http_status_code or 200
         response_body = result.result or {}
@@ -312,19 +327,49 @@ class ProxyRouter:
                 },
             )
 
-        # Build response headers (filter out problematic ones)
-        response_headers = {}
-        for key, value in (result.response_headers or {}).items():
-            lower_key = key.lower()
-            if lower_key not in (
-                "content-length",
-                "transfer-encoding",
-                "content-encoding",
-            ):
-                response_headers[key] = value
-
         return JSONResponse(
             status_code=status_code,
             content=response_body,
-            headers=response_headers,
+            headers=_filter_headers(result.response_headers),
         )
+
+    @staticmethod
+    def _stream_response(start: StreamStart) -> Response:
+        """Turn the engine's first answer into the client's response."""
+        if start.error is not None:
+            return JSONResponse(
+                status_code=502,
+                content={
+                    "error": {
+                        "message": start.error,
+                        "type": "bad_gateway",
+                    }
+                },
+            )
+        headers = _filter_headers(start.headers)
+        if start.chunks is None:
+            return JSONResponse(
+                status_code=start.status_code,
+                content=start.body if start.body is not None else {},
+                headers=headers,
+            )
+        headers.pop("content-type", None)
+        return StreamingResponse(
+            start.chunks,
+            status_code=start.status_code,
+            headers=headers,
+            media_type=start.headers.get("content-type", "text/event-stream"),
+            # Release the engine connection even if the client is gone
+            # before the first chunk.
+            background=BackgroundTask(start.chunks.aclose),
+        )
+
+
+def _filter_headers(headers: dict[str, str] | None) -> dict[str, str]:
+    """Drop hop-by-hop and length/encoding headers from an engine response."""
+    return {
+        k: v
+        for k, v in (headers or {}).items()
+        if k.lower()
+        not in ("content-length", "transfer-encoding", "content-encoding")
+    }

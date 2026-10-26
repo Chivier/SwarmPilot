@@ -364,7 +364,7 @@ class TaskResultCallback:
                     f"Training sample recording failed for task {task_id}: {e}"
                 )
 
-        logger.info(
+        logger.debug(
             f"Task {task_id} completed on {result.worker_id} "
             f"in {result.execution_time_ms:.2f}ms"
         )
