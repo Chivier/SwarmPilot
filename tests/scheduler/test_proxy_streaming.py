@@ -105,3 +105,11 @@ def test_requests_to_one_instance_run_concurrently(client):
     assert codes == [200] * 8
     # One at a time would take 8 * 0.2 s.
     assert elapsed < 4 * DELAY_S, elapsed
+
+
+def test_registration_sets_sketch_capacity(client):
+    from swarmpilot.scheduler import api
+
+    worker = api.worker_queue_manager.get_worker("e0")
+    assert api.instance_registry.get_capacity("e0") == worker.max_in_flight
+    assert worker.max_in_flight > 1

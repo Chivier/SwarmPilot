@@ -963,6 +963,11 @@ async def register_instance(request: InstanceRegisterRequest):
             logger.info(
                 f"Registered worker queue thread for instance {request.instance_id}"
             )
+            # Sketches count the backlog as served this many at a time.
+            worker = worker_queue_manager.get_worker(request.instance_id)
+            await instance_registry.set_capacity(
+                request.instance_id, getattr(worker, "max_in_flight", 1)
+            )
 
         # Set model_id for planner reporter (only first registration takes effect)
         if planner_reporter:

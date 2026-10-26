@@ -14,6 +14,11 @@ Probabilistic sketches add tasks comonotonically: the queue's q-quantile
 grows by the task's q-quantile. That is what the earlier Monte Carlo update
 with shared percentiles converged to, without its sampling noise, and it
 makes the update exactly reversible.
+
+An instance that serves ``servers`` requests at once works through its
+backlog that many times faster, so each charge is divided by ``servers``:
+the sketch is the wait before a new task starts, not the sum of the
+runtimes ahead of it.
 """
 
 from __future__ import annotations
@@ -66,7 +71,9 @@ class Charge:
             time_ms=float(time_ms),
             error_ms=float(error_ms or 0.0),
             quantiles=(
-                tuple(sorted((float(q), float(v)) for q, v in quantiles.items()))
+                tuple(
+                    sorted((float(q), float(v)) for q, v in quantiles.items())
+                )
                 if quantiles
                 else None
             ),
@@ -110,7 +117,7 @@ def empty_like(queue: InstanceQueueBase) -> InstanceQueueBase:
 
 
 def apply(
-    queue: InstanceQueueBase, charge: Charge, sign: int
+    queue: InstanceQueueBase, charge: Charge, sign: int, servers: int = 1
 ) -> InstanceQueueBase:
     """Add (``sign=1``) or remove (``sign=-1``) a charge.
 
@@ -118,17 +125,20 @@ def apply(
         queue: Current sketch.
         charge: The task's contribution.
         sign: 1 to add, -1 to remove.
+        servers: Requests the instance serves at once; the charge is
+            divided by it.
 
     Returns:
         The updated sketch; values never go below zero.
     """
+    scale = sign / max(1, servers)
     if isinstance(queue, InstanceQueueProbabilistic):
         task = charge.at(queue.quantiles)
         values = []
         floor = 0.0
         for v, t in zip(queue.values, task, strict=True):
             # Stay non-negative and non-decreasing despite rounding.
-            floor = max(floor, v + sign * t)
+            floor = max(floor, v + scale * t)
             values.append(floor)
         return InstanceQueueProbabilistic(
             instance_id=queue.instance_id,
@@ -136,11 +146,11 @@ def apply(
             values=values,
         )
     if isinstance(queue, InstanceQueueExpectError):
-        var = queue.error_margin_ms**2 + sign * charge.error_ms**2
+        var = queue.error_margin_ms**2 + sign * (scale * charge.error_ms) ** 2
         return InstanceQueueExpectError(
             instance_id=queue.instance_id,
             expected_time_ms=max(
-                0.0, queue.expected_time_ms + sign * charge.time_ms
+                0.0, queue.expected_time_ms + scale * charge.time_ms
             ),
             error_margin_ms=math.sqrt(max(0.0, var)),
         )

@@ -247,3 +247,59 @@ class TestStrategySwitch:
         q = await reg.get_queue_info("a")
         assert q.quantiles == [0.5, 0.9]
         assert q.values == [10.0, 10.0]
+
+
+class TestCapacity:
+    """Sketches count the backlog as served ``capacity`` at a time (2.7)."""
+
+    async def test_expect_error_divides_by_capacity(self):
+        reg = await _registry("expect_error", "a")
+        await reg.set_capacity("a", 4)
+        for t in range(4):
+            await reg.charge(f"t{t}", Charge.of("a", 100.0, error_ms=40.0))
+        q = await reg.get_queue_info("a")
+        assert q.expected_time_ms == pytest.approx(100.0)
+        assert q.error_margin_ms == pytest.approx(20.0)
+        for t in range(4):
+            await reg.release_charge(f"t{t}")
+        assert _is_empty(await reg.get_queue_info("a"))
+
+    async def test_probabilistic_divides_by_capacity(self):
+        reg = await _registry("probabilistic", "a")
+        await reg.set_capacity("a", 2)
+        charge = Charge.of("a", 50.0, quantiles={0.05: 10.0, 0.99: 90.0})
+        await reg.charge("t", charge)
+        q = await reg.get_queue_info("a")
+        assert q.values == pytest.approx(
+            [v / 2 for v in charge.at(q.quantiles)]
+        )
+
+    async def test_capacity_change_rebuilds_open_charges(self):
+        reg = await _registry("expect_error", "a", "b")
+        await reg.charge("t1", Charge.of("a", 120.0))
+        await reg.charge("t2", Charge.of("b", 50.0))
+        await reg.set_capacity("a", 3)
+        assert (await reg.get_queue_info("a")).expected_time_ms == 40.0
+        assert (await reg.get_queue_info("b")).expected_time_ms == 50.0
+        await reg.release_charge("t1")
+        assert _is_empty(await reg.get_queue_info("a"))
+
+    async def test_default_and_floor_are_one(self):
+        reg = await _registry("expect_error", "a")
+        assert reg.get_capacity("a") == 1
+        await reg.set_capacity("a", 0)
+        assert reg.get_capacity("a") == 1
+
+    async def test_concurrent_instance_wins_with_same_backlog(self):
+        reg = await _registry("expect_error", "serial", "batched")
+        await reg.set_capacity("batched", 8)
+        for iid in ("serial", "batched"):
+            for t in range(4):
+                await reg.charge(f"{iid}{t}", Charge.of(iid, 100.0))
+        strategy = MinimumExpectedTimeStrategy(None, reg)
+        preds = [
+            Prediction(instance_id=i, predicted_time_ms=100.0)
+            for i in ("serial", "batched")
+        ]
+        queues = {i: await reg.get_queue_info(i) for i in ("serial", "batched")}
+        assert strategy.select_instance(preds, queues) == "batched"

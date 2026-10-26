@@ -44,6 +44,8 @@ class InstanceRegistry:
         # and how many charges each sketch holds.
         self._charges: dict[str, Charge] = {}
         self._charge_counts: dict[str, int] = {}
+        # Requests each instance serves at once (1 when not set).
+        self._servers: dict[str, int] = {}
 
     async def register(self, instance: Instance) -> None:
         """Register a new instance.
@@ -109,6 +111,7 @@ class InstanceRegistry:
             self._queue_info.pop(instance_id, None)
             self._stats.pop(instance_id, None)
             self._drop_charges(instance_id)
+            self._servers.pop(instance_id, None)
 
             return instance
 
@@ -235,7 +238,14 @@ class InstanceRegistry:
         self._charge_counts[charge.instance_id] = max(count, 0)
         # An empty sketch is exactly empty, not a rounding residue.
         self._queue_info[charge.instance_id] = (
-            empty_like(queue) if count <= 0 else apply(queue, charge, sign)
+            empty_like(queue)
+            if count <= 0
+            else apply(
+                queue,
+                charge,
+                sign,
+                self._servers.get(charge.instance_id, 1),
+            )
         )
 
     def _drop_charges(self, instance_id: str) -> None:
@@ -299,6 +309,32 @@ class InstanceRegistry:
             self._charges[task_id] = new
             self._apply_locked(new, 1)
             return True
+
+    async def set_capacity(self, instance_id: str, servers: int) -> None:
+        """Set how many requests an instance serves at once.
+
+        The instance's sketch is rebuilt from its open charges, so tasks
+        charged before the change are counted the same way as later ones.
+
+        Args:
+            instance_id: The instance.
+            servers: Requests in flight at once; values below 1 count as 1.
+        """
+        servers = max(1, int(servers))
+        async with self._lock:
+            queue = self._queue_info.get(instance_id)
+            if queue is None or self.get_capacity(instance_id) == servers:
+                return
+            self._servers[instance_id] = servers
+            self._queue_info[instance_id] = empty_like(queue)
+            self._charge_counts.pop(instance_id, None)
+            for charge in self._charges.values():
+                if charge.instance_id == instance_id:
+                    self._apply_locked(charge, 1)
+
+    def get_capacity(self, instance_id: str) -> int:
+        """Return how many requests the instance serves at once."""
+        return self._servers.get(instance_id, 1)
 
     def get_charge(self, task_id: str) -> Charge | None:
         """Return the task's current charge, if any."""
