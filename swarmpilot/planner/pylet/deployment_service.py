@@ -22,6 +22,7 @@ Example:
 from __future__ import annotations
 
 import asyncio
+import threading
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -149,6 +150,11 @@ class PyLetDeploymentService:
         self._drain_timeout = drain_timeout
         self._model_configs = model_configs or {}
         self._initialized = False
+        # One reconcile at a time: the auto-optimizer applies plans from a
+        # worker thread while SDK and API calls apply theirs, and two
+        # executors working from the same "current" state would add or
+        # remove the same machines twice.
+        self._reconcile_lock = threading.RLock()
 
     def init(self) -> None:
         """Initialize the service and connect to PyLet/scheduler.
@@ -231,10 +237,11 @@ class PyLetDeploymentService:
             logger.info(f"Applying deployment: target={target_state}")
 
             # Execute via DeploymentExecutor
-            result = self._deployment_executor.reconcile(
-                target_state=target_state,
-                wait_for_ready=wait_for_ready,
-            )
+            with self._reconcile_lock:
+                result = self._deployment_executor.reconcile(
+                    target_state=target_state,
+                    wait_for_ready=wait_for_ready,
+                )
 
             active = self._instance_manager.get_active_instances()
 
@@ -270,11 +277,12 @@ class PyLetDeploymentService:
         self._ensure_initialized()
 
         try:
-            result = self._deployment_executor.scale_model(
-                model_id=model_id,
-                target_count=target_count,
-                wait_for_ready=wait_for_ready,
-            )
+            with self._reconcile_lock:
+                result = self._deployment_executor.scale_model(
+                    model_id=model_id,
+                    target_count=target_count,
+                    wait_for_ready=wait_for_ready,
+                )
 
             active = self._instance_manager.get_active_instances(model_id)
 
@@ -310,10 +318,11 @@ class PyLetDeploymentService:
         self._ensure_initialized()
 
         try:
-            result = self._migration_executor.migrate(
-                pylet_id=pylet_id,
-                target_model_id=target_model_id,
-            )
+            with self._reconcile_lock:
+                result = self._migration_executor.migrate(
+                    pylet_id=pylet_id,
+                    target_model_id=target_model_id,
+                )
 
             active = self._instance_manager.get_active_instances()
 
@@ -448,7 +457,8 @@ class PyLetDeploymentService:
             Dict mapping pylet_id to termination success.
         """
         self._ensure_initialized()
-        return self._instance_manager.terminate_all(wait_for_drain)
+        with self._reconcile_lock:
+            return self._instance_manager.terminate_all(wait_for_drain)
 
 
 # Global service singleton

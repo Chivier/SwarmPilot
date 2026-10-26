@@ -66,7 +66,7 @@ class TrainingConfig:
 
     # Enable automatic training
     enable_auto_training: bool = (
-        os.getenv("TRAINING_ENABLE_AUTO", "false").lower() == "true"
+        os.getenv("TRAINING_ENABLE_AUTO", "true").lower() == "true"
     )
 
     # Batch size for training data collection
@@ -85,6 +85,20 @@ class TrainingConfig:
 
     # Share of the window held out to validate a candidate model
     holdout_fraction: float = float(os.getenv("TRAINING_HOLDOUT", "0.2"))
+
+    # "drift": a platform with a model retrains only when its predictions
+    # drift (plan item 3.1); "batch": retrain on every full batch.
+    retrain_mode: str = os.getenv("TRAINING_RETRAIN_MODE", "drift")
+
+    # Drift detector: scored tasks per window, tasks before a group can
+    # drift, and the loss and miss-rate ratios that count as drift.
+    drift_window: int = int(os.getenv("DRIFT_WINDOW", "200"))
+    drift_min_samples: int = int(os.getenv("DRIFT_MIN_SAMPLES", "50"))
+    drift_loss_ratio: float = float(os.getenv("DRIFT_LOSS_RATIO", "2.0"))
+    drift_miss_ratio: float = float(os.getenv("DRIFT_MISS_RATIO", "3.0"))
+
+    # Post-drift samples collected before retraining.
+    recovery_samples: int = int(os.getenv("DRIFT_RECOVERY_SAMPLES", "100"))
 
     # Prediction types to train (comma-separated list in env var)
     # Default: train both expect_error and quantile models

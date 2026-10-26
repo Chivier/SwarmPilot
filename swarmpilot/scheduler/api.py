@@ -91,6 +91,7 @@ from .models import (
 from .registry.instance_registry import InstanceRegistry
 from .registry.queue_sketch import DEFAULT_QUANTILES, Charge
 from .registry.task_registry import TaskRegistry
+from .services.drift import DriftDetector
 from .services.planner_registrar import PlannerRegistrar
 from .services.task_result_callback import TaskResultCallback
 from .services.websocket_manager import ConnectionManager
@@ -99,6 +100,7 @@ from .services.worker_queue_manager import (
     complete_platform_info,
 )
 from .services.worker_queue_thread import QueuedTask
+from .utils.arrival_counter import arrival_counter, parent_of
 from .utils.http_error_logger import log_http_error
 
 # Import logger configuration to initialize loguru
@@ -369,6 +371,14 @@ training_client = (
         prediction_types=config.training.prediction_types,
         window_size=config.training.window_size,
         holdout_fraction=config.training.holdout_fraction,
+        retrain_mode=config.training.retrain_mode,
+        drift=DriftDetector(
+            window=config.training.drift_window,
+            min_samples=config.training.drift_min_samples,
+            loss_ratio=config.training.drift_loss_ratio,
+            miss_ratio=config.training.drift_miss_ratio,
+        ),
+        recovery_samples=config.training.recovery_samples,
     )
     if config.training.enable_auto_training
     else None
@@ -407,6 +417,8 @@ if config.planner_report.url and config.planner_report.interval > 0:
         interval=config.planner_report.interval,
         timeout=config.planner_report.timeout,
         throughput_tracker=throughput_tracker,
+        instance_registry=instance_registry,
+        arrivals=arrival_counter,
     )
     logger.info(
         f"Planner reporter initialized: URL={config.planner_report.url}, "
@@ -1657,6 +1669,7 @@ async def submit_task(request: TaskSubmitRequest):
         raise HTTPException(
             status_code=400, detail={"success": False, "error": error_msg}
         ) from e
+    arrival_counter.record(parent_of(request.metadata))
 
     # Log task submission
     logger.info(

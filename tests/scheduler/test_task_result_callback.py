@@ -716,7 +716,10 @@ class TestTrainingIntegration:
         sample_instance,
         success_result,
     ):
-        """Test training sample added on successful task completion."""
+        """Training sample added with the prediction it was routed by."""
+        sample_task_record.predicted_quantiles = {0.5: 100.0, 0.9: 140.0}
+        sample_task_record.predicted_time_ms = 110.0
+        sample_task_record.predicted_error_margin_ms = 20.0
         mock_task_registry.get.return_value = sample_task_record
         callback_with_training.instance_registry.get.return_value = (
             sample_instance
@@ -729,6 +732,9 @@ class TestTrainingIntegration:
             platform_info={"gpu": "A100", "driver": "535"},
             features={"batch_size": 32},
             actual_runtime_ms=150.0,
+            predicted_quantiles={0.5: 100.0, 0.9: 140.0},
+            predicted_time_ms=110.0,
+            predicted_error_ms=20.0,
         )
 
     @pytest.mark.asyncio
