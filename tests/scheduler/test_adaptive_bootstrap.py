@@ -163,7 +163,7 @@ class TestWarmModelProbabilistic:
         assert result.selected_instance_id == "inst-2"
         assert result.selected_prediction is not None
         strategy._probabilistic.schedule_task.assert_awaited_once_with(
-            "model-1", {}, instances
+            "model-1", {}, instances, task_id=None
         )
 
     @pytest.mark.asyncio

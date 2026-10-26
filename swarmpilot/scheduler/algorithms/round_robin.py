@@ -88,6 +88,7 @@ class RoundRobinStrategy(SchedulingStrategy):
         self,
         instance_id: str,
         prediction: Prediction,
+        task_id: str | None = None,
     ) -> None:
         """No-op for RoundRobinStrategy.
 
@@ -97,6 +98,7 @@ class RoundRobinStrategy(SchedulingStrategy):
         Args:
             instance_id: Selected instance
             prediction: Prediction for the task
+            task_id: The task (unused)
         """
         # No-op: RoundRobin doesn't maintain queue state
         pass

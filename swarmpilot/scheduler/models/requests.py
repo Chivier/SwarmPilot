@@ -108,7 +108,7 @@ class StrategySetRequest(BaseModel):
     )
     quantiles: list[float] | None = Field(
         None,
-        description="Custom quantiles for probabilistic strategy (default: [0.5, 0.9, 0.95, 0.99])",
+        description="Custom quantiles for probabilistic strategy (default: 0.05 to 0.99, see queue_sketch.DEFAULT_QUANTILES)",
         min_length=1,
         max_length=100,
     )

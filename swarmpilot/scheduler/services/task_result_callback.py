@@ -276,6 +276,10 @@ class TaskResultCallback:
         logger.debug(f"Handling result for task {task_id}: {result.status}")
 
         try:
+            # The task no longer occupies its instance: take its charge
+            # off the queue sketch, whatever the outcome.
+            await self.instance_registry.release_charge(task_id)
+
             # Get task record
             task = await self.task_registry.get(task_id)
             if not task:

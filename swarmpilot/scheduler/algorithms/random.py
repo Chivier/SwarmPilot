@@ -86,6 +86,7 @@ class RandomStrategy(SchedulingStrategy):
         self,
         instance_id: str,
         prediction: Prediction,
+        task_id: str | None = None,
     ) -> None:
         """No-op for RandomStrategy.
 
@@ -95,6 +96,7 @@ class RandomStrategy(SchedulingStrategy):
         Args:
             instance_id: Selected instance
             prediction: Prediction for the task
+            task_id: The task (unused)
         """
         # No-op: Random doesn't maintain queue state
         pass

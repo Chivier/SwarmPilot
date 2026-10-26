@@ -223,6 +223,7 @@ class ProxyRouter:
                 model_id=model_id,
                 metadata=metadata,
                 available_instances=all_instances,
+                task_id=task_id,
             )
             selected_instance_id = schedule_result.selected_instance_id
 
@@ -236,6 +237,7 @@ class ProxyRouter:
 
         # 5. Verify selected instance has a worker queue
         if not self._queue_manager.has_worker(selected_instance_id):
+            await self._instance_registry.release_charge(task_id)
             logger.error(
                 f"[PROXY] Instance {selected_instance_id} has no worker queue"
             )
@@ -299,6 +301,7 @@ class ProxyRouter:
                 )
         except (ValueError, RuntimeError) as e:
             self._callback.cleanup_future(task_id)
+            await self._instance_registry.release_charge(task_id)
             logger.error(f"[PROXY] Failed to enqueue task: {e}")
             return JSONResponse(
                 status_code=503,

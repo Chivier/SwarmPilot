@@ -248,9 +248,9 @@ def test_yaml_engine_served_and_routed(toy_server):
     seen: list[dict] = []
     real = api.scheduling_strategy.schedule_task
 
-    async def spy(model_id, metadata, available_instances):
+    async def spy(model_id, metadata, available_instances, **kw):
         seen.append(dict(metadata))
-        return await real(model_id, metadata, available_instances)
+        return await real(model_id, metadata, available_instances, **kw)
 
     with TestClient(api.app) as c:
         r = c.post(

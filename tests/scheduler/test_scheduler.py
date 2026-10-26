@@ -600,10 +600,10 @@ class TestMinimumExpectedTimeStrategyUpdate:
         expected_error = math.sqrt(10.0**2 + 5.0**2)
         assert abs(updated_queue.error_margin_ms - expected_error) < 0.01
 
-    async def test_update_queue_wrong_type(
+    async def test_update_queue_charges_sketch_of_other_kind(
         self, mock_predictor_client, instance_registry
     ):
-        """Test update_queue with wrong queue info type."""
+        """A charge lands in the sketch the instance keeps, whatever its kind."""
         from swarmpilot.scheduler.models import (
             Instance,
         )
@@ -630,18 +630,16 @@ class TestMinimumExpectedTimeStrategyUpdate:
         )
         await instance_registry.update_queue_info("inst-1", prob_queue)
 
-        # Try to update - should log warning but not crash
+        # An expect-error prediction adds its time at every quantile
         prediction = Prediction(
             instance_id="inst-1", predicted_time_ms=50.0, error_margin_ms=5.0
         )
 
         await strategy.update_queue("inst-1", prediction)
-        # Queue should remain unchanged due to type mismatch
         queue = await instance_registry.get_queue_info("inst-1")
         assert isinstance(queue, InstanceQueueProbabilistic)
-        # Values should be unchanged
         assert queue.quantiles == [0.5, 0.9]
-        assert queue.values == [100.0, 200.0]
+        assert queue.values == [150.0, 250.0]
 
 
 class TestProbabilisticStrategyUpdate:
@@ -748,59 +746,27 @@ class TestProbabilisticStrategyUpdate:
         assert isinstance(updated_queue, InstanceQueueProbabilistic)
         assert updated_queue.values[0] == 150.0  # 100 + 50
 
-    async def test_update_queue_no_existing_queue(
+    async def test_update_queue_unknown_instance_is_noop(
         self, mock_predictor_client, instance_registry
     ):
-        """Test update_queue when no queue exists (line 517)."""
-        from unittest.mock import AsyncMock
-
-        from swarmpilot.scheduler.models import Instance
-
+        """A charge for an instance the registry does not know changes nothing."""
         strategy = ProbabilisticSchedulingStrategy(
             mock_predictor_client, instance_registry
         )
-
-        # Register instance without setting queue info
-        instance = Instance(
-            instance_id="inst-1",
-            model_id="model-1",
-            endpoint="http://localhost:8001",
-            platform_info={
-                "software_name": "docker",
-                "software_version": "20.10",
-                "hardware_name": "test-hardware",
-            },
-        )
-        await instance_registry.register(instance)
-
-        # Mock get_queue_info to return None (simulating missing queue)
-        original_get_queue = instance_registry.get_queue_info
-        instance_registry.get_queue_info = AsyncMock(return_value=None)
-
-        # Create prediction
         prediction = Prediction(
-            instance_id="inst-1",
+            instance_id="ghost",
             predicted_time_ms=50.0,
-            quantiles={0.5: 40.0, 0.9: 60.0, 0.95: 70.0, 0.99: 100.0},
+            quantiles={0.5: 40.0, 0.9: 60.0},
         )
 
-        # Update queue - should initialize new queue (line 517)
-        await strategy.update_queue("inst-1", prediction)
+        await strategy.update_queue("ghost", prediction)
 
-        # Restore original method
-        instance_registry.get_queue_info = original_get_queue
+        assert await instance_registry.get_queue_info("ghost") is None
 
-        # Verify queue was created and updated
-        updated_queue = await instance_registry.get_queue_info("inst-1")
-        assert isinstance(updated_queue, InstanceQueueProbabilistic)
-        assert updated_queue.quantiles == [0.5, 0.9, 0.95, 0.99]
-        # Values should be approximately the prediction quantiles
-        assert all(v > 0 for v in updated_queue.values)
-
-    async def test_update_queue_wrong_type(
+    async def test_update_queue_charges_expect_error_sketch(
         self, mock_predictor_client, instance_registry
     ):
-        """Test update_queue with wrong queue info type."""
+        """A quantile prediction charged to an expect-error sketch adds its time."""
         from swarmpilot.scheduler.models import (
             Instance,
             InstanceQueueExpectError,
@@ -828,7 +794,7 @@ class TestProbabilisticStrategyUpdate:
         )
         await instance_registry.update_queue_info("inst-1", exp_queue)
 
-        # Try to update - should log warning but not crash
+        # The prediction carries no error margin
         prediction = Prediction(
             instance_id="inst-1",
             predicted_time_ms=50.0,
@@ -836,11 +802,9 @@ class TestProbabilisticStrategyUpdate:
         )
 
         await strategy.update_queue("inst-1", prediction)
-        # Queue should remain unchanged due to type mismatch
         queue = await instance_registry.get_queue_info("inst-1")
         assert isinstance(queue, InstanceQueueExpectError)
-        # Values should be unchanged
-        assert queue.expected_time_ms == 100.0
+        assert queue.expected_time_ms == 150.0
         assert queue.error_margin_ms == 10.0
 
     async def test_select_with_queue_info(

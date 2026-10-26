@@ -4,10 +4,7 @@ This strategy selects the instance with minimum expected queue completion time,
 considering both the current queue state and the predicted time for the new task.
 """
 
-import math
 from typing import TYPE_CHECKING
-
-from loguru import logger
 
 from swarmpilot.scheduler.algorithms.base import SchedulingStrategy
 from swarmpilot.scheduler.clients.models import Prediction
@@ -75,60 +72,3 @@ class MinimumExpectedTimeStrategy(SchedulingStrategy):
 
         return best_instance_id
 
-    async def update_queue(
-        self,
-        instance_id: str,
-        prediction: Prediction,
-    ) -> None:
-        """Update queue using error accumulation formula.
-
-        Formula:
-        - new_expected = current_expected + task_expected
-        - new_error = sqrt(current_error^2 + task_error^2)
-
-        Args:
-            instance_id: Selected instance
-            prediction: Prediction for the task
-        """
-        from swarmpilot.scheduler.models import InstanceQueueExpectError
-
-        current_queue = await self.instance_registry.get_queue_info(instance_id)
-
-        if not current_queue:
-            # If no queue exists, initialize with correct type
-            current_queue = InstanceQueueExpectError(
-                instance_id=instance_id,
-                expected_time_ms=0.0,
-                error_margin_ms=0.0,
-            )
-        elif not isinstance(current_queue, InstanceQueueExpectError):
-            # Type mismatch - this shouldn't happen if strategy switch was done properly
-            logger.warning(
-                f"Queue info type mismatch for {instance_id}: "
-                f"expected InstanceQueueExpectError, got {type(current_queue).__name__}. "
-                f"This indicates the strategy switch didn't properly reinitialize queues. Skipping update."
-            )
-            return
-
-        task_expected = prediction.predicted_time_ms
-        task_error = prediction.error_margin_ms or 0.0
-
-        # Calculate new queue expected time (simple addition)
-        new_expected = current_queue.expected_time_ms + task_expected
-
-        # Calculate new queue error margin (error accumulation)
-        new_error = math.sqrt(current_queue.error_margin_ms**2 + task_error**2)
-
-        updated_queue = InstanceQueueExpectError(
-            instance_id=instance_id,
-            expected_time_ms=new_expected,
-            error_margin_ms=new_error,
-        )
-
-        await self.instance_registry.update_queue_info(
-            instance_id, updated_queue
-        )
-        logger.debug(
-            f"Updated queue (expect_error) for {instance_id}: "
-            f"expected_time_ms={new_expected:.2f}, error_margin_ms={new_error:.2f}"
-        )

@@ -11,6 +11,7 @@ from swarmpilot.scheduler.models import (
     InstanceQueueProbabilistic,
     InstanceStats,
 )
+from swarmpilot.scheduler.registry.queue_sketch import DEFAULT_QUANTILES
 
 """
 # ============================================================================
@@ -67,8 +68,8 @@ class TestBasicOperations:
         assert queue_info is not None
         assert isinstance(queue_info, InstanceQueueProbabilistic)
         assert queue_info.instance_id == sample_instance.instance_id
-        assert len(queue_info.quantiles) == 4
-        assert len(queue_info.values) == 4
+        assert queue_info.quantiles == list(DEFAULT_QUANTILES)
+        assert queue_info.values == [0.0] * len(DEFAULT_QUANTILES)
 
     async def test_remove_existing_instance(
         self, instance_registry, sample_instance

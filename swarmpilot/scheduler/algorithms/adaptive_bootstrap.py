@@ -91,6 +91,7 @@ class AdaptiveBootstrapStrategy(SchedulingStrategy):
         model_id: str,
         metadata: dict[str, Any],
         available_instances: list["Instance"],
+        task_id: str | None = None,
     ) -> ScheduleResult:
         """Schedule a task, auto-selecting strategy per model warmth.
 
@@ -102,6 +103,7 @@ class AdaptiveBootstrapStrategy(SchedulingStrategy):
             model_id: Model identifier.
             metadata: Task metadata for prediction.
             available_instances: List of available instances.
+            task_id: The task being routed.
 
         Returns:
             ScheduleResult with selected instance and optional prediction.
@@ -117,7 +119,7 @@ class AdaptiveBootstrapStrategy(SchedulingStrategy):
                 f"delegating to probabilistic strategy"
             )
             return await self._probabilistic.schedule_task(
-                model_id, metadata, available_instances
+                model_id, metadata, available_instances, task_id=task_id
             )
 
         # Cold path: round-robin, no prediction call
@@ -166,12 +168,14 @@ class AdaptiveBootstrapStrategy(SchedulingStrategy):
         self,
         instance_id: str,
         prediction: Prediction,
+        task_id: str | None = None,
     ) -> None:
         """Not called directly (schedule_task is overridden).
 
         Args:
             instance_id: Selected instance.
             prediction: Prediction for the task.
+            task_id: The task (unused)
         """
         pass
 

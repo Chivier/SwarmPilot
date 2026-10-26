@@ -53,3 +53,15 @@ test measured a 2.6 s stall.
 
 Drain reports `pending_tasks: 0, can_remove: true` with 5 tasks queued, and
 after remove those 5 stay `pending` forever.
+
+# Later runs
+
+Same container type and scripts. Each file is named by benchmark and the
+plan item it was recorded after.
+
+| File | What changed |
+|------|--------------|
+| `proxy-phase1.3.json` | Async dispatch with in-flight limits and SSE streaming. |
+| `proxy-phase1.7.json` | Model lookup cache; per-request log at DEBUG. Non-stream 500 req/s at concurrency 1, 1155 req/s at 64; added P50 1.3 ms, P99 3.1 ms at concurrency 1. |
+| `probe_drain-phase2.1.json` | Drain counts queued work and remove re-routes it: 6 of 6 tasks complete. |
+| `sim_routing-phase2.2.jsonl` | Sketches released on completion (2,000 tasks, as above). P95: probabilistic 9.09 to 7.92 s, min_time 9.73 to 7.80 s; every sketch ends at 0 (`residual_ms`). random and po2 still wait for the reseed fix (2.3). |

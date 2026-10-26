@@ -1,0 +1,10 @@
+{"strategy": "oracle_least_work", "mode": "ref", "p50_s": 1.55, "p95_s": 7.18, "p99_s": 10.91, "max_share": null}
+{"strategy": "round_robin", "mode": "as_is", "p50_s": 3.86, "p95_s": 42.0, "p99_s": 52.67, "max_share": 0.125, "residual_ms": 0.0}
+{"strategy": "random", "mode": "as_is", "p50_s": 1228.07, "p95_s": 2543.66, "p99_s": 2625.95, "max_share": 1.0, "residual_ms": 0.0}
+{"strategy": "po2", "mode": "as_is", "p50_s": 495.09, "p95_s": 1043.54, "p99_s": 1112.3, "max_share": 0.5, "residual_ms": 0.0}
+{"strategy": "min_time", "mode": "as_is", "p50_s": 1.66, "p95_s": 7.8, "p99_s": 12.62, "max_share": 0.15, "residual_ms": 0.0}
+{"strategy": "probabilistic", "mode": "as_is", "p50_s": 1.66, "p95_s": 7.92, "p99_s": 12.5, "max_share": 0.142, "residual_ms": 0.0}
+{"strategy": "adaptive_bootstrap", "mode": "as_is", "p50_s": 3.86, "p95_s": 42.0, "p99_s": 52.67, "max_share": 0.125, "residual_ms": 0.0}
+{"strategy": "random", "mode": "noseed", "p50_s": 6.1, "p95_s": 31.79, "p99_s": 39.6, "max_share": 0.134, "residual_ms": 0.0}
+{"strategy": "po2", "mode": "noseed", "p50_s": 2.89, "p95_s": 13.61, "p99_s": 19.8, "max_share": 0.145, "residual_ms": 0.0}
+{"strategy": "probabilistic", "mode": "noseed", "p50_s": 1.66, "p95_s": 7.92, "p99_s": 12.5, "max_share": 0.142, "residual_ms": 0.0}

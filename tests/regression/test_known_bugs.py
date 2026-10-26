@@ -177,11 +177,6 @@ def test_drain_counts_and_reroutes_queued_tasks(
     assert statuses == dict.fromkeys(task_ids, "completed"), statuses
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="gap R2/A1: queue sketches are never decremented on completion "
-    "(fixed by plan item 2.2)",
-)
 def test_queue_sketch_returns_to_empty(
     scheduler: TestClient, fast_engine: str
 ) -> None:

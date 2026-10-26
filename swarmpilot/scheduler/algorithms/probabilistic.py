@@ -8,7 +8,6 @@ completion time, then selects the instance with the minimum sampled value.
 from typing import TYPE_CHECKING
 
 import numpy as np
-from loguru import logger
 
 from swarmpilot.scheduler.algorithms.base import SchedulingStrategy
 from swarmpilot.scheduler.clients.models import Prediction
@@ -140,97 +139,3 @@ class ProbabilisticSchedulingStrategy(SchedulingStrategy):
 
         return instance_ids[best_instance_idx]
 
-    async def update_queue(
-        self,
-        instance_id: str,
-        prediction: Prediction,
-    ) -> None:
-        """Update queue using Monte Carlo sampling method.
-
-        Uses 1000 samples to compute new quantile distribution by combining
-        queue distribution and task distribution.
-
-        Args:
-            instance_id: Selected instance
-            prediction: Prediction for the task
-        """
-        from swarmpilot.scheduler.models import InstanceQueueProbabilistic
-
-        current_queue = await self.instance_registry.get_queue_info(instance_id)
-
-        if not current_queue:
-            # If no queue exists, initialize with correct type
-            current_queue = InstanceQueueProbabilistic(
-                instance_id=instance_id,
-                quantiles=[0.5, 0.9, 0.95, 0.99],
-                values=[0.0, 0.0, 0.0, 0.0],
-            )
-        elif not isinstance(current_queue, InstanceQueueProbabilistic):
-            # Type mismatch - this shouldn't happen if strategy switch was done properly
-            logger.warning(
-                f"Queue info type mismatch for {instance_id}: "
-                f"expected InstanceQueueProbabilistic, got {type(current_queue).__name__}. "
-                f"This indicates the strategy switch didn't properly reinitialize queues. Skipping update."
-            )
-            return
-
-        if not prediction.quantiles:
-            # Fallback: use predicted_time_ms for all quantiles
-            updated_values = [
-                current_queue.values[i] + prediction.predicted_time_ms
-                for i in range(len(current_queue.quantiles))
-            ]
-            updated_queue = InstanceQueueProbabilistic(
-                instance_id=instance_id,
-                quantiles=current_queue.quantiles,
-                values=updated_values,
-            )
-            await self.instance_registry.update_queue_info(
-                instance_id, updated_queue
-            )
-            logger.debug(
-                f"Updated queue (probabilistic, fallback) for {instance_id}: "
-                f"quantiles={current_queue.quantiles}, "
-                f"values={[f'{v:.2f}' for v in updated_values]}"
-            )
-            return
-
-        # Monte Carlo method
-        num_samples = 1000
-        random_percentiles = np.random.random(num_samples)
-
-        # Sample from queue distribution using vectorized numpy interpolation
-        queue_samples = np.interp(
-            random_percentiles, current_queue.quantiles, current_queue.values
-        )
-
-        # Sample from task distribution
-        task_quantiles = sorted(prediction.quantiles.keys())
-        task_values = [prediction.quantiles[q] for q in task_quantiles]
-        task_samples = np.interp(
-            random_percentiles, task_quantiles, task_values
-        )
-
-        # Compute total time samples
-        total_samples = queue_samples + task_samples
-
-        # Compute new quantiles from samples using numpy.percentile
-        updated_values = [
-            float(np.percentile(total_samples, q * 100))
-            for q in current_queue.quantiles
-        ]
-
-        updated_queue = InstanceQueueProbabilistic(
-            instance_id=instance_id,
-            quantiles=current_queue.quantiles,
-            values=updated_values,
-        )
-
-        await self.instance_registry.update_queue_info(
-            instance_id, updated_queue
-        )
-        logger.debug(
-            f"Updated queue (probabilistic, Monte Carlo) for {instance_id}: "
-            f"quantiles={current_queue.quantiles}, "
-            f"values={[f'{v:.2f}' for v in updated_values]}"
-        )

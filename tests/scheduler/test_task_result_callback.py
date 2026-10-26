@@ -38,6 +38,7 @@ def mock_instance_registry():
     registry.get = AsyncMock()
     registry.increment_completed = AsyncMock()
     registry.increment_failed = AsyncMock()
+    registry.release_charge = AsyncMock(return_value=None)
     return registry
 
 
