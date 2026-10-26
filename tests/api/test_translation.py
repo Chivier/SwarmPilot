@@ -447,3 +447,12 @@ def test_plugin_styles_can_be_registered():
     finally:
         unregister_style("echo")
     assert style_for_path("v1/echo") is None
+
+
+@pytest.mark.parametrize("style", sorted(CONVERSATION))
+def test_prompt_text_is_style_independent(style):
+    req = get_style(style).decode_request(CONVERSATION[style], Context())
+    assert c.prompt_text(req) == (
+        "You are terse.\n\nWhat is the capital of France?\n\nParis."
+        "\n\nAnd of Spain?"
+    )

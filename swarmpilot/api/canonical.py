@@ -204,6 +204,31 @@ class Request:
         return "\n\n".join(p.text for p in self.system)
 
 
+def prompt_text(req: Request) -> str:
+    """Return the request's prompt text, whatever style it came in.
+
+    The system prompt, then every message's text (tool results included),
+    joined by blank lines. Semantic encoders and other text features read
+    this instead of a style's own message shapes.
+
+    Args:
+        req: A canonical request.
+
+    Returns:
+        The concatenated text.
+    """
+    chunks = [req.system_text()] if req.system else []
+    for m in req.messages:
+        for p in m.content:
+            if isinstance(p, TextPart):
+                chunks.append(p.text)
+            elif isinstance(p, ToolResultPart):
+                chunks.extend(
+                    x.text for x in p.content if isinstance(x, TextPart)
+                )
+    return "\n\n".join(chunks)
+
+
 @dataclass(slots=True)
 class Usage:
     """Token counts; unknown counts stay None."""
