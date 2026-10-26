@@ -30,9 +30,10 @@ class RoundRobinStrategy(SchedulingStrategy):
         self,
         predictor_client: "PredictorClient",
         instance_registry: "InstanceRegistry",
+        seed: int | None = None,
     ):
         """Initialize RoundRobinStrategy."""
-        super().__init__(predictor_client, instance_registry)
+        super().__init__(predictor_client, instance_registry, seed=seed)
         self._counter = 0
 
     async def get_predictions(

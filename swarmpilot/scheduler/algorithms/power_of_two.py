@@ -4,7 +4,6 @@ This strategy randomly selects two instances and picks the one with
 lower expected queue completion time.
 """
 
-import random
 from typing import TYPE_CHECKING
 
 from swarmpilot.scheduler.algorithms.base import SchedulingStrategy
@@ -28,9 +27,10 @@ class PowerOfTwoStrategy(SchedulingStrategy):
         self,
         predictor_client: "PredictorClient",
         instance_registry: "InstanceRegistry",
+        seed: int | None = None,
     ):
         """Initialize PowerOfTwoStrategy."""
-        super().__init__(predictor_client, instance_registry)
+        super().__init__(predictor_client, instance_registry, seed=seed)
         self._counter = 0
 
     def select_instance(
@@ -42,42 +42,26 @@ class PowerOfTwoStrategy(SchedulingStrategy):
         if not predictions:
             return None
 
+        # Every task counts as one unit, so the queues compare by length.
         for idx in range(len(predictions)):
             predictions[idx].predicted_time_ms = 1.0
 
-        # Select Queue
-        pred_1 = random.choice(predictions)
-        pred_2 = random.choice(predictions)
-        instance_1 = pred_1.instance_id
-        instance_2 = pred_2.instance_id
+        # Two distinct replicas, uniformly at random
+        if len(predictions) == 1:
+            return predictions[0].instance_id
+        i, j = self._rng.choice(len(predictions), size=2, replace=False)
+        pred_1, pred_2 = predictions[i], predictions[j]
+        instance_1, instance_2 = pred_1.instance_id, pred_2.instance_id
 
         from swarmpilot.scheduler.models import InstanceQueueExpectError
 
-        if not predictions:
-            return None
+        def total(queue: "InstanceQueueBase | None", pred: Prediction) -> float:
+            # Queue expected time plus the new task; prediction alone when
+            # the instance has no expect-error queue.
+            if isinstance(queue, InstanceQueueExpectError):
+                return queue.expected_time_ms + pred.predicted_time_ms
+            return pred.predicted_time_ms
 
-        # Retrive queue info
-        queue_1 = queue_info.get(instance_1)
-        queue_2 = queue_info.get(instance_2)
-
-        # Compute metrics for queue 1
-        if queue_1 and isinstance(queue_1, InstanceQueueExpectError):
-            # Calculate total time: queue expected + queue error + new task expected
-            total_time_1 = queue_1.expected_time_ms + pred_1.predicted_time_ms
-        else:
-            # Fallback: no queue info, just use prediction
-            total_time_1 = pred_1.predicted_time_ms
-
-        # Compute metrics for queue 2
-        if queue_2 and isinstance(queue_1, InstanceQueueExpectError):
-            # Calculate total time: queue expected + queue error + new task expected
-            total_time_2 = queue_2.expected_time_ms + pred_2.predicted_time_ms
-        else:
-            # Fallback: no queue info, just use prediction
-            total_time_2 = pred_2.predicted_time_ms
-
-        if total_time_1 < total_time_2:
-            return instance_1
-        else:
-            return instance_2
-
+        total_time_1 = total(queue_info.get(instance_1), pred_1)
+        total_time_2 = total(queue_info.get(instance_2), pred_2)
+        return instance_1 if total_time_1 <= total_time_2 else instance_2

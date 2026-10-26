@@ -4,11 +4,11 @@ This module defines the abstract base class for all scheduling strategies
 and the common ScheduleResult dataclass.
 """
 
-import random
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
 from loguru import logger
 
 from swarmpilot.scheduler.clients.models import Prediction
@@ -23,9 +23,6 @@ if TYPE_CHECKING:
     from swarmpilot.scheduler.services.worker_queue_manager import (
         WorkerQueueManager,
     )
-
-
-random.seed(42)
 
 
 @dataclass
@@ -43,15 +40,19 @@ class SchedulingStrategy(ABC):
         self,
         predictor_client: "PredictorClient",
         instance_registry: "InstanceRegistry",
+        seed: int | None = None,
     ):
         """Initialize scheduling strategy with dependencies.
 
         Args:
             predictor_client: Client for getting predictions
             instance_registry: Registry for instance and queue management
+            seed: Seed for this strategy's random generator. Leave None in
+                production; set it only to make experiments repeatable.
         """
         self.predictor_client = predictor_client
         self.instance_registry = instance_registry
+        self._rng = np.random.default_rng(seed)
         self._worker_queue_manager: WorkerQueueManager | None = None
 
     def set_worker_queue_manager(

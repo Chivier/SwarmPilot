@@ -21,8 +21,6 @@ from typing import Any
 import numpy as np
 from loguru import logger
 
-random.seed(42)
-
 
 class SwarmOptimizer(ABC):
     """Abstract base class for SwarmPilot optimizers.
@@ -49,6 +47,7 @@ class SwarmOptimizer(ABC):
         initial: np.ndarray,
         a: float,
         target: np.ndarray,
+        seed: int | None = None,
     ):
         """Initialize the optimizer.
 
@@ -63,7 +62,10 @@ class SwarmOptimizer(ABC):
                 be changed (0 < a <= 1).
             target: Target request distribution [N]. Expected request ratio
                 for each model.
+            seed: Seed for this optimizer's random generator. Leave None in
+                production; set it only to make experiments repeatable.
         """
+        self._rng = random.Random(seed)
         self.M = M
         self.N = N
         self.B = B.copy()
@@ -376,7 +378,7 @@ class SimulatedAnnealingOptimizer(SwarmOptimizer):
 
                     # Acceptance criterion: always accept better solutions,
                     # accept worse solutions with probability
-                    if delta < 0 or random.random() < math.exp(
+                    if delta < 0 or self._rng.random() < math.exp(
                         -delta / temperature
                     ):
                         current_deployment = neighbor.copy()
@@ -454,7 +456,7 @@ class SimulatedAnnealingOptimizer(SwarmOptimizer):
             Random neighbor solution, or None if cannot generate.
         """
         # Randomly select a machine
-        machine = random.randint(0, self.M - 1)
+        machine = self._rng.randint(0, self.M - 1)
         current_model = deployment[machine]
 
         # Get other deployable models for this machine
@@ -468,7 +470,7 @@ class SimulatedAnnealingOptimizer(SwarmOptimizer):
             return None
 
         # Randomly select new model
-        new_model = random.choice(valid_models)
+        new_model = self._rng.choice(valid_models)
 
         neighbor = deployment.copy()
         neighbor[machine] = new_model

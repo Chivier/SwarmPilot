@@ -51,6 +51,14 @@ class SchedulingConfig:
         os.getenv("SCHEDULING_PROBABILISTIC_QUANTILE", "0.9")
     )
 
+    # Seed for the strategies' random generators. Unset in production;
+    # set it only to make experiments repeatable.
+    random_seed: int | None = (
+        int(os.environ["SCHEDULING_RANDOM_SEED"])
+        if os.getenv("SCHEDULING_RANDOM_SEED")
+        else None
+    )
+
 
 @dataclass
 class TrainingConfig:

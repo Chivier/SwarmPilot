@@ -29,9 +29,10 @@ class MinimumExpectedTimeStrategy(SchedulingStrategy):
         self,
         predictor_client: "PredictorClient",
         instance_registry: "InstanceRegistry",
+        seed: int | None = None,
     ):
         """Initialize MinimumExpectedTimeStrategy."""
-        super().__init__(predictor_client, instance_registry)
+        super().__init__(predictor_client, instance_registry, seed=seed)
 
     def select_instance(
         self,
@@ -71,4 +72,3 @@ class MinimumExpectedTimeStrategy(SchedulingStrategy):
                 best_instance_id = pred.instance_id
 
         return best_instance_id
-

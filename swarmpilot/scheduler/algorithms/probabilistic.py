@@ -33,6 +33,7 @@ class ProbabilisticSchedulingStrategy(SchedulingStrategy):
         predictor_client: "PredictorClient",
         instance_registry: "InstanceRegistry",
         target_quantile: float = 0.9,
+        seed: int | None = None,
     ):
         """Initialize probabilistic strategy.
 
@@ -40,8 +41,9 @@ class ProbabilisticSchedulingStrategy(SchedulingStrategy):
             predictor_client: Client for getting predictions
             instance_registry: Registry for instance and queue management
             target_quantile: Target quantile for probabilistic selection (default: 0.9)
+            seed: Seed for the random generator (experiments only)
         """
-        super().__init__(predictor_client, instance_registry)
+        super().__init__(predictor_client, instance_registry, seed=seed)
         self.quantiles = instance_registry._quantiles
         self.target_quantile = target_quantile
 
@@ -84,7 +86,7 @@ class ProbabilisticSchedulingStrategy(SchedulingStrategy):
         num_instances = len(instance_ids)
 
         # Generate all random percentiles at once (shared across all instances)
-        random_percentiles = np.random.random(num_samples)
+        random_percentiles = self._rng.random(num_samples)
 
         # Build combined time matrix: shape (num_instances, num_samples)
         # Each entry = prediction_time + queue_time
@@ -138,4 +140,3 @@ class ProbabilisticSchedulingStrategy(SchedulingStrategy):
         best_instance_idx = np.argmax(win_counts)
 
         return instance_ids[best_instance_idx]
-

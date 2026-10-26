@@ -65,3 +65,4 @@ plan item it was recorded after.
 | `proxy-phase1.7.json` | Model lookup cache; per-request log at DEBUG. Non-stream 500 req/s at concurrency 1, 1155 req/s at 64; added P50 1.3 ms, P99 3.1 ms at concurrency 1. |
 | `probe_drain-phase2.1.json` | Drain counts queued work and remove re-routes it: 6 of 6 tasks complete. |
 | `sim_routing-phase2.2.jsonl` | Sketches released on completion (2,000 tasks, as above). P95: probabilistic 9.09 to 7.92 s, min_time 9.73 to 7.80 s; every sketch ends at 0 (`residual_ms`). random and po2 still wait for the reseed fix (2.3). |
+| `sim_routing-phase2.3.jsonl` | No global reseeds; each strategy has its own generator (seeded only in the sim); PO2 compares two distinct replicas. P95: random 2543.7 to 33.6 s and po2 1040.8 to 12.5 s, each replica now gets at most 14% of traffic. The default `adaptive_bootstrap` stays on round-robin here because no platform has a trained model (plan item 2.5). |

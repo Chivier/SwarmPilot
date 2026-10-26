@@ -44,6 +44,7 @@ class AdaptiveBootstrapStrategy(SchedulingStrategy):
         predictor_client: "PredictorClient",
         instance_registry: "InstanceRegistry",
         target_quantile: float = 0.9,
+        seed: int | None = None,
     ):
         """Initialize adaptive bootstrap strategy.
 
@@ -51,12 +52,14 @@ class AdaptiveBootstrapStrategy(SchedulingStrategy):
             predictor_client: Client for getting predictions.
             instance_registry: Registry for instance and queue management.
             target_quantile: Target quantile for probabilistic selection.
+            seed: Seed for the random generator (experiments only)
         """
-        super().__init__(predictor_client, instance_registry)
+        super().__init__(predictor_client, instance_registry, seed=seed)
         self._probabilistic = ProbabilisticSchedulingStrategy(
             predictor_client,
             instance_registry,
             target_quantile=target_quantile,
+            seed=seed,
         )
         self.target_quantile = target_quantile
         self.quantiles = instance_registry._quantiles

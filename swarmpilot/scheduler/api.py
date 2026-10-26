@@ -17,7 +17,6 @@ from typing import ClassVar
 from urllib.parse import parse_qs
 
 import httpx
-import numpy as np
 from fastapi import (
     FastAPI,
     HTTPException,
@@ -107,7 +106,6 @@ from .utils.logger import setup_logger  # noqa: F401
 from .utils.planner_reporter import PlannerReporter
 from .utils.throughput_tracker import ThroughputTracker
 
-random.seed(42)
 # ============================================================================
 # Application Setup
 # ============================================================================
@@ -382,6 +380,7 @@ scheduling_strategy = get_strategy(
     predictor_client=predictor_client,
     instance_registry=instance_registry,
     target_quantile=config.scheduling.probabilistic_quantile,
+    seed=config.scheduling.random_seed,
 )
 
 # Background tasks set - keeps references to fire-and-forget tasks
@@ -2917,8 +2916,6 @@ async def set_strategy_endpoint(request: StrategySetRequest):
     """
     global scheduling_strategy
 
-    random.seed(42)
-
     # Check if there are any running tasks
     running_count = await task_registry.get_count_by_status(TaskStatus.RUNNING)
     if running_count > 0:
@@ -2965,6 +2962,7 @@ async def set_strategy_endpoint(request: StrategySetRequest):
                 predictor_client=predictor_client,
                 instance_registry=instance_registry,
                 target_quantile=target_quantile,
+                seed=config.scheduling.random_seed,
             )
         except BaseException as e:
             raise RuntimeError(f"Strategy initialization failed: {e}") from e
@@ -2991,9 +2989,6 @@ async def set_strategy_endpoint(request: StrategySetRequest):
 
     # Get the new strategy info
     strategy_info = get_current_strategy_info()
-
-    random.seed(42)
-    np.random.seed(42)
 
     logger.success(
         f"Successfully switched to strategy '{request.strategy_name.value}'"

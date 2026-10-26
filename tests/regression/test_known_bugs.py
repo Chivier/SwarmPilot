@@ -198,11 +198,6 @@ def test_queue_sketch_returns_to_empty(
         assert max(values) == pytest.approx(0.0, abs=1e-6), (iid, queue)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="gap R4/R7: the predictor reseeds random and np.random to 42 on "
-    "every call (fixed by plan item 2.3)",
-)
 async def test_random_choices_are_random(tmp_path) -> None:
     """Random must be uniform over replicas, and PO2 must use all of them."""
     from loguru import logger

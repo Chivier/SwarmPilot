@@ -9,13 +9,9 @@ Every routed task is charged to its instance's queue sketch and released
 when it finishes, as the Scheduler's result callback does. ``residual_ms``
 is the largest sketch value left once every task has finished; it must be 0.
 
-Modes:
-  as_is   - the repo's behaviour.
-  noseed  - as_is, but with the per-predict random.seed(42)/np.random.seed(42)
-            in PredictorClient neutralised (until plan item 2.3 removes it).
-
-The baseline file from commit 8a9cee4 also has a "fixed" mode that patched
-sketch subtraction in from outside; plan item 2.2 made that the real code.
+Strategies get a fixed seed so runs repeat. The baseline file from commit
+8a9cee4 also has "fixed" and "noseed" modes that patched the sketch and
+reseed bugs from outside; plan items 2.2 and 2.3 made both the real code.
 
 Usage:
     uv run python tests/perf/sim_routing.py [n_tasks=3000] [load=0.8]
@@ -24,14 +20,12 @@ Usage:
 import asyncio
 import heapq
 import json
-import random
 import sys
 import tempfile
 
 import numpy as np
 
 from swarmpilot.scheduler.algorithms.factory import get_strategy
-from swarmpilot.scheduler.clients import predictor_library_client as plc
 from swarmpilot.scheduler.clients.predictor_library_client import (
     PredictorClient,
 )
@@ -81,7 +75,7 @@ async def run(strategy, mode, means, actual, arrivals):
     for i in insts:
         await reg.register(i)
     pc = PredictorClient(storage_dir=tempfile.mkdtemp(prefix="sim-models-"))
-    strat = get_strategy(strategy, pc, reg)
+    strat = get_strategy(strategy, pc, reg, seed=1)
     free_at = [0.0] * N_INST
     pending = []  # heap of (finish_time, task index)
     lat, chosen = [], []
@@ -156,13 +150,6 @@ async def main():
         "adaptive_bootstrap",
     ]:
         out.append(await run(s, "as_is", means, actual, arrivals))
-    # neutralise the per-call reseed
-    plc.random.seed = lambda *a, **k: None
-    plc.np.random.seed = lambda *a, **k: None
-    random.seed(1)
-    np.random.seed(1)
-    for s in ["random", "po2", "probabilistic"]:
-        out.append(await run(s, "noseed", means, actual, arrivals))
     for r in out:
         print(json.dumps(r))
 
