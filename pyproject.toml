@@ -31,11 +31,15 @@ dependencies = [
     "pulp>=3.3.0",
     # Profiling
     "pyinstrument>=5.1.1",
-    "vllm==0.11.0",
     "pylet>=0.5.0",
 ]
+# Inference engines are optional: SwarmPilot only launches and talks to
+# them. Install the one an instance runs, e.g. pip install "swarmpilot[vllm]".
 
 [project.optional-dependencies]
+vllm = ["vllm==0.11.0"]
+sglang = ["sglang[all]>=0.4"]
+diffusion = ["diffusers>=0.30", "accelerate>=0.30", "pillow>=10.0"]
 analysis = [
     "requests>=2.32.5",
     "plotly>=6.3.1",
@@ -54,6 +58,7 @@ splanner = "swarmpilot.planner.cli:app"
 [project.entry-points."swarmpilot.engines"]
 vllm = "swarmpilot.engines.vllm:VLLMAdapter"
 sglang = "swarmpilot.engines.sglang:SGLangAdapter"
+diffusers = "swarmpilot.engines.diffusion:DiffusersAdapter"
 
 [build-system]
 requires = ["hatchling"]
@@ -66,6 +71,10 @@ packages = ["swarmpilot"]
 allow-direct-references = true
 
 [tool.uv]
+# Engines pin their own torch and transformers; never resolve two together.
+conflicts = [
+    [{ extra = "vllm" }, { extra = "sglang" }],
+]
 package = true
 
 [tool.uv.sources]

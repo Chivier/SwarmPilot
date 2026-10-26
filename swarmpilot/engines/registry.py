@@ -35,6 +35,7 @@ ENTRY_POINT_GROUP = "swarmpilot.engines"
 BUILTIN_ADAPTERS: dict[str, str] = {
     "vllm": "swarmpilot.engines.vllm:VLLMAdapter",
     "sglang": "swarmpilot.engines.sglang:SGLangAdapter",
+    "diffusers": "swarmpilot.engines.diffusion:DiffusersAdapter",
 }
 
 _lock = threading.Lock()
