@@ -94,6 +94,17 @@ def _is_lightweight(platform_info: dict[str, str], path: str) -> bool:
     return path in PRIORITY_PATHS
 
 
+def _prediction_fields(prediction: Any) -> dict[str, Any]:
+    """Task-record prediction fields from a scheduling prediction."""
+    if prediction is None:
+        return {}
+    return {
+        "predicted_time_ms": prediction.predicted_time_ms,
+        "predicted_error_margin_ms": prediction.error_margin_ms,
+        "predicted_quantiles": prediction.quantiles,
+    }
+
+
 class ProxyRouter:
     """Transparent proxy router that forwards requests to backend instances.
 
@@ -234,11 +245,13 @@ class ProxyRouter:
                 task_id=task_id,
             )
             selected_instance_id = schedule_result.selected_instance_id
+            prediction = schedule_result.selected_prediction
 
         except Exception as e:
             logger.opt(exception=True).error(f"[PROXY] Scheduling failed: {e}")
-            # Fallback: pick first instance
+            # Fallback: pick first instance, with no prediction
             selected_instance_id = all_instances[0].instance_id
+            prediction = None
             logger.info(
                 f"[PROXY] Falling back to instance {selected_instance_id}"
             )
@@ -267,6 +280,9 @@ class ProxyRouter:
             task_input=body,
             metadata=metadata,
             assigned_instance=selected_instance_id,
+            # The result callback hands these to the trainer, whose drift
+            # detector needs each task's prediction.
+            **_prediction_fields(prediction),
         )
         arrival_counter.record(metadata.get(PARENT_KEY))
 

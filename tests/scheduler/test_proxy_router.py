@@ -572,3 +572,97 @@ class TestParentHeader:
             "metadata"
         ]
         assert metadata["parent_model"] == "planner-llm"
+
+
+async def test_proxied_task_reaches_trainer_with_its_prediction(
+    mock_scheduling_strategy,
+):
+    """Drift detection needs each proxied task's prediction (item 3.1)."""
+    import httpx
+
+    from swarmpilot.scheduler.models import Instance
+    from swarmpilot.scheduler.registry.instance_registry import (
+        InstanceRegistry,
+    )
+    from swarmpilot.scheduler.registry.task_registry import TaskRegistry
+    from swarmpilot.scheduler.services.websocket_manager import (
+        ConnectionManager,
+    )
+
+    instances = InstanceRegistry()
+    await instances.register(
+        Instance(
+            instance_id="instance-1",
+            model_id="test-model",
+            endpoint="http://localhost:8001",
+            platform_info={
+                "software_name": "vllm",
+                "software_version": "0.11",
+                "hardware_name": "h",
+            },
+        )
+    )
+    tasks = TaskRegistry()
+    trainer = MagicMock()
+    callback = TaskResultCallback(
+        task_registry=tasks,
+        instance_registry=instances,
+        websocket_manager=ConnectionManager(),
+        training_client=trainer,
+    )
+    queued = asyncio.Event()
+    manager = MagicMock()
+    manager.has_worker = MagicMock(return_value=True)
+    manager.supports_streaming = False
+
+    def enqueue(instance_id, task):
+        manager.task = task
+        queued.set()
+        return 1
+
+    manager.enqueue_task = MagicMock(side_effect=enqueue)
+    app = FastAPI()
+    app.include_router(
+        ProxyRouter(
+            scheduling_strategy=mock_scheduling_strategy,
+            instance_registry=instances,
+            task_registry=tasks,
+            task_result_callback=callback,
+            worker_queue_manager=manager,
+            proxy_timeout=5.0,
+        ).router
+    )
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://t"
+    ) as client:
+        request = asyncio.create_task(
+            client.post(
+                "/v1/chat/completions",
+                json={
+                    "model": "test-model",
+                    "messages": [{"role": "user", "content": "hi there"}],
+                    "max_tokens": 32,
+                },
+            )
+        )
+        await asyncio.wait_for(queued.wait(), 5)
+        await callback.handle_result(
+            TaskResult(
+                task_id=manager.task.task_id,
+                worker_id="instance-1",
+                status="completed",
+                result={"choices": []},
+                execution_time_ms=95.0,
+                http_status_code=200,
+                response_headers={},
+            )
+        )
+        response = await asyncio.wait_for(request, 5)
+
+    assert response.status_code == 200
+    trainer.add_sample.assert_called_once()
+    kwargs = trainer.add_sample.call_args.kwargs
+    assert kwargs["predicted_time_ms"] == 100.0
+    assert kwargs["predicted_quantiles"] == {0.5: 80.0, 0.9: 120.0}
+    assert kwargs["actual_runtime_ms"] == 95.0

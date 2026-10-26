@@ -211,3 +211,54 @@ async def test_batch_mode_retrains_every_batch(tmp_path, learned):
 def test_rejects_unknown_mode(tmp_path):
     with pytest.raises(ValueError):
         _client(tmp_path, retrain_mode="sometimes")
+
+
+async def test_drift_flagged_during_a_refit_is_kept(tmp_path, learned):
+    """A detection while a fit runs must survive that fit's bookkeeping."""
+    import asyncio
+    import threading
+
+    client = _client(tmp_path)
+    rng = np.random.default_rng(0)
+    for _ in range(10):
+        await _serve(client, 100, 1.0, rng)
+        if client._is_warm("m", PLAT):
+            break
+    assert client._is_warm("m", PLAT)
+    key = client._key("m", PLAT)
+
+    started, release = threading.Event(), threading.Event()
+    real = client._train_model
+
+    def slow(*args):
+        started.set()
+        release.wait(5)
+        return real(*args)
+
+    client._train_model = slow
+    for _ in range(20):
+        client.add_sample("m", PLAT, {"prompt_length": 500.0}, 75.0)
+    fit = asyncio.create_task(client.flush(force=True))
+    while not started.is_set():
+        await asyncio.sleep(0.01)
+
+    observe = client.drift.observe
+    client.drift.observe = lambda *a: True
+    client.add_sample(
+        "m",
+        PLAT,
+        {"prompt_length": 500.0},
+        300.0,
+        predicted_quantiles=_installed_q(client),
+    )
+    client.drift.observe = observe
+    for _ in range(5):
+        client.add_sample("m", PLAT, {"prompt_length": 500.0}, 300.0)
+    release.set()
+    await fit
+
+    assert client._recovering.get(key) == 5
+    # The next absorb keeps the five post-detection samples, not none.
+    client._absorb()
+    assert len(client._windows[key]) == 5
+    await client.close()

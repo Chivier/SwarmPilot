@@ -385,6 +385,10 @@ class TrainingClient:
         loop = asyncio.get_running_loop()
 
         async with self._flush_lock:
+            # Samples keep arriving while a fit runs on its thread, and one
+            # may flag drift. Only a recovery that began before the fit is
+            # finished by it; a newer one keeps its count and its trim.
+            recovering = {k for k in keys if k in self._recovering}
             for key in keys:
                 model_id = key[0]
                 samples = list(self._windows[key])
@@ -428,14 +432,14 @@ class TrainingClient:
                 self._since_fit[key] = 0
                 if installed_any:
                     self._fit_size[key] = len(samples)
-                if key in self._recovering:
+                if key in recovering:
                     del self._recovering[key]
                     self._ratios.pop(key, None)
                     if installed_any:
                         self.drift.reset(key)
                     else:
                         self.drift.rearm(key)
-                elif installed_any:
+                elif installed_any and key not in self._recovering:
                     self.drift.reset(key)
 
         logger.info(
