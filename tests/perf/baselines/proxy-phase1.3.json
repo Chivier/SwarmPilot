@@ -1,0 +1,170 @@
+{
+  "benchmark": "proxy_overhead",
+  "commit": "4bde115",
+  "date": "2026-10-26",
+  "host": {
+    "python": "3.13.17",
+    "machine": "x86_64",
+    "cpus": 4
+  },
+  "config": {
+    "instances": 1,
+    "engine": "vllm",
+    "strategy": "round_robin",
+    "log_level": "INFO",
+    "duration_s": 10.0,
+    "warmup_s": 2.0
+  },
+  "results": [
+    {
+      "stream": false,
+      "concurrency": 1,
+      "direct": {
+        "requests": 14867,
+        "errors": 0,
+        "rps": 1486.6,
+        "latency_p50_ms": 0.605,
+        "latency_p99_ms": 2.098,
+        "ttft_p50_ms": 0.593,
+        "ttft_p99_ms": 2.054
+      },
+      "proxy": {
+        "requests": 3517,
+        "errors": 0,
+        "rps": 351.7,
+        "latency_p50_ms": 2.68,
+        "latency_p99_ms": 6.505,
+        "ttft_p50_ms": 2.66,
+        "ttft_p99_ms": 6.484
+      },
+      "added_p50_ms": 2.075,
+      "added_p99_ms": 4.407,
+      "throughput_ratio": 0.2366
+    },
+    {
+      "stream": false,
+      "concurrency": 64,
+      "direct": {
+        "requests": 46380,
+        "errors": 0,
+        "rps": 4636.5,
+        "latency_p50_ms": 12.534,
+        "latency_p99_ms": 21.951,
+        "ttft_p50_ms": 12.524,
+        "ttft_p99_ms": 21.941
+      },
+      "proxy": {
+        "requests": 8020,
+        "errors": 0,
+        "rps": 798.9,
+        "latency_p50_ms": 75.198,
+        "latency_p99_ms": 256.28,
+        "ttft_p50_ms": 75.191,
+        "ttft_p99_ms": 256.268
+      },
+      "added_p50_ms": 62.664,
+      "added_p99_ms": 234.329,
+      "throughput_ratio": 0.1723
+    },
+    {
+      "stream": false,
+      "concurrency": 512,
+      "direct": {
+        "requests": 39595,
+        "errors": 0,
+        "rps": 3940.6,
+        "latency_p50_ms": 125.024,
+        "latency_p99_ms": 204.905,
+        "ttft_p50_ms": 125.017,
+        "ttft_p99_ms": 204.897
+      },
+      "proxy": {
+        "requests": 7345,
+        "errors": 0,
+        "rps": 705.5,
+        "latency_p50_ms": 637.323,
+        "latency_p99_ms": 1251.801,
+        "ttft_p50_ms": 637.313,
+        "ttft_p99_ms": 1251.795
+      },
+      "added_p50_ms": 512.299,
+      "added_p99_ms": 1046.896,
+      "throughput_ratio": 0.179
+    },
+    {
+      "stream": true,
+      "concurrency": 1,
+      "direct": {
+        "requests": 9486,
+        "errors": 0,
+        "rps": 948.6,
+        "latency_p50_ms": 0.962,
+        "latency_p99_ms": 3.152,
+        "ttft_p50_ms": 0.948,
+        "ttft_p99_ms": 3.101
+      },
+      "proxy": {
+        "requests": 2899,
+        "errors": 0,
+        "rps": 289.9,
+        "latency_p50_ms": 3.279,
+        "latency_p99_ms": 8.32,
+        "ttft_p50_ms": 3.257,
+        "ttft_p99_ms": 8.293
+      },
+      "added_p50_ms": 2.317,
+      "added_p99_ms": 5.168,
+      "throughput_ratio": 0.3056
+    },
+    {
+      "stream": true,
+      "concurrency": 64,
+      "direct": {
+        "requests": 24492,
+        "errors": 0,
+        "rps": 2445.3,
+        "latency_p50_ms": 23.812,
+        "latency_p99_ms": 50.168,
+        "ttft_p50_ms": 23.802,
+        "ttft_p99_ms": 50.161
+      },
+      "proxy": {
+        "requests": 7380,
+        "errors": 0,
+        "rps": 734.0,
+        "latency_p50_ms": 82.342,
+        "latency_p99_ms": 119.584,
+        "ttft_p50_ms": 82.331,
+        "ttft_p99_ms": 119.573
+      },
+      "added_p50_ms": 58.53,
+      "added_p99_ms": 69.416,
+      "throughput_ratio": 0.3002
+    },
+    {
+      "stream": true,
+      "concurrency": 512,
+      "direct": {
+        "requests": 18317,
+        "errors": 0,
+        "rps": 1784.8,
+        "latency_p50_ms": 269.69,
+        "latency_p99_ms": 421.635,
+        "ttft_p50_ms": 269.677,
+        "ttft_p99_ms": 421.625
+      },
+      "proxy": {
+        "requests": 5247,
+        "errors": 0,
+        "rps": 499.3,
+        "latency_p50_ms": 845.447,
+        "latency_p99_ms": 1362.539,
+        "ttft_p50_ms": 845.439,
+        "ttft_p99_ms": 1362.53
+      },
+      "added_p50_ms": 575.757,
+      "added_p99_ms": 940.904,
+      "throughput_ratio": 0.2798
+    }
+  ]
+}
