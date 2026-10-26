@@ -1,6 +1,6 @@
 """Discovery of engine adapters and cluster backends.
 
-Adapters come from two places:
+Adapters come from three places:
 
 1. The ``swarmpilot.engines`` entry-point group. Any installed package can
    add an engine by declaring, in its ``pyproject.toml``::
@@ -8,7 +8,12 @@ Adapters come from two places:
        [project.entry-points."swarmpilot.engines"]
        my-engine = "my_package.adapter:MyEngineAdapter"
 
-2. :func:`register_adapter`, for tests and in-process plugins.
+2. YAML descriptions of plain HTTP servers, listed in the
+   ``SWARMPILOT_ENGINE_CONFIGS`` environment variable (see
+   :mod:`swarmpilot.engines.generic_http`). A YAML engine replaces an
+   entry-point engine of the same name.
+
+3. :func:`register_adapter`, for tests and in-process plugins.
 
 Built-in adapters are declared as entry points of ``swarmpilot`` itself and
 also listed in :data:`BUILTIN_ADAPTERS`, so they work from a source checkout
@@ -63,7 +68,24 @@ def _discover() -> None:
             _classes[name] = _load(target)
         except Exception as e:
             logger.warning(f"Skipping engine adapter {name!r} ({target}): {e}")
+    _discover_configs()
     _discovered = True
+
+
+def _discover_configs() -> None:
+    # Imported here so the YAML loader stays off the import path of
+    # services that never configure generic engines.
+    from swarmpilot.engines.generic_http import config_files, load_config_file
+
+    for path in config_files():
+        try:
+            cls = load_config_file(path)
+        except Exception as e:
+            logger.warning(f"Skipping engine config {path}: {e}")
+            continue
+        if cls.name in _classes:
+            logger.info(f"Engine adapter {cls.name!r} overridden by {path}")
+        _classes[cls.name] = cls
 
 
 def register_adapter(

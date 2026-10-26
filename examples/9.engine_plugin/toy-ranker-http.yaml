@@ -1,0 +1,24 @@
+# The same toy server described for the generic HTTP adapter, with no
+# Python code. Load it with:
+#   export SWARMPILOT_ENGINE_CONFIGS=$PWD/toy-ranker-http.yaml
+name: toy-ranker-http
+workload: generic_job
+launch:
+  # {model}, {gpus} and {port} are filled in by SwarmPilot.
+  argv: [python, -m, toy_ranker.server, --model, "{model}", --port, "{port}"]
+  health_path: /health
+  ready_timeout_s: 60
+version:
+  path: /info
+  field: build.version
+routes:
+  - path: v1/rank
+    methods: [POST]
+    retry_safe: true
+features:
+  - name: n_docs
+    expr: len(documents)
+  - name: query_chars
+    expr: chars(query)
+capacity:
+  max_in_flight: 4
