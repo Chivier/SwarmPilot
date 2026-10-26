@@ -9,7 +9,7 @@ import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestServer
 
-from swarmpilot.engines import get_adapter
+from swarmpilot.engines import RouteSpec, get_adapter
 from swarmpilot.engines.passthrough import PassthroughAdapter
 from swarmpilot.scheduler.services.async_worker_queue import (
     AsyncWorkerQueue,
@@ -68,16 +68,33 @@ class _Engine:
         return web.json_response({"echo": body})
 
 
-class _FlakyAdapter(PassthroughAdapter):
-    """Pass-through that drops the first ``fail`` connections."""
+class _Key:
+    host, port, ssl = "engine", 1, False
 
-    def __init__(self, fail: int = 0):
+
+def _refused() -> aiohttp.ClientConnectorError:
+    return aiohttp.ClientConnectorError(
+        _Key(), ConnectionRefusedError(111, "x")
+    )
+
+
+class _FlakyAdapter(PassthroughAdapter):
+    """Pass-through whose first ``fail`` sends raise ``exc()``."""
+
+    def __init__(self, fail: int = 0, exc=_refused, routes=()):
         self.fail = fail
+        self.exc = exc
+        self.sent = 0
+        self._routes = routes
+
+    def routes(self):
+        return self._routes
 
     async def dispatch(self, session, endpoint, request):
+        self.sent += 1
         if self.fail:
             self.fail -= 1
-            raise aiohttp.ServerDisconnectedError()
+            raise self.exc()
         return await super().dispatch(session, endpoint, request)
 
 
@@ -190,6 +207,56 @@ class TestAsyncWorkerQueue:
         await _wait(lambda: len(results) == 2)
         assert results[1].status == "failed"
         assert results[1].http_status_code == 0
+        q.stop()
+
+    async def test_lost_connection_not_resent_for_unsafe_route(
+        self, engine, session
+    ):
+        results = []
+        adapter = _FlakyAdapter(
+            fail=1,
+            exc=aiohttp.ServerDisconnectedError,
+            routes=(RouteSpec("v1/completions", retry_safe=False),),
+        )
+        q = _queue(engine, session, results, max_retries=3, adapter=adapter)
+        q.start()
+        q.enqueue(_task(0))
+        await _wait(lambda: len(results) == 1)
+        assert results[0].status == "failed"
+        assert adapter.sent == 1
+        q.stop()
+
+    async def test_lost_connection_resent_for_safe_route(self, engine, session):
+        results = []
+        adapter = _FlakyAdapter(
+            fail=1,
+            exc=aiohttp.ServerDisconnectedError,
+            routes=(RouteSpec("v1/completions", retry_safe=True),),
+        )
+        q = _queue(engine, session, results, max_retries=3, adapter=adapter)
+        q.start()
+        q.enqueue(_task(0))
+        await _wait(lambda: len(results) == 1)
+        assert results[0].status == "completed"
+        assert adapter.sent == 2
+        q.stop()
+
+    async def test_lost_connection_undeclared_route_by_method(
+        self, engine, session
+    ):
+        results = []
+        adapter = _FlakyAdapter(fail=2, exc=aiohttp.ServerDisconnectedError)
+        q = _queue(engine, session, results, max_retries=3, adapter=adapter)
+        q.start()
+        get = _task(0)
+        get.metadata["method"] = "GET"
+        q.enqueue(get)
+        await _wait(lambda: len(results) == 1)
+        assert results[0].status == "completed"
+        adapter.fail = 1
+        q.enqueue(_task(1))
+        await _wait(lambda: len(results) == 2)
+        assert results[1].status == "failed"
         q.stop()
 
     async def test_stream_is_relayed_then_completed(self, engine, session):

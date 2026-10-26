@@ -11,7 +11,12 @@ same harness can measure SwarmPilot without a GPU:
 
 Latency is controlled per process with ``--latency-ms`` (time to the full
 response) and ``--tokens`` (number of SSE chunks, spread over that latency).
-A body may override them with ``fake_latency_ms`` and ``fake_tokens``.
+A body may override them with ``fake_latency_ms`` and ``fake_tokens``, and
+ask for an error with ``fake_status``.
+
+For black-box tests of whatever sits in front of it, the engine counts
+what it sees: ``GET /_stats`` returns requests per path and the most
+requests it ever had in flight at once, and ``POST /_reset`` clears that.
 
 Usage:
     uv run python tests/perf/fake_engine.py --port 18001 --latency-ms 0
@@ -35,6 +40,19 @@ TOKENS = int(os.getenv("FAKE_ENGINE_TOKENS", "16"))
 MODEL = os.getenv("FAKE_ENGINE_MODEL", "fake-model")
 VERSION = os.getenv("FAKE_ENGINE_VERSION", "0.0.0")
 MS_PER_STEP = float(os.getenv("FAKE_ENGINE_MS_PER_STEP", "0"))
+
+
+_STATS: dict = {"in_flight": 0, "max_in_flight": 0, "requests": {}}
+
+
+def _enter(path: str) -> None:
+    _STATS["in_flight"] += 1
+    _STATS["max_in_flight"] = max(_STATS["max_in_flight"], _STATS["in_flight"])
+    _STATS["requests"][path] = _STATS["requests"].get(path, 0) + 1
+
+
+def _leave() -> None:
+    _STATS["in_flight"] -= 1
 
 
 async def _read_json(request: Request) -> dict:
@@ -71,6 +89,14 @@ def _completion(body: dict, chat: bool, tokens: int) -> dict:
 
 
 async def _stream(body: dict, chat: bool, tokens: int, latency_ms: float):
+    try:
+        async for chunk in _chunks(body, chat, tokens, latency_ms):
+            yield chunk
+    finally:
+        _leave()
+
+
+async def _chunks(body: dict, chat: bool, tokens: int, latency_ms: float):
     gap = latency_ms / 1000 / max(tokens, 1)
     model = body.get("model", MODEL)
     for i in range(tokens):
@@ -93,13 +119,22 @@ async def completions(request: Request) -> Response:
     chat = request.url.path.endswith("chat/completions")
     latency_ms = float(body.get("fake_latency_ms", LATENCY_MS))
     tokens = max(1, int(body.get("fake_tokens", TOKENS)))
-    if body.get("stream"):
+    _enter(request.url.path)
+    if body.get("stream") and "fake_status" not in body:
         return StreamingResponse(
             _stream(body, chat, tokens, latency_ms),
             media_type="text/event-stream",
         )
-    if latency_ms:
-        await asyncio.sleep(latency_ms / 1000)
+    try:
+        if latency_ms:
+            await asyncio.sleep(latency_ms / 1000)
+    finally:
+        _leave()
+    if "fake_status" in body:
+        return JSONResponse(
+            {"error": {"message": "fake error", "type": "fake"}},
+            status_code=int(body["fake_status"]),
+        )
     return JSONResponse(_completion(body, chat, tokens))
 
 
@@ -121,8 +156,22 @@ async def health(_: Request) -> Response:
     return JSONResponse({"status": "ok"})
 
 
-async def models(_: Request) -> Response:
+async def stats(_: Request) -> Response:
+    """Report requests per path and peak concurrency."""
+    return JSONResponse(_STATS)
+
+
+async def reset(_: Request) -> Response:
+    """Clear the counters (in-flight requests keep counting down)."""
+    _STATS["max_in_flight"] = _STATS["in_flight"]
+    _STATS["requests"] = {}
+    return JSONResponse({"ok": True})
+
+
+async def models(request: Request) -> Response:
     """List the single fake model."""
+    _enter(request.url.path)
+    _leave()
     return JSONResponse(
         {"object": "list", "data": [{"id": MODEL, "object": "model"}]}
     )
@@ -141,6 +190,8 @@ app = Starlette(
         Route("/health", health),
         Route("/v1/models", models),
         Route("/version", version),
+        Route("/_stats", stats),
+        Route("/_reset", reset, methods=["POST"]),
     ]
 )
 

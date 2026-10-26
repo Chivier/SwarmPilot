@@ -36,6 +36,8 @@ from swarmpilot.scheduler.services.worker_queue_thread import (
     TaskResult,
 )
 
+_IDEMPOTENT = frozenset({"GET", "HEAD", "OPTIONS", "PUT", "DELETE"})
+
 
 class StreamStart:
     """What a streamed task delivers to the caller when the engine answers.
@@ -293,6 +295,21 @@ class AsyncWorkerQueue:
             proxy=self._proxy,
         )
 
+    def _retryable(self, request: EngineRequest, exc: Exception) -> bool:
+        """Whether resending ``request`` after ``exc`` is harmless.
+
+        A refused connection never reached the engine, so it is always
+        retried. A connection lost after sending may have been processed,
+        so only routes the adapter marks ``retry_safe`` are resent; for
+        routes it does not declare, only idempotent methods are.
+        """
+        if isinstance(exc, aiohttp.ClientConnectorError):
+            return True
+        route = self._adapter.route(request.path)
+        if route is not None:
+            return route.retry_safe
+        return request.method in _IDEMPOTENT
+
     async def _send(self, request: EngineRequest):
         for attempt in range(self._max_retries):
             try:
@@ -303,7 +320,9 @@ class AsyncWorkerQueue:
                 aiohttp.ClientConnectorError,
                 aiohttp.ServerDisconnectedError,
             ) as e:
-                if attempt == self._max_retries - 1:
+                if attempt == self._max_retries - 1 or not self._retryable(
+                    request, e
+                ):
                     raise
                 delay = self._retry_delay * (2**attempt)
                 logger.warning(

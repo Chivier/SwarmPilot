@@ -60,6 +60,9 @@ jobs:
       - name: Run engine adapter contract tests
         run: uv run pytest tests/engines/ -v --tb=short
 
+      - name: Run black-box dispatch conformance tests
+        run: uv run pytest tests/conformance/ -v --tb=short
+
   lint:
     runs-on: ubuntu-latest
     steps:

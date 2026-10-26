@@ -152,6 +152,10 @@ class WorkerQueueManager:
                 connector=aiohttp.TCPConnector(
                     limit=0,  # per-instance limits come from max_in_flight
                     ssl=False,  # Internal network, as with the thread queue
+                    # Below uvicorn's 5 s default, so we drop an idle
+                    # connection before the engine does instead of sending
+                    # on one it is closing (which is not safely retryable).
+                    keepalive_timeout=4.0,
                 ),
                 # No total timeout: streams may run long. The read timeout
                 # bounds silence between chunks.

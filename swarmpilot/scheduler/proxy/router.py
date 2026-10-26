@@ -44,7 +44,8 @@ if TYPE_CHECKING:
     )
 
 
-# Lightweight OpenAI-compatible paths that should be prioritized.
+# Lightweight paths that should be prioritized when the engine's adapter
+# does not declare them.
 # These are fast metadata queries that should not be blocked by
 # long-running inference requests in the worker queue.
 PRIORITY_PATHS: set[str] = {
@@ -74,6 +75,18 @@ def _extract_features(
     except (TypeError, ValueError, AttributeError) as e:
         logger.debug(f"[PROXY] No features for /{path}: {e}")
         return {}
+
+
+def _is_lightweight(platform_info: dict[str, str], path: str) -> bool:
+    """Whether ``path`` is a metadata route that skips the queue.
+
+    The engine's adapter decides for routes it declares; other paths fall
+    back to :data:`PRIORITY_PATHS`.
+    """
+    route = resolve_adapter(platform_info.get("software_name")).route(path)
+    if route is not None:
+        return route.lightweight
+    return path in PRIORITY_PATHS
 
 
 class ProxyRouter:
@@ -273,7 +286,7 @@ class ProxyRouter:
             stream_sink=sink,
         )
 
-        is_priority = path in PRIORITY_PATHS
+        is_priority = _is_lightweight(all_instances[0].platform_info, path)
 
         try:
             if is_priority:
