@@ -308,8 +308,8 @@ class TestSimulatedAnnealing:
         # Manually test neighbor generation for restricted VM
         deployment = np.array([0, 1])
 
-        # Patch random.randint to always select VM 0
-        with patch("random.randint", return_value=0):
+        # Make the optimizer's own RNG always select VM 0
+        with patch.object(optimizer._rng, "randint", return_value=0):
             neighbor = optimizer._generate_random_neighbor(deployment)
             # Should return None because VM 0 has no other valid models
             assert neighbor is None
