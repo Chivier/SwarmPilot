@@ -469,6 +469,8 @@ class OpenAIResponsesStyle(ApiStyle):
             if m.role == "tool":
                 for p in m.content:
                     if isinstance(p, c.ToolResultPart):
+                        if any(isinstance(x, c.ImagePart) for x in p.content):
+                            ctx.drop("image in tool result", semantic=True)
                         items.append(
                             {
                                 "type": "function_call_output",

@@ -124,6 +124,9 @@ class ApiStyle(abc.ABC):
     #: Fields with no canonical home that change the answer when left out.
     #: Translating them is refused in strict mode.
     semantic_extensions: ClassVar[frozenset[str]] = frozenset()
+    #: Extension fields the style itself honours on the way back (so they
+    #: are neither sent to the engine nor reported as dropped).
+    handled_extensions: ClassVar[frozenset[str]] = frozenset()
 
     @abc.abstractmethod
     def routes(self) -> tuple[StyleRoute, ...]:
@@ -149,7 +152,7 @@ class ApiStyle(abc.ABC):
 
     def is_stream(self, body: Mapping[str, Any]) -> bool:
         """Return whether the client asked for a streamed answer."""
-        return body.get("stream") is True
+        return isinstance(body, Mapping) and body.get("stream") is True
 
     # Client side.
 

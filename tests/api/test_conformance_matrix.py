@@ -419,3 +419,24 @@ def test_stateful_responses_field_is_refused(gateways):
     )
     assert r.status_code == 400
     assert r.json()["error"]["param"] == "previous_response_id"
+
+
+@pytest.mark.parametrize(
+    ("engine", "route"),
+    [
+        ("openai_chat", "v1/messages"),
+        ("anthropic_messages", "v1/chat/completions"),
+    ],
+)
+def test_non_object_body_is_a_400_when_translating(gateways, engine, route):
+    proxy, _ = gateways[engine]
+    r = httpx.post(f"{proxy}/{route}", json=[1, 2], timeout=10)
+    assert r.status_code == 400
+
+
+def test_non_object_body_still_reaches_a_native_engine(gateways):
+    """Passthrough does not judge the body; the engine answers it."""
+    proxy, engine = gateways["openai_chat"]
+    before = len(httpx.get(f"{engine}/_seen").json())
+    httpx.post(f"{proxy}/v1/chat/completions", json=[1, 2], timeout=10)
+    assert len(httpx.get(f"{engine}/_seen").json()) == before + 1

@@ -63,7 +63,7 @@ class Translation:
     engine: ApiStyle
     request: c.Request | None
     path: str
-    body: dict[str, Any]
+    body: Any
     ctx: Context
 
     @property
@@ -163,7 +163,10 @@ def plan_request(
         default_max_tokens=default_max_tokens,
     )
     if client.name in native_styles:
-        return Translation(client, client, None, path, dict(body), ctx)
+        # The body goes to the engine as the client sent it, whatever it is.
+        return Translation(client, client, None, path, body, ctx)
+    if not isinstance(body, Mapping):
+        raise TranslationError("The request body must be a JSON object")
     engine = _engine_style(client, native_styles)
     if engine is None:
         raise TranslationError(
@@ -173,6 +176,8 @@ def plan_request(
         )
     req = client.decode_request(body, ctx)
     for key in req.extensions.get(client.name, {}):
+        if key in client.handled_extensions:
+            continue
         ctx.drop(key, semantic=key in client.semantic_extensions)
     epath, ebody = engine.encode_request(req, ctx)
     if ctx.dropped:

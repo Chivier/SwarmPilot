@@ -317,9 +317,9 @@ class ProxyRouter:
 
         # 7. Streamed requests get the engine's answer through a sink as
         #    soon as it starts; the rest wait for the completed result.
-        stream = bool(body.get("stream")) and getattr(
-            self._queue_manager, "supports_streaming", False
-        )
+        stream = (
+            isinstance(body, dict) and bool(body.get("stream"))
+        ) and getattr(self._queue_manager, "supports_streaming", False)
         sink: asyncio.Future | None = None
         if stream:
             sink = asyncio.get_running_loop().create_future()

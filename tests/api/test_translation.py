@@ -456,3 +456,127 @@ def test_prompt_text_is_style_independent(style):
         "You are terse.\n\nWhat is the capital of France?\n\nParis."
         "\n\nAnd of Spain?"
     )
+
+
+def test_non_object_body_passes_through_or_is_refused():
+    tr = plan_request("v1/chat/completions", [1, 2], CHAT)
+    assert tr.passthrough and tr.body == [1, 2] and not tr.stream
+    with pytest.raises(TranslationError) as e:
+        plan_request("v1/messages", [1, 2], CHAT)
+    assert e.value.status == 400
+
+
+def _to_anthropic(**fields):
+    body = {"model": "m", "messages": [{"role": "user", "content": "x"}]}
+    body.update(fields)
+    return plan_request("v1/chat/completions", body, ("anthropic_messages",))
+
+
+@pytest.mark.parametrize("effort", ["minimal", "low", "medium", "high"])
+def test_effort_fits_anthropic_thinking_limits(effort):
+    """budget_tokens must be >= 1024 and below max_tokens."""
+    out = _to_anthropic(reasoning_effort=effort).body
+    budget = out["thinking"]["budget_tokens"]
+    assert 1024 <= budget < out["max_tokens"]
+    assert out["max_tokens"] - budget >= 4096
+
+
+def test_thinking_budget_shrinks_to_the_client_limit():
+    out = _to_anthropic(reasoning_effort="high", max_tokens=2000).body
+    assert out["max_tokens"] == 2000
+    assert out["thinking"]["budget_tokens"] == 1999
+
+
+def test_thinking_is_dropped_when_it_cannot_fit():
+    tr = _to_anthropic(reasoning_effort="high", max_tokens=500)
+    assert "thinking" not in tr.body
+    assert tr.ctx.dropped == ["reasoning"]
+
+
+def test_thinking_drops_custom_temperature():
+    tr = _to_anthropic(reasoning_effort="low", temperature=0.2)
+    assert "temperature" not in tr.body
+    assert "temperature" in tr.ctx.dropped
+
+
+def test_temperature_above_one_is_clamped_for_anthropic():
+    tr = _to_anthropic(temperature=1.7)
+    assert tr.body["temperature"] == 1.0
+    assert tr.ctx.dropped == ["temperature above 1"]
+
+
+def test_stream_options_is_honoured_not_reported_dropped():
+    tr = _to_anthropic(stream=True, stream_options={"include_usage": True})
+    assert tr.headers() == {}
+
+
+def test_empty_turns_are_not_sent_to_anthropic():
+    tr = plan_request(
+        "v1/chat/completions",
+        {
+            "model": "m",
+            "messages": [
+                {"role": "user", "content": "a"},
+                {"role": "assistant", "content": ""},
+                {"role": "user", "content": "b"},
+            ],
+        },
+        ("anthropic_messages",),
+    )
+    assert tr.body["messages"] == [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "a"},
+                {"type": "text", "text": "b"},
+            ],
+        }
+    ]
+
+
+def test_anthropic_tool_choice_tool_needs_a_name():
+    with pytest.raises(TranslationError):
+        plan_request(
+            "v1/messages",
+            {
+                "max_tokens": 5,
+                "messages": [{"role": "user", "content": "x"}],
+                "tool_choice": {"type": "tool"},
+            },
+            CHAT,
+        )
+
+
+def test_tool_result_images_are_not_silently_lost_on_responses_engines():
+    body = {
+        "max_tokens": 5,
+        "messages": [
+            {"role": "user", "content": "x"},
+            {
+                "role": "assistant",
+                "content": [
+                    {"type": "tool_use", "id": "t", "name": "f", "input": {}}
+                ],
+            },
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "t",
+                        "content": [
+                            {
+                                "type": "image",
+                                "source": {
+                                    "type": "url",
+                                    "url": "https://x/y.png",
+                                },
+                            }
+                        ],
+                    }
+                ],
+            },
+        ],
+    }
+    with pytest.raises(TranslationError):
+        plan_request("v1/messages", body, ("openai_responses",))

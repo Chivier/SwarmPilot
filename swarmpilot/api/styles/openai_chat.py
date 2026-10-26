@@ -165,6 +165,7 @@ class OpenAIChatStyle(ApiStyle):
     """OpenAI Chat Completions, as served by OpenAI, vLLM and SGLang."""
 
     name: ClassVar[str] = "openai_chat"
+    handled_extensions: ClassVar[frozenset[str]] = frozenset({"stream_options"})
     semantic_extensions: ClassVar[frozenset[str]] = frozenset(
         {"n", "logprobs", "top_logprobs", "logit_bias", "audio", "modalities"}
     )

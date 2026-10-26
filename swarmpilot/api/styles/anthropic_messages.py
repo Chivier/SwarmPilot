@@ -74,6 +74,7 @@ _ERROR_TYPES = {
 }
 # Reasoning effort to an Anthropic thinking budget, when an effort-style
 # client reaches an Anthropic-style engine.
+_MIN_THINKING_BUDGET = 1024
 _EFFORT_BUDGET = {"minimal": 1024, "low": 2048, "medium": 8192, "high": 24576}
 
 
@@ -244,6 +245,8 @@ class AnthropicMessagesStyle(ApiStyle):
                 raise TranslationError(
                     "invalid 'tool_choice'", param="tool_choice"
                 )
+            if tc["type"] == "tool":
+                as_str(tc.get("name"), "tool_choice.name")
             req.tool_choice = c.ToolChoice(mode[tc["type"]], tc.get("name"))
             if tc.get("disable_parallel_tool_use") is not None:
                 req.parallel_tool_calls = not tc["disable_parallel_tool_use"]
@@ -389,6 +392,10 @@ class AnthropicMessagesStyle(ApiStyle):
         for m in req.messages:
             role = "user" if m.role == "tool" else m.role
             blocks = [b for b in (_block_in(p, ctx) for p in m.content) if b]
+            if not blocks:
+                # Anthropic refuses empty turns; neighbours of the same
+                # role merge below.
+                continue
             if messages and messages[-1]["role"] == role:
                 # Messages alternate; merge tool results and the user turn.
                 messages[-1]["content"].extend(blocks)
@@ -406,6 +413,10 @@ class AnthropicMessagesStyle(ApiStyle):
             v = getattr(req, key)
             if v is not None:
                 body[key] = v
+        if req.temperature is not None and req.temperature > 1:
+            # OpenAI styles allow 0-2, Anthropic 0-1.
+            body["temperature"] = 1.0
+            ctx.drop("temperature above 1")
         if req.stop:
             body["stop_sequences"] = req.stop
         if req.seed is not None:
@@ -443,12 +454,43 @@ class AnthropicMessagesStyle(ApiStyle):
         if budget is None and req.reasoning_effort in _EFFORT_BUDGET:
             budget = _EFFORT_BUDGET[req.reasoning_effort]
         if budget is not None:
-            body["thinking"] = {"type": "enabled", "budget_tokens": budget}
+            self._add_thinking(body, budget, req.max_output_tokens, ctx)
         if req.user:
             body["metadata"] = {"user_id": req.user}
         if req.stream:
             body["stream"] = True
         return self.generate_path(), body
+
+    @staticmethod
+    def _add_thinking(
+        body: dict[str, Any],
+        budget: int,
+        client_max: int | None,
+        ctx: Context,
+    ) -> None:
+        """Turn on thinking within Anthropic's limits.
+
+        The budget must be at least 1024 and below ``max_tokens``. When
+        the client set no output limit, the limit grows to leave the
+        default room for the answer; when it did, the budget shrinks to
+        fit, and thinking is left off if even 1024 does not fit.
+        Thinking also rules out a custom temperature or top_k.
+        """
+        budget = max(budget, _MIN_THINKING_BUDGET)
+        if client_max is None:
+            body["max_tokens"] = max(
+                body["max_tokens"], budget + ctx.default_max_tokens
+            )
+        elif budget >= client_max:
+            budget = client_max - 1
+        if budget < _MIN_THINKING_BUDGET:
+            ctx.drop("reasoning")
+            return
+        body["thinking"] = {"type": "enabled", "budget_tokens": budget}
+        for key in ("temperature", "top_k"):
+            if key in body and not (key == "temperature" and body[key] == 1):
+                del body[key]
+                ctx.drop(key)
 
     def decode_response(self, body: Mapping[str, Any]) -> c.Response:
         """Parse a Messages response."""
