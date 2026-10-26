@@ -163,11 +163,13 @@ class PlannerConfig:
                 raise ValueError(error_msg)
 
             # Only validate backend if no custom command is provided
-            if not self.pylet_custom_command and self.pylet_backend not in (
-                "vllm",
-                "sglang",
+            from swarmpilot.engines import adapter_names
+
+            if (
+                not self.pylet_custom_command
+                and self.pylet_backend not in adapter_names()
             ):
-                error_msg = f"PYLET_BACKEND must be 'vllm' or 'sglang', got {self.pylet_backend}"
+                error_msg = f"PYLET_BACKEND must be one of {adapter_names()}, got {self.pylet_backend}"
                 logger.error(f"Configuration validation failed: {error_msg}")
                 raise ValueError(error_msg)
 

@@ -24,6 +24,8 @@ from typing import Any
 import httpx
 from loguru import logger
 
+from swarmpilot.engines import get_adapter
+
 
 @dataclass
 class RegistrationInfo:
@@ -44,19 +46,26 @@ class RegistrationInfo:
     message: str
 
 
-# Default platform info templates for backends
-PLATFORM_INFO_TEMPLATES: dict[str, dict[str, str]] = {
-    "vllm": {
-        "software_name": "vllm",
-        "software_version": "0.6.0",
-        "hardware_name": "gpu",
-    },
-    "sglang": {
-        "software_name": "sglang",
-        "software_version": "0.4.0",
-        "hardware_name": "gpu",
-    },
-}
+def default_platform_info(backend: str) -> dict[str, str]:
+    """Platform info for an instance whose live version was not read.
+
+    The version is ``"unknown"`` rather than a guess, so predictor models
+    trained on a real version are never reused for an unknown one.
+
+    Args:
+        backend: Engine adapter name.
+
+    Returns:
+        Platform info dict.
+    """
+    try:
+        return get_adapter(backend).platform_info("unknown", "gpu")
+    except KeyError:
+        return {
+            "software_name": backend,
+            "software_version": "unknown",
+            "hardware_name": "gpu",
+        }
 
 
 class SchedulerClient:
@@ -120,10 +129,7 @@ class SchedulerClient:
         """
         # Build platform info
         if platform_info is None:
-            platform_info = PLATFORM_INFO_TEMPLATES.get(
-                backend,
-                PLATFORM_INFO_TEMPLATES["vllm"],
-            ).copy()
+            platform_info = default_platform_info(backend)
 
         # Ensure endpoint has http:// prefix for scheduler
         if not endpoint.startswith("http://") and not endpoint.startswith(
