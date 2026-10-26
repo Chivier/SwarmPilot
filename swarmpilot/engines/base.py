@@ -331,6 +331,27 @@ class EngineAdapter(abc.ABC):
         """
         return ()
 
+    def native_styles(self) -> tuple[str, ...]:
+        """Return the API styles this engine serves itself.
+
+        A client calling in one of these styles is passed straight
+        through; any other style is translated into the first of them
+        (see :mod:`swarmpilot.api.translate`). The default lists every
+        registered style whose generation route the engine declares.
+
+        Returns:
+            Style names, e.g. ``("openai_chat",)``.
+        """
+        from swarmpilot.api.registry import find_style, style_names
+
+        paths = {r.path for r in self.routes()}
+        found = []
+        for name in style_names():
+            style = find_style(name)
+            if style is not None and style.generate_path() in paths:
+                found.append(name)
+        return tuple(found)
+
     def route(self, path: str) -> RouteSpec | None:
         """Return the route spec for ``path``, or None if not declared."""
         path = path.lstrip("/")

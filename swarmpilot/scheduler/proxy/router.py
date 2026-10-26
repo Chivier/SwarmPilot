@@ -26,6 +26,9 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from loguru import logger
 from starlette.background import BackgroundTask
 
+from swarmpilot.api import Translation, TranslationError, plan_request
+from swarmpilot.api.base import DEFAULT_MAX_OUTPUT_TOKENS
+from swarmpilot.api.registry import style_for_path
 from swarmpilot.scheduler.services.async_worker_queue import StreamStart
 from swarmpilot.scheduler.services.worker_queue_manager import (
     resolve_adapter,
@@ -168,6 +171,7 @@ class ProxyRouter:
         """
         method = request.method
         task_id = f"proxy-{uuid.uuid4().hex[:12]}"
+        tr: Translation | None = None
 
         logger.debug(f"[PROXY] {method} /{path} -> task_id={task_id}")
 
@@ -178,14 +182,12 @@ class ProxyRouter:
             logger.warning(
                 f"[PROXY] No instances available for {method} /{path}"
             )
-            return JSONResponse(
-                status_code=503,
-                content={
-                    "error": {
-                        "message": "No backend instances available",
-                        "type": "service_unavailable",
-                    }
-                },
+            return _error_response(
+                path,
+                503,
+                "No backend instances available",
+                "service_unavailable",
+                tr,
             )
 
         # 2. Parse request body
@@ -196,6 +198,35 @@ class ProxyRouter:
             except (json.JSONDecodeError, ValueError, UnicodeDecodeError):
                 # Non-JSON body or empty body
                 body = {}
+
+        # 2b. A route of a known API style the engine does not speak is
+        #     translated; one it speaks passes through unchanged.
+        adapter = resolve_adapter(
+            all_instances[0].platform_info.get("software_name")
+        )
+        if method == "POST":
+            try:
+                tr = plan_request(
+                    path,
+                    body,
+                    adapter.native_styles(),
+                    default_max_tokens=getattr(
+                        adapter, "default_max_tokens", DEFAULT_MAX_OUTPUT_TOKENS
+                    ),
+                )
+            except TranslationError as e:
+                return _error_response(
+                    path, e.status, e.message, e.error_type, param=e.param
+                )
+        client_body = body
+        if tr is not None and not tr.passthrough:
+            path, body = tr.path, tr.body
+            if tr.stream and not getattr(
+                self._queue_manager, "supports_streaming", False
+            ):
+                # Ask for one body and stream it to the client afterwards.
+                body.pop("stream", None)
+                body.pop("stream_options", None)
 
         # 3. Extract request headers to forward
         forward_headers = {}
@@ -235,8 +266,8 @@ class ProxyRouter:
                 "exp_modes",
                 "exp_skewness",
             ):
-                if _exp_key in body:
-                    metadata[_exp_key] = body[_exp_key]
+                if _exp_key in client_body:
+                    metadata[_exp_key] = client_body[_exp_key]
 
             schedule_result = await self._scheduling_strategy.schedule_task(
                 model_id=model_id,
@@ -262,14 +293,12 @@ class ProxyRouter:
             logger.error(
                 f"[PROXY] Instance {selected_instance_id} has no worker queue"
             )
-            return JSONResponse(
-                status_code=503,
-                content={
-                    "error": {
-                        "message": "Selected instance not ready",
-                        "type": "service_unavailable",
-                    }
-                },
+            return _error_response(
+                path,
+                503,
+                "Selected instance not ready",
+                "service_unavailable",
+                tr,
             )
 
         # 6. Register task in TaskRegistry so that handle_result
@@ -288,9 +317,9 @@ class ProxyRouter:
 
         # 7. Streamed requests get the engine's answer through a sink as
         #    soon as it starts; the rest wait for the completed result.
-        stream = bool(body.get("stream")) and getattr(
-            self._queue_manager, "supports_streaming", False
-        )
+        stream = (
+            isinstance(body, dict) and bool(body.get("stream"))
+        ) and getattr(self._queue_manager, "supports_streaming", False)
         sink: asyncio.Future | None = None
         if stream:
             sink = asyncio.get_running_loop().create_future()
@@ -328,14 +357,12 @@ class ProxyRouter:
             self._callback.cleanup_future(task_id)
             await self._instance_registry.release_charge(task_id)
             logger.error(f"[PROXY] Failed to enqueue task: {e}")
-            return JSONResponse(
-                status_code=503,
-                content={
-                    "error": {
-                        "message": "Failed to enqueue request",
-                        "type": "service_unavailable",
-                    }
-                },
+            return _error_response(
+                path,
+                503,
+                "Failed to enqueue request",
+                "service_unavailable",
+                tr,
             )
 
         logger.debug(
@@ -355,18 +382,12 @@ class ProxyRouter:
                 f"[PROXY] Timeout after {self._proxy_timeout}s for "
                 f"{method} /{path} (task_id={task_id})"
             )
-            return JSONResponse(
-                status_code=504,
-                content={
-                    "error": {
-                        "message": "Request timed out",
-                        "type": "gateway_timeout",
-                    }
-                },
+            return _error_response(
+                path, 504, "Request timed out", "gateway_timeout", tr
             )
 
         if isinstance(result, StreamStart):
-            return self._stream_response(result)
+            return self._stream_response(result, tr)
 
         # 11. Return the backend's response
         status_code = result.http_status_code or 200
@@ -375,45 +396,34 @@ class ProxyRouter:
         if result.status == "failed" and not result.http_status_code:
             # Internal failure (connection error, etc.)
             error_message = result.error or "Backend request failed"
-            return JSONResponse(
-                status_code=502,
-                content={
-                    "error": {
-                        "message": error_message,
-                        "type": "bad_gateway",
-                    }
-                },
-            )
+            return _error_response(path, 502, error_message, "bad_gateway", tr)
 
-        return JSONResponse(
-            status_code=status_code,
-            content=response_body,
-            headers=_filter_headers(result.response_headers),
+        return _body_response(
+            status_code, response_body, result.response_headers, tr
         )
 
     @staticmethod
-    def _stream_response(start: StreamStart) -> Response:
+    def _stream_response(
+        start: StreamStart, tr: Translation | None = None
+    ) -> Response:
         """Turn the engine's first answer into the client's response."""
         if start.error is not None:
-            return JSONResponse(
-                status_code=502,
-                content={
-                    "error": {
-                        "message": start.error,
-                        "type": "bad_gateway",
-                    }
-                },
+            return _error_response("", 502, start.error, "bad_gateway", tr)
+        if start.chunks is None:
+            return _body_response(
+                start.status_code,
+                start.body if start.body is not None else {},
+                start.headers,
+                tr,
             )
         headers = _filter_headers(start.headers)
-        if start.chunks is None:
-            return JSONResponse(
-                status_code=start.status_code,
-                content=start.body if start.body is not None else {},
-                headers=headers,
-            )
         headers.pop("content-type", None)
+        chunks = start.chunks
+        if tr is not None and not tr.passthrough:
+            headers.update(tr.headers())
+            chunks = tr.stream_response(start.chunks)
         return StreamingResponse(
-            start.chunks,
+            chunks,
             status_code=start.status_code,
             headers=headers,
             media_type=start.headers.get("content-type", "text/event-stream"),
@@ -421,6 +431,53 @@ class ProxyRouter:
             # before the first chunk.
             background=BackgroundTask(start.chunks.aclose),
         )
+
+
+def _error_response(
+    path: str,
+    status: int,
+    message: str,
+    error_type: str,
+    tr: Translation | None = None,
+    *,
+    param: str | None = None,
+) -> JSONResponse:
+    """Return SwarmPilot's own error in the style of the route called.
+
+    Routes of no known style get the OpenAI-shaped body they always had.
+    """
+    style = tr.client if tr is not None else style_for_path(path)
+    if style is None:
+        content: dict[str, Any] = {
+            "error": {"message": message, "type": error_type}
+        }
+    else:
+        content = style.encode_error(status, message, error_type, param)
+    return JSONResponse(status_code=status, content=content)
+
+
+def _body_response(
+    status: int,
+    body: Any,
+    headers: dict[str, str] | None,
+    tr: Translation | None,
+) -> Response:
+    """Return an engine's one-body answer, translated when needed."""
+    out = _filter_headers(headers)
+    if tr is None or tr.passthrough:
+        return JSONResponse(status_code=status, content=body, headers=out)
+    out.update(tr.headers())
+    out.pop("content-type", None)
+    if tr.stream and status < 400 and isinstance(body, dict):
+        # The client asked for a stream; the engine answered with one body.
+        return StreamingResponse(
+            tr.stream_from_body(body),
+            status_code=status,
+            headers=out,
+            media_type="text/event-stream",
+        )
+    status, content = tr.response(status, body)
+    return JSONResponse(status_code=status, content=content, headers=out)
 
 
 def _filter_headers(headers: dict[str, str] | None) -> dict[str, str]:

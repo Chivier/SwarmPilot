@@ -221,6 +221,13 @@
       "title": "Name",
       "type": "string"
     },
+    "native_styles": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Native Styles",
+      "type": "array"
+    },
     "python_features": {
       "title": "Python Features",
       "type": "boolean"
@@ -231,6 +238,16 @@
       },
       "title": "Routes",
       "type": "array"
+    },
+    "style_features": {
+      "additionalProperties": {
+        "items": {
+          "$ref": "#/$defs/FeatureManifest"
+        },
+        "type": "array"
+      },
+      "title": "Style Features",
+      "type": "object"
     },
     "transport": {
       "$ref": "#/$defs/TransportManifest"

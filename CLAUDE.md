@@ -93,6 +93,7 @@ swarmpilot-refresh/
 │   ├── scheduler/           # Scheduler service (continued)
 │   │   └── routes/          # Modular API routes
 │   │       └── predictor.py # Predictor management (train/predict/status)
+│   ├── api/                 # API styles + translation (OpenAI Chat/Responses, Anthropic Messages)
 │   ├── sdk/                 # Python SDK (async httpx client)
 │   │   ├── __init__.py      # Public exports: SwarmPilotClient, models
 │   │   ├── client.py        # SwarmPilotClient (async context manager)
@@ -180,6 +181,9 @@ Each Scheduler process serves one model at a time. The model can be assigned dyn
 | 1 model | 1 Scheduler | Optional |
 | N models | N Schedulers (one per model) | Recommended |
 | Model switch | Same Scheduler (after teardown) | Required |
+
+### API Styles (Translation Layer)
+Clients may call the Scheduler proxy in any registered API style (`swarmpilot/api/styles/`: `openai_chat`, `anthropic_messages`, `openai_responses`; plugins via the `swarmpilot.api_styles` entry-point group). If the engine's adapter lists the client's style in `native_styles()` the body passes through untouched; otherwise it is decoded into `swarmpilot.api.canonical` and re-encoded in the engine's style, answers and SSE streams included. Answer-changing fields that cannot be translated give a 400 (set `SWARMPILOT_API_TRANSLATION=lenient` to drop them); dropped fields are listed in the `x-swarmpilot-dropped` header. Regenerate `swarmpilot/api/canonical.schema.json` with `python -m swarmpilot.api.canonical`.
 
 ### Scheduling Strategies
 7 strategies available, selectable at runtime via `POST /v1/strategy/set` or `SCHEDULING_STRATEGY` env var:

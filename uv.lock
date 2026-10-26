@@ -600,7 +600,7 @@ name = "cffi"
 version = "2.0.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "pycparser", marker = "(implementation_name != 'PyPy' and extra == 'extra-10-swarmpilot-sglang') or (implementation_name != 'PyPy' and extra == 'extra-10-swarmpilot-vllm') or (extra == 'extra-10-swarmpilot-sglang' and extra == 'extra-10-swarmpilot-vllm')" },
+    { name = "pycparser", marker = "implementation_name != 'PyPy'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/eb/56/b1ba7935a17738ae8453301356628e8147c79dbb825bcbc73dc7401f9846/cffi-2.0.0.tar.gz", hash = "sha256:44d1b5909021139fe36001ae048dbdde8214afa20200eda0f64c068cac5d5529", size = 523588, upload-time = "2025-09-08T23:24:04.541Z" }
 wheels = [
@@ -773,8 +773,8 @@ name = "compressed-tensors"
 version = "0.11.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "frozendict", marker = "extra == 'extra-10-swarmpilot-sglang' or extra == 'extra-10-swarmpilot-vllm'" },
-    { name = "pydantic", marker = "extra == 'extra-10-swarmpilot-sglang' or extra == 'extra-10-swarmpilot-vllm'" },
+    { name = "frozendict" },
+    { name = "pydantic" },
     { name = "torch", version = "2.8.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-10-swarmpilot-vllm'" },
     { name = "torch", version = "2.9.1", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-10-swarmpilot-sglang'" },
     { name = "transformers", version = "4.57.1", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-10-swarmpilot-sglang'" },
@@ -1726,11 +1726,11 @@ name = "gguf"
 version = "0.18.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "numpy", marker = "extra == 'extra-10-swarmpilot-sglang' or extra == 'extra-10-swarmpilot-vllm'" },
+    { name = "numpy" },
     { name = "pyyaml", version = "6.0.1", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-10-swarmpilot-sglang'" },
     { name = "pyyaml", version = "6.0.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-10-swarmpilot-vllm'" },
-    { name = "requests", marker = "extra == 'extra-10-swarmpilot-sglang' or extra == 'extra-10-swarmpilot-vllm'" },
-    { name = "tqdm", marker = "extra == 'extra-10-swarmpilot-sglang' or extra == 'extra-10-swarmpilot-vllm'" },
+    { name = "requests" },
+    { name = "tqdm" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/3f/26/7622a41c39db9d7090225a4bf8368550e59694dcf7313b44f9a82b501209/gguf-0.18.0.tar.gz", hash = "sha256:b4659093d5d0dccdb5902a904d54b327f4052879fe5e90946ad5fce9f8018c2e", size = 107170, upload-time = "2026-02-27T15:05:39.254Z" }
 wheels = [
@@ -1742,7 +1742,7 @@ name = "googleapis-common-protos"
 version = "1.76.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "protobuf", version = "7.36.2", source = { registry = "https://pypi.org/simple" } },
+    { name = "protobuf" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/62/b6/bc095b23a3e0d978e75c8c18cabe4c11f791837410670e4486f0d539bfba/googleapis_common_protos-1.76.0.tar.gz", hash = "sha256:71db0e44a1d4c2dd024ebad44ca67129cc1e2892e4861df466764749d5ef8642", size = 156250, upload-time = "2026-10-22T23:43:36.263Z" }
 wheels = [
@@ -1816,7 +1816,7 @@ version = "1.85.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "grpcio" },
-    { name = "protobuf", version = "7.36.2", source = { registry = "https://pypi.org/simple" } },
+    { name = "protobuf" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/2e/13/a4b884e7c0b2c653a0da3188482955daf301b5b16227f396459c9c52d04c/grpcio_health_checking-1.85.0.tar.gz", hash = "sha256:053eadfefcd3cc7ac679b624bc081efdde4e6893a1a34617c99e0ac2d4970ca0", size = 17855, upload-time = "2026-10-26T06:25:00.67Z" }
 wheels = [
@@ -1829,7 +1829,7 @@ version = "1.85.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "grpcio" },
-    { name = "protobuf", version = "7.36.2", source = { registry = "https://pypi.org/simple" } },
+    { name = "protobuf" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/a6/73/e14a3e0b099739b90ba6a269cdb80db9bcc02bcaac3de80b526b11c1a6ae/grpcio_reflection-1.85.0.tar.gz", hash = "sha256:b50383d750c2bbddb9c2b163b41de2219550e4393e1f1e0fb0080b8e1284fdd2", size = 19301, upload-time = "2026-10-26T06:25:05.727Z" }
 wheels = [
@@ -2256,10 +2256,10 @@ name = "jsonschema"
 version = "4.26.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "attrs", marker = "extra == 'extra-10-swarmpilot-sglang' or extra == 'extra-10-swarmpilot-vllm'" },
-    { name = "jsonschema-specifications", marker = "extra == 'extra-10-swarmpilot-sglang' or extra == 'extra-10-swarmpilot-vllm'" },
-    { name = "referencing", marker = "extra == 'extra-10-swarmpilot-sglang' or extra == 'extra-10-swarmpilot-vllm'" },
-    { name = "rpds-py", marker = "extra == 'extra-10-swarmpilot-sglang' or extra == 'extra-10-swarmpilot-vllm'" },
+    { name = "attrs" },
+    { name = "jsonschema-specifications" },
+    { name = "referencing" },
+    { name = "rpds-py" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/b3/fc/e067678238fa451312d4c62bf6e6cf5ec56375422aee02f9cb5f909b3047/jsonschema-4.26.0.tar.gz", hash = "sha256:0c26707e2efad8aa1bfc5b7ce170f3fccc2e4918ff85989ba9ffa9facb2be326", size = 366583, upload-time = "2026-01-07T13:41:07.246Z" }
 wheels = [
@@ -2271,7 +2271,7 @@ name = "jsonschema-specifications"
 version = "2025.9.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "referencing", marker = "extra == 'extra-10-swarmpilot-sglang' or extra == 'extra-10-swarmpilot-vllm'" },
+    { name = "referencing" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/19/74/a633ee74eb36c44aa6d1095e7cc5569bebf04342ee146178e2d36600708b/jsonschema_specifications-2025.9.1.tar.gz", hash = "sha256:b540987f239e745613c7a9176f3edb72b832a4ac465cf02712288397832b5e8d", size = 32855, upload-time = "2025-09-08T01:34:59.186Z" }
 wheels = [
@@ -2780,7 +2780,7 @@ name = "mlx"
 version = "0.31.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "mlx-metal", marker = "(sys_platform == 'darwin' and extra == 'extra-10-swarmpilot-sglang') or (sys_platform == 'darwin' and extra == 'extra-10-swarmpilot-vllm') or (extra == 'extra-10-swarmpilot-sglang' and extra == 'extra-10-swarmpilot-vllm')" },
+    { name = "mlx-metal", marker = "sys_platform == 'darwin'" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/75/32/25dc2eae1d6f867224ef2bca2c644e3e913fe8067991f8394c090b720e3e/mlx-0.31.1-cp311-cp311-macosx_14_0_arm64.whl", hash = "sha256:8863835fb36c7c4f65008b1426ddb9ff7931a13c975e0ef58a40002ae8048922", size = 574311, upload-time = "2026-03-12T02:16:02.651Z" },
@@ -2810,15 +2810,14 @@ name = "mlx-lm"
 version = "0.29.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "jinja2", marker = "extra == 'extra-10-swarmpilot-sglang' or extra == 'extra-10-swarmpilot-vllm'" },
-    { name = "mlx", marker = "(sys_platform == 'darwin' and extra == 'extra-10-swarmpilot-sglang') or (sys_platform == 'darwin' and extra == 'extra-10-swarmpilot-vllm') or (extra == 'extra-10-swarmpilot-sglang' and extra == 'extra-10-swarmpilot-vllm')" },
-    { name = "numpy", marker = "extra == 'extra-10-swarmpilot-sglang' or extra == 'extra-10-swarmpilot-vllm'" },
-    { name = "protobuf", version = "7.34.1", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-10-swarmpilot-vllm'" },
-    { name = "protobuf", version = "7.36.2", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-10-swarmpilot-sglang'" },
-    { name = "pyyaml", version = "6.0.1", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-10-swarmpilot-sglang'" },
+    { name = "jinja2", marker = "(sys_platform != 'darwin' and extra == 'extra-10-swarmpilot-vllm') or (sys_platform == 'darwin' and extra == 'extra-10-swarmpilot-sglang') or (extra != 'extra-10-swarmpilot-sglang' and extra == 'extra-10-swarmpilot-vllm')" },
+    { name = "mlx", marker = "sys_platform == 'darwin'" },
+    { name = "numpy", marker = "(sys_platform != 'darwin' and extra == 'extra-10-swarmpilot-vllm') or (sys_platform == 'darwin' and extra == 'extra-10-swarmpilot-sglang') or (extra != 'extra-10-swarmpilot-sglang' and extra == 'extra-10-swarmpilot-vllm')" },
+    { name = "protobuf", marker = "(sys_platform != 'darwin' and extra == 'extra-10-swarmpilot-vllm') or (sys_platform == 'darwin' and extra == 'extra-10-swarmpilot-sglang') or (extra != 'extra-10-swarmpilot-sglang' and extra == 'extra-10-swarmpilot-vllm')" },
+    { name = "pyyaml", version = "6.0.1", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform == 'darwin' and extra == 'extra-10-swarmpilot-sglang') or (extra == 'extra-10-swarmpilot-sglang' and extra == 'extra-10-swarmpilot-vllm')" },
     { name = "pyyaml", version = "6.0.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-10-swarmpilot-vllm'" },
-    { name = "sentencepiece", marker = "extra == 'extra-10-swarmpilot-sglang' or extra == 'extra-10-swarmpilot-vllm'" },
-    { name = "transformers", version = "4.57.1", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-10-swarmpilot-sglang'" },
+    { name = "sentencepiece", marker = "(sys_platform != 'darwin' and extra == 'extra-10-swarmpilot-vllm') or (sys_platform == 'darwin' and extra == 'extra-10-swarmpilot-sglang') or (extra != 'extra-10-swarmpilot-sglang' and extra == 'extra-10-swarmpilot-vllm')" },
+    { name = "transformers", version = "4.57.1", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform == 'darwin' and extra == 'extra-10-swarmpilot-sglang') or (extra == 'extra-10-swarmpilot-sglang' and extra == 'extra-10-swarmpilot-vllm')" },
     { name = "transformers", version = "4.57.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-10-swarmpilot-vllm'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/e3/62/f46e1355256a114808517947f8e83ad6be310c7288c551db0fa678f47923/mlx_lm-0.29.1.tar.gz", hash = "sha256:b99180d8f33d33a077b814e550bfb2d8a59ae003d668fd1f4b3fff62a381d34b", size = 232302, upload-time = "2025-12-16T16:58:27.959Z" }
@@ -3318,7 +3317,7 @@ name = "nvidia-cudnn-cu12"
 version = "9.10.2.21"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-cublas-cu12", marker = "(python_full_version >= '3.12' and sys_platform == 'darwin') or (python_full_version >= '3.12' and sys_platform == 'linux') or (python_full_version < '3.12' and sys_platform == 'linux' and extra != 'extra-10-swarmpilot-sglang') or (python_full_version < '3.12' and sys_platform == 'linux' and extra == 'extra-10-swarmpilot-sglang' and extra == 'extra-10-swarmpilot-vllm') or (platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux') or (sys_platform == 'darwin' and extra != 'extra-10-swarmpilot-sglang') or (sys_platform == 'darwin' and extra == 'extra-10-swarmpilot-sglang' and extra == 'extra-10-swarmpilot-vllm')" },
+    { name = "nvidia-cublas-cu12", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux') or (sys_platform == 'darwin' and extra == 'extra-10-swarmpilot-vllm') or (sys_platform == 'darwin' and extra != 'extra-10-swarmpilot-sglang') or (sys_platform == 'linux' and extra != 'extra-10-swarmpilot-sglang') or (sys_platform == 'linux' and extra == 'extra-10-swarmpilot-sglang' and extra == 'extra-10-swarmpilot-vllm')" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/fa/41/e79269ce215c857c935fd86bcfe91a451a584dfc27f1e068f568b9ad1ab7/nvidia_cudnn_cu12-9.10.2.21-py3-none-manylinux_2_27_aarch64.whl", hash = "sha256:c9132cc3f8958447b4910a1720036d9eff5928cc3179b0a51fb6d167c6cc87d8", size = 705026878, upload-time = "2025-06-06T21:52:51.348Z" },
@@ -3353,7 +3352,7 @@ name = "nvidia-cufft-cu12"
 version = "11.3.3.83"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-nvjitlink-cu12", marker = "(python_full_version >= '3.12' and sys_platform == 'darwin') or (python_full_version >= '3.12' and sys_platform == 'linux') or (python_full_version < '3.12' and sys_platform == 'linux' and extra != 'extra-10-swarmpilot-sglang') or (python_full_version < '3.12' and sys_platform == 'linux' and extra == 'extra-10-swarmpilot-sglang' and extra == 'extra-10-swarmpilot-vllm') or (platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux') or (sys_platform == 'darwin' and extra != 'extra-10-swarmpilot-sglang') or (sys_platform == 'darwin' and extra == 'extra-10-swarmpilot-sglang' and extra == 'extra-10-swarmpilot-vllm')" },
+    { name = "nvidia-nvjitlink-cu12", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux') or (sys_platform == 'darwin' and extra == 'extra-10-swarmpilot-vllm') or (sys_platform == 'darwin' and extra != 'extra-10-swarmpilot-sglang') or (sys_platform == 'linux' and extra != 'extra-10-swarmpilot-sglang') or (sys_platform == 'linux' and extra == 'extra-10-swarmpilot-sglang' and extra == 'extra-10-swarmpilot-vllm')" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/60/bc/7771846d3a0272026c416fbb7e5f4c1f146d6d80704534d0b187dd6f4800/nvidia_cufft_cu12-11.3.3.83-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:848ef7224d6305cdb2a4df928759dca7b1201874787083b6e7550dd6765ce69a", size = 193109211, upload-time = "2025-03-07T01:44:56.873Z" },
@@ -3385,9 +3384,9 @@ name = "nvidia-cusolver-cu12"
 version = "11.7.3.90"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-cublas-cu12", marker = "(python_full_version >= '3.12' and sys_platform == 'darwin') or (python_full_version >= '3.12' and sys_platform == 'linux') or (python_full_version < '3.12' and sys_platform == 'linux' and extra != 'extra-10-swarmpilot-sglang') or (python_full_version < '3.12' and sys_platform == 'linux' and extra == 'extra-10-swarmpilot-sglang' and extra == 'extra-10-swarmpilot-vllm') or (platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux') or (sys_platform == 'darwin' and extra != 'extra-10-swarmpilot-sglang') or (sys_platform == 'darwin' and extra == 'extra-10-swarmpilot-sglang' and extra == 'extra-10-swarmpilot-vllm')" },
-    { name = "nvidia-cusparse-cu12", marker = "(python_full_version >= '3.12' and sys_platform == 'darwin') or (python_full_version >= '3.12' and sys_platform == 'linux') or (python_full_version < '3.12' and sys_platform == 'linux' and extra != 'extra-10-swarmpilot-sglang') or (python_full_version < '3.12' and sys_platform == 'linux' and extra == 'extra-10-swarmpilot-sglang' and extra == 'extra-10-swarmpilot-vllm') or (platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux') or (sys_platform == 'darwin' and extra != 'extra-10-swarmpilot-sglang') or (sys_platform == 'darwin' and extra == 'extra-10-swarmpilot-sglang' and extra == 'extra-10-swarmpilot-vllm')" },
-    { name = "nvidia-nvjitlink-cu12", marker = "(python_full_version >= '3.12' and sys_platform == 'darwin') or (python_full_version >= '3.12' and sys_platform == 'linux') or (python_full_version < '3.12' and sys_platform == 'linux' and extra != 'extra-10-swarmpilot-sglang') or (python_full_version < '3.12' and sys_platform == 'linux' and extra == 'extra-10-swarmpilot-sglang' and extra == 'extra-10-swarmpilot-vllm') or (platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux') or (sys_platform == 'darwin' and extra != 'extra-10-swarmpilot-sglang') or (sys_platform == 'darwin' and extra == 'extra-10-swarmpilot-sglang' and extra == 'extra-10-swarmpilot-vllm')" },
+    { name = "nvidia-cublas-cu12", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux') or (sys_platform == 'darwin' and extra == 'extra-10-swarmpilot-vllm') or (sys_platform == 'darwin' and extra != 'extra-10-swarmpilot-sglang') or (sys_platform == 'linux' and extra != 'extra-10-swarmpilot-sglang') or (sys_platform == 'linux' and extra == 'extra-10-swarmpilot-sglang' and extra == 'extra-10-swarmpilot-vllm')" },
+    { name = "nvidia-cusparse-cu12", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux') or (sys_platform == 'darwin' and extra == 'extra-10-swarmpilot-vllm') or (sys_platform == 'darwin' and extra != 'extra-10-swarmpilot-sglang') or (sys_platform == 'linux' and extra != 'extra-10-swarmpilot-sglang') or (sys_platform == 'linux' and extra == 'extra-10-swarmpilot-sglang' and extra == 'extra-10-swarmpilot-vllm')" },
+    { name = "nvidia-nvjitlink-cu12", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux') or (sys_platform == 'darwin' and extra == 'extra-10-swarmpilot-vllm') or (sys_platform == 'darwin' and extra != 'extra-10-swarmpilot-sglang') or (sys_platform == 'linux' and extra != 'extra-10-swarmpilot-sglang') or (sys_platform == 'linux' and extra == 'extra-10-swarmpilot-sglang' and extra == 'extra-10-swarmpilot-vllm')" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c8/32/f7cd6ce8a7690544d084ea21c26e910a97e077c9b7f07bf5de623ee19981/nvidia_cusolver_cu12-11.7.3.90-py3-none-manylinux_2_27_aarch64.whl", hash = "sha256:db9ed69dbef9715071232caa9b69c52ac7de3a95773c2db65bdba85916e4e5c0", size = 267229841, upload-time = "2025-03-07T01:46:54.356Z" },
@@ -3400,7 +3399,7 @@ name = "nvidia-cusparse-cu12"
 version = "12.5.8.93"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-nvjitlink-cu12", marker = "(python_full_version >= '3.12' and sys_platform == 'darwin') or (python_full_version >= '3.12' and sys_platform == 'linux') or (python_full_version < '3.12' and sys_platform == 'linux' and extra != 'extra-10-swarmpilot-sglang') or (python_full_version < '3.12' and sys_platform == 'linux' and extra == 'extra-10-swarmpilot-sglang' and extra == 'extra-10-swarmpilot-vllm') or (platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux') or (sys_platform == 'darwin' and extra != 'extra-10-swarmpilot-sglang') or (sys_platform == 'darwin' and extra == 'extra-10-swarmpilot-sglang' and extra == 'extra-10-swarmpilot-vllm')" },
+    { name = "nvidia-nvjitlink-cu12", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux') or (sys_platform == 'darwin' and extra == 'extra-10-swarmpilot-vllm') or (sys_platform == 'darwin' and extra != 'extra-10-swarmpilot-sglang') or (sys_platform == 'linux' and extra != 'extra-10-swarmpilot-sglang') or (sys_platform == 'linux' and extra == 'extra-10-swarmpilot-sglang' and extra == 'extra-10-swarmpilot-vllm')" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/bc/f7/cd777c4109681367721b00a106f491e0d0d15cfa1fd59672ce580ce42a97/nvidia_cusparse_cu12-12.5.8.93-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:9b6c161cb130be1a07a27ea6923df8141f3c295852f4b260c65f18f3e0a091dc", size = 288117129, upload-time = "2025-03-07T01:47:40.407Z" },
@@ -3525,14 +3524,14 @@ resolution-markers = [
     "(python_full_version < '3.12' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version < '3.12' and sys_platform != 'darwin' and sys_platform != 'linux')",
 ]
 dependencies = [
-    { name = "anyio" },
-    { name = "distro" },
-    { name = "httpx" },
-    { name = "jiter" },
-    { name = "pydantic" },
-    { name = "sniffio" },
-    { name = "tqdm" },
-    { name = "typing-extensions" },
+    { name = "anyio", marker = "extra == 'extra-10-swarmpilot-sglang'" },
+    { name = "distro", marker = "extra == 'extra-10-swarmpilot-sglang'" },
+    { name = "httpx", marker = "extra == 'extra-10-swarmpilot-sglang'" },
+    { name = "jiter", marker = "extra == 'extra-10-swarmpilot-sglang'" },
+    { name = "pydantic", marker = "extra == 'extra-10-swarmpilot-sglang'" },
+    { name = "sniffio", marker = "extra == 'extra-10-swarmpilot-sglang'" },
+    { name = "tqdm", marker = "extra == 'extra-10-swarmpilot-sglang'" },
+    { name = "typing-extensions", marker = "extra == 'extra-10-swarmpilot-sglang'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/c4/44/303deb97be7c1c9b53118b52825cbd1557aeeff510f3a52566b1fa66f6a2/openai-2.6.1.tar.gz", hash = "sha256:27ae704d190615fca0c0fc2b796a38f8b5879645a3a52c9c453b23f97141bb49", size = 593043, upload-time = "2025-10-24T13:29:52.79Z" }
 wheels = [
@@ -3544,20 +3543,22 @@ name = "openai"
 version = "2.29.0"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
-    "python_full_version >= '3.14'",
-    "python_full_version == '3.13.*'",
-    "python_full_version == '3.12.*'",
-    "python_full_version < '3.12'",
+    "python_full_version >= '3.14' and extra != 'extra-10-swarmpilot-sglang' and extra == 'extra-10-swarmpilot-vllm'",
+    "python_full_version == '3.13.*' and extra != 'extra-10-swarmpilot-sglang' and extra == 'extra-10-swarmpilot-vllm'",
+    "python_full_version == '3.12.*' and extra != 'extra-10-swarmpilot-sglang' and extra == 'extra-10-swarmpilot-vllm'",
+    "python_full_version < '3.12' and extra != 'extra-10-swarmpilot-sglang' and extra == 'extra-10-swarmpilot-vllm'",
+    "python_full_version >= '3.12' and extra != 'extra-10-swarmpilot-sglang' and extra != 'extra-10-swarmpilot-vllm'",
+    "python_full_version < '3.12' and extra != 'extra-10-swarmpilot-sglang' and extra != 'extra-10-swarmpilot-vllm'",
 ]
 dependencies = [
-    { name = "anyio" },
-    { name = "distro" },
-    { name = "httpx" },
-    { name = "jiter" },
-    { name = "pydantic" },
-    { name = "sniffio" },
-    { name = "tqdm" },
-    { name = "typing-extensions" },
+    { name = "anyio", marker = "extra == 'extra-10-swarmpilot-vllm' or extra != 'extra-10-swarmpilot-sglang'" },
+    { name = "distro", marker = "extra == 'extra-10-swarmpilot-vllm' or extra != 'extra-10-swarmpilot-sglang'" },
+    { name = "httpx", marker = "extra == 'extra-10-swarmpilot-vllm' or extra != 'extra-10-swarmpilot-sglang'" },
+    { name = "jiter", marker = "extra == 'extra-10-swarmpilot-vllm' or extra != 'extra-10-swarmpilot-sglang'" },
+    { name = "pydantic", marker = "extra == 'extra-10-swarmpilot-vllm' or extra != 'extra-10-swarmpilot-sglang'" },
+    { name = "sniffio", marker = "extra == 'extra-10-swarmpilot-vllm' or extra != 'extra-10-swarmpilot-sglang'" },
+    { name = "tqdm", marker = "extra == 'extra-10-swarmpilot-vllm' or extra != 'extra-10-swarmpilot-sglang'" },
+    { name = "typing-extensions", marker = "extra == 'extra-10-swarmpilot-vllm' or extra != 'extra-10-swarmpilot-sglang'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/b4/15/203d537e58986b5673e7f232453a2a2f110f22757b15921cbdeea392e520/openai-2.29.0.tar.gz", hash = "sha256:32d09eb2f661b38d3edd7d7e1a2943d1633f572596febe64c0cd370c86d52bec", size = 671128, upload-time = "2026-03-17T17:53:49.599Z" }
 wheels = [
@@ -3796,7 +3797,7 @@ name = "opentelemetry-proto"
 version = "1.45.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "protobuf", version = "7.36.2", source = { registry = "https://pypi.org/simple" } },
+    { name = "protobuf" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/4b/7f/15f014fb195da6c2dbb6c71399b8e76824878718e94de6454038488eed28/opentelemetry_proto-1.45.1.tar.gz", hash = "sha256:79e0fb95e4616691a469439238aa9224d75779b3e108e895d1aa125ab29ca77c", size = 46488, upload-time = "2026-10-06T17:33:11.49Z" }
 wheels = [
@@ -4465,43 +4466,8 @@ wheels = [
 
 [[package]]
 name = "protobuf"
-version = "7.34.1"
-source = { registry = "https://pypi.org/simple" }
-resolution-markers = [
-    "python_full_version >= '3.14'",
-    "python_full_version == '3.13.*'",
-    "python_full_version == '3.12.*'",
-    "python_full_version < '3.12'",
-]
-sdist = { url = "https://files.pythonhosted.org/packages/6b/6b/a0e95cad1ad7cc3f2c6821fcab91671bd5b78bd42afb357bb4765f29bc41/protobuf-7.34.1.tar.gz", hash = "sha256:9ce42245e704cc5027be797c1db1eb93184d44d1cdd71811fb2d9b25ad541280", size = 454708, upload-time = "2026-03-20T17:34:47.036Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/ec/11/3325d41e6ee15bf1125654301211247b042563bcc898784351252549a8ad/protobuf-7.34.1-cp310-abi3-macosx_10_9_universal2.whl", hash = "sha256:d8b2cc79c4d8f62b293ad9b11ec3aebce9af481fa73e64556969f7345ebf9fc7", size = 429247, upload-time = "2026-03-20T17:34:37.024Z" },
-    { url = "https://files.pythonhosted.org/packages/eb/9d/aa69df2724ff63efa6f72307b483ce0827f4347cc6d6df24b59e26659fef/protobuf-7.34.1-cp310-abi3-manylinux2014_aarch64.whl", hash = "sha256:5185e0e948d07abe94bb76ec9b8416b604cfe5da6f871d67aad30cbf24c3110b", size = 325753, upload-time = "2026-03-20T17:34:38.751Z" },
-    { url = "https://files.pythonhosted.org/packages/92/e8/d174c91fd48e50101943f042b09af9029064810b734e4160bbe282fa1caa/protobuf-7.34.1-cp310-abi3-manylinux2014_s390x.whl", hash = "sha256:403b093a6e28a960372b44e5eb081775c9b056e816a8029c61231743d63f881a", size = 340198, upload-time = "2026-03-20T17:34:39.871Z" },
-    { url = "https://files.pythonhosted.org/packages/53/1b/3b431694a4dc6d37b9f653f0c64b0a0d9ec074ee810710c0c3da21d67ba7/protobuf-7.34.1-cp310-abi3-manylinux2014_x86_64.whl", hash = "sha256:8ff40ce8cd688f7265326b38d5a1bed9bfdf5e6723d49961432f83e21d5713e4", size = 324267, upload-time = "2026-03-20T17:34:41.1Z" },
-    { url = "https://files.pythonhosted.org/packages/85/29/64de04a0ac142fb685fd09999bc3d337943fb386f3a0ec57f92fd8203f97/protobuf-7.34.1-cp310-abi3-win32.whl", hash = "sha256:34b84ce27680df7cca9f231043ada0daa55d0c44a2ddfaa58ec1d0d89d8bf60a", size = 426628, upload-time = "2026-03-20T17:34:42.536Z" },
-    { url = "https://files.pythonhosted.org/packages/4d/87/cb5e585192a22b8bd457df5a2c16a75ea0db9674c3a0a39fc9347d84e075/protobuf-7.34.1-cp310-abi3-win_amd64.whl", hash = "sha256:e97b55646e6ce5cbb0954a8c28cd39a5869b59090dfaa7df4598a7fba869468c", size = 437901, upload-time = "2026-03-20T17:34:44.112Z" },
-    { url = "https://files.pythonhosted.org/packages/88/95/608f665226bca68b736b79e457fded9a2a38c4f4379a4a7614303d9db3bc/protobuf-7.34.1-py3-none-any.whl", hash = "sha256:bb3812cd53aefea2b028ef42bd780f5b96407247f20c6ef7c679807e9d188f11", size = 170715, upload-time = "2026-03-20T17:34:45.384Z" },
-]
-
-[[package]]
-name = "protobuf"
 version = "7.36.2"
 source = { registry = "https://pypi.org/simple" }
-resolution-markers = [
-    "python_full_version >= '3.14' and sys_platform == 'darwin'",
-    "python_full_version == '3.13.*' and sys_platform == 'darwin'",
-    "python_full_version == '3.12.*' and sys_platform == 'darwin'",
-    "python_full_version >= '3.14' and platform_machine == 'aarch64' and sys_platform == 'linux'",
-    "python_full_version == '3.13.*' and platform_machine == 'aarch64' and sys_platform == 'linux'",
-    "python_full_version == '3.12.*' and platform_machine == 'aarch64' and sys_platform == 'linux'",
-    "(python_full_version >= '3.14' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version >= '3.14' and sys_platform != 'darwin' and sys_platform != 'linux')",
-    "(python_full_version == '3.13.*' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version == '3.13.*' and sys_platform != 'darwin' and sys_platform != 'linux')",
-    "(python_full_version == '3.12.*' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version == '3.12.*' and sys_platform != 'darwin' and sys_platform != 'linux')",
-    "python_full_version < '3.12' and sys_platform == 'darwin'",
-    "python_full_version < '3.12' and platform_machine == 'aarch64' and sys_platform == 'linux'",
-    "(python_full_version < '3.12' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version < '3.12' and sys_platform != 'darwin' and sys_platform != 'linux')",
-]
 sdist = { url = "https://files.pythonhosted.org/packages/d9/89/5b8517baa72f84a67b8a307ba953c91057af618bf40bf676f3c03551f8f0/protobuf-7.36.2.tar.gz", hash = "sha256:497d0463ff3316681da6c0b9e8d06cb465d61abce00b613ab42226175644d1bb", size = 512737, upload-time = "2026-09-17T20:07:59.326Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/32/72/98342feb672507c8f3a69e34b4fa8961f608edba5c1a48a6f47156d92cb5/protobuf-7.36.2-cp310-abi3-macosx_10_9_universal2.whl", hash = "sha256:cbc70b17ee27e28894c7fee8bb04be1abead49e936bc70eb60052531eee2079e", size = 456039, upload-time = "2026-09-17T20:07:51.542Z" },
@@ -5302,7 +5268,7 @@ name = "pyzmq"
 version = "27.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "cffi", marker = "(implementation_name == 'pypy' and extra == 'extra-10-swarmpilot-sglang') or (implementation_name == 'pypy' and extra == 'extra-10-swarmpilot-vllm') or (extra == 'extra-10-swarmpilot-sglang' and extra == 'extra-10-swarmpilot-vllm')" },
+    { name = "cffi", marker = "implementation_name == 'pypy'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/04/0b/3c9baedbdf613ecaa7aa07027780b8867f57b6293b6ee50de316c9f3222b/pyzmq-27.1.0.tar.gz", hash = "sha256:ac0765e3d44455adb6ddbf4417dcce460fc40a05978c08efdf2948072f6db540", size = 281750, upload-time = "2025-09-08T23:10:18.157Z" }
 wheels = [
@@ -5380,7 +5346,7 @@ dependencies = [
     { name = "jsonschema" },
     { name = "msgpack" },
     { name = "packaging" },
-    { name = "protobuf", version = "7.34.1", source = { registry = "https://pypi.org/simple" } },
+    { name = "protobuf" },
     { name = "pyyaml", version = "6.0.3", source = { registry = "https://pypi.org/simple" } },
     { name = "requests" },
 ]
@@ -5408,9 +5374,9 @@ name = "referencing"
 version = "0.37.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "attrs", marker = "extra == 'extra-10-swarmpilot-sglang' or extra == 'extra-10-swarmpilot-vllm'" },
-    { name = "rpds-py", marker = "extra == 'extra-10-swarmpilot-sglang' or extra == 'extra-10-swarmpilot-vllm'" },
-    { name = "typing-extensions", marker = "(python_full_version < '3.13' and extra == 'extra-10-swarmpilot-sglang') or (python_full_version < '3.13' and extra == 'extra-10-swarmpilot-vllm') or (extra == 'extra-10-swarmpilot-sglang' and extra == 'extra-10-swarmpilot-vllm')" },
+    { name = "attrs" },
+    { name = "rpds-py" },
+    { name = "typing-extensions", marker = "python_full_version < '3.13'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/22/f5/df4e9027acead3ecc63e50fe1e36aca1523e1719559c499951bb4b53188f/referencing-0.37.0.tar.gz", hash = "sha256:44aefc3142c5b842538163acb373e24cce6632bd54bdb01b21ad5863489f50d8", size = 78036, upload-time = "2025-10-13T15:30:48.871Z" }
 wheels = [
@@ -6219,7 +6185,7 @@ version = "0.4.28"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "grpcio" },
-    { name = "protobuf", version = "7.36.2", source = { registry = "https://pypi.org/simple" } },
+    { name = "protobuf" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/7a/57/110446b41f0751a7a25d528c10092393041c97ff019e6b75149f5ad44286/smg_grpc_proto-0.4.28.tar.gz", hash = "sha256:e2839183b331338fcfeec9c920df00cfa04ee27cfe0027540692b547c93d49ba", size = 38020, upload-time = "2026-10-25T09:24:18.022Z" }
 wheels = [
@@ -6240,8 +6206,8 @@ name = "soundfile"
 version = "0.13.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "cffi", marker = "extra == 'extra-10-swarmpilot-sglang' or extra == 'extra-10-swarmpilot-vllm'" },
-    { name = "numpy", marker = "extra == 'extra-10-swarmpilot-sglang' or extra == 'extra-10-swarmpilot-vllm'" },
+    { name = "cffi" },
+    { name = "numpy" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/e1/41/9b873a8c055582859b239be17902a85339bec6a30ad162f98c9b0288a2cc/soundfile-0.13.1.tar.gz", hash = "sha256:b2c68dab1e30297317080a5b43df57e302584c49e2942defdde0acccc53f0e5b", size = 46156, upload-time = "2025-01-25T09:17:04.831Z" }
 wheels = [
@@ -6285,7 +6251,7 @@ name = "st-attn"
 version = "0.0.7"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "torch", version = "2.9.1", source = { registry = "https://pypi.org/simple" } },
+    { name = "torch", version = "2.9.1", source = { registry = "https://pypi.org/simple" }, marker = "platform_machine != 'aarch64' or sys_platform != 'linux'" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/1b/d4/79e90cd4ed5943d89edb8b89609eb894f29a24da29a22a5e3995fa264958/st_attn-0.0.7-cp311-cp311-manylinux2014_x86_64.whl", hash = "sha256:6ffd3a58a6e8ae16a4ad61f06735276e3f41dc47e8a13a9bb3e6b37fa97f061b", size = 3608220, upload-time = "2025-11-09T04:16:00.822Z" },
@@ -6376,9 +6342,12 @@ vllm = [
 [package.dev-dependencies]
 dev = [
     { name = "aiohttp" },
+    { name = "anthropic" },
     { name = "black" },
     { name = "faker" },
     { name = "httpx" },
+    { name = "openai", version = "2.6.1", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-10-swarmpilot-sglang'" },
+    { name = "openai", version = "2.29.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-10-swarmpilot-vllm' or extra != 'extra-10-swarmpilot-sglang'" },
     { name = "pandas" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -6427,9 +6396,11 @@ provides-extras = ["vllm", "sglang", "diffusion", "analysis"]
 [package.metadata.requires-dev]
 dev = [
     { name = "aiohttp", specifier = ">=3.13.2" },
+    { name = "anthropic", specifier = ">=0.40" },
     { name = "black", specifier = ">=25.9.0" },
     { name = "faker", specifier = ">=37.12.0" },
     { name = "httpx", specifier = ">=0.28.1" },
+    { name = "openai", specifier = ">=1.60" },
     { name = "pandas", specifier = ">=2.3.3" },
     { name = "pytest", specifier = ">=8.4.2" },
     { name = "pytest-asyncio", specifier = ">=1.2.0" },
@@ -7065,7 +7036,7 @@ resolution-markers = [
 ]
 dependencies = [
     { name = "setuptools", version = "79.0.1", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.12' and extra == 'extra-10-swarmpilot-vllm') or (extra == 'extra-10-swarmpilot-sglang' and extra == 'extra-10-swarmpilot-vllm')" },
-    { name = "setuptools", version = "80.9.0", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.12' and platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-10-swarmpilot-vllm') or (python_full_version < '3.12' and platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'extra-10-swarmpilot-sglang') or (python_full_version < '3.12' and sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-10-swarmpilot-vllm') or (python_full_version < '3.12' and sys_platform == 'darwin' and extra == 'extra-10-swarmpilot-sglang') or (python_full_version < '3.12' and sys_platform == 'darwin' and extra == 'extra-10-swarmpilot-vllm') or (python_full_version < '3.12' and sys_platform == 'linux' and extra != 'extra-10-swarmpilot-sglang' and extra == 'extra-10-swarmpilot-vllm') or (python_full_version >= '3.12' and extra == 'extra-10-swarmpilot-sglang' and extra == 'extra-10-swarmpilot-vllm') or (sys_platform == 'darwin' and extra == 'extra-10-swarmpilot-sglang' and extra == 'extra-10-swarmpilot-vllm')" },
+    { name = "setuptools", version = "80.9.0", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.12' and extra == 'extra-10-swarmpilot-vllm') or (extra == 'extra-10-swarmpilot-sglang' and extra == 'extra-10-swarmpilot-vllm')" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/7d/39/43325b3b651d50187e591eefa22e236b2981afcebaefd4f2fc0ea99df191/triton-3.4.0-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:7b70f5e6a41e52e48cfc087436c8a28c17ff98db369447bcaff3b887a3ab4467", size = 155531138, upload-time = "2025-07-30T19:58:29.908Z" },
@@ -7260,7 +7231,7 @@ dependencies = [
     { name = "pillow", version = "12.0.0", source = { registry = "https://pypi.org/simple" } },
     { name = "prometheus-client" },
     { name = "prometheus-fastapi-instrumentator" },
-    { name = "protobuf", version = "7.34.1", source = { registry = "https://pypi.org/simple" } },
+    { name = "protobuf" },
     { name = "psutil" },
     { name = "py-cpuinfo" },
     { name = "pybase64" },
@@ -7299,7 +7270,7 @@ name = "vsa"
 version = "0.0.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "torch", version = "2.9.1", source = { registry = "https://pypi.org/simple" } },
+    { name = "torch", version = "2.9.1", source = { registry = "https://pypi.org/simple" }, marker = "platform_machine != 'aarch64' or sys_platform != 'linux'" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/37/c2/9d5d5ea11374e30f6285fe05efbfe986b9cd2d14515f27d5fadbf7043f6b/vsa-0.0.4-cp311-cp311-manylinux2014_x86_64.whl", hash = "sha256:1697013c761c1c871121cde9f5eab5624bb887f7b5fc7e414f3d8332811ad0be", size = 3104094, upload-time = "2025-11-09T04:22:27.048Z" },
@@ -7557,8 +7528,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "torch", version = "2.9.1", source = { registry = "https://pypi.org/simple" } },
     { name = "transformers", version = "4.57.1", source = { registry = "https://pypi.org/simple" } },
-    { name = "triton", version = "3.4.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-10-swarmpilot-sglang' and extra == 'extra-10-swarmpilot-vllm'" },
-    { name = "triton", version = "3.5.1", source = { registry = "https://pypi.org/simple" }, marker = "(platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'extra-10-swarmpilot-sglang') or (platform_machine != 'x86_64' and extra == 'extra-10-swarmpilot-sglang' and extra == 'extra-10-swarmpilot-vllm') or (sys_platform != 'linux' and extra == 'extra-10-swarmpilot-sglang' and extra == 'extra-10-swarmpilot-vllm')" },
+    { name = "triton", version = "3.5.1", source = { registry = "https://pypi.org/simple" }, marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "typing-extensions" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/62/e1/b522b1e50fddd773d368c2945ef5ed628aa90c0c972027f9aa5a51d6d4f9/xgrammar-0.1.27.tar.gz", hash = "sha256:40af7bb2891f1633ec7f660723c74a92a963307d283aca9e3b4e53a0feaf1d46", size = 2303435, upload-time = "2025-11-04T03:11:53.512Z" }
