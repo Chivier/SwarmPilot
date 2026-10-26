@@ -192,3 +192,37 @@ async def test_background_flush_does_not_block(tmp_path, fakes, monkeypatch):
     await client.close()
     assert started.is_set()
     assert client.last_reports
+
+
+async def test_first_retrain_imports_nothing(tmp_path):
+    """The warm-up loads the fit's lazy imports before serving.
+
+    Imports and extension loads hold the GIL; on cold CI runners the
+    ~850 modules the first torch fit pulls in stalled the event loop for
+    ~100 ms mid-retrain.
+    """
+    import sys
+
+    import numpy as np
+
+    storage = ModelStorage(storage_dir=str(tmp_path))
+    trainer = TrainingClient(
+        storage=storage,
+        cache=ModelCache(),
+        batch_size=40,
+        prediction_types=["quantile", "expect_error"],
+    )
+    rng = np.random.default_rng(0)
+    for _ in range(40):
+        trainer.add_sample(
+            "m", PLAT, {"x": float(rng.uniform(1, 9))}, rng.uniform(10, 90)
+        )
+    before = set(sys.modules)
+    await trainer.flush()
+    new = {
+        m
+        for m in set(sys.modules) - before
+        if m.startswith(("torch", "sympy", "triton", "safetensors"))
+    }
+    assert not new, sorted(new)[:20]
+    await trainer.close()

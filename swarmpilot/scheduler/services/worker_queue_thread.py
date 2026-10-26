@@ -199,14 +199,8 @@ class WorkerQueueThread:
             List of tasks that were still in queue (not processed).
         """
         if self._thread is None:
-            # Thread not started, just drain the queue
-            pending = []
-            while not self._queue.empty():
-                try:
-                    pending.append(self._queue.get_nowait())
-                except Empty:
-                    break
-            return pending
+            # Thread not started, just drain the queues
+            return self._drain_pending()
 
         logger.info(f"Stopping worker queue thread for {self.worker_id}")
         self._shutdown.set()
@@ -219,17 +213,22 @@ class WorkerQueueThread:
 
         self._thread = None
 
-        # Drain remaining tasks
-        pending = []
+        pending = self._drain_pending()
+        logger.info(
+            f"Worker {self.worker_id} stopped with {len(pending)} pending tasks"
+        )
+        return pending
+
+    def _drain_pending(self) -> list[QueuedTask]:
+        """Take every unstarted task, priority tasks first."""
+        with self._priority_lock:
+            pending = list(self._priority_deque)
+            self._priority_deque.clear()
         while not self._queue.empty():
             try:
                 pending.append(self._queue.get_nowait())
             except Empty:
                 break
-
-        logger.info(
-            f"Worker {self.worker_id} stopped with {len(pending)} pending tasks"
-        )
         return pending
 
     def enqueue(self, task: QueuedTask) -> int:

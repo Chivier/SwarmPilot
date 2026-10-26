@@ -22,6 +22,7 @@ Online retraining keeps the Scheduler responsive and its models sound:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
@@ -81,6 +82,7 @@ class TrainingClient:
         coverage_tolerance: float = 0.03,
         min_q99_coverage: float = 0.97,
         seed: int | None = None,
+        warm_up: bool = True,
     ):
         """Initialize training client.
 
@@ -97,6 +99,8 @@ class TrainingClient:
             coverage_tolerance: Allowed gap between q0.9 coverage and 0.9.
             min_q99_coverage: Lowest acceptable q0.99 coverage.
             seed: Seed for the holdout split (experiments only).
+            warm_up: Run a tiny fit on the training thread now, so the
+                first real retrain does not import anything.
         """
         self._storage = storage
         self._cache = cache
@@ -124,6 +128,12 @@ class TrainingClient:
         )
         self._flush_lock = asyncio.Lock()
         self._background: asyncio.Task | None = None
+        if warm_up:
+            # The first fit lazily imports hundreds of modules (torch's
+            # optimizer and compiler stack, sympy). Imports and extension
+            # loads hold the GIL, which stalled the event loop for ~100 ms
+            # mid-retrain on cold machines. Pay that once, here.
+            self._executor.submit(self._warm_up).result()
 
         logger.info(
             f"TrainingClient initialized "
@@ -273,6 +283,27 @@ class TrainingClient:
 
         self._last_flush_samples = len(batch)
         return failure_count == 0
+
+    def _warm_up(self) -> None:
+        """Fit a throwaway model of each type to load the code it needs."""
+        rows = [{"x": float(i), "runtime_ms": 10.0 + i} for i in range(16)]
+        with contextlib.suppress(ImportError):
+            # Model files are also exported as safetensors on save.
+            import safetensors.torch  # noqa: F401
+        for prediction_type in self.prediction_types:
+            cls = PREDICTOR_CLASSES.get(prediction_type)
+            if cls is None:
+                continue
+            try:
+                predictor = cls()
+                predictor.train(
+                    features_list=[dict(r) for r in rows],
+                    config={**self._train_config(prediction_type), "epochs": 2},
+                )
+                predictor.predict({"x": 1.0})
+                json.dumps(predictor.get_model_state(), default=str)
+            except Exception as e:
+                logger.warning(f"Training warm-up for {prediction_type}: {e}")
 
     def _train_model(
         self,
