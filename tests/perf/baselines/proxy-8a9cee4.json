@@ -1,0 +1,169 @@
+{
+  "benchmark": "proxy_overhead",
+  "commit": "0232175",
+  "date": "2026-10-26",
+  "host": {
+    "python": "3.13.17",
+    "machine": "x86_64",
+    "cpus": 4
+  },
+  "config": {
+    "instances": 1,
+    "strategy": "round_robin",
+    "log_level": "INFO",
+    "duration_s": 10.0,
+    "warmup_s": 2.0
+  },
+  "results": [
+    {
+      "stream": false,
+      "concurrency": 1,
+      "direct": {
+        "requests": 15003,
+        "errors": 0,
+        "rps": 1500.3,
+        "latency_p50_ms": 0.622,
+        "latency_p99_ms": 1.838,
+        "ttft_p50_ms": 0.609,
+        "ttft_p99_ms": 1.801
+      },
+      "proxy": {
+        "requests": 1585,
+        "errors": 0,
+        "rps": 158.5,
+        "latency_p50_ms": 6.021,
+        "latency_p99_ms": 11.154,
+        "ttft_p50_ms": 6.0,
+        "ttft_p99_ms": 11.13
+      },
+      "added_p50_ms": 5.399,
+      "added_p99_ms": 9.316,
+      "throughput_ratio": 0.1056
+    },
+    {
+      "stream": false,
+      "concurrency": 64,
+      "direct": {
+        "requests": 40732,
+        "errors": 0,
+        "rps": 4071.1,
+        "latency_p50_ms": 15.194,
+        "latency_p99_ms": 25.611,
+        "ttft_p50_ms": 15.184,
+        "ttft_p99_ms": 25.599
+      },
+      "proxy": {
+        "requests": 1807,
+        "errors": 0,
+        "rps": 177.8,
+        "latency_p50_ms": 350.447,
+        "latency_p99_ms": 425.631,
+        "ttft_p50_ms": 350.424,
+        "ttft_p99_ms": 425.609
+      },
+      "added_p50_ms": 335.253,
+      "added_p99_ms": 400.02,
+      "throughput_ratio": 0.0437
+    },
+    {
+      "stream": false,
+      "concurrency": 512,
+      "direct": {
+        "requests": 40929,
+        "errors": 0,
+        "rps": 4081.6,
+        "latency_p50_ms": 118.894,
+        "latency_p99_ms": 227.454,
+        "ttft_p50_ms": 118.886,
+        "ttft_p99_ms": 227.446
+      },
+      "proxy": {
+        "requests": 1679,
+        "errors": 0,
+        "rps": 142.0,
+        "latency_p50_ms": 2935.961,
+        "latency_p99_ms": 3361.742,
+        "ttft_p50_ms": 2935.948,
+        "ttft_p99_ms": 3361.725
+      },
+      "added_p50_ms": 2817.067,
+      "added_p99_ms": 3134.288,
+      "throughput_ratio": 0.0348
+    },
+    {
+      "stream": true,
+      "concurrency": 1,
+      "direct": {
+        "requests": 10440,
+        "errors": 0,
+        "rps": 1044.0,
+        "latency_p50_ms": 0.877,
+        "latency_p99_ms": 2.444,
+        "ttft_p50_ms": 0.864,
+        "ttft_p99_ms": 2.432
+      },
+      "proxy": {
+        "requests": 0,
+        "errors": 1448,
+        "rps": 0.0,
+        "error_samples": [
+          "RuntimeError: HTTP 502: {\"error\":{\"message\":\"Expecting value: line 1 column 1 (char 0)\",\"type\":\"bad_gateway\"}}",
+          "RuntimeError: HTTP 502: {\"error\":{\"message\":\"Expecting value: line 1 column 1 (char 0)\",\"type\":\"bad_gateway\"}}",
+          "RuntimeError: HTTP 502: {\"error\":{\"message\":\"Expecting value: line 1 column 1 (char 0)\",\"type\":\"bad_gateway\"}}",
+          "RuntimeError: HTTP 502: {\"error\":{\"message\":\"Expecting value: line 1 column 1 (char 0)\",\"type\":\"bad_gateway\"}}",
+          "RuntimeError: HTTP 502: {\"error\":{\"message\":\"Expecting value: line 1 column 1 (char 0)\",\"type\":\"bad_gateway\"}}"
+        ]
+      }
+    },
+    {
+      "stream": true,
+      "concurrency": 64,
+      "direct": {
+        "requests": 24450,
+        "errors": 0,
+        "rps": 2440.9,
+        "latency_p50_ms": 24.082,
+        "latency_p99_ms": 45.262,
+        "ttft_p50_ms": 24.07,
+        "ttft_p99_ms": 45.255
+      },
+      "proxy": {
+        "requests": 0,
+        "errors": 1541,
+        "rps": 0.0,
+        "error_samples": [
+          "RuntimeError: HTTP 502: {\"error\":{\"message\":\"Expecting value: line 1 column 1 (char 0)\",\"type\":\"bad_gateway\"}}",
+          "RuntimeError: HTTP 502: {\"error\":{\"message\":\"Expecting value: line 1 column 1 (char 0)\",\"type\":\"bad_gateway\"}}",
+          "RuntimeError: HTTP 502: {\"error\":{\"message\":\"Expecting value: line 1 column 1 (char 0)\",\"type\":\"bad_gateway\"}}",
+          "RuntimeError: HTTP 502: {\"error\":{\"message\":\"Expecting value: line 1 column 1 (char 0)\",\"type\":\"bad_gateway\"}}",
+          "RuntimeError: HTTP 502: {\"error\":{\"message\":\"Expecting value: line 1 column 1 (char 0)\",\"type\":\"bad_gateway\"}}"
+        ]
+      }
+    },
+    {
+      "stream": true,
+      "concurrency": 512,
+      "direct": {
+        "requests": 18715,
+        "errors": 0,
+        "rps": 1835.4,
+        "latency_p50_ms": 272.564,
+        "latency_p99_ms": 385.012,
+        "ttft_p50_ms": 272.555,
+        "ttft_p99_ms": 385.0
+      },
+      "proxy": {
+        "requests": 0,
+        "errors": 1445,
+        "rps": 0.0,
+        "error_samples": [
+          "RuntimeError: HTTP 502: {\"error\":{\"message\":\"Expecting value: line 1 column 1 (char 0)\",\"type\":\"bad_gateway\"}}",
+          "RuntimeError: HTTP 502: {\"error\":{\"message\":\"Expecting value: line 1 column 1 (char 0)\",\"type\":\"bad_gateway\"}}",
+          "RuntimeError: HTTP 502: {\"error\":{\"message\":\"Expecting value: line 1 column 1 (char 0)\",\"type\":\"bad_gateway\"}}",
+          "RuntimeError: HTTP 502: {\"error\":{\"message\":\"Expecting value: line 1 column 1 (char 0)\",\"type\":\"bad_gateway\"}}",
+          "RuntimeError: HTTP 502: {\"error\":{\"message\":\"Expecting value: line 1 column 1 (char 0)\",\"type\":\"bad_gateway\"}}"
+        ]
+      }
+    }
+  ]
+}

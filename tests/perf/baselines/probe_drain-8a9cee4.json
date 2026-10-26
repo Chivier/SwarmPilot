@@ -1,0 +1,26 @@
+{
+ "register": 200,
+ "t0_assigned_instance_after_submit": "",
+ "drain": {
+  "success": true,
+  "message": "Instance is now draining. No new tasks will be assigned.",
+  "instance_id": "A",
+  "status": "draining",
+  "pending_tasks": 0,
+  "running_tasks": 0,
+  "estimated_completion_time_ms": 0.0
+ },
+ "drain_status_right_after": {
+  "pending_tasks": 0,
+  "can_remove": true
+ },
+ "remove": 200,
+ "task_status_4s_after_remove": {
+  "t0": "completed",
+  "t1": "pending",
+  "t2": "pending",
+  "t3": "pending",
+  "t4": "pending",
+  "t5": "pending"
+ }
+}

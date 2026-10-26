@@ -1,0 +1,11 @@
+{"strategy": "oracle_least_work", "mode": "ref", "p50_s": 1.55, "p95_s": 7.18, "p99_s": 10.91, "max_share": null}
+{"strategy": "round_robin", "mode": "as_is", "p50_s": 3.86, "p95_s": 42.0, "p99_s": 52.67, "max_share": 0.125}
+{"strategy": "random", "mode": "as_is", "p50_s": 1228.07, "p95_s": 2543.66, "p99_s": 2625.95, "max_share": 1.0}
+{"strategy": "po2", "mode": "as_is", "p50_s": 502.46, "p95_s": 1040.84, "p99_s": 1095.8, "max_share": 0.5}
+{"strategy": "min_time", "mode": "as_is", "p50_s": 2.15, "p95_s": 9.73, "p99_s": 14.24, "max_share": 0.149}
+{"strategy": "probabilistic", "mode": "as_is", "p50_s": 2.14, "p95_s": 9.09, "p99_s": 14.08, "max_share": 0.141}
+{"strategy": "min_time", "mode": "fixed", "p50_s": 1.77, "p95_s": 7.57, "p99_s": 12.6, "max_share": 0.157}
+{"strategy": "probabilistic", "mode": "fixed", "p50_s": 1.65, "p95_s": 7.92, "p99_s": 12.5, "max_share": 0.138}
+{"strategy": "random", "mode": "noseed", "p50_s": 6.1, "p95_s": 31.79, "p99_s": 39.6, "max_share": 0.134}
+{"strategy": "po2", "mode": "noseed", "p50_s": 4.8, "p95_s": 19.26, "p99_s": 25.35, "max_share": 0.126}
+{"strategy": "probabilistic", "mode": "noseed", "p50_s": 2.44, "p95_s": 12.86, "p99_s": 20.63, "max_share": 0.14}
