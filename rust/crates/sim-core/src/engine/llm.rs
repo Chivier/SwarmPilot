@@ -103,7 +103,9 @@ impl LlmEngine {
                 i += 1;
                 continue;
             }
-            let need = self.blocks_for(self.running[i].context() + 1);
+            // The step writes KV for the newest token, so the cache must
+            // hold the whole context (the last token is not cached yet).
+            let need = self.blocks_for(self.running[i].context());
             let extra = need.saturating_sub(self.running[i].blocks);
             while extra > self.free_blocks {
                 let last = self.running.len() - 1;

@@ -36,8 +36,8 @@ pub fn run_single(engine: &mut dyn EngineModel, arrivals: &[Arrival]) -> Vec<Req
             (None, Some(e)) => e,
             (Some(a), Some(e)) => a.min(e),
         };
-        // Finish engine work due by `now` before new arrivals join.
-        engine.advance(now, &mut events);
+        // Submit only enqueues; `advance` then orders work at `now` as
+        // step end, arrivals, next step, so a tied arrival joins that step.
         while let Some(a) = arrivals.get(next) {
             if a.t_ms > now {
                 break;

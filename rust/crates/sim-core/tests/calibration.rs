@@ -4,7 +4,9 @@
 //! vllm/performance-benchmark build 9565. Latency tests send a batch of 8
 //! requests with 32 prompt and 128 output tokens; serving tests send 200
 //! ShareGPT prompts with Poisson arrivals at the given QPS (0 = all at
-//! once). We do not have the exact ShareGPT sample, so serving runs use
+//! once). The 70B runs there are Llama-3-70B; Llama-3.1-70B has the same
+//! architecture, so the catalog's llama-3.1-70b stands in. We do not have
+//! the exact ShareGPT sample, so serving runs use
 //! ShareGPT-like lengths and average over seeds.
 //!
 //! Run with `cargo test --release -p swarmpilot-sim-core --test calibration

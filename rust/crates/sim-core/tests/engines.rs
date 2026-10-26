@@ -272,3 +272,40 @@ fn generic_engine_respects_concurrency_and_mean() {
     let done: Vec<_> = r.iter().map(|x| x.done_ms.unwrap().round()).collect();
     assert_eq!(done, vec![100.0, 200.0, 300.0]);
 }
+
+#[test]
+fn arrival_tied_with_step_end_joins_the_next_step() {
+    let mut e = LlmEngine::new(flat_llm(100_000, 256), false);
+    let r = run(&mut e, &[llm(0, 0.0, 10, 5), llm(1, 10.0, 10, 5)]);
+    // B arrives as A's prefill step ends and prefills in the very next step.
+    assert_eq!(r[1].first_token_ms, Some(20.0));
+    assert_eq!(r[1].done_ms, Some(60.0));
+}
+
+#[test]
+fn image_tied_with_batch_end_joins_the_next_batch() {
+    let p = DiffusionProfile {
+        ms_per_step_1024: 10.0,
+        vae_ms: 0.0,
+        max_batch: 2,
+        batch_alpha: 0.0,
+    };
+    let mut e = DiffusionEngine::new(p);
+    let at = |mut a: Arrival, t: f64| {
+        a.t_ms = t;
+        a
+    };
+    // A runs alone; X waits; B arrives exactly as A finishes and should
+    // share the next batch with X.
+    let r = run(
+        &mut e,
+        &[
+            image(0, 10),
+            at(image(1, 10), 50.0),
+            at(image(2, 10), 100.0),
+        ],
+    );
+    assert_eq!(r[0].done_ms, Some(100.0));
+    assert_eq!(r[1].done_ms, Some(200.0));
+    assert_eq!(r[2].done_ms, Some(200.0));
+}
