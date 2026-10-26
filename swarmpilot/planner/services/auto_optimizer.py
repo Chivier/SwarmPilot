@@ -149,7 +149,9 @@ class AutoOptimizer:
         self.min_replicas = max(0, min_replicas)
         self.algorithm = algorithm
         self.objective_method = objective_method
-        self.stale_after = stale_after if stale_after is not None else 3 * interval
+        self.stale_after = (
+            stale_after if stale_after is not None else 3 * interval
+        )
         self.scaler = scaler
         self.horizon = horizon if horizon is not None else interval
         self.last_plan: AutoPlan | None = None
@@ -175,7 +177,8 @@ class AutoOptimizer:
         known = [t for ts in per_model.values() for t in ts]
         fallback = float(np.mean(known)) if known else 1.0
         return {
-            m: float(np.mean(ts)) if ts else fallback for m, ts in per_model.items()
+            m: float(np.mean(ts)) if ts else fallback
+            for m, ts in per_model.items()
         }
 
     def plan(self, instances: Sequence[_Instance]) -> AutoPlan | None:
@@ -272,7 +275,8 @@ class AutoOptimizer:
         external = {
             j: max(
                 0.0,
-                rates.get(j, 0.0) - sum(r * rates.get(i, 0.0) for i, r in into[j]),
+                rates.get(j, 0.0)
+                - sum(r * rates.get(i, 0.0) for i, r in into[j]),
             )
             for j in models
         }
@@ -288,7 +292,8 @@ class AutoOptimizer:
         rate = dict(external)
         for _ in range(4 * len(models) + 16):
             rate = {
-                j: external[j] + sum(r * out[i] for i, r in into[j]) for j in models
+                j: external[j] + sum(r * out[i] for i, r in into[j])
+                for j in models
             }
             nxt = {
                 j: min(rate[j] + outstanding.get(j, 0.0) / self.horizon, cap[j])
@@ -388,7 +393,9 @@ class AutoOptimizer:
             except asyncio.CancelledError:
                 raise
             except Exception as e:
-                logger.opt(exception=True).error(f"[AUTO_OPTIMIZE] round failed: {e}")
+                logger.opt(exception=True).error(
+                    f"[AUTO_OPTIMIZE] round failed: {e}"
+                )
 
     def start(self) -> None:
         """Start the background loop on the running event loop."""

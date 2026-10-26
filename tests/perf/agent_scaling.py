@@ -136,16 +136,22 @@ class Sim:
         initial = initial or {"llm": machines // 2, "tool": machines // 2}
         self.machines = [
             Machine(i, m)
-            for i, m in enumerate(m for m, n in initial.items() for _ in range(n))
+            for i, m in enumerate(
+                m for m, n in initial.items() for _ in range(n)
+            )
         ]
         self.queues: dict[str, deque[Task]] = {m: deque() for m in self.models}
         self.now = 0.0
         self.events: list = []
         self._seq = itertools.count()
         self.store = DemandStore(alpha=0.5, clock=lambda: self.now)
-        self.opt = AutoOptimizer(self.store, self, interval=interval_s, scaler=scaler)
+        self.opt = AutoOptimizer(
+            self.store, self, interval=interval_s, scaler=scaler
+        )
         self.arrivals: Counter[str] = Counter()
-        self.calls: dict[str, Counter[str]] = {m: Counter() for m in self.models}
+        self.calls: dict[str, Counter[str]] = {
+            m: Counter() for m in self.models
+        }
         self.latency: dict[str, list[float]] = {m: [] for m in self.models}
         self.misses: Counter[str] = Counter()
         self.moves = 0
@@ -162,7 +168,11 @@ class Sim:
             for m in have
             if have[m] > target_state.get(m, 0)
         }
-        need = [m for m, n in target_state.items() for _ in range(max(0, n - have[m]))]
+        need = [
+            m
+            for m, n in target_state.items()
+            for _ in range(max(0, n - have[m]))
+        ]
         for model, n in spare.items():
             pool = [m for m in self.machines if _Inst(m).model_id == model]
             # Move idle machines first.
@@ -189,7 +199,9 @@ class Sim:
         return 0.0
 
     def _submit(self, model: str, parent: str | None) -> None:
-        task = Task(model, self.now, parent, self.models[model].sample(self.rng))
+        task = Task(
+            model, self.now, parent, self.models[model].sample(self.rng)
+        )
         self.arrivals[model] += 1
         if parent:
             self.calls[model][parent] += 1
@@ -247,7 +259,9 @@ class Sim:
                 float(n),
                 arrival_rate=self.arrivals[model] / self.report_s,
                 work_s=work,
-                calls_from={p: c / self.report_s for p, c in self.calls[model].items()},
+                calls_from={
+                    p: c / self.report_s for p, c in self.calls[model].items()
+                },
             )
         for m in self.machines:
             if m.done:
@@ -293,9 +307,12 @@ class Sim:
             "tasks": total,
             "slo_miss_rate": sum(self.misses.values()) / total,
             "miss_rate": {
-                m: self.misses[m] / max(1, len(v)) for m, v in self.latency.items()
+                m: self.misses[m] / max(1, len(v))
+                for m, v in self.latency.items()
             },
-            "p99_s": {m: float(np.percentile(v, 99)) for m, v in self.latency.items()},
+            "p99_s": {
+                m: float(np.percentile(v, 99)) for m, v in self.latency.items()
+            },
             "moves": self.moves,
         }
 

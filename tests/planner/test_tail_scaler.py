@@ -36,7 +36,9 @@ class TestDemandStore:
     def test_call_ratio_is_calls_per_caller_task(self):
         store = DemandStore(alpha=1.0)
         store.submit_target("llm", 0, arrival_rate=2.0)
-        store.submit_target("tool", 0, arrival_rate=3.0, calls_from={"llm": 3.0})
+        store.submit_target(
+            "tool", 0, arrival_rate=3.0, calls_from={"llm": 3.0}
+        )
         assert store.call_ratios() == {"llm": {"tool": 1.5}}
 
     def test_caller_that_stops_calling_decays_to_zero(self):
@@ -135,14 +137,18 @@ class TestPlan:
         assert plan.target_state == {"a": 2, "b": 6}
 
     @pytest.mark.parametrize("llm_replicas,tool_need", [(6, 6.0), (2, 2.0)])
-    def test_callee_follows_what_callers_can_finish(self, llm_replicas, tool_need):
+    def test_callee_follows_what_callers_can_finish(
+        self, llm_replicas, tool_need
+    ):
         # llm: 3/s arriving, 40 queued. Each llm task calls tool once.
         # Over the 10 s horizon llm can finish 3 + 40/10 = 7/s, but no
         # more than its replicas serve (1 task/s each).
         service = _Service({"llm": llm_replicas, "tool": 4})
         store = _store(service, {"llm": 1.0, "tool": 1.0})
         store.submit_target("llm", 40, arrival_rate=3.0)
-        store.submit_target("tool", 0, arrival_rate=3.0, calls_from={"llm": 3.0})
+        store.submit_target(
+            "tool", 0, arrival_rate=3.0, calls_from={"llm": 3.0}
+        )
         demand = _opt(store, service)._tail_demand(
             store.targets(),
             store.arrival_rates(),
@@ -157,8 +163,12 @@ class TestPlan:
         service = _Service({"llm": 10, "tool": 10})
         store = _store(service, {"llm": 1.0, "tool": 2.0})
         llm, tool = 1 / (1 - 0.4), 0.8 / (1 - 0.4)
-        store.submit_target("llm", 0, arrival_rate=llm, calls_from={"tool": 0.5 * tool})
-        store.submit_target("tool", 0, arrival_rate=tool, calls_from={"llm": 0.8 * llm})
+        store.submit_target(
+            "llm", 0, arrival_rate=llm, calls_from={"tool": 0.5 * tool}
+        )
+        store.submit_target(
+            "tool", 0, arrival_rate=tool, calls_from={"llm": 0.8 * llm}
+        )
         opt = _opt(store, service)
         demand = opt._tail_demand(
             store.targets(),

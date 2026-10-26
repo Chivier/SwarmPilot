@@ -116,7 +116,9 @@ async def test_report_carries_rate_calls_and_tail_work():
     assert body["calls_from"] == {"llm": 0.5}
     # a: q0.9 interpolated between q0.5 and q0.95 = 2777.8 ms.
     # b: (400 + 100) ms per server, 4 servers. "other" serves model x.
-    assert body["work_s"] == pytest.approx((1000 + 2000 * 0.4 / 0.45) / 1000 + 2.0)
+    assert body["work_s"] == pytest.approx(
+        (1000 + 2000 * 0.4 / 0.45) / 1000 + 2.0
+    )
 
 
 async def test_report_without_new_sources_keeps_old_body():

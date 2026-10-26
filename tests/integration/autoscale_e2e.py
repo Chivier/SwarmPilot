@@ -75,7 +75,9 @@ def _counts() -> dict[str, int]:
     return out
 
 
-async def _session(client: httpx.AsyncClient, images: float, stats: dict) -> None:
+async def _session(
+    client: httpx.AsyncClient, images: float, stats: dict
+) -> None:
     llm = f"http://127.0.0.1:{SCHED[LLM]}/v1/chat/completions"
     diff = f"http://127.0.0.1:{SCHED[DIFF]}/v1/images/generations"
     r = await client.post(
@@ -129,7 +131,14 @@ def main() -> int:
     try:
         procs.append(
             _spawn(
-                [PY, "-m", "swarmpilot.planner.cli", "start", "--port", str(PLANNER)],
+                [
+                    PY,
+                    "-m",
+                    "swarmpilot.planner.cli",
+                    "start",
+                    "--port",
+                    str(PLANNER),
+                ],
                 {
                     "PYLET_LOCAL_MODE": "true",
                     "PYLET_LOCAL_PORT": "15100",
@@ -161,7 +170,9 @@ def main() -> int:
                         "SCHEDULER_MODEL_ID": model,
                         "PLANNER_URL": f"http://127.0.0.1:{PLANNER}",
                         "SCHEDULER_AUTO_REPORT": "2",
-                        "PLANNER_REGISTRATION_URL": (f"http://127.0.0.1:{PLANNER}"),
+                        "PLANNER_REGISTRATION_URL": (
+                            f"http://127.0.0.1:{PLANNER}"
+                        ),
                         "SCHEDULER_SELF_URL": f"http://127.0.0.1:{port}",
                         "SCHEDULING_STRATEGY": "min_time",
                     },
@@ -201,7 +212,9 @@ def main() -> int:
         sampler.join()
         b = _wait_for(lambda c: c.get(DIFF, 0) >= 3, 3 * INTERVAL)
         # Once the diffusion model has its machines, it keeps them.
-        first = next((i for i, c in enumerate(seen) if c.get(DIFF, 0) >= 3), len(seen))
+        first = next(
+            (i for i, c in enumerate(seen) if c.get(DIFF, 0) >= 3), len(seen)
+        )
         flips = sum(c.get(DIFF, 0) < 3 for c in seen[first:])
         print(
             "phase B",

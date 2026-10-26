@@ -50,7 +50,9 @@ def _submit(command: str, kwargs: dict) -> Instance:
     try:
         return pylet.submit(command, **kwargs)
     except httpx.TransportError as e:
-        logger.warning(f"PyLet submit of {kwargs['name']} failed ({e}); retrying")
+        logger.warning(
+            f"PyLet submit of {kwargs['name']} failed ({e}); retrying"
+        )
     try:
         return pylet.get(kwargs["name"])
     except NotFoundError:
@@ -204,7 +206,9 @@ class PyLetClient:
             try:
                 # Check if PyLet is already initialized by listing workers
                 # Use a timeout to avoid hanging if PyLet is unresponsive
-                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                with concurrent.futures.ThreadPoolExecutor(
+                    max_workers=1
+                ) as executor:
                     future = executor.submit(pylet.workers)
                     workers = future.result(timeout=timeout)
                 logger.info(
@@ -423,7 +427,9 @@ class PyLetClient:
 
         instance.wait_running(timeout=timeout)
 
-        logger.info(f"Instance {pylet_id} running at endpoint: {instance.endpoint}")
+        logger.info(
+            f"Instance {pylet_id} running at endpoint: {instance.endpoint}"
+        )
         return InstanceInfo.from_pylet_instance(instance)
 
     def cancel_instance(
@@ -526,7 +532,9 @@ class PyLetClient:
             RuntimeError: If client not initialized.
         """
         if not self._initialized:
-            raise RuntimeError("PyLet client not initialized. Call init() first.")
+            raise RuntimeError(
+                "PyLet client not initialized. Call init() first."
+            )
 
 
 # Global client singleton

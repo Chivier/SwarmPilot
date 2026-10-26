@@ -69,7 +69,9 @@ class DemandStore:
         # (caller, callee) -> calls per second.
         self._calls: dict[tuple[str, str], _Reading] = {}
 
-    def _update(self, table: dict[Any, _Reading], key: Hashable, value: float) -> float:
+    def _update(
+        self, table: dict[Any, _Reading], key: Hashable, value: float
+    ) -> float:
         now = self._clock()
         old = table.get(key)
         smoothed = (
@@ -106,7 +108,9 @@ class DemandStore:
             calls = calls_from or {}
             known = {p for p, c in self._calls if c == model_id}
             for parent in known | set(calls):
-                self._update(self._calls, (parent, model_id), calls.get(parent, 0.0))
+                self._update(
+                    self._calls, (parent, model_id), calls.get(parent, 0.0)
+                )
         return self._update(self._targets, model_id, value)
 
     def submit_throughput(
@@ -162,7 +166,9 @@ class DemandStore:
         """Smoothed q0.9 outstanding work in seconds per model."""
         return self._fresh(self._work, max_age)
 
-    def call_ratios(self, max_age: float | None = None) -> dict[str, dict[str, float]]:
+    def call_ratios(
+        self, max_age: float | None = None
+    ) -> dict[str, dict[str, float]]:
         """Tasks of each callee one task of each caller causes.
 
         Returns:
@@ -192,7 +198,9 @@ class DemandStore:
             model_id: Ignore a reading reported for another model.
         """
         r = self._exec_times.get(normalize_url(instance_url))
-        if r is None or (max_age is not None and self._clock() - r.at > max_age):
+        if r is None or (
+            max_age is not None and self._clock() - r.at > max_age
+        ):
             return None
         if model_id and r.model and r.model != model_id:
             return None
@@ -203,7 +211,9 @@ class DemandStore:
         now = self._clock()
         return {
             "targets": {m: r.value for m, r in self._targets.items()},
-            "execution_times": {u: r.value for u, r in self._exec_times.items()},
+            "execution_times": {
+                u: r.value for u, r in self._exec_times.items()
+            },
             "target_age_s": {m: now - r.at for m, r in self._targets.items()},
             "arrival_rates": self.arrival_rates(),
             "work_s": self.work(),
