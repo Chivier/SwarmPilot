@@ -146,11 +146,21 @@ async with SwarmPilotClient(
 
 ### Auto-Training Pipeline
 
-When `TRAINING_ENABLE_AUTO=true` on the Scheduler, the training pipeline runs automatically:
+Online adaptation is on by default (`TRAINING_ENABLE_AUTO=true`). A
+platform without a model trains once a batch is full. A platform with a
+model retrains only when its predictions drift: the Scheduler scores each
+finished task's q0.9 prediction (pinball loss and miss rate, per prompt
+size group) and, when either rises well above normal, collects 100 fresh
+samples and refits. Pre-drift samples, rescaled by the measured shift, fill
+the rest of the training window until fresh samples do; the model is then
+refitted each time its data doubles. After runtimes double, coverage
+recovers in about 40 s at 5 requests per second (see
+`tests/perf/baselines/drift_recovery-phase3.1.jsonl`).
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `TRAINING_ENABLE_AUTO` | `false` | Enable auto-retraining |
+| `TRAINING_ENABLE_AUTO` | `true` | Enable online adaptation |
+| `TRAINING_RETRAIN_MODE` | `drift` | `drift` or `batch` (retrain every full batch) |
 | `TRAINING_BATCH_SIZE` | `100` | Batch size for data collection |
 | `TRAINING_FREQUENCY` | `3600` | Training frequency (seconds) |
 | `TRAINING_MIN_SAMPLES` | `10` | Minimum samples before first training |

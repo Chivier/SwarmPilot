@@ -91,6 +91,7 @@ from .models import (
 from .registry.instance_registry import InstanceRegistry
 from .registry.queue_sketch import DEFAULT_QUANTILES, Charge
 from .registry.task_registry import TaskRegistry
+from .services.drift import DriftDetector
 from .services.planner_registrar import PlannerRegistrar
 from .services.task_result_callback import TaskResultCallback
 from .services.websocket_manager import ConnectionManager
@@ -369,6 +370,14 @@ training_client = (
         prediction_types=config.training.prediction_types,
         window_size=config.training.window_size,
         holdout_fraction=config.training.holdout_fraction,
+        retrain_mode=config.training.retrain_mode,
+        drift=DriftDetector(
+            window=config.training.drift_window,
+            min_samples=config.training.drift_min_samples,
+            loss_ratio=config.training.drift_loss_ratio,
+            miss_ratio=config.training.drift_miss_ratio,
+        ),
+        recovery_samples=config.training.recovery_samples,
     )
     if config.training.enable_auto_training
     else None

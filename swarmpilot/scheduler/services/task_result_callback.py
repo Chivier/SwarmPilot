@@ -378,6 +378,15 @@ class TaskResultCallback:
                         platform_info=instance.platform_info,
                         features=features,
                         actual_runtime_ms=result.execution_time_ms,
+                        predicted_quantiles=getattr(
+                            task, "predicted_quantiles", None
+                        ),
+                        predicted_time_ms=getattr(
+                            task, "predicted_time_ms", None
+                        ),
+                        predicted_error_ms=getattr(
+                            task, "predicted_error_margin_ms", None
+                        ),
                     )
                     self.training_client.start_flush_if_ready()
                 else:

@@ -441,7 +441,13 @@ Source: `swarmpilot/scheduler/config.py`
 | `SCHEDULER_ENABLE_CORS` | `true` | Enable CORS middleware |
 | `SCHEDULING_STRATEGY` | `adaptive_bootstrap` | Strategy: `adaptive_bootstrap`, `min_time`, `probabilistic`, `round_robin`, `random`, `po2`, `severless` |
 | `SCHEDULING_PROBABILISTIC_QUANTILE` | `0.9` | Target quantile for probabilistic strategy |
-| `TRAINING_ENABLE_AUTO` | `false` | Enable automatic predictor retraining |
+| `TRAINING_ENABLE_AUTO` | `true` | Online adaptation: train cold platforms, retrain on drift |
+| `TRAINING_RETRAIN_MODE` | `drift` | `drift` retrains a platform with a model only when it drifts; `batch` retrains every full batch |
+| `DRIFT_WINDOW` | `200` | Scored tasks per drift window |
+| `DRIFT_MIN_SAMPLES` | `50` | Scored tasks before a group can drift |
+| `DRIFT_LOSS_RATIO` | `2.0` | Drift when q0.9 pinball loss exceeds this times its baseline |
+| `DRIFT_MISS_RATIO` | `3.0` | Drift when the q0.9 miss rate exceeds this times 0.1 (and is significant) |
+| `DRIFT_RECOVERY_SAMPLES` | `100` | Post-drift samples collected before the retrain |
 | `TRAINING_BATCH_SIZE` | `100` | Batch size for training data collection |
 | `TRAINING_FREQUENCY` | `3600` | Training frequency in seconds |
 | `TRAINING_MIN_SAMPLES` | `10` | Minimum samples before training |
