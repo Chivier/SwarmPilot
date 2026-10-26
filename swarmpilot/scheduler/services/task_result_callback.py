@@ -379,7 +379,7 @@ class TaskResultCallback:
                         features=features,
                         actual_runtime_ms=result.execution_time_ms,
                     )
-                    await self.training_client.flush_if_ready()
+                    self.training_client.start_flush_if_ready()
                 else:
                     logger.debug(
                         f"No predictor features for task {task_id}; "

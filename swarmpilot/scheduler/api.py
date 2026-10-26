@@ -367,6 +367,8 @@ training_client = (
         batch_size=config.training.batch_size,
         min_samples=config.training.min_samples,
         prediction_types=config.training.prediction_types,
+        window_size=config.training.window_size,
+        holdout_fraction=config.training.holdout_fraction,
     )
     if config.training.enable_auto_training
     else None

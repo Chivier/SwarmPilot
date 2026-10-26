@@ -112,7 +112,11 @@ class ModelStorage:
         model_path = self.storage_dir / f"{model_key}.joblib"
         model_path.parent.mkdir(parents=True, exist_ok=True)
         try:
-            joblib.dump(complete_state, model_path)
+            # Write aside and rename, so readers see the old model or the
+            # new one, never a partial file.
+            tmp = model_path.with_name(f".{model_path.name}.tmp")
+            joblib.dump(complete_state, tmp)
+            os.replace(tmp, model_path)
             self._known.add(model_key)
             self._missing.pop(model_key, None)
             logger.debug(f"Model saved successfully: {model_path}")

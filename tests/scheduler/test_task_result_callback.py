@@ -80,6 +80,7 @@ def mock_training_client():
     client = MagicMock()
     client.add_sample = MagicMock()
     client.flush_if_ready = AsyncMock(return_value=False)
+    client.start_flush_if_ready = MagicMock(return_value=False)
     return client
 
 
@@ -731,7 +732,7 @@ class TestTrainingIntegration:
         )
 
     @pytest.mark.asyncio
-    async def test_flush_if_ready_called_on_success(
+    async def test_background_flush_started_on_success(
         self,
         callback_with_training,
         mock_task_registry,
@@ -740,7 +741,7 @@ class TestTrainingIntegration:
         sample_instance,
         success_result,
     ):
-        """Test flush_if_ready called after adding sample."""
+        """A retrain starts in the background; the callback does not wait."""
         mock_task_registry.get.return_value = sample_task_record
         callback_with_training.instance_registry.get.return_value = (
             sample_instance
@@ -748,7 +749,8 @@ class TestTrainingIntegration:
 
         await callback_with_training.handle_result(success_result)
 
-        mock_training_client.flush_if_ready.assert_called_once()
+        mock_training_client.start_flush_if_ready.assert_called_once()
+        mock_training_client.flush_if_ready.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_no_training_sample_on_failure(

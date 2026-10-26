@@ -245,11 +245,6 @@ async def test_random_choices_are_random(tmp_path) -> None:
 
 
 @pytest.mark.slow
-@pytest.mark.xfail(
-    strict=True,
-    reason="gap A3: auto-training fits the model on the event loop "
-    "(fixed by plan item 2.4)",
-)
 async def test_retraining_does_not_block_event_loop(tmp_path) -> None:
     """A retrain must keep event-loop lag P99 under 50 ms."""
     from loguru import logger

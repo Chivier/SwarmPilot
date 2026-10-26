@@ -1,0 +1,1 @@
+{"retrain_s": 2.02, "lag_p50_ms": 1.0, "lag_p99_ms": 8.696579001480131, "lag_max_ms": 8.697, "reports": {"m__vllm-x__h__quantile": "q0.9 coverage 1.000"}}
