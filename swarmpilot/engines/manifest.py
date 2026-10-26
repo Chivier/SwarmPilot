@@ -101,6 +101,13 @@ class EngineManifest(_Strict):
     routes: list[RouteManifest]
     features: list[FeatureManifest] | None
     python_features: bool
+    #: API styles the engine serves itself (passed through untouched).
+    native_styles: list[str] = Field(default_factory=list)
+    #: For each client API style that is translated into a native one,
+    #: the same features as expressions over that style's body.
+    style_features: dict[str, list[FeatureManifest]] = Field(
+        default_factory=dict
+    )
 
 
 def build_manifest(adapter: EngineAdapter) -> dict[str, Any]:
@@ -153,8 +160,32 @@ def build_manifest(adapter: EngineAdapter) -> dict[str, Any]:
             else None
         ),
         python_features=not pairs,
+        native_styles=list(adapter.native_styles()),
+        style_features=_style_features(adapter),
     )
     return manifest.model_dump(mode="json")
+
+
+def _style_features(adapter: EngineAdapter) -> dict[str, list[FeatureManifest]]:
+    """Return per-style feature expressions for translated requests."""
+    from swarmpilot.api.base import DEFAULT_MAX_OUTPUT_TOKENS
+    from swarmpilot.api.registry import get_style, style_names
+
+    native = adapter.native_styles()
+    if not native:
+        return {}
+    default = getattr(adapter, "default_max_tokens", DEFAULT_MAX_OUTPUT_TOKENS)
+    out: dict[str, list[FeatureManifest]] = {}
+    for name in style_names():
+        pairs = get_style(name).feature_extractors(default)
+        if (
+            name not in native
+            and pairs
+            and tuple(n for n, _ in pairs)
+            == tuple(adapter.workload.feature_names)
+        ):
+            out[name] = [FeatureManifest(name=n, expr=e) for n, e in pairs]
+    return out
 
 
 def manifest_features(

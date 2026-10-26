@@ -1,0 +1,1177 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "event": {
+      "$defs": {
+        "ErrorEvent": {
+          "properties": {
+            "error_type": {
+              "default": "api_error",
+              "title": "Error Type",
+              "type": "string"
+            },
+            "message": {
+              "title": "Message",
+              "type": "string"
+            },
+            "type": {
+              "const": "error",
+              "default": "error",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "message"
+          ],
+          "title": "ErrorEvent",
+          "type": "object"
+        },
+        "PartStart": {
+          "properties": {
+            "id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Id"
+            },
+            "index": {
+              "title": "Index",
+              "type": "integer"
+            },
+            "kind": {
+              "enum": [
+                "text",
+                "tool_call",
+                "reasoning"
+              ],
+              "title": "Kind",
+              "type": "string"
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Name"
+            },
+            "type": {
+              "const": "part_start",
+              "default": "part_start",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "index",
+            "kind"
+          ],
+          "title": "PartStart",
+          "type": "object"
+        },
+        "PartStop": {
+          "properties": {
+            "index": {
+              "title": "Index",
+              "type": "integer"
+            },
+            "type": {
+              "const": "part_stop",
+              "default": "part_stop",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "index"
+          ],
+          "title": "PartStop",
+          "type": "object"
+        },
+        "ReasoningDelta": {
+          "properties": {
+            "index": {
+              "title": "Index",
+              "type": "integer"
+            },
+            "signature": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Signature"
+            },
+            "text": {
+              "default": "",
+              "title": "Text",
+              "type": "string"
+            },
+            "type": {
+              "const": "reasoning_delta",
+              "default": "reasoning_delta",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "index"
+          ],
+          "title": "ReasoningDelta",
+          "type": "object"
+        },
+        "ResponseStart": {
+          "properties": {
+            "created": {
+              "default": 0,
+              "title": "Created",
+              "type": "integer"
+            },
+            "id": {
+              "title": "Id",
+              "type": "string"
+            },
+            "model": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Model"
+            },
+            "type": {
+              "const": "response_start",
+              "default": "response_start",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "title": "ResponseStart",
+          "type": "object"
+        },
+        "ResponseStop": {
+          "properties": {
+            "stop_reason": {
+              "$ref": "#/$defs/StopReason",
+              "default": "end_turn"
+            },
+            "stop_sequence": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Stop Sequence"
+            },
+            "type": {
+              "const": "response_stop",
+              "default": "response_stop",
+              "title": "Type",
+              "type": "string"
+            },
+            "usage": {
+              "$ref": "#/$defs/Usage"
+            }
+          },
+          "title": "ResponseStop",
+          "type": "object"
+        },
+        "StopReason": {
+          "description": "Why the engine stopped generating.",
+          "enum": [
+            "end_turn",
+            "max_tokens",
+            "stop_sequence",
+            "tool_use",
+            "content_filter",
+            "error"
+          ],
+          "title": "StopReason",
+          "type": "string"
+        },
+        "TextDelta": {
+          "properties": {
+            "index": {
+              "title": "Index",
+              "type": "integer"
+            },
+            "text": {
+              "title": "Text",
+              "type": "string"
+            },
+            "type": {
+              "const": "text_delta",
+              "default": "text_delta",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "index",
+            "text"
+          ],
+          "title": "TextDelta",
+          "type": "object"
+        },
+        "ToolArgsDelta": {
+          "properties": {
+            "delta": {
+              "title": "Delta",
+              "type": "string"
+            },
+            "index": {
+              "title": "Index",
+              "type": "integer"
+            },
+            "type": {
+              "const": "tool_args_delta",
+              "default": "tool_args_delta",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "index",
+            "delta"
+          ],
+          "title": "ToolArgsDelta",
+          "type": "object"
+        },
+        "Usage": {
+          "properties": {
+            "cached_input_tokens": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Cached Input Tokens"
+            },
+            "input_tokens": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Input Tokens"
+            },
+            "output_tokens": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Output Tokens"
+            },
+            "reasoning_tokens": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Reasoning Tokens"
+            }
+          },
+          "title": "Usage",
+          "type": "object"
+        }
+      },
+      "discriminator": {
+        "mapping": {
+          "error": "#/$defs/ErrorEvent",
+          "part_start": "#/$defs/PartStart",
+          "part_stop": "#/$defs/PartStop",
+          "reasoning_delta": "#/$defs/ReasoningDelta",
+          "response_start": "#/$defs/ResponseStart",
+          "response_stop": "#/$defs/ResponseStop",
+          "text_delta": "#/$defs/TextDelta",
+          "tool_args_delta": "#/$defs/ToolArgsDelta"
+        },
+        "propertyName": "type"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ResponseStart"
+        },
+        {
+          "$ref": "#/$defs/PartStart"
+        },
+        {
+          "$ref": "#/$defs/TextDelta"
+        },
+        {
+          "$ref": "#/$defs/ToolArgsDelta"
+        },
+        {
+          "$ref": "#/$defs/ReasoningDelta"
+        },
+        {
+          "$ref": "#/$defs/PartStop"
+        },
+        {
+          "$ref": "#/$defs/ResponseStop"
+        },
+        {
+          "$ref": "#/$defs/ErrorEvent"
+        }
+      ]
+    },
+    "request": {
+      "$defs": {
+        "ImagePart": {
+          "properties": {
+            "detail": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Detail"
+            },
+            "type": {
+              "const": "image",
+              "default": "image",
+              "title": "Type",
+              "type": "string"
+            },
+            "url": {
+              "title": "Url",
+              "type": "string"
+            }
+          },
+          "required": [
+            "url"
+          ],
+          "title": "ImagePart",
+          "type": "object"
+        },
+        "Message": {
+          "properties": {
+            "content": {
+              "items": {
+                "discriminator": {
+                  "mapping": {
+                    "image": "#/$defs/ImagePart",
+                    "reasoning": "#/$defs/ReasoningPart",
+                    "text": "#/$defs/TextPart",
+                    "tool_call": "#/$defs/ToolCallPart",
+                    "tool_result": "#/$defs/ToolResultPart"
+                  },
+                  "propertyName": "type"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/TextPart"
+                  },
+                  {
+                    "$ref": "#/$defs/ImagePart"
+                  },
+                  {
+                    "$ref": "#/$defs/ToolCallPart"
+                  },
+                  {
+                    "$ref": "#/$defs/ToolResultPart"
+                  },
+                  {
+                    "$ref": "#/$defs/ReasoningPart"
+                  }
+                ]
+              },
+              "title": "Content",
+              "type": "array"
+            },
+            "role": {
+              "enum": [
+                "user",
+                "assistant",
+                "tool"
+              ],
+              "title": "Role",
+              "type": "string"
+            }
+          },
+          "required": [
+            "role"
+          ],
+          "title": "Message",
+          "type": "object"
+        },
+        "ReasoningPart": {
+          "properties": {
+            "signature": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Signature"
+            },
+            "text": {
+              "title": "Text",
+              "type": "string"
+            },
+            "type": {
+              "const": "reasoning",
+              "default": "reasoning",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "text"
+          ],
+          "title": "ReasoningPart",
+          "type": "object"
+        },
+        "ResponseFormat": {
+          "properties": {
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Name"
+            },
+            "schema": {
+              "anyOf": [
+                {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Schema"
+            },
+            "strict": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Strict"
+            },
+            "type": {
+              "default": "text",
+              "enum": [
+                "text",
+                "json_object",
+                "json_schema"
+              ],
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "title": "ResponseFormat",
+          "type": "object"
+        },
+        "TextPart": {
+          "properties": {
+            "text": {
+              "title": "Text",
+              "type": "string"
+            },
+            "type": {
+              "const": "text",
+              "default": "text",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "text"
+          ],
+          "title": "TextPart",
+          "type": "object"
+        },
+        "Tool": {
+          "properties": {
+            "description": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Description"
+            },
+            "name": {
+              "title": "Name",
+              "type": "string"
+            },
+            "parameters": {
+              "additionalProperties": true,
+              "title": "Parameters",
+              "type": "object"
+            },
+            "strict": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Strict"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "title": "Tool",
+          "type": "object"
+        },
+        "ToolCallPart": {
+          "properties": {
+            "arguments": {
+              "default": "{}",
+              "title": "Arguments",
+              "type": "string"
+            },
+            "id": {
+              "title": "Id",
+              "type": "string"
+            },
+            "name": {
+              "title": "Name",
+              "type": "string"
+            },
+            "type": {
+              "const": "tool_call",
+              "default": "tool_call",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "name"
+          ],
+          "title": "ToolCallPart",
+          "type": "object"
+        },
+        "ToolChoice": {
+          "properties": {
+            "mode": {
+              "default": "auto",
+              "enum": [
+                "auto",
+                "none",
+                "required",
+                "tool"
+              ],
+              "title": "Mode",
+              "type": "string"
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Name"
+            }
+          },
+          "title": "ToolChoice",
+          "type": "object"
+        },
+        "ToolResultPart": {
+          "properties": {
+            "call_id": {
+              "title": "Call Id",
+              "type": "string"
+            },
+            "content": {
+              "items": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/TextPart"
+                  },
+                  {
+                    "$ref": "#/$defs/ImagePart"
+                  }
+                ]
+              },
+              "title": "Content",
+              "type": "array"
+            },
+            "is_error": {
+              "default": false,
+              "title": "Is Error",
+              "type": "boolean"
+            },
+            "type": {
+              "const": "tool_result",
+              "default": "tool_result",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "call_id"
+          ],
+          "title": "ToolResultPart",
+          "type": "object"
+        }
+      },
+      "properties": {
+        "extensions": {
+          "additionalProperties": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "max_output_tokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Output Tokens"
+        },
+        "messages": {
+          "items": {
+            "$ref": "#/$defs/Message"
+          },
+          "title": "Messages",
+          "type": "array"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model"
+        },
+        "parallel_tool_calls": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parallel Tool Calls"
+        },
+        "reasoning_budget": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reasoning Budget"
+        },
+        "reasoning_effort": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reasoning Effort"
+        },
+        "response_format": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ResponseFormat"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "seed": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seed"
+        },
+        "stop": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Stop",
+          "type": "array"
+        },
+        "stream": {
+          "default": false,
+          "title": "Stream",
+          "type": "boolean"
+        },
+        "system": {
+          "items": {
+            "$ref": "#/$defs/TextPart"
+          },
+          "title": "System",
+          "type": "array"
+        },
+        "temperature": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Temperature"
+        },
+        "tool_choice": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ToolChoice"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "tools": {
+          "items": {
+            "$ref": "#/$defs/Tool"
+          },
+          "title": "Tools",
+          "type": "array"
+        },
+        "top_k": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Top K"
+        },
+        "top_p": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Top P"
+        },
+        "user": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "User"
+        }
+      },
+      "title": "Request",
+      "type": "object"
+    },
+    "response": {
+      "$defs": {
+        "ImagePart": {
+          "properties": {
+            "detail": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Detail"
+            },
+            "type": {
+              "const": "image",
+              "default": "image",
+              "title": "Type",
+              "type": "string"
+            },
+            "url": {
+              "title": "Url",
+              "type": "string"
+            }
+          },
+          "required": [
+            "url"
+          ],
+          "title": "ImagePart",
+          "type": "object"
+        },
+        "ReasoningPart": {
+          "properties": {
+            "signature": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Signature"
+            },
+            "text": {
+              "title": "Text",
+              "type": "string"
+            },
+            "type": {
+              "const": "reasoning",
+              "default": "reasoning",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "text"
+          ],
+          "title": "ReasoningPart",
+          "type": "object"
+        },
+        "StopReason": {
+          "description": "Why the engine stopped generating.",
+          "enum": [
+            "end_turn",
+            "max_tokens",
+            "stop_sequence",
+            "tool_use",
+            "content_filter",
+            "error"
+          ],
+          "title": "StopReason",
+          "type": "string"
+        },
+        "TextPart": {
+          "properties": {
+            "text": {
+              "title": "Text",
+              "type": "string"
+            },
+            "type": {
+              "const": "text",
+              "default": "text",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "text"
+          ],
+          "title": "TextPart",
+          "type": "object"
+        },
+        "ToolCallPart": {
+          "properties": {
+            "arguments": {
+              "default": "{}",
+              "title": "Arguments",
+              "type": "string"
+            },
+            "id": {
+              "title": "Id",
+              "type": "string"
+            },
+            "name": {
+              "title": "Name",
+              "type": "string"
+            },
+            "type": {
+              "const": "tool_call",
+              "default": "tool_call",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "name"
+          ],
+          "title": "ToolCallPart",
+          "type": "object"
+        },
+        "ToolResultPart": {
+          "properties": {
+            "call_id": {
+              "title": "Call Id",
+              "type": "string"
+            },
+            "content": {
+              "items": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/TextPart"
+                  },
+                  {
+                    "$ref": "#/$defs/ImagePart"
+                  }
+                ]
+              },
+              "title": "Content",
+              "type": "array"
+            },
+            "is_error": {
+              "default": false,
+              "title": "Is Error",
+              "type": "boolean"
+            },
+            "type": {
+              "const": "tool_result",
+              "default": "tool_result",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "call_id"
+          ],
+          "title": "ToolResultPart",
+          "type": "object"
+        },
+        "Usage": {
+          "properties": {
+            "cached_input_tokens": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Cached Input Tokens"
+            },
+            "input_tokens": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Input Tokens"
+            },
+            "output_tokens": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Output Tokens"
+            },
+            "reasoning_tokens": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Reasoning Tokens"
+            }
+          },
+          "title": "Usage",
+          "type": "object"
+        }
+      },
+      "properties": {
+        "created": {
+          "default": 0,
+          "title": "Created",
+          "type": "integer"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model"
+        },
+        "output": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "image": "#/$defs/ImagePart",
+                "reasoning": "#/$defs/ReasoningPart",
+                "text": "#/$defs/TextPart",
+                "tool_call": "#/$defs/ToolCallPart",
+                "tool_result": "#/$defs/ToolResultPart"
+              },
+              "propertyName": "type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/TextPart"
+              },
+              {
+                "$ref": "#/$defs/ImagePart"
+              },
+              {
+                "$ref": "#/$defs/ToolCallPart"
+              },
+              {
+                "$ref": "#/$defs/ToolResultPart"
+              },
+              {
+                "$ref": "#/$defs/ReasoningPart"
+              }
+            ]
+          },
+          "title": "Output",
+          "type": "array"
+        },
+        "stop_reason": {
+          "$ref": "#/$defs/StopReason",
+          "default": "end_turn"
+        },
+        "stop_sequence": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Stop Sequence"
+        },
+        "usage": {
+          "$ref": "#/$defs/Usage"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "Response",
+      "type": "object"
+    }
+  },
+  "title": "SwarmPilot canonical interaction",
+  "type": "object"
+}

@@ -63,6 +63,9 @@ jobs:
       - name: Run black-box dispatch conformance tests
         run: uv run pytest tests/conformance/ -v --tb=short
 
+      - name: Run API translation tests
+        run: uv run pytest tests/api/ -v --tb=short
+
       - name: Run golden vector replay
         run: uv run pytest tests/golden/ -v --tb=short
 
