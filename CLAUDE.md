@@ -24,6 +24,7 @@ uv run pytest tests/predictor/ -v     # predictor only
 uv run pytest tests/planner/ -v       # planner only
 uv run pytest tests/sdk/ -v           # SDK only
 uv run pytest -k "test_name"          # single test
+cargo test --release --manifest-path rust/Cargo.toml   # simulator (Rust)
 
 # Lint & format
 uv run ruff check --fix .             # lint + auto-fix
@@ -96,6 +97,7 @@ swarmpilot-refresh/
 │   │   ├── __init__.py      # Public exports: SwarmPilotClient, models
 │   │   ├── client.py        # SwarmPilotClient (async context manager)
 │   │   └── models.py        # Dataclasses: Instance, InstanceGroup, Process, etc.
+│   ├── sim/                 # Cluster simulator: Python face + data (catalogs, specs)
 │   ├── errors.py            # Centralized error hierarchy (SwarmPilotError, etc.)
 │   ├── graph/               # Client library
 │   └── scripts/             # Deployment utilities
@@ -106,6 +108,7 @@ swarmpilot-refresh/
 │   ├── sdk/                 # SDK client + model unit tests
 │   ├── integration/         # End-to-end SDK integration tests
 │   └── conftest.py          # Shared: --run-integration flag, PyLet fixtures
+├── rust/                    # Cargo workspace: sim-core, sim-cli (swarmpilot-sim)
 ├── examples/                # Example cluster configurations
 ├── docs/                    # Documentation
 ├── pyproject.toml           # Package config (hatchling build, uv tooling)

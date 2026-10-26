@@ -1,0 +1,69 @@
+# Default simulated cluster: 9 hardware configurations, 288 GPUs, 256
+# engine instances. A deployment's instances each take `tp` GPUs on one
+# node.
+
+name: default-256
+seed: 0
+node_groups:
+  - name: h100-llama8b
+    gpu: H100-SXM-80GB
+    gpus_per_node: 8
+    nodes: 4
+    deployments:
+      - {engine: vllm, model: llama-3.1-8b, tp: 1, instances: 32}
+
+  - name: h100-llama70b
+    gpu: H100-SXM-80GB
+    gpus_per_node: 8
+    nodes: 4
+    deployments:
+      - {engine: sglang, model: llama-3.1-70b, tp: 4, instances: 8}
+
+  - name: h200-llama70b
+    gpu: H200-141GB
+    gpus_per_node: 8
+    nodes: 2
+    deployments:
+      - {engine: vllm, model: llama-3.1-70b, tp: 2, instances: 8}
+
+  - name: a100-80-qwen7b
+    gpu: A100-SXM-80GB
+    gpus_per_node: 8
+    nodes: 6
+    deployments:
+      - {engine: vllm, model: qwen2.5-7b, tp: 1, instances: 48}
+
+  - name: a100-40-qwen7b
+    gpu: A100-40GB
+    gpus_per_node: 4
+    nodes: 6
+    deployments:
+      - {engine: sglang, model: qwen2.5-7b, tp: 1, instances: 24}
+
+  - name: l40s-qwen7b
+    gpu: L40S-48GB
+    gpus_per_node: 4
+    nodes: 8
+    deployments:
+      - {engine: vllm, model: qwen2.5-7b, tp: 1, instances: 32}
+
+  - name: a10g-llama3b
+    gpu: A10G-24GB
+    gpus_per_node: 1
+    nodes: 40
+    deployments:
+      - {engine: vllm, model: llama-3.2-3b, tp: 1, instances: 40}
+
+  - name: l4-sdxl
+    gpu: L4-24GB
+    gpus_per_node: 2
+    nodes: 16
+    deployments:
+      - {engine: diffusers, model: sdxl, tp: 1, instances: 32}
+
+  - name: rtx4090-private
+    gpu: RTX4090-24GB
+    gpus_per_node: 2
+    nodes: 16
+    deployments:
+      - {engine: generic, model: generic-small, tp: 1, instances: 32}

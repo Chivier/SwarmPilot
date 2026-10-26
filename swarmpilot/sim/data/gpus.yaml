@@ -1,0 +1,61 @@
+# GPU catalog for the cluster simulator.
+#
+# Numbers are vendor datasheet values: dense BF16/FP16 tensor throughput
+# (no sparsity), HBM/GDDR bandwidth and memory size. The simulator turns
+# them into engine step times with the efficiency factors in engines.yaml.
+
+H100-SXM-80GB:
+  memory_gb: 80
+  bandwidth_tbps: 3.35
+  tflops_bf16: 989
+  nvlink: true
+  source: NVIDIA H100 datasheet (SXM5)
+
+H200-141GB:
+  memory_gb: 141
+  bandwidth_tbps: 4.8
+  tflops_bf16: 989
+  nvlink: true
+  source: NVIDIA H200 datasheet (SXM)
+
+A100-SXM-80GB:
+  memory_gb: 80
+  bandwidth_tbps: 2.039
+  tflops_bf16: 312
+  nvlink: true
+  source: NVIDIA A100 datasheet (SXM4 80GB)
+
+A100-40GB:
+  memory_gb: 40
+  bandwidth_tbps: 1.555
+  tflops_bf16: 312
+  nvlink: true
+  source: NVIDIA A100 datasheet (40GB)
+
+L40S-48GB:
+  memory_gb: 48
+  bandwidth_tbps: 0.864
+  tflops_bf16: 362
+  nvlink: false
+  source: NVIDIA L40S datasheet
+
+A10G-24GB:
+  memory_gb: 24
+  bandwidth_tbps: 0.6
+  tflops_bf16: 125
+  nvlink: false
+  source: NVIDIA A10 datasheet; AWS A10G clocks differ, uncalibrated
+
+L4-24GB:
+  memory_gb: 24
+  bandwidth_tbps: 0.3
+  tflops_bf16: 121
+  nvlink: false
+  source: NVIDIA L4 datasheet
+
+RTX4090-24GB:
+  memory_gb: 24
+  bandwidth_tbps: 1.008
+  tflops_bf16: 165
+  nvlink: false
+  source: NVIDIA Ada GeForce whitepaper (FP16 tensor, FP32 accumulate)
