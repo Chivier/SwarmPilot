@@ -198,78 +198,80 @@ async def lifespan(app: FastAPI):
 
     loop_lag_monitor.start()
 
-    # Initialize WorkerQueueManager with event loop reference
-    global worker_queue_manager
-    loop = asyncio.get_running_loop()
-    thread_callback = task_result_callback.create_thread_callback(loop)
-    start_callback = task_result_callback.create_thread_start_callback(loop)
-    worker_queue_manager = WorkerQueueManager(
-        callback=thread_callback,
-        http_timeout=config.proxy.worker_http_timeout,
-        on_task_started=start_callback,
-        async_dispatch=config.proxy.dispatch_mode != "thread",
-        max_in_flight=config.proxy.max_in_flight,
-    )
-    logger.info("WorkerQueueManager initialized")
+    try:
+        # Initialize WorkerQueueManager with event loop reference
+        global worker_queue_manager
+        loop = asyncio.get_running_loop()
+        thread_callback = task_result_callback.create_thread_callback(loop)
+        start_callback = task_result_callback.create_thread_start_callback(loop)
+        worker_queue_manager = WorkerQueueManager(
+            callback=thread_callback,
+            http_timeout=config.proxy.worker_http_timeout,
+            on_task_started=start_callback,
+            async_dispatch=config.proxy.dispatch_mode != "thread",
+            max_in_flight=config.proxy.max_in_flight,
+        )
+        logger.info("WorkerQueueManager initialized")
 
-    # Wire WorkerQueueManager into proxy router and scheduling strategy
-    if proxy_router_instance:
-        proxy_router_instance._queue_manager = worker_queue_manager
-        logger.info("Proxy router wired to WorkerQueueManager")
-    scheduling_strategy.set_worker_queue_manager(worker_queue_manager)
+        # Wire WorkerQueueManager into proxy router and scheduling strategy
+        if proxy_router_instance:
+            proxy_router_instance._queue_manager = worker_queue_manager
+            logger.info("Proxy router wired to WorkerQueueManager")
+        scheduling_strategy.set_worker_queue_manager(worker_queue_manager)
 
-    # Register online API endpoints from config (if configured)
-    n_online = await _register_online_endpoints(worker_queue_manager)
-    if n_online:
-        logger.info(f"Registered {n_online} online API virtual instance(s)")
+        # Register online API endpoints from config (if configured)
+        n_online = await _register_online_endpoints(worker_queue_manager)
+        if n_online:
+            logger.info(f"Registered {n_online} online API virtual instance(s)")
 
-    # Start planner reporter (if configured)
-    if planner_reporter:
-        await planner_reporter.start()
-        logger.info("Planner reporter started")
+        # Start planner reporter (if configured)
+        if planner_reporter:
+            await planner_reporter.start()
+            logger.info("Planner reporter started")
 
-    # Register with planner (if configured) - PYLET-024
-    planner_registrar = None
-    if config.planner_registration.enabled:
-        planner_registrar = PlannerRegistrar(config.planner_registration)
-        await planner_registrar.start()  # Raises RuntimeError on failure
-        logger.info("Planner registration successful")
+        # Register with planner (if configured) - PYLET-024
+        planner_registrar = None
+        if config.planner_registration.enabled:
+            planner_registrar = PlannerRegistrar(config.planner_registration)
+            await planner_registrar.start()  # Raises RuntimeError on failure
+            logger.info("Planner registration successful")
 
-    logger.success("Scheduler service started successfully")
+        logger.success("Scheduler service started successfully")
 
-    yield
+        yield
 
-    # Shutdown
-    logger.info("Scheduler service shutting down...")
+        # Shutdown
+        logger.info("Scheduler service shutting down...")
 
-    # Deregister from planner first (if registered) - PYLET-024
-    if planner_registrar:
-        await planner_registrar.stop()
-        logger.debug("Planner deregistration complete")
+        # Deregister from planner first (if registered) - PYLET-024
+        if planner_registrar:
+            await planner_registrar.stop()
+            logger.debug("Planner deregistration complete")
 
-    # Shutdown planner reporter first (if configured)
-    if planner_reporter:
-        await planner_reporter.shutdown()
-        logger.debug("Planner reporter shutdown complete")
+        # Shutdown planner reporter first (if configured)
+        if planner_reporter:
+            await planner_reporter.shutdown()
+            logger.debug("Planner reporter shutdown complete")
 
-    # Shutdown worker queue manager
-    if worker_queue_manager:
-        worker_queue_manager.shutdown()
-        await worker_queue_manager.aclose()
-        logger.debug("WorkerQueueManager shutdown complete")
+        # Shutdown worker queue manager
+        if worker_queue_manager:
+            worker_queue_manager.shutdown()
+            await worker_queue_manager.aclose()
+            logger.debug("WorkerQueueManager shutdown complete")
 
-    # Close HTTP clients
-    if training_client:
-        await training_client.close()
-        logger.debug("Training client closed")
+        # Close HTTP clients
+        if training_client:
+            await training_client.close()
+            logger.debug("Training client closed")
 
-    await predictor_client.close()
-    logger.debug("Predictor client closed")
+        await predictor_client.close()
+        logger.debug("Predictor client closed")
 
-    await loop_lag_monitor.stop()
-
-    # TODO: Persist state if needed
-    logger.info("Scheduler service shutdown complete")
+        # TODO: Persist state if needed
+        logger.info("Scheduler service shutdown complete")
+    finally:
+        # Runs even if startup or shutdown above fails.
+        await loop_lag_monitor.stop()
 
 
 app = FastAPI(
