@@ -353,22 +353,23 @@ async fn metrics(State(e): S) -> Response {
     ([("content-type", "text/plain; version=0.0.4")], body).into_response()
 }
 
-/// Check readiness and injected faults. `Err` is the response to send.
-async fn admit(e: &VirtualEngine) -> Result<(), Response> {
+/// Check readiness and injected faults: the response to send instead of
+/// serving the request, if any.
+async fn rejection(e: &VirtualEngine) -> Option<Response> {
     if !e.is_ready() {
-        return Err(error(StatusCode::SERVICE_UNAVAILABLE, "loading"));
+        return Some(error(StatusCode::SERVICE_UNAVAILABLE, "loading"));
     }
     let f = e.faults();
     if f.error_rate > 0.0 && rand::thread_rng().gen::<f64>() < f.error_rate {
         let status =
             StatusCode::from_u16(f.error_status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-        return Err(error(status, "injected fault"));
+        return Some(error(status, "injected fault"));
     }
     if f.stall {
         // Hold the request until the client gives up.
         std::future::pending::<()>().await;
     }
-    Ok(())
+    None
 }
 
 fn chars(v: &Value) -> usize {
@@ -418,7 +419,7 @@ async fn completions(State(e): S, Json(body): Json<Value>) -> Response {
 }
 
 async fn openai(e: Arc<VirtualEngine>, body: Value, chat: bool) -> Response {
-    if let Err(r) = admit(&e).await {
+    if let Some(r) = rejection(&e).await {
         return r;
     }
     if matches!(e.profile.kind, ProfileKind::Diffusion(_)) {
@@ -560,7 +561,7 @@ fn image_work(body: &Value) -> Work {
 }
 
 async fn images(State(e): S, Json(body): Json<Value>) -> Response {
-    if let Err(r) = admit(&e).await {
+    if let Some(r) = rejection(&e).await {
         return r;
     }
     let work = match e.profile.kind {
@@ -589,7 +590,7 @@ async fn fallback(State(e): S, req: HttpRequest) -> Response {
     {
         return error(StatusCode::NOT_FOUND, "no such route");
     }
-    if let Err(r) = admit(&e).await {
+    if let Some(r) = rejection(&e).await {
         return r;
     }
     let mut rx = e.submit(Work::Generic);
