@@ -1,0 +1,58 @@
+{
+ "adapters": [
+  {
+   "adapter": "diffusers",
+   "cases": [
+    {"body":{"n":1,"prompt":"a red fox","size":"512x512"},"features":{"megapixels":0.262144,"n_images":1.0,"steps":30.0},"manifest_features":{"megapixels":0.262144,"n_images":1.0,"steps":30.0},"path":"v1/images/generations"},
+    {"body":{},"features":{"megapixels":1.048576,"n_images":1.0,"steps":30.0},"manifest_features":{"megapixels":1.048576,"n_images":1.0,"steps":30.0},"path":"v1/images/generations"},
+    {"body":{"n":2,"num_inference_steps":8,"size":"640x480"},"features":{"megapixels":0.3072,"n_images":2.0,"steps":8.0},"manifest_features":{"megapixels":0.3072,"n_images":2.0,"steps":8.0},"path":"v1/images/generations"},
+    {"body":{"height":256.0,"size":"1x1","width":512},"features":{"megapixels":0.131072,"n_images":1.0,"steps":30.0},"manifest_features":{"megapixels":0.131072,"n_images":1.0,"steps":30.0},"path":"v1/images/generations"},
+    {"body":{"n":"3","size":"big","width":512},"features":{"megapixels":1.048576,"n_images":1.0,"steps":30.0},"manifest_features":{"megapixels":1.048576,"n_images":1.0,"steps":30.0},"path":"v1/images/generations"}
+   ],
+   "extractors": [
+    {"expr":"coalesce(num_inference_steps, 30)","name":"steps"},
+    {"expr":"product(coalesce(product(width, height), area(size), 1048576), 0.000001)","name":"megapixels"},
+    {"expr":"coalesce(n, 1)","name":"n_images"}
+   ],
+   "feature_names": ["steps","megapixels","n_images"],
+   "workload": "diffusion_image"
+  },
+  {
+   "adapter": "sglang",
+   "cases": [
+    {"body":{"max_tokens":32,"messages":[{"content":"Hello there","role":"user"}],"model":"m"},"features":{"max_tokens":32.0,"prompt_length":11.0},"manifest_features":{"max_tokens":32.0,"prompt_length":11.0},"path":"v1/chat/completions"},
+    {"body":{"model":"m","prompt":"Once upon a time"},"features":{"max_tokens":1024.0,"prompt_length":16.0},"manifest_features":{"max_tokens":1024.0,"prompt_length":16.0},"path":"v1/completions"},
+    {"body":{},"features":{"max_tokens":1024.0,"prompt_length":0.0},"manifest_features":{"max_tokens":1024.0,"prompt_length":0.0},"path":"v1/chat/completions"},
+    {"body":{"max_tokens":32,"prompt":"hello world"},"features":{"max_tokens":32.0,"prompt_length":11.0},"manifest_features":{"max_tokens":32.0,"prompt_length":11.0},"path":"v1/chat/completions"},
+    {"body":{"max_tokens":true,"prompt":["ab","c",7]},"features":{"max_tokens":1024.0,"prompt_length":3.0},"manifest_features":{"max_tokens":1024.0,"prompt_length":3.0},"path":"v1/chat/completions"},
+    {"body":{"max_completion_tokens":7,"messages":[{"content":"abc","role":"user"},{"content":[{"text":"de","type":"text"}],"role":"assistant"},{"content":null},"junk"]},"features":{"max_tokens":7.0,"prompt_length":5.0},"manifest_features":{"max_tokens":7.0,"prompt_length":5.0},"path":"v1/chat/completions"},
+    {"body":{"max_tokens":2.5,"messages":"nope","prompt":"x"},"features":{"max_tokens":2.5,"prompt_length":1.0},"manifest_features":{"max_tokens":2.5,"prompt_length":1.0},"path":"v1/chat/completions"}
+   ],
+   "extractors": [
+    {"expr":"sum(chars(messages[*].content), chars(messages[*].content[*].text), chars(prompt), chars(prompt[*]))","name":"prompt_length"},
+    {"expr":"coalesce(max_tokens, max_completion_tokens, 1024)","name":"max_tokens"}
+   ],
+   "feature_names": ["prompt_length","max_tokens"],
+   "workload": "llm_chat"
+  },
+  {
+   "adapter": "vllm",
+   "cases": [
+    {"body":{"max_tokens":32,"messages":[{"content":"Hello there","role":"user"}],"model":"m"},"features":{"max_tokens":32.0,"prompt_length":11.0},"manifest_features":{"max_tokens":32.0,"prompt_length":11.0},"path":"v1/chat/completions"},
+    {"body":{"model":"m","prompt":"Once upon a time"},"features":{"max_tokens":1024.0,"prompt_length":16.0},"manifest_features":{"max_tokens":1024.0,"prompt_length":16.0},"path":"v1/completions"},
+    {"body":{},"features":{"max_tokens":1024.0,"prompt_length":0.0},"manifest_features":{"max_tokens":1024.0,"prompt_length":0.0},"path":"v1/chat/completions"},
+    {"body":{"max_tokens":32,"prompt":"hello world"},"features":{"max_tokens":32.0,"prompt_length":11.0},"manifest_features":{"max_tokens":32.0,"prompt_length":11.0},"path":"v1/chat/completions"},
+    {"body":{"max_tokens":true,"prompt":["ab","c",7]},"features":{"max_tokens":1024.0,"prompt_length":3.0},"manifest_features":{"max_tokens":1024.0,"prompt_length":3.0},"path":"v1/chat/completions"},
+    {"body":{"max_completion_tokens":7,"messages":[{"content":"abc","role":"user"},{"content":[{"text":"de","type":"text"}],"role":"assistant"},{"content":null},"junk"]},"features":{"max_tokens":7.0,"prompt_length":5.0},"manifest_features":{"max_tokens":7.0,"prompt_length":5.0},"path":"v1/chat/completions"},
+    {"body":{"max_tokens":2.5,"messages":"nope","prompt":"x"},"features":{"max_tokens":2.5,"prompt_length":1.0},"manifest_features":{"max_tokens":2.5,"prompt_length":1.0},"path":"v1/chat/completions"}
+   ],
+   "extractors": [
+    {"expr":"sum(chars(messages[*].content), chars(messages[*].content[*].text), chars(prompt), chars(prompt[*]))","name":"prompt_length"},
+    {"expr":"coalesce(max_tokens, max_completion_tokens, 1024)","name":"max_tokens"}
+   ],
+   "feature_names": ["prompt_length","max_tokens"],
+   "workload": "llm_chat"
+  }
+ ],
+ "version": 1
+}
