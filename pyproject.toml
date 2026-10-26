@@ -83,7 +83,6 @@ dev = [
 # Pytest Configuration
 # =============================================================================
 [tool.pytest.ini_options]
-import_mode = "importlib"
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
@@ -96,6 +95,7 @@ markers = [
     "slow: Slow running tests",
 ]
 addopts = [
+    "--import-mode=importlib",
     "-v",
     "--strict-markers",
     "--tb=short",
@@ -164,6 +164,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "*/tests/*" = ["D100", "D102", "D103", "SIM117"]
+"tests/**/*.py" = ["D100", "D102", "D103", "SIM117"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["swarmpilot"]

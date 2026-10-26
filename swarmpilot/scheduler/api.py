@@ -29,6 +29,8 @@ from pyinstrument import Profiler
 from pyinstrument.renderers.html import HTMLRenderer
 from pyinstrument.renderers.speedscope import SpeedscopeRenderer
 
+from swarmpilot.shared.loop_lag import EventLoopLagMonitor
+
 from .algorithms import get_strategy
 from .config import config
 from .models import (
@@ -189,6 +191,8 @@ async def lifespan(app: FastAPI):
     # TODO: Load persisted state if needed
     # TODO: Connect to external services
 
+    loop_lag_monitor.start()
+
     # Initialize WorkerQueueManager with event loop reference
     global worker_queue_manager
     loop = asyncio.get_running_loop()
@@ -253,6 +257,8 @@ async def lifespan(app: FastAPI):
 
     await predictor_client.close()
     logger.debug("Predictor client closed")
+
+    await loop_lag_monitor.stop()
 
     # TODO: Persist state if needed
     logger.info("Scheduler service shutdown complete")
@@ -319,6 +325,7 @@ queue_info_type = (
 )
 
 # Global state - TODO: Consider dependency injection for better testability
+loop_lag_monitor = EventLoopLagMonitor()
 instance_registry = InstanceRegistry(queue_info_type=queue_info_type)
 task_registry = TaskRegistry()
 websocket_manager = (
@@ -3160,6 +3167,19 @@ async def set_strategy_endpoint(request: StrategySetRequest):
 # ============================================================================
 # Health Check Endpoint
 # ============================================================================
+
+
+@app.get("/v1/metrics/event_loop")
+async def get_event_loop_metrics():
+    """Return the event-loop lag histogram.
+
+    Lag is how late a 50 ms probe wakes up. Anything that blocks the loop,
+    such as a synchronous model fit, shows up here.
+
+    Returns:
+        Dict with sample count, mean, P50, P99, max and bucket counts.
+    """
+    return {"success": True, "event_loop_lag": loop_lag_monitor.snapshot()}
 
 
 @app.get("/v1/health", response_model=HealthResponse)
