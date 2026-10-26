@@ -168,6 +168,8 @@ class TestBuiltinAdapters:
             "software_name": "vllm",
             "software_version": "0.11",
             "hardware_name": "H100",
+            "workload": "llm_chat",
+            "feature_schema": "1",
         }
         assert (m.running_requests, m.waiting_requests, m.kv_cache_usage) == (
             4,

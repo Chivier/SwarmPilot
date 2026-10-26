@@ -5,6 +5,10 @@ Online API endpoints and ad-hoc test servers register with a platform
 so the Scheduler uses this pass-through: plain HTTP JSON or SSE with one
 request in flight, exactly as before adapters existed. It is not
 registered, so it never shows up as a launchable engine.
+
+Its features are the ones the proxy extracted before adapters, and only
+the keys the request actually carries, so online endpoints keep routing
+the way they did. That is why it is exempt from the contract suite.
 """
 
 from __future__ import annotations
@@ -26,7 +30,8 @@ class PassthroughAdapter(EngineAdapter):
 
     name: ClassVar[str] = "passthrough"
     workload: ClassVar[WorkloadSpec] = WorkloadSpec(
-        type=WorkloadType.GENERIC_JOB, feature_names=()
+        type=WorkloadType.GENERIC_JOB,
+        feature_names=("prompt_length", "max_tokens"),
     )
 
     def launch_spec(
@@ -44,5 +49,17 @@ class PassthroughAdapter(EngineAdapter):
         return ()
 
     def features(self, path: str, body: Mapping[str, Any]) -> dict[str, float]:
-        """No features of its own."""
-        return {}
+        """Return prompt length and max tokens when the body has them."""
+        feats: dict[str, float] = {}
+        if "max_tokens" in body:
+            feats["max_tokens"] = body["max_tokens"]
+        messages = body.get("messages")
+        if isinstance(messages, list):
+            feats["prompt_length"] = sum(
+                len(m.get("content", ""))
+                for m in messages
+                if isinstance(m, dict)
+            )
+        elif "prompt" in body:
+            feats["prompt_length"] = len(body["prompt"])
+        return feats

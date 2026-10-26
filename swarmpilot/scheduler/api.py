@@ -93,7 +93,10 @@ from .registry.task_registry import TaskRegistry
 from .services.planner_registrar import PlannerRegistrar
 from .services.task_result_callback import TaskResultCallback
 from .services.websocket_manager import ConnectionManager
-from .services.worker_queue_manager import WorkerQueueManager
+from .services.worker_queue_manager import (
+    WorkerQueueManager,
+    complete_platform_info,
+)
 from .services.worker_queue_thread import QueuedTask
 from .utils.http_error_logger import log_http_error
 
@@ -1022,7 +1025,7 @@ async def register_instance(request: InstanceRegisterRequest):
         instance_id=request.instance_id,
         model_id=request.model_id,
         endpoint=request.endpoint,
-        platform_info=request.platform_info,
+        platform_info=complete_platform_info(request.platform_info),
         status=InstanceStatus.INITIALIZING,
     )
 
@@ -1549,7 +1552,9 @@ async def complete_instance_redeploy(request: InstanceRegisterRequest):
     # Update instance configuration
     existing_instance.model_id = request.model_id
     existing_instance.endpoint = request.endpoint
-    existing_instance.platform_info = request.platform_info
+    existing_instance.platform_info = complete_platform_info(
+        request.platform_info
+    )
 
     # Transition to ACTIVE status
     try:

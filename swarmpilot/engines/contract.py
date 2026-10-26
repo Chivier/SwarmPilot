@@ -148,6 +148,8 @@ def check_adapter(adapter: EngineAdapter) -> list[str]:
         "software_name": name,
         "software_version": "1.2",
         "hardware_name": "H100",
+        "workload": str(spec.type),
+        "feature_schema": str(spec.feature_schema_version),
     }
     if pinfo != expected:
         problems.append(f"platform_info() returned {pinfo}, want {expected}")

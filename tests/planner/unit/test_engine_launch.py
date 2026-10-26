@@ -73,6 +73,8 @@ class TestPlatformInfo:
             "software_name": "vllm",
             "software_version": "0.11",
             "hardware_name": "H100",
+            "workload": "llm_chat",
+            "feature_schema": "1",
         }
 
     def test_probe_unhealthy_is_unknown(self):

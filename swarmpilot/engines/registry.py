@@ -101,6 +101,29 @@ def adapter_names() -> list[str]:
         return sorted(_classes)
 
 
+def find_adapter(name: str) -> EngineAdapter | None:
+    """Return the shared adapter instance for ``name``, or None.
+
+    Cheap enough to call on every request.
+
+    Args:
+        name: Adapter name, e.g. ``"vllm"``.
+
+    Returns:
+        The adapter, or None when no adapter has that name.
+    """
+    adapter = _instances.get(name)
+    if adapter is not None:
+        return adapter
+    with _lock:
+        _discover()
+        if name not in _instances:
+            if name not in _classes:
+                return None
+            _instances[name] = _classes[name]()
+        return _instances[name]
+
+
 def get_adapter(name: str) -> EngineAdapter:
     """Return the shared adapter instance for ``name``.
 
@@ -113,15 +136,12 @@ def get_adapter(name: str) -> EngineAdapter:
     Raises:
         KeyError: If no adapter has that name.
     """
-    with _lock:
-        _discover()
-        if name not in _instances:
-            if name not in _classes:
-                raise KeyError(
-                    f"Unknown engine {name!r}. Available: {sorted(_classes)}"
-                )
-            _instances[name] = _classes[name]()
-        return _instances[name]
+    adapter = find_adapter(name)
+    if adapter is None:
+        with _lock:
+            available = sorted(_classes)
+        raise KeyError(f"Unknown engine {name!r}. Available: {available}")
+    return adapter
 
 
 def reset_registry() -> None:

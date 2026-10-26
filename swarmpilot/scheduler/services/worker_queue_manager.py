@@ -17,7 +17,7 @@ from collections.abc import Callable
 import aiohttp
 from loguru import logger
 
-from swarmpilot.engines import EngineAdapter, get_adapter
+from swarmpilot.engines import EngineAdapter, find_adapter
 from swarmpilot.engines.passthrough import PassthroughAdapter
 from swarmpilot.scheduler.services.async_worker_queue import AsyncWorkerQueue
 from swarmpilot.scheduler.services.worker_queue_thread import (
@@ -39,11 +39,33 @@ def resolve_adapter(engine: str | None) -> EngineAdapter:
         (online endpoints, test servers).
     """
     if engine:
-        try:
-            return get_adapter(engine)
-        except KeyError:
-            pass
+        adapter = find_adapter(engine)
+        if adapter is not None:
+            return adapter
     return _PASSTHROUGH
+
+
+def complete_platform_info(platform_info: dict[str, str]) -> dict[str, str]:
+    """Add the adapter's workload keys to a registered platform info.
+
+    Instances started by the Planner already carry ``workload`` and
+    ``feature_schema``. Ones registered by hand usually do not, so the
+    Scheduler fills them in from the engine's adapter. That keeps predictor
+    models for the same engine under one key, whoever registered the
+    instance. Unknown engines are left as they are.
+
+    Args:
+        platform_info: Platform info from the registration request.
+
+    Returns:
+        A new dict with the workload keys added when an adapter is known.
+    """
+    if "workload" in platform_info:
+        return platform_info
+    adapter = resolve_adapter(platform_info.get("software_name"))
+    if adapter is _PASSTHROUGH:
+        return platform_info
+    return {**platform_info, **adapter.workload_keys()}
 
 
 class WorkerQueueManager:

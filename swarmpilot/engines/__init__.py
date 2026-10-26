@@ -21,6 +21,7 @@ from swarmpilot.engines.base import (
 )
 from swarmpilot.engines.registry import (
     adapter_names,
+    find_adapter,
     get_adapter,
     register_adapter,
     unregister_adapter,
@@ -40,6 +41,7 @@ __all__ = [
     "WorkloadSpec",
     "WorkloadType",
     "adapter_names",
+    "find_adapter",
     "get_adapter",
     "major_minor",
     "register_adapter",

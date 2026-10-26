@@ -312,12 +312,28 @@ class EngineAdapter(abc.ABC):
             hardware_name: GPU type or other hardware label.
 
         Returns:
-            Dict with software_name, software_version, hardware_name.
+            Dict with software_name, software_version (major.minor),
+            hardware_name, workload and feature_schema. The predictor keys
+            its models on all five, so a new engine version or a change in
+            what :meth:`features` means starts a fresh model.
         """
         return {
             "software_name": self.name,
             "software_version": major_minor(version),
             "hardware_name": hardware_name,
+            **self.workload_keys(),
+        }
+
+    @classmethod
+    def workload_keys(cls) -> dict[str, str]:
+        """Return the workload type and feature schema version as strings.
+
+        Returns:
+            Dict with ``workload`` and ``feature_schema``.
+        """
+        return {
+            "workload": str(cls.workload.type),
+            "feature_schema": str(cls.workload.feature_schema_version),
         }
 
     async def version(self, client: httpx.AsyncClient, endpoint: str) -> str:

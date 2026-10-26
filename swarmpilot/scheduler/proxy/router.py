@@ -27,6 +27,9 @@ from loguru import logger
 from starlette.background import BackgroundTask
 
 from swarmpilot.scheduler.services.async_worker_queue import StreamStart
+from swarmpilot.scheduler.services.worker_queue_manager import (
+    resolve_adapter,
+)
 from swarmpilot.scheduler.services.worker_queue_thread import QueuedTask
 
 if TYPE_CHECKING:
@@ -50,6 +53,27 @@ PRIORITY_PATHS: set[str] = {
     "ping",
     "version",
 }
+
+
+def _extract_features(
+    platform_info: dict[str, str], path: str, body: dict[str, Any]
+) -> dict[str, float]:
+    """Return the adapter's predictor features for one request.
+
+    Args:
+        platform_info: Platform info of the instances serving the model.
+        path: Request path without the leading slash.
+        body: Parsed JSON body.
+
+    Returns:
+        Feature name to value, or nothing if the body is malformed.
+    """
+    adapter = resolve_adapter(platform_info.get("software_name"))
+    try:
+        return adapter.features(path, body)
+    except (TypeError, ValueError, AttributeError) as e:
+        logger.debug(f"[PROXY] No features for /{path}: {e}")
+        return {}
 
 
 class ProxyRouter:
@@ -166,19 +190,12 @@ class ProxyRouter:
                 "method": method,
                 "proxy": True,
             }
-            # Extract predictor features from request body so the
-            # scheduling strategy can call the trained predictor.
-            if "max_tokens" in body:
-                metadata["max_tokens"] = body["max_tokens"]
-            messages = body.get("messages")
-            if isinstance(messages, list):
-                metadata["prompt_length"] = sum(
-                    len(m.get("content", ""))
-                    for m in messages
-                    if isinstance(m, dict)
-                )
-            elif "prompt" in body:
-                metadata["prompt_length"] = len(body["prompt"])
+            # The engine's adapter turns the body into predictor features,
+            # so the scheduling strategy can call the trained predictor and
+            # training samples use the same features later.
+            metadata.update(
+                _extract_features(all_instances[0].platform_info, path, body)
+            )
             # Forward experiment mode fields from body to scheduling metadata
             for _exp_key in (
                 "exp_runtime",

@@ -46,6 +46,11 @@ class ModelStorage:
 
         Format: {model_id}__{software}-{version}__{hardware}__{prediction_type}
 
+        When ``platform_info`` carries a ``workload`` (set by engine
+        adapters), the key also holds the workload and feature schema:
+        {model_id}__{workload}__{software}-{version}__{hardware}__fs{N}__{type}
+        so a model trained on other features is never reused.
+
         Args:
             model_id: Model identifier.
             platform_info: Platform information dict with software_name,
@@ -57,6 +62,13 @@ class ModelStorage:
         """
         software = f"{platform_info['software_name']}-{platform_info['software_version']}"
         hardware = platform_info["hardware_name"]
+        workload = platform_info.get("workload")
+        if workload:
+            schema = platform_info.get("feature_schema") or "0"
+            return (
+                f"{model_id}__{workload}__{software}__{hardware}"
+                f"__fs{schema}__{prediction_type}"
+            )
         return f"{model_id}__{software}__{hardware}__{prediction_type}"
 
     def save_model(
