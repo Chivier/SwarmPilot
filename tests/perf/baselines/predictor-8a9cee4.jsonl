@@ -1,0 +1,4 @@
+{"case": "default(config={}) as TrainingClient", "train_samples": 100, "train_seconds": 2.42, "predict_ms_per_call": 0.401, "empirical_coverage": {"0.5": 0.58, "0.9": 0.878, "0.95": 0.924, "0.99": 0.956}}
+{"case": "augmentation off", "train_samples": 100, "train_seconds": 1.33, "predict_ms_per_call": 0.288, "empirical_coverage": {"0.5": 0.564, "0.9": 0.806, "0.95": 0.81, "0.99": 0.828}}
+{"case": "default, 2000 samples", "train_samples": 2000, "train_seconds": 5.71, "predict_ms_per_call": 0.299, "empirical_coverage": {"0.5": 0.498, "0.9": 0.944, "0.95": 0.978, "0.99": 0.994}}
+{"case": "augmentation off, 2000 samples", "train_samples": 2000, "train_seconds": 2.13, "predict_ms_per_call": 0.304, "empirical_coverage": {"0.5": 0.536, "0.9": 0.906, "0.95": 0.944, "0.99": 0.984}}

@@ -49,11 +49,17 @@ def git_commit() -> str:
         return "unknown"
 
 
-def wait_http(url: str, timeout: float = 60.0) -> None:
+def wait_http(
+    url: str, timeout: float = 60.0, proc: subprocess.Popen | None = None
+) -> None:
     """Poll ``url`` until it answers 2xx or ``timeout`` passes."""
     deadline = time.monotonic() + timeout
     last: Exception | None = None
     while time.monotonic() < deadline:
+        if proc is not None and proc.poll() is not None:
+            raise RuntimeError(
+                f"process for {url} exited with {proc.returncode}"
+            )
         try:
             if httpx.get(url, timeout=1.0).is_success:
                 return
@@ -77,7 +83,7 @@ def spawn(
         args, env=full_env, stdout=log, stderr=subprocess.STDOUT, cwd=REPO_ROOT
     )
     try:
-        wait_http(ready_url)
+        wait_http(ready_url, proc=proc)
         yield proc
     finally:
         proc.terminate()

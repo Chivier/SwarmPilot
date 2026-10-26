@@ -147,6 +147,7 @@ app = Starlette(
 
 def main() -> None:
     """Run the fake engine under uvicorn."""
+    global LATENCY_MS, TOKENS, MS_PER_STEP
     import uvicorn
 
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
@@ -157,7 +158,6 @@ def main() -> None:
     parser.add_argument("--ms-per-step", type=float, default=MS_PER_STEP)
     args = parser.parse_args()
 
-    global LATENCY_MS, TOKENS, MS_PER_STEP
     LATENCY_MS, TOKENS, MS_PER_STEP = (
         args.latency_ms,
         args.tokens,
