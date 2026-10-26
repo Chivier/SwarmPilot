@@ -230,7 +230,8 @@ async def test_random_choices_are_random(tmp_path) -> None:
             reg = InstanceRegistry(queue_info_type=qtype)
             for inst in insts:
                 await reg.register(inst)
-            strategy = get_strategy(name, predictor, reg)
+            # Seeded so the 1% chi-square false alarm cannot flake CI.
+            strategy = get_strategy(name, predictor, reg, seed=0)
             counts: Counter = Counter()
             for _ in range(n):
                 res = await strategy.schedule_task("m", md, insts)

@@ -167,37 +167,84 @@ class TestWarmModelProbabilistic:
         )
 
     @pytest.mark.asyncio
-    async def test_warm_checks_all_platforms(
+    async def test_mixed_pool_predicts_warm_and_round_robins_cold(
         self, strategy, mock_storage, make_instance
     ):
-        """All platforms must be warm to delegate to probabilistic."""
-        # Two different platforms
-        inst_a = make_instance(
-            "inst-a",
-            {
-                "software_name": "docker",
-                "software_version": "20.10",
-                "hardware_name": "gpu-A",
-            },
-        )
-        inst_b = make_instance(
-            "inst-b",
-            {
-                "software_name": "docker",
-                "software_version": "20.10",
-                "hardware_name": "gpu-B",
-            },
+        """Warm platforms route by prediction while another is cold."""
+        gpu_a = {
+            "software_name": "docker",
+            "software_version": "20.10",
+            "hardware_name": "gpu-A",
+        }
+        gpu_b = {**gpu_a, "hardware_name": "gpu-B"}
+        warm = [make_instance("a1", gpu_a), make_instance("a2", gpu_a)]
+        cold = make_instance("b1", gpu_b)
+        pool = [warm[0], cold, warm[1]]
+        mock_storage.model_exists.side_effect = lambda key: key == "key-gpu-A"
+        mock_storage.generate_model_key.side_effect = (
+            lambda model_id, platform_info, prediction_type: (
+                f"key-{platform_info['hardware_name']}"
+            )
         )
 
-        # First call: both cold → round-robin
-        mock_storage.model_exists.return_value = False
-        result = await strategy.schedule_task("model-1", {}, [inst_a, inst_b])
-        assert result.selected_prediction is None
+        async def probabilistic(model_id, metadata, insts, task_id=None):
+            assert insts == warm
+            return ScheduleResult(
+                selected_instance_id="a2",
+                selected_prediction=Prediction(
+                    instance_id="a2", predicted_time_ms=5.0
+                ),
+            )
 
-        # Second call: only one warm → still round-robin
+        strategy._probabilistic.schedule_task = AsyncMock(
+            side_effect=probabilistic
+        )
+        picks = [
+            (await strategy.schedule_task("m", {}, pool)).selected_instance_id
+            for _ in range(30)
+        ]
+        # The cold instance keeps its round-robin share; the warm turns go
+        # through the predictor, over warm instances only.
+        assert picks.count("b1") == 10
+        assert strategy._probabilistic.schedule_task.await_count == 20
+
+    @pytest.mark.asyncio
+    async def test_prediction_failure_falls_back_to_round_robin(
+        self, strategy, mock_storage, make_instance
+    ):
+        gpu_a = {
+            "software_name": "docker",
+            "software_version": "20.10",
+            "hardware_name": "gpu-A",
+        }
+        pool = [
+            make_instance("a1", gpu_a),
+            make_instance("b1", {**gpu_a, "hardware_name": "gpu-B"}),
+        ]
         mock_storage.model_exists.side_effect = [True, False]
-        result = await strategy.schedule_task("model-1", {}, [inst_a, inst_b])
+        strategy._probabilistic.schedule_task = AsyncMock(
+            side_effect=RuntimeError("predictor down")
+        )
+        result = await strategy.schedule_task("m", {}, pool)
+        assert result.selected_instance_id == "a1"
         assert result.selected_prediction is None
+
+    @pytest.mark.asyncio
+    async def test_experiment_mode_counts_as_warm(
+        self, strategy, mock_storage, instances
+    ):
+        """Experiment-mode requests need no trained model."""
+        mock_storage.model_exists.return_value = False
+        strategy._probabilistic.schedule_task = AsyncMock(
+            return_value=ScheduleResult(
+                selected_instance_id="inst-2", selected_prediction=None
+            )
+        )
+        md = {"exp_runtime": 100.0}
+        await strategy.schedule_task("m", md, instances)
+        strategy._probabilistic.schedule_task.assert_awaited_once_with(
+            "m", md, instances, task_id=None
+        )
 
 
 # ============================================================================

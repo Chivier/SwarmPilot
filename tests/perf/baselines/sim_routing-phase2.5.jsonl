@@ -1,0 +1,7 @@
+{"strategy": "oracle_least_work", "mode": "ref", "p50_s": 1.55, "p95_s": 7.18, "p99_s": 10.91, "max_share": null}
+{"strategy": "round_robin", "mode": "as_is", "p50_s": 3.86, "p95_s": 42.0, "p99_s": 52.67, "max_share": 0.125, "residual_ms": 0.0}
+{"strategy": "random", "mode": "as_is", "p50_s": 5.99, "p95_s": 33.62, "p99_s": 65.0, "max_share": 0.138, "residual_ms": 0.0}
+{"strategy": "po2", "mode": "as_is", "p50_s": 2.72, "p95_s": 12.45, "p99_s": 18.78, "max_share": 0.139, "residual_ms": 0.0}
+{"strategy": "min_time", "mode": "as_is", "p50_s": 1.66, "p95_s": 7.8, "p99_s": 12.62, "max_share": 0.15, "residual_ms": 0.0}
+{"strategy": "probabilistic", "mode": "as_is", "p50_s": 1.66, "p95_s": 7.92, "p99_s": 12.5, "max_share": 0.142, "residual_ms": 0.0}
+{"strategy": "adaptive_bootstrap", "mode": "as_is", "p50_s": 1.66, "p95_s": 7.92, "p99_s": 12.5, "max_share": 0.142, "residual_ms": 0.0}
