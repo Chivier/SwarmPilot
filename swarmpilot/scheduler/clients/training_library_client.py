@@ -13,10 +13,22 @@ Online retraining keeps the Scheduler responsive and its models sound:
 - A random holdout from the window validates the candidate. A quantile
   model installs only if its q0.9 coverage on the holdout is within
   ``coverage_tolerance`` of 0.9 and its q0.99 coverage is at least
-  ``min_q99_coverage``. An expect-error model installs only if its holdout
-  error is no worse than the installed model's.
+  ``min_q99_coverage``, or if it beats the installed model on the holdout
+  (lower q0.9 pinball loss, q0.9 coverage no further from 0.9), as after
+  drift. An expect-error model installs only if its holdout error is no
+  worse than the installed model's.
 - Installing writes the model file atomically, then drops the cache entry.
 - Runtime augmentation is off: online samples carry real variance.
+
+When to retrain (plan item 3.1). A platform with no model trains as soon
+as a batch is full. A platform with a model retrains only when the drift
+detector (``swarmpilot.scheduler.services.drift``) sees its tail loss or
+miss rate rise. Its window then restarts from the samples that showed the
+drift, and it retrains once ``recovery_samples`` post-drift samples are in,
+so the new model is not fitted on the old distribution. After any install
+the model is refitted each time its data doubles, up to the window size,
+so one first fitted on 100 samples keeps improving. ``retrain_mode``
+``"batch"`` restores the old behaviour of retraining every full batch.
 """
 
 from __future__ import annotations
@@ -43,6 +55,7 @@ from swarmpilot.scheduler.clients.preprocessor_config import (
     PreprocessorChainBuilder,
 )
 from swarmpilot.scheduler.registry.queue_sketch import DEFAULT_QUANTILES
+from swarmpilot.scheduler.services.drift import DriftDetector, tail_estimate
 
 # Fewer holdout samples than this cannot judge a candidate; it then installs
 # only where no model exists yet.
@@ -83,6 +96,9 @@ class TrainingClient:
         min_q99_coverage: float = 0.97,
         seed: int | None = None,
         warm_up: bool = True,
+        retrain_mode: str = "drift",
+        drift: DriftDetector | None = None,
+        recovery_samples: int = 100,
     ):
         """Initialize training client.
 
@@ -101,6 +117,12 @@ class TrainingClient:
             seed: Seed for the holdout split (experiments only).
             warm_up: Run a tiny fit on the training thread now, so the
                 first real retrain does not import anything.
+            retrain_mode: "drift" retrains a platform that has a model only
+                when it drifts; "batch" retrains on every full batch.
+            drift: Drift detector; a default one when not given.
+            recovery_samples: Post-drift samples to collect before the
+                retrain. With the default holdout of 0.2 this keeps a
+                holdout of at least 20.
         """
         self._storage = storage
         self._cache = cache
@@ -120,6 +142,26 @@ class TrainingClient:
 
         self._samples_buffer: list[TrainingSample] = []
         self._windows: dict[tuple[str, str], deque[TrainingSample]] = {}
+        if retrain_mode not in ("drift", "batch"):
+            raise ValueError(f"Unknown retrain_mode: {retrain_mode}")
+        self.retrain_mode = retrain_mode
+        self.drift = drift or DriftDetector()
+        self.recovery_samples = recovery_samples
+        # Drifted keys: samples seen since the drift was detected.
+        self._recovering: dict[tuple[str, str], int] = {}
+        # Drifted keys whose window must restart at the drift.
+        self._trim: set[tuple[str, str]] = set()
+        # Window size at the last install, and samples seen since, per key.
+        # A model is refitted each time its data doubles, up to the window
+        # size, so a model first fitted on a small sample keeps improving.
+        self._fit_size: dict[tuple[str, str], int] = {}
+        self._since_fit: dict[tuple[str, str], int] = {}
+        # Drifted keys: runtime / predicted median of post-drift tasks, and
+        # the pre-drift window with the scale learnt from those ratios.
+        self._ratios: dict[tuple[str, str], list[float]] = {}
+        self._transfer: dict[
+            tuple[str, str], tuple[float, list[TrainingSample]]
+        ] = {}
         self._last_flush_samples: int = 0
         self.last_reports: dict[str, FitReport] = {}
         # One fit at a time, off the event loop.
@@ -142,20 +184,30 @@ class TrainingClient:
             f"chain_builder={'yes' if chain_builder else 'no'})"
         )
 
+    @staticmethod
+    def _key(model_id: str, platform_info: dict[str, str]) -> tuple[str, str]:
+        return (model_id, json.dumps(platform_info, sort_keys=True))
+
     def add_sample(
         self,
         model_id: str,
         platform_info: dict[str, str],
         features: dict[str, Any],
         actual_runtime_ms: float,
+        predicted_quantiles: dict[float, float] | None = None,
+        predicted_time_ms: float | None = None,
+        predicted_error_ms: float | None = None,
     ) -> None:
-        """Add a training sample to the buffer.
+        """Add a training sample and score the prediction it was routed by.
 
         Args:
             model_id: Model/tool identifier.
             platform_info: Platform information.
             features: Task features.
             actual_runtime_ms: Actual execution time in ms.
+            predicted_quantiles: Quantile prediction used to route the task.
+            predicted_time_ms: Expected runtime used to route the task.
+            predicted_error_ms: Error margin of ``predicted_time_ms``.
         """
         sample = TrainingSample(
             model_id=model_id,
@@ -166,73 +218,166 @@ class TrainingClient:
         )
         self._samples_buffer.append(sample)
 
-        logger.debug(
-            f"Added training sample for {model_id} on "
-            f"{platform_info.get('hardware_name', '?')}: "
-            f"{actual_runtime_ms:.2f}ms "
-            f"(buffer size: {len(self._samples_buffer)})"
+        key = self._key(model_id, platform_info)
+        self._since_fit[key] = self._since_fit.get(key, 0) + 1
+        if key in self._recovering:
+            self._recovering[key] += 1
+            median = tail_estimate(
+                0.5, predicted_quantiles, predicted_time_ms, None
+            )
+            if median and median > 0:
+                self._ratios[key].append(actual_runtime_ms / median)
+            return
+        tail = tail_estimate(
+            self.drift.tau,
+            predicted_quantiles,
+            predicted_time_ms,
+            predicted_error_ms,
+        )
+        if (
+            self.retrain_mode == "drift"
+            and tail is not None
+            and self.drift.observe(key, features, tail, actual_runtime_ms)
+        ):
+            # Only samples after the detection count: a large shift is
+            # caught within a few tasks, so the ones before it are mostly
+            # from the old distribution.
+            self._recovering[key] = 0
+            self._ratios[key] = []
+            self._trim.add(key)
+            logger.warning(
+                f"Predictor drift for {model_id} on "
+                f"{platform_info.get('hardware_name', '?')}; retraining "
+                f"after {self.recovery_samples} recent samples"
+            )
+
+    def _is_warm(self, model_id: str, platform_info: dict[str, str]) -> bool:
+        return all(
+            self._storage.model_exists(
+                self._storage.generate_model_key(
+                    model_id=model_id,
+                    platform_info=platform_info,
+                    prediction_type=t,
+                )
+            )
+            for t in self.prediction_types
         )
 
+    def _due(self) -> set[tuple[str, str]] | None:
+        """Keys to retrain now; None means every key in the buffer."""
+        due = {
+            k for k, n in self._recovering.items() if n >= self.recovery_samples
+        }
+        if self.retrain_mode == "drift":
+            due |= {
+                k
+                for k, n in self._fit_size.items()
+                if k not in self._recovering
+                and n < self.window_size
+                and self._since_fit.get(k, 0) >= n
+            }
+        if len(self._samples_buffer) >= self.batch_size:
+            if self.retrain_mode == "batch":
+                return None
+            due |= {
+                self._key(s.model_id, s.platform_info)
+                for s in self._samples_buffer
+                if not self._is_warm(s.model_id, s.platform_info)
+            }
+        return due
+
     async def flush_if_ready(self) -> bool:
-        """Flush buffer to train models if batch size reached.
+        """Retrain what is due (see the module docstring).
 
         Returns:
-            True if training was triggered, False otherwise.
+            True if training ran and succeeded, False otherwise.
         """
+        due = self._due()
+        if due is None or due:
+            return await self.flush(only=due)
         if len(self._samples_buffer) >= self.batch_size:
-            return await self.flush()
+            self._absorb()
         return False
 
     def start_flush_if_ready(self) -> bool:
-        """Start a background flush if the batch is full and none is running.
+        """Start a background retrain if one is due and none is running.
 
         For the result callback: it must not wait for a retrain.
 
         Returns:
-            True if a flush was started.
+            True if a retrain was started.
         """
-        if len(self._samples_buffer) < self.batch_size:
-            return False
         if self._background is not None and not self._background.done():
             return False
-        self._background = asyncio.get_running_loop().create_task(self.flush())
+        due = self._due()
+        if due is not None and not due:
+            if len(self._samples_buffer) >= self.batch_size:
+                self._absorb()
+            return False
+        self._background = asyncio.get_running_loop().create_task(
+            self.flush(only=due)
+        )
         return True
 
-    async def flush(self, force: bool = False) -> bool:
-        """Train models with all buffered samples.
-
-        Args:
-            force: If True, train even below min_samples threshold.
-
-        Returns:
-            True if all training succeeded, False otherwise.
-        """
-        if not self._samples_buffer:
-            logger.debug("No training samples to flush")
-            return False
-
-        if not force and len(self._samples_buffer) < self.min_samples:
-            logger.debug(
-                f"Buffer has {len(self._samples_buffer)} samples, "
-                f"below minimum of {self.min_samples}. Skipping training."
-            )
-            return False
-
+    def _absorb(self) -> set[tuple[str, str]]:
+        """Move buffered samples into their windows; return touched keys."""
         batch, self._samples_buffer = self._samples_buffer, []
-        touched: dict[tuple[str, str], deque[TrainingSample]] = {}
+        touched: set[tuple[str, str]] = set()
         for sample in batch:
-            platform_key = json.dumps(sample.platform_info, sort_keys=True)
-            key = (sample.model_id, platform_key)
+            key = self._key(sample.model_id, sample.platform_info)
             window = self._windows.get(key)
             if window is None:
                 window = deque(maxlen=self.window_size)
                 self._windows[key] = window
             window.append(sample)
-            touched[key] = window
+            touched.add(key)
+        for key in self._trim:
+            window = self._windows.get(key)
+            if window is not None:
+                n = self._recovering.get(key, 0)
+                old = list(window)
+                recent = old[-n:] if n else []
+                window.clear()
+                window.extend(recent)
+                self._transfer[key] = (1.0, old[: len(old) - n])
+        self._trim.clear()
+        self._last_flush_samples = len(batch)
+        return touched
+
+    async def flush(
+        self,
+        force: bool = False,
+        only: set[tuple[str, str]] | None = None,
+    ) -> bool:
+        """Absorb buffered samples and train models on their windows.
+
+        Args:
+            force: If True, train even below min_samples threshold.
+            only: Train just these (model, platform) keys; None trains
+                every key with buffered samples.
+
+        Returns:
+            True if all training succeeded, False otherwise.
+        """
+        if only is None:
+            if not self._samples_buffer:
+                logger.debug("No training samples to flush")
+                return False
+            if not force and len(self._samples_buffer) < self.min_samples:
+                logger.debug(
+                    f"Buffer has {len(self._samples_buffer)} samples, "
+                    f"below minimum of {self.min_samples}. Skipping training."
+                )
+                return False
+
+        n_batch = len(self._samples_buffer)
+        touched = self._absorb()
+        keys = touched if only is None else set(only)
+        keys = {k for k in keys if self._windows.get(k)}
 
         logger.info(
-            f"Flushing {len(batch)} training samples "
-            f"across {len(touched)} model-platform combinations"
+            f"Flushing {n_batch} training samples; training "
+            f"{len(keys)} model-platform combinations"
         )
 
         success_count = 0
@@ -240,13 +385,20 @@ class TrainingClient:
         loop = asyncio.get_running_loop()
 
         async with self._flush_lock:
-            for (model_id, _platform_key), window in touched.items():
-                samples = list(window)
+            # Samples keep arriving while a fit runs on its thread, and one
+            # may flag drift. Only a recovery that began before the fit is
+            # finished by it; a newer one keeps its count and its trim.
+            recovering = {k for k in keys if k in self._recovering}
+            for key in keys:
+                model_id = key[0]
+                samples = list(self._windows[key])
                 platform_info = samples[0].platform_info
                 features_list = [
                     {**s.features, "runtime_ms": s.actual_runtime_ms}
                     for s in samples
                 ]
+                extra = self._transfer_rows(key, len(samples))
+                installed_any = False
                 for prediction_type in self.prediction_types:
                     try:
                         report = await loop.run_in_executor(
@@ -256,6 +408,7 @@ class TrainingClient:
                             platform_info,
                             prediction_type,
                             [dict(f) for f in features_list],
+                            [dict(f) for f in extra],
                         )
                         success_count += 1
                     except Exception as e:
@@ -266,23 +419,62 @@ class TrainingClient:
                         )
                         failure_count += 1
                         continue
-                    key = self._storage.generate_model_key(
+                    model_key = self._storage.generate_model_key(
                         model_id=model_id,
                         platform_info=platform_info,
                         prediction_type=prediction_type,
                     )
-                    self.last_reports[key] = report
+                    self.last_reports[model_key] = report
                     if report.installed:
+                        installed_any = True
                         # The file is already swapped; drop the stale copy.
-                        self._cache.invalidate(key)
+                        self._cache.invalidate(model_key)
+                self._since_fit[key] = 0
+                if installed_any:
+                    self._fit_size[key] = len(samples)
+                if key in recovering:
+                    del self._recovering[key]
+                    self._ratios.pop(key, None)
+                    if installed_any:
+                        self.drift.reset(key)
+                    else:
+                        self.drift.rearm(key)
+                elif installed_any and key not in self._recovering:
+                    self.drift.reset(key)
 
         logger.info(
             f"Training complete: {success_count} succeeded, "
-            f"{failure_count} failed, {len(batch)} samples consumed"
+            f"{failure_count} failed, {n_batch} samples consumed"
         )
-
-        self._last_flush_samples = len(batch)
         return failure_count == 0
+
+    def _transfer_rows(
+        self, key: tuple[str, str], n_real: int
+    ) -> list[dict[str, Any]]:
+        """Pre-drift samples rescaled to the new runtimes, as extra rows.
+
+        After drift the window restarts, so the first refits see few real
+        samples. Most shifts are close to multiplicative (a slower GPU,
+        contention, a new engine version), so the pre-drift window, scaled
+        by the median of runtime / predicted median over post-drift tasks,
+        fills the window until real samples do. Validation uses real
+        samples only.
+        """
+        if key not in self._transfer:
+            return []
+        scale, old = self._transfer[key]
+        ratios = self._ratios.get(key)
+        if ratios:
+            scale = float(np.median(ratios))
+            self._transfer[key] = (scale, old)
+        room = self.window_size - n_real
+        if room <= 0:
+            del self._transfer[key]
+            return []
+        return [
+            {**s.features, "runtime_ms": s.actual_runtime_ms * scale}
+            for s in old[-room:]
+        ]
 
     def _warm_up(self) -> None:
         """Fit a throwaway model of each type to load the code it needs."""
@@ -311,6 +503,7 @@ class TrainingClient:
         platform_info: dict[str, str],
         prediction_type: str,
         features_list: list[dict[str, Any]],
+        extra_train: list[dict[str, Any]] | None = None,
     ) -> FitReport:
         """Fit, validate and maybe install one model. Runs off the loop.
 
@@ -322,6 +515,7 @@ class TrainingClient:
             platform_info: Platform info dict.
             prediction_type: Type of prediction model.
             features_list: Training data with runtime_ms.
+            extra_train: Rows used only for fitting, never held out.
 
         Returns:
             What happened to the candidate.
@@ -335,16 +529,22 @@ class TrainingClient:
             raise ValueError(f"Invalid prediction type: {prediction_type}")
 
         # Apply V2 preprocessor chain if configured
+        extra_train = list(extra_train or [])
         if self._chain_builder is not None:
             chain = self._chain_builder.get_chain(model_id)
             if chain is not None:
-                processed_list = []
-                for sample in features_list:
-                    runtime_ms = sample.pop("runtime_ms")
-                    processed = chain.transform(sample)
-                    processed["runtime_ms"] = runtime_ms
-                    processed_list.append(processed)
-                features_list = processed_list
+
+                def transform(rows: list[dict[str, Any]]) -> list[dict]:
+                    out = []
+                    for sample in rows:
+                        runtime_ms = sample.pop("runtime_ms")
+                        processed = chain.transform(sample)
+                        processed["runtime_ms"] = runtime_ms
+                        out.append(processed)
+                    return out
+
+                features_list = transform(features_list)
+                extra_train = transform(extra_train)
 
         model_key = self._storage.generate_model_key(
             model_id=model_id,
@@ -368,7 +568,7 @@ class TrainingClient:
             # Cold platform: a model fitted on everything beats none.
             n_holdout = 0
         holdout = [features_list[k] for k in order[:n_holdout]]
-        train = [features_list[k] for k in order[n_holdout:]]
+        train = [features_list[k] for k in order[n_holdout:]] + extra_train
 
         logger.debug(
             f"Training {model_id} ({prediction_type}) on "
@@ -445,24 +645,56 @@ class TrainingClient:
             {k: v for k, v in h.items() if k != "runtime_ms"} for h in holdout
         ]
         if prediction_type == "quantile":
-            preds = [predictor.predict(r)["quantiles"] for r in rows]
-            cover = {
-                q: float(
-                    np.mean(
-                        actual <= np.array([float(p[str(q)]) for p in preds])
+
+            def score(model: Any) -> tuple[dict[float, float], float]:
+                preds = [model.predict(r)["quantiles"] for r in rows]
+                cover = {
+                    q: float(
+                        np.mean(
+                            actual
+                            <= np.array([float(p[str(q)]) for p in preds])
+                        )
                     )
-                )
-                for q in (0.9, 0.99)
-            }
+                    for q in (0.9, 0.99)
+                }
+                q90 = np.array([float(p["0.9"]) for p in preds])
+                diff = actual - q90
+                pinball = float(np.mean(np.maximum(0.9 * diff, -0.1 * diff)))
+                return cover, pinball
+
+            cover, pinball = score(predictor)
             metrics = {
                 "q0.9_coverage": cover[0.9],
                 "q0.99_coverage": cover[0.99],
+                "q0.9_pinball_ms": pinball,
             }
+            on_target = abs(cover[0.9] - 0.9) <= self.coverage_tolerance and (
+                cover[0.99] >= self.min_q99_coverage
+            )
+            if on_target:
+                return True, "coverage within target", metrics
+            # Off target, but the installed model may be worse still (it
+            # has drifted): then the candidate is the better of the two.
+            current = self._load_installed(model_key, prediction_type)
+            if current is not None:
+                try:
+                    old_cover, old_pinball = score(current)
+                except Exception:
+                    old_cover, old_pinball = None, None
+                if old_cover is not None:
+                    metrics["installed_q0.9_coverage"] = old_cover[0.9]
+                    metrics["installed_q0.9_pinball_ms"] = old_pinball
+                    if pinball < old_pinball and abs(cover[0.9] - 0.9) <= abs(
+                        old_cover[0.9] - 0.9
+                    ):
+                        return (
+                            True,
+                            "better than the installed model on the holdout",
+                            metrics,
+                        )
             if abs(cover[0.9] - 0.9) > self.coverage_tolerance:
                 return False, f"q0.9 coverage {cover[0.9]:.3f}", metrics
-            if cover[0.99] < self.min_q99_coverage:
-                return False, f"q0.99 coverage {cover[0.99]:.3f}", metrics
-            return True, "coverage within target", metrics
+            return False, f"q0.99 coverage {cover[0.99]:.3f}", metrics
 
         def mae(model: Any) -> float:
             got = np.array(

@@ -514,3 +514,155 @@ class TestBackendErrorForwarding:
             or "Backend request failed" in error_msg
         )
         loop.close()
+
+
+class TestParentHeader:
+    """Calls made on behalf of another model's task (item 3.4)."""
+
+    def test_parent_header_is_counted_and_kept(
+        self,
+        mock_scheduling_strategy,
+        mock_instance_registry,
+        mock_task_registry,
+        mock_callback,
+        mock_queue_manager,
+    ):
+        from swarmpilot.scheduler.utils.arrival_counter import arrival_counter
+
+        app = FastAPI()
+        app.include_router(
+            ProxyRouter(
+                scheduling_strategy=mock_scheduling_strategy,
+                instance_registry=mock_instance_registry,
+                task_registry=mock_task_registry,
+                task_result_callback=mock_callback,
+                worker_queue_manager=mock_queue_manager,
+                proxy_timeout=5.0,
+            ).router
+        )
+        loop = asyncio.new_event_loop()
+        future = loop.create_future()
+        future.set_result(
+            TaskResult(
+                task_id="t",
+                worker_id="instance-1",
+                status="completed",
+                result={},
+                execution_time_ms=1.0,
+                http_status_code=200,
+                response_headers={},
+            )
+        )
+        mock_callback.register_future = MagicMock(return_value=future)
+        arrival_counter.take()
+
+        client = TestClient(app)
+        client.post(
+            "/v1/images/generations",
+            json={"prompt": "x"},
+            headers={"X-SwarmPilot-Parent": "planner-llm"},
+        )
+        client.post("/v1/images/generations", json={"prompt": "y"})
+        loop.close()
+
+        window = arrival_counter.take()
+        assert window.arrivals == 2
+        assert window.calls_from == {"planner-llm": 1}
+        metadata = mock_task_registry.create_task.call_args_list[0].kwargs[
+            "metadata"
+        ]
+        assert metadata["parent_model"] == "planner-llm"
+
+
+async def test_proxied_task_reaches_trainer_with_its_prediction(
+    mock_scheduling_strategy,
+):
+    """Drift detection needs each proxied task's prediction (item 3.1)."""
+    import httpx
+
+    from swarmpilot.scheduler.models import Instance
+    from swarmpilot.scheduler.registry.instance_registry import (
+        InstanceRegistry,
+    )
+    from swarmpilot.scheduler.registry.task_registry import TaskRegistry
+    from swarmpilot.scheduler.services.websocket_manager import (
+        ConnectionManager,
+    )
+
+    instances = InstanceRegistry()
+    await instances.register(
+        Instance(
+            instance_id="instance-1",
+            model_id="test-model",
+            endpoint="http://localhost:8001",
+            platform_info={
+                "software_name": "vllm",
+                "software_version": "0.11",
+                "hardware_name": "h",
+            },
+        )
+    )
+    tasks = TaskRegistry()
+    trainer = MagicMock()
+    callback = TaskResultCallback(
+        task_registry=tasks,
+        instance_registry=instances,
+        websocket_manager=ConnectionManager(),
+        training_client=trainer,
+    )
+    queued = asyncio.Event()
+    manager = MagicMock()
+    manager.has_worker = MagicMock(return_value=True)
+    manager.supports_streaming = False
+
+    def enqueue(instance_id, task):
+        manager.task = task
+        queued.set()
+        return 1
+
+    manager.enqueue_task = MagicMock(side_effect=enqueue)
+    app = FastAPI()
+    app.include_router(
+        ProxyRouter(
+            scheduling_strategy=mock_scheduling_strategy,
+            instance_registry=instances,
+            task_registry=tasks,
+            task_result_callback=callback,
+            worker_queue_manager=manager,
+            proxy_timeout=5.0,
+        ).router
+    )
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://t"
+    ) as client:
+        request = asyncio.create_task(
+            client.post(
+                "/v1/chat/completions",
+                json={
+                    "model": "test-model",
+                    "messages": [{"role": "user", "content": "hi there"}],
+                    "max_tokens": 32,
+                },
+            )
+        )
+        await asyncio.wait_for(queued.wait(), 5)
+        await callback.handle_result(
+            TaskResult(
+                task_id=manager.task.task_id,
+                worker_id="instance-1",
+                status="completed",
+                result={"choices": []},
+                execution_time_ms=95.0,
+                http_status_code=200,
+                response_headers={},
+            )
+        )
+        response = await asyncio.wait_for(request, 5)
+
+    assert response.status_code == 200
+    trainer.add_sample.assert_called_once()
+    kwargs = trainer.add_sample.call_args.kwargs
+    assert kwargs["predicted_time_ms"] == 100.0
+    assert kwargs["predicted_quantiles"] == {0.5: 80.0, 0.9: 120.0}
+    assert kwargs["actual_runtime_ms"] == 95.0

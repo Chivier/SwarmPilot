@@ -1,0 +1,6 @@
+{"mode": "drift", "rate_per_s": 2.0, "shift": 2.0, "recovery_s": 103.6, "final_q90_coverage": 0.92, "retrain_wall_s": 9.11}
+{"mode": "drift", "rate_per_s": 5.0, "shift": 2.0, "recovery_s": 40.5, "final_q90_coverage": 0.9, "retrain_wall_s": 9.57}
+{"mode": "drift", "rate_per_s": 20.0, "shift": 2.0, "recovery_s": 11.0, "final_q90_coverage": 0.89, "retrain_wall_s": 7.68}
+{"mode": "batch", "rate_per_s": 2.0, "shift": 2.0, "recovery_s": 783.8, "final_q90_coverage": 0.89, "retrain_wall_s": 39.19}
+{"mode": "batch", "rate_per_s": 5.0, "shift": 2.0, "recovery_s": 312.2, "final_q90_coverage": 0.885, "retrain_wall_s": 38.88}
+{"mode": "batch", "rate_per_s": 20.0, "shift": 2.0, "recovery_s": 92.4, "final_q90_coverage": 0.875, "retrain_wall_s": 37.5}

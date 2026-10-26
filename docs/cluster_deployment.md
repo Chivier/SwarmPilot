@@ -426,6 +426,40 @@ curl http://localhost:8002/v1/timeline
 curl -X POST http://localhost:8002/v1/timeline/clear
 ```
 
+### Autoscaling agent workloads
+
+With `AUTO_OPTIMIZE_ENABLED=true`, each Scheduler reports its arrival rate,
+a q0.9 estimate of its outstanding work (from the queue sketches) and its
+outstanding task count every `PLANNER_REPORT_INTERVAL`. The default `tail`
+scaler gives each model a share of the machines proportional to the
+instances it needs: its arrival rate times its execution time, plus its
+q0.9 backlog drained over one interval.
+
+When one model's tasks call another (an agent's LLM step calling a tool or
+a diffusion model), mark those calls with the calling model so the Planner
+can size the callee from the caller's traffic instead of waiting for calls
+to pile up:
+
+```bash
+# Proxy path
+curl http://scheduler-tool:8000/v1/images/generations \
+  -H "X-SwarmPilot-Parent: Qwen/Qwen3-8B" -d '{"prompt": "..."}'
+
+# Task API
+curl -X POST http://scheduler-tool:8000/v1/task/submit -d '{
+  "task_id": "t1", "model_id": "sdxl", "task_input": {...},
+  "metadata": {"parent_model": "Qwen/Qwen3-8B"}}'
+```
+
+`GET /v1/demand` on the Planner shows the rates, tail work and estimated
+call ratios it plans from. In the agent-workload simulation
+(`tests/perf/agent_scaling.py`) the tail scaler missed the per-task SLO on
+7.0% of tasks against 40.4% for the `count` scaler with short agent steps,
+and 1.7% against 13.5% with long ones. Schedulers older than this release
+send no arrival rate; while any model lacks one the Planner uses `count`.
+`tests/integration/autoscale_e2e.py` checks the whole loop on a local PyLet
+cluster with fake LLM and diffusion engines.
+
 ---
 
 ## Environment Variables
@@ -441,7 +475,13 @@ Source: `swarmpilot/scheduler/config.py`
 | `SCHEDULER_ENABLE_CORS` | `true` | Enable CORS middleware |
 | `SCHEDULING_STRATEGY` | `adaptive_bootstrap` | Strategy: `adaptive_bootstrap`, `min_time`, `probabilistic`, `round_robin`, `random`, `po2`, `severless` |
 | `SCHEDULING_PROBABILISTIC_QUANTILE` | `0.9` | Target quantile for probabilistic strategy |
-| `TRAINING_ENABLE_AUTO` | `false` | Enable automatic predictor retraining |
+| `TRAINING_ENABLE_AUTO` | `true` | Online adaptation: train cold platforms, retrain on drift |
+| `TRAINING_RETRAIN_MODE` | `drift` | `drift` retrains a platform with a model only when it drifts; `batch` retrains every full batch |
+| `DRIFT_WINDOW` | `200` | Scored tasks per drift window |
+| `DRIFT_MIN_SAMPLES` | `50` | Scored tasks before a group can drift |
+| `DRIFT_LOSS_RATIO` | `2.0` | Drift when q0.9 pinball loss exceeds this times its baseline |
+| `DRIFT_MISS_RATIO` | `3.0` | Drift when the q0.9 miss rate exceeds this times 0.1 (and is significant) |
+| `DRIFT_RECOVERY_SAMPLES` | `100` | Post-drift samples collected before the retrain |
 | `TRAINING_BATCH_SIZE` | `100` | Batch size for training data collection |
 | `TRAINING_FREQUENCY` | `3600` | Training frequency in seconds |
 | `TRAINING_MIN_SAMPLES` | `10` | Minimum samples before training |
@@ -474,8 +514,13 @@ Source: `swarmpilot/planner/config.py`
 | `INSTANCE_TIMEOUT` | `30` | Instance operation timeout (seconds) |
 | `INSTANCE_MAX_RETRIES` | `3` | Max retries for instance operations |
 | `INSTANCE_RETRY_DELAY` | `1.0` | Delay between retries (seconds) |
-| `AUTO_OPTIMIZE_ENABLED` | `false` | Enable periodic auto-optimization |
+| `AUTO_OPTIMIZE_ENABLED` | `false` | Re-plan the deployment from Scheduler demand reports (needs PyLet) |
 | `AUTO_OPTIMIZE_INTERVAL` | `60.0` | Optimization interval (seconds) |
+| `AUTO_OPTIMIZE_CHANGE_THRESHOLD` | `0.05` | Minimum objective improvement before a round changes anything |
+| `AUTO_OPTIMIZE_CHANGE_FACTOR` | `0.3` | Share of machines that may change model per round (at least one) |
+| `AUTO_OPTIMIZE_MIN_REPLICAS` | `1` | Replicas a deployed model keeps even with no demand |
+| `AUTO_OPTIMIZE_ALGORITHM` | `integer_programming` | Optimizer: `integer_programming` or `simulated_annealing` |
+| `AUTO_OPTIMIZE_SCALER` | `tail` | `tail` sizes models by arrival rate, q0.9 backlog and calls between models; `count` by outstanding tasks only (see [Autoscaling agent workloads](#autoscaling-agent-workloads)) |
 | `PYLET_ENABLED` | `false` | Enable PyLet cluster integration |
 | `PYLET_HEAD_URL` | _(none)_ | PyLet head node URL (required when `PYLET_ENABLED=true`) |
 | `PYLET_BACKEND` | `vllm` | Backend engine: `vllm` or `sglang` |

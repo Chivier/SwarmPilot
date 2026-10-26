@@ -31,6 +31,11 @@ from swarmpilot.scheduler.services.worker_queue_manager import (
     resolve_adapter,
 )
 from swarmpilot.scheduler.services.worker_queue_thread import QueuedTask
+from swarmpilot.scheduler.utils.arrival_counter import (
+    PARENT_HEADER,
+    PARENT_KEY,
+    arrival_counter,
+)
 
 if TYPE_CHECKING:
     from swarmpilot.scheduler.algorithms.base import SchedulingStrategy
@@ -87,6 +92,17 @@ def _is_lightweight(platform_info: dict[str, str], path: str) -> bool:
     if route is not None:
         return route.lightweight
     return path in PRIORITY_PATHS
+
+
+def _prediction_fields(prediction: Any) -> dict[str, Any]:
+    """Task-record prediction fields from a scheduling prediction."""
+    if prediction is None:
+        return {}
+    return {
+        "predicted_time_ms": prediction.predicted_time_ms,
+        "predicted_error_margin_ms": prediction.error_margin_ms,
+        "predicted_quantiles": prediction.quantiles,
+    }
 
 
 class ProxyRouter:
@@ -203,6 +219,9 @@ class ProxyRouter:
                 "method": method,
                 "proxy": True,
             }
+            parent = request.headers.get(PARENT_HEADER)
+            if parent:
+                metadata[PARENT_KEY] = parent
             # The engine's adapter turns the body into predictor features,
             # so the scheduling strategy can call the trained predictor and
             # training samples use the same features later.
@@ -226,11 +245,13 @@ class ProxyRouter:
                 task_id=task_id,
             )
             selected_instance_id = schedule_result.selected_instance_id
+            prediction = schedule_result.selected_prediction
 
         except Exception as e:
             logger.opt(exception=True).error(f"[PROXY] Scheduling failed: {e}")
-            # Fallback: pick first instance
+            # Fallback: pick first instance, with no prediction
             selected_instance_id = all_instances[0].instance_id
+            prediction = None
             logger.info(
                 f"[PROXY] Falling back to instance {selected_instance_id}"
             )
@@ -259,7 +280,11 @@ class ProxyRouter:
             task_input=body,
             metadata=metadata,
             assigned_instance=selected_instance_id,
+            # The result callback hands these to the trainer, whose drift
+            # detector needs each task's prediction.
+            **_prediction_fields(prediction),
         )
+        arrival_counter.record(metadata.get(PARENT_KEY))
 
         # 7. Streamed requests get the engine's answer through a sink as
         #    soon as it starts; the rest wait for the completed result.

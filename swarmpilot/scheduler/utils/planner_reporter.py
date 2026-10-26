@@ -3,22 +3,39 @@
 This module provides a background task that periodically reports the total
 number of uncompleted (pending + running) tasks to the planner service's
 /submit_target endpoint.
+
+With an instance registry and an arrival counter it also reports what the
+Planner's tail scaler reads (item 3.4): the arrival rate, a q0.9 estimate
+of the outstanding work from the queue sketches, and the calls other
+models' tasks made.
 """
 
 import asyncio
 from contextlib import suppress
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 import httpx
+import numpy as np
 from loguru import logger
 
 from swarmpilot.scheduler.utils.http_error_logger import log_http_error
 
 if TYPE_CHECKING:
+    from swarmpilot.scheduler.registry.instance_registry import (
+        InstanceRegistry,
+    )
     from swarmpilot.scheduler.registry.task_registry import TaskRegistry
+    from swarmpilot.scheduler.utils.arrival_counter import ArrivalCounter
     from swarmpilot.scheduler.utils.throughput_tracker import ThroughputTracker
 
-from swarmpilot.scheduler.models import TaskStatus
+from swarmpilot.scheduler.models import (
+    InstanceQueueExpectError,
+    InstanceQueueProbabilistic,
+    TaskStatus,
+)
+
+# Quantile of the outstanding work reported as ``work_s``.
+WORK_QUANTILE = 0.9
 
 
 class PlannerReporter:
@@ -31,6 +48,8 @@ class PlannerReporter:
         interval: float,
         timeout: float = 5.0,
         throughput_tracker: Optional["ThroughputTracker"] = None,
+        instance_registry: Optional["InstanceRegistry"] = None,
+        arrivals: Optional["ArrivalCounter"] = None,
     ):
         """Initialize the planner reporter.
 
@@ -40,12 +59,16 @@ class PlannerReporter:
             interval: Reporting interval in seconds
             timeout: HTTP request timeout in seconds
             throughput_tracker: Optional throughput tracker for reporting execution times
+            instance_registry: Source of the queue sketches for ``work_s``.
+            arrivals: Counter of task arrivals and their calling models.
         """
         self._task_registry = task_registry
         self._planner_url = planner_url
         self._interval = interval
         self._timeout = timeout
         self._throughput_tracker = throughput_tracker
+        self._instance_registry = instance_registry
+        self._arrivals = arrivals
 
         self._model_id: str | None = None
         self._reporter_task: asyncio.Task | None = None
@@ -139,15 +162,13 @@ class PlannerReporter:
                 TaskStatus.RUNNING
             )
             total_uncompleted = pending + running
+            payload = await self._target_payload(float(total_uncompleted))
 
             # POST to planner's /submit_target endpoint
             try:
                 response = await self._http_client.post(
                     f"{self._planner_url}/v1/submit_target",
-                    json={
-                        "model_id": self._model_id,
-                        "value": float(total_uncompleted),
-                    },
+                    json=payload,
                 )
             except BaseException as e:
                 raise RuntimeError(
@@ -193,6 +214,44 @@ class PlannerReporter:
                 f"[planner_reporter] Planner report error: {e}"
             )
 
+    async def _target_payload(self, uncompleted: float) -> dict[str, Any]:
+        """The /v1/submit_target body, with tail-scaler fields if known."""
+        payload: dict[str, Any] = {
+            "model_id": self._model_id,
+            "value": uncompleted,
+        }
+        if self._arrivals is not None:
+            window = self._arrivals.take()
+            if window.seconds > 0:
+                payload["arrival_rate"] = window.rate
+                payload["calls_from"] = window.call_rates()
+        if self._instance_registry is not None:
+            payload["work_s"] = await self._tail_work_s()
+        return payload
+
+    async def _tail_work_s(self) -> float:
+        """Upper estimate of the model's outstanding work, in seconds.
+
+        Sums each instance's q0.9 queue wait times its capacity (a sketch
+        of an instance serving ``n`` tasks at once holds work divided by
+        ``n``). The sum of quantiles bounds the quantile of the sum.
+        """
+        registry = self._instance_registry
+        instances = await registry.list_all(model_id=self._model_id)
+        queues = await registry.get_all_queue_info(
+            [i.instance_id for i in instances]
+        )
+        total_ms = 0.0
+        for iid, q in queues.items():
+            if isinstance(q, InstanceQueueProbabilistic) and q.values:
+                wait = float(np.interp(WORK_QUANTILE, q.quantiles, q.values))
+            elif isinstance(q, InstanceQueueExpectError):
+                wait = q.expected_time_ms + q.error_margin_ms
+            else:
+                continue
+            total_ms += max(wait, 0.0) * registry.get_capacity(iid)
+        return total_ms / 1000.0
+
     async def _report_throughput(self) -> None:
         """Report throughput data for instances with recent data to planner.
 
@@ -227,6 +286,7 @@ class PlannerReporter:
                         json={
                             "instance_url": instance_endpoint,
                             "avg_execution_time": avg_execution_time_seconds,
+                            "model_id": self._model_id,
                         },
                     )
                     logger.debug(
