@@ -295,11 +295,6 @@ async def test_retraining_does_not_block_event_loop(tmp_path) -> None:
     assert snap["p99_ms"] <= 50, json.dumps(snap)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="gap S3: the Planner has no /v1/submit_target or "
-    "/v1/submit_throughput (fixed by plan item 3.2)",
-)
 def test_planner_accepts_scheduler_reports() -> None:
     """The Planner must accept the reports the Scheduler already sends."""
     from swarmpilot.planner.api import app
@@ -314,3 +309,6 @@ def test_planner_accepts_scheduler_reports() -> None:
             json={"instance_url": "http://x:8000", "avg_execution_time": 1.5},
         )
         assert r.is_success, (r.status_code, r.text)
+        demand = client.get("/v1/demand").json()
+        assert demand["targets"]["m"] > 0
+        assert demand["execution_times"]["http://x:8000"] == 1.5

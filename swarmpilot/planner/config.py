@@ -33,6 +33,20 @@ class PlannerConfig:
         self.auto_optimize_interval: float = float(
             os.getenv("AUTO_OPTIMIZE_INTERVAL", "60.0")
         )
+        # Act only when the objective improves by at least this much.
+        self.auto_optimize_change_threshold: float = float(
+            os.getenv("AUTO_OPTIMIZE_CHANGE_THRESHOLD", "0.05")
+        )
+        # Share of machines that may change model in one round.
+        self.auto_optimize_change_factor: float = float(
+            os.getenv("AUTO_OPTIMIZE_CHANGE_FACTOR", "0.3")
+        )
+        self.auto_optimize_min_replicas: int = int(
+            os.getenv("AUTO_OPTIMIZE_MIN_REPLICAS", "1")
+        )
+        self.auto_optimize_algorithm: str = os.getenv(
+            "AUTO_OPTIMIZE_ALGORITHM", "integer_programming"
+        )
 
         # PyLet configuration
         self.pylet_enabled: bool = os.getenv(
@@ -152,6 +166,14 @@ class PlannerConfig:
 
         if self.auto_optimize_interval <= 0:
             error_msg = f"AUTO_OPTIMIZE_INTERVAL must be positive, got {self.auto_optimize_interval}"
+            logger.error(f"Configuration validation failed: {error_msg}")
+            raise ValueError(error_msg)
+
+        if not 0 < self.auto_optimize_change_factor <= 1:
+            error_msg = (
+                "AUTO_OPTIMIZE_CHANGE_FACTOR must be in (0, 1], got "
+                f"{self.auto_optimize_change_factor}"
+            )
             logger.error(f"Configuration validation failed: {error_msg}")
             raise ValueError(error_msg)
 

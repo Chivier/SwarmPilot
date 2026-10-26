@@ -15,6 +15,12 @@ from swarmpilot.shared.models import (
     TaskResubmitResponse,
 )
 
+from .demand import (
+    DemandReportResponse,
+    DemandSnapshot,
+    SubmitTargetRequest,
+    SubmitThroughputRequest,
+)
 from .instance import (
     InstanceRegisterRequest,
     InstanceRegisterResponse,
@@ -58,6 +64,8 @@ from .sdk_api import (
 )
 
 __all__ = [
+    "DemandReportResponse",
+    "DemandSnapshot",
     "DeployResponse",
     "InstanceDetailResponse",
     "InstanceDrainRequest",
@@ -96,6 +104,8 @@ __all__ = [
     "SchedulerRegisterResponse",
     "ServeRequest",
     "ServeResponse",
+    "SubmitTargetRequest",
+    "SubmitThroughputRequest",
     "TaskResubmitRequest",
     "TaskResubmitResponse",
     "TerminateRequest",

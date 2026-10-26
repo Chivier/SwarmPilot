@@ -474,8 +474,12 @@ Source: `swarmpilot/planner/config.py`
 | `INSTANCE_TIMEOUT` | `30` | Instance operation timeout (seconds) |
 | `INSTANCE_MAX_RETRIES` | `3` | Max retries for instance operations |
 | `INSTANCE_RETRY_DELAY` | `1.0` | Delay between retries (seconds) |
-| `AUTO_OPTIMIZE_ENABLED` | `false` | Enable periodic auto-optimization |
+| `AUTO_OPTIMIZE_ENABLED` | `false` | Re-plan the deployment from Scheduler demand reports (needs PyLet) |
 | `AUTO_OPTIMIZE_INTERVAL` | `60.0` | Optimization interval (seconds) |
+| `AUTO_OPTIMIZE_CHANGE_THRESHOLD` | `0.05` | Minimum objective improvement before a round changes anything |
+| `AUTO_OPTIMIZE_CHANGE_FACTOR` | `0.3` | Share of machines that may change model per round (at least one) |
+| `AUTO_OPTIMIZE_MIN_REPLICAS` | `1` | Replicas a deployed model keeps even with no demand |
+| `AUTO_OPTIMIZE_ALGORITHM` | `integer_programming` | Optimizer: `integer_programming` or `simulated_annealing` |
 | `PYLET_ENABLED` | `false` | Enable PyLet cluster integration |
 | `PYLET_HEAD_URL` | _(none)_ | PyLet head node URL (required when `PYLET_ENABLED=true`) |
 | `PYLET_BACKEND` | `vllm` | Backend engine: `vllm` or `sglang` |
