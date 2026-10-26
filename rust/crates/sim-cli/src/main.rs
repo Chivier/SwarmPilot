@@ -1,10 +1,15 @@
-//! `swarmpilot-sim`: inspect cluster specs and engine profiles, and replay
-//! request streams through one simulated engine.
+//! `swarmpilot-sim`: inspect cluster specs and engine profiles, replay
+//! request streams through one simulated engine, serve virtual engines over
+//! HTTP, and run a spec's nodes as PyLet sim workers.
 
+use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::sync::Arc;
 
 use clap::{Parser, Subcommand};
+use swarmpilot_sim_cluster::engine_server::VirtualEngine;
+use swarmpilot_sim_cluster::host::{Host, HostOptions};
 use swarmpilot_sim_core::engine;
 use swarmpilot_sim_core::metrics::Summary;
 use swarmpilot_sim_core::runner::run_single;
@@ -81,6 +86,52 @@ enum Cmd {
         slo_ms: Option<f64>,
         #[arg(long, default_value_t = 0)]
         seed: u64,
+    },
+    /// Run every node of a spec as a PyLet sim worker against a real PyLet
+    /// head. Prints one JSON line when all nodes are started.
+    Up {
+        /// PyLet head URL.
+        #[arg(long)]
+        head: String,
+        /// Spec file (default: the built-in 256-instance spec).
+        #[arg(long)]
+        spec: Option<PathBuf>,
+        /// Wall seconds per simulated second (0.1 runs 10x faster).
+        #[arg(long, default_value_t = 1.0)]
+        time_scale: f64,
+        #[arg(long, default_value = "127.0.0.1")]
+        bind: IpAddr,
+        /// Host name the head and the Planner use to reach the engines.
+        #[arg(long, default_value = "127.0.0.1")]
+        advertise_host: String,
+        /// First node's worker HTTP port; node i uses start + i * gap.
+        #[arg(long, default_value_t = 21000)]
+        port_start: u16,
+        #[arg(long, default_value_t = 100)]
+        port_gap: u16,
+        /// Control API port (inspection and fault injection).
+        #[arg(long, default_value_t = 20999)]
+        control_port: u16,
+    },
+    /// Serve one virtual engine on a port, without PyLet.
+    Serve {
+        #[arg(long)]
+        engine: String,
+        #[arg(long)]
+        model: String,
+        #[arg(long)]
+        gpu: String,
+        #[arg(long, default_value_t = 1)]
+        tp: u32,
+        #[arg(long, default_value = "127.0.0.1")]
+        bind: IpAddr,
+        #[arg(long)]
+        port: u16,
+        #[arg(long, default_value_t = 1.0)]
+        time_scale: f64,
+        /// Skip the cold start.
+        #[arg(long)]
+        warm: bool,
     },
 }
 
@@ -179,6 +230,85 @@ fn run(cli: Cli) -> Result<(), Error> {
             let records = run_single(e.as_mut(), &arrivals);
             print(&Summary::from_records(&records, slo_ms));
         }
+        Cmd::Up {
+            head,
+            spec,
+            time_scale,
+            bind,
+            advertise_host,
+            port_start,
+            port_gap,
+            control_port,
+        } => {
+            let spec = match spec {
+                Some(p) => ClusterSpec::load(&p)?,
+                None => ClusterSpec::default_256(),
+            };
+            let opt = HostOptions {
+                bind_ip: bind,
+                advertise_host,
+                port_start,
+                port_gap,
+                time_scale,
+            };
+            let host = Host::new(&spec, Arc::new(catalog), &opt).map_err(Error::Invalid)?;
+            let control = SocketAddr::new(bind, control_port);
+            println!(
+                "{}",
+                serde_json::json!({
+                    "event": "up",
+                    "spec": spec.name,
+                    "nodes": host.nodes.len(),
+                    "gpus": host.nodes.iter().map(|n| n.spec.gpus).sum::<u32>(),
+                    "control": format!("http://{control}"),
+                    "head": head,
+                })
+            );
+            runtime()?.block_on(async move {
+                tokio::select! {
+                    r = host.run(head, control) => r,
+                    _ = tokio::signal::ctrl_c() => Ok(()),
+                }
+            })?;
+        }
+        Cmd::Serve {
+            engine,
+            model,
+            gpu,
+            tp,
+            bind,
+            port,
+            time_scale,
+            warm,
+        } => {
+            let mut profile = EngineProfile::resolve(&catalog, &engine, &model, &gpu, tp)?;
+            if warm {
+                profile.cold_start_s = 0.0;
+            }
+            runtime()?.block_on(async move {
+                let e = VirtualEngine::start(
+                    "serve".into(),
+                    SocketAddr::new(bind, port),
+                    profile,
+                    model,
+                    time_scale,
+                    0,
+                )
+                .await?;
+                println!(
+                    "{}",
+                    serde_json::json!({"event": "serving", "url": format!("http://{}", e.addr)})
+                );
+                let _ = tokio::signal::ctrl_c().await;
+                Ok::<(), std::io::Error>(())
+            })?;
+        }
     }
     Ok(())
+}
+
+fn runtime() -> Result<tokio::runtime::Runtime, Error> {
+    Ok(tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?)
 }

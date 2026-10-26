@@ -89,7 +89,27 @@ async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown events."""
     # Startup: Optionally start a local PyLet cluster
     local_cluster = None
-    if config.pylet_local_mode:
+    if config.pylet_sim_mode:
+        try:
+            from swarmpilot.planner.pylet.sim_cluster import SimPyLetCluster
+
+            local_cluster = SimPyLetCluster(
+                port=config.pylet_local_port,
+                spec=config.pylet_sim_spec,
+                time_scale=config.pylet_sim_time_scale,
+                port_start=config.pylet_sim_port_start,
+                port_gap=config.pylet_sim_port_gap,
+                control_port=config.pylet_sim_control_port,
+            )
+            if not local_cluster.start():
+                logger.error("Failed to start simulated PyLet cluster")
+                local_cluster = None
+        except Exception as e:
+            logger.opt(exception=True).error(
+                f"Failed to start simulated PyLet cluster: {e}"
+            )
+            local_cluster = None
+    elif config.pylet_local_mode:
         try:
             from swarmpilot.planner.pylet.local_cluster import (
                 LocalPyLetCluster,

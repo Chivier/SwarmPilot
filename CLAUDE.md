@@ -109,7 +109,7 @@ swarmpilot-refresh/
 │   ├── sdk/                 # SDK client + model unit tests
 │   ├── integration/         # End-to-end SDK integration tests
 │   └── conftest.py          # Shared: --run-integration flag, PyLet fixtures
-├── rust/                    # Cargo workspace: sim-core, sim-cli (swarmpilot-sim)
+├── rust/                    # Cargo workspace: sim-core, sim-cluster, sim-cli (swarmpilot-sim)
 ├── examples/                # Example cluster configurations
 ├── docs/                    # Documentation
 ├── pyproject.toml           # Package config (hatchling build, uv tooling)
@@ -162,6 +162,7 @@ Each service uses a different config approach:
 - **Predictor:** `pydantic_settings.BaseSettings` with `PREDICTOR_*` env prefix
 - **Planner:** Plain class with `os.getenv()` in `__init__`, global `config = PlannerConfig()`
   - Supports `PYLET_LOCAL_MODE=true` to start a local PyLet cluster as subprocesses (no external cluster needed)
+  - Supports `PYLET_SIM_MODE=true` to start a real PyLet head with simulated GPU nodes and virtual engines (`swarmpilot-sim up`, see `docs/simulator.md`)
 
 ### API Prefixes
 - Scheduler endpoints: `/v1/...`

@@ -5,13 +5,13 @@ built in phases (design doc: "SwarmPilot cluster simulator design"):
 
 | Phase | What | Status |
 |---|---|---|
-| S0 | Engine performance models, catalogs, cluster specs, workloads, metrics | This change |
-| S1 | Virtual engines over HTTP and PyLet sim mode (real PyLet head, simulated workers) | Next |
+| S0 | Engine performance models, catalogs, cluster specs, workloads, metrics | Done |
+| S1 | Virtual engines over HTTP and PyLet sim mode (real PyLet head, simulated workers) | This change |
 | S2 | Multi-instance discrete-event sim driving the real routing and autoscaling code | Planned |
 | S3 | Scenario suite, CI gates, `calibrate` | Planned |
 
-The core is Rust (`rust/crates/sim-core`, binary `swarmpilot-sim` in
-`rust/crates/sim-cli`). `swarmpilot/sim/` is the Python face: it holds the
+The core is Rust (`rust/crates/sim-core`; virtual engines and sim workers in
+`rust/crates/sim-cluster`; binary `swarmpilot-sim` in `rust/crates/sim-cli`). `swarmpilot/sim/` is the Python face: it holds the
 data files the binary reads and wraps the binary.
 
 ## Build and run
@@ -52,11 +52,103 @@ use a binary from elsewhere.
 One engine replays about 100,000 requests (1.9 simulated hours at 15 QPS
 on an 8B model) in a quarter of a second.
 
+## PyLet sim mode (emulated cluster)
+
+The real services run unchanged on the wall clock; only the GPUs are
+simulated. The PyLet head is the real `pylet` head. Every node of a cluster
+spec becomes a simulated PyLet worker that registers, heartbeats and
+reports instance status over PyLet's own worker protocol. When the head
+assigns an instance, the worker parses its launch command (the engine
+adapters' `vllm serve ...`, `python -m sglang.launch_server ...`,
+`... diffusers_server ...`), resolves the engine profile for the node's GPU
+type and the instance's TP, and starts a virtual engine on the instance's
+port instead of running the command.
+
+```bash
+# The Planner starts its own simulated cluster (head + 102 sim nodes).
+PYLET_SIM_MODE=true PYLET_SIM_TIME_SCALE=0.1 splanner start --port 8002
+SCHEDULER_MODEL_ID=Qwen/Qwen3-8B PLANNER_REGISTRATION_URL=http://localhost:8002 \
+  sscheduler start --port 8000
+splanner serve Qwen/Qwen3-8B --gpu 1 --replicas 4
+curl localhost:8000/v1/chat/completions -d '{"model": "Qwen/Qwen3-8B",
+  "messages": [{"role": "user", "content": "hi"}], "max_tokens": 32}'
+```
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `PYLET_SIM_MODE` | `false` | Start a simulated cluster (implies `PYLET_LOCAL_MODE`) |
+| `PYLET_SIM_SPEC` | `swarmpilot/sim/specs/default-256.yaml` | Cluster spec; only `node_groups` matter here |
+| `PYLET_SIM_TIME_SCALE` | `1.0` | Wall seconds per simulated second (0.1 is 10x faster, cold starts included) |
+| `PYLET_SIM_PORT_START` | `21000` | Node `i` uses ports `start + i * gap` (worker) and the ones above (engines) |
+| `PYLET_SIM_PORT_GAP` | `100` | Ports per node |
+| `PYLET_SIM_CONTROL_PORT` | `20999` | The simulator's control API |
+| `PYLET_LOCAL_PORT` | `5100` | PyLet head port |
+
+Keep the port block below the OS ephemeral range (32768 and up on Linux),
+or outgoing connections can take engine ports. The head keeps its database
+in a fresh temporary directory, so every run starts empty and `~/.pylet`
+is never touched.
+
+Outside the Planner, start the same thing with
+`swarmpilot.planner.pylet.sim_cluster.SimPyLetCluster`, or by hand:
+
+```bash
+python -c "import pylet; pylet.start(port=5100, block=True)" &
+rust/target/release/swarmpilot-sim --catalog swarmpilot/sim/data \
+  up --head http://localhost:5100 --time-scale 0.1
+```
+
+`swarmpilot-sim serve --engine vllm --model llama-3.1-8b --gpu H100-SXM-80GB
+--port 8100 --warm` runs one virtual engine with no PyLet at all.
+
+### Virtual engines
+
+Each virtual engine drives its engine model (below) on a clock that runs
+at `1 / time_scale`, and serves what SwarmPilot's adapters and scheduler
+read:
+
+- `/health` (503 until the cold start is over), `/version`,
+  `/get_server_info` and `/server_info`, `/v1/models`.
+- `/metrics` with vLLM or SGLang metric names, plus
+  `swarmpilot_sim_completed_total`.
+- `/v1/chat/completions` and `/v1/completions`, JSON or SSE streams with
+  one chunk per simulated token. Prompt length is about characters / 4;
+  output length is `sim_output_tokens`, else `max_tokens`, else 128.
+- `/v1/images/generations` on diffusion engines; any POST on generic ones.
+
+A model the catalog does not know fails the instance (status FAILED), as a
+missing model would. Set `SWARMPILOT_SIM_ENGINE` and `SWARMPILOT_SIM_MODEL`
+in an instance's environment to override what the command says; any
+command that is not a known engine runs as the generic engine.
+
+### Control API and faults
+
+On `PYLET_SIM_CONTROL_PORT`:
+
+- `GET /nodes`, `GET /instances`: placement, readiness, load, profile.
+- `POST /instances/{id}/faults` with
+  `{"error_rate": 0.2, "error_status": 503, "stall": false, "slowdown": 3}`.
+- `POST /instances/{id}/crash`: the engine stops serving and PyLet sees
+  the instance FAILED with exit code 137.
+- `POST /nodes/{id}/down` and `/up`: the node's engines stop and its
+  heartbeats stop (PyLet marks it offline after its 90 s timeout); on
+  `up` it registers again with a new boot id.
+
+### Known gaps
+
+- The Planner reports one hardware name for every instance
+  (`PLANNER_HARDWARE_NAME`), so per-GPU predictor keys collapse to one in
+  a mixed cluster.
+- A crashed engine stays registered with the Scheduler and Planner: PyLet
+  marks it FAILED, but nothing removes it, and requests routed there fail
+  after the proxy's retries. The simulator makes this reproducible; the
+  fix belongs in the Planner.
+
 ## Engine models
 
 All engines implement one event-driven interface (`EngineModel`: submit,
 next event time, advance), so the same model runs on a virtual clock (S2)
-or the wall clock (S1).
+or the wall clock (the virtual engines of S1).
 
 - **LLM (vLLM, SGLang):** iteration-level continuous batching. Each step
   runs one decode token per running sequence, then fills the token budget

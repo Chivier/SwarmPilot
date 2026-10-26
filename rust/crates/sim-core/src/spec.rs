@@ -27,8 +27,28 @@ pub struct NodeGroup {
     pub gpu: String,
     pub gpus_per_node: u32,
     pub nodes: u32,
+    /// CPU cores and memory each node advertises to PyLet.
+    #[serde(default = "default_cpus")]
+    pub cpus_per_node: u32,
+    #[serde(default = "default_memory_mb")]
+    pub memory_mb_per_node: u64,
     #[serde(default)]
     pub deployments: Vec<Deployment>,
+}
+
+fn default_cpus() -> u32 {
+    64
+}
+
+fn default_memory_mb() -> u64 {
+    1_048_576
+}
+
+impl NodeGroup {
+    /// Node names, as the planner uses them and as PyLet worker ids.
+    pub fn node_ids(&self) -> impl Iterator<Item = String> + '_ {
+        (0..self.nodes).map(move |n| format!("{}-n{}", self.name, n))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -115,7 +135,7 @@ impl ClusterSpec {
                     out.push(InstancePlan {
                         id: format!("{}-{}", g.name, out.len()),
                         group: g.name.clone(),
-                        node: format!("{}-n{}", g.name, n),
+                        node: g.node_ids().nth(n).expect("node index in range"),
                         gpu_indices: gpus,
                         profile: profile.clone(),
                     });

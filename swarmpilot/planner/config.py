@@ -115,6 +115,28 @@ class PlannerConfig:
             os.getenv("PYLET_LOCAL_MEMORY_PER_WORKER", "65536")
         )
 
+        # Simulated PyLet mode — like local mode, but every node of a
+        # cluster spec is a simulated worker (swarmpilot-sim) running
+        # virtual engines, so no GPUs are needed. Implies local mode.
+        self.pylet_sim_mode: bool = os.getenv(
+            "PYLET_SIM_MODE", "false"
+        ).lower() in ("true", "1", "yes")
+        self.pylet_sim_spec: str | None = os.getenv("PYLET_SIM_SPEC")
+        self.pylet_sim_time_scale: float = float(
+            os.getenv("PYLET_SIM_TIME_SCALE", "1.0")
+        )
+        self.pylet_sim_port_start: int = int(
+            os.getenv("PYLET_SIM_PORT_START", "21000")
+        )
+        self.pylet_sim_port_gap: int = int(
+            os.getenv("PYLET_SIM_PORT_GAP", "100")
+        )
+        self.pylet_sim_control_port: int = int(
+            os.getenv("PYLET_SIM_CONTROL_PORT", "20999")
+        )
+        if self.pylet_sim_mode:
+            self.pylet_local_mode = True
+
         # Auto-activate local mode when PyLet is enabled without
         # an explicit head URL, so a local cluster is started.
         if self.pylet_enabled and not self.pylet_head_url:
