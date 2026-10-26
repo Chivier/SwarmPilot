@@ -33,6 +33,20 @@ class PlatformInfo(BaseModel):
         ...,
         description="Name of the hardware platform",
     )
+    workload: str | None = Field(
+        default=None,
+        description=(
+            "Workload type from the engine adapter (e.g. llm_chat). Part of "
+            "the model key when set."
+        ),
+    )
+    feature_schema: str | None = Field(
+        default=None,
+        description=(
+            "Version of the adapter's feature schema. Part of the model key "
+            "when workload is set."
+        ),
+    )
 
     def extract_gpu_specs(self) -> dict[str, Any] | None:
         """Extract GPU specs from hardware_name.

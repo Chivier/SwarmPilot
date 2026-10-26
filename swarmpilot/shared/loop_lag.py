@@ -98,17 +98,36 @@ class EventLoopLagMonitor:
             logger.warning(f"[loop_lag] event loop blocked for {lag_ms:.1f} ms")
 
     def start(self) -> None:
-        """Start the probe on the running event loop (idempotent)."""
-        if self.running:
+        """Start the probe on the running event loop.
+
+        Idempotent on the same loop. A probe left on another loop (an
+        earlier app lifespan, for example in tests) is dropped, and the
+        histogram restarts so ``since`` and the counts cover this run.
+        """
+        loop = asyncio.get_running_loop()
+        if self.running and self._task.get_loop() is loop:
             return
-        self._task = asyncio.get_running_loop().create_task(
-            self._run(), name="event-loop-lag-probe"
-        )
+        self._drop_foreign_task()
+        self.reset()
+        self._task = loop.create_task(self._run(), name="event-loop-lag-probe")
+
+    def _drop_foreign_task(self) -> None:
+        task, self._task = self._task, None
+        if task is not None and not task.done():
+            task_loop = task.get_loop()
+            if not task_loop.is_closed():
+                task_loop.call_soon_threadsafe(task.cancel)
 
     async def stop(self) -> None:
         """Stop the probe and wait for it to exit."""
         task, self._task = self._task, None
-        if task is None:
+        if task is None or task.done():
+            return
+        if task.get_loop() is not asyncio.get_running_loop():
+            # Bound to another loop: cancel there if it still runs, never
+            # await across loops.
+            if not task.get_loop().is_closed():
+                task.get_loop().call_soon_threadsafe(task.cancel)
             return
         task.cancel()
         with contextlib.suppress(asyncio.CancelledError):

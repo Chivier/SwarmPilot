@@ -128,6 +128,12 @@ def main() -> None:
     parser.add_argument(
         "--log-level", default="INFO", help="SCHEDULER_LOGURU_LEVEL"
     )
+    parser.add_argument(
+        "--engine",
+        default="vllm",
+        help="Platform software_name the fake engine registers as; picks "
+        "the engine adapter (and its in-flight limit) in the Scheduler.",
+    )
     parser.add_argument("--out", type=Path, default=None)
     args = parser.parse_args()
 
@@ -165,7 +171,7 @@ def main() -> None:
                     "model_id": "fake-model",
                     "endpoint": engine_url,
                     "platform_info": {
-                        "software_name": "fake",
+                        "software_name": args.engine,
                         "software_version": "0.0.0",
                         "hardware_name": "cpu",
                     },
@@ -197,6 +203,7 @@ def main() -> None:
             },
             "config": {
                 "instances": args.instances,
+                "engine": args.engine,
                 "strategy": args.strategy,
                 "log_level": args.log_level,
                 "duration_s": args.duration,

@@ -28,17 +28,6 @@ if TYPE_CHECKING:
     pass
 
 
-# Model launch command templates
-# $PORT is replaced by PyLet with the auto-allocated port
-MODEL_COMMANDS: dict[str, str] = {
-    "vllm": "vllm serve {model_id} --port $PORT --host 0.0.0.0",
-    "sglang": (
-        "python -m sglang.launch_server "
-        "--model {model_id} --port $PORT --host 0.0.0.0"
-    ),
-}
-
-
 def deploy_model(
     model_id: str,
     backend: str = "vllm",
@@ -55,7 +44,7 @@ def deploy_model(
 
     Args:
         model_id: Model identifier (e.g., "Qwen/Qwen3-0.6B").
-        backend: Model backend, one of "vllm" or "sglang".
+        backend: Engine adapter name, e.g. "vllm" or "sglang".
         gpu_count: Number of GPUs to allocate for the model.
         env: Additional environment variables to set.
         labels: Custom labels for the instance.
@@ -76,14 +65,9 @@ def deploy_model(
     """
     import pylet
 
-    if backend not in MODEL_COMMANDS:
-        raise ValueError(
-            f"Unsupported backend: {backend}. "
-            f"Supported backends: {list(MODEL_COMMANDS.keys())}"
-        )
+    from swarmpilot.planner.pylet.client import build_launch_command
 
-    command_template = MODEL_COMMANDS[backend]
-    command = command_template.format(model_id=model_id)
+    command = build_launch_command(model_id, backend, gpu_count=gpu_count)
 
     # Generate instance name if not provided
     if name is None:

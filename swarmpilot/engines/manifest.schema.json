@@ -1,0 +1,253 @@
+{
+  "$defs": {
+    "CapacityManifest": {
+      "additionalProperties": false,
+      "description": "Concurrent requests per instance.",
+      "properties": {
+        "batching": {
+          "enum": [
+            "continuous",
+            "static",
+            "none"
+          ],
+          "title": "Batching",
+          "type": "string"
+        },
+        "max_in_flight": {
+          "minimum": 1,
+          "title": "Max In Flight",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "max_in_flight",
+        "batching"
+      ],
+      "title": "CapacityManifest",
+      "type": "object"
+    },
+    "FeatureManifest": {
+      "additionalProperties": false,
+      "description": "One predictor feature as an extractor expression.",
+      "properties": {
+        "expr": {
+          "title": "Expr",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "expr"
+      ],
+      "title": "FeatureManifest",
+      "type": "object"
+    },
+    "RouteManifest": {
+      "additionalProperties": false,
+      "description": "One public route.\n\n``drop_fields`` and ``clamps`` are filled by the request hardening of\nplan item 6.3; until then they are empty.",
+      "properties": {
+        "clamps": {
+          "additionalProperties": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array"
+          },
+          "title": "Clamps",
+          "type": "object"
+        },
+        "drop_fields": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Drop Fields",
+          "type": "array"
+        },
+        "lightweight": {
+          "default": false,
+          "title": "Lightweight",
+          "type": "boolean"
+        },
+        "methods": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Methods",
+          "type": "array"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "request_schema": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Request Schema"
+        },
+        "retry_safe": {
+          "default": false,
+          "title": "Retry Safe",
+          "type": "boolean"
+        },
+        "streaming": {
+          "default": false,
+          "title": "Streaming",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "path",
+        "methods"
+      ],
+      "title": "RouteManifest",
+      "type": "object"
+    },
+    "TransportManifest": {
+      "additionalProperties": false,
+      "description": "How requests reach an instance.",
+      "properties": {
+        "health_path": {
+          "title": "Health Path",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "http_json",
+            "sse",
+            "grpc"
+          ],
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "health_path"
+      ],
+      "title": "TransportManifest",
+      "type": "object"
+    },
+    "WorkloadManifest": {
+      "additionalProperties": false,
+      "description": "What the engine does; keys predictor models.",
+      "properties": {
+        "feature_names": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Feature Names",
+          "type": "array"
+        },
+        "feature_schema_version": {
+          "title": "Feature Schema Version",
+          "type": "integer"
+        },
+        "latency_metric": {
+          "enum": [
+            "e2e",
+            "ttft"
+          ],
+          "title": "Latency Metric",
+          "type": "string"
+        },
+        "runtime_unit": {
+          "const": "ms",
+          "title": "Runtime Unit",
+          "type": "string"
+        },
+        "type": {
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "feature_names",
+        "feature_schema_version",
+        "latency_metric",
+        "runtime_unit"
+      ],
+      "title": "WorkloadManifest",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "A whole adapter manifest.",
+  "properties": {
+    "capacity": {
+      "$ref": "#/$defs/CapacityManifest"
+    },
+    "features": {
+      "anyOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/FeatureManifest"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Features"
+    },
+    "manifest_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Manifest Version",
+      "type": "integer"
+    },
+    "name": {
+      "title": "Name",
+      "type": "string"
+    },
+    "python_features": {
+      "title": "Python Features",
+      "type": "boolean"
+    },
+    "routes": {
+      "items": {
+        "$ref": "#/$defs/RouteManifest"
+      },
+      "title": "Routes",
+      "type": "array"
+    },
+    "transport": {
+      "$ref": "#/$defs/TransportManifest"
+    },
+    "workload": {
+      "$ref": "#/$defs/WorkloadManifest"
+    }
+  },
+  "required": [
+    "name",
+    "workload",
+    "transport",
+    "capacity",
+    "routes",
+    "features",
+    "python_features"
+  ],
+  "title": "EngineManifest",
+  "type": "object"
+}

@@ -35,6 +35,9 @@ class QueuedTask:
         metadata: Additional task metadata (priority, path, headers, etc.).
         enqueue_time: Unix timestamp when task was enqueued.
         predicted_time_ms: Predicted execution time in milliseconds (optional).
+        priority: Whether the task skipped the normal queue.
+        stream_sink: Future resolved with the engine's first answer for
+            streamed proxy requests (async dispatch only).
     """
 
     task_id: str
@@ -44,6 +47,9 @@ class QueuedTask:
     enqueue_time: float
     predicted_time_ms: float | None = None
     priority: bool = False
+    # asyncio.Future that receives a StreamStart when the engine answers.
+    # Only the async dispatch queue supports it.
+    stream_sink: Any = None
 
 
 @dataclass

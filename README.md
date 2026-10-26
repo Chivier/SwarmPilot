@@ -123,15 +123,19 @@ swarmpilot-refresh/
 # Development (recommended)
 git clone <repo-url> swarmpilot-refresh
 cd swarmpilot-refresh
-uv sync                        # editable install
-uv sync --extra pylet          # include PyLet
+uv sync                        # editable install, no inference engine
+uv sync --extra vllm           # plus the engine your instances run
 
 # Using pip
 pip install swarmpilot
-
-# With PyLet support
-pip install swarmpilot[pylet]
+pip install "swarmpilot[vllm]"       # or [sglang], [diffusion]
 ```
+
+SwarmPilot itself installs no inference engine. Install the engine on the
+machines that run instances, through its extra or however you normally do.
+vLLM and SGLang pin different torch versions, so they cannot share one
+environment. Other engines plug in through an adapter or a YAML file, see
+[examples/9.engine_plugin](examples/9.engine_plugin/).
 ## Pre-Trained Model
 
 Predictor models for Qwen3-8B-VL

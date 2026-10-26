@@ -13,6 +13,8 @@ import time
 from collections.abc import Callable
 from contextlib import asynccontextmanager, suppress
 from datetime import datetime
+from typing import ClassVar
+from urllib.parse import parse_qs
 
 import httpx
 import numpy as np
@@ -91,7 +93,10 @@ from .registry.task_registry import TaskRegistry
 from .services.planner_registrar import PlannerRegistrar
 from .services.task_result_callback import TaskResultCallback
 from .services.websocket_manager import ConnectionManager
-from .services.worker_queue_manager import WorkerQueueManager
+from .services.worker_queue_manager import (
+    WorkerQueueManager,
+    complete_platform_info,
+)
 from .services.worker_queue_thread import QueuedTask
 from .utils.http_error_logger import log_http_error
 
@@ -193,75 +198,80 @@ async def lifespan(app: FastAPI):
 
     loop_lag_monitor.start()
 
-    # Initialize WorkerQueueManager with event loop reference
-    global worker_queue_manager
-    loop = asyncio.get_running_loop()
-    thread_callback = task_result_callback.create_thread_callback(loop)
-    start_callback = task_result_callback.create_thread_start_callback(loop)
-    worker_queue_manager = WorkerQueueManager(
-        callback=thread_callback,
-        http_timeout=config.proxy.worker_http_timeout,
-        on_task_started=start_callback,
-    )
-    logger.info("WorkerQueueManager initialized")
+    try:
+        # Initialize WorkerQueueManager with event loop reference
+        global worker_queue_manager
+        loop = asyncio.get_running_loop()
+        thread_callback = task_result_callback.create_thread_callback(loop)
+        start_callback = task_result_callback.create_thread_start_callback(loop)
+        worker_queue_manager = WorkerQueueManager(
+            callback=thread_callback,
+            http_timeout=config.proxy.worker_http_timeout,
+            on_task_started=start_callback,
+            async_dispatch=config.proxy.dispatch_mode != "thread",
+            max_in_flight=config.proxy.max_in_flight,
+        )
+        logger.info("WorkerQueueManager initialized")
 
-    # Wire WorkerQueueManager into proxy router and scheduling strategy
-    if proxy_router_instance:
-        proxy_router_instance._queue_manager = worker_queue_manager
-        logger.info("Proxy router wired to WorkerQueueManager")
-    scheduling_strategy.set_worker_queue_manager(worker_queue_manager)
+        # Wire WorkerQueueManager into proxy router and scheduling strategy
+        if proxy_router_instance:
+            proxy_router_instance._queue_manager = worker_queue_manager
+            logger.info("Proxy router wired to WorkerQueueManager")
+        scheduling_strategy.set_worker_queue_manager(worker_queue_manager)
 
-    # Register online API endpoints from config (if configured)
-    n_online = await _register_online_endpoints(worker_queue_manager)
-    if n_online:
-        logger.info(f"Registered {n_online} online API virtual instance(s)")
+        # Register online API endpoints from config (if configured)
+        n_online = await _register_online_endpoints(worker_queue_manager)
+        if n_online:
+            logger.info(f"Registered {n_online} online API virtual instance(s)")
 
-    # Start planner reporter (if configured)
-    if planner_reporter:
-        await planner_reporter.start()
-        logger.info("Planner reporter started")
+        # Start planner reporter (if configured)
+        if planner_reporter:
+            await planner_reporter.start()
+            logger.info("Planner reporter started")
 
-    # Register with planner (if configured) - PYLET-024
-    planner_registrar = None
-    if config.planner_registration.enabled:
-        planner_registrar = PlannerRegistrar(config.planner_registration)
-        await planner_registrar.start()  # Raises RuntimeError on failure
-        logger.info("Planner registration successful")
+        # Register with planner (if configured) - PYLET-024
+        planner_registrar = None
+        if config.planner_registration.enabled:
+            planner_registrar = PlannerRegistrar(config.planner_registration)
+            await planner_registrar.start()  # Raises RuntimeError on failure
+            logger.info("Planner registration successful")
 
-    logger.success("Scheduler service started successfully")
+        logger.success("Scheduler service started successfully")
 
-    yield
+        yield
 
-    # Shutdown
-    logger.info("Scheduler service shutting down...")
+        # Shutdown
+        logger.info("Scheduler service shutting down...")
 
-    # Deregister from planner first (if registered) - PYLET-024
-    if planner_registrar:
-        await planner_registrar.stop()
-        logger.debug("Planner deregistration complete")
+        # Deregister from planner first (if registered) - PYLET-024
+        if planner_registrar:
+            await planner_registrar.stop()
+            logger.debug("Planner deregistration complete")
 
-    # Shutdown planner reporter first (if configured)
-    if planner_reporter:
-        await planner_reporter.shutdown()
-        logger.debug("Planner reporter shutdown complete")
+        # Shutdown planner reporter first (if configured)
+        if planner_reporter:
+            await planner_reporter.shutdown()
+            logger.debug("Planner reporter shutdown complete")
 
-    # Shutdown worker queue manager
-    if worker_queue_manager:
-        worker_queue_manager.shutdown()
-        logger.debug("WorkerQueueManager shutdown complete")
+        # Shutdown worker queue manager
+        if worker_queue_manager:
+            worker_queue_manager.shutdown()
+            await worker_queue_manager.aclose()
+            logger.debug("WorkerQueueManager shutdown complete")
 
-    # Close HTTP clients
-    if training_client:
-        await training_client.close()
-        logger.debug("Training client closed")
+        # Close HTTP clients
+        if training_client:
+            await training_client.close()
+            logger.debug("Training client closed")
 
-    await predictor_client.close()
-    logger.debug("Predictor client closed")
+        await predictor_client.close()
+        logger.debug("Predictor client closed")
 
-    await loop_lag_monitor.stop()
-
-    # TODO: Persist state if needed
-    logger.info("Scheduler service shutdown complete")
+        # TODO: Persist state if needed
+        logger.info("Scheduler service shutdown complete")
+    finally:
+        # Runs even if startup or shutdown above fails.
+        await loop_lag_monitor.stop()
 
 
 app = FastAPI(
@@ -274,47 +284,51 @@ app = FastAPI(
 logger.info("Initializing Scheduler API")
 
 
-@app.middleware("http")
-async def profile_request(request: Request, call_next: Callable):
-    """Profile the current request.
+class ProfileMiddleware:
+    """Profile a request when it carries ``?profile=<anything>``.
 
     Taken from pyinstrument documentation with small improvements.
     See: https://pyinstrument.readthedocs.io/en/latest/guide.html
 
-    Args:
-        request: The incoming HTTP request.
-        call_next: The next middleware or route handler.
-
-    Returns:
-        The response from the route handler.
+    A plain ASGI middleware rather than ``@app.middleware("http")``:
+    Starlette's BaseHTTPMiddleware costs about 0.5 ms on every request,
+    profiled or not.
     """
-    # we map a profile type to a file extension, as well as a pyinstrument profile renderer
-    profile_type_to_ext = {"html": "html", "speedscope": "speedscope.json"}
-    profile_type_to_renderer = {
-        "html": HTMLRenderer,
-        "speedscope": SpeedscopeRenderer,
+
+    _RENDERERS: ClassVar[dict[str, tuple[str, type]]] = {
+        "html": ("html", HTMLRenderer),
+        "speedscope": ("speedscope.json", SpeedscopeRenderer),
     }
 
-    # if the `profile=true` HTTP query argument is passed, we profile the request
-    if request.query_params.get("profile", False):
+    def __init__(self, app: Callable):
+        self.app = app
+
+    async def __call__(self, scope: dict, receive: Callable, send: Callable):
+        """Pass the request through, profiling it when asked."""
+        if scope["type"] != "http" or b"profile=" not in scope.get(
+            "query_string", b""
+        ):
+            await self.app(scope, receive, send)
+            return
+        params = parse_qs(scope["query_string"].decode(errors="replace"))
+        if not params.get("profile", [""])[0]:
+            await self.app(scope, receive, send)
+            return
+
         # The default profile format is speedscope
-        profile_type = request.query_params.get("profile_format", "speedscope")
-
-        # we profile the request along with all additional middlewares, by interrupting
-        # the program every 1ms1 and records the entire stack at that point
+        profile_type = params.get("profile_format", ["speedscope"])[0]
+        # Profile the request along with all inner middlewares, sampling
+        # the stack every 1 ms.
         with Profiler(interval=0.001, async_mode="enabled") as profiler:
-            response = await call_next(request)
+            await self.app(scope, receive, send)
 
-        # we dump the profiling into a file
-        extension = profile_type_to_ext[profile_type]
-        renderer = profile_type_to_renderer[profile_type]()
+        extension, renderer = self._RENDERERS[profile_type]
         with open(f"profile.{extension}", "w") as out:
-            out.write(profiler.output(renderer=renderer))
+            out.write(profiler.output(renderer=renderer()))
         profiler.print()
-        return response
 
-    # Proceed without profiling
-    return await call_next(request)
+
+app.add_middleware(ProfileMiddleware)
 
 
 # Determine queue info type based on scheduling strategy
@@ -1013,7 +1027,7 @@ async def register_instance(request: InstanceRegisterRequest):
         instance_id=request.instance_id,
         model_id=request.model_id,
         endpoint=request.endpoint,
-        platform_info=request.platform_info,
+        platform_info=complete_platform_info(request.platform_info),
         status=InstanceStatus.INITIALIZING,
     )
 
@@ -1033,6 +1047,7 @@ async def register_instance(request: InstanceRegisterRequest):
                 worker_id=request.instance_id,
                 worker_endpoint=request.endpoint,
                 model_id=request.model_id,
+                engine=request.platform_info.get("software_name"),
             )
             logger.info(
                 f"Registered worker queue thread for instance {request.instance_id}"
@@ -1539,7 +1554,9 @@ async def complete_instance_redeploy(request: InstanceRegisterRequest):
     # Update instance configuration
     existing_instance.model_id = request.model_id
     existing_instance.endpoint = request.endpoint
-    existing_instance.platform_info = request.platform_info
+    existing_instance.platform_info = complete_platform_info(
+        request.platform_info
+    )
 
     # Transition to ACTIVE status
     try:

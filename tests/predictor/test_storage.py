@@ -473,3 +473,29 @@ class TestStorageErrorHandling:
         finally:
             # Restore permissions for cleanup
             os.chmod(temp_storage_dir, stat.S_IRWXU)
+
+
+class TestModelExistsCache:
+    """model_exists() runs per request, so it caches without going stale."""
+
+    def test_miss_is_cached_then_rechecked(self, tmp_path, monkeypatch):
+        from swarmpilot.predictor.storage import model_storage as ms
+
+        storage = ms.ModelStorage(str(tmp_path))
+        now = [100.0]
+        monkeypatch.setattr(ms.time, "monotonic", lambda: now[0])
+        assert not storage.model_exists("k")
+        (tmp_path / "k.joblib").write_bytes(b"x")  # another process
+        assert not storage.model_exists("k")
+        now[0] += storage.MISSING_TTL_S
+        assert storage.model_exists("k")
+
+    def test_save_and_delete_update_the_cache(self, tmp_path):
+        from swarmpilot.predictor.storage.model_storage import ModelStorage
+
+        storage = ModelStorage(str(tmp_path))
+        assert not storage.model_exists("k")
+        storage.save_model("k", {}, {"model_id": "m"})
+        assert storage.model_exists("k")
+        assert storage.delete_model("k")
+        assert not storage.model_exists("k")

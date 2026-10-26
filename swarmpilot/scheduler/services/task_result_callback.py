@@ -12,15 +12,18 @@ Key features:
 """
 
 import asyncio
+import contextlib
 from collections.abc import Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
+from swarmpilot.engines.passthrough import PassthroughAdapter
 from swarmpilot.scheduler.models import TaskStatus
 from swarmpilot.scheduler.registry.instance_registry import InstanceRegistry
 from swarmpilot.scheduler.registry.task_registry import TaskRegistry
 from swarmpilot.scheduler.services.websocket_manager import ConnectionManager
+from swarmpilot.scheduler.services.worker_queue_manager import resolve_adapter
 
 if TYPE_CHECKING:
     from swarmpilot.scheduler.clients.training_library_client import (
@@ -28,6 +31,37 @@ if TYPE_CHECKING:
     )
     from swarmpilot.scheduler.services.worker_queue_thread import TaskResult
     from swarmpilot.scheduler.utils.throughput_tracker import ThroughputTracker
+
+# Pre-adapter extraction: only the keys the input actually carries.
+_LEGACY_FEATURES = PassthroughAdapter()
+
+
+def training_features(task: Any, platform_info: dict[str, str]) -> dict:
+    """Return the features a finished task contributes to training.
+
+    Proxy requests carry the adapter's features in their metadata, put there
+    by the proxy before scheduling. Training uses exactly those keys so that
+    every sample has the same features as prediction, and request details
+    such as the path never reach the model. Tasks submitted through the task
+    API carry their own feature metadata, which is used as it is, plus the
+    prompt length and max tokens when the input has them, as before.
+
+    Args:
+        task: Task record with ``metadata`` and ``task_input``.
+        platform_info: Platform info of the instance that ran the task.
+
+    Returns:
+        Feature name to value; empty when the task has no features.
+    """
+    metadata = task.metadata or {}
+    if metadata.get("proxy"):
+        adapter = resolve_adapter(platform_info.get("software_name"))
+        names = adapter.workload.feature_names
+        return {k: metadata[k] for k in names if k in metadata}
+    features = dict(metadata)
+    with contextlib.suppress(TypeError, ValueError, AttributeError):
+        features.update(_LEGACY_FEATURES.features("", task.task_input or {}))
+    return features
 
 
 class TaskResultCallback:
@@ -333,38 +367,26 @@ class TaskResultCallback:
             )
         if self.training_client and instance and task:
             try:
-                # Build training features from metadata + task_input.
-                # Metadata alone may be constant across proxy requests
-                # (e.g., always {"path": "v1/chat/completions"}), so we
-                # extract numeric/variable features from task_input too.
-                features = dict(task.metadata)
-                task_input = task.task_input or {}
-                if "max_tokens" in task_input:
-                    features["max_tokens"] = task_input["max_tokens"]
-                # Compute prompt length as a useful numeric feature
-                messages = task_input.get("messages")
-                if isinstance(messages, list):
-                    prompt_len = sum(
-                        len(m.get("content", ""))
-                        for m in messages
-                        if isinstance(m, dict)
+                features = training_features(task, instance.platform_info)
+                if features:
+                    self.training_client.add_sample(
+                        model_id=task.model_id,
+                        platform_info=instance.platform_info,
+                        features=features,
+                        actual_runtime_ms=result.execution_time_ms,
                     )
-                    features["prompt_length"] = prompt_len
-                elif "prompt" in task_input:
-                    features["prompt_length"] = len(task_input["prompt"])
-                self.training_client.add_sample(
-                    model_id=task.model_id,
-                    platform_info=instance.platform_info,
-                    features=features,
-                    actual_runtime_ms=result.execution_time_ms,
-                )
-                await self.training_client.flush_if_ready()
+                    await self.training_client.flush_if_ready()
+                else:
+                    logger.debug(
+                        f"No predictor features for task {task_id}; "
+                        "skipping training sample"
+                    )
             except (ValueError, RuntimeError, OSError) as e:
                 logger.warning(
                     f"Training sample recording failed for task {task_id}: {e}"
                 )
 
-        logger.info(
+        logger.debug(
             f"Task {task_id} completed on {result.worker_id} "
             f"in {result.execution_time_ms:.2f}ms"
         )

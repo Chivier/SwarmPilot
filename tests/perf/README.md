@@ -12,7 +12,12 @@ and prints its metrics as JSON.
 | `sim_routing.py` | 0.3 | CPU only | Routing simulation with the real strategy classes: 8 replicas, Poisson arrivals, 80% load. Reports P50/P95/P99 and the largest share of traffic one replica got. |
 | `bench_predictor.py` | 0.3 | CPU only | Quantile predictor training time, prediction time and empirical coverage. |
 | `../integration/probe_drain.py` | 0.3 | CPU only | What happens to queued tasks when an instance is drained and removed. |
-| `fake_engine.py` | | | OpenAI-style fake engine (chat, completions, SSE streaming, images). |
+| `fake_engine.py` | | | OpenAI-style fake engine (chat, completions, SSE streaming, images). `GET /_stats` reports requests per path and peak concurrency. |
+
+`tests/conformance/` checks dispatch semantics (pass-through, streaming,
+per-instance in-flight limit, lightweight routes, timeouts) over HTTP only,
+so the same tests can later run against the Rust gateway. The proxy
+benchmark is black-box in the same way: it only needs URLs.
 
 The five known bugs also have failing tests in
 `tests/regression/test_known_bugs.py`, marked `xfail(strict=True)`. The

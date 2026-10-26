@@ -8,6 +8,7 @@
 | 4 | [4.planner/](4.planner/) | Optimization plan generation | Intermediate |
 | 5 | [5.multi_model_planner/](5.multi_model_planner/) | Multi-model, Planner-managed deployment | Intermediate / Advanced |
 | 6 | [6.predictor_training/](6.predictor_training/) | Real-world data collection & predictor training pipeline | Advanced |
+| 9 | [9.engine_plugin/](9.engine_plugin/) | Bring your own engine: YAML generic adapter or plugin package | Intermediate |
 
 ## Benchmark Gallery
 

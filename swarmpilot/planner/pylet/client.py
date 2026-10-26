@@ -18,6 +18,7 @@ Example:
 
 from __future__ import annotations
 
+import shlex
 from dataclasses import dataclass, field
 
 import pylet
@@ -25,6 +26,7 @@ from loguru import logger
 from pylet import Instance
 from pylet.errors import NotFoundError, PyletError
 
+from swarmpilot.engines import adapter_names, get_adapter
 from swarmpilot.errors import PartialDeploymentError
 
 
@@ -82,15 +84,42 @@ class PartialDeploymentResult:
     failed: list[tuple[int, str]]
 
 
-# Model launch command templates
-# $PORT is replaced by PyLet with the auto-allocated port
-MODEL_COMMANDS: dict[str, str] = {
-    "vllm": "vllm serve {model_id} --port $PORT --host 0.0.0.0",
-    "sglang": (
-        "python -m sglang.launch_server "
-        "--model {model_id} --port $PORT --host 0.0.0.0"
-    ),
-}
+def build_launch_command(
+    model_id: str,
+    backend: str,
+    gpu_count: int = 1,
+    extra_args: str | None = None,
+) -> str:
+    """Build the shell command PyLet runs for an engine instance.
+
+    The engine adapter returns an argv list; every argument is shell-quoted
+    and only the port becomes PyLet's ``$PORT`` variable, so a model id or
+    extra argument can never inject shell syntax.
+
+    Args:
+        model_id: Model to serve.
+        backend: Engine adapter name (``vllm``, ``sglang`` or a plugin).
+        gpu_count: GPUs per instance.
+        extra_args: Extra engine arguments, split like a shell would.
+
+    Returns:
+        The command line.
+
+    Raises:
+        ValueError: If no adapter is registered under ``backend``.
+    """
+    try:
+        adapter = get_adapter(backend)
+    except KeyError as e:
+        raise ValueError(
+            f"Unsupported backend: {backend}. Supported: {adapter_names()}"
+        ) from e
+    spec = adapter.launch_spec(
+        model_id,
+        gpus=gpu_count,
+        extra_args=tuple(shlex.split(extra_args)) if extra_args else (),
+    )
+    return spec.render_shell()
 
 
 class PyLetClient:
@@ -200,7 +229,8 @@ class PyLetClient:
 
         Args:
             model_id: Model identifier (e.g., "Qwen/Qwen3-0.6B").
-            backend: Model backend, one of "vllm" or "sglang" (ignored if custom_command set).
+            backend: Engine adapter name, e.g. "vllm" or "sglang" (ignored
+                if custom_command set).
             gpu_count: Number of GPUs to allocate per instance.
             cpu_count: Number of CPU cores to allocate per instance.
             name: Optional base instance name (suffix appended for count > 1).
@@ -229,21 +259,9 @@ class PyLetClient:
             command = self.custom_command.format(model_id=model_id)
             logger.debug(f"Using custom command: {command}")
         else:
-            if backend not in MODEL_COMMANDS:
-                raise ValueError(
-                    f"Unsupported backend: {backend}. "
-                    f"Supported: {list(MODEL_COMMANDS.keys())}"
-                )
-            command_template = MODEL_COMMANDS[backend]
-            command = command_template.format(model_id=model_id)
-
-            # Auto-enable tensor parallelism when multiple GPUs
-            if gpu_count > 1:
-                command += f" --tensor-parallel-size {gpu_count}"
-
-            # Append per-model extra arguments (e.g., --max-model-len)
-            if extra_args:
-                command += f" {extra_args}"
+            command = build_launch_command(
+                model_id, backend, gpu_count=gpu_count, extra_args=extra_args
+            )
 
         # Build labels with SwarmPilot metadata
         instance_labels = {

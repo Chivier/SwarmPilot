@@ -29,15 +29,21 @@ Example:
 
 from __future__ import annotations
 
+import os
 import time
 from dataclasses import dataclass, field
 from enum import Enum
 
 from loguru import logger
 
+from swarmpilot.engines import get_adapter
+from swarmpilot.engines.live import probe_platform_info
 from swarmpilot.errors import PartialDeploymentError
 from swarmpilot.planner.pylet.client import PyLetClient
-from swarmpilot.planner.pylet.scheduler_client import SchedulerClient
+from swarmpilot.planner.pylet.scheduler_client import (
+    SchedulerClient,
+    default_platform_info,
+)
 from swarmpilot.planner.scheduler_registry import get_scheduler_registry
 
 
@@ -146,6 +152,8 @@ class InstanceManager:
         scheduler_url: str,
         custom_command: str | None = None,
         reuse_cluster: bool = False,
+        engine_ready_timeout: float | None = None,
+        hardware_name: str | None = None,
     ):
         """Initialize instance manager.
 
@@ -154,6 +162,11 @@ class InstanceManager:
             scheduler_url: URL of default scheduler (fallback).
             custom_command: Optional custom command template for PyLet.
             reuse_cluster: If True, reuse existing PyLet connection.
+            engine_ready_timeout: Seconds to wait for a new engine's health
+                path before registering it (env
+                ``PLANNER_ENGINE_READY_TIMEOUT``, default 600).
+            hardware_name: Hardware label in registered platform info (env
+                ``PLANNER_HARDWARE_NAME``, default "gpu").
         """
         self.pylet_client = PyLetClient(
             head_url=pylet_head_url,
@@ -165,6 +178,15 @@ class InstanceManager:
         self._scheduler_clients: dict[str, SchedulerClient] = {}
         self._instances: dict[str, ManagedInstance] = {}
         self._initialized = False
+        self._custom_command = custom_command
+        self._engine_ready_timeout = (
+            engine_ready_timeout
+            if engine_ready_timeout is not None
+            else float(os.getenv("PLANNER_ENGINE_READY_TIMEOUT", "600"))
+        )
+        self._hardware_name = hardware_name or os.getenv(
+            "PLANNER_HARDWARE_NAME", "gpu"
+        )
 
     def init(self) -> None:
         """Initialize connection to PyLet.
@@ -400,6 +422,30 @@ class InstanceManager:
             failed=failed,
         )
 
+    def _platform_info(self, managed: ManagedInstance) -> dict[str, str]:
+        """Wait for the engine to be healthy and read its live version.
+
+        Instances started from a custom command are not probed, because
+        their adapter's health and version routes may not apply.
+        """
+        if self._custom_command or not managed.endpoint:
+            return default_platform_info(managed.backend)
+        try:
+            adapter = get_adapter(managed.backend)
+        except KeyError:
+            return default_platform_info(managed.backend)
+        info = probe_platform_info(
+            adapter,
+            managed.endpoint,
+            hardware_name=self._hardware_name,
+            ready_timeout_s=self._engine_ready_timeout,
+        )
+        logger.info(
+            f"[INSTANCE_PLATFORM] pylet_id={managed.pylet_id} "
+            f"platform_info={info}"
+        )
+        return info
+
     def wait_instance_ready(
         self,
         pylet_id: str,
@@ -448,6 +494,7 @@ class InstanceManager:
 
             # Register with scheduler if requested
             if register and managed.endpoint:
+                platform_info = self._platform_info(managed)
                 managed.status = ManagedInstanceStatus.REGISTERING
                 scheduler = self._get_scheduler_client(managed.model_id)
                 result = scheduler.register_instance(
@@ -455,6 +502,7 @@ class InstanceManager:
                     model_id=managed.model_id,
                     endpoint=managed.endpoint,
                     backend=managed.backend,
+                    platform_info=platform_info,
                 )
 
                 if result.success:

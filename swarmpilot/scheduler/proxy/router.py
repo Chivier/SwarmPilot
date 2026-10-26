@@ -22,9 +22,14 @@ import uuid
 from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Request, Response
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from loguru import logger
+from starlette.background import BackgroundTask
 
+from swarmpilot.scheduler.services.async_worker_queue import StreamStart
+from swarmpilot.scheduler.services.worker_queue_manager import (
+    resolve_adapter,
+)
 from swarmpilot.scheduler.services.worker_queue_thread import QueuedTask
 
 if TYPE_CHECKING:
@@ -39,7 +44,8 @@ if TYPE_CHECKING:
     )
 
 
-# Lightweight OpenAI-compatible paths that should be prioritized.
+# Lightweight paths that should be prioritized when the engine's adapter
+# does not declare them.
 # These are fast metadata queries that should not be blocked by
 # long-running inference requests in the worker queue.
 PRIORITY_PATHS: set[str] = {
@@ -48,6 +54,39 @@ PRIORITY_PATHS: set[str] = {
     "ping",
     "version",
 }
+
+
+def _extract_features(
+    platform_info: dict[str, str], path: str, body: dict[str, Any]
+) -> dict[str, float]:
+    """Return the adapter's predictor features for one request.
+
+    Args:
+        platform_info: Platform info of the instances serving the model.
+        path: Request path without the leading slash.
+        body: Parsed JSON body.
+
+    Returns:
+        Feature name to value, or nothing if the body is malformed.
+    """
+    adapter = resolve_adapter(platform_info.get("software_name"))
+    try:
+        return adapter.features(path, body)
+    except (TypeError, ValueError, AttributeError) as e:
+        logger.debug(f"[PROXY] No features for /{path}: {e}")
+        return {}
+
+
+def _is_lightweight(platform_info: dict[str, str], path: str) -> bool:
+    """Whether ``path`` is a metadata route that skips the queue.
+
+    The engine's adapter decides for routes it declares; other paths fall
+    back to :data:`PRIORITY_PATHS`.
+    """
+    route = resolve_adapter(platform_info.get("software_name")).route(path)
+    if route is not None:
+        return route.lightweight
+    return path in PRIORITY_PATHS
 
 
 class ProxyRouter:
@@ -164,19 +203,12 @@ class ProxyRouter:
                 "method": method,
                 "proxy": True,
             }
-            # Extract predictor features from request body so the
-            # scheduling strategy can call the trained predictor.
-            if "max_tokens" in body:
-                metadata["max_tokens"] = body["max_tokens"]
-            messages = body.get("messages")
-            if isinstance(messages, list):
-                metadata["prompt_length"] = sum(
-                    len(m.get("content", ""))
-                    for m in messages
-                    if isinstance(m, dict)
-                )
-            elif "prompt" in body:
-                metadata["prompt_length"] = len(body["prompt"])
+            # The engine's adapter turns the body into predictor features,
+            # so the scheduling strategy can call the trained predictor and
+            # training samples use the same features later.
+            metadata.update(
+                _extract_features(all_instances[0].platform_info, path, body)
+            )
             # Forward experiment mode fields from body to scheduling metadata
             for _exp_key in (
                 "exp_runtime",
@@ -227,8 +259,17 @@ class ProxyRouter:
             assigned_instance=selected_instance_id,
         )
 
-        # 7. Register Future for this task
-        future = self._callback.register_future(task_id)
+        # 7. Streamed requests get the engine's answer through a sink as
+        #    soon as it starts; the rest wait for the completed result.
+        stream = bool(body.get("stream")) and getattr(
+            self._queue_manager, "supports_streaming", False
+        )
+        sink: asyncio.Future | None = None
+        if stream:
+            sink = asyncio.get_running_loop().create_future()
+            future = sink
+        else:
+            future = self._callback.register_future(task_id)
 
         # 9. Create and enqueue the task
         queued_task = QueuedTask(
@@ -242,9 +283,10 @@ class ProxyRouter:
                 "proxy": True,
             },
             enqueue_time=time.time(),
+            stream_sink=sink,
         )
 
-        is_priority = path in PRIORITY_PATHS
+        is_priority = _is_lightweight(all_instances[0].platform_info, path)
 
         try:
             if is_priority:
@@ -255,7 +297,7 @@ class ProxyRouter:
                 self._queue_manager.enqueue_task(
                     selected_instance_id, queued_task
                 )
-        except ValueError as e:
+        except (ValueError, RuntimeError) as e:
             self._callback.cleanup_future(task_id)
             logger.error(f"[PROXY] Failed to enqueue task: {e}")
             return JSONResponse(
@@ -268,7 +310,7 @@ class ProxyRouter:
                 },
             )
 
-        logger.info(
+        logger.debug(
             f"[PROXY] {method} /{path} enqueued to {selected_instance_id} "
             f"(task_id={task_id})"
         )
@@ -295,6 +337,9 @@ class ProxyRouter:
                 },
             )
 
+        if isinstance(result, StreamStart):
+            return self._stream_response(result)
+
         # 11. Return the backend's response
         status_code = result.http_status_code or 200
         response_body = result.result or {}
@@ -312,19 +357,49 @@ class ProxyRouter:
                 },
             )
 
-        # Build response headers (filter out problematic ones)
-        response_headers = {}
-        for key, value in (result.response_headers or {}).items():
-            lower_key = key.lower()
-            if lower_key not in (
-                "content-length",
-                "transfer-encoding",
-                "content-encoding",
-            ):
-                response_headers[key] = value
-
         return JSONResponse(
             status_code=status_code,
             content=response_body,
-            headers=response_headers,
+            headers=_filter_headers(result.response_headers),
         )
+
+    @staticmethod
+    def _stream_response(start: StreamStart) -> Response:
+        """Turn the engine's first answer into the client's response."""
+        if start.error is not None:
+            return JSONResponse(
+                status_code=502,
+                content={
+                    "error": {
+                        "message": start.error,
+                        "type": "bad_gateway",
+                    }
+                },
+            )
+        headers = _filter_headers(start.headers)
+        if start.chunks is None:
+            return JSONResponse(
+                status_code=start.status_code,
+                content=start.body if start.body is not None else {},
+                headers=headers,
+            )
+        headers.pop("content-type", None)
+        return StreamingResponse(
+            start.chunks,
+            status_code=start.status_code,
+            headers=headers,
+            media_type=start.headers.get("content-type", "text/event-stream"),
+            # Release the engine connection even if the client is gone
+            # before the first chunk.
+            background=BackgroundTask(start.chunks.aclose),
+        )
+
+
+def _filter_headers(headers: dict[str, str] | None) -> dict[str, str]:
+    """Drop hop-by-hop and length/encoding headers from an engine response."""
+    return {
+        k: v
+        for k, v in (headers or {}).items()
+        if k.lower()
+        not in ("content-length", "transfer-encoding", "content-encoding")
+    }

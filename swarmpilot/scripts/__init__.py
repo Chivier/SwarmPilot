@@ -11,7 +11,6 @@ Migration Tasks:
 """
 
 from swarmpilot.scripts.deploy import (
-    MODEL_COMMANDS,
     deploy_model,
     wait_model_ready,
     wait_model_ready_sync,
@@ -36,7 +35,6 @@ from swarmpilot.scripts.signal_handler import (
 
 __all__ = [
     "HEALTH_ENDPOINTS",
-    "MODEL_COMMANDS",
     "GracefulShutdown",
     "HealthMonitor",
     "HeartbeatSender",
