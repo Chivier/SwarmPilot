@@ -1,0 +1,68 @@
+# Engine tuning for the cluster simulator.
+#
+# An LLM step costs
+#   overhead + max(weights + kv_read, compute)
+# where weights = weight bytes per GPU / (bandwidth * mbu * tp_eff),
+# kv_read = context tokens * KV bytes per token per GPU / (bandwidth * mbu),
+# compute = batched tokens * 2 * params per GPU / (flops * mfu * tp_eff),
+# and tp_eff = 1 / (1 + tp_comm_coef * (tp - 1)).
+#
+# vLLM factors are fit to the vLLM nightly performance benchmark on 8xH100
+# (buildkite vllm/performance-benchmark build 9565): latency tests
+# (32 in / 128 out, batch 8) and ShareGPT serving tests at QPS 1, 4, 16, inf
+# for Llama-3.1-8B TP1 and Llama-3-70B TP4. See
+# rust/crates/sim-core/tests/calibration.rs for the fit points.
+#
+# SGLang has no public per-step numbers we could use. The vLLM v0.6.0 blog
+# appendix reports SGLang TTFT and TPOT comparable to vLLM on A100 and H100,
+# so it reuses the vLLM factors until we measure it.
+
+vllm:
+  mbu: 0.75
+  mfu: 0.45
+  step_overhead_ms: 1.2
+  request_overhead_ms: 12.0
+  request_overhead_per_extra_rank_ms: 5.0
+  tp_comm_coef: 0.10
+  gpu_memory_utilization: 0.9
+  activation_reserve_gb: 2.0
+  block_size: 16
+  max_num_seqs: 256
+  max_num_batched_tokens: 8192
+  cold_start_s: 25.0
+  load_gbps: 2.0
+  source: vLLM nightly benchmark, buildkite build 9565 (8xH100)
+  uncalibrated: false
+
+sglang:
+  mbu: 0.75
+  mfu: 0.45
+  step_overhead_ms: 1.2
+  request_overhead_ms: 12.0
+  request_overhead_per_extra_rank_ms: 5.0
+  tp_comm_coef: 0.10
+  gpu_memory_utilization: 0.88
+  activation_reserve_gb: 2.0
+  block_size: 1
+  max_num_seqs: 256
+  max_num_batched_tokens: 8192
+  cold_start_s: 30.0
+  load_gbps: 2.0
+  source: assumed equal to vLLM (vLLM v0.6.0 blog appendix)
+  uncalibrated: true
+
+diffusers:
+  cold_start_s: 20.0
+  load_gbps: 2.0
+  # Per-step time on another GPU = reference * (ref_tflops / tflops)^exp.
+  # A batch-1 UNet does not fill a large GPU, so the ratio is damped.
+  flops_scaling_exponent: 0.75
+  source: Baseten SDXL TensorRT blog, scaled by datasheet FLOPS
+  uncalibrated: true
+
+generic:
+  cold_start_s: 10.0
+  load_gbps: 2.0
+  flops_scaling_exponent: 1.0
+  source: synthetic
+  uncalibrated: true

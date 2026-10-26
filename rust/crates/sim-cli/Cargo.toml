@@ -1,0 +1,17 @@
+[package]
+name = "swarmpilot-sim"
+description = "Command-line front end of the SwarmPilot cluster simulator"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "swarmpilot-sim"
+path = "src/main.rs"
+
+[dependencies]
+swarmpilot-sim-core = { path = "../sim-core" }
+serde.workspace = true
+serde_json.workspace = true
+clap.workspace = true
