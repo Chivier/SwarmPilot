@@ -47,6 +47,11 @@ class PlannerConfig:
         self.auto_optimize_algorithm: str = os.getenv(
             "AUTO_OPTIMIZE_ALGORITHM", "integer_programming"
         )
+        # "tail" sizes models by arrival rate, q0.9 backlog and calls
+        # between models; "count" by outstanding tasks only.
+        self.auto_optimize_scaler: str = os.getenv(
+            "AUTO_OPTIMIZE_SCALER", "tail"
+        ).lower()
 
         # PyLet configuration
         self.pylet_enabled: bool = os.getenv(
@@ -173,6 +178,14 @@ class PlannerConfig:
             error_msg = (
                 "AUTO_OPTIMIZE_CHANGE_FACTOR must be in (0, 1], got "
                 f"{self.auto_optimize_change_factor}"
+            )
+            logger.error(f"Configuration validation failed: {error_msg}")
+            raise ValueError(error_msg)
+
+        if self.auto_optimize_scaler not in ("tail", "count"):
+            error_msg = (
+                "AUTO_OPTIMIZE_SCALER must be 'tail' or 'count', got "
+                f"{self.auto_optimize_scaler!r}"
             )
             logger.error(f"Configuration validation failed: {error_msg}")
             raise ValueError(error_msg)

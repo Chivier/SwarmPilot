@@ -171,6 +171,7 @@ async def lifespan(app: FastAPI):
                 change_factor=config.auto_optimize_change_factor,
                 min_replicas=config.auto_optimize_min_replicas,
                 algorithm=config.auto_optimize_algorithm,
+                scaler=config.auto_optimize_scaler,
             )
             auto_optimizer.start()
 
@@ -669,12 +670,19 @@ async def submit_target(request: SubmitTargetRequest):
     """Record a model's outstanding work, reported by its Scheduler.
 
     Args:
-        request: Model and its pending plus running task count.
+        request: Model, its pending plus running task count, and, from
+            newer Schedulers, its arrival rate, tail work and callers.
 
     Returns:
         The smoothed demand now held for the model.
     """
-    smoothed = get_demand_store().submit_target(request.model_id, request.value)
+    smoothed = get_demand_store().submit_target(
+        request.model_id,
+        request.value,
+        arrival_rate=request.arrival_rate,
+        work_s=request.work_s,
+        calls_from=request.calls_from,
+    )
     logger.debug(
         f"[DEMAND] model={request.model_id} value={request.value} "
         f"smoothed={smoothed:.2f}"

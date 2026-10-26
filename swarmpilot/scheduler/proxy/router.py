@@ -31,6 +31,11 @@ from swarmpilot.scheduler.services.worker_queue_manager import (
     resolve_adapter,
 )
 from swarmpilot.scheduler.services.worker_queue_thread import QueuedTask
+from swarmpilot.scheduler.utils.arrival_counter import (
+    PARENT_HEADER,
+    PARENT_KEY,
+    arrival_counter,
+)
 
 if TYPE_CHECKING:
     from swarmpilot.scheduler.algorithms.base import SchedulingStrategy
@@ -203,6 +208,9 @@ class ProxyRouter:
                 "method": method,
                 "proxy": True,
             }
+            parent = request.headers.get(PARENT_HEADER)
+            if parent:
+                metadata[PARENT_KEY] = parent
             # The engine's adapter turns the body into predictor features,
             # so the scheduling strategy can call the trained predictor and
             # training samples use the same features later.
@@ -260,6 +268,7 @@ class ProxyRouter:
             metadata=metadata,
             assigned_instance=selected_instance_id,
         )
+        arrival_counter.record(metadata.get(PARENT_KEY))
 
         # 7. Streamed requests get the engine's answer through a sink as
         #    soon as it starts; the rest wait for the completed result.

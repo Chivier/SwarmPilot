@@ -514,3 +514,61 @@ class TestBackendErrorForwarding:
             or "Backend request failed" in error_msg
         )
         loop.close()
+
+
+class TestParentHeader:
+    """Calls made on behalf of another model's task (item 3.4)."""
+
+    def test_parent_header_is_counted_and_kept(
+        self,
+        mock_scheduling_strategy,
+        mock_instance_registry,
+        mock_task_registry,
+        mock_callback,
+        mock_queue_manager,
+    ):
+        from swarmpilot.scheduler.utils.arrival_counter import arrival_counter
+
+        app = FastAPI()
+        app.include_router(
+            ProxyRouter(
+                scheduling_strategy=mock_scheduling_strategy,
+                instance_registry=mock_instance_registry,
+                task_registry=mock_task_registry,
+                task_result_callback=mock_callback,
+                worker_queue_manager=mock_queue_manager,
+                proxy_timeout=5.0,
+            ).router
+        )
+        loop = asyncio.new_event_loop()
+        future = loop.create_future()
+        future.set_result(
+            TaskResult(
+                task_id="t",
+                worker_id="instance-1",
+                status="completed",
+                result={},
+                execution_time_ms=1.0,
+                http_status_code=200,
+                response_headers={},
+            )
+        )
+        mock_callback.register_future = MagicMock(return_value=future)
+        arrival_counter.take()
+
+        client = TestClient(app)
+        client.post(
+            "/v1/images/generations",
+            json={"prompt": "x"},
+            headers={"X-SwarmPilot-Parent": "planner-llm"},
+        )
+        client.post("/v1/images/generations", json={"prompt": "y"})
+        loop.close()
+
+        window = arrival_counter.take()
+        assert window.arrivals == 2
+        assert window.calls_from == {"planner-llm": 1}
+        metadata = mock_task_registry.create_task.call_args_list[0].kwargs[
+            "metadata"
+        ]
+        assert metadata["parent_model"] == "planner-llm"

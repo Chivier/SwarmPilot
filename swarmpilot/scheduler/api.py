@@ -100,6 +100,7 @@ from .services.worker_queue_manager import (
     complete_platform_info,
 )
 from .services.worker_queue_thread import QueuedTask
+from .utils.arrival_counter import arrival_counter, parent_of
 from .utils.http_error_logger import log_http_error
 
 # Import logger configuration to initialize loguru
@@ -416,6 +417,8 @@ if config.planner_report.url and config.planner_report.interval > 0:
         interval=config.planner_report.interval,
         timeout=config.planner_report.timeout,
         throughput_tracker=throughput_tracker,
+        instance_registry=instance_registry,
+        arrivals=arrival_counter,
     )
     logger.info(
         f"Planner reporter initialized: URL={config.planner_report.url}, "
@@ -1666,6 +1669,7 @@ async def submit_task(request: TaskSubmitRequest):
         raise HTTPException(
             status_code=400, detail={"success": False, "error": error_msg}
         ) from e
+    arrival_counter.record(parent_of(request.metadata))
 
     # Log task submission
     logger.info(

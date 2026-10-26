@@ -426,6 +426,38 @@ curl http://localhost:8002/v1/timeline
 curl -X POST http://localhost:8002/v1/timeline/clear
 ```
 
+### Autoscaling agent workloads
+
+With `AUTO_OPTIMIZE_ENABLED=true`, each Scheduler reports its arrival rate,
+a q0.9 estimate of its outstanding work (from the queue sketches) and its
+outstanding task count every `PLANNER_REPORT_INTERVAL`. The default `tail`
+scaler gives each model a share of the machines proportional to the
+instances it needs: its arrival rate times its execution time, plus its
+q0.9 backlog drained over one interval.
+
+When one model's tasks call another (an agent's LLM step calling a tool or
+a diffusion model), mark those calls with the calling model so the Planner
+can size the callee from the caller's traffic instead of waiting for calls
+to pile up:
+
+```bash
+# Proxy path
+curl http://scheduler-tool:8000/v1/images/generations \
+  -H "X-SwarmPilot-Parent: Qwen/Qwen3-8B" -d '{"prompt": "..."}'
+
+# Task API
+curl -X POST http://scheduler-tool:8000/v1/task/submit -d '{
+  "task_id": "t1", "model_id": "sdxl", "task_input": {...},
+  "metadata": {"parent_model": "Qwen/Qwen3-8B"}}'
+```
+
+`GET /v1/demand` on the Planner shows the rates, tail work and estimated
+call ratios it plans from. In the agent-workload simulation
+(`tests/perf/agent_scaling.py`) the tail scaler missed the per-task SLO on
+7.0% of tasks against 40.4% for the `count` scaler with short agent steps,
+and 1.7% against 13.5% with long ones. Schedulers older than this release
+send no arrival rate; while any model lacks one the Planner uses `count`.
+
 ---
 
 ## Environment Variables
@@ -486,6 +518,7 @@ Source: `swarmpilot/planner/config.py`
 | `AUTO_OPTIMIZE_CHANGE_FACTOR` | `0.3` | Share of machines that may change model per round (at least one) |
 | `AUTO_OPTIMIZE_MIN_REPLICAS` | `1` | Replicas a deployed model keeps even with no demand |
 | `AUTO_OPTIMIZE_ALGORITHM` | `integer_programming` | Optimizer: `integer_programming` or `simulated_annealing` |
+| `AUTO_OPTIMIZE_SCALER` | `tail` | `tail` sizes models by arrival rate, q0.9 backlog and calls between models; `count` by outstanding tasks only (see [Autoscaling agent workloads](#autoscaling-agent-workloads)) |
 | `PYLET_ENABLED` | `false` | Enable PyLet cluster integration |
 | `PYLET_HEAD_URL` | _(none)_ | PyLet head node URL (required when `PYLET_ENABLED=true`) |
 | `PYLET_BACKEND` | `vllm` | Backend engine: `vllm` or `sglang` |
