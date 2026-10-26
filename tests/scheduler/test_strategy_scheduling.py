@@ -29,6 +29,7 @@ from swarmpilot.scheduler.models import (
     InstanceStatus,
 )
 from swarmpilot.scheduler.registry.instance_registry import InstanceRegistry
+from swarmpilot.scheduler.registry.queue_sketch import DEFAULT_QUANTILES
 
 
 class TestSchedulingStrategies:
@@ -138,7 +139,7 @@ class TestSchedulingStrategies:
             )
             assert isinstance(queue, InstanceQueueProbabilistic)
             # Queue values should remain at initial state (not updated by round-robin)
-            assert queue.values == [0.0, 0.0, 0.0, 0.0]
+            assert queue.values == [0.0] * len(DEFAULT_QUANTILES)
 
     @pytest.mark.asyncio
     async def test_min_time_strategy_scheduling(
@@ -276,7 +277,7 @@ class TestSchedulingStrategies:
             metadata=metadata,
             instances=test_instances,
             prediction_type="quantile",
-            quantiles=[0.5, 0.9, 0.95, 0.99],
+            quantiles=list(DEFAULT_QUANTILES),
         )
 
         # Verify selected instance (depends on sampling)
@@ -286,13 +287,13 @@ class TestSchedulingStrategies:
             "instance-2",
         ]
 
-        # Verify queue was updated using Monte Carlo sampling
+        # Verify the task was charged to the selected queue
         selected_queue = await instance_registry_probabilistic.get_queue_info(
             result.selected_instance_id
         )
         assert isinstance(selected_queue, InstanceQueueProbabilistic)
-        assert selected_queue.quantiles == [0.5, 0.9, 0.95, 0.99]
-        # Values should be updated (non-zero after Monte Carlo sampling)
+        assert selected_queue.quantiles == list(DEFAULT_QUANTILES)
+        # Values should be updated (non-zero after the charge)
         assert any(v > 0 for v in selected_queue.values)
 
     @pytest.mark.asyncio

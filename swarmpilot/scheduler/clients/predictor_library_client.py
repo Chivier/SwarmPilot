@@ -8,11 +8,9 @@ to the PreprocessorChainBuilder.
 from __future__ import annotations
 
 import json
-import random
 from collections import defaultdict
 from typing import TYPE_CHECKING, Any
 
-import numpy as np
 from loguru import logger
 
 from swarmpilot.scheduler.clients._predictor_lib import (
@@ -102,9 +100,6 @@ class PredictorClient:
         Raises:
             ValueError: On model-not-found or invalid features.
         """
-        random.seed(42)
-        np.random.seed(42)
-
         # Check experiment mode
         if is_experiment_mode(metadata, platform_info_dict):
             config = {}

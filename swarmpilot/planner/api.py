@@ -4,7 +4,6 @@ This module provides the main FastAPI application for the Planner service,
 which handles model deployment optimization using PyLet cluster management.
 """
 
-import random
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 
@@ -63,9 +62,6 @@ except ImportError:
     pylet_router = None  # type: ignore[assignment]
 
 from .routes.sdk_api import router as sdk_router
-
-np.random.seed(42)
-random.seed(42)
 
 # Configure logging
 setup_logging()

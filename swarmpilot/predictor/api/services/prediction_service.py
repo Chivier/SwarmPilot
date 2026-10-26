@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-import random
 import traceback
 from typing import Any
-
-import numpy as np
 
 from swarmpilot.predictor.api import dependencies
 from swarmpilot.predictor.models import PredictionRequest, PredictionResponse
@@ -38,9 +35,6 @@ def try_experiment_mode(
     request: PredictionRequest,
 ) -> PredictionResponse | None:
     """Return synthetic prediction response when request is in experiment mode."""
-    random.seed(42)
-    np.random.seed(42)
-
     if not is_experiment_mode(
         request.features, request.platform_info.model_dump()
     ):

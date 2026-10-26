@@ -51,6 +51,14 @@ class SchedulingConfig:
         os.getenv("SCHEDULING_PROBABILISTIC_QUANTILE", "0.9")
     )
 
+    # Seed for the strategies' random generators. Unset in production;
+    # set it only to make experiments repeatable.
+    random_seed: int | None = (
+        int(os.environ["SCHEDULING_RANDOM_SEED"])
+        if os.getenv("SCHEDULING_RANDOM_SEED")
+        else None
+    )
+
 
 @dataclass
 class TrainingConfig:
@@ -71,6 +79,12 @@ class TrainingConfig:
 
     # Minimum samples required before training
     min_samples: int = int(os.getenv("TRAINING_MIN_SAMPLES", "10"))
+
+    # Latest samples kept per (model, platform); each retrain fits on them
+    window_size: int = int(os.getenv("TRAINING_WINDOW", "2000"))
+
+    # Share of the window held out to validate a candidate model
+    holdout_fraction: float = float(os.getenv("TRAINING_HOLDOUT", "0.2"))
 
     # Prediction types to train (comma-separated list in env var)
     # Default: train both expect_error and quantile models

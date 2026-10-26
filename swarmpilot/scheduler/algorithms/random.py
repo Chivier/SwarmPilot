@@ -4,7 +4,6 @@ Simple strategy that randomly selects an instance.
 Represents the worst case of probabilistic scheduling.
 """
 
-import random
 from typing import TYPE_CHECKING, Any
 
 from loguru import logger
@@ -30,9 +29,10 @@ class RandomStrategy(SchedulingStrategy):
         self,
         predictor_client: "PredictorClient",
         instance_registry: "InstanceRegistry",
+        seed: int | None = None,
     ):
         """Initialize RandomStrategy."""
-        super().__init__(predictor_client, instance_registry)
+        super().__init__(predictor_client, instance_registry, seed=seed)
         self._counter = 0
 
     async def get_predictions(
@@ -80,12 +80,13 @@ class RandomStrategy(SchedulingStrategy):
         if not predictions:
             return None
 
-        return random.choice(predictions).instance_id
+        return predictions[self._rng.integers(len(predictions))].instance_id
 
     async def update_queue(
         self,
         instance_id: str,
         prediction: Prediction,
+        task_id: str | None = None,
     ) -> None:
         """No-op for RandomStrategy.
 
@@ -95,6 +96,7 @@ class RandomStrategy(SchedulingStrategy):
         Args:
             instance_id: Selected instance
             prediction: Prediction for the task
+            task_id: The task (unused)
         """
         # No-op: Random doesn't maintain queue state
         pass

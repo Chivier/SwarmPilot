@@ -4,14 +4,15 @@ This module defines the abstract base class for all scheduling strategies
 and the common ScheduleResult dataclass.
 """
 
-import random
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
 from loguru import logger
 
 from swarmpilot.scheduler.clients.models import Prediction
+from swarmpilot.scheduler.registry.queue_sketch import Charge
 
 if TYPE_CHECKING:
     from swarmpilot.scheduler.clients.predictor_library_client import (
@@ -22,9 +23,6 @@ if TYPE_CHECKING:
     from swarmpilot.scheduler.services.worker_queue_manager import (
         WorkerQueueManager,
     )
-
-
-random.seed(42)
 
 
 @dataclass
@@ -42,15 +40,19 @@ class SchedulingStrategy(ABC):
         self,
         predictor_client: "PredictorClient",
         instance_registry: "InstanceRegistry",
+        seed: int | None = None,
     ):
         """Initialize scheduling strategy with dependencies.
 
         Args:
             predictor_client: Client for getting predictions
             instance_registry: Registry for instance and queue management
+            seed: Seed for this strategy's random generator. Leave None in
+                production; set it only to make experiments repeatable.
         """
         self.predictor_client = predictor_client
         self.instance_registry = instance_registry
+        self._rng = np.random.default_rng(seed)
         self._worker_queue_manager: WorkerQueueManager | None = None
 
     def set_worker_queue_manager(
@@ -90,6 +92,7 @@ class SchedulingStrategy(ABC):
         model_id: str,
         metadata: dict[str, Any],
         available_instances: list["Instance"],
+        task_id: str | None = None,
     ) -> ScheduleResult:
         """Schedule a task to an instance (template method).
 
@@ -103,6 +106,8 @@ class SchedulingStrategy(ABC):
             model_id: Model identifier
             metadata: Task metadata for prediction
             available_instances: List of available instances
+            task_id: The task being routed. Its charge on the chosen
+                instance's queue sketch is released when it finishes.
 
         Returns:
             ScheduleResult containing selected instance and prediction
@@ -159,7 +164,9 @@ class SchedulingStrategy(ABC):
 
         # Step 5: Update queue information
         if selected_prediction:
-            await self.update_queue(selected_instance_id, selected_prediction)
+            await self.update_queue(
+                selected_instance_id, selected_prediction, task_id=task_id
+            )
         else:
             logger.warning(
                 f"No prediction is selected:"
@@ -263,24 +270,32 @@ class SchedulingStrategy(ABC):
         """
         pass
 
-    @abstractmethod
     async def update_queue(
         self,
         instance_id: str,
         prediction: Prediction,
+        task_id: str | None = None,
     ) -> None:
-        """Update queue information for selected instance.
+        """Charge the task's prediction to the instance's queue sketch.
 
-        Each strategy implements its own queue update logic:
-        - MinimumExpectedTimeStrategy: error accumulation
-        - ProbabilisticSchedulingStrategy: Monte Carlo sampling
-        - RoundRobinStrategy: no-op
+        The registry subtracts the same charge when the task completes,
+        fails or moves. Strategies that keep no queue state override this
+        with a no-op.
 
         Args:
             instance_id: Selected instance
             prediction: Prediction for the task
+            task_id: The task, or None for a charge never released
         """
-        pass
+        await self.instance_registry.charge(
+            task_id,
+            Charge.of(
+                instance_id,
+                prediction.predicted_time_ms,
+                prediction.error_margin_ms,
+                prediction.quantiles,
+            ),
+        )
 
     def get_prediction_type(self) -> str:
         """Get the prediction type required by this strategy.

@@ -34,6 +34,7 @@ def get_strategy(
     predictor_client: "PredictorClient",
     instance_registry: "InstanceRegistry",
     target_quantile: float = 0.9,
+    seed: int | None = None,
     **kwargs,
 ) -> "SchedulingStrategy":
     """Get scheduling strategy by name.
@@ -44,33 +45,49 @@ def get_strategy(
         predictor_client: Predictor client instance
         instance_registry: Instance registry instance
         target_quantile: Target quantile for probabilistic strategy (default: 0.9)
+        seed: Seed for the strategy's random generator (experiments only)
         **kwargs: Additional keyword arguments (reserved for future use)
 
     Returns:
         Configured scheduling strategy instance
     """
     if strategy_name == "min_time":
-        return MinimumExpectedTimeStrategy(predictor_client, instance_registry)
+        return MinimumExpectedTimeStrategy(
+            predictor_client, instance_registry, seed=seed
+        )
     elif strategy_name == "probabilistic":
         return ProbabilisticSchedulingStrategy(
-            predictor_client, instance_registry, target_quantile=target_quantile
+            predictor_client,
+            instance_registry,
+            target_quantile=target_quantile,
+            seed=seed,
         )
     elif strategy_name == "round_robin":
-        return RoundRobinStrategy(predictor_client, instance_registry)
+        return RoundRobinStrategy(
+            predictor_client, instance_registry, seed=seed
+        )
     elif strategy_name == "random":
-        return RandomStrategy(predictor_client, instance_registry)
+        return RandomStrategy(predictor_client, instance_registry, seed=seed)
     elif strategy_name == "po2":
-        return PowerOfTwoStrategy(predictor_client, instance_registry)
+        return PowerOfTwoStrategy(
+            predictor_client, instance_registry, seed=seed
+        )
     elif strategy_name == "serverless":
         return MinimumExpectedTimeServerlessStrategy(
-            predictor_client, instance_registry
+            predictor_client, instance_registry, seed=seed
         )
     elif strategy_name == "adaptive_bootstrap":
         return AdaptiveBootstrapStrategy(
-            predictor_client, instance_registry, target_quantile=target_quantile
+            predictor_client,
+            instance_registry,
+            target_quantile=target_quantile,
+            seed=seed,
         )
     else:
         # Default to adaptive bootstrap
         return AdaptiveBootstrapStrategy(
-            predictor_client, instance_registry, target_quantile=target_quantile
+            predictor_client,
+            instance_registry,
+            target_quantile=target_quantile,
+            seed=seed,
         )

@@ -14,8 +14,8 @@ from fastapi.testclient import TestClient
 
 
 @pytest.fixture
-def client():
-    """Create a test client with a fresh app instance."""
+def client(monkeypatch):
+    """Create a test client with fresh registries, restored afterwards."""
     # Import here to avoid circular dependencies
     from swarmpilot.scheduler import api
 
@@ -26,9 +26,12 @@ def client():
         ConnectionManager,
     )
 
-    api.instance_registry = InstanceRegistry()
-    api.task_registry = TaskRegistry()
-    api.websocket_manager = ConnectionManager()
+    monkeypatch.setattr(api, "instance_registry", InstanceRegistry())
+    monkeypatch.setattr(api, "task_registry", TaskRegistry())
+    monkeypatch.setattr(api, "websocket_manager", ConnectionManager())
+    # The lifespan does not run here, so drop any queue manager an earlier
+    # test left behind, with its queued work.
+    monkeypatch.setattr(api, "worker_queue_manager", None)
 
     return TestClient(api.app)
 
@@ -345,6 +348,7 @@ class TestTaskAssignmentWithDraining:
 
         with patch.object(api, "worker_queue_manager") as mock_wqm:
             mock_wqm.enqueue_task = lambda *a, **kw: 1
+            mock_wqm.outstanding = lambda *a, **kw: (0, 0)
             yield mock_wqm
 
     async def test_task_not_assigned_to_draining_instance(

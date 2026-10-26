@@ -15,6 +15,12 @@ from swarmpilot.scheduler.models import (
     InstanceStats,
     InstanceStatus,
 )
+from swarmpilot.scheduler.registry.queue_sketch import (
+    DEFAULT_QUANTILES,
+    Charge,
+    apply,
+    empty_like,
+)
 
 
 class InstanceRegistry:
@@ -33,7 +39,13 @@ class InstanceRegistry:
         self._lock = asyncio.Lock()
         self._queue_info_type = queue_info_type
         # Store quantiles configuration for probabilistic queues
-        self._quantiles = [0.5, 0.9, 0.95, 0.99]  # Default quantiles
+        self._quantiles = list(DEFAULT_QUANTILES)
+        # What each routed, unfinished task added to its instance's sketch,
+        # and how many charges each sketch holds.
+        self._charges: dict[str, Charge] = {}
+        self._charge_counts: dict[str, int] = {}
+        # Requests each instance serves at once (1 when not set).
+        self._servers: dict[str, int] = {}
 
     async def register(self, instance: Instance) -> None:
         """Register a new instance.
@@ -98,6 +110,8 @@ class InstanceRegistry:
             instance = self._instances.pop(instance_id)
             self._queue_info.pop(instance_id, None)
             self._stats.pop(instance_id, None)
+            self._drop_charges(instance_id)
+            self._servers.pop(instance_id, None)
 
             return instance
 
@@ -211,6 +225,151 @@ class InstanceRegistry:
         async with self._lock:
             if instance_id in self._instances:
                 self._queue_info[instance_id] = queue_info
+
+    # ------------------------------------------------------------------
+    # Queue sketch charges
+    # ------------------------------------------------------------------
+
+    def _apply_locked(self, charge: Charge, sign: int) -> None:
+        queue = self._queue_info.get(charge.instance_id)
+        if queue is None:
+            return
+        count = self._charge_counts.get(charge.instance_id, 0) + sign
+        self._charge_counts[charge.instance_id] = max(count, 0)
+        # An empty sketch is exactly empty, not a rounding residue.
+        self._queue_info[charge.instance_id] = (
+            empty_like(queue)
+            if count <= 0
+            else apply(
+                queue,
+                charge,
+                sign,
+                self._servers.get(charge.instance_id, 1),
+            )
+        )
+
+    def _drop_charges(self, instance_id: str) -> None:
+        self._charge_counts.pop(instance_id, None)
+        stale = [
+            t for t, c in self._charges.items() if c.instance_id == instance_id
+        ]
+        for task_id in stale:
+            del self._charges[task_id]
+
+    async def charge(self, task_id: str | None, charge: Charge) -> None:
+        """Add a task's predicted runtime to its instance's sketch.
+
+        A task charged before (re-routed or re-predicted) has its old charge
+        removed first, in the same step.
+
+        Args:
+            task_id: The task, or None for a charge that is never released.
+            charge: The task's contribution.
+        """
+        async with self._lock:
+            if task_id is not None:
+                old = self._charges.pop(task_id, None)
+                if old is not None:
+                    self._apply_locked(old, -1)
+                self._charges[task_id] = charge
+            self._apply_locked(charge, 1)
+
+    async def release_charge(self, task_id: str) -> Charge | None:
+        """Remove a finished or moved task from its instance's sketch.
+
+        Args:
+            task_id: The task.
+
+        Returns:
+            The removed charge, or None if the task held none.
+        """
+        async with self._lock:
+            old = self._charges.pop(task_id, None)
+            if old is not None:
+                self._apply_locked(old, -1)
+            return old
+
+    async def move_charge(self, task_id: str, instance_id: str) -> bool:
+        """Move a task's charge, unchanged, to another instance.
+
+        Returns:
+            True if the task held a charge.
+        """
+        async with self._lock:
+            old = self._charges.pop(task_id, None)
+            if old is None:
+                return False
+            self._apply_locked(old, -1)
+            new = Charge(
+                instance_id=instance_id,
+                time_ms=old.time_ms,
+                error_ms=old.error_ms,
+                quantiles=old.quantiles,
+            )
+            self._charges[task_id] = new
+            self._apply_locked(new, 1)
+            return True
+
+    async def set_capacity(self, instance_id: str, servers: int) -> None:
+        """Set how many requests an instance serves at once.
+
+        The instance's sketch is rebuilt from its open charges, so tasks
+        charged before the change are counted the same way as later ones.
+
+        Args:
+            instance_id: The instance.
+            servers: Requests in flight at once; values below 1 count as 1.
+        """
+        servers = max(1, int(servers))
+        async with self._lock:
+            queue = self._queue_info.get(instance_id)
+            if queue is None or self.get_capacity(instance_id) == servers:
+                return
+            self._servers[instance_id] = servers
+            self._queue_info[instance_id] = empty_like(queue)
+            self._charge_counts.pop(instance_id, None)
+            for charge in self._charges.values():
+                if charge.instance_id == instance_id:
+                    self._apply_locked(charge, 1)
+
+    def get_capacity(self, instance_id: str) -> int:
+        """Return how many requests the instance serves at once."""
+        return self._servers.get(instance_id, 1)
+
+    def get_charge(self, task_id: str) -> Charge | None:
+        """Return the task's current charge, if any."""
+        return self._charges.get(task_id)
+
+    async def reset_queues(
+        self, queue_info_type: str, quantiles: list[float] | None = None
+    ) -> None:
+        """Switch every sketch to a new kind and rebuild it from charges.
+
+        Args:
+            queue_info_type: "probabilistic" or "expect_error".
+            quantiles: Quantile grid for probabilistic sketches.
+        """
+        async with self._lock:
+            self._queue_info_type = queue_info_type
+            if quantiles:
+                self._quantiles = sorted(set(quantiles))
+            for iid in self._instances:
+                if queue_info_type == "expect_error":
+                    queue: InstanceQueueBase = InstanceQueueExpectError(
+                        instance_id=iid,
+                        expected_time_ms=0.0,
+                        error_margin_ms=0.0,
+                    )
+                else:
+                    queue = InstanceQueueProbabilistic(
+                        instance_id=iid,
+                        quantiles=list(self._quantiles),
+                        values=[0.0] * len(self._quantiles),
+                    )
+                self._queue_info[iid] = queue
+            self._charge_counts.clear()
+            for charge in self._charges.values():
+                self._apply_locked(charge, 1)
 
     async def get_stats(self, instance_id: str) -> InstanceStats | None:
         """Get statistics for an instance.
@@ -397,6 +556,7 @@ class InstanceRegistry:
             instance = self._instances.pop(instance_id)
             self._queue_info.pop(instance_id, None)
             self._stats.pop(instance_id, None)
+            self._drop_charges(instance_id)
 
             return instance
 
@@ -521,4 +681,6 @@ class InstanceRegistry:
             self._instances.clear()
             self._queue_info.clear()
             self._stats.clear()
+            self._charges.clear()
+            self._charge_counts.clear()
             return count

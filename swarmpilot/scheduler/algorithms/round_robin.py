@@ -30,9 +30,10 @@ class RoundRobinStrategy(SchedulingStrategy):
         self,
         predictor_client: "PredictorClient",
         instance_registry: "InstanceRegistry",
+        seed: int | None = None,
     ):
         """Initialize RoundRobinStrategy."""
-        super().__init__(predictor_client, instance_registry)
+        super().__init__(predictor_client, instance_registry, seed=seed)
         self._counter = 0
 
     async def get_predictions(
@@ -88,6 +89,7 @@ class RoundRobinStrategy(SchedulingStrategy):
         self,
         instance_id: str,
         prediction: Prediction,
+        task_id: str | None = None,
     ) -> None:
         """No-op for RoundRobinStrategy.
 
@@ -97,6 +99,7 @@ class RoundRobinStrategy(SchedulingStrategy):
         Args:
             instance_id: Selected instance
             prediction: Prediction for the task
+            task_id: The task (unused)
         """
         # No-op: RoundRobin doesn't maintain queue state
         pass

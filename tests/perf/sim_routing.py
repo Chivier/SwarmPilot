@@ -5,17 +5,13 @@ prompt-dependent mean m (heavy-tailed lognormal across prompts) and actual
 service time m * lognormal(cv=0.3). The predictor runs in experiment mode
 with exp_runtime=m, exp_cv=0.3, i.e. a well-calibrated per-request predictor.
 
-Modes:
-  as_is   - exactly the repo's behaviour: queue sketches are only ever added
-            to (nothing subtracts them when a task completes).
-  fixed   - same strategies, but when a task completes its predicted
-            quantiles are subtracted from its instance's queue sketch.
-  noseed  - as_is, but with the per-predict random.seed(42)/np.random.seed(42)
-            in PredictorClient neutralised.
+Every routed task is charged to its instance's queue sketch and released
+when it finishes, as the Scheduler's result callback does. ``residual_ms``
+is the largest sketch value left once every task has finished; it must be 0.
 
-The "fixed" and "noseed" modes patch around the bugs from outside, so they
-show what plan items 2.2 and 2.3 should achieve. Once those land, "as_is"
-should match them.
+Strategies get a fixed seed so runs repeat. The baseline file from commit
+8a9cee4 also has "fixed" and "noseed" modes that patched the sketch and
+reseed bugs from outside; plan items 2.2 and 2.3 made both the real code.
 
 Usage:
     uv run python tests/perf/sim_routing.py [n_tasks=3000] [load=0.8]
@@ -24,14 +20,12 @@ Usage:
 import asyncio
 import heapq
 import json
-import random
 import sys
 import tempfile
 
 import numpy as np
 
 from swarmpilot.scheduler.algorithms.factory import get_strategy
-from swarmpilot.scheduler.clients import predictor_library_client as plc
 from swarmpilot.scheduler.clients.predictor_library_client import (
     PredictorClient,
 )
@@ -62,31 +56,6 @@ def workload(seed=0):
     return means, actual, arrivals
 
 
-async def subtract(reg, iid, pred):
-    q = await reg.get_queue_info(iid)
-    if isinstance(q, InstanceQueueProbabilistic) and pred.quantiles:
-        ks = sorted(pred.quantiles)
-        tv = np.interp(q.quantiles, ks, [pred.quantiles[k] for k in ks])
-        vals = [max(0.0, v - t) for v, t in zip(q.values, tv)]
-        await reg.update_queue_info(
-            iid,
-            InstanceQueueProbabilistic(
-                instance_id=iid, quantiles=q.quantiles, values=vals
-            ),
-        )
-    elif isinstance(q, InstanceQueueExpectError):
-        await reg.update_queue_info(
-            iid,
-            InstanceQueueExpectError(
-                instance_id=iid,
-                expected_time_ms=max(
-                    0.0, q.expected_time_ms - pred.predicted_time_ms
-                ),
-                error_margin_ms=q.error_margin_ms,
-            ),
-        )
-
-
 async def run(strategy, mode, means, actual, arrivals):
     qtype = (
         "probabilistic"
@@ -106,24 +75,32 @@ async def run(strategy, mode, means, actual, arrivals):
     for i in insts:
         await reg.register(i)
     pc = PredictorClient(storage_dir=tempfile.mkdtemp(prefix="sim-models-"))
-    strat = get_strategy(strategy, pc, reg)
+    strat = get_strategy(strategy, pc, reg, seed=1)
     free_at = [0.0] * N_INST
-    pending = []  # heap of (finish_time, inst_idx, prediction)
+    pending = []  # heap of (finish_time, task index)
     lat, chosen = [], []
     for t in range(N_TASKS):
         now = arrivals[t]
         while pending and pending[0][0] <= now:
-            _, k, _, pred = heapq.heappop(pending)
-            if mode == "fixed" and pred is not None:
-                await subtract(reg, f"i{k}", pred)
+            _, done = heapq.heappop(pending)
+            await reg.release_charge(f"t{done}")
         md = {"exp_runtime": float(means[t]), "exp_cv": 0.3}
-        res = await strat.schedule_task("m", md, insts)
+        res = await strat.schedule_task("m", md, insts, task_id=f"t{t}")
         k = int(res.selected_instance_id[1:])
         start = max(now, free_at[k])
         free_at[k] = start + actual[t]
-        heapq.heappush(pending, (free_at[k], k, t, res.selected_prediction))
+        heapq.heappush(pending, (free_at[k], t))
         lat.append(free_at[k] - now)
         chosen.append(k)
+    while pending:
+        _, done = heapq.heappop(pending)
+        await reg.release_charge(f"t{done}")
+    residual = 0.0
+    for q in (await reg.get_all_queue_info()).values():
+        if isinstance(q, InstanceQueueProbabilistic):
+            residual = max(residual, *q.values)
+        elif isinstance(q, InstanceQueueExpectError):
+            residual = max(residual, q.expected_time_ms)
     lat = np.array(lat) / 1000
     share = np.bincount(chosen, minlength=N_INST) / N_TASKS
     return {
@@ -133,6 +110,7 @@ async def run(strategy, mode, means, actual, arrivals):
         "p95_s": round(float(np.percentile(lat, 95)), 2),
         "p99_s": round(float(np.percentile(lat, 99)), 2),
         "max_share": round(float(share.max()), 3),
+        "residual_ms": residual,
     }
 
 
@@ -163,17 +141,15 @@ async def main():
     logger.remove()
     means, actual, arrivals = workload()
     out = [oracle_jsq(means, actual, arrivals)]
-    for s in ["round_robin", "random", "po2", "min_time", "probabilistic"]:
+    for s in [
+        "round_robin",
+        "random",
+        "po2",
+        "min_time",
+        "probabilistic",
+        "adaptive_bootstrap",
+    ]:
         out.append(await run(s, "as_is", means, actual, arrivals))
-    for s in ["min_time", "probabilistic"]:
-        out.append(await run(s, "fixed", means, actual, arrivals))
-    # neutralise the per-call reseed
-    plc.random.seed = lambda *a, **k: None
-    plc.np.random.seed = lambda *a, **k: None
-    random.seed(1)
-    np.random.seed(1)
-    for s in ["random", "po2", "probabilistic"]:
-        out.append(await run(s, "noseed", means, actual, arrivals))
     for r in out:
         print(json.dumps(r))
 

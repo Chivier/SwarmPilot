@@ -65,7 +65,9 @@ def sample_prediction_for_update():
 class TestUpdateMetadataValidation:
     """Tests for request/response validation."""
 
-    def test_valid_request_accepted(self, test_client, sample_metadata_update):
+    def test_valid_request_accepted(
+        self, test_client, sample_metadata_update, sample_prediction_for_update
+    ):
         """Test that a valid request is accepted."""
         # First register an instance and submit a task
         test_client.post(
@@ -97,10 +99,10 @@ class TestUpdateMetadataValidation:
                 },
             )
 
-        # Update metadata
+        # Update metadata; the task is assigned, so it is re-predicted
         with patch(
             "swarmpilot.scheduler.api.predictor_client.predict",
-            new=AsyncMock(return_value=[]),
+            new=AsyncMock(return_value=[sample_prediction_for_update]),
         ):
             response = test_client.post(
                 "/v1/task/update_metadata", json=sample_metadata_update

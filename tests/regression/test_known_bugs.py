@@ -153,11 +153,6 @@ def _wait_all_done(
     return statuses
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="gap S5/S4: drain ignores queued tasks and remove drops them "
-    "(fixed by plan item 2.1)",
-)
 def test_drain_counts_and_reroutes_queued_tasks(
     scheduler: TestClient, slow_engine: str
 ) -> None:
@@ -182,11 +177,6 @@ def test_drain_counts_and_reroutes_queued_tasks(
     assert statuses == dict.fromkeys(task_ids, "completed"), statuses
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="gap R2/A1: queue sketches are never decremented on completion "
-    "(fixed by plan item 2.2)",
-)
 def test_queue_sketch_returns_to_empty(
     scheduler: TestClient, fast_engine: str
 ) -> None:
@@ -208,11 +198,6 @@ def test_queue_sketch_returns_to_empty(
         assert max(values) == pytest.approx(0.0, abs=1e-6), (iid, queue)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="gap R4/R7: the predictor reseeds random and np.random to 42 on "
-    "every call (fixed by plan item 2.3)",
-)
 async def test_random_choices_are_random(tmp_path) -> None:
     """Random must be uniform over replicas, and PO2 must use all of them."""
     from loguru import logger
@@ -245,7 +230,8 @@ async def test_random_choices_are_random(tmp_path) -> None:
             reg = InstanceRegistry(queue_info_type=qtype)
             for inst in insts:
                 await reg.register(inst)
-            strategy = get_strategy(name, predictor, reg)
+            # Seeded so the 1% chi-square false alarm cannot flake CI.
+            strategy = get_strategy(name, predictor, reg, seed=0)
             counts: Counter = Counter()
             for _ in range(n):
                 res = await strategy.schedule_task("m", md, insts)
@@ -260,11 +246,6 @@ async def test_random_choices_are_random(tmp_path) -> None:
 
 
 @pytest.mark.slow
-@pytest.mark.xfail(
-    strict=True,
-    reason="gap A3: auto-training fits the model on the event loop "
-    "(fixed by plan item 2.4)",
-)
 async def test_retraining_does_not_block_event_loop(tmp_path) -> None:
     """A retrain must keep event-loop lag P99 under 50 ms."""
     from loguru import logger

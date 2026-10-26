@@ -276,6 +276,10 @@ class TaskResultCallback:
         logger.debug(f"Handling result for task {task_id}: {result.status}")
 
         try:
+            # The task no longer occupies its instance: take its charge
+            # off the queue sketch, whatever the outcome.
+            await self.instance_registry.release_charge(task_id)
+
             # Get task record
             task = await self.task_registry.get(task_id)
             if not task:
@@ -375,7 +379,7 @@ class TaskResultCallback:
                         features=features,
                         actual_runtime_ms=result.execution_time_ms,
                     )
-                    await self.training_client.flush_if_ready()
+                    self.training_client.start_flush_if_ready()
                 else:
                     logger.debug(
                         f"No predictor features for task {task_id}; "

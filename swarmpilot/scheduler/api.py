@@ -17,7 +17,6 @@ from typing import ClassVar
 from urllib.parse import parse_qs
 
 import httpx
-import numpy as np
 from fastapi import (
     FastAPI,
     HTTPException,
@@ -34,6 +33,7 @@ from pyinstrument.renderers.speedscope import SpeedscopeRenderer
 from swarmpilot.shared.loop_lag import EventLoopLagMonitor
 
 from .algorithms import get_strategy
+from .algorithms.base import ScheduleResult
 from .config import config
 from .models import (
     # Health models
@@ -89,6 +89,7 @@ from .models import (
     WSTaskResultMessage,
 )
 from .registry.instance_registry import InstanceRegistry
+from .registry.queue_sketch import DEFAULT_QUANTILES, Charge
 from .registry.task_registry import TaskRegistry
 from .services.planner_registrar import PlannerRegistrar
 from .services.task_result_callback import TaskResultCallback
@@ -105,7 +106,6 @@ from .utils.logger import setup_logger  # noqa: F401
 from .utils.planner_reporter import PlannerReporter
 from .utils.throughput_tracker import ThroughputTracker
 
-random.seed(42)
 # ============================================================================
 # Application Setup
 # ============================================================================
@@ -367,6 +367,8 @@ training_client = (
         batch_size=config.training.batch_size,
         min_samples=config.training.min_samples,
         prediction_types=config.training.prediction_types,
+        window_size=config.training.window_size,
+        holdout_fraction=config.training.holdout_fraction,
     )
     if config.training.enable_auto_training
     else None
@@ -380,6 +382,7 @@ scheduling_strategy = get_strategy(
     predictor_client=predictor_client,
     instance_registry=instance_registry,
     target_quantile=config.scheduling.probabilistic_quantile,
+    seed=config.scheduling.random_seed,
 )
 
 # Background tasks set - keeps references to fire-and-forget tasks
@@ -430,180 +433,6 @@ worker_queue_manager: WorkerQueueManager | None = None
 # ============================================================================
 # Task Redistribution Helper
 # ============================================================================
-
-
-async def _subtract_task_from_queue_info(
-    instance_id: str,
-    predicted_time_ms: float,
-    predicted_error_margin_ms: float | None = None,
-    predicted_quantiles: dict | None = None,
-) -> None:
-    """Subtract a task's predicted execution time from an instance's queue info.
-
-    This should be called when a task is removed from an instance's queue
-    (e.g., during work stealing when a task is fetched from a donor).
-
-    Args:
-        instance_id: ID of the instance to update
-        predicted_time_ms: Predicted execution time of the task
-        predicted_error_margin_ms: Predicted error margin (for expect_error strategy)
-        predicted_quantiles: Predicted quantiles (for probabilistic strategy)
-    """
-    current_queue = await instance_registry.get_queue_info(instance_id)
-    if not current_queue:
-        logger.warning(
-            f"No queue info found for instance {instance_id} during task subtraction"
-        )
-        return
-
-    if isinstance(current_queue, InstanceQueueExpectError):
-        # Subtract expected time, keep error margin unchanged
-        new_expected = max(
-            0.0, current_queue.expected_time_ms - predicted_time_ms
-        )
-        updated_queue = InstanceQueueExpectError(
-            instance_id=instance_id,
-            expected_time_ms=new_expected,
-            error_margin_ms=current_queue.error_margin_ms,
-        )
-        await instance_registry.update_queue_info(instance_id, updated_queue)
-        logger.debug(
-            f"Subtracted task time from queue (expect_error) for {instance_id}: "
-            f"expected_time_ms={new_expected:.2f}"
-        )
-
-    elif isinstance(current_queue, InstanceQueueProbabilistic):
-        if predicted_quantiles:
-            # Monte Carlo subtraction
-            num_samples = 1000
-            random_percentiles = np.random.random(num_samples)
-
-            # Sample from current queue distribution
-            queue_samples = np.interp(
-                random_percentiles,
-                current_queue.quantiles,
-                current_queue.values,
-            )
-
-            # Sample from predicted task distribution
-            task_quantiles = sorted(predicted_quantiles.keys())
-            task_values = [predicted_quantiles[q] for q in task_quantiles]
-            task_samples = np.interp(
-                random_percentiles, task_quantiles, task_values
-            )
-
-            # Subtract task time from queue
-            updated_samples = np.maximum(queue_samples - task_samples, 0.0)
-
-            # Compute new quantiles from updated samples
-            updated_values = [
-                float(np.percentile(updated_samples, q * 100))
-                for q in current_queue.quantiles
-            ]
-        else:
-            # Fallback: simple subtraction for all quantiles
-            updated_values = [
-                max(0.0, v - predicted_time_ms) for v in current_queue.values
-            ]
-
-        updated_queue = InstanceQueueProbabilistic(
-            instance_id=instance_id,
-            quantiles=current_queue.quantiles,
-            values=updated_values,
-        )
-        await instance_registry.update_queue_info(instance_id, updated_queue)
-        logger.debug(
-            f"Subtracted task time from queue (probabilistic) for {instance_id}: "
-            f"values={[f'{v:.2f}' for v in updated_values]}"
-        )
-
-
-async def _add_task_to_queue_info(
-    instance_id: str,
-    predicted_time_ms: float,
-    predicted_error_margin_ms: float | None = None,
-    predicted_quantiles: dict | None = None,
-) -> None:
-    """Add a task's predicted execution time to an instance's queue info.
-
-    This should be called when a task is added to an instance's queue
-    (e.g., during work stealing when a task is submitted to a new instance).
-
-    Args:
-        instance_id: ID of the instance to update
-        predicted_time_ms: Predicted execution time of the task
-        predicted_error_margin_ms: Predicted error margin (for expect_error strategy)
-        predicted_quantiles: Predicted quantiles (for probabilistic strategy)
-    """
-    current_queue = await instance_registry.get_queue_info(instance_id)
-    if not current_queue:
-        logger.warning(
-            f"No queue info found for instance {instance_id} during task addition"
-        )
-        return
-
-    if isinstance(current_queue, InstanceQueueExpectError):
-        # Add expected time
-        new_expected = current_queue.expected_time_ms + predicted_time_ms
-        # Add error margin using error accumulation formula
-        task_error = predicted_error_margin_ms or 0.0
-        new_error = math.sqrt(current_queue.error_margin_ms**2 + task_error**2)
-
-        updated_queue = InstanceQueueExpectError(
-            instance_id=instance_id,
-            expected_time_ms=new_expected,
-            error_margin_ms=new_error,
-        )
-        await instance_registry.update_queue_info(instance_id, updated_queue)
-        logger.debug(
-            f"Added task time to queue (expect_error) for {instance_id}: "
-            f"expected_time_ms={new_expected:.2f}, error_margin_ms={new_error:.2f}"
-        )
-
-    elif isinstance(current_queue, InstanceQueueProbabilistic):
-        if predicted_quantiles:
-            # Monte Carlo addition
-            num_samples = 1000
-            random_percentiles = np.random.random(num_samples)
-
-            # Sample from current queue distribution
-            queue_samples = np.interp(
-                random_percentiles,
-                current_queue.quantiles,
-                current_queue.values,
-            )
-
-            # Sample from predicted task distribution
-            task_quantiles = sorted(predicted_quantiles.keys())
-            task_values = [predicted_quantiles[q] for q in task_quantiles]
-            task_samples = np.interp(
-                random_percentiles, task_quantiles, task_values
-            )
-
-            # Add task time to queue
-            updated_samples = queue_samples + task_samples
-
-            # Compute new quantiles from updated samples
-            updated_values = [
-                float(np.percentile(updated_samples, q * 100))
-                for q in current_queue.quantiles
-            ]
-        else:
-            # Fallback: simple addition for all quantiles
-            updated_values = [
-                v + predicted_time_ms for v in current_queue.values
-            ]
-
-        updated_queue = InstanceQueueProbabilistic(
-            instance_id=instance_id,
-            quantiles=current_queue.quantiles,
-            values=updated_values,
-        )
-        await instance_registry.update_queue_info(instance_id, updated_queue)
-        logger.debug(
-            f"Added task time to queue (probabilistic) for {instance_id}: "
-            f"values={[f'{v:.2f}' for v in updated_values]}"
-        )
 
 
 async def _redistribute_tasks_on_registration(
@@ -829,23 +658,6 @@ async def _redistribute_tasks_on_registration(
                         f"[WorkStealing] Stolen task {task_data['task_id']} from {donor.instance_id} → {instance_id}"
                     )
 
-                    # Update donor's queue info by subtracting the stolen task's time
-                    predicted_time_ms = task_data.get("predicted_time_ms")
-                    if predicted_time_ms is not None:
-                        await _subtract_task_from_queue_info(
-                            instance_id=donor.instance_id,
-                            predicted_time_ms=predicted_time_ms,
-                            predicted_error_margin_ms=task_data.get(
-                                "predicted_error_margin_ms"
-                            ),
-                            predicted_quantiles=task_data.get(
-                                "predicted_quantiles"
-                            ),
-                        )
-                        logger.debug(
-                            f"Updated donor {donor.instance_id} queue_info after task steal "
-                            f"(subtracted {predicted_time_ms:.2f}ms)"
-                        )
                 elif result.get("error"):
                     failed_donors.append(result["donor"].instance_id)
 
@@ -891,23 +703,10 @@ async def _redistribute_tasks_on_registration(
                     )
                     resubmitted_count += 1
 
-                    # Update new instance's queue info
-                    predicted_time_ms = task_data.get("predicted_time_ms")
-                    if predicted_time_ms is not None:
-                        await _add_task_to_queue_info(
-                            instance_id=new_instance.instance_id,
-                            predicted_time_ms=predicted_time_ms,
-                            predicted_error_margin_ms=task_data.get(
-                                "predicted_error_margin_ms"
-                            ),
-                            predicted_quantiles=task_data.get(
-                                "predicted_quantiles"
-                            ),
-                        )
-                        logger.debug(
-                            f"Updated new instance {new_instance.instance_id} queue_info "
-                            f"after task steal (added {predicted_time_ms:.2f}ms)"
-                        )
+                    # Move the task's sketch charge from donor to new
+                    await instance_registry.move_charge(
+                        task_id, new_instance.instance_id
+                    )
 
                     await task_registry.update_assigned_instance(
                         task_id, new_instance.instance_id
@@ -923,6 +722,7 @@ async def _redistribute_tasks_on_registration(
                         f"Failed to enqueue stolen task {task_id} "
                         f"to {new_instance.instance_id}: {type(e).__name__}: {e}"
                     )
+                    await instance_registry.release_charge(task_id)
                     failed_resubmissions.append(task_id)
         else:
             logger.error(
@@ -969,6 +769,117 @@ async def _redistribute_tasks_on_registration(
             logger.warning(
                 f"[WorkStealing] Instance {instance_id} not found when updating status to ACTIVE"
             )
+
+
+async def _record_route(task_id: str, result: ScheduleResult) -> None:
+    """Store where a task was routed and the prediction charged for it."""
+    pred = result.selected_prediction
+    try:
+        await task_registry.update_assigned_instance(
+            task_id, result.selected_instance_id
+        )
+        if pred is not None:
+            await task_registry.update_prediction(
+                task_id,
+                predicted_time_ms=pred.predicted_time_ms,
+                predicted_error_margin_ms=pred.error_margin_ms,
+                predicted_quantiles=pred.quantiles,
+            )
+    except KeyError:
+        pass
+
+
+async def _drain_status(instance_id: str) -> dict:
+    """Drain status with work counted from the instance's worker queue.
+
+    The registry's pending counter only tracks tasks handed over by work
+    stealing, so it misses ordinary queued work. The worker queue knows
+    exactly what is waiting and what is in flight. Pending work is the
+    larger of the two, and an instance can be removed only when it is zero.
+
+    Raises:
+        KeyError: If the instance is not registered.
+    """
+    status = await instance_registry.get_drain_status(instance_id)
+    queued, running = (
+        worker_queue_manager.outstanding(instance_id)
+        if worker_queue_manager
+        else (0, 0)
+    )
+    pending = max(status["pending_tasks"], queued + running)
+    status["pending_tasks"] = pending
+    status["running_tasks"] = running
+    status["can_remove"] = (
+        status["status"] == InstanceStatus.DRAINING and pending == 0
+    )
+    return status
+
+
+async def _fail_orphan(task: QueuedTask, worker_id: str, error: str) -> None:
+    """Report a task that lost its instance and could not be re-routed."""
+    from swarmpilot.scheduler.services.async_worker_queue import StreamStart
+    from swarmpilot.scheduler.services.worker_queue_thread import TaskResult
+
+    sink = task.stream_sink
+    if sink is not None and not sink.done():
+        sink.set_result(StreamStart(0, {}, error=error))
+    await task_result_callback.handle_result(
+        TaskResult(
+            task_id=task.task_id,
+            worker_id=worker_id,
+            status="failed",
+            error=error,
+        )
+    )
+
+
+async def _reroute_orphaned_tasks(
+    tasks: list[QueuedTask], model_id: str, removed_id: str
+) -> int:
+    """Send tasks that were queued on a removed instance elsewhere.
+
+    Each task is scheduled again among the model's remaining active
+    instances, with the features it was first scheduled with. Tasks that
+    cannot be placed fail with an explicit error instead of hanging.
+
+    Returns:
+        How many tasks were re-routed.
+    """
+    rerouted = 0
+    for task in tasks:
+        try:
+            available = await instance_registry.list_active(model_id=model_id)
+            if not available or worker_queue_manager is None:
+                raise RuntimeError("no other active instance")
+            record = await task_registry.get(task.task_id)
+            metadata = record.metadata if record else task.metadata
+            result = await scheduling_strategy.schedule_task(
+                model_id=model_id,
+                metadata=metadata,
+                available_instances=available,
+                task_id=task.task_id,
+            )
+            target = result.selected_instance_id
+            if task.priority:
+                worker_queue_manager.enqueue_priority_task(target, task)
+            else:
+                worker_queue_manager.enqueue_task(target, task)
+            await _record_route(task.task_id, result)
+            rerouted += 1
+            logger.info(
+                f"[REROUTE] task {task.task_id}: {removed_id} -> {target}"
+            )
+        except Exception as e:
+            logger.warning(
+                f"[REROUTE] task {task.task_id} from {removed_id} failed: {e}"
+            )
+            await _fail_orphan(
+                task,
+                removed_id,
+                f"Instance {removed_id} was removed and the task could not "
+                f"be re-routed: {e}",
+            )
+    return rerouted
 
 
 # ============================================================================
@@ -1052,6 +963,11 @@ async def register_instance(request: InstanceRegisterRequest):
             logger.info(
                 f"Registered worker queue thread for instance {request.instance_id}"
             )
+            # Sketches count the backlog as served this many at a time.
+            worker = worker_queue_manager.get_worker(request.instance_id)
+            await instance_registry.set_capacity(
+                request.instance_id, getattr(worker, "max_in_flight", 1)
+            )
 
         # Set model_id for planner reporter (only first registration takes effect)
         if planner_reporter:
@@ -1103,26 +1019,26 @@ async def remove_instance(request: InstanceRemoveRequest):
     Raises:
         HTTPException 404: If instance not found
     """
-    # Remove instance directly (allows pending tasks)
+    # Remove the instance. Requests already in flight finish and report
+    # back as usual; tasks still queued on it are re-routed.
     try:
-        stats = await instance_registry.get_stats(request.instance_id)
-        pending = stats.pending_tasks if stats else 0
+        instance = await instance_registry.remove(request.instance_id)
 
-        await instance_registry.remove(request.instance_id)
-
-        # Deregister worker queue thread for this instance
+        orphans: list[QueuedTask] = []
         if worker_queue_manager and worker_queue_manager.has_worker(
             request.instance_id
         ):
-            worker_queue_manager.deregister_worker(request.instance_id)
-            logger.info(
-                f"Deregistered worker queue thread for instance {request.instance_id}"
+            orphans = worker_queue_manager.deregister_worker(
+                request.instance_id
             )
+        rerouted = await _reroute_orphaned_tasks(
+            orphans, instance.model_id, request.instance_id
+        )
 
-        if pending > 0:
+        if orphans:
             logger.warning(
-                f"Removed instance {request.instance_id} with {pending} pending tasks "
-                f"(callbacks still accepted)"
+                f"Removed instance {request.instance_id} with "
+                f"{len(orphans)} queued tasks ({rerouted} re-routed)"
             )
         else:
             logger.info(f"Removed instance {request.instance_id}")
@@ -1173,9 +1089,7 @@ async def drain_instance(request: InstanceDrainRequest):
 
     try:
         instance = await instance_registry.start_draining(request.instance_id)
-        drain_status = await instance_registry.get_drain_status(
-            request.instance_id
-        )
+        drain_status = await _drain_status(request.instance_id)
 
         # Estimate completion time based on queue info
         queue_info = await instance_registry.get_queue_info(request.instance_id)
@@ -1209,7 +1123,7 @@ async def drain_instance(request: InstanceDrainRequest):
             instance_id=instance.instance_id,
             status=instance.status,
             pending_tasks=drain_status["pending_tasks"],
-            running_tasks=0,
+            running_tasks=drain_status["running_tasks"],
             estimated_completion_time_ms=estimated_time,
         )
 
@@ -1243,7 +1157,7 @@ async def get_drain_status(
         HTTPException 404: If instance not found
     """
     try:
-        drain_status = await instance_registry.get_drain_status(instance_id)
+        drain_status = await _drain_status(instance_id)
 
         logger.debug(
             f"Drain status for {instance_id}: "
@@ -1257,7 +1171,7 @@ async def get_drain_status(
             instance_id=instance_id,
             status=drain_status["status"],
             pending_tasks=drain_status["pending_tasks"],
-            running_tasks=0,
+            running_tasks=drain_status["running_tasks"],
             can_remove=drain_status["can_remove"],
             drain_initiated_at=drain_status.get("drain_initiated_at"),
         )
@@ -1438,6 +1352,7 @@ async def start_instance_redeploy(request: InstanceRedeployRequest):
                         model_id=model_id,
                         metadata=metadata,
                         available_instances=available,
+                        task_id=task_id,
                     )
                     queued = QueuedTask(
                         task_id=task_id,
@@ -1449,6 +1364,7 @@ async def start_instance_redeploy(request: InstanceRedeployRequest):
                     worker_queue_manager.enqueue_task(
                         result.selected_instance_id, queued
                     )
+                    await _record_route(task_id, result)
                     success = True
 
                 if success:
@@ -1758,6 +1674,7 @@ async def submit_task(request: TaskSubmitRequest):
                 model_id=request.model_id,
                 metadata=request.metadata,
                 available_instances=available_instances,
+                task_id=request.task_id,
             )
             selected_id = schedule_result.selected_instance_id
             queued_task = QueuedTask(
@@ -1770,7 +1687,9 @@ async def submit_task(request: TaskSubmitRequest):
             queue_position = worker_queue_manager.enqueue_task(
                 selected_id, queued_task
             )
+            await _record_route(request.task_id, schedule_result)
         except Exception as e:
+            await instance_registry.release_charge(request.task_id)
             logger.opt(exception=True).warning(
                 f"[submit_task] Scheduling failed for task {request.task_id}: {e}. "
                 f"Task remains in PENDING status."
@@ -2096,6 +2015,7 @@ async def resubmit_task(request: TaskResubmitRequest):
                 model_id=task.model_id,
                 metadata=task.metadata or {},
                 available_instances=available_instances,
+                task_id=request.task_id,
             )
             queued_task = QueuedTask(
                 task_id=request.task_id,
@@ -2107,7 +2027,9 @@ async def resubmit_task(request: TaskResubmitRequest):
             queue_position = worker_queue_manager.enqueue_task(
                 schedule_result.selected_instance_id, queued_task
             )
+            await _record_route(request.task_id, schedule_result)
         except Exception as e:
+            await instance_registry.release_charge(request.task_id)
             logger.opt(exception=True).warning(
                 f"[resubmit_task] Scheduling failed for task {request.task_id}: {e}. "
                 f"Task remains in PENDING status."
@@ -2228,10 +2150,6 @@ async def _update_single_task_metadata(
     # Store old values for potential rollback
     old_metadata = task.metadata.copy() if task.metadata else {}
     old_prediction_ms = task.predicted_time_ms
-    old_error_margin_ms = task.predicted_error_margin_ms
-    old_quantiles = (
-        task.predicted_quantiles.copy() if task.predicted_quantiles else None
-    )
 
     # 3. Check if task is in a queue (needs queue update)
     needs_queue_update = task.assigned_instance != "" and task.status in (
@@ -2277,15 +2195,6 @@ async def _update_single_task_metadata(
                 old_prediction_ms=old_prediction_ms,
             )
 
-        # 5b. Subtract old prediction from queue
-        if old_prediction_ms is not None:
-            await _subtract_task_from_queue_info(
-                instance_id=task.assigned_instance,
-                predicted_time_ms=old_prediction_ms,
-                predicted_error_margin_ms=old_error_margin_ms,
-                predicted_quantiles=old_quantiles,
-            )
-
         # 5c. Update metadata in registry
         await task_registry.update_metadata(task_id, new_metadata)
 
@@ -2299,7 +2208,7 @@ async def _update_single_task_metadata(
             else:
                 prediction_type = "quantile"
                 quantiles = getattr(
-                    scheduling_strategy, "quantiles", [0.5, 0.9, 0.95, 0.99]
+                    scheduling_strategy, "quantiles", list(DEFAULT_QUANTILES)
                 )
 
             try:
@@ -2328,15 +2237,6 @@ async def _update_single_task_metadata(
             # Rollback metadata
             await task_registry.update_metadata(task_id, old_metadata)
 
-            # Rollback queue (re-add old prediction)
-            if old_prediction_ms is not None:
-                await _add_task_to_queue_info(
-                    instance_id=task.assigned_instance,
-                    predicted_time_ms=old_prediction_ms,
-                    predicted_error_margin_ms=old_error_margin_ms,
-                    predicted_quantiles=old_quantiles,
-                )
-
             return TaskUpdateMetadataResult(
                 task_id=task_id,
                 success=False,
@@ -2345,12 +2245,15 @@ async def _update_single_task_metadata(
                 old_prediction_ms=old_prediction_ms,
             )
 
-        # 5e. Add new prediction to queue
-        await _add_task_to_queue_info(
-            instance_id=task.assigned_instance,
-            predicted_time_ms=new_pred.predicted_time_ms,
-            predicted_error_margin_ms=new_pred.error_margin_ms,
-            predicted_quantiles=new_pred.quantiles,
+        # Replace the task's sketch charge with the new prediction
+        await instance_registry.charge(
+            task_id,
+            Charge.of(
+                task.assigned_instance,
+                new_pred.predicted_time_ms,
+                new_pred.error_margin_ms,
+                new_pred.quantiles,
+            ),
         )
 
         # 5f. Update task's prediction fields
@@ -2483,10 +2386,6 @@ async def _repredict_single_task(task) -> bool:
 
     # Store old prediction values for potential rollback
     old_prediction_ms = task.predicted_time_ms
-    old_error_margin_ms = task.predicted_error_margin_ms
-    old_quantiles = (
-        task.predicted_quantiles.copy() if task.predicted_quantiles else None
-    )
 
     try:
         # 1. Get the instance
@@ -2498,15 +2397,6 @@ async def _repredict_single_task(task) -> bool:
             )
             return False
 
-        # 2. Subtract old prediction from queue
-        if old_prediction_ms is not None:
-            await _subtract_task_from_queue_info(
-                instance_id=task.assigned_instance,
-                predicted_time_ms=old_prediction_ms,
-                predicted_error_margin_ms=old_error_margin_ms,
-                predicted_quantiles=old_quantiles,
-            )
-
         # 3. Get new prediction with existing metadata (no change)
         try:
             # Determine prediction type based on current strategy
@@ -2517,7 +2407,7 @@ async def _repredict_single_task(task) -> bool:
             else:
                 prediction_type = "quantile"
                 quantiles = getattr(
-                    scheduling_strategy, "quantiles", [0.5, 0.9, 0.95, 0.99]
+                    scheduling_strategy, "quantiles", list(DEFAULT_QUANTILES)
                 )
 
             try:
@@ -2542,23 +2432,17 @@ async def _repredict_single_task(task) -> bool:
                 f"Re-prediction failed for task {task_id}: {pred_error}"
             )
 
-            # Rollback queue (re-add old prediction)
-            if old_prediction_ms is not None:
-                await _add_task_to_queue_info(
-                    instance_id=task.assigned_instance,
-                    predicted_time_ms=old_prediction_ms,
-                    predicted_error_margin_ms=old_error_margin_ms,
-                    predicted_quantiles=old_quantiles,
-                )
-
             return False
 
-        # 4. Add new prediction to queue
-        await _add_task_to_queue_info(
-            instance_id=task.assigned_instance,
-            predicted_time_ms=new_pred.predicted_time_ms,
-            predicted_error_margin_ms=new_pred.error_margin_ms,
-            predicted_quantiles=new_pred.quantiles,
+        # Replace the task's sketch charge with the new prediction
+        await instance_registry.charge(
+            task_id,
+            Charge.of(
+                task.assigned_instance,
+                new_pred.predicted_time_ms,
+                new_pred.error_margin_ms,
+                new_pred.quantiles,
+            ),
         )
 
         # 5. Update task's prediction fields
@@ -2583,19 +2467,6 @@ async def _repredict_single_task(task) -> bool:
         logger.opt(exception=True).error(
             f"Error re-predicting task {task_id}: {e}"
         )
-
-        try:
-            # Attempt to restore queue
-            if old_prediction_ms is not None:
-                await _add_task_to_queue_info(
-                    instance_id=task.assigned_instance,
-                    predicted_time_ms=old_prediction_ms,
-                    predicted_error_margin_ms=old_error_margin_ms,
-                    predicted_quantiles=old_quantiles,
-                )
-        except (KeyError, ValueError):
-            pass  # Best effort rollback
-
         return False
 
 
@@ -2964,50 +2835,12 @@ async def reinitialize_instance_queues(
             "probabilistic"  # Default to probabilistic for round_robin
         )
 
-    # Update the global queue_info_type FIRST to ensure consistency
-    # This prevents race conditions where new instances might be registered
-    # during the reinitialization process
-    instance_registry._queue_info_type = queue_info_type
-
-    # Update stored quantiles configuration if custom quantiles provided
-    if quantiles:
-        instance_registry._quantiles = sorted(set(quantiles))
-
-    # Get all registered instances
+    # Rebuild every sketch in the new kind from the tasks still charged
+    # to it, so in-flight work is not forgotten by a strategy switch.
+    await instance_registry.reset_queues(
+        queue_info_type, list(quantiles or DEFAULT_QUANTILES)
+    )
     all_instances = await instance_registry.list_all()
-
-    # Reinitialize queue info for each instance
-    for instance in all_instances:
-        if queue_info_type == "expect_error":
-            # Initialize with InstanceQueueExpectError
-            new_queue_info = InstanceQueueExpectError(
-                instance_id=instance.instance_id,
-                expected_time_ms=0.0,
-                error_margin_ms=0.0,
-            )
-        else:  # probabilistic
-            # Initialize with InstanceQueueProbabilistic
-            # Use custom quantiles if provided, otherwise use default
-            if quantiles:
-                # Ensure quantiles are sorted and unique
-                sorted_quantiles = sorted(set(quantiles))
-                values = [0.0] * len(sorted_quantiles)
-            else:
-                # Default quantiles for distribution representation
-                sorted_quantiles = [0.5, 0.9, 0.95, 0.99]
-                values = [0.0, 0.0, 0.0, 0.0]
-
-            new_queue_info = InstanceQueueProbabilistic(
-                instance_id=instance.instance_id,
-                quantiles=sorted_quantiles,
-                values=values,
-            )
-
-        # Update the queue info in the registry
-        await instance_registry.update_queue_info(
-            instance.instance_id, new_queue_info
-        )
-
     return len(all_instances)
 
 
@@ -3090,8 +2923,6 @@ async def set_strategy_endpoint(request: StrategySetRequest):
     """
     global scheduling_strategy
 
-    random.seed(42)
-
     # Check if there are any running tasks
     running_count = await task_registry.get_count_by_status(TaskStatus.RUNNING)
     if running_count > 0:
@@ -3138,6 +2969,7 @@ async def set_strategy_endpoint(request: StrategySetRequest):
                 predictor_client=predictor_client,
                 instance_registry=instance_registry,
                 target_quantile=target_quantile,
+                seed=config.scheduling.random_seed,
             )
         except BaseException as e:
             raise RuntimeError(f"Strategy initialization failed: {e}") from e
@@ -3164,9 +2996,6 @@ async def set_strategy_endpoint(request: StrategySetRequest):
 
     # Get the new strategy info
     strategy_info = get_current_strategy_info()
-
-    random.seed(42)
-    np.random.seed(42)
 
     logger.success(
         f"Successfully switched to strategy '{request.strategy_name.value}'"

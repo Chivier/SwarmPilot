@@ -309,6 +309,28 @@ class TestWorkerQueueThreadExecution:
         assert pending[0].task_id == "task-1"
         assert pending[1].task_id == "task-2"
 
+    def test_stop_returns_priority_tasks_too(
+        self,
+        worker_thread: WorkerQueueThread,
+    ) -> None:
+        """Priority tasks not yet sent come back from stop(), first."""
+
+        def task(tid: str) -> QueuedTask:
+            return QueuedTask(
+                task_id=tid,
+                model_id="test-model",
+                task_input={},
+                metadata={},
+                enqueue_time=time.time(),
+            )
+
+        worker_thread.enqueue(task("normal"))
+        worker_thread.enqueue_priority(task("urgent"))
+
+        pending = worker_thread.stop()
+
+        assert [t.task_id for t in pending] == ["urgent", "normal"]
+
 
 class TestWorkerQueueThreadRetry:
     """Tests for HTTP retry logic."""

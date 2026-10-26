@@ -293,6 +293,24 @@ class WorkerQueueManager:
         with self._lock:
             return self._workers.get(worker_id)
 
+    def outstanding(self, worker_id: str) -> tuple[int, int]:
+        """Return (queued, running) task counts for a worker.
+
+        Queued counts priority and normal tasks not yet sent; running
+        counts requests in flight. Unknown workers have none.
+
+        Args:
+            worker_id: Worker to inspect.
+
+        Returns:
+            Queued and running task counts.
+        """
+        with self._lock:
+            worker = self._workers.get(worker_id)
+        if worker is None:
+            return 0, 0
+        return worker.outstanding()
+
     def has_worker(self, worker_id: str) -> bool:
         """Check if a worker is registered.
 

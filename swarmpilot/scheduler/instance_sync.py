@@ -310,6 +310,7 @@ async def reschedule_task(
         model_id=task.model_id,
         metadata=task.metadata,
         available_instances=available,
+        task_id=task.task_id,
     )
 
     if not schedule_result.selected_instance_id:
