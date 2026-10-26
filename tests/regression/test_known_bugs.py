@@ -153,11 +153,6 @@ def _wait_all_done(
     return statuses
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="gap S5/S4: drain ignores queued tasks and remove drops them "
-    "(fixed by plan item 2.1)",
-)
 def test_drain_counts_and_reroutes_queued_tasks(
     scheduler: TestClient, slow_engine: str
 ) -> None:

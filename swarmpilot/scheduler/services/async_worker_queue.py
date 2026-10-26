@@ -211,6 +211,10 @@ class AsyncWorkerQueue:
         """Return the number of requests currently sent to the instance."""
         return len(self._running)
 
+    def outstanding(self) -> tuple[int, int]:
+        """Return (queued including priority, in flight) task counts."""
+        return len(self._queue) + len(self._priority), len(self._running)
+
     def has_running_task(self) -> bool:
         """Return whether any request is in flight."""
         return bool(self._running)

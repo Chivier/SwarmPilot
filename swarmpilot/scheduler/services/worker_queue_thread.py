@@ -268,6 +268,12 @@ class WorkerQueueThread:
         """Get current queue size (approximate)."""
         return self._queue.qsize()
 
+    def outstanding(self) -> tuple[int, int]:
+        """Return (queued including priority, running) task counts."""
+        with self._priority_lock:
+            priority = len(self._priority_deque)
+        return self._queue.qsize() + priority, int(self.has_running_task())
+
     def has_running_task(self) -> bool:
         """Check if a task is currently being executed."""
         return self._current_task is not None

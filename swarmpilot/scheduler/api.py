@@ -971,6 +971,101 @@ async def _redistribute_tasks_on_registration(
             )
 
 
+async def _drain_status(instance_id: str) -> dict:
+    """Drain status with work counted from the instance's worker queue.
+
+    The registry's pending counter only tracks tasks handed over by work
+    stealing, so it misses ordinary queued work. The worker queue knows
+    exactly what is waiting and what is in flight. Pending work is the
+    larger of the two, and an instance can be removed only when it is zero.
+
+    Raises:
+        KeyError: If the instance is not registered.
+    """
+    status = await instance_registry.get_drain_status(instance_id)
+    queued, running = (
+        worker_queue_manager.outstanding(instance_id)
+        if worker_queue_manager
+        else (0, 0)
+    )
+    pending = max(status["pending_tasks"], queued + running)
+    status["pending_tasks"] = pending
+    status["running_tasks"] = running
+    status["can_remove"] = (
+        status["status"] == InstanceStatus.DRAINING and pending == 0
+    )
+    return status
+
+
+async def _fail_orphan(task: QueuedTask, worker_id: str, error: str) -> None:
+    """Report a task that lost its instance and could not be re-routed."""
+    from swarmpilot.scheduler.services.async_worker_queue import StreamStart
+    from swarmpilot.scheduler.services.worker_queue_thread import TaskResult
+
+    sink = task.stream_sink
+    if sink is not None and not sink.done():
+        sink.set_result(StreamStart(0, {}, error=error))
+    await task_result_callback.handle_result(
+        TaskResult(
+            task_id=task.task_id,
+            worker_id=worker_id,
+            status="failed",
+            error=error,
+        )
+    )
+
+
+async def _reroute_orphaned_tasks(
+    tasks: list[QueuedTask], model_id: str, removed_id: str
+) -> int:
+    """Send tasks that were queued on a removed instance elsewhere.
+
+    Each task is scheduled again among the model's remaining active
+    instances, with the features it was first scheduled with. Tasks that
+    cannot be placed fail with an explicit error instead of hanging.
+
+    Returns:
+        How many tasks were re-routed.
+    """
+    rerouted = 0
+    for task in tasks:
+        try:
+            available = await instance_registry.list_active(model_id=model_id)
+            if not available or worker_queue_manager is None:
+                raise RuntimeError("no other active instance")
+            record = await task_registry.get(task.task_id)
+            metadata = record.metadata if record else task.metadata
+            result = await scheduling_strategy.schedule_task(
+                model_id=model_id,
+                metadata=metadata,
+                available_instances=available,
+            )
+            target = result.selected_instance_id
+            if task.priority:
+                worker_queue_manager.enqueue_priority_task(target, task)
+            else:
+                worker_queue_manager.enqueue_task(target, task)
+            if record:
+                await task_registry.update_assigned_instance(
+                    task.task_id, target
+                )
+            rerouted += 1
+            logger.info(
+                f"[REROUTE] task {task.task_id}: {removed_id} -> {target}"
+            )
+        except Exception as e:
+            logger.warning(
+                f"[REROUTE] task {task.task_id} from {removed_id} failed: {e}"
+            )
+            await _fail_orphan(
+                task,
+                removed_id,
+                f"Instance {removed_id} was removed and the task could not "
+                f"be re-routed: {e}",
+            )
+    return rerouted
+
+
 # ============================================================================
 # Instance Management Endpoints
 # ============================================================================
@@ -1103,26 +1198,26 @@ async def remove_instance(request: InstanceRemoveRequest):
     Raises:
         HTTPException 404: If instance not found
     """
-    # Remove instance directly (allows pending tasks)
+    # Remove the instance. Requests already in flight finish and report
+    # back as usual; tasks still queued on it are re-routed.
     try:
-        stats = await instance_registry.get_stats(request.instance_id)
-        pending = stats.pending_tasks if stats else 0
+        instance = await instance_registry.remove(request.instance_id)
 
-        await instance_registry.remove(request.instance_id)
-
-        # Deregister worker queue thread for this instance
+        orphans: list[QueuedTask] = []
         if worker_queue_manager and worker_queue_manager.has_worker(
             request.instance_id
         ):
-            worker_queue_manager.deregister_worker(request.instance_id)
-            logger.info(
-                f"Deregistered worker queue thread for instance {request.instance_id}"
+            orphans = worker_queue_manager.deregister_worker(
+                request.instance_id
             )
+        rerouted = await _reroute_orphaned_tasks(
+            orphans, instance.model_id, request.instance_id
+        )
 
-        if pending > 0:
+        if orphans:
             logger.warning(
-                f"Removed instance {request.instance_id} with {pending} pending tasks "
-                f"(callbacks still accepted)"
+                f"Removed instance {request.instance_id} with "
+                f"{len(orphans)} queued tasks ({rerouted} re-routed)"
             )
         else:
             logger.info(f"Removed instance {request.instance_id}")
@@ -1173,9 +1268,7 @@ async def drain_instance(request: InstanceDrainRequest):
 
     try:
         instance = await instance_registry.start_draining(request.instance_id)
-        drain_status = await instance_registry.get_drain_status(
-            request.instance_id
-        )
+        drain_status = await _drain_status(request.instance_id)
 
         # Estimate completion time based on queue info
         queue_info = await instance_registry.get_queue_info(request.instance_id)
@@ -1209,7 +1302,7 @@ async def drain_instance(request: InstanceDrainRequest):
             instance_id=instance.instance_id,
             status=instance.status,
             pending_tasks=drain_status["pending_tasks"],
-            running_tasks=0,
+            running_tasks=drain_status["running_tasks"],
             estimated_completion_time_ms=estimated_time,
         )
 
@@ -1243,7 +1336,7 @@ async def get_drain_status(
         HTTPException 404: If instance not found
     """
     try:
-        drain_status = await instance_registry.get_drain_status(instance_id)
+        drain_status = await _drain_status(instance_id)
 
         logger.debug(
             f"Drain status for {instance_id}: "
@@ -1257,7 +1350,7 @@ async def get_drain_status(
             instance_id=instance_id,
             status=drain_status["status"],
             pending_tasks=drain_status["pending_tasks"],
-            running_tasks=0,
+            running_tasks=drain_status["running_tasks"],
             can_remove=drain_status["can_remove"],
             drain_initiated_at=drain_status.get("drain_initiated_at"),
         )
@@ -1769,6 +1862,9 @@ async def submit_task(request: TaskSubmitRequest):
             )
             queue_position = worker_queue_manager.enqueue_task(
                 selected_id, queued_task
+            )
+            await task_registry.update_assigned_instance(
+                request.task_id, selected_id
             )
         except Exception as e:
             logger.opt(exception=True).warning(

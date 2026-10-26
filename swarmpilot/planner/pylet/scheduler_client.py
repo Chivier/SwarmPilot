@@ -321,10 +321,20 @@ class SchedulerClient:
         if wait_for_drain:
             import time
 
+            # The Scheduler counts queued and in-flight work, so can_remove
+            # is the only signal to trust; a failed status check (-1)
+            # keeps waiting.
             start_time = time.time()
-            while time.time() - start_time < drain_timeout:
+            while True:
                 can_remove, pending = self.check_drain_status(instance_id)
-                if can_remove or pending == 0:
+                if can_remove:
+                    break
+                if time.time() - start_time >= drain_timeout:
+                    logger.warning(
+                        f"Drain of {instance_id} timed out after "
+                        f"{drain_timeout}s with {pending} tasks pending; "
+                        "removing anyway (queued tasks are re-routed)"
+                    )
                     break
                 logger.debug(
                     f"Waiting for {instance_id} to drain "
