@@ -177,6 +177,7 @@ class SwarmPilotClient:
         replicas: int = 1,
         gpu: int = 1,
         scheduler: str | None = "auto",
+        hardware: str | None = None,
     ) -> InstanceGroup:
         """Deploy a model service.
 
@@ -190,6 +191,8 @@ class SwarmPilotClient:
             gpu: GPUs required per replica.
             scheduler: Scheduler URL, ``'auto'`` for automatic
                 selection, or ``None`` to skip registration.
+            hardware: Run replicas only on workers whose hardware name
+                matches this pattern (e.g. ``"H100*"``).
 
         Returns:
             An :class:`InstanceGroup` describing the deployed
@@ -202,6 +205,8 @@ class SwarmPilotClient:
             "gpu_count": gpu,
             "scheduler": scheduler,
         }
+        if hardware is not None:
+            payload["hardware"] = hardware
         data = await self._request(
             "POST",
             self._planner("/v1/serve"),

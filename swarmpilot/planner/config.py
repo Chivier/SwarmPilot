@@ -137,6 +137,16 @@ class PlannerConfig:
         if self.pylet_sim_mode:
             self.pylet_local_mode = True
 
+        # Seconds between checks for instances whose engine died (PyLet
+        # FAILED); they are removed from their Scheduler. 0 disables.
+        self.instance_watch_interval: float = float(
+            os.getenv("PLANNER_INSTANCE_WATCH_INTERVAL", "2.0")
+        )
+        # Deploy a replacement for each instance found dead.
+        self.replace_failed_instances: bool = os.getenv(
+            "PLANNER_REPLACE_FAILED", "true"
+        ).lower() in ("true", "1", "yes")
+
         # Auto-activate local mode when PyLet is enabled without
         # an explicit head URL, so a local cluster is started.
         if self.pylet_enabled and not self.pylet_head_url:

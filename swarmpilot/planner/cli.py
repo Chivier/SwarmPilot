@@ -174,6 +174,11 @@ def serve(
         "--scheduler",
         help="Scheduler URL, 'auto', or 'none'",
     ),
+    hardware: str | None = typer.Option(
+        None,
+        "--hardware",
+        help="Only use workers whose hardware matches, e.g. 'H100*'",
+    ),
     planner_url: str | None = typer.Option(
         None,
         "--planner-url",
@@ -186,6 +191,7 @@ def serve(
     Examples:
         $ splanner serve Qwen/Qwen3-0.6B --gpu 1
         $ splanner serve "vllm serve my-model" --replicas 2
+        $ splanner serve meta-llama/Llama-3.1-70B --gpu 4 --hardware 'H100*'
     """
     base = _get_planner_url(planner_url)
     sched_value = None if scheduler == "none" else scheduler
@@ -197,6 +203,8 @@ def serve(
     }
     if name is not None:
         payload["name"] = name
+    if hardware is not None:
+        payload["hardware"] = hardware
 
     data = _request("POST", f"{base}/v1/serve", json=payload)
 

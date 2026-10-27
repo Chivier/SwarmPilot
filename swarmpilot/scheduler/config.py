@@ -5,7 +5,7 @@ environment variables and sensible defaults.
 """
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -190,6 +190,24 @@ class ProxyConfig:
 
 
 @dataclass
+class HealthConfig:
+    """Handling of instances whose engine cannot be reached."""
+
+    # Seconds between health checks of UNHEALTHY instances (an instance
+    # becomes UNHEALTHY when a connection to it is refused; its queued
+    # requests move to other instances at once).
+    check_interval: float = float(
+        os.getenv("SCHEDULER_HEALTH_CHECK_INTERVAL", "1.0")
+    )
+
+    # Remove an instance that stays UNHEALTHY this long; 0 keeps it.
+    # Online API endpoints are never removed.
+    remove_after: float = float(
+        os.getenv("SCHEDULER_UNHEALTHY_REMOVE_AFTER", "120")
+    )
+
+
+@dataclass
 class PlannerRegistrationConfig:
     """Configuration for registering with the planner service.
 
@@ -258,6 +276,7 @@ class Config:
     proxy: ProxyConfig
     planner_registration: PlannerRegistrationConfig
     online_endpoints: OnlineEndpointConfig
+    health: HealthConfig = field(default_factory=HealthConfig)
 
     @classmethod
     def load(cls) -> "Config":
@@ -277,6 +296,7 @@ class Config:
             proxy=ProxyConfig(),
             planner_registration=PlannerRegistrationConfig(),
             online_endpoints=OnlineEndpointConfig(),
+            health=HealthConfig(),
         )
 
     def __repr__(self) -> str:

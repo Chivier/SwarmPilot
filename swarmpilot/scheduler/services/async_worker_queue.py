@@ -38,6 +38,10 @@ from swarmpilot.scheduler.services.worker_queue_thread import (
 
 _IDEMPOTENT = frozenset({"GET", "HEAD", "OPTIONS", "PUT", "DELETE"})
 
+# The request never reached the engine: the connection was refused or
+# never opened. Typical of a crashed engine or a lost node.
+_UNREACHABLE = (aiohttp.ClientConnectorError, aiohttp.ConnectionTimeoutError)
+
 
 class StreamStart:
     """What a streamed task delivers to the caller when the engine answers.
@@ -107,6 +111,7 @@ class AsyncWorkerQueue:
         retry_delay: float = 1.0,
         on_task_started: Callable[[str], None] | None = None,
         extra_headers: dict[str, str] | None = None,
+        on_unreachable: Callable[[str, list[QueuedTask]], None] | None = None,
     ):
         """Create the queue.
 
@@ -123,6 +128,11 @@ class AsyncWorkerQueue:
             on_task_started: Called with the task id when a task is sent.
             extra_headers: Headers merged into every request (task headers
                 win on conflict).
+            on_unreachable: Called with the instance id and its unsent
+                tasks when a connection to the instance cannot be opened.
+                The failing task comes first; none of them are reported
+                through ``callback``, so the caller must re-route or fail
+                them. Without it, the queue retries the same instance.
         """
         self.worker_id = worker_id
         self.worker_endpoint = worker_endpoint
@@ -135,6 +145,7 @@ class AsyncWorkerQueue:
         self._retry_delay = retry_delay
         self._on_task_started = on_task_started
         self._extra_headers = extra_headers or {}
+        self._on_unreachable = on_unreachable
         self._proxy = env_proxy_for(worker_endpoint)
 
         self._queue: deque[QueuedTask] = deque()
@@ -176,9 +187,7 @@ class AsyncWorkerQueue:
         if self._dispatcher is not None:
             self._dispatcher.cancel()
             self._dispatcher = None
-        pending = [*self._priority, *self._queue]
-        self._priority.clear()
-        self._queue.clear()
+        pending = self.take_pending()
         logger.info(
             f"Worker {self.worker_id} stopped with {len(pending)} pending "
             f"and {len(self._running)} in-flight tasks"
@@ -202,6 +211,13 @@ class AsyncWorkerQueue:
         task.priority = True
         self._priority.append(task)
         self._kick()
+
+    def take_pending(self) -> list[QueuedTask]:
+        """Remove and return the tasks not sent yet, priority tasks first."""
+        pending = [*self._priority, *self._queue]
+        self._priority.clear()
+        self._queue.clear()
+        return pending
 
     def queue_size(self) -> int:
         """Return the number of normal tasks waiting to be sent."""
@@ -307,7 +323,7 @@ class AsyncWorkerQueue:
         so only routes the adapter marks ``retry_safe`` are resent; for
         routes it does not declare, only idempotent methods are.
         """
-        if isinstance(exc, aiohttp.ClientConnectorError):
+        if isinstance(exc, _UNREACHABLE):
             return True
         route = self._adapter.route(request.path)
         if route is not None:
@@ -321,9 +337,13 @@ class AsyncWorkerQueue:
                     self._session, self.worker_endpoint, request
                 )
             except (
-                aiohttp.ClientConnectorError,
+                *_UNREACHABLE,
                 aiohttp.ServerDisconnectedError,
             ) as e:
+                if isinstance(e, _UNREACHABLE) and self._on_unreachable:
+                    # Another instance takes it now, instead of this one
+                    # after seconds of backoff.
+                    raise
                 if attempt == self._max_retries - 1 or not self._retryable(
                     request, e
                 ):
@@ -335,6 +355,22 @@ class AsyncWorkerQueue:
                 )
                 await asyncio.sleep(delay)
         raise RuntimeError("unreachable")
+
+    def _hand_back(self, task: QueuedTask, e: Exception) -> None:
+        """Give the failed task and all unsent ones to ``on_unreachable``."""
+        self._running.pop(task.task_id, None)
+        pending = [task, *self.take_pending()]
+        logger.warning(
+            f"Worker {self.worker_id} unreachable ({type(e).__name__}: {e}); "
+            f"handing back {len(pending)} unsent task(s)"
+        )
+        self._kick()
+        try:
+            self._on_unreachable(self.worker_id, pending)
+        except Exception as cb_err:
+            logger.opt(exception=True).error(
+                f"on_unreachable failed for {self.worker_id}: {cb_err}"
+            )
 
     async def _execute(self, task: QueuedTask) -> None:
         started = time.time()
@@ -348,6 +384,9 @@ class AsyncWorkerQueue:
         try:
             resp = await self._send(self._request(task))
         except Exception as e:
+            if isinstance(e, _UNREACHABLE) and self._on_unreachable:
+                self._hand_back(task, e)
+                return
             elapsed = (time.time() - started) * 1000
             logger.warning(
                 f"Task {task.task_id} failed after {elapsed:.2f}ms: "

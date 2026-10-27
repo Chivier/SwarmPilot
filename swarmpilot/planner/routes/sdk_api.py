@@ -207,6 +207,7 @@ def _instance_to_detail(instance) -> InstanceDetailResponse:
         endpoint=instance.endpoint,
         status=instance.status.value,
         gpu_count=instance.gpu_count,
+        hardware=instance.hardware,
         error=instance.error,
     )
 
@@ -236,10 +237,13 @@ async def serve_model(request: ServeRequest):
 
     logger.info(
         f"[SDK] serve name={name} model={model} "
-        f"replicas={request.replicas} scheduler={scheduler_url}"
+        f"replicas={request.replicas} scheduler={scheduler_url} "
+        f"hardware={request.hardware}"
     )
 
     try:
+        if request.hardware is not None:
+            service.set_model_config(model, hardware=request.hardware)
         result = service.apply_deployment(
             target_state={model: request.replicas},
             wait_for_ready=True,
@@ -527,10 +531,7 @@ async def terminate_instances(request: TerminateRequest):
             )
 
         if request.model:
-            instances = service.get_instances_by_model(request.model)
-            pylet_ids = [i.pylet_id for i in instances]
-            mgr = service.instance_manager
-            results = mgr.terminate_instances(pylet_ids)
+            results = service.terminate_model(request.model)
             count = sum(1 for v in results.values() if v)
             return TerminateResponse(
                 success=True,

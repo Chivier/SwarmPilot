@@ -355,3 +355,108 @@ def test_planner_serve_scale_terminate(planner_stack):
             30,
             "scheduler to drop instances",
         )
+
+
+def test_instances_carry_their_node_gpu(planner_stack):
+    """Each instance is registered with the GPU of the node it runs on."""
+    planner, scheduler = planner_stack["planner"], planner_stack["scheduler"]
+    with httpx.Client(timeout=120) as c:
+        r = c.post(
+            f"{planner}/v1/serve",
+            json={"model_or_command": MODEL, "replicas": 10, "gpu_count": 1},
+        ).json()
+        assert r["success"], r
+        sim_view = {
+            v["instance_id"]: v
+            for v in c.get(f"{planner_stack['control']}/instances").json()
+        }
+        listed = c.get(f"{scheduler}/v1/instance/list").json()["instances"]
+        assert len(listed) == 10
+        hardware = {}
+        for inst in listed:
+            gpu = sim_view[inst["instance_id"]]["profile"]["gpu"]
+            assert inst["platform_info"]["hardware_name"] == gpu
+            hardware[gpu] = hardware.get(gpu, 0) + 1
+        # 8 H100 GPUs and 4 L40S GPUs: 10 replicas need both kinds.
+        assert set(hardware) == {"H100-SXM-80GB", "L40S-48GB"}
+
+        r = c.post(f"{planner}/v1/terminate", json={"model": MODEL}).json()
+        assert r["success"], r
+        _wait(
+            lambda: c.get(f"{scheduler}/v1/instance/list").json()["count"] == 0,
+            30,
+            "scheduler to drop instances",
+        )
+
+
+def test_serve_on_one_kind_of_hardware(planner_stack):
+    planner, scheduler = planner_stack["planner"], planner_stack["scheduler"]
+    with httpx.Client(timeout=120) as c:
+        r = c.post(
+            f"{planner}/v1/serve",
+            json={
+                "model_or_command": MODEL,
+                "replicas": 3,
+                "gpu_count": 1,
+                "hardware": "L40S*",
+            },
+        ).json()
+        assert r["success"], r
+        listed = c.get(f"{scheduler}/v1/instance/list").json()["instances"]
+        assert len(listed) == 3
+        assert {i["platform_info"]["hardware_name"] for i in listed} == {
+            "L40S-48GB"
+        }
+        # Only 4 L40S GPUs exist: asking for 6 places 4 and reports the rest.
+        r = c.post(
+            f"{planner}/v1/scale", json={"model": MODEL, "replicas": 6}
+        ).json()
+        assert not r["success"]
+        assert r["current_count"] == 4, r
+
+        r = c.post(f"{planner}/v1/terminate", json={"model": MODEL}).json()
+        assert r["success"], r
+        _wait(
+            lambda: c.get(f"{scheduler}/v1/instance/list").json()["count"] == 0,
+            30,
+            "scheduler to drop instances",
+        )
+
+
+def test_crashed_engine_stops_getting_traffic(planner_stack):
+    """A crash costs no client errors, and the Planner replaces the engine."""
+    planner, scheduler = planner_stack["planner"], planner_stack["scheduler"]
+    control = planner_stack["control"]
+    with httpx.Client(timeout=120) as c:
+        r = c.post(
+            f"{planner}/v1/serve",
+            json={"model_or_command": MODEL, "replicas": 4, "gpu_count": 1},
+        ).json()
+        assert r["success"], r
+        victim = r["instances"][0]
+        assert c.post(f"{control}/instances/{victim}/crash").status_code == 200
+
+        # Right after the crash, before PyLet or the Planner react.
+        slow = 0
+        for _ in range(20):
+            start = time.monotonic()
+            r = _chat(c, scheduler)
+            assert r.status_code == 200, r.text
+            slow += time.monotonic() - start > 1.0
+        assert slow == 0
+
+        ids = lambda: {  # noqa: E731
+            i["instance_id"]
+            for i in c.get(f"{scheduler}/v1/instance/list").json()["instances"]
+        }
+        _wait(lambda: victim not in ids(), 15, "crashed engine deregistered")
+        # The Planner brings the model back to 4 replicas.
+        _wait(lambda: len(ids()) == 4, 30, "replacement registered")
+        planner_view = c.get(f"{planner}/v1/instances").json()
+        assert victim not in {i["pylet_id"] for i in planner_view}
+        for _ in range(8):
+            assert _chat(c, scheduler).status_code == 200
+
+        r = c.post(f"{planner}/v1/terminate", json={"model": MODEL}).json()
+        assert r["success"], r
+        _wait(lambda: not ids(), 30, "scheduler to drop instances")

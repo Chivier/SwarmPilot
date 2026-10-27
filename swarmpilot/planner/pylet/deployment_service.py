@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
+from collections import Counter
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -155,6 +156,12 @@ class PyLetDeploymentService:
         # executors working from the same "current" state would add or
         # remove the same machines twice.
         self._reconcile_lock = threading.RLock()
+        # Replica count last asked for per model, so a replacement for a
+        # failed instance never goes beyond it.
+        self._desired: dict[str, int] = {}
+        self._watcher: threading.Thread | None = None
+        self._watcher_stop = threading.Event()
+        self._replace_failed = True
 
     def init(self) -> None:
         """Initialize the service and connect to PyLet/scheduler.
@@ -178,6 +185,7 @@ class PyLetDeploymentService:
 
     def close(self) -> None:
         """Close connections and cleanup."""
+        self.stop_watcher()
         if self._instance_manager:
             self._instance_manager.close()
         self._initialized = False
@@ -238,6 +246,7 @@ class PyLetDeploymentService:
 
             # Execute via DeploymentExecutor
             with self._reconcile_lock:
+                self._desired.update(target_state)
                 result = self._deployment_executor.reconcile(
                     target_state=target_state,
                     wait_for_ready=wait_for_ready,
@@ -278,6 +287,7 @@ class PyLetDeploymentService:
 
         try:
             with self._reconcile_lock:
+                self._desired[model_id] = target_count
                 result = self._deployment_executor.scale_model(
                     model_id=model_id,
                     target_count=target_count,
@@ -340,6 +350,120 @@ class PyLetDeploymentService:
                 success=False,
                 error=str(e),
             )
+
+    def set_model_config(self, model_id: str, **overrides: object) -> None:
+        """Set per-model deployment overrides (see ``model_configs``).
+
+        Args:
+            model_id: Model identifier.
+            **overrides: ``backend``, ``gpu_count``, ``extra_args`` or
+                ``hardware``; a None value removes the override.
+        """
+        self._ensure_initialized()
+        configs = self._deployment_executor.model_configs
+        cfg = dict(configs.get(model_id, {}))
+        for key, value in overrides.items():
+            if value is None:
+                cfg.pop(key, None)
+            else:
+                cfg[key] = value
+        configs[model_id] = cfg
+        self._model_configs = configs
+
+    # -- failed instances ---------------------------------------------------
+
+    def check_instances(self) -> list[ManagedInstance]:
+        """Remove instances whose engine died and start replacements.
+
+        Replacements run on a separate thread, under the reconcile lock,
+        so a slow engine start never holds up the next check.
+
+        Returns:
+            The instances that were removed.
+        """
+        self._ensure_initialized()
+        reaped = self._instance_manager.reap_failed()
+        if reaped and self._replace_failed:
+            counts = Counter(m.model_id for m in reaped)
+            threading.Thread(
+                target=self._replace,
+                args=(dict(counts),),
+                name="replace-failed",
+                daemon=True,
+            ).start()
+        return reaped
+
+    def _replace(self, lost: dict[str, int]) -> None:
+        """Deploy new instances for ones that failed.
+
+        A model gets at most as many as it lost, and never more than its
+        last requested replica count (a scale-down or terminate since the
+        failure wins).
+        """
+        with self._reconcile_lock:
+            for model_id, n in lost.items():
+                current = sum(
+                    not m.is_terminal
+                    for m in self._instance_manager.get_instances_by_model(
+                        model_id
+                    )
+                )
+                desired = self._desired.get(model_id)
+                need = n if desired is None else min(n, desired - current)
+                if need <= 0:
+                    continue
+                logger.info(
+                    f"[INSTANCE_REPLACE] model_id={model_id} count={need} "
+                    f"(current={current}, desired={desired})"
+                )
+                try:
+                    result = self._deployment_executor.execute(
+                        {model_id: current},
+                        {model_id: current + need},
+                        ready_timeout=self._deploy_timeout,
+                    )
+                    if not result.success:
+                        logger.warning(
+                            f"Replacing {model_id} instances: "
+                            f"{result.failed_count} failed"
+                        )
+                except Exception as e:
+                    logger.opt(exception=True).error(
+                        f"Replacing {model_id} instances failed: {e}"
+                    )
+
+    def start_watcher(self, interval: float, replace: bool = True) -> None:
+        """Check for failed instances every ``interval`` seconds.
+
+        Args:
+            interval: Seconds between checks; 0 or less does nothing.
+            replace: Deploy a replacement for each failed instance.
+        """
+        self._ensure_initialized()
+        if interval <= 0 or self._watcher is not None:
+            return
+        self._replace_failed = replace
+        self._watcher_stop.clear()
+
+        def run() -> None:
+            while not self._watcher_stop.wait(interval):
+                try:
+                    self.check_instances()
+                except Exception as e:
+                    logger.warning(f"Instance check failed: {e}")
+
+        self._watcher = threading.Thread(
+            target=run, name="instance-watcher", daemon=True
+        )
+        self._watcher.start()
+        logger.info(f"Watching instances every {interval}s (replace={replace})")
+
+    def stop_watcher(self) -> None:
+        """Stop the instance watcher."""
+        self._watcher_stop.set()
+        if self._watcher is not None:
+            self._watcher.join(timeout=10)
+            self._watcher = None
 
     def sync_to_instance_store(
         self,
@@ -457,8 +581,27 @@ class PyLetDeploymentService:
             Dict mapping pylet_id to termination success.
         """
         self._ensure_initialized()
+        # Cleared first, so a replacement waiting for the lock skips.
+        self._desired = dict.fromkeys(self._desired, 0)
         with self._reconcile_lock:
             return self._instance_manager.terminate_all(wait_for_drain)
+
+    def terminate_model(self, model_id: str) -> dict[str, bool]:
+        """Terminate every instance of a model.
+
+        Args:
+            model_id: Model identifier.
+
+        Returns:
+            Dict mapping pylet_id to termination success.
+        """
+        self._ensure_initialized()
+        self._desired[model_id] = 0
+        pylet_ids = [
+            i.pylet_id
+            for i in self._instance_manager.get_instances_by_model(model_id)
+        ]
+        return self._instance_manager.terminate_instances(pylet_ids)
 
 
 # Global service singleton

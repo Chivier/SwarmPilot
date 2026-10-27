@@ -339,6 +339,56 @@ PYLET_CUSTOM_COMMAND="python my_model_server.py" \
 
 ---
 
+## Mixed Hardware
+
+PyLet workers report GPU counts but not GPU types, so tell the Planner
+which hardware each worker has. Every instance is then registered with
+the hardware of the worker it landed on, which keeps predictor models for
+different GPUs apart, and a model can be pinned to one kind of hardware.
+
+```bash
+# Patterns match the PyLet worker id first, then the worker's host.
+PLANNER_HARDWARE_MAP='{"gpu-h100-*": "H100-SXM-80GB", "10.0.2.*": "A100-40GB"}' \
+  PLANNER_HARDWARE_NAME=gpu \
+  splanner start --port 8002
+
+splanner serve meta-llama/Llama-3.1-70B --gpu 4 --replicas 2 --hardware 'H100*'
+```
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `PLANNER_HARDWARE_MAP` | empty | JSON object, or the path of a JSON/YAML file, mapping worker id or host patterns to hardware names (first match wins) |
+| `PLANNER_HARDWARE_NAME` | `gpu` | Hardware name for workers no pattern matches |
+
+`--hardware` (`hardware` in `POST /v1/serve` and `SwarmPilotClient.serve`)
+is a case-insensitive pattern. It is kept for the model, so later scaling,
+deploys and replacements stay on that hardware too; set it per model in
+`PYLET_MODEL_CONFIGS` with `"hardware": "H100*"` as well. Replicas that do
+not fit on free GPUs of that hardware are reported as failed rather than
+queued. In sim mode the map comes from the simulator's node list.
+
+## Engine Failures
+
+When an engine crashes, its requests are not lost:
+
+- **Scheduler:** the first refused connection marks the instance
+  `unhealthy`. No new request is routed to it, and every request waiting
+  for it (none had reached the engine) is scheduled again on the model's
+  other instances. Requests already running on the engine when it died
+  fail. The Scheduler checks unhealthy instances every
+  `SCHEDULER_HEALTH_CHECK_INTERVAL` seconds (default 1) and routes to them
+  again when they answer; one that stays unreachable for
+  `SCHEDULER_UNHEALTHY_REMOVE_AFTER` seconds (default 120, 0 = never) is
+  removed. Online API endpoints are never removed.
+- **Planner:** every `PLANNER_INSTANCE_WATCH_INTERVAL` seconds (default 2,
+  0 disables) it looks for active instances that PyLet reports `FAILED`,
+  `COMPLETED` or `CANCELLED`, or no longer knows. It removes them from
+  their Scheduler, deletes them in PyLet and, unless
+  `PLANNER_REPLACE_FAILED=false`, deploys replacements, never beyond the
+  replica count last asked for with serve, scale or deploy.
+
+---
+
 ## Stopping Services
 
 ### Terminate Instances

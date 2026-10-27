@@ -5,6 +5,7 @@ that can execute tasks.
 """
 
 import asyncio
+import time
 from datetime import UTC, datetime
 
 from swarmpilot.scheduler.models import (
@@ -46,6 +47,8 @@ class InstanceRegistry:
         self._charge_counts: dict[str, int] = {}
         # Requests each instance serves at once (1 when not set).
         self._servers: dict[str, int] = {}
+        # When each UNHEALTHY instance was found unreachable (monotonic).
+        self._unhealthy_since: dict[str, float] = {}
 
     async def register(self, instance: Instance) -> None:
         """Register a new instance.
@@ -112,6 +115,7 @@ class InstanceRegistry:
             self._stats.pop(instance_id, None)
             self._drop_charges(instance_id)
             self._servers.pop(instance_id, None)
+            self._unhealthy_since.pop(instance_id, None)
 
             return instance
 
@@ -154,6 +158,48 @@ class InstanceRegistry:
                 instance.drain_initiated_at = (
                     datetime.now(UTC).isoformat().replace("+00:00", "Z")
                 )
+
+    async def mark_unhealthy(self, instance_id: str) -> bool:
+        """Stop routing to an ACTIVE instance whose engine is unreachable.
+
+        Args:
+            instance_id: The instance.
+
+        Returns:
+            True if it was ACTIVE and is now UNHEALTHY; False if it is
+            unknown or in another state (draining, already unhealthy).
+        """
+        async with self._lock:
+            instance = self._instances.get(instance_id)
+            if instance is None or instance.status != InstanceStatus.ACTIVE:
+                return False
+            instance.status = InstanceStatus.UNHEALTHY
+            self._unhealthy_since[instance_id] = time.monotonic()
+            return True
+
+    async def mark_healthy(self, instance_id: str) -> bool:
+        """Route to an UNHEALTHY instance again.
+
+        Returns:
+            True if it was UNHEALTHY and is now ACTIVE.
+        """
+        async with self._lock:
+            instance = self._instances.get(instance_id)
+            if instance is None or instance.status != InstanceStatus.UNHEALTHY:
+                return False
+            instance.status = InstanceStatus.ACTIVE
+            self._unhealthy_since.pop(instance_id, None)
+            return True
+
+    async def list_unhealthy(self) -> list[tuple[Instance, float]]:
+        """Return UNHEALTHY instances with seconds since they became so."""
+        now = time.monotonic()
+        async with self._lock:
+            return [
+                (i, now - self._unhealthy_since.get(i.instance_id, now))
+                for i in self._instances.values()
+                if i.status == InstanceStatus.UNHEALTHY
+            ]
 
     async def list_all(self, model_id: str | None = None) -> list[Instance]:
         """List all instances, optionally filtered by model_id.

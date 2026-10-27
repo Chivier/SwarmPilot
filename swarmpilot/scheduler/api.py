@@ -5,6 +5,7 @@ and WebSocket connections for real-time task result delivery.
 """
 
 import asyncio
+import contextlib
 import json
 import math
 import os
@@ -98,6 +99,7 @@ from .services.websocket_manager import ConnectionManager
 from .services.worker_queue_manager import (
     WorkerQueueManager,
     complete_platform_info,
+    resolve_adapter,
 )
 from .services.worker_queue_thread import QueuedTask
 from .utils.arrival_counter import arrival_counter, parent_of
@@ -212,8 +214,12 @@ async def lifespan(app: FastAPI):
             on_task_started=start_callback,
             async_dispatch=config.proxy.dispatch_mode != "thread",
             max_in_flight=config.proxy.max_in_flight,
+            on_unreachable=_on_instance_unreachable,
         )
         logger.info("WorkerQueueManager initialized")
+        health_task = asyncio.create_task(
+            _health_loop(), name="instance-health"
+        )
 
         # Wire WorkerQueueManager into proxy router and scheduling strategy
         if proxy_router_instance:
@@ -244,6 +250,7 @@ async def lifespan(app: FastAPI):
 
         # Shutdown
         logger.info("Scheduler service shutting down...")
+        health_task.cancel()
 
         # Deregister from planner first (if registered) - PYLET-024
         if planner_registrar:
@@ -846,7 +853,10 @@ async def _fail_orphan(task: QueuedTask, worker_id: str, error: str) -> None:
 
 
 async def _reroute_orphaned_tasks(
-    tasks: list[QueuedTask], model_id: str, removed_id: str
+    tasks: list[QueuedTask],
+    model_id: str,
+    removed_id: str,
+    reason: str = "was removed",
 ) -> int:
     """Send tasks that were queued on a removed instance elsewhere.
 
@@ -888,10 +898,121 @@ async def _reroute_orphaned_tasks(
             await _fail_orphan(
                 task,
                 removed_id,
-                f"Instance {removed_id} was removed and the task could not "
+                f"Instance {removed_id} {reason} and the task could not "
                 f"be re-routed: {e}",
             )
     return rerouted
+
+
+# ----------------------------------------------------------------------------
+# Unreachable instances
+# ----------------------------------------------------------------------------
+
+
+def _on_instance_unreachable(instance_id: str, tasks: list[QueuedTask]) -> None:
+    """Worker queue hook: a connection to the instance could not be opened.
+
+    Runs on the event loop inside the queue; the work happens in a task.
+    """
+    task = asyncio.create_task(_handle_unreachable(instance_id, tasks))
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+
+
+async def _handle_unreachable(
+    instance_id: str, tasks: list[QueuedTask]
+) -> None:
+    """Stop routing to an unreachable instance and move its work.
+
+    The instance becomes UNHEALTHY, so no new task is routed to it, and
+    every task that was waiting for it (none had reached the engine) is
+    scheduled again among the model's other instances. The health loop
+    brings it back when it answers again, or removes it after
+    ``SCHEDULER_UNHEALTHY_REMOVE_AFTER`` seconds.
+    """
+    instance = await instance_registry.get(instance_id)
+    if instance is None:
+        for task in tasks:
+            await _fail_orphan(task, instance_id, "Instance was removed")
+        return
+    if await instance_registry.mark_unhealthy(instance_id):
+        logger.warning(
+            f"[HEALTH] instance {instance_id} at {instance.endpoint} is "
+            "unreachable; no new tasks until it answers again"
+        )
+    rerouted = await _reroute_orphaned_tasks(
+        tasks, instance.model_id, instance_id, reason="is unreachable"
+    )
+    if tasks:
+        logger.info(
+            f"[HEALTH] re-routed {rerouted} of {len(tasks)} task(s) from "
+            f"{instance_id}"
+        )
+
+
+async def _instance_answers(
+    client: httpx.AsyncClient, instance: Instance
+) -> bool:
+    """Whether an instance's engine is serving again.
+
+    Engines with an adapter must pass its health check (a restarting
+    engine answers 503 while it loads). For unknown engines and online
+    APIs, whose health path may not exist, any HTTP answer will do.
+    """
+    adapter = resolve_adapter(instance.platform_info.get("software_name"))
+    base = instance.endpoint
+    if not base.startswith(("http://", "https://")):
+        base = f"http://{base}"
+    if adapter.name != "passthrough":
+        return await adapter.health(client, base)
+    try:
+        await client.get(base, timeout=5)
+    except httpx.HTTPError:
+        return False
+    return True
+
+
+async def _check_unhealthy(client: httpx.AsyncClient) -> None:
+    """Restore UNHEALTHY instances that answer; remove long-dead ones."""
+    remove_after = config.health.remove_after
+    for instance, down_for in await instance_registry.list_unhealthy():
+        iid = instance.instance_id
+        try:
+            ok = await _instance_answers(client, instance)
+        except Exception as e:
+            logger.debug(f"[HEALTH] check of {iid} failed: {e}")
+            ok = False
+        if ok:
+            if await instance_registry.mark_healthy(iid):
+                logger.info(
+                    f"[HEALTH] instance {iid} answers again after "
+                    f"{down_for:.1f}s; routing to it"
+                )
+        elif (
+            remove_after > 0
+            and down_for >= remove_after
+            and not instance.endpoint_group
+        ):
+            logger.warning(
+                f"[HEALTH] removing instance {iid}: unreachable for "
+                f"{down_for:.0f}s"
+            )
+            with contextlib.suppress(KeyError):
+                await _remove_instance(iid)
+
+
+async def _health_loop() -> None:
+    """Check UNHEALTHY instances every ``SCHEDULER_HEALTH_CHECK_INTERVAL``."""
+    interval = max(config.health.check_interval, 0.05)
+    async with httpx.AsyncClient() as client:
+        while True:
+            await asyncio.sleep(interval)
+            try:
+                await _check_unhealthy(client)
+            except Exception as e:
+                logger.opt(exception=True).warning(
+                    f"[HEALTH] health check round failed: {e}"
+                )
 
 
 # ============================================================================
@@ -1015,6 +1136,32 @@ async def register_instance(request: InstanceRegisterRequest):
     )
 
 
+async def _remove_instance(instance_id: str) -> None:
+    """Remove an instance and re-route the tasks queued on it.
+
+    Requests already in flight finish and report back as usual.
+
+    Raises:
+        KeyError: If the instance is not registered.
+    """
+    instance = await instance_registry.remove(instance_id)
+
+    orphans: list[QueuedTask] = []
+    if worker_queue_manager and worker_queue_manager.has_worker(instance_id):
+        orphans = worker_queue_manager.deregister_worker(instance_id)
+    rerouted = await _reroute_orphaned_tasks(
+        orphans, instance.model_id, instance_id
+    )
+
+    if orphans:
+        logger.warning(
+            f"Removed instance {instance_id} with "
+            f"{len(orphans)} queued tasks ({rerouted} re-routed)"
+        )
+    else:
+        logger.info(f"Removed instance {instance_id}")
+
+
 @app.post("/v1/instance/remove", response_model=InstanceRemoveResponse)
 async def remove_instance(request: InstanceRemoveRequest):
     """Remove an instance from the scheduler.
@@ -1031,30 +1178,8 @@ async def remove_instance(request: InstanceRemoveRequest):
     Raises:
         HTTPException 404: If instance not found
     """
-    # Remove the instance. Requests already in flight finish and report
-    # back as usual; tasks still queued on it are re-routed.
     try:
-        instance = await instance_registry.remove(request.instance_id)
-
-        orphans: list[QueuedTask] = []
-        if worker_queue_manager and worker_queue_manager.has_worker(
-            request.instance_id
-        ):
-            orphans = worker_queue_manager.deregister_worker(
-                request.instance_id
-            )
-        rerouted = await _reroute_orphaned_tasks(
-            orphans, instance.model_id, request.instance_id
-        )
-
-        if orphans:
-            logger.warning(
-                f"Removed instance {request.instance_id} with "
-                f"{len(orphans)} queued tasks ({rerouted} re-routed)"
-            )
-        else:
-            logger.info(f"Removed instance {request.instance_id}")
-
+        await _remove_instance(request.instance_id)
     except KeyError as e:
         error_msg = "Instance not found"
         logger.error(
