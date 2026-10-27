@@ -229,8 +229,9 @@ class DeploymentExecutor:
             target_state: Target model counts {model_id: count}.
             remove: PyLet IDs to remove first; see
                 ``DeploymentPlan.from_diff``.
-            place: Workers for new instances; ignored for a model pinned
-                to a kind of hardware.
+            place: Workers for new instances. The caller picks workers
+                that fit (GPU count and hardware pattern); a None entry
+                lets the model's hardware pattern, or PyLet, choose.
 
         Returns:
             DeploymentPlan with actions to execute.
@@ -243,13 +244,8 @@ class DeploymentExecutor:
                     instances_by_model[instance.model_id] = []
                 instances_by_model[instance.model_id].append(instance)
 
-        place = {
-            m: workers
-            for m, workers in (place or {}).items()
-            if not self.model_configs.get(m, {}).get("hardware")
-        }
         return DeploymentPlan.from_diff(
-            current_state, target_state, instances_by_model, remove, place
+            current_state, target_state, instances_by_model, remove, place or {}
         )
 
     def execute_plan(

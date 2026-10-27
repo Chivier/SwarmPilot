@@ -235,15 +235,30 @@ class PyLetDeploymentService:
         return self._instance_manager.free_gpus() // per
 
     def free_slots(self) -> list[tuple[str, str]]:
-        """Free places for one instance of the default GPU count.
+        """Free GPUs, one entry each.
+
+        Entries of the same worker add up to its free GPUs, so a caller
+        that knows each model's GPU count (``model_requirements``) can
+        tell which models still fit where.
 
         Returns:
-            One (worker id, hardware name) pair per place.
+            One (worker id, hardware name) pair per free GPU.
         """
         self._ensure_initialized()
-        return self._instance_manager.free_slots(
-            max(1, self._default_gpu_count)
-        )
+        return self._instance_manager.free_slots(1)
+
+    def model_requirements(self, model_id: str) -> tuple[int, str | None]:
+        """GPUs one instance of a model takes, and its hardware pattern.
+
+        Args:
+            model_id: Model identifier.
+
+        Returns:
+            (GPU count, hardware name pattern or None for any hardware).
+        """
+        cfg = self._model_configs.get(model_id, {})
+        gpus = int(cfg.get("gpu_count", self._default_gpu_count) or 1)
+        return max(1, gpus), cfg.get("hardware") or None
 
     def apply_deployment(
         self,
