@@ -152,10 +152,14 @@ def test_update_metadata_asks_for_sketch_kind(client_with_strategy) -> None:
     assert r.status_code == 200, r.text
     assert r.json()["results"][0]["queue_updated"] is True
     predict.assert_awaited_once()
-    assert predict.call_args.kwargs["prediction_type"] == _expected_type(strategy)
+    assert predict.call_args.kwargs["prediction_type"] == _expected_type(
+        strategy
+    )
 
 
-@pytest.mark.parametrize("client_with_strategy", ["po2", "serverless"], indirect=True)
+@pytest.mark.parametrize(
+    "client_with_strategy", ["po2", "serverless"], indirect=True
+)
 def test_repredict_keeps_error_margin_in_expect_error_sketch(
     client_with_strategy,
 ) -> None:
