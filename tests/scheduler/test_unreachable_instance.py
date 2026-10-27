@@ -183,3 +183,26 @@ def test_only_instance_dead_fails_fast(client):
     assert r.status_code == 502
     assert "unreachable" in r.text
     assert time.monotonic() - start < 0.9
+
+
+def test_reroute_survives_a_strategy_error(client, engine, monkeypatch):
+    """Re-routing falls back like the proxy when scheduling raises."""
+    from swarmpilot.scheduler import api
+
+    _register(client, "dead", f"http://127.0.0.1:{_dead_port()}")
+    _register(client, "live", engine.url)
+    _active(client, "dead", "live")
+
+    async def broken(**_):
+        raise RuntimeError("Model not found")
+
+    # Both the proxy and re-routing fail to schedule; the proxy then falls
+    # back to the first instance, the dead one. (The proxy keeps the
+    # strategy it started with, so it is patched separately.)
+    monkeypatch.setattr(api.scheduling_strategy, "schedule_task", broken)
+    proxy_strategy = api.proxy_router_instance._scheduling_strategy
+    monkeypatch.setattr(proxy_strategy, "schedule_task", broken)
+    r = client.post("/infer", json={})
+    assert r.status_code == 200, r.text
+    assert engine.seen == 1
+    assert _status(client, "dead") == "unhealthy"

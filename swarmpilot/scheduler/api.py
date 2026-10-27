@@ -875,18 +875,40 @@ async def _reroute_orphaned_tasks(
                 raise RuntimeError("no other active instance")
             record = await task_registry.get(task.task_id)
             metadata = record.metadata if record else task.metadata
-            result = await scheduling_strategy.schedule_task(
-                model_id=model_id,
-                metadata=metadata,
-                available_instances=available,
-                task_id=task.task_id,
-            )
-            target = result.selected_instance_id
+            try:
+                result = await scheduling_strategy.schedule_task(
+                    model_id=model_id,
+                    metadata=metadata,
+                    available_instances=available,
+                    task_id=task.task_id,
+                )
+            except Exception as e:
+                # As the proxy does: a strategy failure (no predictor
+                # model yet, say) must not cost the request.
+                logger.warning(
+                    f"[REROUTE] scheduling {task.task_id} failed ({e}); "
+                    "using the least busy instance"
+                )
+                result = None
+                target = min(
+                    available,
+                    key=lambda i: sum(
+                        worker_queue_manager.outstanding(i.instance_id)
+                    ),
+                ).instance_id
+            else:
+                target = result.selected_instance_id
             if task.priority:
                 worker_queue_manager.enqueue_priority_task(target, task)
             else:
                 worker_queue_manager.enqueue_task(target, task)
-            await _record_route(task.task_id, result)
+            if result is not None:
+                await _record_route(task.task_id, result)
+            else:
+                with contextlib.suppress(KeyError):
+                    await task_registry.update_assigned_instance(
+                        task.task_id, target
+                    )
             rerouted += 1
             logger.info(
                 f"[REROUTE] task {task.task_id}: {removed_id} -> {target}"

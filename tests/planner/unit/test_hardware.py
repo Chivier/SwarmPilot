@@ -190,3 +190,23 @@ class TestReapFailed:
         mgr = _manager(HardwareResolver({}))
         assert mgr.reap_failed() == []
         mgr.pylet_client.list_model_instances.assert_not_called()
+
+
+def test_reap_survives_pylet_delete_error():
+    """A failed PyLet delete still drops the instance and goes on."""
+    mgr = _manager(HardwareResolver({}))
+    mgr._get_scheduler_client = MagicMock(return_value=MagicMock())
+    for pid in ("a", "b"):
+        mgr._instances[pid] = ManagedInstance(
+            pylet_id=pid,
+            instance_id=pid,
+            model_id="m",
+            status=ManagedInstanceStatus.ACTIVE,
+        )
+    mgr.pylet_client.list_model_instances.return_value = [
+        InstanceInfo("a", "m", "h:1", "FAILED"),
+        InstanceInfo("b", "m", "h:2", "FAILED"),
+    ]
+    mgr.pylet_client.cancel_instance.side_effect = ConnectionError("reset")
+    assert {m.pylet_id for m in mgr.reap_failed()} == {"a", "b"}
+    assert mgr.instances == {}

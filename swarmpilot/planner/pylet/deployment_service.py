@@ -596,12 +596,15 @@ class PyLetDeploymentService:
             Dict mapping pylet_id to termination success.
         """
         self._ensure_initialized()
+        # Cleared first, so a replacement waiting for the lock skips; one
+        # already deploying finishes first and is terminated here too.
         self._desired[model_id] = 0
-        pylet_ids = [
-            i.pylet_id
-            for i in self._instance_manager.get_instances_by_model(model_id)
-        ]
-        return self._instance_manager.terminate_instances(pylet_ids)
+        with self._reconcile_lock:
+            pylet_ids = [
+                i.pylet_id
+                for i in self._instance_manager.get_instances_by_model(model_id)
+            ]
+            return self._instance_manager.terminate_instances(pylet_ids)
 
 
 # Global service singleton

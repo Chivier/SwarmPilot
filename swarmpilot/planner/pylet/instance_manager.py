@@ -908,7 +908,17 @@ class InstanceManager:
                     f"{managed.instance_id}: {e}"
                 )
             if info is not None:
-                self.pylet_client.cancel_instance(managed.pylet_id, delete=True)
+                try:
+                    self.pylet_client.cancel_instance(
+                        managed.pylet_id, delete=True
+                    )
+                except Exception as e:
+                    # Still dropped below, so it is replaced; PyLet keeps
+                    # the dead record until someone deletes it.
+                    logger.warning(
+                        f"Could not delete failed instance "
+                        f"{managed.pylet_id} in PyLet: {e}"
+                    )
             with self._lock:
                 self._instances.pop(managed.pylet_id, None)
             reaped.append(managed)
