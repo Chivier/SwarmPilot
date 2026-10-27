@@ -212,10 +212,66 @@ of plan item 0.1, within this machine's noise.
 - **Scheduler side** (`tests/scheduler/test_gateway_control.py`): the
   state built from the registry and the report sinks.
 
+### API style translation (R3b)
+
+`swarmpilot_core::api` is a port of `swarmpilot/api` (canonical model,
+SSE parser, the three built-in styles and `plan_request`), and the
+gateway uses it as the Python proxy uses the original: a client may call
+`/v1/chat/completions`, `/v1/messages` or `/v1/responses` whatever the
+engine speaks, answers and streams included. Refused fields get the same
+400 in the client's style, dropped ones the same `x-swarmpilot-dropped`
+header; `SWARMPILOT_API_TRANSLATION=lenient` on the Scheduler reaches the
+gateway in the state (`translation_lenient`), and each adapter's
+`default_max_tokens` in its manifest.
+
+The Python styles read loosely typed JSON, so the port reproduces Python
+semantics rather than idiomatic Rust (`api/py.rs`): truthiness, `dict.get`
+with and without defaults, `AttributeError` on `.get` of a non-object,
+`TypeError` on an unhashable key, `str()` and `repr()` with Python's
+float repr, `int()`, `json.dumps(ensure_ascii=False)`, and iteration
+over strings and dicts. Ids and the clock come through an `Env`, called
+in the same order as Python's generators call `new_id` and `now`. An
+exception Python would raise becomes a 500 (`Internal Server Error`), a
+failing engine stream an `Engine stream failed` error event, and a
+failing client encoder a cut-off stream, as in Python.
+
+Drift guards:
+
+- **Differential fuzzing** (`tests/core/test_translation_parity.py`):
+  random requests in each style, half of them with fields replaced by
+  values of random types or removed, planned against every engine style;
+  random engine answers and error bodies; random SSE streams, mutated,
+  cut short anywhere (inside UTF-8 characters too), with keep-alives,
+  bad JSON, CRLF and random chunk splits, ending normally or in an
+  error. Both sides run with the same counting ids and fixed clock and
+  must give the same plan, body, dropped list and answer bytes. About
+  6,000 cases per CI run; `SWARMPILOT_PARITY_SCALE=40` ran 180,000 with
+  no difference.
+- **Translation matrix on both data planes**
+  (`tests/api/test_conformance_matrix.py`): every client SDK against
+  every engine style, text and tools, streamed and not, plus the
+  tool-result round trip and the refusal and drop cases.
+- **Byte A/B** (`test_gateway_answers_like_python` in the same file):
+  the same requests through the Python proxy and the gateway in front of
+  the same Scheduler; status, content type, dropped header and body must
+  match once ids and timestamps are masked.
+
+Known differences, all on input no client sends: JSON `NaN` and
+`Infinity` literals and lone surrogates in strings are refused by the
+gateway's parser (Python accepts them); integers beyond 64 bits are
+refused too; `repr()` of strings with unusual non-printable characters
+in error messages may differ. API styles added as Python plugins are not
+in the gateway: requests that would be translated to or from one get 501.
+
+Porting found one Python bug, fixed in both: a translated stream stops
+reading the engine at its last event (`[DONE]`, `message_stop`, ...), so
+the engine's body was never read to the end and the request counted as
+failed (no throughput, no training sample). `Translation.stream_response`
+now reads the rest of the engine's body after the client's stream ends.
+
 ### Not yet in the gateway (R3a)
 
-- API style translation: a request whose style the engine does not
-  speak gets 501 (R3b). Native styles pass through.
+- API styles that exist only as Python plugins (501, see above).
 - Feature adapters written only in Python (no extractor manifest) give
   no features, so those requests route without predictions; the
   pass-through adapter is ported.
@@ -236,7 +292,7 @@ of plan item 0.1, within this machine's noise.
 | R1 (done) | 4.7, part of 1.8 | Core crate, PyO3 module, `SCHEDULER_CORE` | Golden vectors, differential tests, sim A/B, suites on Rust |
 | R2 (done) | 4.7 | Predictor inference in Rust: load the safetensors + JSON model files (1.7) and run the MLPs; preprocessing stays in Python | Recorded predictions within 1e-5 of torch on every model kind; differential tests; routing sim with trained predictors, P95 within 5% |
 | R3a (done) | 5.0, 1.8 | `swarmpilot-gateway`: proxy, routing with its own RNG, predictor and experiment mode, dispatch, SSE; gRPC control channel. Go/no-go (0.1): the Python proxy added 2.4 ms P99 at concurrency 1 and 153 ms at 64 | Conformance on both data planes, control channel end to end, routing A/B identical on deterministic strategies, overhead benchmark |
-| R3b | 5.0 | API style translation in the gateway | API fixtures and the translation conformance matrix on both data planes |
+| R3b (done) | 5.0 | API style translation in the gateway: canonical model, three styles, streams, `plan_request` in `swarmpilot_core::api` | Differential fuzzing against `swarmpilot/api`; translation matrix and byte A/B on both data planes |
 | R3c | 5.8 | Shadow mode and the emulated-cluster A/B on the 256-instance spec | Decision and latency distributions within bars |
 | R4 | 8.6 | Published `swarmpilot-core` wheels, static gateway binary, signatures and SBOM | Wheel and binary run the same CI suites |
 

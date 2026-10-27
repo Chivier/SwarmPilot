@@ -18,6 +18,7 @@
 //! - [`interp`] and [`fsum`]: bit-compatible ports of `numpy.interp` and
 //!   `math.fsum`, which the Python code relies on.
 
+pub mod api;
 pub mod experiment;
 pub mod extract;
 pub mod fsum;

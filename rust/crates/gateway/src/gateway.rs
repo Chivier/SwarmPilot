@@ -23,6 +23,10 @@ use crate::features;
 use crate::pb;
 use crate::route::{RequestInfo, Routing};
 use crate::state::{ModelCache, Snapshot};
+use crate::translate;
+use swarmpilot_core::api::base::{SystemEnv, TrError};
+use swarmpilot_core::api::py::{self, truthy};
+use swarmpilot_core::api::translate::{find_style, plan_request, Translation};
 
 /// Header a client sets on calls made on behalf of another model's task.
 const PARENT_HEADER: &str = "x-swarmpilot-parent";
@@ -315,18 +319,6 @@ impl Gateway {
     }
 }
 
-/// Python truthiness of a JSON value.
-fn truthy(v: &Value) -> bool {
-    match v {
-        Value::Null => false,
-        Value::Bool(b) => *b,
-        Value::Number(n) => n.as_f64().is_some_and(|x| x != 0.0),
-        Value::String(s) => !s.is_empty(),
-        Value::Array(a) => !a.is_empty(),
-        Value::Object(o) => !o.is_empty(),
-    }
-}
-
 /// SwarmPilot's own error in the style of the route called
 /// (`_error_response`).
 fn error_response(
@@ -336,29 +328,29 @@ fn error_response(
     message: &str,
     error_type: &str,
 ) -> Response {
+    style_error(snap, path, status, message, error_type, None)
+}
+
+fn style_error(
+    snap: Option<&Snapshot>,
+    path: &str,
+    status: u16,
+    message: &str,
+    error_type: &str,
+    param: Option<&str>,
+) -> Response {
     let style = snap
         .and_then(|s| s.style_paths.get(path))
         .map(String::as_str);
-    let body = match style {
-        Some("anthropic_messages") => {
-            let kind = match status {
-                400 => "invalid_request_error",
-                401 => "authentication_error",
-                403 => "permission_error",
-                404 => "not_found_error",
-                413 => "request_too_large",
-                429 => "rate_limit_error",
-                503 | 529 => "overloaded_error",
-                _ => "api_error",
-            };
-            json!({"type": "error", "error": {"type": kind, "message": message}})
-        }
-        Some(_) => {
-            json!({"error": {"message": message, "type": error_type, "param": null, "code": null}})
+    let body = match style.map(|s| (s, find_style(s))) {
+        Some((_, Some(st))) => st.encode_error(status, message, Some(error_type), param),
+        // A style only the Python Scheduler has: the OpenAI shape.
+        Some((_, None)) => {
+            json!({"error": {"message": message, "type": error_type, "param": param, "code": null}})
         }
         None => json!({"error": {"message": message, "type": error_type}}),
     };
-    json_response(status, &HeaderMap::new(), Bytes::from(body.to_string()))
+    json_response(status, &HeaderMap::new(), Bytes::from(py::dumps(&body)))
 }
 
 fn json_response(status: u16, engine_headers: &HeaderMap, body: Bytes) -> Response {
@@ -373,7 +365,7 @@ fn json_response(status: u16, engine_headers: &HeaderMap, body: Bytes) -> Respon
 }
 
 /// Engine response headers minus hop-by-hop, length and encoding ones.
-fn copy_headers(from: &HeaderMap, to: &mut HeaderMap) {
+pub(crate) fn copy_headers(from: &HeaderMap, to: &mut HeaderMap) {
     for (k, v) in from {
         if matches!(
             k.as_str(),
@@ -467,32 +459,78 @@ pub async fn proxy(State(gw): State<Arc<Gateway>>, req: Request) -> Response {
         }
     };
     let has_body = matches!(method, Method::POST | Method::PUT | Method::PATCH);
-    let body: Value = if has_body {
+    let client_body: Value = if has_body {
         serde_json::from_slice(&raw).unwrap_or_else(|_| json!({}))
     } else {
         json!({})
     };
     let first = candidates[0];
     let adapter = snap.adapter(&first.software);
+    // A route of a known API style the engine does not speak is
+    // translated; one it speaks passes through unchanged.
+    let client_path = path.clone();
+    let mut tr: Option<Translation> = None;
     if method == Method::POST {
+        let native = &adapter.native_styles;
         if let Some(style) = snap.style_paths.get(&path) {
-            if !adapter.native_styles.is_empty() && !adapter.native_styles.contains(style) {
+            let python_only =
+                find_style(style).is_none() || !native.iter().any(|n| find_style(n).is_some());
+            if !native.is_empty() && !native.contains(style) && python_only {
                 return error_response(
                     Some(&snap),
                     &path,
                     501,
-                    &format!("The gateway does not translate {style} requests yet; call this model in its engine's API style"),
+                    &format!("The gateway cannot translate {style} requests for this engine (an API style only the Python Scheduler has)"),
                     "not_implemented",
                 );
             }
         }
+        match plan_request(
+            &path,
+            &client_body,
+            native,
+            snap.translation_strict,
+            i128::from(adapter.default_max_tokens),
+            &mut SystemEnv,
+        ) {
+            Ok(t) => tr = t,
+            Err(TrError::Translation {
+                message,
+                param,
+                status,
+                error_type,
+            }) => {
+                return style_error(
+                    Some(&snap),
+                    &path,
+                    status,
+                    &message,
+                    &error_type,
+                    param.as_deref(),
+                )
+            }
+            Err(TrError::Py(e)) => {
+                tracing::error!(error = %e, path = %path, "translating the request failed");
+                return translate::internal_error();
+            }
+        }
     }
+    let translated = tr.as_ref().filter(|t| !t.passthrough());
+    let (path, body) = match translated {
+        Some(t) => {
+            if let Some(d) = t.dropped_header() {
+                tracing::debug!(from = %client_path, to = %t.path, dropped = %d, "translated");
+            }
+            (t.path.clone(), t.body.clone())
+        }
+        None => (path, client_body.clone()),
+    };
     let task_id = format!(
         "gw-{:x}-{:x}",
         std::process::id(),
         gw.next_task.fetch_add(1, Ordering::Relaxed)
     );
-    let info = RequestInfo::new(features::extract(&adapter, &body), &body);
+    let info = RequestInfo::new(features::extract(&adapter, &body), &client_body);
     let decision = {
         let models = gw.models.read().unwrap();
         gw.routing
@@ -510,7 +548,7 @@ pub async fn proxy(State(gw): State<Arc<Gateway>>, req: Request) -> Response {
         gw.routing.lock().unwrap().release(&task_id);
         return error_response(
             Some(&snap),
-            &path,
+            &client_path,
             503,
             "Selected instance not ready",
             "service_unavailable",
@@ -526,7 +564,9 @@ pub async fn proxy(State(gw): State<Arc<Gateway>>, req: Request) -> Response {
     // The Python proxy sends `json=body`: a body that is not a JSON object
     // reaches the engine as `{}`.
     let send_body = has_body.then(|| {
-        if body.as_object().is_some_and(|o| !o.is_empty()) || raw_is_empty_object(&raw) {
+        if translated.is_some() {
+            Bytes::from(serde_json::to_vec(&body).unwrap_or_default())
+        } else if body.as_object().is_some_and(|o| !o.is_empty()) || raw_is_empty_object(&raw) {
             raw.clone()
         } else {
             Bytes::from_static(b"{}")
@@ -555,7 +595,7 @@ pub async fn proxy(State(gw): State<Arc<Gateway>>, req: Request) -> Response {
         gw.fail(&mut job, "Failed to enqueue request".into());
         return error_response(
             Some(&snap),
-            &path,
+            &client_path,
             503,
             "Failed to enqueue request",
             "service_unavailable",
@@ -568,7 +608,7 @@ pub async fn proxy(State(gw): State<Arc<Gateway>>, req: Request) -> Response {
             tracing::error!(task = %task_id, "timed out after {}s", snap.timeout_s);
             return error_response(
                 Some(&snap),
-                &path,
+                &client_path,
                 504,
                 "Request timed out",
                 "gateway_timeout",
@@ -576,26 +616,40 @@ pub async fn proxy(State(gw): State<Arc<Gateway>>, req: Request) -> Response {
         }
     };
     match reply {
-        Reply::Failed(msg) => error_response(Some(&snap), &path, 502, &msg, "bad_gateway"),
+        Reply::Failed(msg) => {
+            // A failed stream start is styled by the translation only.
+            let err_path = if stream && tr.is_none() {
+                ""
+            } else {
+                client_path.as_str()
+            };
+            error_response(Some(&snap), err_path, 502, &msg, "bad_gateway")
+        }
         Reply::Body {
             status,
             headers,
             body,
-        } => json_response(status, &headers, body),
+        } => match translated {
+            Some(t) => translate::body(t, status, &headers, &body, stream),
+            None => json_response(status, &headers, body),
+        },
         Reply::Stream {
             status,
             headers,
             chunks,
         } => {
+            if let Some(t) = translated {
+                return translate::stream(t, status, &headers, chunks);
+            }
             let mut resp = Response::new(Body::from_stream(chunks));
             *resp.status_mut() = StatusCode::from_u16(status).unwrap_or(StatusCode::OK);
             copy_headers(&headers, resp.headers_mut());
-            if !resp.headers().contains_key("content-type") {
-                resp.headers_mut().insert(
-                    "content-type",
-                    HeaderValue::from_static("text/event-stream"),
-                );
-            }
+            let ct = headers
+                .get("content-type")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("text/event-stream");
+            resp.headers_mut()
+                .insert("content-type", translate::media_type(ct));
             resp.into_response()
         }
     }

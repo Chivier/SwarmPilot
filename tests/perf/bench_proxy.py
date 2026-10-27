@@ -50,12 +50,28 @@ BODY = {
     "messages": [{"role": "user", "content": "Say hello."}],
     "max_tokens": 16,
 }
+# The same request in each client API style; the fake engine speaks
+# OpenAI Chat, so the other styles measure translation as well.
+STYLE_REQUESTS = {
+    "openai_chat": ("v1/chat/completions", BODY),
+    "anthropic_messages": ("v1/messages", BODY),
+    "openai_responses": (
+        "v1/responses",
+        {"model": "fake-model", "input": "Say hello.", "max_output_tokens": 16},
+    ),
+}
 
 
-def make_request(session: aiohttp.ClientSession, base_url: str, stream: bool):
-    """Return a coroutine factory that sends one chat request."""
-    url = f"{base_url}/v1/chat/completions"
-    body = json.dumps({**BODY, "stream": stream}).encode()
+def make_request(
+    session: aiohttp.ClientSession,
+    base_url: str,
+    stream: bool,
+    style: str = "openai_chat",
+):
+    """Return a coroutine factory that sends one request in ``style``."""
+    path, base = STYLE_REQUESTS[style]
+    url = f"{base_url}/{path}"
+    body = json.dumps({**base, "stream": stream}).encode()
     headers = {"content-type": "application/json"}
 
     async def one() -> tuple[float, float]:
@@ -83,6 +99,7 @@ async def run_matrix(
     duration: float,
     warmup: float,
     streams: list[bool],
+    style: str = "openai_chat",
 ) -> list[dict]:
     """Measure direct and proxied calls for every (stream, concurrency)."""
     rows = []
@@ -94,12 +111,15 @@ async def run_matrix(
         for stream in streams:
             for c in concurrencies:
                 row: dict = {"stream": stream, "concurrency": c}
-                for target, url in (
-                    ("direct", engine_url),
-                    ("proxy", proxy_url),
+                for target, url, req_style in (
+                    ("direct", engine_url, "openai_chat"),
+                    ("proxy", proxy_url, style),
                 ):
                     res = await closed_loop(
-                        make_request(session, url, stream), c, duration, warmup
+                        make_request(session, url, stream, req_style),
+                        c,
+                        duration,
+                        warmup,
                     )
                     row[target] = res.summary()
                 d, p = row["direct"], row["proxy"]
@@ -147,6 +167,13 @@ def main() -> None:
         choices=["python", "gateway"],
         default="python",
         help="Serve requests with the Scheduler's proxy or swarmpilot-gateway.",
+    )
+    parser.add_argument(
+        "--client-style",
+        choices=sorted(STYLE_REQUESTS),
+        default="openai_chat",
+        help="API style clients call the proxy in; other than openai_chat "
+        "it is translated for the (OpenAI Chat) fake engine.",
     )
     parser.add_argument("--out", type=Path, default=None)
     args = parser.parse_args()
@@ -224,6 +251,7 @@ def main() -> None:
                 args.duration,
                 args.warmup,
                 streams,
+                args.client_style,
             )
         )
 
@@ -240,6 +268,7 @@ def main() -> None:
             },
             "config": {
                 "data_plane": args.data_plane,
+                "client_style": args.client_style,
                 "instances": args.instances,
                 "engine": args.engine,
                 "strategy": args.strategy,

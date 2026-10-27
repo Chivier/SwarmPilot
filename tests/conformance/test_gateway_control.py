@@ -194,21 +194,37 @@ def test_registration_reaches_gateway(stack):
     assert health["strategy"] == "round_robin"
 
 
-def test_untranslated_style_gives_501(stack):
-    """A Messages request to a vLLM instance needs translation (R3b)."""
+def test_translated_requests_are_answered_and_counted(stack):
+    """A Messages client on a vLLM instance is translated (R3b).
+
+    Streamed or not, the request counts as completed: a translated stream
+    ends at the engine's ``[DONE]`` and the rest of its body is still read.
+    """
     wait_gateway_instances(stack.gateway, 1)
+    before = stack.info("fake-0")["stats"]
+    body = {
+        "model": "fake-model",
+        "max_tokens": 8,
+        "messages": [{"role": "user", "content": "hi"}],
+    }
+    r = httpx.post(f"{stack.gateway}/v1/messages", json=body)
+    assert r.status_code == 200, r.text
+    assert r.json()["type"] == "message"
     r = httpx.post(
-        f"{stack.gateway}/v1/messages",
-        json={
-            "model": "fake-model",
-            "max_tokens": 8,
-            "messages": [{"role": "user", "content": "hi"}],
-        },
+        f"{stack.gateway}/v1/messages", json={**body, "stream": True}
     )
-    assert r.status_code == 501
-    body = r.json()
-    assert body["type"] == "error"
-    assert body["error"]["type"] == "api_error"
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "text/event-stream; charset=utf-8"
+    assert "event: message_stop" in r.text
+
+    def counted() -> bool:
+        stats = stack.info("fake-0")["stats"]
+        return (
+            stats["completed_tasks"] == before["completed_tasks"] + 2
+            and stats["failed_tasks"] == before["failed_tasks"]
+        )
+
+    _wait(counted, "completion reports")
 
 
 def test_completions_are_counted_on_the_instance(stack):

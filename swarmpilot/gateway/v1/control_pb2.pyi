@@ -52,16 +52,18 @@ class State(_message.Message):
     def __init__(self, version: _Optional[int] = ..., protocol_version: _Optional[int] = ..., model_id: _Optional[str] = ..., strategy: _Optional[str] = ..., proxy: _Optional[_Union[ProxySettings, _Mapping]] = ..., instances: _Optional[_Iterable[_Union[Instance, _Mapping]]] = ..., manifests: _Optional[_Mapping[str, str]] = ..., predictor: _Optional[_Union[PredictorSettings, _Mapping]] = ..., api_style_paths: _Optional[_Mapping[str, str]] = ...) -> None: ...
 
 class ProxySettings(_message.Message):
-    __slots__ = ("timeout_s", "max_retries", "retry_delay_s", "http_timeout_s")
+    __slots__ = ("timeout_s", "max_retries", "retry_delay_s", "http_timeout_s", "translation_lenient")
     TIMEOUT_S_FIELD_NUMBER: _ClassVar[int]
     MAX_RETRIES_FIELD_NUMBER: _ClassVar[int]
     RETRY_DELAY_S_FIELD_NUMBER: _ClassVar[int]
     HTTP_TIMEOUT_S_FIELD_NUMBER: _ClassVar[int]
+    TRANSLATION_LENIENT_FIELD_NUMBER: _ClassVar[int]
     timeout_s: float
     max_retries: int
     retry_delay_s: float
     http_timeout_s: float
-    def __init__(self, timeout_s: _Optional[float] = ..., max_retries: _Optional[int] = ..., retry_delay_s: _Optional[float] = ..., http_timeout_s: _Optional[float] = ...) -> None: ...
+    translation_lenient: bool
+    def __init__(self, timeout_s: _Optional[float] = ..., max_retries: _Optional[int] = ..., retry_delay_s: _Optional[float] = ..., http_timeout_s: _Optional[float] = ..., translation_lenient: _Optional[bool] = ...) -> None: ...
 
 class Instance(_message.Message):
     __slots__ = ("instance_id", "endpoint", "model_id", "platform_info", "status", "max_in_flight", "servers", "extra_headers", "platform_key")

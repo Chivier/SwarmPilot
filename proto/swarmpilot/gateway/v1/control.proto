@@ -58,6 +58,9 @@ message ProxySettings {
   double retry_delay_s = 3;
   // Seconds an engine may stay silent while answering (sock_read).
   double http_timeout_s = 4;
+  // SWARMPILOT_API_TRANSLATION=lenient: drop answer-changing fields that
+  // cannot be translated instead of refusing the request.
+  bool translation_lenient = 5;
 }
 
 message Instance {
