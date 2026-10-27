@@ -1,5 +1,6 @@
 """Hardware-aware auto-optimizer: learned speeds, victims and placement."""
 
+import time
 from dataclasses import dataclass
 
 import pytest
@@ -508,3 +509,105 @@ class TestShapeRegressions:
             )
             plan = opt.plan(service.instances, spare=4)
             assert plan is not None and plan.target_state["big"] > 1
+
+
+class TestMakeRoom:
+    """A starved multi-GPU model takes a worker from smaller models."""
+
+    @staticmethod
+    def _service(rates):
+        # Four small instances fill the A100 worker a4; big has one
+        # instance on b4; one small sits on a slow worker.
+        layout = [("small", FAST)] * 4 + [("small", SLOW), ("big", FAST)]
+        service = _ShapedService(layout, SHAPES)
+        for inst, w in zip(
+            service.instances, ["a4"] * 4 + ["s1", "b4"], strict=True
+        ):
+            inst.worker_id = w
+        return service, _store(service, SHAPED_EXEC, rates)
+
+    def test_removes_small_instances_to_fit_big(self):
+        service, store = self._service({"small": 0.5, "big": 10.0})
+        opt = _opt(store, service, elastic=True, target_concurrency=1)
+        plan = opt.plan(service.instances, slots=[("x1", SLOW)])
+        assert plan is not None
+        assert plan.place == {"big": ("a4",)}
+        assert sorted(plan.remove) == ["p0", "p1", "p2", "p3"]
+        assert plan.target_state == {"small": 1, "big": 2}
+
+    def test_no_room_taken_from_a_model_left_shorter(self):
+        # small is as starved as big: taking its worker would leave it
+        # further short than big is now.
+        service, store = self._service({"small": 20.0, "big": 10.0})
+        opt = _opt(store, service, elastic=True, target_concurrency=1)
+        plan = opt.plan(service.instances, slots=[])
+        assert plan is None or not plan.remove
+
+    def test_young_instances_stay(self):
+        service, store = self._service({"small": 0.5, "big": 10.0})
+        service.instances[0].created_at = time.time()
+        opt = _opt(store, service, elastic=True, target_concurrency=1)
+        plan = opt.plan(service.instances, slots=[])
+        assert plan is None or "a4" not in plan.place.get("big", ())
+
+    def test_fixed_pool_does_not_make_room(self):
+        service, store = self._service({"small": 0.5, "big": 10.0})
+        opt = _opt(store, service, target_concurrency=1)
+        plan = opt.plan(service.instances, slots=[])
+        assert plan is None or plan.target_state.get("big", 0) <= 1
+
+
+class TestWholeNodes:
+    """Each instance holds a whole worker (``PLANNER_WHOLE_NODES``)."""
+
+    @staticmethod
+    def _service(layout, sizes):
+        service = _ShapedService(layout, SHAPES)
+        service.whole_nodes = True
+        for inst, n in zip(service.instances, sizes, strict=True):
+            inst.gpu_count = n
+        return service
+
+    def test_any_model_the_worker_holds_can_take_it(self):
+        # small sits on a 4-GPU A100 worker big could use; no free GPUs.
+        service = self._service(
+            [("small", FAST)] * 3 + [("big", FAST)], [1, 1, 4, 4]
+        )
+        store = _store(service, SHAPED_EXEC, {"small": 0.3, "big": 10.0})
+        opt = _opt(store, service, target_concurrency=1)
+        plan = opt.plan(service.instances, slots=[])
+        assert plan is not None
+        assert plan.place == {"big": ("w2",)}
+        assert plan.remove == ("p2",)
+
+    def test_one_gpu_workers_never_become_big(self):
+        service = self._service(
+            [("small", FAST)] * 3 + [("big", FAST)], [1, 1, 1, 4]
+        )
+        store = _store(service, SHAPED_EXEC, {"small": 0.3, "big": 10.0})
+        opt = _opt(store, service, target_concurrency=1)
+        plan = opt.plan(service.instances, slots=[])
+        assert plan is None or plan.target_state.get("big", 0) <= 1
+
+    def test_growth_takes_the_smallest_free_worker_whole(self):
+        service = self._service([("small", FAST), ("big", FAST)], [1, 4])
+        store = _store(service, SHAPED_EXEC, {"small": 3.0, "big": 0.5})
+        opt = _opt(store, service, elastic=True, target_concurrency=1)
+        # A free 4-GPU A100 worker listed first, then two 1-GPU ones.
+        slots = [("a4", FAST)] * 4 + [("a1", FAST), ("b1", FAST)]
+        plan = opt.plan(service.instances, slots=slots)
+        assert plan is not None
+        # Two new small instances, one per 1-GPU worker; the 4-GPU
+        # worker is not split between them.
+        assert sorted(plan.place["small"]) == ["a1", "b1"]
+
+    def test_make_room_takes_a_whole_worker(self):
+        service = self._service(
+            [("small", FAST), ("small", SLOW), ("big", FAST)], [4, 1, 4]
+        )
+        store = _store(service, SHAPED_EXEC, {"small": 0.3, "big": 40.0})
+        opt = _opt(store, service, elastic=True, target_concurrency=1)
+        plan = opt.plan(service.instances, slots=[("s1", SLOW)])
+        assert plan is not None
+        assert plan.place == {"big": ("w0",)}
+        assert plan.remove == ("p0",)

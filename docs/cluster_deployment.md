@@ -535,6 +535,28 @@ without a named worker (serve, scale, replacements) also go best fit:
 PyLet itself takes the first worker that fits, so 1-GPU replicas would
 fill an 8-GPU node and leave no room for a 4-GPU model.
 
+With `PLANNER_WHOLE_NODES=true` a worker is the smallest unit the Planner
+hands out: it runs at most one instance, which gets all its GPUs (the
+engine starts with that tensor-parallel size), and a model's `gpu_count`
+is the fewest GPUs its worker must have. A free worker is one with every
+GPU free and no instance of ours on it, and a replica takes the smallest
+free worker that fits, so 1-GPU models fill 1-GPU workers first. In the
+hardware-aware loop a worker can then change to any model it holds, not
+only one of the same size. Use whole workers with
+`AUTO_OPTIMIZE_HARDWARE_AWARE=true`: the count path plans replica counts
+without worker sizes, so it only re-divides counts among models of the
+same GPU count and leaves placement to the smallest free worker.
+
+Best fit still runs out: after a busy night smaller models can hold every
+big node, in pieces or whole, and no free place holds a 4-GPU instance. In an
+elastic pool, when the model furthest below its share fits on no free
+GPUs, the loop makes room: it removes instances of other models from the
+one worker where the fewest GPUs must be freed, and starts the model
+there. It takes an instance only from a model that keeps its floor and
+ends less short than the starved model is now, never one younger than
+`min_age`, so the largest shortfall always shrinks and two models do not
+pass a worker back and forth.
+
 Hardware names come from `PLANNER_HARDWARE_MAP` (or the simulator's
 node list); the speeds are in the loop's log line.
 
