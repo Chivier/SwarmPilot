@@ -66,6 +66,16 @@ class ArrivalCounter:
         if parent:
             self._calls[parent] += 1
 
+    def add(self, count: int, calls_from: dict[str, int]) -> None:
+        """Count ``count`` tasks another data plane received.
+
+        Args:
+            count: Tasks that arrived.
+            calls_from: Of those, tasks made on behalf of each model.
+        """
+        self._arrivals += count
+        self._calls.update(calls_from)
+
     def take(self) -> ArrivalWindow:
         """Return the arrivals since the last call and start a new window."""
         now = self._clock()

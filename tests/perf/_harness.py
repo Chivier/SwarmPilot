@@ -125,6 +125,47 @@ def scheduler_cmd(port: int) -> list[str]:
     ]
 
 
+def gateway_binary() -> Path | None:
+    """The built ``swarmpilot-gateway``, or None when it is not built.
+
+    ``SWARMPILOT_GATEWAY_BIN`` names it explicitly; otherwise the release
+    build, then the debug build, of the Cargo workspace is used.
+    """
+    explicit = os.getenv("SWARMPILOT_GATEWAY_BIN")
+    if explicit:
+        return Path(explicit)
+    for profile in ("release", "debug"):
+        path = REPO_ROOT / "rust" / "target" / profile / "swarmpilot-gateway"
+        if path.exists():
+            return path
+    return None
+
+
+def gateway_cmd(binary: Path, port: int, control: Path) -> list[str]:
+    """Return the argv that starts the gateway on ``port``."""
+    return [
+        str(binary),
+        "--listen",
+        f"127.0.0.1:{port}",
+        "--control",
+        str(control),
+        "--seed",
+        "0",
+    ]
+
+
+def wait_gateway_instances(url: str, n: int, timeout: float = 30.0) -> None:
+    """Wait until the gateway at ``url`` has state with ``n`` instances."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        with contextlib.suppress(httpx.HTTPError):
+            r = httpx.get(f"{url}/_gateway/health", timeout=1.0)
+            if r.is_success and r.json().get("instances") == n:
+                return
+        time.sleep(0.1)
+    raise TimeoutError(f"gateway at {url} never saw {n} instance(s)")
+
+
 @dataclass
 class LoadResult:
     """Latency samples from one closed-loop load run.
@@ -148,9 +189,11 @@ class LoadResult:
         out: dict = {
             "requests": len(self.latencies_ms),
             "errors": self.errors,
-            "rps": round(len(self.latencies_ms) / self.elapsed_s, 1)
-            if self.elapsed_s
-            else 0.0,
+            "rps": (
+                round(len(self.latencies_ms) / self.elapsed_s, 1)
+                if self.elapsed_s
+                else 0.0
+            ),
         }
         for name, xs in (
             ("latency", self.latencies_ms),

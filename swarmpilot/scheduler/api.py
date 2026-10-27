@@ -31,9 +31,11 @@ from pyinstrument import Profiler
 from pyinstrument.renderers.html import HTMLRenderer
 from pyinstrument.renderers.speedscope import SpeedscopeRenderer
 
+from swarmpilot.api.registry import get_style, style_names
+from swarmpilot.predictor.models import PlatformInfo
 from swarmpilot.shared.loop_lag import EventLoopLagMonitor
 
-from . import core as scheduling_core
+from . import core as scheduling_core, gateway_control
 from .algorithms import get_strategy, queue_info_type_for
 from .algorithms.base import ScheduleResult
 from .config import config
@@ -234,6 +236,12 @@ async def lifespan(app: FastAPI):
         if n_online:
             logger.info(f"Registered {n_online} online API virtual instance(s)")
 
+        gateway_server = None
+        if config.proxy.gateway_socket:
+            gateway_server = await gateway_control.start_server(
+                _gateway_sources(), config.proxy.gateway_socket
+            )
+
         # Start planner reporter (if configured)
         if planner_reporter:
             await planner_reporter.start()
@@ -253,6 +261,8 @@ async def lifespan(app: FastAPI):
         # Shutdown
         logger.info("Scheduler service shutting down...")
         health_task.cancel()
+        if gateway_server:
+            await gateway_server.stop(1.0)
 
         # Deregister from planner first (if registered) - PYLET-024
         if planner_registrar:
@@ -1033,6 +1043,130 @@ async def _health_loop() -> None:
                 logger.opt(exception=True).warning(
                     f"[HEALTH] health check round failed: {e}"
                 )
+
+
+# ----------------------------------------------------------------------------
+# swarmpilot-gateway control channel (phase R3)
+# ----------------------------------------------------------------------------
+
+
+async def _gateway_instances() -> list[gateway_control.InstanceView]:
+    """Registered instances with the dispatch limits of their queues."""
+    views = []
+    for inst in await instance_registry.list_all():
+        limits = (
+            worker_queue_manager.dispatch_limits(inst.instance_id)
+            if worker_queue_manager
+            else None
+        )
+        # An instance without a queue is not ready; Python's proxy answers
+        # 503 for it, the gateway does not route to it.
+        status = inst.status if limits else InstanceStatus.INITIALIZING
+        max_in_flight, headers = limits or (1, {})
+        views.append(
+            gateway_control.InstanceView(
+                instance_id=inst.instance_id,
+                endpoint=inst.endpoint,
+                model_id=inst.model_id,
+                platform_info=dict(inst.platform_info),
+                status=status,
+                max_in_flight=max_in_flight,
+                servers=instance_registry.get_capacity(inst.instance_id),
+                extra_headers=headers,
+            )
+        )
+    return views
+
+
+async def _gateway_completion(c: gateway_control.pb.Completion) -> None:
+    """What the result callback does for a request the gateway finished.
+
+    The gateway keeps no task records, so only statistics, throughput and
+    training samples follow.
+    """
+    instance = await instance_registry.get(c.instance_id)
+    if instance is None:
+        return
+    if not c.succeeded:
+        await instance_registry.increment_failed(instance.instance_id)
+        return
+    await instance_registry.increment_completed(instance.instance_id)
+    if throughput_tracker:
+        await throughput_tracker.record_execution_time(
+            instance_endpoint=instance.endpoint,
+            execution_time_ms=c.execution_time_ms,
+        )
+    if training_client and c.features:
+        try:
+            training_client.add_sample(
+                model_id=c.model_id,
+                platform_info=instance.platform_info,
+                features=dict(c.features),
+                actual_runtime_ms=c.execution_time_ms,
+                predicted_quantiles=(
+                    {float(q): v for q, v in c.predicted_quantiles.items()}
+                    or None
+                ),
+                predicted_time_ms=(
+                    c.predicted_time_ms
+                    if c.HasField("predicted_time_ms")
+                    else None
+                ),
+                predicted_error_ms=(
+                    c.predicted_error_margin_ms
+                    if c.HasField("predicted_error_margin_ms")
+                    else None
+                ),
+            )
+            training_client.start_flush_if_ready()
+        except (ValueError, RuntimeError, OSError) as e:
+            logger.warning(
+                f"Training sample recording failed for task {c.task_id}: {e}"
+            )
+
+
+async def _gateway_unreachable(instance_id: str, error: str) -> None:
+    logger.warning(f"[GATEWAY] {instance_id} unreachable: {error}")
+    await _handle_unreachable(instance_id, [])
+
+
+def _gateway_model_key(
+    model_id: str, platform_info: dict[str, str], prediction_type: str
+) -> str:
+    return predictor_client._low_level.generate_model_key(
+        model_id, PlatformInfo(**platform_info), prediction_type
+    )
+
+
+def _gateway_sources() -> gateway_control.Sources:
+    """Wire the control channel to the Scheduler's state."""
+    return gateway_control.Sources(
+        instances=_gateway_instances,
+        strategy=lambda: get_current_strategy_info().strategy_name,
+        model_id=lambda: config.planner_registration.model_id or "",
+        proxy=lambda: gateway_control.pb.ProxySettings(
+            timeout_s=config.proxy.timeout,
+            max_retries=getattr(worker_queue_manager, "_max_retries", 3),
+            retry_delay_s=getattr(worker_queue_manager, "_retry_delay", 1.0),
+            http_timeout_s=config.proxy.worker_http_timeout,
+        ),
+        manifest=lambda software: resolve_adapter(software or None).manifest(),
+        storage_dir=lambda: os.path.abspath(config.predictor.storage_dir),
+        sketch_quantiles=lambda: list(instance_registry._quantiles),
+        model_key=_gateway_model_key,
+        hardware_features=lambda info: (
+            PlatformInfo(**info).extract_gpu_specs() or {}
+        ),
+        preprocessor_rules=lambda model_id: (
+            predictor_client._chain_builder.get_chain(model_id) is not None
+        ),
+        style_paths=lambda: {
+            name: get_style(name).generate_path() for name in style_names()
+        },
+        on_completion=_gateway_completion,
+        on_arrivals=arrival_counter.add,
+        on_unreachable=_gateway_unreachable,
+    )
 
 
 # ============================================================================

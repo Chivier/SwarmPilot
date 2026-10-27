@@ -100,7 +100,7 @@ jobs:
       - name: Run Rust tests (calibration table printed)
         run: cargo test --release --locked -- --nocapture
 
-      - name: Build simulator binary
+      - name: Build simulator and gateway binaries
         run: cargo build --release --locked
 
       - name: Install uv
@@ -114,6 +114,14 @@ jobs:
         run: |
           uv sync --dev
           uv run pytest tests/sim/ -v --tb=short
+
+      - name: Run conformance, control and routing A/B tests on the gateway
+        # Every conformance test runs against the Python proxy and against
+        # swarmpilot-gateway (phase R3); the A/B needs identical decisions.
+        working-directory: .
+        env:
+          SWARMPILOT_GATEWAY_BIN: rust/target/release/swarmpilot-gateway
+        run: uv run pytest tests/conformance/ -v --tb=short
 
   rust-core:
     # SCHEDULER_CORE=rust: the Rust scheduling core must match the Python

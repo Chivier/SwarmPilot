@@ -16,6 +16,7 @@ Python implementations from drifting apart.
 | `extract` | the feature extractor grammar in `engines/extractors.py` |
 | `interp`, `fsum` | bit-exact ports of `numpy.interp` and `math.fsum` |
 | `mlp` | inference of `predictor/predictor/expect_error.py` and `quantile.py` (the MLP, scaling, the quantile head), and a reader for the portable model file |
+| `experiment` | experiment-mode predictions of `predictor/utils/experiment.py` (`exp_*` request fields), bit-exact |
 
 `rust/crates/core-py` wraps it as the Python module `swarmpilot_core`
 (PyO3, abi3 for Python 3.11+).
@@ -135,13 +136,106 @@ Rust (`Extractor.eval_json`); the gateway will reject such bodies.
 Rust parses JSON with serde_json's `float_roundtrip` feature, without
 which some decimals parse one bit off.
 
+## The gateway (R3)
+
+`rust/crates/gateway` builds `swarmpilot-gateway`, the Scheduler's data
+plane in Rust. It serves the public port in place of the Python
+catch-all proxy: it reads the request, computes the adapter's features,
+routes with the Rust core and its own predictor copy, and dispatches to
+the engine with the same per-instance queues. The Python Scheduler keeps
+everything else (registration, health, draining, training, the Planner,
+the `/v1/...` API) and talks to the gateway over gRPC on a Unix socket
+(`proto/swarmpilot/gateway/v1/control.proto`):
+
+- `WatchState`: the Scheduler streams the routing state (instances and
+  their status, limits and headers; strategy; adapter manifests; proxy
+  timeouts; predictor model keys, hardware features and experiment
+  draws). It rebuilds it every 0.2 s and sends it when it changed.
+- `ReportCompletions`: every finished request goes back in batches
+  (100 ms), with its features and prediction, so instance statistics,
+  Planner throughput, arrival counts and training samples work as with
+  the Python proxy.
+- `ReportUnreachable`: a refused connection is handled by the
+  Scheduler's `_handle_unreachable` (the instance becomes UNHEALTHY).
+
+The gateway loads trained models from the predictor storage directory
+(portable files, R2) and reloads them when a retrain rewrites them.
+
+```bash
+cargo build --release --manifest-path rust/Cargo.toml
+SCHEDULER_GATEWAY_SOCKET=/run/swarmpilot/gw.sock sscheduler start --port 8000
+rust/target/release/swarmpilot-gateway \
+    --listen 0.0.0.0:8080 --control /run/swarmpilot/gw.sock
+```
+
+Clients then call port 8080; registration and the rest of the API stay
+on 8000. `GET /_gateway/health` shows the state version, model,
+strategy and instance count. `GATEWAY_SEED` seeds the routing RNG;
+`GATEWAY_LOG` sets the log filter (`info` by default).
+
+### Overhead
+
+`tests/perf/bench_proxy.py --data-plane {python,gateway}`, one fake
+engine, adaptive_bootstrap, 4-vCPU container (baselines in
+`tests/perf/baselines/proxy-r3a-*.json`). Added latency over calling the
+engine directly:
+
+| Concurrency | Python P50 / P99 | Gateway P50 / P99 | Throughput vs direct (Python / gateway) |
+|-------------|------------------|-------------------|------------------------------------------|
+| 1 | 1.1 / 1.8 ms | 0.3 / 0.5-0.7 ms | 0.15 / 0.36 |
+| 64 | 22 / 125 ms | 1.0 / 2.0 ms | 0.17 / 0.81 |
+| 512 | 196 / 426 ms | 9 / 30 ms | 0.16 / 0.82 |
+
+The single-process Python fake engine limits throughput at high
+concurrency; the added P99 at concurrency 1 sits at the 0.5 ms budget
+of plan item 0.1, within this machine's noise.
+
+### Drift guards for the gateway
+
+- **Dispatch conformance** (`tests/conformance/test_dispatch_conformance.py`):
+  every black-box test runs against the Python proxy and the gateway.
+- **Control channel end to end** (`tests/conformance/test_gateway_control.py`):
+  503 without instances, registration and strategy switches reaching the
+  gateway, completions counted on the instance, samples from gateway
+  traffic training a model the gateway then loads, an unreachable
+  instance marked UNHEALTHY in the Scheduler while requests succeed.
+- **Routing A/B** (`tests/conformance/test_routing_ab.py`): 18 requests
+  with experiment-mode predictions queue up on three engines; with
+  min_time, serverless and round_robin the gateway must choose the same
+  instance as the Python proxy for every request.
+- **Fallbacks** (`strategy.rs` tests): a failed prediction gives the
+  first instance uncharged; round_robin and random use 0 ms placeholders;
+  adaptive_bootstrap keeps its round-robin pick.
+- **Experiment mode** (`tests/core/test_experiment_parity.py`): 1,200
+  random parameter sets and the error cases, equal to the last bit
+  (CPython 3.12+ `sum()` compensation is emulated; 3.11 within 1e-15).
+- **Scheduler side** (`tests/scheduler/test_gateway_control.py`): the
+  state built from the registry and the report sinks.
+
+### Not yet in the gateway (R3a)
+
+- API style translation: a request whose style the engine does not
+  speak gets 501 (R3b). Native styles pass through.
+- Feature adapters written only in Python (no extractor manifest) give
+  no features, so those requests route without predictions; the
+  pass-through adapter is ported.
+- A preprocessor chain configured for the model disables trained
+  predictions in the gateway (routing falls back as on a cold model).
+- Requests are not in the Scheduler's task registry (`/v1/task/...`).
+- Strategies that draw random numbers (probabilistic, po2, random,
+  adaptive_bootstrap with trained models) use the gateway's own RNG, so
+  their decisions match Python in distribution, not one for one.
+- State changes reach the gateway within 0.2 s.
+
 ## Phases
 
 | Phase | Plan item | Content | Drift guard |
 |-------|-----------|---------|-------------|
 | R1 (done) | 4.7, part of 1.8 | Core crate, PyO3 module, `SCHEDULER_CORE` | Golden vectors, differential tests, sim A/B, suites on Rust |
 | R2 (done) | 4.7 | Predictor inference in Rust: load the safetensors + JSON model files (1.7) and run the MLPs; preprocessing stays in Python | Recorded predictions within 1e-5 of torch on every model kind; differential tests; routing sim with trained predictors, P95 within 5% |
-| R3 | 5.0, 1.8 | `swarmpilot-gateway` binary (proxy, routing with its own RNG, dispatch, SSE, API style translation) and the control-channel protos, after the 0.1 go/no-go benchmark | Conformance and API fixtures against both the Python Scheduler and the gateway; emulated-cluster A/B on the 256-instance spec; shadow mode (5.8) |
+| R3a (done) | 5.0, 1.8 | `swarmpilot-gateway`: proxy, routing with its own RNG, predictor and experiment mode, dispatch, SSE; gRPC control channel. Go/no-go (0.1): the Python proxy added 2.4 ms P99 at concurrency 1 and 153 ms at 64 | Conformance on both data planes, control channel end to end, routing A/B identical on deterministic strategies, overhead benchmark |
+| R3b | 5.0 | API style translation in the gateway | API fixtures and the translation conformance matrix on both data planes |
+| R3c | 5.8 | Shadow mode and the emulated-cluster A/B on the 256-instance spec | Decision and latency distributions within bars |
 | R4 | 8.6 | Published `swarmpilot-core` wheels, static gateway binary, signatures and SBOM | Wheel and binary run the same CI suites |
 
 `SCHEDULER_CORE` defaults to `python` until R2 lands and the Gate A

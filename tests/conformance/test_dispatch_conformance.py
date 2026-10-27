@@ -1,9 +1,12 @@
 """Black-box dispatch semantics every SwarmPilot data plane must keep.
 
-These tests only speak HTTP: to a data plane (the Python Scheduler today,
-the Rust gateway of the migration plan later) and to the fake engine behind
-it, whose ``/_stats`` shows what actually reached it. By default they start
-both locally. To check another data plane, start it in front of a fake
+These tests only speak HTTP: to a data plane and to the fake engine behind
+it, whose ``/_stats`` shows what actually reached it. By default they run
+twice, once against the Python Scheduler's proxy and once against
+``swarmpilot-gateway`` (phase R3) in front of the same Scheduler; the
+gateway run is skipped when the binary is not built (``cargo build
+--release --manifest-path rust/Cargo.toml``). To check another data plane,
+start it in front of a fake
 engine with one instance registered as ``vllm`` and a per-instance limit of
 4 requests in flight and a 2 s request timeout, then set::
 
@@ -28,21 +31,31 @@ sys.path.insert(0, str(Path(__file__).parents[1] / "perf"))
 from _harness import (
     fake_engine_cmd,
     free_port,
+    gateway_binary,
+    gateway_cmd,
     scheduler_cmd,
     spawn,
+    wait_gateway_instances,
 )
 
 MAX_IN_FLIGHT = 4
 TIMEOUT_S = 2
 
 
-@pytest.fixture(scope="module")
-def urls():
+@pytest.fixture(scope="module", params=["python", "gateway"])
+def urls(request):
     proxy = os.getenv("SWARMPILOT_CONFORMANCE_PROXY")
     engine = os.getenv("SWARMPILOT_CONFORMANCE_ENGINE")
     if proxy and engine:
+        if request.param != "python":
+            pytest.skip("an external data plane is checked once")
         yield proxy.rstrip("/"), engine.rstrip("/")
         return
+    binary = None
+    if request.param == "gateway":
+        binary = gateway_binary()
+        if binary is None:
+            pytest.skip("swarmpilot-gateway is not built")
 
     eport, sport = free_port(), free_port()
     engine = f"http://127.0.0.1:{eport}"
@@ -58,6 +71,9 @@ def urls():
         "PROXY_MAX_IN_FLIGHT": str(MAX_IN_FLIGHT),
         "PROXY_TIMEOUT": str(TIMEOUT_S),
     }
+    control = tmp / "gateway.sock"
+    if binary is not None:
+        env["SCHEDULER_GATEWAY_SOCKET"] = str(control)
     with ExitStack() as stack:
         stack.enter_context(
             spawn(
@@ -88,7 +104,20 @@ def urls():
             },
         )
         r.raise_for_status()
-        yield proxy, engine
+        if binary is None:
+            yield proxy, engine
+            return
+        gport = free_port()
+        gateway = f"http://127.0.0.1:{gport}"
+        stack.enter_context(
+            spawn(
+                gateway_cmd(binary, gport, control),
+                f"{gateway}/_gateway/health",
+                log_path=tmp / "gateway.log",
+            )
+        )
+        wait_gateway_instances(gateway, 1)
+        yield gateway, engine
 
 
 @pytest.fixture
