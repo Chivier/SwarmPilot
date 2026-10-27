@@ -5,11 +5,16 @@ Scheduler process whose only instance is a fake engine speaking the engine
 style (see ``fake_engines.py``). The Scheduler either passes the body
 through (same style) or translates it both ways. Cells cover plain text and
 tool calls, streamed and not, plus a tool-result round trip.
+
+Every test runs twice: against the Python proxy, and against
+``swarmpilot-gateway`` (phase R3b, translation in Rust) in front of the
+same Scheduler; the gateway run is skipped when the binary is not built.
 """
 
 from __future__ import annotations
 
 import json
+import re
 import sys
 import tempfile
 from contextlib import ExitStack
@@ -22,7 +27,14 @@ import pytest
 import yaml
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "perf"))
-from _harness import free_port, scheduler_cmd, spawn
+from _harness import (
+    free_port,
+    gateway_binary,
+    gateway_cmd,
+    scheduler_cmd,
+    spawn,
+    wait_gateway_instances,
+)
 
 STYLES = ("openai_chat", "anthropic_messages", "openai_responses")
 ROUTES = {
@@ -74,20 +86,45 @@ def _engine_config(style: str, path: Path) -> None:
     )
 
 
-@pytest.fixture(scope="module")
-def gateways():
-    """Start one fake engine and one Scheduler per engine style."""
+class Urls(dict):
+    """Engine style to ``(proxy, engine)`` URLs.
+
+    Attributes:
+        python: Engine style to the Python proxy of the same Scheduler
+            (the proxy itself, or the one behind the gateway).
+    """
+
+    python: dict[str, str]
+
+
+@pytest.fixture(scope="module", params=["python", "gateway"])
+def gateways(request):
+    """Start one fake engine and one Scheduler per engine style.
+
+    With the ``gateway`` data plane, each Scheduler gets a
+    ``swarmpilot-gateway`` in front, and clients call the gateway.
+    """
+    binary = None
+    if request.param == "gateway":
+        binary = gateway_binary()
+        if binary is None:
+            pytest.skip("swarmpilot-gateway is not built")
     tmp = Path(tempfile.mkdtemp(prefix="sp-api-"))
     configs = tmp / "engines"
     configs.mkdir()
     for style in STYLES:
         _engine_config(style, configs / f"{style}.yaml")
-    urls: dict[str, tuple[str, str]] = {}
+    urls = Urls()
+    urls.python = {}
     with ExitStack() as stack:
         for style in STYLES:
             eport, sport = free_port(), free_port()
             engine = f"http://127.0.0.1:{eport}"
             proxy = f"http://127.0.0.1:{sport}"
+            control = tmp / f"gateway-{style}.sock"
+            gateway_env = (
+                {"SCHEDULER_GATEWAY_SOCKET": str(control)} if binary else {}
+            )
             stack.enter_context(
                 spawn(
                     [
@@ -113,6 +150,7 @@ def gateways():
                         "TRAINING_ENABLE_AUTO": "false",
                         "SWARMPILOT_ENGINE_CONFIGS": str(configs),
                         "PROXY_TIMEOUT": "10",
+                        **gateway_env,
                     },
                     log_path=tmp / f"scheduler-{style}.log",
                 )
@@ -131,6 +169,18 @@ def gateways():
                 },
             )
             r.raise_for_status()
+            urls.python[style] = proxy
+            if binary is not None:
+                gport = free_port()
+                proxy = f"http://127.0.0.1:{gport}"
+                stack.enter_context(
+                    spawn(
+                        gateway_cmd(binary, gport, control),
+                        f"{proxy}/_gateway/health",
+                        log_path=tmp / f"gateway-{style}.log",
+                    )
+                )
+                wait_gateway_instances(proxy, 1)
             urls[style] = (proxy, engine)
         yield urls
 
@@ -440,3 +490,89 @@ def test_non_object_body_still_reaches_a_native_engine(gateways):
     before = len(httpx.get(f"{engine}/_seen").json())
     httpx.post(f"{proxy}/v1/chat/completions", json=[1, 2], timeout=10)
     assert len(httpx.get(f"{engine}/_seen").json()) == before + 1
+
+
+# The same requests through both data planes: the gateway's translation
+# must answer exactly as the Python proxy's, ids and clocks aside.
+
+_ID = re.compile(r"(chatcmpl-|msg_|resp_|fc_|rs_|call_|toolu_)[0-9a-f]{24}")
+_CLOCK = re.compile(r'"(created|created_at)":\d+')
+
+
+def _normalise(text: str) -> str:
+    return _CLOCK.sub(r'"\1":0', _ID.sub(r"\1<id>", text))
+
+
+def _ab_bodies(client: str) -> list[dict]:
+    base = {
+        "openai_chat": {
+            "model": "fake-model",
+            "messages": [
+                {"role": "system", "content": SYSTEM},
+                {"role": "user", "content": USER},
+            ],
+            "max_tokens": 16,
+        },
+        "anthropic_messages": {
+            "model": "fake-model",
+            "max_tokens": 16,
+            "system": SYSTEM,
+            "messages": [{"role": "user", "content": USER}],
+        },
+        "openai_responses": {
+            "model": "fake-model",
+            "instructions": SYSTEM,
+            "input": USER,
+            "max_output_tokens": 16,
+        },
+    }[client]
+    tools = {
+        "openai_chat": [
+            {
+                "type": "function",
+                "function": {"name": "get_weather", "parameters": SCHEMA},
+            }
+        ],
+        "anthropic_messages": [{"name": "get_weather", "input_schema": SCHEMA}],
+        "openai_responses": [
+            {"type": "function", "name": "get_weather", "parameters": SCHEMA}
+        ],
+    }[client]
+    out = []
+    for tool in (False, True):
+        for stream in (False, True):
+            body = dict(base)
+            if tool:
+                body["tools"] = tools
+            if stream:
+                body["stream"] = True
+                if client == "openai_chat":
+                    body["stream_options"] = {"include_usage": True}
+            out.append(body)
+    out.append(_round_trip_body(client))
+    out.append({**base, "presence_penalty": 0.5, "n": 2})
+    out.append({**base, "metadata": {"user_id": "u"}, "top_k": 3})
+    out.append({k: v for k, v in base.items() if k != "max_tokens"})
+    out.append({**base, "previous_response_id": "resp_1"})
+    out.append([1, 2])
+    return out
+
+
+@pytest.mark.parametrize("engine", STYLES)
+@pytest.mark.parametrize("client", STYLES)
+def test_gateway_answers_like_python(gateways, client, engine):
+    proxy, _ = gateways[engine]
+    python = gateways.python[engine]
+    if proxy == python:
+        pytest.skip("compares the gateway with the Python proxy")
+    for body in _ab_bodies(client):
+        got = {}
+        for name, url in (("python", python), ("gateway", proxy)):
+            r = httpx.post(f"{url}/{ROUTES[client]}", json=body, timeout=10)
+            got[name] = (
+                r.status_code,
+                r.headers.get("content-type"),
+                r.headers.get("x-swarmpilot-dropped"),
+                _normalise(r.text),
+            )
+        assert got["gateway"] == got["python"], body

@@ -1,0 +1,37 @@
+[package]
+name = "swarmpilot-gateway"
+description = "Rust data plane for the SwarmPilot Scheduler: routing, prediction and dispatch on the public port"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "swarmpilot-gateway"
+path = "src/main.rs"
+
+[dependencies]
+axum = "0.8.9"
+bytes = "1"
+clap = { workspace = true, features = ["env"] }
+futures-util = "0.3.34"
+http-body-util = "0.1"
+hyper-util = { version = "0.1.21", features = ["tokio"] }
+prost = "0.14"
+rand.workspace = true
+reqwest = { version = "0.13.3", default-features = false, features = ["stream"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true, features = ["float_roundtrip"] }
+swarmpilot-core = { path = "../core" }
+thiserror.workspace = true
+tokio = { version = "1.53.3", features = ["rt-multi-thread", "macros", "net", "time", "sync", "signal"] }
+tokio-stream = "0.1.19"
+tonic = { version = "0.14", default-features = false, features = ["codegen", "transport"] }
+tonic-prost = "0.14"
+tower = "0.5"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[build-dependencies]
+tonic-prost-build = "0.14"
+protox = "0.9"

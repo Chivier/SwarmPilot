@@ -11,7 +11,10 @@ use pyo3::exceptions::{PyKeyError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyList, PyMapping, PyString};
 
+use std::collections::HashMap;
+
 use swarmpilot_core::extract::{Doc, Extractor as CoreExtractor};
+use swarmpilot_core::mlp::{Output, RuntimePredictor as CorePredictor, Tensor};
 use swarmpilot_core::sketch::{Charge, Ledger as CoreLedger, Sketch, SketchKind};
 use swarmpilot_core::strategy::{self, Prediction};
 
@@ -371,17 +374,214 @@ impl Ledger {
     }
 }
 
+/// A trained runtime predictor (`ExpectErrorPredictor` or
+/// `QuantilePredictor`) evaluated in Rust.
+#[pyclass(frozen, module = "swarmpilot_core")]
+struct RuntimePredictor {
+    inner: CorePredictor,
+}
+
+fn model_err(e: swarmpilot_core::mlp::ModelError) -> PyErr {
+    PyValueError::new_err(e.to_string())
+}
+
+#[pymethods]
+impl RuntimePredictor {
+    /// Build from `get_model_state()`: `state_json` is every field but
+    /// the state dict, `tensors` maps state-dict names to `(shape,
+    /// little-endian float32 bytes)`.
+    #[staticmethod]
+    #[pyo3(signature = (state_json, tensors, norm_f32 = false))]
+    fn from_state(
+        state_json: &str,
+        tensors: HashMap<String, (Vec<usize>, Vec<u8>)>,
+        norm_f32: bool,
+    ) -> PyResult<Self> {
+        let state: serde_json::Value =
+            serde_json::from_str(state_json).map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let mut parsed = HashMap::new();
+        for (name, (shape, bytes)) in tensors {
+            if bytes.len() % 4 != 0 {
+                return Err(PyValueError::new_err(format!("{name}: not float32 bytes")));
+            }
+            let data = bytes
+                .chunks_exact(4)
+                .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
+                .collect();
+            parsed.insert(name, Tensor { shape, data });
+        }
+        CorePredictor::from_state(&state, &parsed, norm_f32)
+            .map(|inner| RuntimePredictor { inner })
+            .map_err(model_err)
+    }
+
+    /// Load the portable model file written by `ModelStorage`.
+    #[staticmethod]
+    fn load_portable(sidecar: std::path::PathBuf) -> PyResult<Self> {
+        CorePredictor::load_portable(&sidecar)
+            .map(|inner| RuntimePredictor { inner })
+            .map_err(model_err)
+    }
+
+    #[getter]
+    fn feature_names(&self) -> Vec<String> {
+        self.inner.feature_names().to_vec()
+    }
+
+    /// `("expect_error", expected_ms, error_ms)` or `("quantile",
+    /// [(q, ms), ...])` for float32 feature values in model order.
+    fn predict(&self, py: Python<'_>, values: Vec<f32>) -> PyResult<Py<PyAny>> {
+        Ok(match self.inner.predict(&values).map_err(model_err)? {
+            Output::ExpectError {
+                expected_ms,
+                error_ms,
+            } => ("expect_error", expected_ms, error_ms)
+                .into_pyobject(py)?
+                .into_any()
+                .unbind(),
+            Output::Quantiles(q) => ("quantile", q).into_pyobject(py)?.into_any().unbind(),
+        })
+    }
+}
+
+/// Experiment-mode prediction for a request body's `exp_*` fields.
+///
+/// Returns `("expect_error", expected, error)` or `("quantile", pairs)`;
+/// raises ValueError where the Python code raises.
+#[pyfunction]
+#[pyo3(signature = (fields_json, prediction_type, quantiles, normals))]
+fn experiment_predict(
+    py: Python<'_>,
+    fields_json: &str,
+    prediction_type: &str,
+    quantiles: Option<Vec<f64>>,
+    normals: Vec<f64>,
+) -> PyResult<Py<PyAny>> {
+    use swarmpilot_core::experiment::{Params, Synthetic};
+    let fields: serde_json::Value =
+        serde_json::from_str(fields_json).map_err(|e| PyValueError::new_err(e.to_string()))?;
+    let fields = fields
+        .as_object()
+        .ok_or_else(|| PyValueError::new_err("fields must be an object"))?;
+    let out = Params::parse(fields)
+        .and_then(|p| p.predict(prediction_type, quantiles.as_deref(), &normals))
+        .map_err(|e| PyValueError::new_err(e.0))?;
+    Ok(match out {
+        Synthetic::ExpectError {
+            expected_ms,
+            error_ms,
+        } => ("expect_error", expected_ms, error_ms)
+            .into_pyobject(py)?
+            .into_any()
+            .unbind(),
+        Synthetic::Quantiles(pairs) => ("quantile", pairs).into_pyobject(py)?.into_any().unbind(),
+    })
+}
+
+/// One request through the API translation layer, for the parity tests
+/// (`tests/core/test_translation_parity.py`): plan the request, then
+/// convert the engine's answer, a one-body `response` or the SSE `chunks`
+/// (ending in an error when `fail`). Ids count up from 1 and the clock
+/// reads `now`. Returns the outcome as JSON text.
+#[pyfunction]
+#[pyo3(signature = (path, body, native_styles, strict, default_max_tokens, status = 200, response = None, chunks = None, fail = false, now = 1_700_000_000))]
+#[allow(clippy::too_many_arguments)]
+fn api_translate(
+    path: &str,
+    body: &str,
+    native_styles: Vec<String>,
+    strict: bool,
+    default_max_tokens: i64,
+    status: u16,
+    response: Option<&str>,
+    chunks: Option<Vec<Vec<u8>>>,
+    fail: bool,
+    now: i64,
+) -> PyResult<String> {
+    use serde_json::{json, Value};
+    use swarmpilot_core::api::base::{CountingEnv, TrError};
+    use swarmpilot_core::api::translate::plan_request;
+
+    let parse = |s: &str| {
+        serde_json::from_str::<Value>(s).map_err(|e| PyValueError::new_err(e.to_string()))
+    };
+    let body = parse(body)?;
+    let mut env = CountingEnv {
+        next: 0,
+        now: i128::from(now),
+    };
+    let tr = match plan_request(path, &body, &native_styles, strict, i128::from(default_max_tokens), &mut env) {
+        Ok(None) => return Ok(json!({"plan": "none"}).to_string()),
+        Ok(Some(tr)) => tr,
+        Err(TrError::Translation {
+            message,
+            param,
+            status,
+            error_type,
+        }) => {
+            return Ok(json!({"plan": "error", "status": status, "message": message, "param": param, "type": error_type})
+                .to_string())
+        }
+        Err(TrError::Py(_)) => return Ok(json!({"plan": "internal"}).to_string()),
+    };
+    let mut out = json!({
+        "plan": "ok",
+        "passthrough": tr.passthrough(),
+        "stream": tr.stream(),
+        "path": tr.path,
+        "body": tr.body,
+        "dropped": tr.ctx.dropped,
+    });
+    if tr.passthrough() {
+        return Ok(out.to_string());
+    }
+    let answer = if let Some(chunks) = chunks {
+        let mut st = tr.stream_translator();
+        let mut bytes = Vec::new();
+        for c in &chunks {
+            bytes.extend(st.feed(c, &mut env));
+        }
+        bytes.extend(if fail {
+            st.fail(&mut env)
+        } else {
+            st.end(&mut env)
+        });
+        json!({"sse": String::from_utf8_lossy(&bytes), "broken": st.broken().is_some()})
+    } else if let Some(resp) = response {
+        let resp = parse(resp)?;
+        match (&resp, tr.stream() && status < 400) {
+            (Value::Object(b), true) => match tr.stream_from_body(b, &mut env) {
+                Ok((bytes, broken)) => {
+                    json!({"sse": String::from_utf8_lossy(&bytes), "broken": broken.is_some()})
+                }
+                Err(_) => json!({"internal": true}),
+            },
+            _ => match tr.response(status, &resp, &mut env) {
+                Ok((s, b)) => json!({"status": s, "body": b}),
+                Err(_) => json!({"internal": true}),
+            },
+        }
+    } else {
+        Value::Null
+    };
+    out["answer"] = answer;
+    Ok(out.to_string())
+}
+
 #[pymodule]
 #[pyo3(name = "swarmpilot_core")]
 fn init_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     m.add_class::<Extractor>()?;
     m.add_class::<Ledger>()?;
+    m.add_class::<RuntimePredictor>()?;
     m.add_function(wrap_pyfunction!(charge_at, m)?)?;
     m.add_function(wrap_pyfunction!(apply_probabilistic, m)?)?;
     m.add_function(wrap_pyfunction!(apply_expect_error, m)?)?;
     m.add_function(wrap_pyfunction!(select_min_expected, m)?)?;
     m.add_function(wrap_pyfunction!(select_po2, m)?)?;
     m.add_function(wrap_pyfunction!(select_probabilistic, m)?)?;
+    m.add_function(wrap_pyfunction!(experiment_predict, m)?)?;
+    m.add_function(wrap_pyfunction!(api_translate, m)?)?;
     Ok(())
 }

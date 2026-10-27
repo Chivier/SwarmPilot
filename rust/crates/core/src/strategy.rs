@@ -45,6 +45,23 @@ pub trait Draws {
     fn choice2(&mut self, n: usize) -> (usize, usize);
 }
 
+/// The predictor could not answer (no model, missing features, a bad
+/// experiment-mode parameter); the message says why.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PredictError(pub String);
+
+impl std::fmt::Display for PredictError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for PredictError {}
+
+/// A predictor that can fail: `(prediction type, instance indices)`.
+pub type FallibleFn<'a> =
+    dyn FnMut(&'static str, &[usize]) -> Result<Vec<Prediction>, PredictError> + 'a;
+
 /// Strategy names, as `get_strategy` takes them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StrategyKind {
@@ -255,34 +272,67 @@ impl Router {
         draws: &mut dyn Draws,
         task_id: Option<&str>,
     ) -> Routed {
+        let mut ok = |ptype: &'static str, subset: &[usize]| Ok(predict(ptype, subset));
+        self.try_route(ledger, instances, warm, &mut ok, draws, task_id)
+    }
+
+    /// [`Router::route`] with a predictor that can fail (no model, missing
+    /// features), handled as the Python Scheduler handles it:
+    ///
+    /// - round_robin and random use placeholder predictions of 0 ms;
+    /// - adaptive_bootstrap, when its round-robin turn landed on a warm
+    ///   instance, keeps that round-robin pick;
+    /// - every other strategy falls back to the first instance with no
+    ///   prediction (the proxy's fallback), and nothing is charged.
+    pub fn try_route(
+        &mut self,
+        ledger: &mut Ledger,
+        instances: &[String],
+        warm: &[bool],
+        predict: &mut FallibleFn<'_>,
+        draws: &mut dyn Draws,
+        task_id: Option<&str>,
+    ) -> Routed {
         let all: Vec<usize> = (0..instances.len()).collect();
+        let fallback = |selected: usize, ptype: &'static str| Routed {
+            selected,
+            prediction: None,
+            charged: None,
+            prediction_types: vec![ptype],
+        };
         if self.kind != StrategyKind::AdaptiveBootstrap {
-            return self.schedule(self.kind, ledger, instances, &all, predict, draws, task_id);
+            return self
+                .schedule(self.kind, ledger, instances, &all, predict, draws, task_id)
+                .unwrap_or_else(|_| fallback(0, self.kind.prediction_type()));
         }
         let hot: Vec<usize> = all.iter().copied().filter(|&k| warm[k]).collect();
         if hot.len() == instances.len() {
-            return self.schedule(
-                StrategyKind::Probabilistic,
-                ledger,
-                instances,
-                &all,
-                predict,
-                draws,
-                task_id,
-            );
+            return self
+                .schedule(
+                    StrategyKind::Probabilistic,
+                    ledger,
+                    instances,
+                    &all,
+                    predict,
+                    draws,
+                    task_id,
+                )
+                .unwrap_or_else(|_| fallback(0, "quantile"));
         }
         let idx = (self.counter % instances.len() as u64) as usize;
         self.counter += 1;
         if warm[idx] {
-            return self.schedule(
-                StrategyKind::Probabilistic,
-                ledger,
-                instances,
-                &hot,
-                predict,
-                draws,
-                task_id,
-            );
+            return self
+                .schedule(
+                    StrategyKind::Probabilistic,
+                    ledger,
+                    instances,
+                    &hot,
+                    predict,
+                    draws,
+                    task_id,
+                )
+                .unwrap_or_else(|_| fallback(idx, "quantile"));
         }
         Routed {
             selected: idx,
@@ -301,12 +351,25 @@ impl Router {
         ledger: &mut Ledger,
         instances: &[String],
         subset: &[usize],
-        predict: &mut dyn FnMut(&'static str, &[usize]) -> Vec<Prediction>,
+        predict: &mut FallibleFn<'_>,
         draws: &mut dyn Draws,
         task_id: Option<&str>,
-    ) -> Routed {
+    ) -> Result<Routed, PredictError> {
         let ptype = kind.prediction_type();
-        let mut preds = predict(ptype, subset);
+        let mut preds = match predict(ptype, subset) {
+            Ok(p) => p,
+            // round_robin and random do not need real predictions.
+            Err(_) if !kind.charges() => subset
+                .iter()
+                .map(|&k| Prediction {
+                    instance_id: instances[k].clone(),
+                    predicted_time_ms: 0.0,
+                    error_margin_ms: None,
+                    quantiles: None,
+                })
+                .collect(),
+            Err(e) => return Err(e),
+        };
         let queues: Vec<Option<&Sketch>> = preds
             .iter()
             .map(|p| ledger.sketch(&p.instance_id))
@@ -355,12 +418,12 @@ impl Router {
             .copied()
             .find(|&k| instances[k] == selected_id)
             .unwrap_or(subset[0]);
-        Routed {
+        Ok(Routed {
             selected,
             prediction,
             charged,
             prediction_types: vec![ptype],
-        }
+        })
     }
 }
 
@@ -403,5 +466,119 @@ mod tests {
         );
         // Ties go to the first instance.
         assert_eq!(select_probabilistic(&preds, &[None, None], &pct), Some(0));
+    }
+
+    struct Fixed;
+
+    impl Draws for Fixed {
+        fn random(&mut self, n: usize) -> Vec<f64> {
+            vec![0.5; n]
+        }
+        fn integers(&mut self, _high: usize) -> usize {
+            0
+        }
+        fn choice2(&mut self, _n: usize) -> (usize, usize) {
+            (0, 1)
+        }
+    }
+
+    fn setup(kind: StrategyKind) -> (Router, Ledger, Vec<String>) {
+        let mut ledger = Ledger::new(kind.sketch_kind(), &crate::DEFAULT_QUANTILES);
+        let ids: Vec<String> = ["a", "b", "c"].iter().map(|s| s.to_string()).collect();
+        for id in &ids {
+            ledger.register(id).unwrap();
+        }
+        (Router::new(kind), ledger, ids)
+    }
+
+    fn failing(_: &'static str, _: &[usize]) -> Result<Vec<Prediction>, PredictError> {
+        Err(PredictError("Model not found".into()))
+    }
+
+    #[test]
+    fn failed_prediction_falls_back_to_first_instance_uncharged() {
+        for kind in [
+            StrategyKind::MinTime,
+            StrategyKind::Probabilistic,
+            StrategyKind::Po2,
+            StrategyKind::Serverless,
+        ] {
+            let (mut router, mut ledger, ids) = setup(kind);
+            let r = router.try_route(
+                &mut ledger,
+                &ids,
+                &[false; 3],
+                &mut failing,
+                &mut Fixed,
+                Some("t"),
+            );
+            assert_eq!(r.selected, 0, "{kind:?}");
+            assert!(r.prediction.is_none() && r.charged.is_none());
+            assert!(ledger.get_charge("t").is_none());
+        }
+    }
+
+    #[test]
+    fn round_robin_and_random_ignore_failed_predictions() {
+        let (mut router, mut ledger, ids) = setup(StrategyKind::RoundRobin);
+        let picks: Vec<usize> = (0..4)
+            .map(|_| {
+                router
+                    .try_route(
+                        &mut ledger,
+                        &ids,
+                        &[false; 3],
+                        &mut failing,
+                        &mut Fixed,
+                        None,
+                    )
+                    .selected
+            })
+            .collect();
+        assert_eq!(picks, [0, 1, 2, 0]);
+        let (mut router, mut ledger, ids) = setup(StrategyKind::Random);
+        let r = router.try_route(
+            &mut ledger,
+            &ids,
+            &[false; 3],
+            &mut failing,
+            &mut Fixed,
+            None,
+        );
+        assert_eq!(r.prediction.map(|p| p.predicted_time_ms), Some(0.0));
+    }
+
+    #[test]
+    fn adaptive_keeps_round_robin_pick_when_warm_prediction_fails() {
+        let (mut router, mut ledger, ids) = setup(StrategyKind::AdaptiveBootstrap);
+        let warm = [false, true, true];
+        let picks: Vec<usize> = (0..3)
+            .map(|_| {
+                router
+                    .try_route(
+                        &mut ledger,
+                        &ids,
+                        &warm,
+                        &mut failing,
+                        &mut Fixed,
+                        Some("t"),
+                    )
+                    .selected
+            })
+            .collect();
+        // Turn 0 is cold (plain round robin); turns 1 and 2 are warm, and
+        // their failed predictions keep the round-robin pick.
+        assert_eq!(picks, [0, 1, 2]);
+        assert!(ledger.get_charge("t").is_none());
+        // All warm and failing: the first instance.
+        let r = router.try_route(
+            &mut ledger,
+            &ids,
+            &[true; 3],
+            &mut failing,
+            &mut Fixed,
+            None,
+        );
+        assert_eq!(r.selected, 0);
     }
 }

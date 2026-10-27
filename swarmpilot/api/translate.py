@@ -105,8 +105,12 @@ class Translation:
         """Convert an engine's SSE stream to the client's style."""
         if self.request is None:
             return chunks
-        return self.client.encode_stream(
-            _guard(self.engine.decode_stream(chunks), chunks), self.request
+        return _then_drain(
+            self.client.encode_stream(
+                _guard(self.engine.decode_stream(chunks), chunks),
+                self.request,
+            ),
+            chunks,
         )
 
     def stream_from_body(self, body: Mapping[str, Any]) -> AsyncIterator[bytes]:
@@ -217,6 +221,25 @@ async def _guard(
         aclose = getattr(source, "aclose", None)
         if aclose is not None:
             await aclose()
+
+
+async def _then_drain(
+    out: AsyncIterator[bytes], source: AsyncIterator[bytes]
+) -> AsyncIterator[bytes]:
+    """Yield the client's stream, then read the engine's to its end.
+
+    The client's stream is complete at the engine's last event (``[DONE]``,
+    ``message_stop``, ...), before the engine's body has ended. Reading
+    the rest, usually nothing, lets the request count as completed and
+    its connection be reused, as for an untranslated stream.
+    """
+    async for b in out:
+        yield b
+    try:
+        async for _ in source:
+            pass
+    except Exception as e:  # the engine failed after its last event
+        logger.debug(f"[API] Engine stream ended badly after the answer: {e}")
 
 
 async def events_from_response(resp: c.Response) -> AsyncIterator[Any]:

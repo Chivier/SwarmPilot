@@ -197,6 +197,11 @@
     "capacity": {
       "$ref": "#/$defs/CapacityManifest"
     },
+    "default_max_tokens": {
+      "default": 4096,
+      "title": "Default Max Tokens",
+      "type": "integer"
+    },
     "features": {
       "anyOf": [
         {

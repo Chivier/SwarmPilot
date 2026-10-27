@@ -1,0 +1,54 @@
+{
+  "format": "swarmpilot-predictor",
+  "format_version": 1,
+  "model_key": "quantile",
+  "model_id": "golden",
+  "prediction_type": "quantile",
+  "platform_info": {},
+  "samples_count": null,
+  "weights_file": "quantile.safetensors",
+  "weights_sha256": "b18a513de468a7e770e85f22562385f764cb8f5e9b4b6741592e6ebada412400",
+  "activation": "relu",
+  "state": {
+    "model_config": {
+      "input_dim": 3,
+      "output_dim": 6,
+      "hidden_layers": [
+        32,
+        16
+      ]
+    },
+    "feature_names": [
+      "batch",
+      "max_tokens",
+      "prompt_length"
+    ],
+    "removed_features": [],
+    "quantiles": [
+      0.05,
+      0.25,
+      0.5,
+      0.75,
+      0.9,
+      0.99
+    ],
+    "feature_mean": [
+      4.46999979019165,
+      356.79998779296875,
+      1927.8199462890625
+    ],
+    "feature_std": [
+      2.295452117919922,
+      409.2403259277344,
+      1084.2818603515625
+    ],
+    "target_mean": 7.2285284996032715,
+    "target_std": 1.3944594860076904,
+    "delta_scale": 1.5,
+    "log_transform_enabled": true,
+    "residual_calibration_enabled": false,
+    "residual_mu": null,
+    "residual_sigma": null
+  },
+  "saved_at": "2026-10-27T12:52:04.775433+00:00"
+}

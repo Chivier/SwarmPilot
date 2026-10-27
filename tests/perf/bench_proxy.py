@@ -8,8 +8,12 @@ SwarmPilot adds per request.
 One Scheduler instance is registered per fake engine, because in production
 one engine process is one instance.
 
+``--data-plane gateway`` measures ``swarmpilot-gateway`` (phase R3) in
+front of the same Scheduler instead of the Scheduler's Python proxy.
+
 Usage:
     uv run python tests/perf/bench_proxy.py
+    uv run python tests/perf/bench_proxy.py --data-plane gateway
     uv run python tests/perf/bench_proxy.py --concurrency 1 64 512 \
         --duration 10 --out tests/perf/baselines/proxy-<commit>.json
 """
@@ -23,6 +27,7 @@ import os
 import platform
 import tempfile
 import time
+from contextlib import ExitStack
 from pathlib import Path
 
 import aiohttp
@@ -31,9 +36,12 @@ from _harness import (
     closed_loop,
     fake_engine_cmd,
     free_port,
+    gateway_binary,
+    gateway_cmd,
     git_commit,
     scheduler_cmd,
     spawn,
+    wait_gateway_instances,
     write_json,
 )
 
@@ -42,12 +50,28 @@ BODY = {
     "messages": [{"role": "user", "content": "Say hello."}],
     "max_tokens": 16,
 }
+# The same request in each client API style; the fake engine speaks
+# OpenAI Chat, so the other styles measure translation as well.
+STYLE_REQUESTS = {
+    "openai_chat": ("v1/chat/completions", BODY),
+    "anthropic_messages": ("v1/messages", BODY),
+    "openai_responses": (
+        "v1/responses",
+        {"model": "fake-model", "input": "Say hello.", "max_output_tokens": 16},
+    ),
+}
 
 
-def make_request(session: aiohttp.ClientSession, base_url: str, stream: bool):
-    """Return a coroutine factory that sends one chat request."""
-    url = f"{base_url}/v1/chat/completions"
-    body = json.dumps({**BODY, "stream": stream}).encode()
+def make_request(
+    session: aiohttp.ClientSession,
+    base_url: str,
+    stream: bool,
+    style: str = "openai_chat",
+):
+    """Return a coroutine factory that sends one request in ``style``."""
+    path, base = STYLE_REQUESTS[style]
+    url = f"{base_url}/{path}"
+    body = json.dumps({**base, "stream": stream}).encode()
     headers = {"content-type": "application/json"}
 
     async def one() -> tuple[float, float]:
@@ -75,6 +99,7 @@ async def run_matrix(
     duration: float,
     warmup: float,
     streams: list[bool],
+    style: str = "openai_chat",
 ) -> list[dict]:
     """Measure direct and proxied calls for every (stream, concurrency)."""
     rows = []
@@ -86,12 +111,15 @@ async def run_matrix(
         for stream in streams:
             for c in concurrencies:
                 row: dict = {"stream": stream, "concurrency": c}
-                for target, url in (
-                    ("direct", engine_url),
-                    ("proxy", proxy_url),
+                for target, url, req_style in (
+                    ("direct", engine_url, "openai_chat"),
+                    ("proxy", proxy_url, style),
                 ):
                     res = await closed_loop(
-                        make_request(session, url, stream), c, duration, warmup
+                        make_request(session, url, stream, req_style),
+                        c,
+                        duration,
+                        warmup,
                     )
                     row[target] = res.summary()
                 d, p = row["direct"], row["proxy"]
@@ -134,13 +162,33 @@ def main() -> None:
         help="Platform software_name the fake engine registers as; picks "
         "the engine adapter (and its in-flight limit) in the Scheduler.",
     )
+    parser.add_argument(
+        "--data-plane",
+        choices=["python", "gateway"],
+        default="python",
+        help="Serve requests with the Scheduler's proxy or swarmpilot-gateway.",
+    )
+    parser.add_argument(
+        "--client-style",
+        choices=sorted(STYLE_REQUESTS),
+        default="openai_chat",
+        help="API style clients call the proxy in; other than openai_chat "
+        "it is translated for the (OpenAI Chat) fake engine.",
+    )
     parser.add_argument("--out", type=Path, default=None)
     args = parser.parse_args()
 
+    binary = None
+    if args.data_plane == "gateway":
+        binary = gateway_binary()
+        if binary is None:
+            parser.error("swarmpilot-gateway is not built")
+
     eport, sport = free_port(), free_port()
     engine_url = f"http://127.0.0.1:{eport}"
-    proxy_url = f"http://127.0.0.1:{sport}"
+    scheduler_url = f"http://127.0.0.1:{sport}"
     tmp = Path(tempfile.mkdtemp(prefix="sp-bench-"))
+    control = tmp / "gateway.sock"
     env = {
         "SCHEDULING_STRATEGY": args.strategy,
         "SCHEDULER_LOGURU_LEVEL": args.log_level,
@@ -149,6 +197,8 @@ def main() -> None:
         "SCHEDULER_MODEL_ID": "fake-model",
         "TRAINING_ENABLE_AUTO": "false",
     }
+    if binary is not None:
+        env["SCHEDULER_GATEWAY_SOCKET"] = str(control)
 
     with (
         spawn(
@@ -158,14 +208,15 @@ def main() -> None:
         ),
         spawn(
             scheduler_cmd(sport),
-            f"{proxy_url}/v1/health",
+            f"{scheduler_url}/v1/health",
             env=env,
             log_path=tmp / "scheduler.log",
         ),
+        ExitStack() as stack,
     ):
         for i in range(args.instances):
             r = httpx.post(
-                f"{proxy_url}/v1/instance/register",
+                f"{scheduler_url}/v1/instance/register",
                 json={
                     "instance_id": f"fake-{i}",
                     "model_id": "fake-model",
@@ -178,6 +229,19 @@ def main() -> None:
                 },
             )
             r.raise_for_status()
+        proxy_url = scheduler_url
+        if binary is not None:
+            gport = free_port()
+            proxy_url = f"http://127.0.0.1:{gport}"
+            stack.enter_context(
+                spawn(
+                    gateway_cmd(binary, gport, control),
+                    f"{proxy_url}/_gateway/health",
+                    env={"GATEWAY_LOG": "warn"},
+                    log_path=tmp / "gateway.log",
+                )
+            )
+            wait_gateway_instances(proxy_url, args.instances)
         streams = [False] if args.no_stream else [False, True]
         rows = asyncio.run(
             run_matrix(
@@ -187,6 +251,7 @@ def main() -> None:
                 args.duration,
                 args.warmup,
                 streams,
+                args.client_style,
             )
         )
 
@@ -202,6 +267,8 @@ def main() -> None:
                 "cpus": os.cpu_count(),
             },
             "config": {
+                "data_plane": args.data_plane,
+                "client_style": args.client_style,
                 "instances": args.instances,
                 "engine": args.engine,
                 "strategy": args.strategy,

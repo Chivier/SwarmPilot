@@ -273,3 +273,69 @@ fn features_match_python() {
     }
     assert!(checked > 20, "only {checked} features checked");
 }
+
+/// Within `rel` of `want`, relative to its magnitude.
+fn close(got: f64, want: f64, rel: f64) -> bool {
+    (got - want).abs() <= rel * want.abs().max(1e-9)
+}
+
+#[test]
+fn predictor_matches_torch() {
+    use swarmpilot_core::mlp::{Output, RuntimePredictor};
+
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../tests/golden/predictor");
+    let expected = golden("predictor/expected.json");
+    let mut worst = 0.0f64;
+    for (name, model) in expected.as_object().unwrap() {
+        let p = RuntimePredictor::load_portable(&dir.join(format!("{name}.json"))).unwrap();
+        assert_eq!(
+            Value::from(p.feature_names().to_vec()),
+            model["feature_names"]
+        );
+        for case in model["cases"].as_array().unwrap() {
+            let x: Vec<f32> = floats(&case["x"]).iter().map(|v| *v as f32).collect();
+            let want = &case["out"];
+            let pairs: Vec<(f64, f64)> = match p.predict(&x).unwrap() {
+                Output::ExpectError {
+                    expected_ms,
+                    error_ms,
+                } => {
+                    assert_eq!(error_ms, f(&want["error_margin_ms"]));
+                    vec![(0.0, expected_ms)]
+                }
+                Output::Quantiles(q) => q,
+            };
+            for (q, got) in pairs {
+                let w = if name == "quantile" {
+                    f(&want["quantiles"][q.to_string()])
+                } else {
+                    f(&want["expected_runtime_ms"])
+                };
+                worst = worst.max((got - w).abs() / w.abs().max(1e-9));
+                assert!(
+                    close(got, w, 1e-5),
+                    "{name} {:?} q={q}: {got} vs torch {w}",
+                    case["x"]
+                );
+            }
+        }
+    }
+    println!("predictor: worst relative difference to torch {worst:e}");
+}
+
+#[test]
+fn predictor_rejects_tampered_weights() {
+    use swarmpilot_core::mlp::RuntimePredictor;
+
+    let dir = std::env::temp_dir().join(format!("sp-golden-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let src = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../tests/golden/predictor");
+    std::fs::copy(src.join("quantile.json"), dir.join("quantile.json")).unwrap();
+    let mut w = std::fs::read(src.join("quantile.safetensors")).unwrap();
+    let last = w.len() - 1;
+    w[last] ^= 1;
+    std::fs::write(dir.join("quantile.safetensors"), w).unwrap();
+    let err = RuntimePredictor::load_portable(&dir.join("quantile.json")).unwrap_err();
+    assert!(err.to_string().contains("sha256"), "{err}");
+    std::fs::remove_dir_all(&dir).ok();
+}

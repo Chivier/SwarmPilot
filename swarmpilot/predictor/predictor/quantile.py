@@ -19,6 +19,10 @@ from torch.nn import functional
 
 from swarmpilot.predictor.predictor.base import BasePredictor
 from swarmpilot.predictor.predictor.mlp import MLP
+from swarmpilot.predictor.predictor.native import (
+    forget_native_model,
+    native_model,
+)
 from swarmpilot.predictor.utils.logging import get_logger
 
 logger = get_logger()
@@ -735,30 +739,36 @@ class QuantilePredictor(BasePredictor):
         ]
         X = np.array([feature_values], dtype=np.float32)
 
-        # Normalize using training statistics
-        X_normalized = (X - self.feature_mean) / self.feature_std
+        native = native_model(self)
+        if native is not None:
+            # De-normalisation and the log transform happen in Rust too.
+            _, pairs = native.predict(X[0].tolist())
+            predictions = np.array([v for _, v in pairs], dtype=np.float32)
+        else:
+            # Normalize using training statistics
+            X_normalized = (X - self.feature_mean) / self.feature_std
 
-        # Convert to tensor and predict
-        X_tensor = torch.tensor(X_normalized, dtype=torch.float32)
+            # Convert to tensor and predict
+            X_tensor = torch.tensor(X_normalized, dtype=torch.float32)
 
-        self.model.eval()
-        with torch.no_grad():
-            # Forward pass: MLP -> BaseDeltaTransform -> monotonic quantiles
-            raw_output = self.model(X_tensor)
-            predictions_normalized = (
-                self.transform(raw_output).numpy().flatten()
+            self.model.eval()
+            with torch.no_grad():
+                # Forward pass: MLP -> BaseDeltaTransform -> monotonic quantiles
+                raw_output = self.model(X_tensor)
+                predictions_normalized = (
+                    self.transform(raw_output).numpy().flatten()
+                )
+
+            # Denormalize predictions back to original scale
+            # Note: when log_transform is enabled, this gives log(runtime_ms)
+            predictions = (
+                predictions_normalized * self.target_std + self.target_mean
             )
 
-        # Denormalize predictions back to original scale
-        # Note: when log_transform is enabled, this gives log(runtime_ms)
-        predictions = (
-            predictions_normalized * self.target_std + self.target_mean
-        )
-
-        # Apply inverse log transform if enabled during training
-        # This converts log(runtime_ms) back to runtime_ms using exponential
-        if self.log_transform_enabled:
-            predictions = np.power(np.e, predictions)
+            # Apply inverse log transform if enabled during training
+            # This converts log(runtime_ms) back to runtime_ms using exponential
+            if self.log_transform_enabled:
+                predictions = np.power(np.e, predictions)
 
         # Apply additional monotonicity enforcement if requested
         # Note: base+delta architecture guarantees monotonicity, but this
@@ -845,3 +855,4 @@ class QuantilePredictor(BasePredictor):
         )
         self.residual_mu = state.get("residual_mu")
         self.residual_sigma = state.get("residual_sigma")
+        forget_native_model(self)
