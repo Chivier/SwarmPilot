@@ -350,11 +350,14 @@ reported in simulated time. Results
 
 The one request that failed (Python run, generic-small) was a
 client-side connection reset with no status, the harness's known
-keep-alive race. Bars, all met: shadow mismatch under 1% (none in 13,089 decisions, or in
-the 13,090 of the noise run), success rate no lower, the gateway's
+keep-alive race. Bars, all met: every decision compared (no shadow
+errors or drops) with mismatches under 1% (none in 13,089 decisions, or
+in the 13,090 of the noise run), success rate no lower, the gateway's
 latency no slower than Python's own noise allows (one-sided KS at most
 1.5 times the Python-to-Python KS, floor 0.05), and hardware shares
-within 1.5 times the noise (floor 0.02). Faster does not fail: on SDXL
+within 1.5 times the noise (floor 0.02). P99 has no bar of its own:
+the KS bar covers the whole distribution, and a tail of a few hundred
+requests is too noisy to judge alone. Faster does not fail: on SDXL
 (time scale 0.075) the gateway's lower overhead shows in simulated time.
 The generic engine's latency varies widely between runs (Python's own
 P99 was 627 and 745 ms); a repeat of that model alone gave the gateway

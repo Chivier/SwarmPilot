@@ -87,16 +87,7 @@ def _maybe_switch_to_probabilistic(
                 api_module.config.scheduling.probabilistic_quantile
             ),
         )
-        # Preserve the worker queue manager reference.
-        wqm = getattr(
-            api_module.scheduling_strategy,
-            "_worker_queue_manager",
-            None,
-        )
-        if wqm is not None:
-            new_strategy.set_worker_queue_manager(wqm)
-
-        api_module.scheduling_strategy = new_strategy
+        api_module.install_strategy(new_strategy)
         logger.success(
             "[auto-switch] Switched scheduling strategy to "
             "'probabilistic' after successful training "

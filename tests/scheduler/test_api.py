@@ -1356,6 +1356,11 @@ class TestStrategyManagement:
             api.proxy_router_instance._scheduling_strategy
             is api.scheduling_strategy
         )
+        if api.worker_queue_manager is not None:
+            assert (
+                api.scheduling_strategy._worker_queue_manager
+                is api.worker_queue_manager
+            )
 
     def test_set_strategy_to_round_robin(self, client):
         """Test switching to round_robin strategy."""

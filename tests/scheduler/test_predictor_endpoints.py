@@ -596,7 +596,12 @@ class TestMaybeSwitchToProbabilistic:
         self,
         mock_get_strategy: MagicMock,
     ) -> None:
-        """Above threshold creates new strategy and assigns it."""
+        """Above threshold, the new strategy reaches every scheduling path.
+
+        The global, the proxy's reference and the worker queue manager
+        must all see it: the proxy kept the startup strategy before.
+        """
+        import swarmpilot.scheduler.api as api_module
         from swarmpilot.scheduler.routes.predictor import (
             _maybe_switch_to_probabilistic,
         )
@@ -604,22 +609,25 @@ class TestMaybeSwitchToProbabilistic:
         # Fake the current strategy as non-probabilistic.
         mock_old_strategy = MagicMock()
         mock_old_strategy.__class__ = type("RoundRobinStrategy", (), {})
-        mock_old_strategy._worker_queue_manager = MagicMock()
+        wqm = MagicMock()
+        proxy = MagicMock()
+        proxy._scheduling_strategy = mock_old_strategy
 
         mock_new_strategy = MagicMock()
         mock_get_strategy.return_value = mock_new_strategy
 
-        with patch(
-            "swarmpilot.scheduler.api.scheduling_strategy",
-            mock_old_strategy,
+        with (
+            patch.object(api_module, "scheduling_strategy", mock_old_strategy),
+            patch.object(api_module, "worker_queue_manager", wqm),
+            patch.object(api_module, "proxy_router_instance", proxy),
         ):
             result = _maybe_switch_to_probabilistic(20)
+            assert api_module.scheduling_strategy is mock_new_strategy
 
         assert result == "probabilistic"
         mock_get_strategy.assert_called_once()
-        mock_new_strategy.set_worker_queue_manager.assert_called_once_with(
-            mock_old_strategy._worker_queue_manager,
-        )
+        assert proxy._scheduling_strategy is mock_new_strategy
+        mock_new_strategy.set_worker_queue_manager.assert_called_once_with(wqm)
 
     def test_already_probabilistic_skips_switch(
         self,

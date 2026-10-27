@@ -521,6 +521,7 @@ def compare(a: dict, b: dict, noise: dict | None) -> dict:
                 pa["share_by_instance"], pb["share_by_instance"]
             ),
             "shadow_mismatch_rate": (pa["shadow"] or {}).get("mismatch_rate"),
+            "shadow_complete": shadow_complete(pa["shadow"]),
         }
         if noise is not None:
             pn = noise[name]
@@ -535,13 +536,29 @@ def compare(a: dict, b: dict, noise: dict | None) -> dict:
     return out
 
 
+def shadow_complete(s: dict | None) -> bool:
+    """Whether every Python decision was compared with the gateway's.
+
+    A gateway that failed, or a mirror that dropped events, would leave a
+    low mismatch rate over too few decisions.
+    """
+    return bool(
+        s
+        and s["compared"] > 0
+        and s["compared"] == s["decisions"]
+        and s["errors"] == 0
+        and s["dropped"] == 0
+    )
+
+
 def bars(cmp: dict) -> dict[str, bool]:
     """The R3c bars, per model."""
     out = {}
     for name, row in cmp.items():
         noise = row.get("noise", {})
         ok = (
-            (row["shadow_mismatch_rate"] or 0.0) < 0.01
+            row["shadow_complete"]
+            and row["shadow_mismatch_rate"] < 0.01
             and row["ok_rate"][1] >= row["ok_rate"][0] - 0.005
             # Latency no slower, and placement no further from Python's,
             # than Python's own run-to-run noise allows (with a floor).

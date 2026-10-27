@@ -38,6 +38,7 @@ from swarmpilot.shared.loop_lag import EventLoopLagMonitor
 
 from . import core as scheduling_core, gateway_control
 from .algorithms import get_strategy, queue_info_type_for
+from .algorithms.base import SchedulingStrategy
 from .algorithms.base import ScheduleResult
 from .config import config
 from .models import (
@@ -3205,6 +3206,25 @@ async def get_strategy_endpoint():
     )
 
 
+def install_strategy(new_strategy: SchedulingStrategy) -> None:
+    """Make ``new_strategy`` the one every scheduling path uses.
+
+    The proxy holds its own reference and the worker queue manager is
+    wired into each strategy, so every swap (``POST /v1/strategy/set``,
+    the switch to ``probabilistic`` after training) goes through here.
+    Shadow mode found the proxy still routing with the startup strategy.
+
+    Args:
+        new_strategy: The strategy to install.
+    """
+    global scheduling_strategy
+    if worker_queue_manager is not None:
+        new_strategy.set_worker_queue_manager(worker_queue_manager)
+    scheduling_strategy = new_strategy
+    if proxy_router_instance is not None:
+        proxy_router_instance._scheduling_strategy = new_strategy
+
+
 @app.post("/v1/strategy/set", response_model=StrategySetResponse)
 async def set_strategy_endpoint(request: StrategySetRequest):
     """Set the scheduling strategy for the scheduler.
@@ -3225,8 +3245,6 @@ async def set_strategy_endpoint(request: StrategySetRequest):
         HTTPException 400: If tasks are currently running
         HTTPException 500: If strategy initialization fails
     """
-    global scheduling_strategy
-
     # Check if there are any running tasks
     running_count = await task_registry.get_count_by_status(TaskStatus.RUNNING)
     if running_count > 0:
@@ -3292,12 +3310,7 @@ async def set_strategy_endpoint(request: StrategySetRequest):
             },
         ) from e
 
-    # Update global scheduling strategy
-    scheduling_strategy = new_strategy
-    # The proxy holds its own reference: without this it kept routing with
-    # the strategy the Scheduler started with (found by shadow mode).
-    if proxy_router_instance is not None:
-        proxy_router_instance._scheduling_strategy = new_strategy
+    install_strategy(new_strategy)
 
     # Update config (in-memory only, not persisted)
     config.scheduling.default_strategy = request.strategy_name.value
