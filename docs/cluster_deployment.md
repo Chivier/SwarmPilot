@@ -364,8 +364,16 @@ splanner serve meta-llama/Llama-3.1-70B --gpu 4 --replicas 2 --hardware 'H100*'
 is a case-insensitive pattern. It is kept for the model, so later scaling,
 deploys and replacements stay on that hardware too; set it per model in
 `PYLET_MODEL_CONFIGS` with `"hardware": "H100*"` as well. Replicas that do
-not fit on free GPUs of that hardware are reported as failed rather than
+not fit on a free node of that hardware are reported as failed rather than
 queued. In sim mode the map comes from the simulator's node list.
+
+A node (PyLet worker) is the smallest unit the Planner places on. Its
+resources are fixed when it is created and are never split: each instance
+takes a whole free node, and a node holds at most one instance, even when
+it has more GPUs than the instance asks for. A node counts as free only
+when all its GPUs are free and no live instance is assigned to it. The
+elastic auto-optimizer grows into free nodes on the same terms, so size
+nodes to match the instances you run on them.
 
 ## Engine Failures
 

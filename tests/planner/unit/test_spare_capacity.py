@@ -26,11 +26,15 @@ def test_free_gpus_counts_online_workers_only():
     assert manager.free_gpus() == 4
 
 
-def test_spare_capacity_is_in_default_gpu_count_units():
+def test_spare_capacity_counts_free_nodes():
     with patch("swarmpilot.planner.pylet.deployment_service.InstanceManager"):
         service = PyLetDeploymentService(
             "http://pylet:1", "http://sched:1", default_gpu_count=2
         )
     service._initialized = True
-    service._instance_manager.free_gpus.return_value = 5
+    service._instance_manager.free_slots.return_value = [
+        ("w0", "H100"),
+        ("w1", "L40S"),
+    ]
     assert service.spare_capacity() == 2
+    service._instance_manager.free_slots.assert_called_with(2)

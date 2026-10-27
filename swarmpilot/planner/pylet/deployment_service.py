@@ -224,21 +224,19 @@ class PyLetDeploymentService:
         return state
 
     def spare_capacity(self) -> int:
-        """Instances of the default GPU count that fit on free GPUs.
+        """Free nodes that can hold one instance of the default GPU count.
 
-        A model pinned to one kind of hardware or using more GPUs may fit
-        fewer; its extra replicas then wait in PyLet's queue and the
-        deploy reports them failed.
+        A node is never split, so each free node holds one instance. A
+        model pinned to one kind of hardware or using more GPUs may fit
+        fewer; the deploy then reports its extra replicas failed.
         """
-        self._ensure_initialized()
-        per = max(1, self._default_gpu_count)
-        return self._instance_manager.free_gpus() // per
+        return len(self.free_slots())
 
     def free_slots(self) -> list[tuple[str, str]]:
-        """Free places for one instance of the default GPU count.
+        """Free nodes for one instance of the default GPU count each.
 
         Returns:
-            One (worker id, hardware name) pair per place.
+            One (worker id, hardware name) pair per free node.
         """
         self._ensure_initialized()
         return self._instance_manager.free_slots(

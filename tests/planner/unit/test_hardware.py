@@ -100,18 +100,58 @@ def _manager(resolver):
 class TestPlacement:
     """Placement on one kind of hardware and registration."""
 
-    def test_place_spreads_over_matching_workers(self):
+    def test_place_gives_each_replica_a_whole_free_node(self):
         mgr = _manager(HardwareResolver({"h-*": "H100", "l-*": "L40S"}))
         mgr.pylet_client.list_workers.return_value = [
             _worker("h-0", "a", range(8)),
             _worker("h-1", "b", range(2)),
             _worker("l-0", "c", range(4)),
         ]
-        groups = mgr._place("H100*", gpu_count=2, count=4)
-        # Most free GPUs first: h-0 goes 8 -> 2, then ties go to h-0.
-        assert groups == {"h-0": 4}
-        # 8 + 2 free GPUs fit five 2-GPU replicas, not six.
-        assert sum(mgr._place("H100*", 2, 6).values()) == 5
+        # A node is never split: two H100 nodes hold two replicas, not
+        # the five that 8 + 2 free GPUs would fit.
+        assert mgr._place("H100*", gpu_count=2, count=4) == {
+            "h-0": 1,
+            "h-1": 1,
+        }
+        # A node smaller than one replica does not fit.
+        assert mgr._place("H100*", gpu_count=4, count=4) == {"h-0": 1}
+
+    def test_partly_used_or_assigned_nodes_are_not_free(self):
+        mgr = _manager(HardwareResolver({"h-*": "H100"}))
+        busy = _worker("h-0", "a", range(2))
+        busy.gpu = 4  # two of its four GPUs are held
+        mgr.pylet_client.list_workers.return_value = [
+            busy,
+            _worker("h-1", "b", range(4)),
+            _worker("h-2", "c", range(4)),
+        ]
+        mgr._instances["p1"] = ManagedInstance(
+            pylet_id="p1",
+            instance_id="p1",
+            model_id="m",
+            backend="vllm",
+            worker_id="h-2",  # submitted there, not started yet
+        )
+        assert [w for w, _ in mgr.free_slots()] == ["h-1"]
+
+    def test_unpinned_deploy_takes_whole_nodes_too(self):
+        mgr = _manager(HardwareResolver({}))
+        mgr.pylet_client.list_workers.return_value = [
+            _worker("n-0", "a", range(4)),
+            _worker("n-1", "b", range(1)),
+        ]
+        mgr.pylet_client.deploy_model.side_effect = lambda **kw: [
+            InstanceInfo(f"p-{kw['target_worker']}", kw["model_id"], None, "x")
+            for _ in range(kw["count"])
+        ]
+        result = mgr.deploy_instances("m", count=3)
+        assert result.success_count == 2
+        assert "no free node" in result.failed[0][1]
+        workers = {
+            c.kwargs["target_worker"]
+            for c in mgr.pylet_client.deploy_model.call_args_list
+        }
+        assert workers == {"n-0", "n-1"}
 
     def test_deploy_reports_replicas_that_do_not_fit(self):
         mgr = _manager(HardwareResolver({"l-*": "L40S"}))
@@ -124,12 +164,13 @@ class TestPlacement:
             for i in range(kw["count"])
         ]
         result = mgr.deploy_instances("m", count=3, hardware="l40s")
-        assert result.success_count == 2
-        assert len(result.failed) == 1
+        # One L40S node holds one replica, however many GPUs it has.
+        assert result.success_count == 1
+        assert len(result.failed) == 2
         assert "hardware 'l40s'" in result.failed[0][1]
         call = mgr.pylet_client.deploy_model.call_args.kwargs
         assert call["target_worker"] == "l-0"
-        assert call["count"] == 2
+        assert call["count"] == 1
 
     def test_registers_hardware_of_assigned_worker(self):
         mgr = _manager(HardwareResolver({"l-*": "L40S-48GB"}))

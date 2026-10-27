@@ -32,7 +32,6 @@ from __future__ import annotations
 import os
 import threading
 import time
-from collections import Counter
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -355,8 +354,11 @@ class InstanceManager:
             extra_args: Additional CLI arguments for the launch command.
             hardware: Only place instances on workers whose hardware name
                 matches this pattern (any case, e.g. ``"H100*"``).
-                Replicas that do not fit are reported as failed. Ignored
-                when ``target_worker`` is set.
+                Ignored when ``target_worker`` is set.
+
+        Without ``target_worker`` each replica takes a whole free node
+        (see ``_free_nodes``); replicas that find none are reported as
+        failed.
 
         Returns:
             DeploymentResult with deployed and failed instances.
@@ -378,21 +380,22 @@ class InstanceManager:
         deployed: list[ManagedInstance] = []
         failed: list[tuple[str, str]] = []
 
-        if hardware and target_worker is None:
-            groups = self._place(hardware, gpu_count, count)
+        if target_worker is None:
+            # One instance per whole free node; see ``_free_nodes``.
+            groups = self._place(hardware or None, gpu_count, count)
             placed = sum(groups.values())
+            kind = f" of hardware {hardware!r}" if hardware else ""
             for i in range(placed, count):
                 failed.append(
                     (
                         f"{model_id}-{i}",
-                        f"no worker with {gpu_count} free GPU(s) of "
-                        f"hardware {hardware!r}",
+                        f"no free node with {gpu_count} GPU(s){kind}",
                     )
                 )
             if failed:
                 logger.warning(
                     f"[INSTANCE_DEPLOY] only {placed} of {count} replicas of "
-                    f"{model_id} fit on {hardware!r} workers"
+                    f"{model_id} fit on free nodes{kind}"
                 )
         else:
             groups = {target_worker: count}
@@ -483,24 +486,22 @@ class InstanceManager:
                 f"All deployments failed for {model_id}: {e}"
             )
 
-    def _place(
-        self, hardware: str, gpu_count: int, count: int
-    ) -> dict[str, int]:
-        """Pick workers of one kind of hardware for ``count`` replicas.
+    def _free_nodes(self, gpu_count: int, hardware: str | None = None) -> list:
+        """Online workers with nothing on them that can hold one instance.
 
-        Each replica goes to the matching online worker with the most
-        free GPUs left, so replicas spread out the way PyLet spreads them.
-        GPUs held by instances PyLet has not placed yet are not visible
-        here, so a later submit can still wait in PyLet's queue.
+        A worker is a node, and a node is the smallest unit placement
+        hands out: its resources are fixed and never split, so an
+        instance takes a whole node and a node holds at most one
+        instance. A node counts as free only when all its GPUs are free
+        and the Planner has no live instance assigned to it (an instance
+        submitted to a node but not started yet holds no GPU in PyLet).
 
         Args:
-            hardware: Hardware name pattern.
-            gpu_count: GPUs per replica.
-            count: Replicas wanted.
+            gpu_count: GPUs one instance takes; smaller nodes do not fit.
+            hardware: Only nodes whose hardware name matches this pattern.
 
         Returns:
-            Worker id to replica count; fewer than ``count`` in total when
-            the matching workers are full.
+            The free workers, most GPUs first.
         """
         workers = [
             w
@@ -508,21 +509,47 @@ class InstanceManager:
             if getattr(w, "status", "ONLINE") == "ONLINE"
         ]
         self.hardware.observe_workers(workers)
-        # PyLet's ``gpu_available`` is the count at registration; the free
-        # GPU indices are computed from current allocations.
-        free = {
-            w.id: len(w.gpu_indices_available)
-            for w in workers
-            if matches(self.hardware.resolve(w.id, w.host), hardware)
-        }
-        groups: Counter[str] = Counter()
-        for _ in range(count):
-            best = max(free, key=lambda k: free[k], default=None)
-            if best is None or free[best] < gpu_count:
-                break
-            free[best] -= gpu_count
-            groups[best] += 1
-        return dict(groups)
+        gone = (
+            ManagedInstanceStatus.TERMINATED,
+            ManagedInstanceStatus.FAILED,
+        )
+        with self._lock:
+            taken = {
+                m.worker_id
+                for m in self._instances.values()
+                if m.worker_id and m.status not in gone
+            }
+        free = []
+        for w in workers:
+            idle = len(w.gpu_indices_available)
+            total = getattr(w, "gpu", None)
+            if not isinstance(total, int):
+                total = idle
+            if w.id in taken or idle < total or total < gpu_count:
+                continue
+            name = self.hardware.resolve(w.id, getattr(w, "host", None))
+            if hardware is not None and not matches(name, hardware):
+                continue
+            free.append(w)
+        free.sort(key=lambda w: -len(w.gpu_indices_available))
+        return free
+
+    def _place(
+        self, hardware: str | None, gpu_count: int, count: int
+    ) -> dict[str, int]:
+        """Pick a whole free node for each of ``count`` replicas.
+
+        Args:
+            hardware: Hardware name pattern, or None for any node.
+            gpu_count: GPUs per replica.
+            count: Replicas wanted.
+
+        Returns:
+            Worker id to replica count (1 each); fewer than ``count`` in
+            total when too few nodes are free.
+        """
+        nodes = self._free_nodes(gpu_count, hardware)[:count]
+        return {w.id: 1 for w in nodes}
 
     def free_gpus(self) -> int:
         """GPUs no instance holds on the online workers."""
@@ -534,25 +561,17 @@ class InstanceManager:
         return sum(len(w.gpu_indices_available) for w in workers)
 
     def free_slots(self, gpu_count: int = 1) -> list[tuple[str, str]]:
-        """Free places for one instance on the online workers.
+        """Free nodes for one instance each (see ``_free_nodes``).
 
         Args:
             gpu_count: GPUs one instance takes.
 
         Returns:
-            One (worker id, hardware name) pair per place.
+            One (worker id, hardware name) pair per free node.
         """
-        workers = [
-            w
-            for w in self.pylet_client.list_workers()
-            if getattr(w, "status", "ONLINE") == "ONLINE"
-        ]
-        self.hardware.observe_workers(workers)
-        per = max(1, gpu_count)
         return [
             (w.id, self.hardware.resolve(w.id, getattr(w, "host", None)))
-            for w in workers
-            for _ in range(len(w.gpu_indices_available) // per)
+            for w in self._free_nodes(max(1, gpu_count))
         ]
 
     def _resolve_hardware(
