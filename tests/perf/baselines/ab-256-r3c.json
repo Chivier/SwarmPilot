@@ -1,0 +1,1678 @@
+{
+  "benchmark": "ab_cluster",
+  "commit": "38bf344",
+  "date": "2026-10-27T17:05:49Z",
+  "config": {
+    "spec": "swarmpilot/sim/specs/default-256.yaml",
+    "util": 0.3,
+    "wall_rps_per_model": 12.0,
+    "duration_s": 180.0,
+    "pretrain_s": 150.0,
+    "seed": 1,
+    "strategy": "adaptive_bootstrap",
+    "time_scales": {
+      "llama-3.1-8b": 15.0,
+      "llama-3.1-70b": 4.36,
+      "qwen2.5-7b": 15.0,
+      "llama-3.2-3b": 12.5,
+      "sdxl": 0.0752,
+      "generic-small": 12.64
+    },
+    "utilization": {
+      "llama-3.1-8b": 0.177,
+      "llama-3.1-70b": 0.3,
+      "qwen2.5-7b": 0.122,
+      "llama-3.2-3b": 0.3,
+      "sdxl": 0.3,
+      "generic-small": 0.3
+    }
+  },
+  "comparison": {
+    "llama-3.1-8b": {
+      "ok_rate": [
+        1.0,
+        1.0
+      ],
+      "p50": [
+        413.5,
+        409.1
+      ],
+      "p99": [
+        2021.1,
+        2029.1
+      ],
+      "latency_ks": 0.0088,
+      "latency_ks_slower": 0.0074,
+      "group_tvd": 0.0,
+      "instance_tvd": 0.0821,
+      "shadow_mismatch_rate": 0.0,
+      "noise": {
+        "latency_ks": 0.0116,
+        "group_tvd": 0.0,
+        "instance_tvd": 0.0844
+      }
+    },
+    "llama-3.1-70b": {
+      "ok_rate": [
+        1.0,
+        1.0
+      ],
+      "p50": [
+        1208.6,
+        1211.4
+      ],
+      "p99": [
+        6016.0,
+        5721.3
+      ],
+      "latency_ks": 0.0081,
+      "latency_ks_slower": 0.0081,
+      "group_tvd": 0.0,
+      "instance_tvd": 0.0286,
+      "shadow_mismatch_rate": 0.0,
+      "noise": {
+        "latency_ks": 0.0129,
+        "group_tvd": 0.0,
+        "instance_tvd": 0.0195
+      }
+    },
+    "qwen2.5-7b": {
+      "ok_rate": [
+        1.0,
+        1.0
+      ],
+      "p50": [
+        655.2,
+        658.3
+      ],
+      "p99": [
+        6392.9,
+        6380.4
+      ],
+      "latency_ks": 0.0063,
+      "latency_ks_slower": 0.0063,
+      "group_tvd": 0.0005,
+      "instance_tvd": 0.0277,
+      "shadow_mismatch_rate": 0.0,
+      "noise": {
+        "latency_ks": 0.0049,
+        "group_tvd": 0.0,
+        "instance_tvd": 0.0201
+      }
+    },
+    "llama-3.2-3b": {
+      "ok_rate": [
+        1.0,
+        1.0
+      ],
+      "p50": [
+        896.6,
+        896.0
+      ],
+      "p99": [
+        4547.9,
+        4547.7
+      ],
+      "latency_ks": 0.0026,
+      "latency_ks_slower": 0.0013,
+      "group_tvd": 0.0,
+      "instance_tvd": 0.0,
+      "shadow_mismatch_rate": 0.0,
+      "noise": {
+        "latency_ks": 0.0013,
+        "group_tvd": 0.0,
+        "instance_tvd": 0.0
+      }
+    },
+    "sdxl": {
+      "ok_rate": [
+        1.0,
+        1.0
+      ],
+      "p50": [
+        6714.7,
+        6694.6
+      ],
+      "p99": [
+        19353.0,
+        19324.3
+      ],
+      "latency_ks": 0.1437,
+      "latency_ks_slower": 0.0014,
+      "group_tvd": 0.0,
+      "instance_tvd": 0.0,
+      "shadow_mismatch_rate": 0.0,
+      "noise": {
+        "latency_ks": 0.0216,
+        "group_tvd": 0.0,
+        "instance_tvd": 0.0
+      }
+    },
+    "generic-small": {
+      "ok_rate": [
+        0.9995,
+        1.0
+      ],
+      "p50": [
+        228.1,
+        197.5
+      ],
+      "p99": [
+        626.6,
+        1069.4
+      ],
+      "latency_ks": 0.1443,
+      "latency_ks_slower": 0.068,
+      "group_tvd": 0.0,
+      "instance_tvd": 0.0273,
+      "shadow_mismatch_rate": 0.0,
+      "noise": {
+        "latency_ks": 0.0986,
+        "group_tvd": 0.0,
+        "instance_tvd": 0.0297
+      }
+    }
+  },
+  "bars_met": {
+    "llama-3.1-8b": true,
+    "llama-3.1-70b": true,
+    "qwen2.5-7b": true,
+    "llama-3.2-3b": true,
+    "sdxl": true,
+    "generic-small": true
+  },
+  "phases": {
+    "python": {
+      "llama-3.1-8b": {
+        "requests": 2155,
+        "ok": 2155,
+        "ok_rate": 1.0,
+        "statuses": {
+          "200": 2155
+        },
+        "e2e_sim_ms": {
+          "p50": 413.5,
+          "p90": 1084.4,
+          "p99": 2021.1
+        },
+        "send_lag_p99_ms": 2.1,
+        "share_by_instance": {
+          "h100-llama8b-0": 0.03666,
+          "h100-llama8b-1": 0.03155,
+          "h100-llama8b-2": 0.0232,
+          "h100-llama8b-3": 0.03109,
+          "h100-llama8b-4": 0.02784,
+          "h100-llama8b-5": 0.02599,
+          "h100-llama8b-6": 0.02691,
+          "h100-llama8b-7": 0.04594,
+          "h100-llama8b-8": 0.03387,
+          "h100-llama8b-9": 0.03387,
+          "h100-llama8b-10": 0.03202,
+          "h100-llama8b-11": 0.03063,
+          "h100-llama8b-12": 0.02413,
+          "h100-llama8b-13": 0.03295,
+          "h100-llama8b-14": 0.03434,
+          "h100-llama8b-15": 0.03944,
+          "h100-llama8b-16": 0.02923,
+          "h100-llama8b-17": 0.02831,
+          "h100-llama8b-18": 0.03527,
+          "h100-llama8b-19": 0.03341,
+          "h100-llama8b-20": 0.0348,
+          "h100-llama8b-21": 0.03016,
+          "h100-llama8b-22": 0.03063,
+          "h100-llama8b-23": 0.02691,
+          "h100-llama8b-24": 0.02923,
+          "h100-llama8b-25": 0.02367,
+          "h100-llama8b-26": 0.03434,
+          "h100-llama8b-27": 0.02506,
+          "h100-llama8b-28": 0.03387,
+          "h100-llama8b-29": 0.03295,
+          "h100-llama8b-30": 0.03295,
+          "h100-llama8b-31": 0.02877
+        },
+        "share_by_group": {
+          "h100-llama8b": 1.0
+        },
+        "shadow": {
+          "enabled": true,
+          "url": "http://127.0.0.1:19100/_gateway/shadow",
+          "decisions": 2155,
+          "compared": 2155,
+          "matched": 2155,
+          "mismatched": 0,
+          "mismatch_rate": 0.0,
+          "errors": 0,
+          "dropped": 0,
+          "draws_diverged": 0,
+          "queued": 0,
+          "by_strategy": {
+            "AdaptiveBootstrapStrategy": {
+              "decisions": 2155,
+              "mismatched": 0
+            }
+          },
+          "decide_us": {
+            "python": {
+              "p50": 1742.0,
+              "p99": 2871.3
+            },
+            "gateway": {
+              "p50": 84.1,
+              "p99": 200.2
+            }
+          },
+          "last_error": null
+        }
+      },
+      "llama-3.1-70b": {
+        "requests": 2101,
+        "ok": 2101,
+        "ok_rate": 1.0,
+        "statuses": {
+          "200": 2101
+        },
+        "e2e_sim_ms": {
+          "p50": 1208.6,
+          "p90": 3306.4,
+          "p99": 6016.0
+        },
+        "send_lag_p99_ms": 2.1,
+        "share_by_instance": {
+          "h100-llama70b-0": 0.06283,
+          "h100-llama70b-1": 0.06283,
+          "h100-llama70b-2": 0.06283,
+          "h100-llama70b-3": 0.06283,
+          "h100-llama70b-4": 0.06283,
+          "h100-llama70b-5": 0.06235,
+          "h100-llama70b-6": 0.06235,
+          "h100-llama70b-7": 0.06235,
+          "h200-llama70b-0": 0.06616,
+          "h200-llama70b-1": 0.05283,
+          "h200-llama70b-2": 0.07282,
+          "h200-llama70b-3": 0.06521,
+          "h200-llama70b-4": 0.06949,
+          "h200-llama70b-5": 0.05807,
+          "h200-llama70b-6": 0.05188,
+          "h200-llama70b-7": 0.06235
+        },
+        "share_by_group": {
+          "h100-llama70b": 0.5012,
+          "h200-llama70b": 0.4988
+        },
+        "shadow": {
+          "enabled": true,
+          "url": "http://127.0.0.1:19101/_gateway/shadow",
+          "decisions": 2101,
+          "compared": 2101,
+          "matched": 2101,
+          "mismatched": 0,
+          "mismatch_rate": 0.0,
+          "errors": 0,
+          "dropped": 0,
+          "draws_diverged": 0,
+          "queued": 0,
+          "by_strategy": {
+            "AdaptiveBootstrapStrategy": {
+              "decisions": 2101,
+              "mismatched": 0
+            }
+          },
+          "decide_us": {
+            "python": {
+              "p50": 345.4,
+              "p99": 1726.3
+            },
+            "gateway": {
+              "p50": 42.0,
+              "p99": 122.1
+            }
+          },
+          "last_error": null
+        }
+      },
+      "qwen2.5-7b": {
+        "requests": 2236,
+        "ok": 2236,
+        "ok_rate": 1.0,
+        "statuses": {
+          "200": 2236
+        },
+        "e2e_sim_ms": {
+          "p50": 655.2,
+          "p90": 2601.2,
+          "p99": 6392.9
+        },
+        "send_lag_p99_ms": 2.1,
+        "share_by_instance": {
+          "a100-80-qwen7b-0": 0.00984,
+          "a100-80-qwen7b-1": 0.00984,
+          "a100-80-qwen7b-2": 0.00984,
+          "a100-80-qwen7b-3": 0.00984,
+          "a100-80-qwen7b-4": 0.00984,
+          "a100-80-qwen7b-5": 0.00984,
+          "a100-80-qwen7b-6": 0.00984,
+          "a100-80-qwen7b-7": 0.00984,
+          "a100-80-qwen7b-8": 0.00984,
+          "a100-80-qwen7b-9": 0.00984,
+          "a100-80-qwen7b-10": 0.00984,
+          "a100-80-qwen7b-11": 0.00984,
+          "a100-80-qwen7b-12": 0.00984,
+          "a100-80-qwen7b-13": 0.00984,
+          "a100-80-qwen7b-14": 0.00984,
+          "a100-80-qwen7b-15": 0.00984,
+          "a100-80-qwen7b-16": 0.00984,
+          "a100-80-qwen7b-17": 0.00984,
+          "a100-80-qwen7b-18": 0.00984,
+          "a100-80-qwen7b-19": 0.00984,
+          "a100-80-qwen7b-20": 0.00984,
+          "a100-80-qwen7b-21": 0.00984,
+          "a100-80-qwen7b-22": 0.00984,
+          "a100-80-qwen7b-23": 0.00984,
+          "a100-80-qwen7b-24": 0.00984,
+          "a100-80-qwen7b-25": 0.00984,
+          "a100-80-qwen7b-26": 0.00984,
+          "a100-80-qwen7b-27": 0.00984,
+          "a100-80-qwen7b-28": 0.00984,
+          "a100-80-qwen7b-29": 0.00984,
+          "a100-80-qwen7b-30": 0.00984,
+          "a100-80-qwen7b-31": 0.00984,
+          "a100-80-qwen7b-32": 0.00984,
+          "a100-80-qwen7b-33": 0.00984,
+          "a100-80-qwen7b-34": 0.00984,
+          "a100-80-qwen7b-35": 0.00984,
+          "a100-80-qwen7b-36": 0.00984,
+          "a100-80-qwen7b-37": 0.00984,
+          "a100-80-qwen7b-38": 0.00984,
+          "a100-80-qwen7b-39": 0.00984,
+          "a100-80-qwen7b-40": 0.00984,
+          "a100-80-qwen7b-41": 0.00984,
+          "a100-80-qwen7b-42": 0.00984,
+          "a100-80-qwen7b-43": 0.00984,
+          "a100-80-qwen7b-44": 0.00984,
+          "a100-80-qwen7b-45": 0.00984,
+          "a100-80-qwen7b-46": 0.00984,
+          "a100-80-qwen7b-47": 0.00984,
+          "a100-40-qwen7b-0": 0.01521,
+          "a100-40-qwen7b-1": 0.01521,
+          "a100-40-qwen7b-2": 0.01431,
+          "a100-40-qwen7b-3": 0.01476,
+          "a100-40-qwen7b-4": 0.01521,
+          "a100-40-qwen7b-5": 0.01342,
+          "a100-40-qwen7b-6": 0.01297,
+          "a100-40-qwen7b-7": 0.01252,
+          "a100-40-qwen7b-8": 0.01521,
+          "a100-40-qwen7b-9": 0.01297,
+          "a100-40-qwen7b-10": 0.01476,
+          "a100-40-qwen7b-11": 0.01655,
+          "a100-40-qwen7b-12": 0.01476,
+          "a100-40-qwen7b-13": 0.01342,
+          "a100-40-qwen7b-14": 0.01118,
+          "a100-40-qwen7b-15": 0.01565,
+          "a100-40-qwen7b-16": 0.01521,
+          "a100-40-qwen7b-17": 0.01386,
+          "a100-40-qwen7b-18": 0.01342,
+          "a100-40-qwen7b-19": 0.01297,
+          "a100-40-qwen7b-20": 0.01297,
+          "a100-40-qwen7b-21": 0.01431,
+          "a100-40-qwen7b-22": 0.01386,
+          "a100-40-qwen7b-23": 0.01342,
+          "l40s-qwen7b-0": 0.00537,
+          "l40s-qwen7b-1": 0.00716,
+          "l40s-qwen7b-2": 0.00626,
+          "l40s-qwen7b-3": 0.00492,
+          "l40s-qwen7b-4": 0.00537,
+          "l40s-qwen7b-5": 0.00537,
+          "l40s-qwen7b-6": 0.00537,
+          "l40s-qwen7b-7": 0.00626,
+          "l40s-qwen7b-8": 0.00403,
+          "l40s-qwen7b-9": 0.00537,
+          "l40s-qwen7b-10": 0.00626,
+          "l40s-qwen7b-11": 0.00447,
+          "l40s-qwen7b-12": 0.00581,
+          "l40s-qwen7b-13": 0.00626,
+          "l40s-qwen7b-14": 0.00716,
+          "l40s-qwen7b-15": 0.00716,
+          "l40s-qwen7b-16": 0.00626,
+          "l40s-qwen7b-17": 0.00492,
+          "l40s-qwen7b-18": 0.00671,
+          "l40s-qwen7b-19": 0.00581,
+          "l40s-qwen7b-20": 0.00671,
+          "l40s-qwen7b-21": 0.00492,
+          "l40s-qwen7b-22": 0.00581,
+          "l40s-qwen7b-23": 0.00671,
+          "l40s-qwen7b-24": 0.00626,
+          "l40s-qwen7b-25": 0.00716,
+          "l40s-qwen7b-26": 0.00671,
+          "l40s-qwen7b-27": 0.00626,
+          "l40s-qwen7b-28": 0.00581,
+          "l40s-qwen7b-29": 0.00581,
+          "l40s-qwen7b-30": 0.00492,
+          "l40s-qwen7b-31": 0.00626
+        },
+        "share_by_group": {
+          "a100-80-qwen7b": 0.4723,
+          "a100-40-qwen7b": 0.3381,
+          "l40s-qwen7b": 0.1896
+        },
+        "shadow": {
+          "enabled": true,
+          "url": "http://127.0.0.1:19102/_gateway/shadow",
+          "decisions": 2236,
+          "compared": 2236,
+          "matched": 2236,
+          "mismatched": 0,
+          "mismatch_rate": 0.0,
+          "errors": 0,
+          "dropped": 0,
+          "draws_diverged": 0,
+          "queued": 0,
+          "by_strategy": {
+            "AdaptiveBootstrapStrategy": {
+              "decisions": 2236,
+              "mismatched": 0
+            }
+          },
+          "decide_us": {
+            "python": {
+              "p50": 2342.3,
+              "p99": 4180.5
+            },
+            "gateway": {
+              "p50": 95.4,
+              "p99": 225.2
+            }
+          },
+          "last_error": null
+        }
+      },
+      "llama-3.2-3b": {
+        "requests": 2293,
+        "ok": 2293,
+        "ok_rate": 1.0,
+        "statuses": {
+          "200": 2293
+        },
+        "e2e_sim_ms": {
+          "p50": 896.6,
+          "p90": 2438.7,
+          "p99": 4547.9
+        },
+        "send_lag_p99_ms": 2.1,
+        "share_by_instance": {
+          "a10g-llama3b-0": 0.02529,
+          "a10g-llama3b-1": 0.02529,
+          "a10g-llama3b-2": 0.02529,
+          "a10g-llama3b-3": 0.02529,
+          "a10g-llama3b-4": 0.02529,
+          "a10g-llama3b-5": 0.02529,
+          "a10g-llama3b-6": 0.02529,
+          "a10g-llama3b-7": 0.02529,
+          "a10g-llama3b-8": 0.02529,
+          "a10g-llama3b-9": 0.02529,
+          "a10g-llama3b-10": 0.02529,
+          "a10g-llama3b-11": 0.02529,
+          "a10g-llama3b-12": 0.02529,
+          "a10g-llama3b-13": 0.02486,
+          "a10g-llama3b-14": 0.02486,
+          "a10g-llama3b-15": 0.02486,
+          "a10g-llama3b-16": 0.02486,
+          "a10g-llama3b-17": 0.02486,
+          "a10g-llama3b-18": 0.02486,
+          "a10g-llama3b-19": 0.02486,
+          "a10g-llama3b-20": 0.02486,
+          "a10g-llama3b-21": 0.02486,
+          "a10g-llama3b-22": 0.02486,
+          "a10g-llama3b-23": 0.02486,
+          "a10g-llama3b-24": 0.02486,
+          "a10g-llama3b-25": 0.02486,
+          "a10g-llama3b-26": 0.02486,
+          "a10g-llama3b-27": 0.02486,
+          "a10g-llama3b-28": 0.02486,
+          "a10g-llama3b-29": 0.02486,
+          "a10g-llama3b-30": 0.02486,
+          "a10g-llama3b-31": 0.02486,
+          "a10g-llama3b-32": 0.02486,
+          "a10g-llama3b-33": 0.02486,
+          "a10g-llama3b-34": 0.02486,
+          "a10g-llama3b-35": 0.02486,
+          "a10g-llama3b-36": 0.02486,
+          "a10g-llama3b-37": 0.02486,
+          "a10g-llama3b-38": 0.02486,
+          "a10g-llama3b-39": 0.02486
+        },
+        "share_by_group": {
+          "a10g-llama3b": 1.0
+        },
+        "shadow": {
+          "enabled": true,
+          "url": "http://127.0.0.1:19103/_gateway/shadow",
+          "decisions": 2293,
+          "compared": 2293,
+          "matched": 2293,
+          "mismatched": 0,
+          "mismatch_rate": 0.0,
+          "errors": 0,
+          "dropped": 0,
+          "draws_diverged": 0,
+          "queued": 0,
+          "by_strategy": {
+            "AdaptiveBootstrapStrategy": {
+              "decisions": 2293,
+              "mismatched": 0
+            }
+          },
+          "decide_us": {
+            "python": {
+              "p50": 141.5,
+              "p99": 285.0
+            },
+            "gateway": {
+              "p50": 33.7,
+              "p99": 100.1
+            }
+          },
+          "last_error": null
+        }
+      },
+      "sdxl": {
+        "requests": 2130,
+        "ok": 2130,
+        "ok_rate": 1.0,
+        "statuses": {
+          "200": 2130
+        },
+        "e2e_sim_ms": {
+          "p50": 6714.7,
+          "p90": 11918.5,
+          "p99": 19353.0
+        },
+        "send_lag_p99_ms": 2.0,
+        "share_by_instance": {
+          "l4-sdxl-0": 0.03146,
+          "l4-sdxl-1": 0.03146,
+          "l4-sdxl-2": 0.03146,
+          "l4-sdxl-3": 0.03146,
+          "l4-sdxl-4": 0.03146,
+          "l4-sdxl-5": 0.03146,
+          "l4-sdxl-6": 0.03146,
+          "l4-sdxl-7": 0.03146,
+          "l4-sdxl-8": 0.03146,
+          "l4-sdxl-9": 0.03146,
+          "l4-sdxl-10": 0.03146,
+          "l4-sdxl-11": 0.03146,
+          "l4-sdxl-12": 0.03146,
+          "l4-sdxl-13": 0.03146,
+          "l4-sdxl-14": 0.03146,
+          "l4-sdxl-15": 0.03146,
+          "l4-sdxl-16": 0.03146,
+          "l4-sdxl-17": 0.03146,
+          "l4-sdxl-18": 0.03099,
+          "l4-sdxl-19": 0.03099,
+          "l4-sdxl-20": 0.03099,
+          "l4-sdxl-21": 0.03099,
+          "l4-sdxl-22": 0.03099,
+          "l4-sdxl-23": 0.03099,
+          "l4-sdxl-24": 0.03099,
+          "l4-sdxl-25": 0.03099,
+          "l4-sdxl-26": 0.03099,
+          "l4-sdxl-27": 0.03099,
+          "l4-sdxl-28": 0.03099,
+          "l4-sdxl-29": 0.03099,
+          "l4-sdxl-30": 0.03099,
+          "l4-sdxl-31": 0.03099
+        },
+        "share_by_group": {
+          "l4-sdxl": 1.0
+        },
+        "shadow": {
+          "enabled": true,
+          "url": "http://127.0.0.1:19104/_gateway/shadow",
+          "decisions": 2130,
+          "compared": 2130,
+          "matched": 2130,
+          "mismatched": 0,
+          "mismatch_rate": 0.0,
+          "errors": 0,
+          "dropped": 0,
+          "draws_diverged": 0,
+          "queued": 0,
+          "by_strategy": {
+            "AdaptiveBootstrapStrategy": {
+              "decisions": 2130,
+              "mismatched": 0
+            }
+          },
+          "decide_us": {
+            "python": {
+              "p50": 124.9,
+              "p99": 280.3
+            },
+            "gateway": {
+              "p50": 27.1,
+              "p99": 59.1
+            }
+          },
+          "last_error": null
+        }
+      },
+      "generic-small": {
+        "requests": 2175,
+        "ok": 2174,
+        "ok_rate": 0.9995,
+        "statuses": {
+          "200": 2174,
+          "0": 1
+        },
+        "e2e_sim_ms": {
+          "p50": 228.1,
+          "p90": 446.5,
+          "p99": 626.6
+        },
+        "send_lag_p99_ms": 2.1,
+        "share_by_instance": {
+          "rtx4090-private-0": 0.03496,
+          "rtx4090-private-1": 0.03358,
+          "rtx4090-private-2": 0.0322,
+          "rtx4090-private-3": 0.0299,
+          "rtx4090-private-4": 0.0322,
+          "rtx4090-private-5": 0.0345,
+          "rtx4090-private-6": 0.03082,
+          "rtx4090-private-7": 0.03312,
+          "rtx4090-private-8": 0.03036,
+          "rtx4090-private-9": 0.03266,
+          "rtx4090-private-10": 0.0345,
+          "rtx4090-private-11": 0.03128,
+          "rtx4090-private-12": 0.03266,
+          "rtx4090-private-13": 0.03266,
+          "rtx4090-private-14": 0.0345,
+          "rtx4090-private-15": 0.03312,
+          "rtx4090-private-16": 0.03128,
+          "rtx4090-private-17": 0.03312,
+          "rtx4090-private-18": 0.03082,
+          "rtx4090-private-19": 0.03174,
+          "rtx4090-private-20": 0.03082,
+          "rtx4090-private-21": 0.02944,
+          "rtx4090-private-22": 0.03036,
+          "rtx4090-private-23": 0.0299,
+          "rtx4090-private-24": 0.0299,
+          "rtx4090-private-25": 0.02852,
+          "rtx4090-private-26": 0.0299,
+          "rtx4090-private-27": 0.03082,
+          "rtx4090-private-28": 0.02576,
+          "rtx4090-private-29": 0.0299,
+          "rtx4090-private-30": 0.02806,
+          "rtx4090-private-31": 0.02668
+        },
+        "share_by_group": {
+          "rtx4090-private": 1.0
+        },
+        "shadow": {
+          "enabled": true,
+          "url": "http://127.0.0.1:19105/_gateway/shadow",
+          "decisions": 2174,
+          "compared": 2174,
+          "matched": 2174,
+          "mismatched": 0,
+          "mismatch_rate": 0.0,
+          "errors": 0,
+          "dropped": 0,
+          "draws_diverged": 0,
+          "queued": 0,
+          "by_strategy": {
+            "AdaptiveBootstrapStrategy": {
+              "decisions": 2174,
+              "mismatched": 0
+            }
+          },
+          "decide_us": {
+            "python": {
+              "p50": 1700.7,
+              "p99": 3163.7
+            },
+            "gateway": {
+              "p50": 69.7,
+              "p99": 154.3
+            }
+          },
+          "last_error": null
+        }
+      }
+    },
+    "gateway": {
+      "llama-3.1-8b": {
+        "requests": 2155,
+        "ok": 2155,
+        "ok_rate": 1.0,
+        "statuses": {
+          "200": 2155
+        },
+        "e2e_sim_ms": {
+          "p50": 409.1,
+          "p90": 1082.7,
+          "p99": 2029.1
+        },
+        "send_lag_p99_ms": 2.1,
+        "share_by_instance": {
+          "h100-llama8b-0": 0.03109,
+          "h100-llama8b-1": 0.02784,
+          "h100-llama8b-2": 0.02691,
+          "h100-llama8b-3": 0.03341,
+          "h100-llama8b-4": 0.03202,
+          "h100-llama8b-5": 0.02367,
+          "h100-llama8b-6": 0.02413,
+          "h100-llama8b-7": 0.04037,
+          "h100-llama8b-8": 0.04037,
+          "h100-llama8b-9": 0.02506,
+          "h100-llama8b-10": 0.03573,
+          "h100-llama8b-11": 0.02645,
+          "h100-llama8b-12": 0.03805,
+          "h100-llama8b-13": 0.03712,
+          "h100-llama8b-14": 0.03805,
+          "h100-llama8b-15": 0.03619,
+          "h100-llama8b-16": 0.03063,
+          "h100-llama8b-17": 0.03387,
+          "h100-llama8b-18": 0.02738,
+          "h100-llama8b-19": 0.02599,
+          "h100-llama8b-20": 0.02691,
+          "h100-llama8b-21": 0.02877,
+          "h100-llama8b-22": 0.0297,
+          "h100-llama8b-23": 0.02459,
+          "h100-llama8b-24": 0.03202,
+          "h100-llama8b-25": 0.03712,
+          "h100-llama8b-26": 0.03063,
+          "h100-llama8b-27": 0.02877,
+          "h100-llama8b-28": 0.02691,
+          "h100-llama8b-29": 0.03666,
+          "h100-llama8b-30": 0.02552,
+          "h100-llama8b-31": 0.03805
+        },
+        "share_by_group": {
+          "h100-llama8b": 1.0
+        },
+        "shadow": null
+      },
+      "llama-3.1-70b": {
+        "requests": 2101,
+        "ok": 2101,
+        "ok_rate": 1.0,
+        "statuses": {
+          "200": 2101
+        },
+        "e2e_sim_ms": {
+          "p50": 1211.4,
+          "p90": 3308.0,
+          "p99": 5721.3
+        },
+        "send_lag_p99_ms": 2.1,
+        "share_by_instance": {
+          "h100-llama70b-0": 0.06283,
+          "h100-llama70b-1": 0.06283,
+          "h100-llama70b-2": 0.06283,
+          "h100-llama70b-3": 0.06283,
+          "h100-llama70b-4": 0.06283,
+          "h100-llama70b-5": 0.06235,
+          "h100-llama70b-6": 0.06235,
+          "h100-llama70b-7": 0.06235,
+          "h200-llama70b-0": 0.0633,
+          "h200-llama70b-1": 0.07139,
+          "h200-llama70b-2": 0.06283,
+          "h200-llama70b-3": 0.06616,
+          "h200-llama70b-4": 0.06045,
+          "h200-llama70b-5": 0.0514,
+          "h200-llama70b-6": 0.05378,
+          "h200-llama70b-7": 0.06949
+        },
+        "share_by_group": {
+          "h100-llama70b": 0.5012,
+          "h200-llama70b": 0.4988
+        },
+        "shadow": null
+      },
+      "qwen2.5-7b": {
+        "requests": 2236,
+        "ok": 2236,
+        "ok_rate": 1.0,
+        "statuses": {
+          "200": 2236
+        },
+        "e2e_sim_ms": {
+          "p50": 658.3,
+          "p90": 2582.9,
+          "p99": 6380.4
+        },
+        "send_lag_p99_ms": 2.1,
+        "share_by_instance": {
+          "a100-80-qwen7b-0": 0.00984,
+          "a100-80-qwen7b-1": 0.00984,
+          "a100-80-qwen7b-2": 0.00984,
+          "a100-80-qwen7b-3": 0.00984,
+          "a100-80-qwen7b-4": 0.00984,
+          "a100-80-qwen7b-5": 0.00984,
+          "a100-80-qwen7b-6": 0.00984,
+          "a100-80-qwen7b-7": 0.00984,
+          "a100-80-qwen7b-8": 0.00984,
+          "a100-80-qwen7b-9": 0.00984,
+          "a100-80-qwen7b-10": 0.00984,
+          "a100-80-qwen7b-11": 0.00984,
+          "a100-80-qwen7b-12": 0.00984,
+          "a100-80-qwen7b-13": 0.00984,
+          "a100-80-qwen7b-14": 0.00984,
+          "a100-80-qwen7b-15": 0.00984,
+          "a100-80-qwen7b-16": 0.00984,
+          "a100-80-qwen7b-17": 0.00984,
+          "a100-80-qwen7b-18": 0.00984,
+          "a100-80-qwen7b-19": 0.00984,
+          "a100-80-qwen7b-20": 0.00984,
+          "a100-80-qwen7b-21": 0.00984,
+          "a100-80-qwen7b-22": 0.00984,
+          "a100-80-qwen7b-23": 0.00984,
+          "a100-80-qwen7b-24": 0.00984,
+          "a100-80-qwen7b-25": 0.00984,
+          "a100-80-qwen7b-26": 0.00984,
+          "a100-80-qwen7b-27": 0.00984,
+          "a100-80-qwen7b-28": 0.00984,
+          "a100-80-qwen7b-29": 0.00984,
+          "a100-80-qwen7b-30": 0.00984,
+          "a100-80-qwen7b-31": 0.00984,
+          "a100-80-qwen7b-32": 0.00984,
+          "a100-80-qwen7b-33": 0.00984,
+          "a100-80-qwen7b-34": 0.00984,
+          "a100-80-qwen7b-35": 0.00984,
+          "a100-80-qwen7b-36": 0.00984,
+          "a100-80-qwen7b-37": 0.00984,
+          "a100-80-qwen7b-38": 0.00984,
+          "a100-80-qwen7b-39": 0.00984,
+          "a100-80-qwen7b-40": 0.00984,
+          "a100-80-qwen7b-41": 0.00984,
+          "a100-80-qwen7b-42": 0.00984,
+          "a100-80-qwen7b-43": 0.00984,
+          "a100-80-qwen7b-44": 0.00984,
+          "a100-80-qwen7b-45": 0.00984,
+          "a100-80-qwen7b-46": 0.00984,
+          "a100-80-qwen7b-47": 0.00984,
+          "a100-40-qwen7b-0": 0.01342,
+          "a100-40-qwen7b-1": 0.01521,
+          "a100-40-qwen7b-2": 0.01386,
+          "a100-40-qwen7b-3": 0.01476,
+          "a100-40-qwen7b-4": 0.0161,
+          "a100-40-qwen7b-5": 0.01431,
+          "a100-40-qwen7b-6": 0.01297,
+          "a100-40-qwen7b-7": 0.01252,
+          "a100-40-qwen7b-8": 0.01431,
+          "a100-40-qwen7b-9": 0.01476,
+          "a100-40-qwen7b-10": 0.01342,
+          "a100-40-qwen7b-11": 0.01655,
+          "a100-40-qwen7b-12": 0.01431,
+          "a100-40-qwen7b-13": 0.01565,
+          "a100-40-qwen7b-14": 0.01386,
+          "a100-40-qwen7b-15": 0.01476,
+          "a100-40-qwen7b-16": 0.01386,
+          "a100-40-qwen7b-17": 0.01163,
+          "a100-40-qwen7b-18": 0.01386,
+          "a100-40-qwen7b-19": 0.01521,
+          "a100-40-qwen7b-20": 0.01565,
+          "a100-40-qwen7b-21": 0.01252,
+          "a100-40-qwen7b-22": 0.01163,
+          "a100-40-qwen7b-23": 0.01252,
+          "l40s-qwen7b-0": 0.00626,
+          "l40s-qwen7b-1": 0.00581,
+          "l40s-qwen7b-2": 0.00671,
+          "l40s-qwen7b-3": 0.00671,
+          "l40s-qwen7b-4": 0.00626,
+          "l40s-qwen7b-5": 0.00537,
+          "l40s-qwen7b-6": 0.00447,
+          "l40s-qwen7b-7": 0.00626,
+          "l40s-qwen7b-8": 0.00581,
+          "l40s-qwen7b-9": 0.00581,
+          "l40s-qwen7b-10": 0.00581,
+          "l40s-qwen7b-11": 0.00581,
+          "l40s-qwen7b-12": 0.00626,
+          "l40s-qwen7b-13": 0.00447,
+          "l40s-qwen7b-14": 0.00626,
+          "l40s-qwen7b-15": 0.00626,
+          "l40s-qwen7b-16": 0.00581,
+          "l40s-qwen7b-17": 0.00581,
+          "l40s-qwen7b-18": 0.00581,
+          "l40s-qwen7b-19": 0.00716,
+          "l40s-qwen7b-20": 0.00537,
+          "l40s-qwen7b-21": 0.00537,
+          "l40s-qwen7b-22": 0.00537,
+          "l40s-qwen7b-23": 0.00716,
+          "l40s-qwen7b-24": 0.00581,
+          "l40s-qwen7b-25": 0.00671,
+          "l40s-qwen7b-26": 0.00581,
+          "l40s-qwen7b-27": 0.00537,
+          "l40s-qwen7b-28": 0.00626,
+          "l40s-qwen7b-29": 0.00581,
+          "l40s-qwen7b-30": 0.00716,
+          "l40s-qwen7b-31": 0.00492
+        },
+        "share_by_group": {
+          "a100-80-qwen7b": 0.4723,
+          "a100-40-qwen7b": 0.3377,
+          "l40s-qwen7b": 0.1901
+        },
+        "shadow": null
+      },
+      "llama-3.2-3b": {
+        "requests": 2293,
+        "ok": 2293,
+        "ok_rate": 1.0,
+        "statuses": {
+          "200": 2293
+        },
+        "e2e_sim_ms": {
+          "p50": 896.0,
+          "p90": 2438.5,
+          "p99": 4547.7
+        },
+        "send_lag_p99_ms": 2.0,
+        "share_by_instance": {
+          "a10g-llama3b-0": 0.02529,
+          "a10g-llama3b-1": 0.02529,
+          "a10g-llama3b-2": 0.02529,
+          "a10g-llama3b-3": 0.02529,
+          "a10g-llama3b-4": 0.02529,
+          "a10g-llama3b-5": 0.02529,
+          "a10g-llama3b-6": 0.02529,
+          "a10g-llama3b-7": 0.02529,
+          "a10g-llama3b-8": 0.02529,
+          "a10g-llama3b-9": 0.02529,
+          "a10g-llama3b-10": 0.02529,
+          "a10g-llama3b-11": 0.02529,
+          "a10g-llama3b-12": 0.02529,
+          "a10g-llama3b-13": 0.02486,
+          "a10g-llama3b-14": 0.02486,
+          "a10g-llama3b-15": 0.02486,
+          "a10g-llama3b-16": 0.02486,
+          "a10g-llama3b-17": 0.02486,
+          "a10g-llama3b-18": 0.02486,
+          "a10g-llama3b-19": 0.02486,
+          "a10g-llama3b-20": 0.02486,
+          "a10g-llama3b-21": 0.02486,
+          "a10g-llama3b-22": 0.02486,
+          "a10g-llama3b-23": 0.02486,
+          "a10g-llama3b-24": 0.02486,
+          "a10g-llama3b-25": 0.02486,
+          "a10g-llama3b-26": 0.02486,
+          "a10g-llama3b-27": 0.02486,
+          "a10g-llama3b-28": 0.02486,
+          "a10g-llama3b-29": 0.02486,
+          "a10g-llama3b-30": 0.02486,
+          "a10g-llama3b-31": 0.02486,
+          "a10g-llama3b-32": 0.02486,
+          "a10g-llama3b-33": 0.02486,
+          "a10g-llama3b-34": 0.02486,
+          "a10g-llama3b-35": 0.02486,
+          "a10g-llama3b-36": 0.02486,
+          "a10g-llama3b-37": 0.02486,
+          "a10g-llama3b-38": 0.02486,
+          "a10g-llama3b-39": 0.02486
+        },
+        "share_by_group": {
+          "a10g-llama3b": 1.0
+        },
+        "shadow": null
+      },
+      "sdxl": {
+        "requests": 2130,
+        "ok": 2130,
+        "ok_rate": 1.0,
+        "statuses": {
+          "200": 2130
+        },
+        "e2e_sim_ms": {
+          "p50": 6694.6,
+          "p90": 11885.0,
+          "p99": 19324.3
+        },
+        "send_lag_p99_ms": 2.1,
+        "share_by_instance": {
+          "l4-sdxl-0": 0.03146,
+          "l4-sdxl-1": 0.03146,
+          "l4-sdxl-2": 0.03146,
+          "l4-sdxl-3": 0.03146,
+          "l4-sdxl-4": 0.03146,
+          "l4-sdxl-5": 0.03146,
+          "l4-sdxl-6": 0.03146,
+          "l4-sdxl-7": 0.03146,
+          "l4-sdxl-8": 0.03146,
+          "l4-sdxl-9": 0.03146,
+          "l4-sdxl-10": 0.03146,
+          "l4-sdxl-11": 0.03146,
+          "l4-sdxl-12": 0.03146,
+          "l4-sdxl-13": 0.03146,
+          "l4-sdxl-14": 0.03146,
+          "l4-sdxl-15": 0.03146,
+          "l4-sdxl-16": 0.03146,
+          "l4-sdxl-17": 0.03146,
+          "l4-sdxl-18": 0.03099,
+          "l4-sdxl-19": 0.03099,
+          "l4-sdxl-20": 0.03099,
+          "l4-sdxl-21": 0.03099,
+          "l4-sdxl-22": 0.03099,
+          "l4-sdxl-23": 0.03099,
+          "l4-sdxl-24": 0.03099,
+          "l4-sdxl-25": 0.03099,
+          "l4-sdxl-26": 0.03099,
+          "l4-sdxl-27": 0.03099,
+          "l4-sdxl-28": 0.03099,
+          "l4-sdxl-29": 0.03099,
+          "l4-sdxl-30": 0.03099,
+          "l4-sdxl-31": 0.03099
+        },
+        "share_by_group": {
+          "l4-sdxl": 1.0
+        },
+        "shadow": null
+      },
+      "generic-small": {
+        "requests": 2175,
+        "ok": 2175,
+        "ok_rate": 1.0,
+        "statuses": {
+          "200": 2175
+        },
+        "e2e_sim_ms": {
+          "p50": 197.5,
+          "p90": 524.6,
+          "p99": 1069.4
+        },
+        "send_lag_p99_ms": 2.0,
+        "share_by_instance": {
+          "rtx4090-private-0": 0.03172,
+          "rtx4090-private-1": 0.03402,
+          "rtx4090-private-2": 0.03264,
+          "rtx4090-private-3": 0.03172,
+          "rtx4090-private-4": 0.03448,
+          "rtx4090-private-5": 0.0354,
+          "rtx4090-private-6": 0.0331,
+          "rtx4090-private-7": 0.03264,
+          "rtx4090-private-8": 0.03218,
+          "rtx4090-private-9": 0.03448,
+          "rtx4090-private-10": 0.03218,
+          "rtx4090-private-11": 0.02851,
+          "rtx4090-private-12": 0.03126,
+          "rtx4090-private-13": 0.03034,
+          "rtx4090-private-14": 0.0308,
+          "rtx4090-private-15": 0.03172,
+          "rtx4090-private-16": 0.03218,
+          "rtx4090-private-17": 0.02897,
+          "rtx4090-private-18": 0.03172,
+          "rtx4090-private-19": 0.02943,
+          "rtx4090-private-20": 0.02943,
+          "rtx4090-private-21": 0.03034,
+          "rtx4090-private-22": 0.03034,
+          "rtx4090-private-23": 0.0308,
+          "rtx4090-private-24": 0.02989,
+          "rtx4090-private-25": 0.03126,
+          "rtx4090-private-26": 0.0308,
+          "rtx4090-private-27": 0.02897,
+          "rtx4090-private-28": 0.02943,
+          "rtx4090-private-29": 0.03126,
+          "rtx4090-private-30": 0.02851,
+          "rtx4090-private-31": 0.02943
+        },
+        "share_by_group": {
+          "rtx4090-private": 1.0
+        },
+        "shadow": null
+      }
+    },
+    "python2": {
+      "llama-3.1-8b": {
+        "requests": 2155,
+        "ok": 2155,
+        "ok_rate": 1.0,
+        "statuses": {
+          "200": 2155
+        },
+        "e2e_sim_ms": {
+          "p50": 413.8,
+          "p90": 1096.9,
+          "p99": 2020.7
+        },
+        "send_lag_p99_ms": 2.0,
+        "share_by_instance": {
+          "h100-llama8b-0": 0.02552,
+          "h100-llama8b-1": 0.03573,
+          "h100-llama8b-2": 0.02923,
+          "h100-llama8b-3": 0.02088,
+          "h100-llama8b-4": 0.02923,
+          "h100-llama8b-5": 0.02784,
+          "h100-llama8b-6": 0.03016,
+          "h100-llama8b-7": 0.04594,
+          "h100-llama8b-8": 0.02227,
+          "h100-llama8b-9": 0.02552,
+          "h100-llama8b-10": 0.03387,
+          "h100-llama8b-11": 0.0297,
+          "h100-llama8b-12": 0.03527,
+          "h100-llama8b-13": 0.03573,
+          "h100-llama8b-14": 0.02459,
+          "h100-llama8b-15": 0.03712,
+          "h100-llama8b-16": 0.03434,
+          "h100-llama8b-17": 0.03712,
+          "h100-llama8b-18": 0.03063,
+          "h100-llama8b-19": 0.03109,
+          "h100-llama8b-20": 0.03341,
+          "h100-llama8b-21": 0.03063,
+          "h100-llama8b-22": 0.04037,
+          "h100-llama8b-23": 0.0297,
+          "h100-llama8b-24": 0.03573,
+          "h100-llama8b-25": 0.03248,
+          "h100-llama8b-26": 0.02645,
+          "h100-llama8b-27": 0.02831,
+          "h100-llama8b-28": 0.02645,
+          "h100-llama8b-29": 0.03202,
+          "h100-llama8b-30": 0.03944,
+          "h100-llama8b-31": 0.0232
+        },
+        "share_by_group": {
+          "h100-llama8b": 1.0
+        },
+        "shadow": {
+          "enabled": true,
+          "url": "http://127.0.0.1:19100/_gateway/shadow",
+          "decisions": 2155,
+          "compared": 2155,
+          "matched": 2155,
+          "mismatched": 0,
+          "mismatch_rate": 0.0,
+          "errors": 0,
+          "dropped": 0,
+          "draws_diverged": 0,
+          "queued": 0,
+          "by_strategy": {
+            "AdaptiveBootstrapStrategy": {
+              "decisions": 2155,
+              "mismatched": 0
+            }
+          },
+          "decide_us": {
+            "python": {
+              "p50": 1805.5,
+              "p99": 2934.5
+            },
+            "gateway": {
+              "p50": 87.1,
+              "p99": 196.2
+            }
+          },
+          "last_error": null
+        }
+      },
+      "llama-3.1-70b": {
+        "requests": 2101,
+        "ok": 2101,
+        "ok_rate": 1.0,
+        "statuses": {
+          "200": 2101
+        },
+        "e2e_sim_ms": {
+          "p50": 1227.6,
+          "p90": 3304.8,
+          "p99": 5860.4
+        },
+        "send_lag_p99_ms": 2.1,
+        "share_by_instance": {
+          "h100-llama70b-0": 0.06283,
+          "h100-llama70b-1": 0.06283,
+          "h100-llama70b-2": 0.06283,
+          "h100-llama70b-3": 0.06283,
+          "h100-llama70b-4": 0.06283,
+          "h100-llama70b-5": 0.06235,
+          "h100-llama70b-6": 0.06235,
+          "h100-llama70b-7": 0.06235,
+          "h200-llama70b-0": 0.07092,
+          "h200-llama70b-1": 0.05283,
+          "h200-llama70b-2": 0.06426,
+          "h200-llama70b-3": 0.07044,
+          "h200-llama70b-4": 0.0614,
+          "h200-llama70b-5": 0.05569,
+          "h200-llama70b-6": 0.0514,
+          "h200-llama70b-7": 0.07187
+        },
+        "share_by_group": {
+          "h100-llama70b": 0.5012,
+          "h200-llama70b": 0.4988
+        },
+        "shadow": {
+          "enabled": true,
+          "url": "http://127.0.0.1:19101/_gateway/shadow",
+          "decisions": 2101,
+          "compared": 2101,
+          "matched": 2101,
+          "mismatched": 0,
+          "mismatch_rate": 0.0,
+          "errors": 0,
+          "dropped": 0,
+          "draws_diverged": 0,
+          "queued": 0,
+          "by_strategy": {
+            "AdaptiveBootstrapStrategy": {
+              "decisions": 2101,
+              "mismatched": 0
+            }
+          },
+          "decide_us": {
+            "python": {
+              "p50": 274.4,
+              "p99": 1739.0
+            },
+            "gateway": {
+              "p50": 43.7,
+              "p99": 133.4
+            }
+          },
+          "last_error": null
+        }
+      },
+      "qwen2.5-7b": {
+        "requests": 2236,
+        "ok": 2236,
+        "ok_rate": 1.0,
+        "statuses": {
+          "200": 2236
+        },
+        "e2e_sim_ms": {
+          "p50": 659.4,
+          "p90": 2608.6,
+          "p99": 6404.3
+        },
+        "send_lag_p99_ms": 2.1,
+        "share_by_instance": {
+          "a100-80-qwen7b-0": 0.00984,
+          "a100-80-qwen7b-1": 0.00984,
+          "a100-80-qwen7b-2": 0.00984,
+          "a100-80-qwen7b-3": 0.00984,
+          "a100-80-qwen7b-4": 0.00984,
+          "a100-80-qwen7b-5": 0.00984,
+          "a100-80-qwen7b-6": 0.00984,
+          "a100-80-qwen7b-7": 0.00984,
+          "a100-80-qwen7b-8": 0.00984,
+          "a100-80-qwen7b-9": 0.00984,
+          "a100-80-qwen7b-10": 0.00984,
+          "a100-80-qwen7b-11": 0.00984,
+          "a100-80-qwen7b-12": 0.00984,
+          "a100-80-qwen7b-13": 0.00984,
+          "a100-80-qwen7b-14": 0.00984,
+          "a100-80-qwen7b-15": 0.00984,
+          "a100-80-qwen7b-16": 0.00984,
+          "a100-80-qwen7b-17": 0.00984,
+          "a100-80-qwen7b-18": 0.00984,
+          "a100-80-qwen7b-19": 0.00984,
+          "a100-80-qwen7b-20": 0.00984,
+          "a100-80-qwen7b-21": 0.00984,
+          "a100-80-qwen7b-22": 0.00984,
+          "a100-80-qwen7b-23": 0.00984,
+          "a100-80-qwen7b-24": 0.00984,
+          "a100-80-qwen7b-25": 0.00984,
+          "a100-80-qwen7b-26": 0.00984,
+          "a100-80-qwen7b-27": 0.00984,
+          "a100-80-qwen7b-28": 0.00984,
+          "a100-80-qwen7b-29": 0.00984,
+          "a100-80-qwen7b-30": 0.00984,
+          "a100-80-qwen7b-31": 0.00984,
+          "a100-80-qwen7b-32": 0.00984,
+          "a100-80-qwen7b-33": 0.00984,
+          "a100-80-qwen7b-34": 0.00984,
+          "a100-80-qwen7b-35": 0.00984,
+          "a100-80-qwen7b-36": 0.00984,
+          "a100-80-qwen7b-37": 0.00984,
+          "a100-80-qwen7b-38": 0.00984,
+          "a100-80-qwen7b-39": 0.00984,
+          "a100-80-qwen7b-40": 0.00984,
+          "a100-80-qwen7b-41": 0.00984,
+          "a100-80-qwen7b-42": 0.00984,
+          "a100-80-qwen7b-43": 0.00984,
+          "a100-80-qwen7b-44": 0.00984,
+          "a100-80-qwen7b-45": 0.00984,
+          "a100-80-qwen7b-46": 0.00984,
+          "a100-80-qwen7b-47": 0.00984,
+          "a100-40-qwen7b-0": 0.01431,
+          "a100-40-qwen7b-1": 0.01476,
+          "a100-40-qwen7b-2": 0.01386,
+          "a100-40-qwen7b-3": 0.01386,
+          "a100-40-qwen7b-4": 0.01521,
+          "a100-40-qwen7b-5": 0.01386,
+          "a100-40-qwen7b-6": 0.01476,
+          "a100-40-qwen7b-7": 0.01431,
+          "a100-40-qwen7b-8": 0.01565,
+          "a100-40-qwen7b-9": 0.01431,
+          "a100-40-qwen7b-10": 0.01252,
+          "a100-40-qwen7b-11": 0.01476,
+          "a100-40-qwen7b-12": 0.01431,
+          "a100-40-qwen7b-13": 0.01565,
+          "a100-40-qwen7b-14": 0.01342,
+          "a100-40-qwen7b-15": 0.01565,
+          "a100-40-qwen7b-16": 0.01431,
+          "a100-40-qwen7b-17": 0.01386,
+          "a100-40-qwen7b-18": 0.01521,
+          "a100-40-qwen7b-19": 0.01208,
+          "a100-40-qwen7b-20": 0.01208,
+          "a100-40-qwen7b-21": 0.01297,
+          "a100-40-qwen7b-22": 0.01208,
+          "a100-40-qwen7b-23": 0.01431,
+          "l40s-qwen7b-0": 0.00537,
+          "l40s-qwen7b-1": 0.0076,
+          "l40s-qwen7b-2": 0.00626,
+          "l40s-qwen7b-3": 0.00581,
+          "l40s-qwen7b-4": 0.00671,
+          "l40s-qwen7b-5": 0.00537,
+          "l40s-qwen7b-6": 0.00537,
+          "l40s-qwen7b-7": 0.00716,
+          "l40s-qwen7b-8": 0.00447,
+          "l40s-qwen7b-9": 0.00537,
+          "l40s-qwen7b-10": 0.00581,
+          "l40s-qwen7b-11": 0.00492,
+          "l40s-qwen7b-12": 0.00581,
+          "l40s-qwen7b-13": 0.00671,
+          "l40s-qwen7b-14": 0.0076,
+          "l40s-qwen7b-15": 0.00671,
+          "l40s-qwen7b-16": 0.00626,
+          "l40s-qwen7b-17": 0.00492,
+          "l40s-qwen7b-18": 0.00626,
+          "l40s-qwen7b-19": 0.00537,
+          "l40s-qwen7b-20": 0.00581,
+          "l40s-qwen7b-21": 0.00581,
+          "l40s-qwen7b-22": 0.00581,
+          "l40s-qwen7b-23": 0.0076,
+          "l40s-qwen7b-24": 0.00626,
+          "l40s-qwen7b-25": 0.00537,
+          "l40s-qwen7b-26": 0.00626,
+          "l40s-qwen7b-27": 0.00537,
+          "l40s-qwen7b-28": 0.00581,
+          "l40s-qwen7b-29": 0.00537,
+          "l40s-qwen7b-30": 0.00492,
+          "l40s-qwen7b-31": 0.00537
+        },
+        "share_by_group": {
+          "a100-80-qwen7b": 0.4723,
+          "a100-40-qwen7b": 0.3381,
+          "l40s-qwen7b": 0.1896
+        },
+        "shadow": {
+          "enabled": true,
+          "url": "http://127.0.0.1:19102/_gateway/shadow",
+          "decisions": 2236,
+          "compared": 2236,
+          "matched": 2236,
+          "mismatched": 0,
+          "mismatch_rate": 0.0,
+          "errors": 0,
+          "dropped": 0,
+          "draws_diverged": 0,
+          "queued": 0,
+          "by_strategy": {
+            "AdaptiveBootstrapStrategy": {
+              "decisions": 2236,
+              "mismatched": 0
+            }
+          },
+          "decide_us": {
+            "python": {
+              "p50": 2366.3,
+              "p99": 4273.9
+            },
+            "gateway": {
+              "p50": 101.1,
+              "p99": 260.9
+            }
+          },
+          "last_error": null
+        }
+      },
+      "llama-3.2-3b": {
+        "requests": 2293,
+        "ok": 2293,
+        "ok_rate": 1.0,
+        "statuses": {
+          "200": 2293
+        },
+        "e2e_sim_ms": {
+          "p50": 896.5,
+          "p90": 2438.9,
+          "p99": 4547.9
+        },
+        "send_lag_p99_ms": 2.1,
+        "share_by_instance": {
+          "a10g-llama3b-0": 0.02529,
+          "a10g-llama3b-1": 0.02529,
+          "a10g-llama3b-2": 0.02529,
+          "a10g-llama3b-3": 0.02529,
+          "a10g-llama3b-4": 0.02529,
+          "a10g-llama3b-5": 0.02529,
+          "a10g-llama3b-6": 0.02529,
+          "a10g-llama3b-7": 0.02529,
+          "a10g-llama3b-8": 0.02529,
+          "a10g-llama3b-9": 0.02529,
+          "a10g-llama3b-10": 0.02529,
+          "a10g-llama3b-11": 0.02529,
+          "a10g-llama3b-12": 0.02529,
+          "a10g-llama3b-13": 0.02486,
+          "a10g-llama3b-14": 0.02486,
+          "a10g-llama3b-15": 0.02486,
+          "a10g-llama3b-16": 0.02486,
+          "a10g-llama3b-17": 0.02486,
+          "a10g-llama3b-18": 0.02486,
+          "a10g-llama3b-19": 0.02486,
+          "a10g-llama3b-20": 0.02486,
+          "a10g-llama3b-21": 0.02486,
+          "a10g-llama3b-22": 0.02486,
+          "a10g-llama3b-23": 0.02486,
+          "a10g-llama3b-24": 0.02486,
+          "a10g-llama3b-25": 0.02486,
+          "a10g-llama3b-26": 0.02486,
+          "a10g-llama3b-27": 0.02486,
+          "a10g-llama3b-28": 0.02486,
+          "a10g-llama3b-29": 0.02486,
+          "a10g-llama3b-30": 0.02486,
+          "a10g-llama3b-31": 0.02486,
+          "a10g-llama3b-32": 0.02486,
+          "a10g-llama3b-33": 0.02486,
+          "a10g-llama3b-34": 0.02486,
+          "a10g-llama3b-35": 0.02486,
+          "a10g-llama3b-36": 0.02486,
+          "a10g-llama3b-37": 0.02486,
+          "a10g-llama3b-38": 0.02486,
+          "a10g-llama3b-39": 0.02486
+        },
+        "share_by_group": {
+          "a10g-llama3b": 1.0
+        },
+        "shadow": {
+          "enabled": true,
+          "url": "http://127.0.0.1:19103/_gateway/shadow",
+          "decisions": 2293,
+          "compared": 2293,
+          "matched": 2293,
+          "mismatched": 0,
+          "mismatch_rate": 0.0,
+          "errors": 0,
+          "dropped": 0,
+          "draws_diverged": 0,
+          "queued": 0,
+          "by_strategy": {
+            "AdaptiveBootstrapStrategy": {
+              "decisions": 2293,
+              "mismatched": 0
+            }
+          },
+          "decide_us": {
+            "python": {
+              "p50": 149.4,
+              "p99": 303.7
+            },
+            "gateway": {
+              "p50": 36.6,
+              "p99": 100.7
+            }
+          },
+          "last_error": null
+        }
+      },
+      "sdxl": {
+        "requests": 2130,
+        "ok": 2130,
+        "ok_rate": 1.0,
+        "statuses": {
+          "200": 2130
+        },
+        "e2e_sim_ms": {
+          "p50": 6716.3,
+          "p90": 11917.5,
+          "p99": 19353.1
+        },
+        "send_lag_p99_ms": 2.1,
+        "share_by_instance": {
+          "l4-sdxl-0": 0.03146,
+          "l4-sdxl-1": 0.03146,
+          "l4-sdxl-2": 0.03146,
+          "l4-sdxl-3": 0.03146,
+          "l4-sdxl-4": 0.03146,
+          "l4-sdxl-5": 0.03146,
+          "l4-sdxl-6": 0.03146,
+          "l4-sdxl-7": 0.03146,
+          "l4-sdxl-8": 0.03146,
+          "l4-sdxl-9": 0.03146,
+          "l4-sdxl-10": 0.03146,
+          "l4-sdxl-11": 0.03146,
+          "l4-sdxl-12": 0.03146,
+          "l4-sdxl-13": 0.03146,
+          "l4-sdxl-14": 0.03146,
+          "l4-sdxl-15": 0.03146,
+          "l4-sdxl-16": 0.03146,
+          "l4-sdxl-17": 0.03146,
+          "l4-sdxl-18": 0.03099,
+          "l4-sdxl-19": 0.03099,
+          "l4-sdxl-20": 0.03099,
+          "l4-sdxl-21": 0.03099,
+          "l4-sdxl-22": 0.03099,
+          "l4-sdxl-23": 0.03099,
+          "l4-sdxl-24": 0.03099,
+          "l4-sdxl-25": 0.03099,
+          "l4-sdxl-26": 0.03099,
+          "l4-sdxl-27": 0.03099,
+          "l4-sdxl-28": 0.03099,
+          "l4-sdxl-29": 0.03099,
+          "l4-sdxl-30": 0.03099,
+          "l4-sdxl-31": 0.03099
+        },
+        "share_by_group": {
+          "l4-sdxl": 1.0
+        },
+        "shadow": {
+          "enabled": true,
+          "url": "http://127.0.0.1:19104/_gateway/shadow",
+          "decisions": 2130,
+          "compared": 2130,
+          "matched": 2130,
+          "mismatched": 0,
+          "mismatch_rate": 0.0,
+          "errors": 0,
+          "dropped": 0,
+          "draws_diverged": 0,
+          "queued": 0,
+          "by_strategy": {
+            "AdaptiveBootstrapStrategy": {
+              "decisions": 2130,
+              "mismatched": 0
+            }
+          },
+          "decide_us": {
+            "python": {
+              "p50": 128.9,
+              "p99": 272.3
+            },
+            "gateway": {
+              "p50": 29.1,
+              "p99": 68.6
+            }
+          },
+          "last_error": null
+        }
+      },
+      "generic-small": {
+        "requests": 2175,
+        "ok": 2175,
+        "ok_rate": 1.0,
+        "statuses": {
+          "200": 2175
+        },
+        "e2e_sim_ms": {
+          "p50": 211.4,
+          "p90": 427.7,
+          "p99": 745.2
+        },
+        "send_lag_p99_ms": 2.1,
+        "share_by_instance": {
+          "rtx4090-private-0": 0.03264,
+          "rtx4090-private-1": 0.0308,
+          "rtx4090-private-2": 0.03218,
+          "rtx4090-private-3": 0.0331,
+          "rtx4090-private-4": 0.02851,
+          "rtx4090-private-5": 0.03218,
+          "rtx4090-private-6": 0.02943,
+          "rtx4090-private-7": 0.03126,
+          "rtx4090-private-8": 0.02989,
+          "rtx4090-private-9": 0.03264,
+          "rtx4090-private-10": 0.03218,
+          "rtx4090-private-11": 0.03356,
+          "rtx4090-private-12": 0.0354,
+          "rtx4090-private-13": 0.03034,
+          "rtx4090-private-14": 0.02897,
+          "rtx4090-private-15": 0.03218,
+          "rtx4090-private-16": 0.03126,
+          "rtx4090-private-17": 0.03218,
+          "rtx4090-private-18": 0.03172,
+          "rtx4090-private-19": 0.03126,
+          "rtx4090-private-20": 0.03126,
+          "rtx4090-private-21": 0.03126,
+          "rtx4090-private-22": 0.03218,
+          "rtx4090-private-23": 0.03356,
+          "rtx4090-private-24": 0.03126,
+          "rtx4090-private-25": 0.03172,
+          "rtx4090-private-26": 0.03172,
+          "rtx4090-private-27": 0.02897,
+          "rtx4090-private-28": 0.02897,
+          "rtx4090-private-29": 0.0308,
+          "rtx4090-private-30": 0.02759,
+          "rtx4090-private-31": 0.02897
+        },
+        "share_by_group": {
+          "rtx4090-private": 1.0
+        },
+        "shadow": {
+          "enabled": true,
+          "url": "http://127.0.0.1:19105/_gateway/shadow",
+          "decisions": 2175,
+          "compared": 2175,
+          "matched": 2175,
+          "mismatched": 0,
+          "mismatch_rate": 0.0,
+          "errors": 0,
+          "dropped": 0,
+          "draws_diverged": 0,
+          "queued": 0,
+          "by_strategy": {
+            "AdaptiveBootstrapStrategy": {
+              "decisions": 2175,
+              "mismatched": 0
+            }
+          },
+          "decide_us": {
+            "python": {
+              "p50": 1782.0,
+              "p99": 3398.0
+            },
+            "gateway": {
+              "p50": 74.2,
+              "p99": 170.4
+            }
+          },
+          "last_error": null
+        }
+      }
+    }
+  }
+}

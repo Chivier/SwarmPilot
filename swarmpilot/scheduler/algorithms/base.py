@@ -13,6 +13,7 @@ from loguru import logger
 
 from swarmpilot.scheduler.clients.models import Prediction
 from swarmpilot.scheduler.registry.queue_sketch import Charge
+from swarmpilot.scheduler.shadow import RecordingRng
 
 if TYPE_CHECKING:
     from swarmpilot.scheduler.clients.predictor_library_client import (
@@ -52,7 +53,8 @@ class SchedulingStrategy(ABC):
         """
         self.predictor_client = predictor_client
         self.instance_registry = instance_registry
-        self._rng = np.random.default_rng(seed)
+        # Shadow mode replays the draws of each decision in the gateway.
+        self._rng = RecordingRng(np.random.default_rng(seed))
         self._worker_queue_manager: WorkerQueueManager | None = None
 
     def set_worker_queue_manager(

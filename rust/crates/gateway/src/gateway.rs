@@ -466,65 +466,12 @@ pub async fn proxy(State(gw): State<Arc<Gateway>>, req: Request) -> Response {
     };
     let first = candidates[0];
     let adapter = snap.adapter(&first.software);
-    // A route of a known API style the engine does not speak is
-    // translated; one it speaks passes through unchanged.
     let client_path = path.clone();
-    let mut tr: Option<Translation> = None;
-    if method == Method::POST {
-        let native = &adapter.native_styles;
-        if let Some(style) = snap.style_paths.get(&path) {
-            let python_only =
-                find_style(style).is_none() || !native.iter().any(|n| find_style(n).is_some());
-            if !native.is_empty() && !native.contains(style) && python_only {
-                return error_response(
-                    Some(&snap),
-                    &path,
-                    501,
-                    &format!("The gateway cannot translate {style} requests for this engine (an API style only the Python Scheduler has)"),
-                    "not_implemented",
-                );
-            }
-        }
-        match plan_request(
-            &path,
-            &client_body,
-            native,
-            snap.translation_strict,
-            i128::from(adapter.default_max_tokens),
-            &mut SystemEnv,
-        ) {
-            Ok(t) => tr = t,
-            Err(TrError::Translation {
-                message,
-                param,
-                status,
-                error_type,
-            }) => {
-                return style_error(
-                    Some(&snap),
-                    &path,
-                    status,
-                    &message,
-                    &error_type,
-                    param.as_deref(),
-                )
-            }
-            Err(TrError::Py(e)) => {
-                tracing::error!(error = %e, path = %path, "translating the request failed");
-                return translate::internal_error();
-            }
-        }
-    }
-    let translated = tr.as_ref().filter(|t| !t.passthrough());
-    let (path, body) = match translated {
-        Some(t) => {
-            if let Some(d) = t.dropped_header() {
-                tracing::debug!(from = %client_path, to = %t.path, dropped = %d, "translated");
-            }
-            (t.path.clone(), t.body.clone())
-        }
-        None => (path, client_body.clone()),
+    let Planned { tr, path, body } = match plan(&snap, &adapter, &method, path, &client_body) {
+        Ok(p) => p,
+        Err(resp) => return resp,
     };
+    let translated = tr.as_ref().filter(|t| !t.passthrough());
     let task_id = format!(
         "gw-{:x}-{:x}",
         std::process::id(),
@@ -655,6 +602,83 @@ pub async fn proxy(State(gw): State<Arc<Gateway>>, req: Request) -> Response {
     }
 }
 
+/// The request as the engine gets it.
+struct Planned {
+    tr: Option<Translation>,
+    path: String,
+    body: Value,
+}
+
+/// Translate the request when its API style is not the engine's, or say
+/// what to answer instead.
+#[allow(clippy::result_large_err)]
+fn plan(
+    snap: &Snapshot,
+    adapter: &crate::state::Adapter,
+    method: &Method,
+    path: String,
+    client_body: &Value,
+) -> Result<Planned, Response> {
+    // A route of a known API style the engine does not speak is
+    // translated; one it speaks passes through unchanged.
+    let mut tr: Option<Translation> = None;
+    if method == Method::POST {
+        let native = &adapter.native_styles;
+        if let Some(style) = snap.style_paths.get(&path) {
+            let python_only =
+                find_style(style).is_none() || !native.iter().any(|n| find_style(n).is_some());
+            if !native.is_empty() && !native.contains(style) && python_only {
+                return Err(error_response(
+                    Some(snap),
+                    &path,
+                    501,
+                    &format!("The gateway cannot translate {style} requests for this engine (an API style only the Python Scheduler has)"),
+                    "not_implemented",
+                ));
+            }
+        }
+        match plan_request(
+            &path,
+            client_body,
+            native,
+            snap.translation_strict,
+            i128::from(adapter.default_max_tokens),
+            &mut SystemEnv,
+        ) {
+            Ok(t) => tr = t,
+            Err(TrError::Translation {
+                message,
+                param,
+                status,
+                error_type,
+            }) => {
+                return Err(style_error(
+                    Some(snap),
+                    &path,
+                    status,
+                    &message,
+                    &error_type,
+                    param.as_deref(),
+                ))
+            }
+            Err(TrError::Py(e)) => {
+                tracing::error!(error = %e, path = %path, "translating the request failed");
+                return Err(translate::internal_error());
+            }
+        }
+    }
+    let (path, body) = match tr.as_ref().filter(|t| !t.passthrough()) {
+        Some(t) => {
+            if let Some(d) = t.dropped_header() {
+                tracing::debug!(from = %path, to = %t.path, dropped = %d, "translated");
+            }
+            (t.path.clone(), t.body.clone())
+        }
+        None => (path, client_body.clone()),
+    };
+    Ok(Planned { tr, path, body })
+}
+
 fn raw_is_empty_object(raw: &Bytes) -> bool {
     serde_json::from_slice::<Value>(raw).is_ok_and(|v| v.as_object().is_some_and(|o| o.is_empty()))
 }
@@ -671,4 +695,104 @@ pub async fn health(State(gw): State<Arc<Gateway>>) -> Response {
     });
     let status = if snap.is_some() { 200 } else { 503 };
     json_response(status, &HeaderMap::new(), Bytes::from(body.to_string()))
+}
+
+/// `POST /_gateway/shadow` (with `--shadow`): the Scheduler's shadow mode
+/// (`swarmpilot/scheduler/shadow.py`). Events come in the order they
+/// happened in the Scheduler: `decide` routes a request the Python proxy
+/// routed, with the draws its strategy made, and keeps the charge under
+/// the Scheduler's task id; `release` takes that charge off when the
+/// Scheduler releases its own. Nothing is sent to an engine.
+pub async fn shadow(State(gw): State<Arc<Gateway>>, body: Bytes) -> Response {
+    let req: Value = match serde_json::from_slice(&body) {
+        Ok(v) => v,
+        Err(e) => {
+            return json_response(
+                400,
+                &HeaderMap::new(),
+                Bytes::from(json!({"detail": e.to_string()}).to_string()),
+            )
+        }
+    };
+    let events = req
+        .get("events")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let results: Vec<Value> = events.iter().map(|ev| gw.shadow_event(ev)).collect();
+    json_response(
+        200,
+        &HeaderMap::new(),
+        Bytes::from(json!({ "results": results }).to_string()),
+    )
+}
+
+/// Every other request to a shadow gateway.
+pub async fn shadow_only() -> Response {
+    json_response(
+        503,
+        &HeaderMap::new(),
+        Bytes::from_static(
+            br#"{"error":{"message":"This gateway runs in shadow mode and serves no traffic","type":"service_unavailable"}}"#,
+        ),
+    )
+}
+
+impl Gateway {
+    fn shadow_event(&self, ev: &Value) -> Value {
+        let task_id = ev.get("task_id").and_then(Value::as_str).unwrap_or("");
+        match ev.get("op").and_then(Value::as_str) {
+            Some("release") => {
+                self.routing.lock().unwrap().release(task_id);
+                json!({})
+            }
+            Some("decide") => match self.shadow_decide(ev, task_id) {
+                Ok(v) => v,
+                Err(e) => json!({ "error": e }),
+            },
+            _ => json!({"error": "unknown op"}),
+        }
+    }
+
+    fn shadow_decide(&self, ev: &Value, task_id: &str) -> Result<Value, String> {
+        let started = Instant::now();
+        let snap = self
+            .snapshot()
+            .ok_or("the gateway has no Scheduler state yet")?;
+        let candidates = self.candidates(&snap);
+        let first = candidates.first().ok_or("No backend instances available")?;
+        let adapter = snap.adapter(&first.software);
+        let path = ev
+            .get("path")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .trim_start_matches('/')
+            .to_string();
+        let client_body = ev.get("body").cloned().unwrap_or_else(|| json!({}));
+        let planned = plan(&snap, &adapter, &Method::POST, path, &client_body)
+            .map_err(|r| format!("the gateway would answer {}", r.status()))?;
+        let info = RequestInfo::new(features::extract(&adapter, &planned.body), &client_body);
+        let recorded = ev
+            .get("draws")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        let (decision, diverged) = {
+            let models = self.models.read().unwrap();
+            self.routing.lock().unwrap().route_with(
+                &snap,
+                &models,
+                &candidates,
+                &info,
+                task_id,
+                Some(recorded),
+            )
+        };
+        Ok(json!({
+            "instance_id": decision.instance_id,
+            "predicted_time_ms": decision.prediction.map(|p| p.predicted_time_ms),
+            "draws_diverged": diverged,
+            "decide_us": started.elapsed().as_secs_f64() * 1e6,
+        }))
+    }
 }

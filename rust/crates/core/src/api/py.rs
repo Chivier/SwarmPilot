@@ -439,7 +439,12 @@ pub fn float_repr(x: f64) -> String {
         };
     }
     // Rust's `{:e}` gives the shortest round-trip digits.
-    let sci = format!("{:e}", x.abs());
+    // Among equally short candidates it may break an exact tie upwards
+    // where Python breaks it to even, so re-round to that many digits:
+    // exact formatting is correctly rounded with ties to even.
+    let short = format!("{:e}", x.abs());
+    let prec = short.split_once('e').unwrap().0.len().saturating_sub(2);
+    let sci = format!("{:.*e}", prec, x.abs());
     let (mant, exp) = sci.split_once('e').unwrap();
     let exp: i32 = exp.parse().unwrap();
     let digits: String = mant.chars().filter(|c| *c != '.').collect();
@@ -579,6 +584,10 @@ mod tests {
             (-2.5e300, "-2.5e+300"),
             (5e-324, "5e-324"),
             (-0.0, "-0.0"),
+            // Exact ties at 17 digits break to even, as in Python.
+            (1690060720831323.0 + 0.25, "1690060720831323.2"),
+            (814943839737735.0 + 0.25, "814943839737735.2"),
+            (814943839737735.0 + 0.75, "814943839737735.8"),
         ] {
             assert_eq!(float_repr(x), want, "{x}");
         }

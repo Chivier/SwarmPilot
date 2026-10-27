@@ -19,6 +19,7 @@ import asyncio
 import json
 import time
 import uuid
+from contextlib import nullcontext
 from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Request, Response
@@ -34,6 +35,7 @@ from swarmpilot.scheduler.services.worker_queue_manager import (
     resolve_adapter,
 )
 from swarmpilot.scheduler.services.worker_queue_thread import QueuedTask
+from swarmpilot.scheduler.shadow import ShadowMirror
 from swarmpilot.scheduler.utils.arrival_counter import (
     PARENT_HEADER,
     PARENT_KEY,
@@ -143,6 +145,8 @@ class ProxyRouter:
         self._callback = task_result_callback
         self._queue_manager = worker_queue_manager
         self._proxy_timeout = proxy_timeout
+        # Set at startup when SCHEDULER_GATEWAY_SHADOW_URL is.
+        self.shadow: ShadowMirror | None = None
 
         self.router = APIRouter()
         self.router.add_api_route(
@@ -219,6 +223,7 @@ class ProxyRouter:
                     path, e.status, e.message, e.error_type, param=e.param
                 )
         client_body = body
+        client_path = path
         if tr is not None and not tr.passthrough:
             path, body = tr.path, tr.body
             if tr.stream and not getattr(
@@ -269,14 +274,31 @@ class ProxyRouter:
                 if _exp_key in client_body:
                     metadata[_exp_key] = client_body[_exp_key]
 
-            schedule_result = await self._scheduling_strategy.schedule_task(
-                model_id=model_id,
-                metadata=metadata,
-                available_instances=all_instances,
-                task_id=task_id,
-            )
+            with (
+                self.shadow.recording()
+                if self.shadow is not None
+                else nullcontext([])
+            ) as draws:
+                started = time.perf_counter()
+                schedule_result = await self._scheduling_strategy.schedule_task(
+                    model_id=model_id,
+                    metadata=metadata,
+                    available_instances=all_instances,
+                    task_id=task_id,
+                )
+                decide_us = (time.perf_counter() - started) * 1e6
             selected_instance_id = schedule_result.selected_instance_id
             prediction = schedule_result.selected_prediction
+            if self.shadow is not None:
+                self.shadow.decided(
+                    task_id=task_id,
+                    path=client_path,
+                    body=client_body,
+                    instance_id=selected_instance_id,
+                    draws=draws,
+                    decide_us=decide_us,
+                    strategy=type(self._scheduling_strategy).__name__,
+                )
 
         except Exception as e:
             logger.opt(exception=True).error(f"[PROXY] Scheduling failed: {e}")

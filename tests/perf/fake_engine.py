@@ -11,8 +11,10 @@ same harness can measure SwarmPilot without a GPU:
 
 Latency is controlled per process with ``--latency-ms`` (time to the full
 response) and ``--tokens`` (number of SSE chunks, spread over that latency).
-A body may override them with ``fake_latency_ms`` and ``fake_tokens``, and
-ask for an error with ``fake_status``.
+A body may override them with ``fake_latency_ms`` and ``fake_tokens``, ask
+for an error with ``fake_status``, and keep a stream open for
+``fake_hold_open_ms`` after its ``[DONE]`` (or ``[[hold_open_ms=N]]`` in a
+message, which survives API style translation).
 
 For black-box tests of whatever sits in front of it, the engine counts
 what it sees: ``GET /_stats`` returns requests per path and the most
@@ -28,6 +30,7 @@ import argparse
 import asyncio
 import json
 import os
+import re
 import time
 
 from starlette.applications import Starlette
@@ -111,6 +114,14 @@ async def _chunks(body: dict, chat: bool, tokens: int, latency_ms: float):
         chunk = {"id": f"fake-{i}", "model": model, "choices": [choice]}
         yield f"data: {json.dumps(chunk)}\n\n".encode()
     yield b"data: [DONE]\n\n"
+    await asyncio.sleep(_hold_open_ms(body) / 1000)
+
+
+def _hold_open_ms(body: dict) -> float:
+    if "fake_hold_open_ms" in body:
+        return float(body["fake_hold_open_ms"])
+    m = re.search(r"\[\[hold_open_ms=(\d+)\]\]", json.dumps(body))
+    return float(m.group(1)) if m else 0.0
 
 
 async def completions(request: Request) -> Response:

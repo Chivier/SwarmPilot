@@ -14,7 +14,7 @@ import time
 from collections.abc import Callable
 from contextlib import asynccontextmanager, suppress
 from datetime import datetime
-from typing import ClassVar
+from typing import Any, ClassVar
 from urllib.parse import parse_qs
 
 import httpx
@@ -38,7 +38,7 @@ from swarmpilot.shared.loop_lag import EventLoopLagMonitor
 
 from . import core as scheduling_core, gateway_control
 from .algorithms import get_strategy, queue_info_type_for
-from .algorithms.base import ScheduleResult
+from .algorithms.base import ScheduleResult, SchedulingStrategy
 from .config import config
 from .models import (
     # Health models
@@ -106,6 +106,7 @@ from .services.worker_queue_manager import (
     resolve_adapter,
 )
 from .services.worker_queue_thread import QueuedTask
+from .shadow import ShadowMirror
 from .utils.arrival_counter import arrival_counter, parent_of
 from .utils.http_error_logger import log_http_error
 
@@ -242,6 +243,16 @@ async def lifespan(app: FastAPI):
             gateway_server = await gateway_control.start_server(
                 _gateway_sources(), config.proxy.gateway_socket
             )
+        global shadow_mirror
+        if config.proxy.gateway_shadow_url and proxy_router_instance:
+            shadow_mirror = ShadowMirror(config.proxy.gateway_shadow_url)
+            shadow_mirror.start()
+            proxy_router_instance.shadow = shadow_mirror
+            instance_registry.release_listeners.append(shadow_mirror.released)
+            logger.info(
+                "Shadow mode: mirroring routing decisions to "
+                f"{config.proxy.gateway_shadow_url}"
+            )
 
         # Start planner reporter (if configured)
         if planner_reporter:
@@ -264,6 +275,8 @@ async def lifespan(app: FastAPI):
         health_task.cancel()
         if gateway_server:
             await gateway_server.stop(1.0)
+        if shadow_mirror:
+            await shadow_mirror.stop()
 
         # Deregister from planner first (if registered) - PYLET-024
         if planner_registrar:
@@ -3192,6 +3205,25 @@ async def get_strategy_endpoint():
     )
 
 
+def install_strategy(new_strategy: SchedulingStrategy) -> None:
+    """Make ``new_strategy`` the one every scheduling path uses.
+
+    The proxy holds its own reference and the worker queue manager is
+    wired into each strategy, so every swap (``POST /v1/strategy/set``,
+    the switch to ``probabilistic`` after training) goes through here.
+    Shadow mode found the proxy still routing with the startup strategy.
+
+    Args:
+        new_strategy: The strategy to install.
+    """
+    global scheduling_strategy
+    if worker_queue_manager is not None:
+        new_strategy.set_worker_queue_manager(worker_queue_manager)
+    scheduling_strategy = new_strategy
+    if proxy_router_instance is not None:
+        proxy_router_instance._scheduling_strategy = new_strategy
+
+
 @app.post("/v1/strategy/set", response_model=StrategySetResponse)
 async def set_strategy_endpoint(request: StrategySetRequest):
     """Set the scheduling strategy for the scheduler.
@@ -3212,8 +3244,6 @@ async def set_strategy_endpoint(request: StrategySetRequest):
         HTTPException 400: If tasks are currently running
         HTTPException 500: If strategy initialization fails
     """
-    global scheduling_strategy
-
     # Check if there are any running tasks
     running_count = await task_registry.get_count_by_status(TaskStatus.RUNNING)
     if running_count > 0:
@@ -3279,8 +3309,7 @@ async def set_strategy_endpoint(request: StrategySetRequest):
             },
         ) from e
 
-    # Update global scheduling strategy
-    scheduling_strategy = new_strategy
+    install_strategy(new_strategy)
 
     # Update config (in-memory only, not persisted)
     config.scheduling.default_strategy = request.strategy_name.value
@@ -3443,6 +3472,18 @@ async def reassign_model(request: Request):
 # ============================================================================
 
 from .routes.predictor import router as predictor_router  # noqa: E402
+
+#: Shadow mode's comparison, when SCHEDULER_GATEWAY_SHADOW_URL is set.
+shadow_mirror: ShadowMirror | None = None
+
+
+@app.get("/v1/gateway/shadow")
+async def gateway_shadow() -> dict[str, Any]:
+    """How the shadow gateway's routing decisions compare with ours."""
+    if shadow_mirror is None:
+        return {"enabled": False}
+    return shadow_mirror.summary()
+
 
 app.include_router(predictor_router, prefix="/v1")
 logger.info("Predictor management router mounted at /v1/predictor")

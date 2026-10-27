@@ -227,6 +227,41 @@ def test_translated_requests_are_answered_and_counted(stack):
     _wait(counted, "completion reports")
 
 
+@pytest.mark.parametrize("plane", ["scheduler", "gateway"])
+def test_engine_holding_its_stream_open_does_not_hold_the_client(stack, plane):
+    """After ``[DONE]`` the engine's body is read for at most 2 s.
+
+    The client gets its answer and the request counts as completed even
+    though the engine keeps the stream open for a minute.
+    """
+    wait_gateway_instances(stack.gateway, 1)
+    before = stack.info("fake-0")["stats"]
+    t0 = time.monotonic()
+    r = httpx.post(
+        f"{getattr(stack, plane)}/v1/messages",
+        json={
+            "model": "fake-model",
+            "max_tokens": 8,
+            "stream": True,
+            # Body fields are dropped in translation; the message is not.
+            "messages": [{"role": "user", "content": "[[hold_open_ms=60000]]"}],
+        },
+        timeout=30,
+    )
+    assert r.status_code == 200
+    assert "event: message_stop" in r.text
+    assert time.monotonic() - t0 < 10
+
+    def counted() -> bool:
+        stats = stack.info("fake-0")["stats"]
+        return (
+            stats["completed_tasks"] == before["completed_tasks"] + 1
+            and stats["failed_tasks"] == before["failed_tasks"]
+        )
+
+    _wait(counted, "completion report")
+
+
 def test_completions_are_counted_on_the_instance(stack):
     before = stack.info("fake-0")["stats"]
     for status in (200, 200, 500):

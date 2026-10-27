@@ -1342,6 +1342,26 @@ class TestStrategyManagement:
         assert data["reinitialized_instances"] == 0
         assert "Successfully switched" in data["message"]
 
+    def test_set_strategy_reaches_the_proxy(self, client):
+        """The proxy routes with the new strategy, not the startup one."""
+        from swarmpilot.scheduler import api
+
+        if api.proxy_router_instance is None:
+            pytest.skip("proxy disabled")
+        response = client.post(
+            "/v1/strategy/set", json={"strategy_name": "round_robin"}
+        )
+        assert response.status_code == 200
+        assert (
+            api.proxy_router_instance._scheduling_strategy
+            is api.scheduling_strategy
+        )
+        if api.worker_queue_manager is not None:
+            assert (
+                api.scheduling_strategy._worker_queue_manager
+                is api.worker_queue_manager
+            )
+
     def test_set_strategy_to_round_robin(self, client):
         """Test switching to round_robin strategy."""
         response = client.post(

@@ -190,6 +190,13 @@ The single-process Python fake engine limits throughput at high
 concurrency; the added P99 at concurrency 1 sits at the 0.5 ms budget
 of plan item 0.1, within this machine's noise.
 
+Streams: the gateway first accepted client connections without
+`TCP_NODELAY`, so from concurrency 8 up every SSE answer waited about
+40 ms on the client's delayed ACK (throughput 0.27 of direct at 64).
+uvicorn sets it on every connection; the gateway now does too (R3c), and
+streams at 64 add 1 ms P50 at 0.93 of direct
+(`tests/perf/baselines/proxy-r3c-gateway.json`, Messages clients).
+
 ### Drift guards for the gateway
 
 - **Dispatch conformance** (`tests/conformance/test_dispatch_conformance.py`):
@@ -269,6 +276,96 @@ the engine's body was never read to the end and the request counted as
 failed (no throughput, no training sample). `Translation.stream_response`
 now reads the rest of the engine's body after the client's stream ends.
 
+That read has a deadline (R3c): once the client has the whole answer the
+request counts as completed, and an engine that keeps its body open is
+cut off after 2 s (`DRAIN_TIMEOUT_S` in `swarmpilot/api/translate.py`,
+`DRAIN_TIMEOUT` in the gateway) instead of holding the client until the
+proxy timeout. In Python the read used to be cut short anyway: the
+abandoned decoder was garbage collected and closed the engine's stream
+first, so its connection was never reused.
+
+### Shadow mode (R3c)
+
+Before the gateway takes a public port, it can follow a Scheduler that
+keeps serving every request itself:
+
+```bash
+SCHEDULER_GATEWAY_SOCKET=/tmp/gw.sock \
+SCHEDULER_GATEWAY_SHADOW_URL=http://127.0.0.1:8090 \
+  sscheduler start --port 8000
+swarmpilot-gateway --control /tmp/gw.sock --listen 127.0.0.1:8090 --shadow
+curl localhost:8000/v1/gateway/shadow
+```
+
+The Python proxy mirrors each routing decision to
+`POST /_gateway/shadow` (`swarmpilot/scheduler/shadow.py`). The gateway
+routes the same request (translation, features, predictions, strategy)
+on its own state, keeps the charge under the Scheduler's task id, and
+answers with the instance it would have chosen; it sends nothing to an
+engine and answers any other request with 503. Two things make every
+strategy comparable decision by decision, random ones included:
+
+- the draws the Python strategy made (`probabilistic` samples, `po2`
+  pairs, `random` picks) are recorded (`RecordingRng`) and replayed in
+  the gateway instead of its own generator;
+- decisions and charge releases go over one ordered channel, in the order
+  they happened, so the gateway's sketches take and lose the same charges.
+
+What can still differ is what the shadow is for: predictions, sketches,
+strategy code, and state the gateway has not received yet.
+`GET /v1/gateway/shadow` reports decisions, matches, the mismatch rate
+(the plan's bar: under 1%), errors, dropped events, draws that did not
+replay, decision times on both sides, and the last 50 mismatches.
+Requests submitted outside the proxy (`/v1/task/submit`) and tasks moved
+off a removed instance charge the Scheduler's sketches without being
+mirrored, so expect mismatches around them.
+
+`tests/conformance/test_shadow.py` runs every strategy through a shadow
+gateway and requires zero mismatches; it fails if the gateway ignores
+the replayed draws or misses releases. Shadow mode found one Python bug:
+`POST /v1/strategy/set` replaced the Scheduler's strategy but not the
+proxy's, which kept routing with the startup strategy (fixed).
+
+### Cluster A/B (R3c)
+
+`tests/perf/ab_cluster.py` runs the 256-instance spec
+(`swarmpilot/sim/specs/default-256.yaml`: 6 models, 9 hardware
+configurations) as virtual engines with one Scheduler per model, trains
+the predictors (round_robin, 150 s), and replays one seeded open-loop
+stream under adaptive_bootstrap three times: Python proxy with a shadow
+gateway, the gateway serving, and Python again for the run-to-run noise
+floor. Each model's engines run on their own time scale (wall rate 12
+req/s per model, 12-30% of the simulated capacity), and latencies are
+reported in simulated time. Results
+(`tests/perf/baselines/ab-256-r3c.json`, 4-vCPU container):
+
+| Model (instances) | Shadow mismatches | Latency KS, gateway slower / noise | Hardware share TVD | P50 / P99 ms, Python → gateway |
+|---|---|---|---|---|
+| llama-3.1-8b (32) | 0 / 2155 | 0.007 / 0.012 | 0 | 414 / 2021 → 409 / 2029 |
+| llama-3.1-70b (16, 2 configs) | 0 / 2101 | 0.008 / 0.013 | 0 | 1209 / 6016 → 1211 / 5721 |
+| qwen2.5-7b (104, 3 configs) | 0 / 2236 | 0.006 / 0.005 | 0.0005 | 655 / 6393 → 658 / 6380 |
+| llama-3.2-3b (40) | 0 / 2293 | 0.001 / 0.001 | 0 | 897 / 4548 → 896 / 4548 |
+| sdxl (32) | 0 / 2130 | 0.001 / 0.022 | 0 | 6715 / 19353 → 6695 / 19324 |
+| generic-small (32) | 0 / 2174 | 0.068 / 0.099 | 0 | 228 / 627 → 198 / 1069 |
+
+The one request that failed (Python run, generic-small) was a
+client-side connection reset with no status, the harness's known
+keep-alive race. Bars, all met: every decision compared (no shadow
+errors or drops) with mismatches under 1% (none in 13,089 decisions, or
+in the 13,090 of the noise run), success rate no lower, the gateway's
+latency no slower than Python's own noise allows (one-sided KS at most
+1.5 times the Python-to-Python KS, floor 0.05), and hardware shares
+within 1.5 times the noise (floor 0.02). P99 has no bar of its own:
+the KS bar covers the whole distribution, and a tail of a few hundred
+requests is too noisy to judge alone. Faster does not fail: on SDXL
+(time scale 0.075) the gateway's lower overhead shows in simulated time.
+The generic engine's latency varies widely between runs (Python's own
+P99 was 627 and 745 ms); a repeat of that model alone gave the gateway
+198 / 527 ms against Python's 299 / 633 ms.
+
+Decision time per request, from the shadow comparison: Python 0.14-2.4
+ms at P50 (2.3 ms on the 104-instance model), the gateway 27-101 µs.
+
 ### Not yet in the gateway (R3a)
 
 - API styles that exist only as Python plugins (501, see above).
@@ -279,8 +376,9 @@ now reads the rest of the engine's body after the client's stream ends.
   predictions in the gateway (routing falls back as on a cold model).
 - Requests are not in the Scheduler's task registry (`/v1/task/...`).
 - Strategies that draw random numbers (probabilistic, po2, random,
-  adaptive_bootstrap with trained models) use the gateway's own RNG, so
-  their decisions match Python in distribution, not one for one.
+  adaptive_bootstrap with trained models) use the gateway's own RNG when
+  it serves traffic, so their decisions match Python in distribution,
+  not one for one (shadow mode replays Python's draws instead).
 - State changes reach the gateway within 0.2 s.
 - Like the Python proxy, the gateway calls the engine on the path alone
   and drops the query string; changing that means changing both.
@@ -293,7 +391,7 @@ now reads the rest of the engine's body after the client's stream ends.
 | R2 (done) | 4.7 | Predictor inference in Rust: load the safetensors + JSON model files (1.7) and run the MLPs; preprocessing stays in Python | Recorded predictions within 1e-5 of torch on every model kind; differential tests; routing sim with trained predictors, P95 within 5% |
 | R3a (done) | 5.0, 1.8 | `swarmpilot-gateway`: proxy, routing with its own RNG, predictor and experiment mode, dispatch, SSE; gRPC control channel. Go/no-go (0.1): the Python proxy added 2.4 ms P99 at concurrency 1 and 153 ms at 64 | Conformance on both data planes, control channel end to end, routing A/B identical on deterministic strategies, overhead benchmark |
 | R3b (done) | 5.0 | API style translation in the gateway: canonical model, three styles, streams, `plan_request` in `swarmpilot_core::api` | Differential fuzzing against `swarmpilot/api`; translation matrix and byte A/B on both data planes |
-| R3c | 5.8 | Shadow mode and the emulated-cluster A/B on the 256-instance spec | Decision and latency distributions within bars |
+| R3c (done) | 5.8 | Shadow mode (decide-only gateway, Python's draws replayed) and the emulated-cluster A/B on the 256-instance spec; SSE `TCP_NODELAY`; drain deadline | Zero shadow mismatches on every strategy (conformance) and at cluster scale; latency and placement within Python's run-to-run noise |
 | R4 | 8.6 | Published `swarmpilot-core` wheels, static gateway binary, signatures and SBOM | Wheel and binary run the same CI suites |
 
 `SCHEDULER_CORE` defaults to `python` until R2 lands and the Gate A
