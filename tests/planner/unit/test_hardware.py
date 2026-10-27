@@ -91,7 +91,10 @@ def _worker(wid, host, free):
 
 
 def _manager(resolver):
-    mgr = InstanceManager("http://pylet:1", "http://sched:1", hardware=resolver)
+    # GPU-level placement: several instances per worker.
+    mgr = InstanceManager(
+        "http://pylet:1", "http://sched:1", hardware=resolver, whole_nodes=False
+    )
     mgr._initialized = True
     mgr.pylet_client = MagicMock()
     return mgr
@@ -214,11 +217,11 @@ class TestWholeNodes:
             for c in mgr.pylet_client.deploy_model.call_args_list
         ]
 
-    def test_env_turns_it_on(self, monkeypatch):
-        monkeypatch.setenv("PLANNER_WHOLE_NODES", "true")
+    def test_on_by_default_env_turns_it_off(self, monkeypatch):
+        monkeypatch.delenv("PLANNER_WHOLE_NODES", raising=False)
         mgr = InstanceManager("http://pylet:1", "http://sched:1")
         assert mgr.whole_nodes is True
-        monkeypatch.delenv("PLANNER_WHOLE_NODES")
+        monkeypatch.setenv("PLANNER_WHOLE_NODES", "false")
         assert InstanceManager("http://p:1", "http://s:1").whole_nodes is False
 
     def test_each_replica_takes_the_smallest_free_worker_whole(self):

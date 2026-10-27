@@ -183,7 +183,7 @@ class InstanceManager:
             hardware: Resolves each worker's hardware name; built from
                 ``PLANNER_HARDWARE_MAP`` if None.
             whole_nodes: Give each instance a whole worker (env
-                ``PLANNER_WHOLE_NODES``, default false): at most one
+                ``PLANNER_WHOLE_NODES``, default true): at most one
                 instance per worker, holding all its GPUs, and a model's
                 GPU count is the fewest a worker must have.
         """
@@ -205,7 +205,7 @@ class InstanceManager:
         )
         self.hardware = hardware or HardwareResolver(default=hardware_name)
         if whole_nodes is None:
-            whole_nodes = os.getenv("PLANNER_WHOLE_NODES", "false").lower() in (
+            whole_nodes = os.getenv("PLANNER_WHOLE_NODES", "true").lower() in (
                 "1",
                 "true",
                 "yes",
