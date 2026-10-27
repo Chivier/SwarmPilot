@@ -27,7 +27,9 @@ import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from itertools import pairwise
+from typing import Any
 
+from swarmpilot.scheduler import core
 from swarmpilot.scheduler.models import (
     InstanceQueueBase,
     InstanceQueueExpectError,
@@ -131,6 +133,9 @@ def apply(
     Returns:
         The updated sketch; values never go below zero.
     """
+    rc = core.rust()
+    if rc is not None:
+        return _apply_rust(rc, queue, charge, sign, servers)
     scale = sign / max(1, servers)
     if isinstance(queue, InstanceQueueProbabilistic):
         task = charge.at(queue.quantiles)
@@ -146,12 +151,54 @@ def apply(
             values=values,
         )
     if isinstance(queue, InstanceQueueExpectError):
-        var = queue.error_margin_ms**2 + sign * (scale * charge.error_ms) ** 2
+        # x * x, not x ** 2: libm's pow is not always correctly rounded,
+        # and the Rust core must match to the last bit.
+        err = scale * charge.error_ms
+        var = queue.error_margin_ms * queue.error_margin_ms + sign * (err * err)
         return InstanceQueueExpectError(
             instance_id=queue.instance_id,
             expected_time_ms=max(
                 0.0, queue.expected_time_ms + scale * charge.time_ms
             ),
             error_margin_ms=math.sqrt(max(0.0, var)),
+        )
+    return queue
+
+
+def _apply_rust(
+    rc: Any,
+    queue: InstanceQueueBase,
+    charge: Charge,
+    sign: int,
+    servers: int,
+) -> InstanceQueueBase:
+    """:func:`apply` computed by the Rust core."""
+    servers = min(max(1, servers), 2**32 - 1)
+    if isinstance(queue, InstanceQueueProbabilistic):
+        return InstanceQueueProbabilistic(
+            instance_id=queue.instance_id,
+            quantiles=queue.quantiles,
+            values=rc.apply_probabilistic(
+                queue.values,
+                queue.quantiles,
+                charge.time_ms,
+                charge.quantiles,
+                sign,
+                servers,
+            ),
+        )
+    if isinstance(queue, InstanceQueueExpectError):
+        expected, error = rc.apply_expect_error(
+            queue.expected_time_ms,
+            queue.error_margin_ms,
+            charge.time_ms,
+            charge.error_ms,
+            sign,
+            servers,
+        )
+        return InstanceQueueExpectError(
+            instance_id=queue.instance_id,
+            expected_time_ms=expected,
+            error_margin_ms=error,
         )
     return queue

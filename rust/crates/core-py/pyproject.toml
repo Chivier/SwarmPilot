@@ -1,0 +1,23 @@
+[build-system]
+requires = ["maturin>=1.7,<2"]
+build-backend = "maturin"
+
+[project]
+name = "swarmpilot-core"
+version = "0.1.0"
+description = "Rust scheduling core for SwarmPilot (SCHEDULER_CORE=rust)"
+requires-python = ">=3.11"
+
+[tool.maturin]
+features = ["extension-module"]
+module-name = "swarmpilot_core"
+
+[tool.uv]
+# Rebuild the extension when the Rust sources change.
+cache-keys = [
+  { file = "pyproject.toml" },
+  { file = "Cargo.toml" },
+  { file = "src/**/*.rs" },
+  { file = "../core/Cargo.toml" },
+  { file = "../core/src/**/*.rs" },
+]

@@ -6325,6 +6325,9 @@ analysis = [
     { name = "tiktoken" },
     { name = "tomli-w" },
 ]
+core = [
+    { name = "swarmpilot-core" },
+]
 diffusion = [
     { name = "accelerate" },
     { name = "diffusers", version = "0.36.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-10-swarmpilot-sglang'" },
@@ -6382,6 +6385,7 @@ requires-dist = [
     { name = "requests", marker = "extra == 'analysis'", specifier = ">=2.32.5" },
     { name = "scipy", specifier = ">=1.16.3" },
     { name = "sglang", extras = ["all"], marker = "extra == 'sglang'", specifier = ">=0.4" },
+    { name = "swarmpilot-core", marker = "extra == 'core'", directory = "rust/crates/core-py" },
     { name = "tiktoken", marker = "extra == 'analysis'", specifier = ">=0.12.0" },
     { name = "tomli-w", marker = "extra == 'analysis'", specifier = ">=1.2.0" },
     { name = "torch", specifier = ">=2.0.0" },
@@ -6391,7 +6395,7 @@ requires-dist = [
     { name = "vllm", marker = "extra == 'vllm'", specifier = "==0.11.0" },
     { name = "websockets", specifier = ">=12.0" },
 ]
-provides-extras = ["vllm", "sglang", "diffusion", "analysis"]
+provides-extras = ["vllm", "sglang", "diffusion", "analysis", "core"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -6409,6 +6413,11 @@ dev = [
     { name = "respx", specifier = ">=0.22.0" },
     { name = "ruff", specifier = ">=0.8.0" },
 ]
+
+[[package]]
+name = "swarmpilot-core"
+version = "0.1.0"
+source = { directory = "rust/crates/core-py" }
 
 [[package]]
 name = "sympy"

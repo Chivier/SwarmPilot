@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from swarmpilot.scheduler import core
 from swarmpilot.scheduler.algorithms.base import SchedulingStrategy
 from swarmpilot.scheduler.clients.models import Prediction
 
@@ -87,6 +88,27 @@ class ProbabilisticSchedulingStrategy(SchedulingStrategy):
 
         # Generate all random percentiles at once (shared across all instances)
         random_percentiles = self._rng.random(num_samples)
+
+        rc = core.rust()
+        if rc is not None:
+            k = rc.select_probabilistic(
+                [p.instance_id for p in predictions],
+                [p.predicted_time_ms for p in predictions],
+                [
+                    sorted(p.quantiles.items()) if p.quantiles else None
+                    for p in predictions
+                ],
+                [
+                    (q.quantiles, q.values)
+                    if isinstance(q, InstanceQueueProbabilistic)
+                    else None
+                    for q in (
+                        queue_info.get(p.instance_id) for p in predictions
+                    )
+                ],
+                random_percentiles.tolist(),
+            )
+            return predictions[k].instance_id
 
         # Build combined time matrix: shape (num_instances, num_samples)
         # Each entry = prediction_time + queue_time

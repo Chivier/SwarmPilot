@@ -49,6 +49,9 @@ analysis = [
     "datasets>=4.4.1",
     "tomli-w>=1.2.0",
 ]
+# Rust scheduling core (SCHEDULER_CORE=rust); builds from rust/ and
+# needs a Rust toolchain until wheels are published.
+core = ["swarmpilot-core"]
 
 [project.scripts]
 sscheduler = "swarmpilot.scheduler.cli:app"
@@ -78,6 +81,7 @@ conflicts = [
 package = true
 
 [tool.uv.sources]
+swarmpilot-core = { path = "rust/crates/core-py" }
 
 [dependency-groups]
 dev = [

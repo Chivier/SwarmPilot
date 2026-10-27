@@ -6,6 +6,7 @@ lower expected queue completion time.
 
 from typing import TYPE_CHECKING
 
+from swarmpilot.scheduler import core
 from swarmpilot.scheduler.algorithms.base import SchedulingStrategy
 from swarmpilot.scheduler.clients.models import Prediction
 
@@ -61,6 +62,19 @@ class PowerOfTwoStrategy(SchedulingStrategy):
             if isinstance(queue, InstanceQueueExpectError):
                 return queue.expected_time_ms + pred.predicted_time_ms
             return pred.predicted_time_ms
+
+        rc = core.rust()
+        if rc is not None:
+            queues = [
+                q.expected_time_ms
+                if isinstance(q, InstanceQueueExpectError)
+                else None
+                for q in (
+                    queue_info.get(instance_1),
+                    queue_info.get(instance_2),
+                )
+            ]
+            return (instance_1, instance_2)[rc.select_po2(queues, 0, 1)]
 
         total_time_1 = total(queue_info.get(instance_1), pred_1)
         total_time_2 = total(queue_info.get(instance_2), pred_2)

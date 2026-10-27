@@ -1,6 +1,9 @@
 [workspace]
 resolver = "2"
-members = ["crates/sim-core", "crates/sim-cli", "crates/sim-cluster"]
+members = ["crates/core", "crates/core-py", "crates/sim-core", "crates/sim-cli", "crates/sim-cluster"]
+# The Python extension builds through maturin (`uv sync --extra core`);
+# plain cargo build/test leave it out, so they never link libpython.
+default-members = ["crates/core", "crates/sim-core", "crates/sim-cli", "crates/sim-cluster"]
 
 [workspace.package]
 version = "0.1.0"

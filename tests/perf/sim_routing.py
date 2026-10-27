@@ -37,8 +37,8 @@ from swarmpilot.scheduler.models import (
 from swarmpilot.scheduler.registry.instance_registry import InstanceRegistry
 
 N_INST = 8
-N_TASKS = int(sys.argv[1]) if len(sys.argv) > 1 else 3000
-LOAD = float(sys.argv[2]) if len(sys.argv) > 2 else 0.8
+N_TASKS = 3000
+LOAD = 0.8
 PLAT = {
     "software_name": "exp",
     "software_version": "exp",
@@ -46,17 +46,21 @@ PLAT = {
 }
 
 
-def workload(seed=0):
+def workload(seed=0, n_tasks=None, load=None):
+    n_tasks = N_TASKS if n_tasks is None else n_tasks
+    load = LOAD if load is None else load
     rng = np.random.default_rng(seed)
-    means = rng.lognormal(mean=np.log(1000), sigma=1.0, size=N_TASKS)
+    means = rng.lognormal(mean=np.log(1000), sigma=1.0, size=n_tasks)
     sig = np.sqrt(np.log(1 + 0.3**2))
-    actual = means * rng.lognormal(-(sig**2) / 2, sig, size=N_TASKS)
-    rate = LOAD * N_INST / actual.mean()
-    arrivals = np.cumsum(rng.exponential(1 / rate, size=N_TASKS))
+    actual = means * rng.lognormal(-(sig**2) / 2, sig, size=n_tasks)
+    rate = load * N_INST / actual.mean()
+    arrivals = np.cumsum(rng.exponential(1 / rate, size=n_tasks))
     return means, actual, arrivals
 
 
-async def run(strategy, mode, means, actual, arrivals):
+async def run(strategy, mode, means, actual, arrivals, chosen_out=None):
+    """Route every task; ``chosen_out`` receives each task's instance."""
+    n_tasks = len(arrivals)
     qtype = (
         "probabilistic"
         if strategy in ("probabilistic", "adaptive_bootstrap")
@@ -79,7 +83,7 @@ async def run(strategy, mode, means, actual, arrivals):
     free_at = [0.0] * N_INST
     pending = []  # heap of (finish_time, task index)
     lat, chosen = [], []
-    for t in range(N_TASKS):
+    for t in range(n_tasks):
         now = arrivals[t]
         while pending and pending[0][0] <= now:
             _, done = heapq.heappop(pending)
@@ -101,8 +105,10 @@ async def run(strategy, mode, means, actual, arrivals):
             residual = max(residual, *q.values)
         elif isinstance(q, InstanceQueueExpectError):
             residual = max(residual, q.expected_time_ms)
+    if chosen_out is not None:
+        chosen_out.extend(chosen)
     lat = np.array(lat) / 1000
-    share = np.bincount(chosen, minlength=N_INST) / N_TASKS
+    share = np.bincount(chosen, minlength=N_INST) / n_tasks
     return {
         "strategy": strategy,
         "mode": mode,
@@ -118,7 +124,7 @@ def oracle_jsq(means, actual, arrivals):
     """Reference: send each task to the instance with least true backlog."""
     free_at = [0.0] * N_INST
     lat = []
-    for t in range(N_TASKS):
+    for t in range(len(arrivals)):
         now = arrivals[t]
         k = int(np.argmin([max(f, now) for f in free_at]))
         start = max(now, free_at[k])
@@ -154,4 +160,9 @@ async def main():
         print(json.dumps(r))
 
 
-asyncio.run(main())
+if __name__ == "__main__":
+    if len(sys.argv) > 1:
+        N_TASKS = int(sys.argv[1])
+    if len(sys.argv) > 2:
+        LOAD = float(sys.argv[2])
+    asyncio.run(main())
