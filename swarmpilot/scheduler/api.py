@@ -38,8 +38,7 @@ from swarmpilot.shared.loop_lag import EventLoopLagMonitor
 
 from . import core as scheduling_core, gateway_control
 from .algorithms import get_strategy, queue_info_type_for
-from .algorithms.base import SchedulingStrategy
-from .algorithms.base import ScheduleResult
+from .algorithms.base import ScheduleResult, SchedulingStrategy
 from .config import config
 from .models import (
     # Health models
