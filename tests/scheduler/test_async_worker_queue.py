@@ -244,7 +244,11 @@ class TestAsyncWorkerQueue:
 
     async def test_lost_connection_goes_to_on_lost(self, engine, session):
         results, lost = [], []
-        adapter = _FlakyAdapter(fail=1, exc=aiohttp.ServerDisconnectedError)
+        adapter = _FlakyAdapter(
+            fail=1,
+            exc=aiohttp.ServerDisconnectedError,
+            routes=(RouteSpec("v1/completions", rerun_safe=True),),
+        )
         q = _queue(
             engine,
             session,
@@ -257,6 +261,28 @@ class TestAsyncWorkerQueue:
         await _wait(lambda: len(lost) == 1)
         assert results == [] and lost[0].reroutes == 1
         assert q.in_flight() == 0
+        q.stop()
+
+    async def test_lost_connection_not_rerun_unless_rerun_safe(
+        self, engine, session
+    ):
+        results, lost = [], []
+        adapter = _FlakyAdapter(
+            fail=1,
+            exc=aiohttp.ServerDisconnectedError,
+            routes=(RouteSpec("v1/completions"),),
+        )
+        q = _queue(
+            engine,
+            session,
+            results,
+            adapter=adapter,
+            on_lost=lambda wid, tasks: lost.extend(tasks),
+        )
+        q.start()
+        q.enqueue(_task(0))
+        await _wait(lambda: len(results) == 1)
+        assert lost == [] and results[0].status == "failed"
         q.stop()
 
     async def test_503_goes_to_on_lost_until_max_reroutes(

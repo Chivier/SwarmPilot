@@ -462,3 +462,49 @@ class TestShapes:
         plan = opt.plan(service.instances, slots=slots)
         assert plan is not None
         assert plan.place == {"small": ("s1",)}
+
+
+class TestShapeRegressions:
+    """Cases from the review of the shape-aware loop."""
+
+    def test_floor_swap_never_moves_a_pinned_model_off_its_hardware(self):
+        shapes = {"m": (1, None), "n": (1, None), "pin": (1, "A100*")}
+        exec_s = {}
+        for model in shapes:
+            exec_s[(model, FAST)] = 1.0
+            exec_s[(model, SLOW)] = 4.0
+        layouts = [
+            [("m", FAST), ("n", SLOW), ("n", SLOW), ("n", FAST), ("pin", FAST)],
+            [("m", FAST), ("n", SLOW), ("n", SLOW), ("pin", FAST)],
+        ]
+        for layout in layouts:
+            for rates in (
+                {"m": 0.3, "n": 0.1, "pin": 3.0},
+                {"m": 1.0, "n": 0.1, "pin": 5.0},
+            ):
+                service = _ShapedService(layout, shapes)
+                store = _store(service, exec_s, rates)
+                opt = _opt(store, service, target_concurrency=1)
+                opt.speeds.observe([("m", FAST, 1.0), ("m", SLOW, 4.0)])
+                plan = opt.plan(service.instances, slots=[])
+                if plan is None:
+                    continue
+                hw = {i.worker_id: i.hardware for i in service.instances}
+                assert all(hw[w] == FAST for w in plan.place.get("pin", ()))
+
+    def test_count_path_grows_models_of_any_shape(self):
+        for shapes in (
+            {"small": (2, None), "big": (2, None)},
+            {"small": (1, None), "big": (1, "A100*")},
+        ):
+            service = _ShapedService([("small", FAST), ("big", FAST)], shapes)
+            store = _store(service, SHAPED_EXEC, {"small": 0.1, "big": 4.0})
+            opt = _opt(
+                store,
+                service,
+                hardware_aware=False,
+                elastic=True,
+                target_concurrency=1,
+            )
+            plan = opt.plan(service.instances, spare=4)
+            assert plan is not None and plan.target_state["big"] > 1

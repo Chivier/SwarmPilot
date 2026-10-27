@@ -142,7 +142,8 @@ class AsyncWorkerQueue:
                 them. Without it, the queue retries the same instance.
             on_lost: Called with the instance id and a task whose engine
                 went away before answering it: the connection was lost
-                after sending, or the engine answered 503. Nothing has
+                after sending (routes marked ``rerun_safe`` only), or the
+                engine answered 503. Nothing has
                 reached the client yet (a stream had not started), so the
                 caller can run it on another instance; the task is not
                 reported through ``callback``. Without it, or after
@@ -389,6 +390,16 @@ class AsyncWorkerQueue:
                 f"on_unreachable failed for {self.worker_id}: {cb_err}"
             )
 
+    def _may_rerun(self, task: QueuedTask) -> bool:
+        """Whether a request lost after sending may run again elsewhere.
+
+        The engine may have acted on it before it died, so only routes
+        the adapter marks ``rerun_safe`` (stateless inference) are; a
+        503 means the engine refused it and is always resent.
+        """
+        route = self._adapter.route(task.metadata.get("path", ""))
+        return route is not None and route.may_rerun
+
     def _resend_elsewhere(self, task: QueuedTask, why: str) -> bool:
         """Give a task whose engine went away to ``on_lost``.
 
@@ -435,6 +446,7 @@ class AsyncWorkerQueue:
             if (
                 isinstance(e, _LOST)
                 and not isinstance(e, _UNREACHABLE)
+                and self._may_rerun(task)
                 and self._resend_elsewhere(task, type(e).__name__)
             ):
                 return

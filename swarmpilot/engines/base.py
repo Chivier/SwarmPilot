@@ -134,6 +134,10 @@ class RouteSpec:
         streaming: Whether the route can answer with SSE.
         lightweight: Metadata routes that skip the queue.
         retry_safe: Whether re-sending after a lost response is harmless.
+        rerun_safe: Whether a request whose engine died with it open may
+            run again on another instance (stateless inference: the
+            client gets one answer, the lost one never arrives). None
+            takes ``retry_safe``.
     """
 
     path: str
@@ -142,6 +146,12 @@ class RouteSpec:
     streaming: bool = False
     lightweight: bool = False
     retry_safe: bool = False
+    rerun_safe: bool | None = None
+
+    @property
+    def may_rerun(self) -> bool:
+        """``rerun_safe``, defaulting to ``retry_safe``."""
+        return self.retry_safe if self.rerun_safe is None else self.rerun_safe
 
 
 @dataclass(frozen=True)

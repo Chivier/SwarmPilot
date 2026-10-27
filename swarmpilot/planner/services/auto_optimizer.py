@@ -451,15 +451,22 @@ class AutoOptimizer:
                 if self.algorithm == "integer_programming":
                     moves += size - M
                 a = min(1.0, (moves + 1e-9) / size)
-            # Machines are counted, not placed, so one changes model only
-            # to a model of the same shape (GPUs and hardware pattern);
-            # new ones are places of one GPU of any kind.
+            # Machines are counted, not placed, so one that runs a model
+            # changes only to a model of the same shape (GPUs and hardware
+            # pattern). New places are free GPUs counted in the default
+            # GPU count; any model may take one, and what does not fit is
+            # reported by the deploy (the hardware-aware loop places by
+            # shape).
             reqs = self._requirements(models)
-            shape = [reqs[models[j]] if j >= 0 else _ANY for j in initial]
+            shape = [reqs[models[j]] if j >= 0 else None for j in initial]
             B = np.tile(throughput, (size, 1))
             for i in range(size):
                 for j, m in enumerate(models):
-                    if j != initial[i] and reqs[m] != shape[i]:
+                    if (
+                        shape[i] is not None
+                        and j != initial[i]
+                        and reqs[m] != shape[i]
+                    ):
                         B[i, j] = 0
             optimizer = create_optimizer(
                 self.algorithm,
@@ -477,6 +484,7 @@ class AutoOptimizer:
                 (
                     int(j)
                     if j == initial[i]
+                    or shape[i] is None
                     or (j >= 0 and reqs[models[j]] == shape[i])
                     else int(initial[i])
                 )
@@ -809,8 +817,15 @@ class AutoOptimizer:
             for i in range(M):
                 if deployment[i] < 0 or not ok(i, deployment[i]):
                     deployment[i] = initial[i]
-            self._keep_fastest(deployment, initial, machine_speed, floor, index)
+            self._keep_fastest(
+                deployment, initial, machine_speed, floor, index, ok
+            )
             _undo_needless_moves(deployment, initial, machine_speed, ok)
+            # Whatever the passes above did, no machine ends on a model
+            # it cannot run.
+            for i in range(M):
+                if not ok(i, deployment[i]):
+                    deployment[i] = initial[i]
 
         changed = [
             i for i in range(len(deployment)) if deployment[i] != initial[i]
@@ -1063,6 +1078,7 @@ class AutoOptimizer:
         speed: np.ndarray,
         floor: dict[str, int],
         index: dict[str, int],
+        ok=lambda i, j: True,
     ) -> None:
         """Keep each model's floor on machines that do not move.
 
@@ -1070,7 +1086,8 @@ class AutoOptimizer:
         all its machines for others serves nothing in between. A model
         below its floor of unmoved machines keeps its slowest outgoing
         one, and the machine coming to it that is closest in speed goes
-        to that machine's new model instead, so both keep their capacity.
+        to that machine's new model instead, so both keep their capacity,
+        if it can run that model (``ok(machine, model index)``).
         """
         for m, need in floor.items():
             j = index[m]
@@ -1091,7 +1108,9 @@ class AutoOptimizer:
                 incoming = [
                     x
                     for x in range(len(deployment))
-                    if deployment[x] == j and initial[x] != j
+                    if deployment[x] == j
+                    and initial[x] != j
+                    and ok(x, deployment[i])
                 ]
                 if incoming:
                     x = min(incoming, key=lambda x: abs(speed[x] - speed[i]))
