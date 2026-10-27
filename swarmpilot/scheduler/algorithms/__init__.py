@@ -11,7 +11,10 @@ from swarmpilot.scheduler.algorithms.base import (
     ScheduleResult,
     SchedulingStrategy,
 )
-from swarmpilot.scheduler.algorithms.factory import get_strategy
+from swarmpilot.scheduler.algorithms.factory import (
+    get_strategy,
+    queue_info_type_for,
+)
 from swarmpilot.scheduler.algorithms.min_expected_time import (
     MinimumExpectedTimeStrategy,
 )
@@ -36,4 +39,5 @@ __all__ = [
     "ScheduleResult",
     "SchedulingStrategy",
     "get_strategy",
+    "queue_info_type_for",
 ]

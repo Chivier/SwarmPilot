@@ -29,6 +29,25 @@ if TYPE_CHECKING:
     from swarmpilot.scheduler.registry.instance_registry import InstanceRegistry
 
 
+# Strategies that compare instances by expected queue time read
+# expect-error queue sketches; every other strategy reads probabilistic ones.
+EXPECT_ERROR_STRATEGIES = frozenset({"min_time", "po2", "serverless"})
+
+
+def queue_info_type_for(strategy_name: str) -> str:
+    """Return the queue sketch kind a strategy reads.
+
+    Args:
+        strategy_name: Strategy name as given to :func:`get_strategy`.
+
+    Returns:
+        "expect_error" or "probabilistic".
+    """
+    if strategy_name in EXPECT_ERROR_STRATEGIES:
+        return "expect_error"
+    return "probabilistic"
+
+
 def get_strategy(
     strategy_name: str,
     predictor_client: "PredictorClient",
