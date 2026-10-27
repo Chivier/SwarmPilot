@@ -12,7 +12,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use axum::extract::DefaultBodyLimit;
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::serve::ListenerExt;
 use axum::Router;
 use clap::Parser;
@@ -46,6 +46,11 @@ struct Args {
     /// draws one from the OS.
     #[arg(long, env = "GATEWAY_SEED")]
     seed: Option<u64>,
+    /// Shadow mode: serve no traffic, only `POST /_gateway/shadow`, where
+    /// a Scheduler with SCHEDULER_GATEWAY_SHADOW_URL mirrors its routing
+    /// decisions for comparison.
+    #[arg(long, env = "GATEWAY_SHADOW")]
+    shadow: bool,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -88,11 +93,16 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    let app = Router::new()
-        .route("/_gateway/health", get(gateway::health))
-        .fallback(gateway::proxy)
-        .layer(DefaultBodyLimit::disable())
-        .with_state(gw);
+    let app = Router::new().route("/_gateway/health", get(gateway::health));
+    // A shadow gateway's sketches follow the Scheduler's decisions only,
+    // so it must not route traffic of its own.
+    let app = if args.shadow {
+        app.route("/_gateway/shadow", post(gateway::shadow))
+            .fallback(gateway::shadow_only)
+    } else {
+        app.fallback(gateway::proxy)
+    };
+    let app = app.layer(DefaultBodyLimit::disable()).with_state(gw);
     // Like uvicorn (asyncio sets TCP_NODELAY on every connection): without
     // it, small SSE writes wait on the client's delayed ACK, ~40 ms each.
     let listener = tokio::net::TcpListener::bind(args.listen)

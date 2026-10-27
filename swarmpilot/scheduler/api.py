@@ -14,7 +14,7 @@ import time
 from collections.abc import Callable
 from contextlib import asynccontextmanager, suppress
 from datetime import datetime
-from typing import ClassVar
+from typing import Any, ClassVar
 from urllib.parse import parse_qs
 
 import httpx
@@ -106,6 +106,7 @@ from .services.worker_queue_manager import (
     resolve_adapter,
 )
 from .services.worker_queue_thread import QueuedTask
+from .shadow import ShadowMirror
 from .utils.arrival_counter import arrival_counter, parent_of
 from .utils.http_error_logger import log_http_error
 
@@ -242,6 +243,16 @@ async def lifespan(app: FastAPI):
             gateway_server = await gateway_control.start_server(
                 _gateway_sources(), config.proxy.gateway_socket
             )
+        global shadow_mirror
+        if config.proxy.gateway_shadow_url and proxy_router_instance:
+            shadow_mirror = ShadowMirror(config.proxy.gateway_shadow_url)
+            shadow_mirror.start()
+            proxy_router_instance.shadow = shadow_mirror
+            instance_registry.release_listeners.append(shadow_mirror.released)
+            logger.info(
+                "Shadow mode: mirroring routing decisions to "
+                f"{config.proxy.gateway_shadow_url}"
+            )
 
         # Start planner reporter (if configured)
         if planner_reporter:
@@ -264,6 +275,8 @@ async def lifespan(app: FastAPI):
         health_task.cancel()
         if gateway_server:
             await gateway_server.stop(1.0)
+        if shadow_mirror:
+            await shadow_mirror.stop()
 
         # Deregister from planner first (if registered) - PYLET-024
         if planner_registrar:
@@ -3281,6 +3294,10 @@ async def set_strategy_endpoint(request: StrategySetRequest):
 
     # Update global scheduling strategy
     scheduling_strategy = new_strategy
+    # The proxy holds its own reference: without this it kept routing with
+    # the strategy the Scheduler started with (found by shadow mode).
+    if proxy_router_instance is not None:
+        proxy_router_instance._scheduling_strategy = new_strategy
 
     # Update config (in-memory only, not persisted)
     config.scheduling.default_strategy = request.strategy_name.value
@@ -3443,6 +3460,18 @@ async def reassign_model(request: Request):
 # ============================================================================
 
 from .routes.predictor import router as predictor_router  # noqa: E402
+
+#: Shadow mode's comparison, when SCHEDULER_GATEWAY_SHADOW_URL is set.
+shadow_mirror: ShadowMirror | None = None
+
+
+@app.get("/v1/gateway/shadow")
+async def gateway_shadow() -> dict[str, Any]:
+    """How the shadow gateway's routing decisions compare with ours."""
+    if shadow_mirror is None:
+        return {"enabled": False}
+    return shadow_mirror.summary()
+
 
 app.include_router(predictor_router, prefix="/v1")
 logger.info("Predictor management router mounted at /v1/predictor")

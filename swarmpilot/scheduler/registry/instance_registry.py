@@ -6,6 +6,7 @@ that can execute tasks.
 
 import asyncio
 import time
+from collections.abc import Callable
 from datetime import UTC, datetime
 
 from swarmpilot.scheduler.models import (
@@ -49,6 +50,8 @@ class InstanceRegistry:
         self._servers: dict[str, int] = {}
         # When each UNHEALTHY instance was found unreachable (monotonic).
         self._unhealthy_since: dict[str, float] = {}
+        # Called with the task id after a charge is released (shadow mode).
+        self.release_listeners: list[Callable[[str], None]] = []
 
     async def register(self, instance: Instance) -> None:
         """Register a new instance.
@@ -333,7 +336,10 @@ class InstanceRegistry:
             old = self._charges.pop(task_id, None)
             if old is not None:
                 self._apply_locked(old, -1)
-            return old
+        if old is not None:
+            for listener in self.release_listeners:
+                listener(task_id)
+        return old
 
     async def move_charge(self, task_id: str, instance_id: str) -> bool:
         """Move a task's charge, unchanged, to another instance.

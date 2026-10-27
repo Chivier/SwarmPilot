@@ -192,6 +192,11 @@ class ProxyConfig:
     # unset keeps the Python proxy as the only data plane.
     gateway_socket: str = os.getenv("SCHEDULER_GATEWAY_SOCKET", "")
 
+    # Shadow mode (phase R3c): URL of a swarmpilot-gateway started with
+    # --shadow; each proxy routing decision is mirrored to it and compared
+    # (GET /v1/gateway/shadow). Unset: no mirroring.
+    gateway_shadow_url: str = os.getenv("SCHEDULER_GATEWAY_SHADOW_URL", "")
+
 
 @dataclass
 class HealthConfig:

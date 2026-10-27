@@ -92,6 +92,67 @@ impl Draws for RngDraws<'_> {
     }
 }
 
+/// Shadow mode: the draws the Python strategy made for the decision,
+/// replayed in order. A draw of another shape, or one too many, marks the
+/// replay as diverged and comes from the gateway's generator instead.
+struct ReplayDraws {
+    recorded: std::collections::VecDeque<Value>,
+    rng: StdRng,
+    diverged: bool,
+}
+
+impl ReplayDraws {
+    fn next(&mut self, key: &str) -> Option<Value> {
+        match self.recorded.pop_front() {
+            Some(Value::Object(mut m)) if m.contains_key(key) => m.remove(key),
+            _ => {
+                self.diverged = true;
+                None
+            }
+        }
+    }
+}
+
+impl Draws for ReplayDraws {
+    fn random(&mut self, n: usize) -> Vec<f64> {
+        let xs: Option<Vec<f64>> = self.next("random").and_then(|v| {
+            v.as_array()
+                .map(|a| a.iter().filter_map(Value::as_f64).collect())
+        });
+        match xs {
+            Some(xs) if xs.len() == n => xs,
+            _ => {
+                self.diverged = true;
+                RngDraws(&mut self.rng).random(n)
+            }
+        }
+    }
+
+    fn integers(&mut self, high: usize) -> usize {
+        match self.next("integers").and_then(|v| v.as_u64()) {
+            Some(k) if (k as usize) < high => k as usize,
+            _ => {
+                self.diverged = true;
+                RngDraws(&mut self.rng).integers(high)
+            }
+        }
+    }
+
+    fn choice2(&mut self, n: usize) -> (usize, usize) {
+        let pair = self.next("choice2").and_then(|v| {
+            let a = v.as_array()?;
+            Some((a.first()?.as_u64()? as usize, a.get(1)?.as_u64()? as usize))
+        });
+        match pair {
+            Some((a, b)) if a < n && b < n && a != b => (a, b),
+            _ => {
+                self.diverged = true;
+                RngDraws(&mut self.rng).choice2(n)
+            }
+        }
+    }
+}
+
 /// Strategy, sketches and generator, behind one lock.
 pub struct Routing {
     router: Router,
@@ -160,6 +221,21 @@ impl Routing {
         req: &RequestInfo,
         task_id: &str,
     ) -> Decision {
+        self.route_with(snap, models, candidates, req, task_id, None)
+            .0
+    }
+
+    /// [`Routing::route`], with the draws replayed from `recorded` when
+    /// given (shadow mode); also says whether the replay diverged.
+    pub fn route_with(
+        &mut self,
+        snap: &Snapshot,
+        models: &ModelCache,
+        candidates: &[&Instance],
+        req: &RequestInfo,
+        task_id: &str,
+        recorded: Option<Vec<Value>>,
+    ) -> (Decision, bool) {
         let ids: Vec<String> = candidates.iter().map(|i| i.id.clone()).collect();
         let warm: Vec<bool> = if self.router.kind == StrategyKind::AdaptiveBootstrap {
             let mut by_platform: HashMap<&str, bool> = HashMap::new();
@@ -178,18 +254,43 @@ impl Routing {
             let chosen: Vec<&Instance> = subset.iter().map(|&k| candidates[k]).collect();
             predictions(snap, models, &chosen, ptype, req)
         };
-        let routed = self.router.try_route(
-            &mut self.ledger,
-            &ids,
-            &warm,
-            &mut predict,
-            &mut RngDraws(&mut self.rng),
-            Some(task_id),
-        );
-        Decision {
-            instance_id: ids[routed.selected].clone(),
-            prediction: routed.prediction,
-        }
+        let (routed, diverged) = match recorded {
+            Some(recorded) => {
+                let mut replay = ReplayDraws {
+                    recorded: recorded.into(),
+                    rng: StdRng::seed_from_u64(self.rng.gen()),
+                    diverged: false,
+                };
+                let routed = self.router.try_route(
+                    &mut self.ledger,
+                    &ids,
+                    &warm,
+                    &mut predict,
+                    &mut replay,
+                    Some(task_id),
+                );
+                // Draws left over: Python drew more than the gateway did.
+                (routed, replay.diverged || !replay.recorded.is_empty())
+            }
+            None => (
+                self.router.try_route(
+                    &mut self.ledger,
+                    &ids,
+                    &warm,
+                    &mut predict,
+                    &mut RngDraws(&mut self.rng),
+                    Some(task_id),
+                ),
+                false,
+            ),
+        };
+        (
+            Decision {
+                instance_id: ids[routed.selected].clone(),
+                prediction: routed.prediction,
+            },
+            diverged,
+        )
     }
 
     /// The task finished (or failed): take its charge off its sketch.
