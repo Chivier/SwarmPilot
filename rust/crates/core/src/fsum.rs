@@ -2,9 +2,9 @@
 
 /// Sum `values` with a single rounding, as `math.fsum` does.
 ///
-/// Returns `None` where Python raises `OverflowError`: an intermediate
-/// sum of finite values overflowed. Non-finite inputs are summed the
-/// IEEE way, as Python does.
+/// Returns `None` where Python raises: `OverflowError` when an
+/// intermediate sum of finite values overflows, `ValueError` for
+/// `-inf + inf`. Other non-finite inputs are summed as Python does.
 pub fn fsum(values: &[f64]) -> Option<f64> {
     let mut p: Vec<f64> = Vec::with_capacity(values.len());
     let mut special = 0.0_f64;
@@ -44,7 +44,7 @@ pub fn fsum(values: &[f64]) -> Option<f64> {
     }
     if special != 0.0 {
         if inf_sum.is_nan() {
-            return Some(f64::NAN);
+            return None;
         }
         return Some(special);
     }
@@ -87,5 +87,6 @@ mod tests {
         assert_eq!(fsum(&[1e100, 1.0, -1e100, 1e-100]), Some(1.0));
         assert_eq!(fsum(&[]), Some(0.0));
         assert_eq!(fsum(&[f64::MAX, f64::MAX]), None);
+        assert_eq!(fsum(&[f64::INFINITY, f64::NEG_INFINITY]), None);
     }
 }

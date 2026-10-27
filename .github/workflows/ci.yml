@@ -120,6 +120,10 @@ jobs:
     # one bit for bit (golden vectors, differential tests, routing-sim
     # A/B) and pass the Python suites and the emulated cluster run on it.
     runs-on: ubuntu-latest
+    env:
+      # Keep the venv uv sync built with the core extra; a plain uv run
+      # would sync it back to the default extras.
+      UV_NO_SYNC: "1"
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -139,7 +143,7 @@ jobs:
           cache-dependency-glob: "uv.lock"
 
       - name: Install dependencies with the Rust core
-        run: uv sync --dev --extra core --python 3.11
+        run: uv sync --dev --extra core
 
       - name: Replay golden vectors in Rust
         working-directory: rust

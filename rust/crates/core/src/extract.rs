@@ -237,7 +237,12 @@ struct Parser<'a> {
     text: &'a str,
     tokens: Vec<Tok>,
     pos: usize,
+    depth: usize,
 }
+
+/// Deepest nesting of combiner calls (`MAX_DEPTH` in Python), so an
+/// expression cannot exhaust the stack.
+pub const MAX_DEPTH: usize = 64;
 
 fn num(s: &str) -> f64 {
     s.parse()
@@ -318,6 +323,10 @@ impl Parser<'_> {
             "coalesce" => Node::Coalesce,
             _ => return Err(self.err(&format!("unknown function {name:?}"))),
         };
+        self.depth += 1;
+        if self.depth > MAX_DEPTH {
+            return Err(self.err("nested too deeply"));
+        }
         let mut args = vec![self.expr()?];
         loop {
             match self.take()? {
@@ -326,6 +335,7 @@ impl Parser<'_> {
                 _ => return Err(self.err("expected ')'")),
             }
         }
+        self.depth -= 1;
         Ok(combine(args))
     }
 }
@@ -344,6 +354,7 @@ impl Extractor {
             text: expr,
             tokens: tokenize(expr),
             pos: 0,
+            depth: 0,
         };
         let root = p.expr()?;
         if p.peek().is_some() {
@@ -387,6 +398,14 @@ mod tests {
         assert_eq!(ev("min(4, max_tokens, 9)", body.clone()), 4.0);
         assert_eq!(ev("product(max_tokens, missing)", body.clone()), 0.0);
         assert_eq!(ev("sum(0.1, 0.2, 0.3)", body), 0.6);
+    }
+
+    #[test]
+    fn limits_nesting() {
+        let nested = |n: usize| format!("{}1{}", "sum(".repeat(n), ")".repeat(n));
+        assert!(Extractor::compile(&nested(MAX_DEPTH), 0.0).is_ok());
+        assert!(Extractor::compile(&nested(MAX_DEPTH + 1), 0.0).is_err());
+        assert!(Extractor::compile(&nested(200_000), 0.0).is_err());
     }
 
     #[test]

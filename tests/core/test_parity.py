@@ -422,6 +422,12 @@ GARBAGE = (
     "a[*][*]",
     "a[0].b[*]",
     "field(a,default=-1e-3)",
+    "sum(product(big, big), product(neg, big))",
+    "sum(product(big, big), 1)",
+    "min(product(big, big), product(neg, big))",
+    "sum(" * 64 + "b" + ")" * 64,
+    "sum(" * 65 + "b" + ")" * 65,
+    "sum(" * 200_000 + "b" + ")" * 200_000,
 )
 
 
@@ -432,7 +438,15 @@ def test_extractor_parse_errors_match(use_core, expr):
         use_core(c)
         try:
             fn = compile_extractor(expr)
-            results[c] = fn({"a": {"b": [1, 2]}, "b": 3.5, "c": "xy"})
+            results[c] = fn(
+                {
+                    "a": {"b": [1, 2]},
+                    "b": 3.5,
+                    "c": "xy",
+                    "big": 1e200,
+                    "neg": -1e200,
+                }
+            )
         except ExtractorError:
             results[c] = "error"
     assert results["python"] == results["rust"]

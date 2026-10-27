@@ -53,6 +53,10 @@ _TOKEN = re.compile(
 )
 _AREA_SIDE = re.compile(r"[0-9]{1,18}")
 
+#: Deepest nesting of combiner calls, so a configuration cannot exhaust
+#: the stack (the Rust parser has the same limit).
+MAX_DEPTH = 64
+
 Getter = Callable[[Mapping[str, Any]], Any]
 Extractor = Callable[[Mapping[str, Any]], float]
 
@@ -226,7 +230,7 @@ def _combine(fn: Callable[[list[float]], float]) -> Callable[..., Getter]:
                 vals.append(v)
             try:
                 return fn(vals)
-            except OverflowError:  # fsum of huge values
+            except (OverflowError, ValueError):  # fsum overflow, inf - inf
                 return _MISSING
 
         return get
@@ -259,6 +263,7 @@ class _Parser:
             if name or num or op.strip()
         ]
         self.pos = 0
+        self.depth = 0
 
     def peek(self) -> tuple[str, str, str] | None:
         return self.tokens[self.pos] if self.pos < len(self.tokens) else None
@@ -306,11 +311,15 @@ class _Parser:
             self.expect(")")
             return getter
         if name in _COMBINERS:
+            self.depth += 1
+            if self.depth > MAX_DEPTH:
+                raise ExtractorError(f"nested too deeply in {self.text!r}")
             args = [self.expr()]
             while (tok := self.take())[2] == ",":
                 args.append(self.expr())
             if tok[2] != ")":
                 raise ExtractorError(f"expected ')' in {self.text!r}")
+            self.depth -= 1
             return _COMBINERS[name](*args)
         raise ExtractorError(f"unknown function {name!r} in {self.text!r}")
 
