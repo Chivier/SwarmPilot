@@ -193,6 +193,7 @@ class TestTrade:
         service = _Service([("a", FAST), ("a", FAST), ("b", SLOW), ("b", SLOW)])
         store = _store(service, EXEC, {"a": 1.0, "b": 2.0})
         opt = _opt(store, service, target_concurrency=1)
+        opt.speeds.observe([("a", FAST, 1.0), ("a", SLOW, 4.0)])
         plan = opt.plan(service.instances)
         assert plan is not None
         # Counts may stay 2:2, but b should end up on a fast GPU.
@@ -334,3 +335,40 @@ def test_light_model_is_not_starved_by_a_heavy_one():
     # Proportional shares would give a 2% of 10 machines; max-min gives
     # it the 2 it needs.
     assert plan is None or plan.target_state.get("a", 0) >= 2
+
+
+class TestTradeSafety:
+    """A trade never leaves a model with nothing serving."""
+
+    def test_one_machine_model_does_not_trade_away_its_only_one(self):
+        # The best shares put heavy b on a's fast GPU and a on a slow one,
+        # but removals drain first: a would serve nothing in between.
+        service = _Service([("a", FAST), ("b", SLOW), ("b", SLOW)])
+        store = _store(service, EXEC, {"a": 0.2, "b": 3.0})
+        opt = _opt(store, service, target_concurrency=1)
+        opt.speeds.observe([("a", FAST, 1.0), ("a", SLOW, 4.0)])
+        assert opt.plan(service.instances) is None
+
+    def test_trade_keeps_a_floor_on_unmoved_machines(self):
+        service = _Service([("a", FAST), ("a", FAST), ("b", SLOW), ("b", SLOW)])
+        store = _store(service, EXEC, {"a": 1.0, "b": 2.0})
+        opt = _opt(store, service, target_concurrency=1)
+        opt.speeds.observe([("a", FAST, 1.0), ("a", SLOW, 4.0)])
+        plan = opt.plan(service.instances)
+        assert plan is not None and plan.remove
+        for model in ("a", "b"):
+            mine = [i for i in service.instances if i.model_id == model]
+            staying = [i for i in mine if i.pylet_id not in plan.remove]
+            assert len(staying) >= 1, model
+
+    def test_min_age_counts_from_serving(self):
+        import time
+
+        service = _Service([("a", FAST)] * 2 + [("b", FAST)] * 2)
+        store = _store(
+            service, {("a", FAST): 1.0, ("b", FAST): 1.0}, {"a": 9, "b": 1}
+        )
+        for inst in service.instances:
+            inst.created_at = 0.0  # submitted long ago...
+            inst.active_since = time.time()  # ...but serving only now
+        assert _opt(store, service).plan(service.instances) is None

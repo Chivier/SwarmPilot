@@ -71,10 +71,11 @@ instance as that much capacity:
   served before backlog, each split max-min fairly, so neither a model
   whose backlog is already timing out nor one too heavy to serve can take
   the machines a lighter model needs to keep up.
-* A model kept at ``min_replicas`` keeps its fastest instances.
 * A move costs a drain and a cold start, so each machine that moves must
-  improve the objective by ``change_threshold`` on its own, and an
-  instance younger than ``min_age`` does not move.
+  improve the objective by ``change_threshold`` on its own, an instance
+  that started serving less than ``min_age`` ago does not move, and each
+  model keeps its floor on machines that do not move this round (removals
+  drain before replacements start).
 
 Before every deployed model has reported once, the loop waits (up to
 ``stale_after`` seconds from its first round), so a model whose Scheduler
@@ -212,6 +213,14 @@ def _water_fill(need: dict[str, float], supply: float) -> dict[str, float]:
     return out
 
 
+def _serving_since(inst: _Instance) -> float:
+    """When an instance started serving, or was created if not known."""
+    since = getattr(inst, "active_since", None)
+    if since is None:
+        since = getattr(inst, "created_at", None)
+    return since or 0.0
+
+
 def _share_error(
     deployment: Sequence[int], speed: np.ndarray, target: np.ndarray
 ) -> float:
@@ -278,8 +287,9 @@ class AutoOptimizer:
                 pool before it shrinks.
             hardware_aware: Weigh machines by learned hardware speed
                 (tail scaler only); see the module docstring.
-            min_age: Seconds a hardware-aware loop leaves a new instance
-                where it is. Defaults to three intervals.
+            min_age: Seconds a hardware-aware loop leaves an instance
+                where it is after it starts serving. Defaults to four
+                intervals.
         """
         if scaler not in SCALERS:
             raise ValueError(f"scaler must be one of {SCALERS}, got {scaler}")
@@ -306,7 +316,7 @@ class AutoOptimizer:
         self.max_instances = max(0, max_instances)
         self.scale_down_rounds = max(1, scale_down_rounds)
         self.hardware_aware = hardware_aware
-        self.min_age = min_age if min_age is not None else 3 * interval
+        self.min_age = min_age if min_age is not None else 4 * interval
         self.speeds = HardwareSpeeds(alpha=0.3)
         self._low_rounds = 0
         self._first_plan_at: float | None = None
@@ -661,7 +671,7 @@ class AutoOptimizer:
         young = {
             i
             for i, inst in enumerate(instances)
-            if now - (getattr(inst, "created_at", None) or 0.0) < self.min_age
+            if now - _serving_since(inst) < self.min_age
         }
 
         grow, victims = 0, []
@@ -879,24 +889,39 @@ class AutoOptimizer:
         floor: dict[str, int],
         index: dict[str, int],
     ) -> None:
-        """Give a model below its floor back its fastest machines."""
-        counts = Counter(deployment)
-        floor_of = {index[m]: f for m, f in floor.items()}
-        for j, need in floor_of.items():
-            while counts[j] < need:
-                back = [
+        """Keep each model's floor on machines that do not move.
+
+        Removals drain before replacements start, so a model that trades
+        all its machines for others serves nothing in between. A model
+        below its floor of unmoved machines keeps its slowest outgoing
+        one, and the machine coming to it that is closest in speed goes
+        to that machine's new model instead, so both keep their capacity.
+        """
+        for m, need in floor.items():
+            j = index[m]
+            kept = sum(
+                1
+                for i in range(len(deployment))
+                if initial[i] == j and deployment[i] == j
+            )
+            for _ in range(max(0, need - kept)):
+                out = [
                     i
                     for i in range(len(deployment))
-                    if initial[i] == j
-                    and deployment[i] != j
-                    and counts[deployment[i]] > floor_of.get(deployment[i], 0)
+                    if initial[i] == j and deployment[i] != j
                 ]
-                if not back:
+                if not out:
                     break
-                i = max(back, key=lambda i: speed[i])
-                counts[deployment[i]] -= 1
+                i = min(out, key=lambda i: speed[i])
+                incoming = [
+                    x
+                    for x in range(len(deployment))
+                    if deployment[x] == j and initial[x] != j
+                ]
+                if incoming:
+                    x = min(incoming, key=lambda x: abs(speed[x] - speed[i]))
+                    deployment[x] = deployment[i]
                 deployment[i] = j
-                counts[j] += 1
 
     def _keep_min_replicas(self, counts: Counter, current: Counter) -> None:
         for m, have in current.items():

@@ -485,10 +485,9 @@ outstanding task count every `SCHEDULER_AUTO_REPORT` seconds (with
 instances it needs: its arrival rate times its execution time, plus its
 q0.9 backlog drained over one interval.
 
-With `AUTO_OPTIMIZE_ELASTIC=false` the loop only re-divides the instances
-that exist, so a model grows only by taking machines from another and free
-GPUs stay free. By default (`AUTO_OPTIMIZE_ELASTIC=true`) it also sizes
-the pool: the tail scaler's need
+By default the loop only re-divides the instances that exist, so a model
+grows only by taking machines from another and free GPUs stay free. With
+`AUTO_OPTIMIZE_ELASTIC=true` it also sizes the pool: the tail scaler's need
 is in tasks in flight, and the pool wants one instance per
 `AUTO_OPTIMIZE_TARGET_CONCURRENCY` of them. It grows at once into free
 GPUs (up to `AUTO_OPTIMIZE_MAX_INSTANCES`) and shrinks only after
@@ -499,8 +498,8 @@ Set the target near the concurrency at which your engines' latency starts
 to climb (for 7-8B models on one A100 or L40S under vLLM continuous
 batching, roughly 50 to 100).
 
-`AUTO_OPTIMIZE_HARDWARE_AWARE` (on by default) matters on mixed hardware.
-With it off every machine counts the same, the deployment service removes the
+On mixed hardware, consider `AUTO_OPTIMIZE_HARDWARE_AWARE=true`. Without
+it every machine counts the same, the deployment service removes the
 oldest instances of a model that shrinks, and new instances go wherever
 PyLet puts them, so a model can be left on one slow GPU while a fast one
 sits idle. With it the loop learns how fast each kind of hardware is from
@@ -523,11 +522,10 @@ node list); the speeds are in the loop's log line.
 
 Each move costs a drain (up to `PYLET_DRAIN_TIMEOUT`) and a cold start,
 so every moved machine must improve the objective by
-`AUTO_OPTIMIZE_CHANGE_THRESHOLD` on its own, an instance younger than
-three intervals is not moved, and the removals of one round drain side by
-side. In the 10-GPU simulator scenario (`docs/simulator.md`) this cut
-failed requests from 466 (fixed pool) and 649 (elastic, hardware-blind)
-to 114 out of 33,682.
+`AUTO_OPTIMIZE_CHANGE_THRESHOLD` on its own, an instance that started
+serving less than four intervals ago is not moved, each model keeps its
+`AUTO_OPTIMIZE_MIN_REPLICAS` on machines that do not move in that round,
+and the removals of one round drain side by side.
 
 When one model's tasks call another (an agent's LLM step calling a tool or
 a diffusion model), mark those calls with the calling model so the Planner
@@ -614,12 +612,12 @@ Source: `swarmpilot/planner/config.py`
 | `AUTO_OPTIMIZE_CHANGE_FACTOR` | `0.3` | Share of machines that may change model per round (at least one) |
 | `AUTO_OPTIMIZE_MIN_REPLICAS` | `1` | Replicas a deployed model keeps even with no demand |
 | `AUTO_OPTIMIZE_ALGORITHM` | `integer_programming` | Optimizer: `integer_programming` or `simulated_annealing` |
-| `AUTO_OPTIMIZE_ELASTIC` | `true` | Also grow the pool into free GPUs and shrink it when idle (tail scaler only) |
+| `AUTO_OPTIMIZE_ELASTIC` | `false` | Also grow the pool into free GPUs and shrink it when idle (tail scaler only) |
 | `AUTO_OPTIMIZE_TARGET_CONCURRENCY` | `64` | Tasks in flight per instance an elastic pool aims for |
 | `AUTO_OPTIMIZE_MIN_INSTANCES` | `1` | Smallest elastic pool |
 | `AUTO_OPTIMIZE_MAX_INSTANCES` | `0` | Largest elastic pool; 0 = as many as the free GPUs allow |
 | `AUTO_OPTIMIZE_SCALE_DOWN_ROUNDS` | `3` | Rounds in a row that must want fewer instances before the pool shrinks |
-| `AUTO_OPTIMIZE_HARDWARE_AWARE` | `true` | Weigh machines by hardware speed learned from execution times; choose which instances move and where (tail scaler only) |
+| `AUTO_OPTIMIZE_HARDWARE_AWARE` | `false` | Weigh machines by hardware speed learned from execution times; choose which instances move and where (tail scaler only) |
 | `AUTO_OPTIMIZE_SCALER` | `tail` | `tail` sizes models by arrival rate, q0.9 backlog and calls between models; `count` by outstanding tasks only (see [Autoscaling agent workloads](#autoscaling-agent-workloads)) |
 | `PYLET_ENABLED` | `false` | Enable PyLet cluster integration |
 | `PYLET_HEAD_URL` | _(none)_ | PyLet head node URL (required when `PYLET_ENABLED=true`) |
