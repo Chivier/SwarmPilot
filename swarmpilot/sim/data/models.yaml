@@ -71,3 +71,19 @@ qwen3-8b:
   kv_heads: 8
   head_dim: 128
   aliases: [Qwen/Qwen3-8B, Qwen/Qwen3-8B-Base]
+
+llama-3.2-1b:
+  kind: llm
+  params_b: 1.24
+  layers: 16
+  kv_heads: 8
+  head_dim: 64
+  aliases: [meta-llama/Llama-3.2-1B, meta-llama/Llama-3.2-1B-Instruct]
+
+qwen2.5-32b:
+  kind: llm
+  params_b: 32.76
+  layers: 64
+  kv_heads: 8
+  head_dim: 128
+  aliases: [Qwen/Qwen2.5-32B, Qwen/Qwen2.5-32B-Instruct]

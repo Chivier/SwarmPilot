@@ -10,6 +10,7 @@ from aiohttp import web
 from aiohttp.test_utils import TestServer
 
 from swarmpilot.engines import RouteSpec, get_adapter
+from swarmpilot.engines.base import EngineResponse
 from swarmpilot.engines.passthrough import PassthroughAdapter
 from swarmpilot.scheduler.services.async_worker_queue import (
     AsyncWorkerQueue,
@@ -239,6 +240,77 @@ class TestAsyncWorkerQueue:
         await _wait(lambda: len(results) == 1)
         assert results[0].status == "completed"
         assert adapter.sent == 2
+        q.stop()
+
+    async def test_lost_connection_goes_to_on_lost(self, engine, session):
+        results, lost = [], []
+        adapter = _FlakyAdapter(
+            fail=1,
+            exc=aiohttp.ServerDisconnectedError,
+            routes=(RouteSpec("v1/completions", rerun_safe=True),),
+        )
+        q = _queue(
+            engine,
+            session,
+            results,
+            adapter=adapter,
+            on_lost=lambda wid, tasks: lost.extend(tasks),
+        )
+        q.start()
+        q.enqueue(_task(0))
+        await _wait(lambda: len(lost) == 1)
+        assert results == [] and lost[0].reroutes == 1
+        assert q.in_flight() == 0
+        q.stop()
+
+    async def test_lost_connection_not_rerun_unless_rerun_safe(
+        self, engine, session
+    ):
+        results, lost = [], []
+        adapter = _FlakyAdapter(
+            fail=1,
+            exc=aiohttp.ServerDisconnectedError,
+            routes=(RouteSpec("v1/completions"),),
+        )
+        q = _queue(
+            engine,
+            session,
+            results,
+            adapter=adapter,
+            on_lost=lambda wid, tasks: lost.extend(tasks),
+        )
+        q.start()
+        q.enqueue(_task(0))
+        await _wait(lambda: len(results) == 1)
+        assert lost == [] and results[0].status == "failed"
+        q.stop()
+
+    async def test_503_goes_to_on_lost_until_max_reroutes(
+        self, engine, session
+    ):
+        results, lost = [], []
+
+        class _Stopped(PassthroughAdapter):
+            async def dispatch(self, session, endpoint, request):
+                return EngineResponse(503, body={"error": "engine stopped"})
+
+        q = _queue(
+            engine,
+            session,
+            results,
+            adapter=_Stopped(),
+            on_lost=lambda wid, tasks: lost.extend(tasks),
+            max_reroutes=1,
+        )
+        q.start()
+        task = _task(0)
+        q.enqueue(task)
+        await _wait(lambda: len(lost) == 1)
+        # Sent again (here: to the same queue) after one loss, it fails.
+        q.enqueue(task)
+        await _wait(lambda: len(results) == 1)
+        assert results[0].status == "failed"
+        assert results[0].http_status_code == 503
         q.stop()
 
     async def test_lost_connection_undeclared_route_by_method(

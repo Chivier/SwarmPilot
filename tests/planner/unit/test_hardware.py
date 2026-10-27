@@ -100,7 +100,7 @@ def _manager(resolver):
 class TestPlacement:
     """Placement on one kind of hardware and registration."""
 
-    def test_place_spreads_over_matching_workers(self):
+    def test_place_fills_the_smallest_matching_worker_first(self):
         mgr = _manager(HardwareResolver({"h-*": "H100", "l-*": "L40S"}))
         mgr.pylet_client.list_workers.return_value = [
             _worker("h-0", "a", range(8)),
@@ -108,8 +108,8 @@ class TestPlacement:
             _worker("l-0", "c", range(4)),
         ]
         groups = mgr._place("H100*", gpu_count=2, count=4)
-        # Most free GPUs first: h-0 goes 8 -> 2, then ties go to h-0.
-        assert groups == {"h-0": 4}
+        # Best fit: h-1's two GPUs first, then h-0; l-0 is not H100.
+        assert groups == {"h-1": 1, "h-0": 3}
         # 8 + 2 free GPUs fit five 2-GPU replicas, not six.
         assert sum(mgr._place("H100*", 2, 6).values()) == 5
 
@@ -130,6 +130,30 @@ class TestPlacement:
         call = mgr.pylet_client.deploy_model.call_args.kwargs
         assert call["target_worker"] == "l-0"
         assert call["count"] == 2
+
+    def test_unpinned_replicas_best_fit_and_overflow_to_pylet(self):
+        mgr = _manager(HardwareResolver({}))
+        mgr.pylet_client.list_workers.return_value = [
+            _worker("big", "a", range(8)),
+            _worker("one", "b", range(1)),
+        ]
+        mgr.pylet_client.deploy_model.side_effect = lambda **kw: [
+            InstanceInfo(f"p{i}", kw["model_id"], None, "PENDING")
+            for i in range(kw["count"])
+        ]
+        result = mgr.deploy_instances("m", count=3, gpu_count=4)
+        assert result.success_count == 3
+        calls = [
+            (c.kwargs["target_worker"], c.kwargs["count"])
+            for c in mgr.pylet_client.deploy_model.call_args_list
+        ]
+        # Two fit on the 8-GPU worker; the third waits in PyLet's queue.
+        assert calls == [("big", 2), (None, 1)]
+        mgr.pylet_client.deploy_model.reset_mock()
+        mgr.deploy_instances("m", count=1, gpu_count=1)
+        # One GPU goes to the 1-GPU worker, not into the 8-GPU one.
+        call = mgr.pylet_client.deploy_model.call_args.kwargs
+        assert call["target_worker"] == "one"
 
     def test_registers_hardware_of_assigned_worker(self):
         mgr = _manager(HardwareResolver({"l-*": "L40S-48GB"}))

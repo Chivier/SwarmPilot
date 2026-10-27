@@ -394,6 +394,17 @@ class InstanceManager:
                     f"[INSTANCE_DEPLOY] only {placed} of {count} replicas of "
                     f"{model_id} fit on {hardware!r} workers"
                 )
+        elif target_worker is None:
+            # Best fit on any worker; what does not fit waits in PyLet's
+            # queue as before.
+            try:
+                groups = self._place(None, gpu_count, count)
+            except Exception as e:
+                logger.debug(f"Could not place {model_id} replicas: {e}")
+                groups = {}
+            rest = count - sum(groups.values())
+            if rest > 0:
+                groups[None] = rest
         else:
             groups = {target_worker: count}
 
@@ -484,17 +495,20 @@ class InstanceManager:
             )
 
     def _place(
-        self, hardware: str, gpu_count: int, count: int
+        self, hardware: str | None, gpu_count: int, count: int
     ) -> dict[str, int]:
-        """Pick workers of one kind of hardware for ``count`` replicas.
+        """Pick workers for ``count`` replicas, best fit first.
 
-        Each replica goes to the matching online worker with the most
-        free GPUs left, so replicas spread out the way PyLet spreads them.
-        GPUs held by instances PyLet has not placed yet are not visible
-        here, so a later submit can still wait in PyLet's queue.
+        Each replica goes to the matching online worker with the fewest
+        free GPUs that still hold it, so small instances fill small
+        nodes and leave the large ones whole for instances that need
+        several GPUs (PyLet itself takes the first worker that fits,
+        whatever its size). GPUs held by instances PyLet has not placed
+        yet are not visible here, so a later submit can still wait in
+        PyLet's queue.
 
         Args:
-            hardware: Hardware name pattern.
+            hardware: Hardware name pattern, or None for any worker.
             gpu_count: GPUs per replica.
             count: Replicas wanted.
 
@@ -513,14 +527,18 @@ class InstanceManager:
         free = {
             w.id: len(w.gpu_indices_available)
             for w in workers
-            if matches(self.hardware.resolve(w.id, w.host), hardware)
+            if hardware is None
+            or matches(self.hardware.resolve(w.id, w.host), hardware)
         }
+        order = {wid: k for k, wid in enumerate(free)}
+        per = max(1, gpu_count)
         groups: Counter[str] = Counter()
         for _ in range(count):
-            best = max(free, key=lambda k: free[k], default=None)
-            if best is None or free[best] < gpu_count:
+            fits = [wid for wid, n in free.items() if n >= per]
+            if not fits:
                 break
-            free[best] -= gpu_count
+            best = min(fits, key=lambda k: (free[k], order[k]))
+            free[best] -= per
             groups[best] += 1
         return dict(groups)
 

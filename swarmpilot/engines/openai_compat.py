@@ -96,9 +96,13 @@ LLM_ROUTES: tuple[RouteSpec, ...] = (
         "v1/chat/completions",
         request_model=ChatCompletionRequest,
         streaming=True,
+        rerun_safe=True,
     ),
     RouteSpec(
-        "v1/completions", request_model=CompletionRequest, streaming=True
+        "v1/completions",
+        request_model=CompletionRequest,
+        streaming=True,
+        rerun_safe=True,
     ),
     RouteSpec("v1/models", methods=("GET",), lightweight=True, retry_safe=True),
     RouteSpec("health", methods=("GET",), lightweight=True, retry_safe=True),

@@ -372,3 +372,139 @@ class TestTradeSafety:
             inst.created_at = 0.0  # submitted long ago...
             inst.active_since = time.time()  # ...but serving only now
         assert _opt(store, service).plan(service.instances) is None
+
+
+@dataclass
+class _Sized(_Inst):
+    gpu_count: int = 1
+
+
+class _ShapedService(_Service):
+    """Models of different GPU counts and hardware patterns."""
+
+    def __init__(self, layout, reqs):
+        self.instances = [
+            _Sized(m, f"http://w{i}:80", hw, f"w{i}", f"p{i}", 0.0, reqs[m][0])
+            for i, (m, hw) in enumerate(layout)
+        ]
+        self.applied = []
+        self.reqs = reqs
+
+    def model_requirements(self, model_id):
+        return self.reqs.get(model_id, (1, None))
+
+
+# "big" needs 4 GPUs of A100 (the 4-GPU workers); "small" one of any.
+SHAPES = {"small": (1, None), "big": (4, "A100*")}
+SHAPED_EXEC = {
+    ("small", FAST): 1.0,
+    ("small", SLOW): 4.0,
+    ("big", FAST): 2.0,
+    ("big", SLOW): 8.0,
+}
+
+
+class TestShapes:
+    """Models that take several GPUs or one kind of hardware."""
+
+    def test_big_model_grows_only_where_it_fits(self):
+        service = _ShapedService([("small", FAST), ("big", FAST)], SHAPES)
+        store = _store(service, SHAPED_EXEC, {"small": 0.1, "big": 4.0})
+        opt = _opt(store, service, elastic=True, target_concurrency=1)
+        # Single free GPUs everywhere, and one A100 worker with four.
+        slots = [("a1", FAST)] + [("a4", FAST)] * 4 + [("s1", SLOW)] * 2
+        plan = opt.plan(service.instances, slots=slots)
+        assert plan is not None
+        assert plan.place == {"big": ("a4",)}
+        assert plan.target_state["big"] == 2
+
+    def test_pinned_model_never_lands_on_other_hardware(self):
+        service = _ShapedService([("small", FAST), ("big", FAST)], SHAPES)
+        store = _store(service, SHAPED_EXEC, {"small": 0.1, "big": 4.0})
+        opt = _opt(store, service, elastic=True, target_concurrency=1)
+        plan = opt.plan(service.instances, slots=[("s4", SLOW)] * 4)
+        # Four free A10Gs hold a 4-GPU instance, but not of A100: big
+        # cannot grow, and small has all it needs.
+        assert plan is None or "big" not in plan.place
+
+    def test_machines_trade_only_between_equal_shapes(self):
+        # big is starved, small has surplus; no free GPUs.
+        service = _ShapedService(
+            [("small", FAST)] * 4 + [("big", FAST)], SHAPES
+        )
+        store = _store(service, SHAPED_EXEC, {"small": 0.5, "big": 10.0})
+        opt = _opt(store, service, target_concurrency=1)
+        plan = opt.plan(service.instances)
+        # A 1-GPU machine cannot become a 4-GPU instance.
+        assert plan is None or plan.target_state.get("big", 0) <= 1
+
+    def test_count_scaler_keeps_shapes_apart(self):
+        service = _ShapedService(
+            [("small", FAST)] * 4 + [("big", FAST)], SHAPES
+        )
+        store = _store(service, SHAPED_EXEC, {"small": 0.5, "big": 10.0})
+        opt = _opt(store, service, hardware_aware=False)
+        plan = opt.plan(service.instances)
+        assert plan is None or plan.target_state.get("big", 0) <= 1
+
+    def test_small_shortfall_takes_the_slowest_place_that_covers_it(self):
+        service = _ShapedService([("small", FAST), ("big", FAST)], SHAPES)
+        opt = _opt(
+            _store(service, SHAPED_EXEC, {"small": 1.2, "big": 0.5}),
+            service,
+            elastic=True,
+            target_concurrency=1,
+        )
+        opt.speeds.observe([("small", FAST, 1.0), ("small", SLOW, 4.0)])
+        # small is 0.2 short: a slow GPU (0.25) covers it, so the fast
+        # A100s stay free; of the slow ones, the single-GPU worker.
+        slots = [("a4", FAST)] * 4 + [("s4", SLOW)] * 4 + [("s1", SLOW)]
+        plan = opt.plan(service.instances, slots=slots)
+        assert plan is not None
+        assert plan.place == {"small": ("s1",)}
+
+
+class TestShapeRegressions:
+    """Cases from the review of the shape-aware loop."""
+
+    def test_floor_swap_never_moves_a_pinned_model_off_its_hardware(self):
+        shapes = {"m": (1, None), "n": (1, None), "pin": (1, "A100*")}
+        exec_s = {}
+        for model in shapes:
+            exec_s[(model, FAST)] = 1.0
+            exec_s[(model, SLOW)] = 4.0
+        layouts = [
+            [("m", FAST), ("n", SLOW), ("n", SLOW), ("n", FAST), ("pin", FAST)],
+            [("m", FAST), ("n", SLOW), ("n", SLOW), ("pin", FAST)],
+        ]
+        for layout in layouts:
+            for rates in (
+                {"m": 0.3, "n": 0.1, "pin": 3.0},
+                {"m": 1.0, "n": 0.1, "pin": 5.0},
+            ):
+                service = _ShapedService(layout, shapes)
+                store = _store(service, exec_s, rates)
+                opt = _opt(store, service, target_concurrency=1)
+                opt.speeds.observe([("m", FAST, 1.0), ("m", SLOW, 4.0)])
+                plan = opt.plan(service.instances, slots=[])
+                if plan is None:
+                    continue
+                hw = {i.worker_id: i.hardware for i in service.instances}
+                assert all(hw[w] == FAST for w in plan.place.get("pin", ()))
+
+    def test_count_path_grows_models_of_any_shape(self):
+        for shapes in (
+            {"small": (2, None), "big": (2, None)},
+            {"small": (1, None), "big": (1, "A100*")},
+        ):
+            service = _ShapedService([("small", FAST), ("big", FAST)], shapes)
+            store = _store(service, SHAPED_EXEC, {"small": 0.1, "big": 4.0})
+            opt = _opt(
+                store,
+                service,
+                hardware_aware=False,
+                elastic=True,
+                target_concurrency=1,
+            )
+            plan = opt.plan(service.instances, spare=4)
+            assert plan is not None and plan.target_state["big"] > 1

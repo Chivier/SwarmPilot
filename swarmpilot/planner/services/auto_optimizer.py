@@ -100,6 +100,7 @@ from swarmpilot.planner.core.optimizer_factory import (
     create_optimizer,
     run_optimization,
 )
+from swarmpilot.planner.pylet.hardware import matches
 from swarmpilot.planner.services.demand import DemandStore
 from swarmpilot.planner.services.hardware_speed import HardwareSpeeds
 
@@ -125,8 +126,11 @@ class DeploymentTarget(Protocol):
     # Elastic pools also call ``spare_capacity() -> int``: instances that
     # still fit on free GPUs. A service without it never grows the pool.
     # Hardware-aware pools call ``free_slots() -> [(worker, hardware)]``
-    # instead, and pass ``remove`` (PyLet IDs) and ``place`` (workers per
-    # model) to ``apply_deployment``.
+    # (one entry per free GPU) instead, and pass ``remove`` (PyLet IDs)
+    # and ``place`` (workers per model) to ``apply_deployment``.
+    # ``model_requirements(model) -> (gpus, hardware pattern or None)``,
+    # when present, says what one instance of a model needs; without it
+    # every model takes one GPU of any kind.
 
 
 @dataclass(frozen=True)
@@ -172,15 +176,33 @@ def _hardware(inst: _Instance) -> str:
     return getattr(inst, "hardware", None) or _DEFAULT_HW
 
 
+Requirement = tuple[int, str | None]
+_ANY: Requirement = (1, None)
+
+
+def _fits(req: Requirement, gpus: int, hardware: str | None) -> bool:
+    """Whether ``gpus`` GPUs of ``hardware`` hold one instance of ``req``."""
+    need, pattern = req
+    if gpus < need:
+        return False
+    return pattern is None or (
+        hardware is not None and matches(hardware, pattern)
+    )
+
+
 def _undo_needless_moves(
-    deployment: list[int], initial: list[int], speed: np.ndarray
+    deployment: list[int],
+    initial: list[int],
+    speed: np.ndarray,
+    ok=lambda i, j: True,
 ) -> None:
     """Keep machines where they are when an equal one could move instead.
 
     The optimizer sees capacity only, so it may move machine ``i`` off
     model ``m`` and give ``m`` an equally fast machine ``k`` in return.
     Swapping the two assignments keeps every model's capacity and saves
-    a redeploy.
+    a redeploy, if machine ``k`` can run what ``i`` was given
+    (``ok(k, model index)``).
     """
     changed = True
     while changed:
@@ -195,6 +217,7 @@ def _undo_needless_moves(
                     and deployment[k] == m
                     and initial[k] != m
                     and abs(speed[k] - speed[i]) < 1e-9
+                    and (deployment[i] < 0 or ok(k, deployment[i]))
                 ):
                     deployment[i], deployment[k] = m, deployment[i]
                     changed = True
@@ -428,11 +451,28 @@ class AutoOptimizer:
                 if self.algorithm == "integer_programming":
                     moves += size - M
                 a = min(1.0, (moves + 1e-9) / size)
+            # Machines are counted, not placed, so one that runs a model
+            # changes only to a model of the same shape (GPUs and hardware
+            # pattern). New places are free GPUs counted in the default
+            # GPU count; any model may take one, and what does not fit is
+            # reported by the deploy (the hardware-aware loop places by
+            # shape).
+            reqs = self._requirements(models)
+            shape = [reqs[models[j]] if j >= 0 else None for j in initial]
+            B = np.tile(throughput, (size, 1))
+            for i in range(size):
+                for j, m in enumerate(models):
+                    if (
+                        shape[i] is not None
+                        and j != initial[i]
+                        and reqs[m] != shape[i]
+                    ):
+                        B[i, j] = 0
             optimizer = create_optimizer(
                 self.algorithm,
                 M=size,
                 N=len(models),
-                B=np.tile(throughput, (size, 1)),
+                B=B,
                 initial=initial,
                 a=a,
                 target=target,
@@ -440,8 +480,18 @@ class AutoOptimizer:
             deployment, _, _ = run_optimization(
                 optimizer, objective_method=self.objective_method
             )
+            deployment = [
+                (
+                    int(j)
+                    if j == initial[i]
+                    or shape[i] is None
+                    or (j >= 0 and reqs[models[j]] == shape[i])
+                    else int(initial[i])
+                )
+                for i, j in enumerate(deployment)
+            ]
             counts = Counter(models[j] for j in deployment if j >= 0)
-            self._keep_min_replicas(counts, current)
+            self._keep_min_replicas(counts, current, reqs)
         if target.any():
             before = self._score(current, models, throughput, target)
             after = self._score(counts, models, throughput, target)
@@ -640,6 +690,20 @@ class AutoOptimizer:
         speed = self.speeds.speed(hardware or _DEFAULT_HW)
         return default if speed is None else speed
 
+    def _requirements(self, models) -> dict[str, Requirement]:
+        """GPUs per instance and hardware pattern of each model."""
+        lookup = getattr(self._service, "model_requirements", None)
+        out: dict[str, Requirement] = {}
+        for m in models:
+            req = None
+            if lookup is not None:
+                try:
+                    req = lookup(m)
+                except Exception as e:
+                    logger.debug(f"No requirements for {m}: {e}")
+            out[m] = (max(1, int(req[0])), req[1] or None) if req else _ANY
+        return out
+
     def _plan_by_speed(
         self,
         instances: Sequence[_Instance],
@@ -647,11 +711,18 @@ class AutoOptimizer:
         demand: dict[str, float],
         steady: dict[str, float],
     ) -> AutoPlan | None:
-        """Plan with each machine weighted by its hardware's speed."""
+        """Plan with each machine weighted by its hardware's speed.
+
+        Models may need different GPU counts and kinds of hardware
+        (``model_requirements``). A machine changes model only to one
+        that takes as many GPUs and runs on its hardware, and the pool
+        grows each model into free GPUs that hold one of its instances.
+        """
         M = len(instances)
         current = Counter(inst.model_id for inst in instances)
         models = sorted(set(current) | set(demand))
         index = {m: j for j, m in enumerate(models)}
+        reqs = self._requirements(models)
         self._learn_speeds(instances)
         known = [
             v
@@ -660,10 +731,12 @@ class AutoOptimizer:
         ]
         default = float(np.median(known)) if known else 1.0
         speed = [self._speed_of(_hardware(i), default) for i in instances]
-        free = sorted(
-            ((w, self._speed_of(h, default)) for w, h in slots),
-            key=lambda s: -s[1],
-        )
+        gpus = [
+            int(getattr(inst, "gpu_count", 0) or reqs[inst.model_id][0])
+            for inst in instances
+        ]
+        hardware = [getattr(inst, "hardware", None) for inst in instances]
+        pool = self._free_pool(slots, default)
         floor = {m: min(self.min_replicas, n) for m, n in current.items()}
         # A move costs a drain and a cold start; an instance that just
         # arrived stays put until it has paid that back.
@@ -674,20 +747,34 @@ class AutoOptimizer:
             if now - _serving_since(inst) < self.min_age
         }
 
-        grow, victims = 0, []
+        def ok(i: int, j: int) -> bool:
+            """Machine ``i`` can become an instance of model ``j``."""
+            if i >= M or j == index[instances[i].model_id]:
+                return True
+            if i in young:
+                return False
+            req = reqs[models[j]]
+            return req[0] == gpus[i] and _fits(req, gpus[i], hardware[i])
+
+        added: list[tuple[str, str | None, float]] = []
+        victims: list[int] = []
         if self.elastic:
-            grow, victims = self._resize(speed, free, demand, current, floor)
-            if victims:
+            grow, victims = self._resize(
+                speed, bool(pool), demand, current, floor
+            )
+            if grow:
+                added = self._grow(instances, speed, pool, demand, steady, reqs)
+            elif victims:
                 victims = self._pick_victims(
                     instances, speed, demand, floor, len(victims), young
                 )
-        if not demand and not grow and not victims:
+        if not demand and not added and not victims:
             return None
 
-        initial = [index[i.model_id] for i in instances] + [-1] * grow
-        machine_speed = np.array(speed + [v for _, v in free[:grow]])
+        initial = [index[i.model_id] for i in instances] + [-1] * len(added)
+        machine_speed = np.array(speed + [v for _, _, v in added])
         workers = [getattr(i, "worker_id", None) for i in instances] + [
-            w for w, _ in free[:grow]
+            w for _, w, _ in added
         ]
         supply = machine_speed.sum() - sum(speed[i] for i in victims)
         target_map = self._allocate(
@@ -695,26 +782,26 @@ class AutoOptimizer:
         )
         target = np.array([target_map.get(m, 0.0) for m in models])
 
-        if victims:
+        if added:
+            # A growing round only adds: each new machine already has the
+            # model it was placed for.
+            deployment = initial[:M] + [index[m] for m, _, _ in added]
+        elif victims:
             deployment = list(initial)
             for i in victims:
                 deployment[i] = -1
         elif not target.any():
             return None
         else:
-            size = M + grow
             a = max(self.change_factor, 1.0 / M)
-            if grow:
-                moves = a * M
-                if self.algorithm == "integer_programming":
-                    moves += grow
-                a = min(1.0, (moves + 1e-9) / size)
             B = np.tile(machine_speed[:, None], (1, len(models)))
-            for i in young:
-                B[i, [j for j in range(len(models)) if j != initial[i]]] = 0
+            for i in range(M):
+                for j in range(len(models)):
+                    if not ok(i, j):
+                        B[i, j] = 0
             optimizer = create_optimizer(
                 self.algorithm,
-                M=size,
+                M=M,
                 N=len(models),
                 B=B,
                 initial=np.array(initial),
@@ -725,8 +812,20 @@ class AutoOptimizer:
                 optimizer, objective_method=self.objective_method
             )
             deployment = [int(j) for j in result]
-            self._keep_fastest(deployment, initial, machine_speed, floor, index)
-            _undo_needless_moves(deployment, initial, machine_speed)
+            # A machine the optimizer emptied or gave to a model it cannot
+            # run (no capacity there) stays where it is.
+            for i in range(M):
+                if deployment[i] < 0 or not ok(i, deployment[i]):
+                    deployment[i] = initial[i]
+            self._keep_fastest(
+                deployment, initial, machine_speed, floor, index, ok
+            )
+            _undo_needless_moves(deployment, initial, machine_speed, ok)
+            # Whatever the passes above did, no machine ends on a model
+            # it cannot run.
+            for i in range(M):
+                if not ok(i, deployment[i]):
+                    deployment[i] = initial[i]
 
         changed = [
             i for i in range(len(deployment)) if deployment[i] != initial[i]
@@ -736,7 +835,7 @@ class AutoOptimizer:
         before = _share_error(initial, machine_speed, target)
         after = _share_error(deployment, machine_speed, target)
         # Every machine that moves must buy its share of the threshold.
-        resized = bool(grow or victims)
+        resized = bool(added or victims)
         moved = sum(1 for i in changed if initial[i] >= 0)
         if not resized and before - after < self.change_threshold * moved:
             return None
@@ -767,32 +866,45 @@ class AutoOptimizer:
             speeds=self.speeds.snapshot(),
         )
 
+    def _free_pool(
+        self,
+        slots: Sequence[tuple[str | None, str | None]],
+        default: float,
+    ) -> dict[object, list]:
+        """Free GPUs per worker: key -> [worker, hardware, speed, GPUs].
+
+        Slots without a worker are single places PyLet will choose.
+        """
+        pool: dict[object, list] = {}
+        for k, (w, h) in enumerate(slots):
+            key = w if w is not None else ("?", k)
+            if key in pool:
+                pool[key][3] += 1
+            else:
+                pool[key] = [w, h, self._speed_of(h, default), 1]
+        return pool
+
     def _resize(
         self,
         speed: list[float],
-        free: list[tuple[str | None, float]],
+        has_free: bool,
         demand: dict[str, float],
         current: Counter,
         floor: dict[str, int],
-    ) -> tuple[int, list[int]]:
-        """Free places to grow into, or instances to drop (by index).
+    ) -> tuple[bool, list[int]]:
+        """Whether to grow, or instances to drop (by index).
 
         The dropped instances returned here are only as many as the
-        pool should lose; ``_pick_victims`` chooses which.
+        pool should lose; ``_pick_victims`` chooses which, and ``_grow``
+        where to grow.
         """
         M = len(speed)
         capacity = sum(speed)
         wanted = sum(demand.values()) / self.target_concurrency
-        ceiling = M + len(free)
-        if self.max_instances:
-            ceiling = min(ceiling, self.max_instances)
-        if wanted > capacity and ceiling > M:
+        room = not self.max_instances or self.max_instances > M
+        if wanted > capacity and has_free and room:
             self._low_rounds = 0
-            grow = 0
-            while M + grow < ceiling and capacity < wanted:
-                capacity += free[grow][1]
-                grow += 1
-            return grow, []
+            return True, []
 
         # The slowest instances above the floors could go.
         smallest = max(self.min_instances, sum(floor.values()))
@@ -809,13 +921,91 @@ class AutoOptimizer:
             left -= speed[i]
         if not drop:
             self._low_rounds = 0
-            return 0, []
+            return False, []
         self._low_rounds += 1
         if self._low_rounds < self.scale_down_rounds and not over_cap:
-            return 0, []
+            return False, []
         self._low_rounds = 0
         step = max(1, int(self.change_factor * M))
-        return 0, drop[:step]
+        return False, drop[:step]
+
+    def _grow(
+        self,
+        instances: Sequence[_Instance],
+        speed: list[float],
+        pool: dict[object, list],
+        demand: dict[str, float],
+        steady: dict[str, float],
+        reqs: dict[str, Requirement],
+    ) -> list[tuple[str, str | None, float]]:
+        """New instances for the models short of capacity.
+
+        The model furthest below its share goes first, onto the free
+        place that suits it best (``_best_place``), until the pool has
+        the capacity it wants, no model short of capacity fits anywhere,
+        or ``max_instances`` is reached.
+
+        Returns:
+            (model, worker, speed) per new instance.
+        """
+        tc = self.target_concurrency
+        have: dict[str, float] = {}
+        for inst, v in zip(instances, speed, strict=True):
+            have[inst.model_id] = have.get(inst.model_id, 0.0) + v
+        capacity = sum(speed)
+        wanted = sum(demand.values()) / tc
+        reachable = capacity + sum(p[2] * p[3] for p in pool.values())
+        goal = {
+            m: v / tc
+            for m, v in self._allocate(demand, steady, reachable * tc).items()
+        }
+        room = (
+            self.max_instances - len(instances) if self.max_instances else None
+        )
+        added: list[tuple[str, str | None, float]] = []
+        while capacity < wanted and (room is None or len(added) < room):
+            short = sorted(
+                (m for m in goal if goal[m] - have.get(m, 0.0) > 1e-9),
+                key=lambda m: -(goal[m] - have.get(m, 0.0)),
+            )
+            pick = None
+            for m in short:
+                key = self._best_place(
+                    pool, reqs[m], goal[m] - have.get(m, 0.0)
+                )
+                if key is not None:
+                    pick = (m, key)
+                    break
+            if pick is None:
+                break
+            m, key = pick
+            slot = pool[key]
+            slot[3] -= reqs[m][0]
+            added.append((m, slot[0], slot[2]))
+            have[m] = have.get(m, 0.0) + slot[2]
+            capacity += slot[2]
+        return added
+
+    @staticmethod
+    def _best_place(
+        pool: dict[object, list], req: Requirement, short: float
+    ) -> object | None:
+        """The free place for one instance of ``req`` short ``short``.
+
+        The slowest hardware that covers the shortfall on its own, else
+        the fastest, so fast GPUs stay free for the models that need
+        them; then the worker with the fewest free GPUs that hold the
+        instance (best fit), so large nodes stay whole for multi-GPU
+        models.
+        """
+        fits = [k for k, p in pool.items() if _fits(req, p[3], p[1])]
+        if not fits:
+            return None
+        order = {k: n for n, k in enumerate(pool)}
+        enough = [k for k in fits if pool[k][2] >= short - 1e-9]
+        if enough:
+            return min(enough, key=lambda k: (pool[k][2], pool[k][3], order[k]))
+        return min(fits, key=lambda k: (-pool[k][2], pool[k][3], order[k]))
 
     def _pick_victims(
         self,
@@ -888,6 +1078,7 @@ class AutoOptimizer:
         speed: np.ndarray,
         floor: dict[str, int],
         index: dict[str, int],
+        ok=lambda i, j: True,
     ) -> None:
         """Keep each model's floor on machines that do not move.
 
@@ -895,7 +1086,8 @@ class AutoOptimizer:
         all its machines for others serves nothing in between. A model
         below its floor of unmoved machines keeps its slowest outgoing
         one, and the machine coming to it that is closest in speed goes
-        to that machine's new model instead, so both keep their capacity.
+        to that machine's new model instead, so both keep their capacity,
+        if it can run that model (``ok(machine, model index)``).
         """
         for m, need in floor.items():
             j = index[m]
@@ -916,18 +1108,32 @@ class AutoOptimizer:
                 incoming = [
                     x
                     for x in range(len(deployment))
-                    if deployment[x] == j and initial[x] != j
+                    if deployment[x] == j
+                    and initial[x] != j
+                    and ok(x, deployment[i])
                 ]
                 if incoming:
                     x = min(incoming, key=lambda x: abs(speed[x] - speed[i]))
                     deployment[x] = deployment[i]
                 deployment[i] = j
 
-    def _keep_min_replicas(self, counts: Counter, current: Counter) -> None:
+    def _keep_min_replicas(
+        self,
+        counts: Counter,
+        current: Counter,
+        reqs: dict[str, Requirement] | None = None,
+    ) -> None:
+        """Give a model below its floor machines of its own shape."""
+        reqs = reqs or {}
         for m, have in current.items():
             floor = min(self.min_replicas, have)
             while counts[m] < floor:
-                donor = max(counts, key=lambda k: counts[k])
+                same = [
+                    k for k in counts if reqs.get(k, _ANY) == reqs.get(m, _ANY)
+                ]
+                if not same:
+                    break
+                donor = max(same, key=lambda k: counts[k])
                 if counts[donor] <= max(self.min_replicas, 1):
                     break
                 counts[donor] -= 1

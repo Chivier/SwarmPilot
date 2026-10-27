@@ -374,8 +374,12 @@ When an engine crashes, its requests are not lost:
 - **Scheduler:** the first refused connection marks the instance
   `unhealthy`. No new request is routed to it, and every request waiting
   for it (none had reached the engine) is scheduled again on the model's
-  other instances. Requests already running on the engine when it died
-  fail. The Scheduler checks unhealthy instances every
+  other instances. A request already running on the engine when it died
+  gets a dropped connection or a 503; nothing has reached the client yet
+  (a stream that has started cannot be taken back), so it too runs again
+  on another instance, at most twice. The same holds for an instance the
+  Planner removes after its drain times out with requests still running.
+  The Scheduler checks unhealthy instances every
   `SCHEDULER_HEALTH_CHECK_INTERVAL` seconds (default 1) and routes to them
   again when they answer; one that stays unreachable for
   `SCHEDULER_UNHEALTHY_REMOVE_AFTER` seconds (default 120, 0 = never) is
@@ -516,6 +520,20 @@ hardware`, the fastest kind counting 1) and:
   (`rate * s`) before anyone's backlog, so one model's backlog cannot take
   the machines another needs to keep up;
 - leaves a model at `min_replicas` its fastest instances.
+
+Models can take different GPU counts and kinds of hardware
+(`PYLET_MODEL_CONFIGS`, e.g. `{"meta-llama/Llama-3.1-70B-Instruct":
+{"gpu_count": 4, "hardware": "[ah]100*"}}`). The loop knows each model's
+shape: a machine changes model only to one with the same GPU count that
+runs on its hardware, and a growing pool gives each model short of
+capacity a free place that holds one of its instances: the slowest kind
+of hardware that covers the shortfall on its own (else the fastest), on
+the worker with the fewest free GPUs that fit, so large nodes stay whole
+for multi-GPU models. Without `AUTO_OPTIMIZE_HARDWARE_AWARE` the loop
+re-divides counts only among models of the same shape. Replicas placed
+without a named worker (serve, scale, replacements) also go best fit:
+PyLet itself takes the first worker that fits, so 1-GPU replicas would
+fill an 8-GPU node and leave no room for a 4-GPU model.
 
 Hardware names come from `PLANNER_HARDWARE_MAP` (or the simulator's
 node list); the speeds are in the loop's log line.

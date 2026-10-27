@@ -181,6 +181,7 @@ class DiffusersAdapter(EngineAdapter):
             RouteSpec(
                 path="v1/images/generations",
                 request_model=ImageGenerationRequest,
+                rerun_safe=True,
             ),
         )
 
