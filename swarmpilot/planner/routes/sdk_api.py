@@ -16,6 +16,11 @@ Endpoints:
     POST /scale       - Scale model replicas
     POST /terminate   - Terminate instances
     GET  /schedulers  - Get scheduler mapping
+
+Endpoints that deploy, scale or terminate are plain functions, so FastAPI
+runs them on its thread pool: they wait minutes for engines to start or
+drain, and on the event loop that wait would stall every other Planner
+request, the Schedulers' demand reports and registrations included.
 """
 
 from __future__ import annotations
@@ -213,7 +218,7 @@ def _instance_to_detail(instance) -> InstanceDetailResponse:
 
 
 @router.post("/serve", response_model=ServeResponse)
-async def serve_model(request: ServeRequest):
+def serve_model(request: ServeRequest):
     """Deploy a model service.
 
     If ``model_or_command`` contains a ``/``, it is treated as a
@@ -269,7 +274,7 @@ async def serve_model(request: ServeRequest):
 
 
 @router.post("/run", response_model=RunResponse)
-async def run_workload(request: RunRequest):
+def run_workload(request: RunRequest):
     """Start a custom workload.
 
     Deploys the given command directly via PyLet without scheduler
@@ -339,7 +344,7 @@ async def register_model(request: RegisterRequest):
 
 
 @router.post("/deploy", response_model=DeployResponse)
-async def deploy_registered():
+def deploy_registered():
     """Trigger optimized deployment of registered models.
 
     Collects all models from the register store and deploys them
@@ -458,7 +463,7 @@ async def get_instance(name: str):
 
 
 @router.post("/scale", response_model=ScaleResponse)
-async def scale_model(request: ScaleRequest):
+def scale_model(request: ScaleRequest):
     """Scale model replicas to target count.
 
     Args:
@@ -501,7 +506,7 @@ async def scale_model(request: ScaleRequest):
 
 
 @router.post("/terminate", response_model=TerminateResponse)
-async def terminate_instances(request: TerminateRequest):
+def terminate_instances(request: TerminateRequest):
     """Terminate instances by name, model, or all.
 
     Exactly one of ``name``, ``model``, or ``all`` should be
