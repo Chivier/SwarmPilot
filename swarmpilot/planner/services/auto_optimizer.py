@@ -78,7 +78,7 @@ instance as that much capacity:
   drain before replacements start).
 * In an elastic pool, a model that takes several GPUs or one kind of
   hardware can find no free place while smaller models hold the GPUs it
-  needs in pieces. When the model furthest below its share fits on no free
+  needs (in pieces, or whole workers when each instance takes one). When the model furthest below its share fits on no free
   GPUs, the loop makes room (``_make_room``): it removes instances of
   models that stay less short than it from one worker, and starts the
   model there.
@@ -753,6 +753,8 @@ class AutoOptimizer:
             if now - _serving_since(inst) < self.min_age
         }
 
+        whole = getattr(self._service, "whole_nodes", False) is True
+
         def ok(i: int, j: int) -> bool:
             """Machine ``i`` can become an instance of model ``j``."""
             if i >= M or j == index[instances[i].model_id]:
@@ -760,7 +762,10 @@ class AutoOptimizer:
             if i in young:
                 return False
             req = reqs[models[j]]
-            return req[0] == gpus[i] and _fits(req, gpus[i], hardware[i])
+            # A whole worker takes any model it holds; a share of one
+            # only a model of the same size.
+            same = whole or req[0] == gpus[i]
+            return same and _fits(req, gpus[i], hardware[i])
 
         added: list[tuple[str, str | None, float]] = []
         victims: list[int] = []
@@ -785,7 +790,9 @@ class AutoOptimizer:
                 speed, bool(pool), demand, current, floor
             )
             if grow:
-                added = self._grow(instances, speed, pool, demand, steady, reqs)
+                added = self._grow(
+                    instances, speed, pool, demand, steady, reqs, whole
+                )
             elif victims:
                 victims = self._pick_victims(
                     instances, speed, demand, floor, len(victims), young
@@ -962,13 +969,15 @@ class AutoOptimizer:
         demand: dict[str, float],
         steady: dict[str, float],
         reqs: dict[str, Requirement],
+        whole: bool = False,
     ) -> list[tuple[str, str | None, float]]:
         """New instances for the models short of capacity.
 
         The model furthest below its share goes first, onto the free
         place that suits it best (``_best_place``), until the pool has
         the capacity it wants, no model short of capacity fits anywhere,
-        or ``max_instances`` is reached.
+        or ``max_instances`` is reached. With ``whole`` workers an
+        instance takes all of its worker.
 
         Returns:
             (model, worker, speed) per new instance.
@@ -996,7 +1005,7 @@ class AutoOptimizer:
             pick = None
             for m in short:
                 key = self._best_place(
-                    pool, reqs[m], goal[m] - have.get(m, 0.0)
+                    pool, reqs[m], goal[m] - have.get(m, 0.0), whole
                 )
                 if key is not None:
                     pick = (m, key)
@@ -1005,7 +1014,7 @@ class AutoOptimizer:
                 break
             m, key = pick
             slot = pool[key]
-            slot[3] -= reqs[m][0]
+            slot[3] = 0 if whole else slot[3] - reqs[m][0]
             added.append((m, slot[0], slot[2]))
             have[m] = have.get(m, 0.0) + slot[2]
             capacity += slot[2]
@@ -1034,8 +1043,9 @@ class AutoOptimizer:
 
         Returns:
             (model, worker, speed of the new instance, instances to
-            remove by index), or None when the model is not short by a
-            whole instance, fits on free GPUs, or nowhere can be freed.
+            remove by index), or None when the model is short by less
+            than half the instance it would get, fits on free GPUs, or
+            nowhere can be freed.
         """
         tc = self.target_concurrency
         have: dict[str, float] = {}
@@ -1072,7 +1082,9 @@ class AutoOptimizer:
 
         best = None
         for w, (hw, v, free, members) in workers.items():
-            if short < v - 1e-9 or not _fits(req, req[0], hw):
+            # Short by less than half of what the worker adds: not worth
+            # a drain and a cold start.
+            if short < v / 2 or not _fits(req, req[0], hw):
                 continue
             # Instances of the models with the most to spare go first.
             spare = {}
@@ -1115,7 +1127,10 @@ class AutoOptimizer:
 
     @staticmethod
     def _best_place(
-        pool: dict[object, list], req: Requirement, short: float
+        pool: dict[object, list],
+        req: Requirement,
+        short: float,
+        whole: bool = False,
     ) -> object | None:
         """The free place for one instance of ``req`` short ``short``.
 
@@ -1123,12 +1138,16 @@ class AutoOptimizer:
         the fastest, so fast GPUs stay free for the models that need
         them; then the worker with the fewest free GPUs that hold the
         instance (best fit), so large nodes stay whole for multi-GPU
-        models.
+        models. With ``whole`` workers the smallest worker comes first,
+        since an instance takes all of it.
         """
         fits = [k for k, p in pool.items() if _fits(req, p[3], p[1])]
         if not fits:
             return None
         order = {k: n for n, k in enumerate(pool)}
+        if whole:
+            smallest = min(pool[k][3] for k in fits)
+            fits = [k for k in fits if pool[k][3] == smallest]
         enough = [k for k in fits if pool[k][2] >= short - 1e-9]
         if enough:
             return min(enough, key=lambda k: (pool[k][2], pool[k][3], order[k]))

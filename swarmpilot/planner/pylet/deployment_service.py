@@ -231,8 +231,15 @@ class PyLetDeploymentService:
         deploy reports them failed.
         """
         self._ensure_initialized()
+        if self.whole_nodes:
+            return len(self._instance_manager.free_nodes())
         per = max(1, self._default_gpu_count)
         return self._instance_manager.free_gpus() // per
+
+    @property
+    def whole_nodes(self) -> bool:
+        """Whether each instance takes a whole worker."""
+        return getattr(self._instance_manager, "whole_nodes", False) is True
 
     def free_slots(self) -> list[tuple[str, str]]:
         """Free GPUs, one entry each.
@@ -240,6 +247,9 @@ class PyLetDeploymentService:
         Entries of the same worker add up to its free GPUs, so a caller
         that knows each model's GPU count (``model_requirements``) can
         tell which models still fit where.
+
+        With whole workers (``PLANNER_WHOLE_NODES``) only the GPUs of
+        workers that are free as a whole are listed.
 
         Returns:
             One (worker id, hardware name) pair per free GPU.

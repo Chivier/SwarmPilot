@@ -174,6 +174,99 @@ class TestPlacement:
         assert info["hardware_name"] == "L40S-48GB"
 
 
+def _node(wid, host, total, free=None):
+    return SimpleNamespace(
+        id=wid,
+        host=host,
+        status="ONLINE",
+        gpu=total,
+        gpu_indices_available=list(range(total if free is None else free)),
+    )
+
+
+class TestWholeNodes:
+    """``PLANNER_WHOLE_NODES``: one instance per worker, all its GPUs."""
+
+    @staticmethod
+    def _mgr(workers, resolver=None):
+        mgr = InstanceManager(
+            "http://pylet:1",
+            "http://sched:1",
+            hardware=resolver or HardwareResolver({}),
+            whole_nodes=True,
+        )
+        mgr._initialized = True
+        mgr.pylet_client = MagicMock()
+        mgr.pylet_client.list_workers.return_value = workers
+        mgr.pylet_client.deploy_model.side_effect = lambda **kw: [
+            InstanceInfo(f"p-{kw['target_worker']}", kw["model_id"], None, "X")
+        ]
+        return mgr
+
+    @staticmethod
+    def _calls(mgr):
+        return [
+            (
+                c.kwargs["target_worker"],
+                c.kwargs["gpu_count"],
+                c.kwargs["count"],
+            )
+            for c in mgr.pylet_client.deploy_model.call_args_list
+        ]
+
+    def test_env_turns_it_on(self, monkeypatch):
+        monkeypatch.setenv("PLANNER_WHOLE_NODES", "true")
+        mgr = InstanceManager("http://pylet:1", "http://sched:1")
+        assert mgr.whole_nodes is True
+        monkeypatch.delenv("PLANNER_WHOLE_NODES")
+        assert InstanceManager("http://p:1", "http://s:1").whole_nodes is False
+
+    def test_each_replica_takes_the_smallest_free_worker_whole(self):
+        mgr = self._mgr(
+            [
+                _node("eight", "a", 8),
+                _node("busy", "b", 4, free=3),
+                _node("one", "c", 1),
+                _node("four", "d", 4),
+            ]
+        )
+        result = mgr.deploy_instances("m", count=4, gpu_count=1)
+        # The partly used worker is not free; the rest go smallest
+        # first, each with all its GPUs.
+        assert self._calls(mgr) == [
+            ("one", 1, 1),
+            ("four", 4, 1),
+            ("eight", 8, 1),
+        ]
+        assert result.success_count == 3
+        assert "no free worker" in result.failed[0][1]
+
+    def test_gpu_count_is_the_fewest_a_worker_must_have(self):
+        mgr = self._mgr(
+            [_node("one", "a", 1), _node("two", "b", 2), _node("eight", "c", 8)]
+        )
+        mgr.deploy_instances("big", count=1, gpu_count=4)
+        assert self._calls(mgr) == [("eight", 8, 1)]
+
+    def test_hardware_pattern_and_held_workers(self):
+        mgr = self._mgr(
+            [_node("h-0", "a", 4), _node("l-0", "b", 4), _node("h-1", "c", 4)],
+            HardwareResolver({"h-*": "H100", "l-*": "L40S"}),
+        )
+        mgr.deploy_instances("m", count=1, gpu_count=4, hardware="H100*")
+        # PyLet has not placed it yet, so h-0 still shows free GPUs: it
+        # is held all the same.
+        mgr.deploy_instances("m", count=1, gpu_count=4, hardware="H100*")
+        assert [c[0] for c in self._calls(mgr)] == ["h-0", "h-1"]
+        assert [w for w, _ in mgr.free_slots(1)] == ["l-0"] * 4
+
+    def test_target_worker_must_be_free(self):
+        mgr = self._mgr([_node("w", "a", 2, free=1), _node("v", "b", 2)])
+        assert mgr.deploy_instances("m", 1, target_worker="w").failed
+        mgr.deploy_instances("m", 1, target_worker="v")
+        assert self._calls(mgr) == [("v", 2, 1)]
+
+
 class TestReapFailed:
     """Removal of instances whose engine died."""
 
