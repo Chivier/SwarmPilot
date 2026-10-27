@@ -24,7 +24,7 @@ PLATFORM = {
 
 
 class _Engine:
-    def __init__(self, port: int = 0):
+    def __init__(self, port: int = 0, status: int = 200, drop: bool = False):
         self.seen = 0
         outer = self
 
@@ -33,14 +33,19 @@ class _Engine:
                 n = int(self.headers.get("content-length", 0))
                 self.rfile.read(n)
                 outer.seen += 1
-                self._reply()
+                if drop:
+                    # Dies mid-request: the connection closes unanswered.
+                    self.close_connection = True
+                    self.connection.shutdown(socket.SHUT_RDWR)
+                    return
+                self._reply(status)
 
             def do_GET(self) -> None:
                 self._reply()
 
-            def _reply(self) -> None:
+            def _reply(self, code: int = 200) -> None:
                 body = b'{"ok": true}'
-                self.send_response(200)
+                self.send_response(code)
                 self.send_header("content-type", "application/json")
                 self.send_header("content-length", str(len(body)))
                 self.end_headers()
@@ -206,3 +211,38 @@ def test_reroute_survives_a_strategy_error(client, engine, monkeypatch):
     assert r.status_code == 200, r.text
     assert engine.seen == 1
     assert _status(client, "dead") == "unhealthy"
+
+
+@pytest.mark.parametrize(
+    "broken", [{"status": 503}, {"drop": True}], ids=["503", "dropped"]
+)
+def test_request_lost_by_a_dying_engine_runs_elsewhere(client, engine, broken):
+    """A dying engine's open requests run again on another instance.
+
+    An engine that stops with requests open (it crashed, or was removed
+    after a drain timeout) answers 503 or drops the connection.
+    """
+    dying = _Engine(**broken)
+    try:
+        _register(client, "dying", dying.url)
+        _register(client, "live", engine.url)
+        _active(client, "dying", "live")
+        for _ in range(4):
+            r = client.post("/infer", json={"x": 1})
+            assert r.status_code == 200, r.text
+        assert dying.seen >= 1
+        assert engine.seen == 4
+    finally:
+        dying.stop()
+
+
+def test_lost_request_fails_when_nowhere_else_to_go(client):
+    dying = _Engine(status=503)
+    try:
+        _register(client, "dying", dying.url)
+        _active(client, "dying")
+        r = client.post("/infer", json={})
+        assert r.status_code >= 500
+        assert dying.seen == 1
+    finally:
+        dying.stop()

@@ -41,6 +41,11 @@ _IDEMPOTENT = frozenset({"GET", "HEAD", "OPTIONS", "PUT", "DELETE"})
 # The request never reached the engine: the connection was refused or
 # never opened. Typical of a crashed engine or a lost node.
 _UNREACHABLE = (aiohttp.ClientConnectorError, aiohttp.ConnectionTimeoutError)
+# The engine went away after the request was sent: its process died or
+# was stopped (a drained instance removed with requests still running).
+_LOST = (aiohttp.ServerDisconnectedError, aiohttp.ClientOSError)
+# What an engine that stops serving answers its open requests.
+_LOST_STATUS = 503
 
 
 class StreamStart:
@@ -112,6 +117,8 @@ class AsyncWorkerQueue:
         on_task_started: Callable[[str], None] | None = None,
         extra_headers: dict[str, str] | None = None,
         on_unreachable: Callable[[str, list[QueuedTask]], None] | None = None,
+        on_lost: Callable[[str, list[QueuedTask]], None] | None = None,
+        max_reroutes: int = 2,
     ):
         """Create the queue.
 
@@ -133,6 +140,14 @@ class AsyncWorkerQueue:
                 The failing task comes first; none of them are reported
                 through ``callback``, so the caller must re-route or fail
                 them. Without it, the queue retries the same instance.
+            on_lost: Called with the instance id and a task whose engine
+                went away before answering it: the connection was lost
+                after sending, or the engine answered 503. Nothing has
+                reached the client yet (a stream had not started), so the
+                caller can run it on another instance; the task is not
+                reported through ``callback``. Without it, or after
+                ``max_reroutes`` such losses, the task fails.
+            max_reroutes: Losses after which a task fails instead.
         """
         self.worker_id = worker_id
         self.worker_endpoint = worker_endpoint
@@ -146,6 +161,8 @@ class AsyncWorkerQueue:
         self._on_task_started = on_task_started
         self._extra_headers = extra_headers or {}
         self._on_unreachable = on_unreachable
+        self._on_lost = on_lost
+        self._max_reroutes = max(0, max_reroutes)
         self._proxy = env_proxy_for(worker_endpoint)
 
         self._queue: deque[QueuedTask] = deque()
@@ -372,6 +389,34 @@ class AsyncWorkerQueue:
                 f"on_unreachable failed for {self.worker_id}: {cb_err}"
             )
 
+    def _resend_elsewhere(self, task: QueuedTask, why: str) -> bool:
+        """Give a task whose engine went away to ``on_lost``.
+
+        Returns:
+            False when the task must fail here instead: no ``on_lost``,
+            too many losses already, or a stream the client is reading.
+        """
+        if self._on_lost is None or task.reroutes >= self._max_reroutes:
+            return False
+        sink = task.stream_sink
+        if sink is not None and sink.done():
+            return False
+        task.reroutes += 1
+        self._running.pop(task.task_id, None)
+        self._kick()
+        logger.warning(
+            f"Worker {self.worker_id} lost task {task.task_id} ({why}); "
+            f"sending it elsewhere (loss {task.reroutes})"
+        )
+        try:
+            self._on_lost(self.worker_id, [task])
+        except Exception as e:
+            logger.opt(exception=True).error(
+                f"on_lost failed for {self.worker_id}: {e}"
+            )
+            return False
+        return True
+
     async def _execute(self, task: QueuedTask) -> None:
         started = time.time()
         if self._on_task_started:
@@ -386,6 +431,12 @@ class AsyncWorkerQueue:
         except Exception as e:
             if isinstance(e, _UNREACHABLE) and self._on_unreachable:
                 self._hand_back(task, e)
+                return
+            if (
+                isinstance(e, _LOST)
+                and not isinstance(e, _UNREACHABLE)
+                and self._resend_elsewhere(task, type(e).__name__)
+            ):
                 return
             elapsed = (time.time() - started) * 1000
             logger.warning(
@@ -404,6 +455,13 @@ class AsyncWorkerQueue:
                     execution_time_ms=elapsed,
                 ),
             )
+            return
+
+        if resp.status_code == _LOST_STATUS and self._resend_elsewhere(
+            task, f"HTTP {resp.status_code}"
+        ):
+            if resp.close is not None:
+                await resp.close()
             return
 
         status = "completed" if resp.status_code < 400 else "failed"

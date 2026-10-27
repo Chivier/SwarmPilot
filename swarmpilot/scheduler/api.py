@@ -217,6 +217,7 @@ async def lifespan(app: FastAPI):
             async_dispatch=config.proxy.dispatch_mode != "thread",
             max_in_flight=config.proxy.max_in_flight,
             on_unreachable=_on_instance_unreachable,
+            on_lost=_on_task_lost,
         )
         logger.info("WorkerQueueManager initialized")
         health_task = asyncio.create_task(
@@ -868,7 +869,11 @@ async def _reroute_orphaned_tasks(
     rerouted = 0
     for task in tasks:
         try:
-            available = await instance_registry.list_active(model_id=model_id)
+            available = [
+                i
+                for i in await instance_registry.list_active(model_id=model_id)
+                if i.instance_id != removed_id
+            ]
             if not available or worker_queue_manager is None:
                 raise RuntimeError("no other active instance")
             record = await task_registry.get(task.task_id)
@@ -937,6 +942,37 @@ def _on_instance_unreachable(instance_id: str, tasks: list[QueuedTask]) -> None:
     task = asyncio.create_task(_handle_unreachable(instance_id, tasks))
     _background_tasks.add(task)
     task.add_done_callback(_background_tasks.discard)
+
+
+def _on_task_lost(instance_id: str, tasks: list[QueuedTask]) -> None:
+    """Worker queue hook: an engine went away with these tasks open.
+
+    Runs on the event loop inside the queue; the work happens in a task.
+    """
+    task = asyncio.create_task(_handle_lost(instance_id, tasks))
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+
+
+async def _handle_lost(instance_id: str, tasks: list[QueuedTask]) -> None:
+    """Run tasks whose engine went away on other instances of the model.
+
+    The engine crashed, or the instance was removed while the tasks were
+    still running (a drain that timed out). The client has seen nothing
+    yet, so the task runs again; the instance itself is left to the
+    unreachable check and the Planner.
+    """
+    by_model: dict[str, list[QueuedTask]] = {}
+    for task in tasks:
+        by_model.setdefault(task.model_id, []).append(task)
+    for model_id, group in by_model.items():
+        rerouted = await _reroute_orphaned_tasks(
+            group, model_id, instance_id, reason="lost the request"
+        )
+        logger.info(
+            f"[REROUTE] {rerouted} of {len(group)} lost task(s) from "
+            f"{instance_id} sent elsewhere"
+        )
 
 
 async def _handle_unreachable(

@@ -38,6 +38,8 @@ class QueuedTask:
         priority: Whether the task skipped the normal queue.
         stream_sink: Future resolved with the engine's first answer for
             streamed proxy requests (async dispatch only).
+        reroutes: Times the task was sent again elsewhere after its
+            engine went away mid-request.
     """
 
     task_id: str
@@ -50,6 +52,7 @@ class QueuedTask:
     # asyncio.Future that receives a StreamStart when the engine answers.
     # Only the async dispatch queue supports it.
     stream_sink: Any = None
+    reroutes: int = 0
 
 
 @dataclass
