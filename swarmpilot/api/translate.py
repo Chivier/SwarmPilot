@@ -17,8 +17,14 @@ a 400 that names the field.
 
 from __future__ import annotations
 
+import asyncio
 import os
-from collections.abc import AsyncIterator, Mapping, Sequence
+from collections.abc import (
+    AsyncGenerator,
+    AsyncIterator,
+    Mapping,
+    Sequence,
+)
 from dataclasses import dataclass
 from typing import Any
 
@@ -36,6 +42,8 @@ from swarmpilot.api.registry import find_style, style_for_path
 #: Set to ``lenient`` to drop answer-changing fields instead of refusing.
 POLICY_ENV = "SWARMPILOT_API_TRANSLATION"
 DROPPED_HEADER = "x-swarmpilot-dropped"
+# How long to keep reading an engine's stream after its last event.
+DRAIN_TIMEOUT_S = 2.0
 # Preferred engine style when an engine speaks several.
 _ENGINE_PREFERENCE = ("openai_chat", "anthropic_messages", "openai_responses")
 
@@ -105,12 +113,9 @@ class Translation:
         """Convert an engine's SSE stream to the client's style."""
         if self.request is None:
             return chunks
+        events = _guard(self.engine.decode_stream(chunks), chunks)
         return _then_drain(
-            self.client.encode_stream(
-                _guard(self.engine.decode_stream(chunks), chunks),
-                self.request,
-            ),
-            chunks,
+            self.client.encode_stream(events, self.request), chunks, events
         )
 
     def stream_from_body(self, body: Mapping[str, Any]) -> AsyncIterator[bytes]:
@@ -224,22 +229,42 @@ async def _guard(
 
 
 async def _then_drain(
-    out: AsyncIterator[bytes], source: AsyncIterator[bytes]
+    out: AsyncIterator[bytes],
+    source: AsyncIterator[bytes],
+    events: AsyncGenerator[Any, None],
 ) -> AsyncIterator[bytes]:
     """Yield the client's stream, then read the engine's to its end.
 
     The client's stream is complete at the engine's last event (``[DONE]``,
     ``message_stop``, ...), before the engine's body has ended. Reading
-    the rest, usually nothing, lets the request count as completed and
-    its connection be reused, as for an untranslated stream.
+    the rest, usually nothing, lets its connection be reused, as for an
+    untranslated stream. The request counts as completed either way
+    (``answered``), and an engine that keeps its body open is cut off
+    after ``DRAIN_TIMEOUT_S`` so the client is not held waiting.
+
+    ``events`` (the guarded decoder, which closes ``source``) is held here
+    and closed last: left to the garbage collector, it would close the
+    engine's stream as soon as the encoder is done with it, before it is
+    drained.
     """
-    async for b in out:
-        yield b
     try:
-        async for _ in source:
-            pass
-    except Exception as e:  # the engine failed after its last event
-        logger.debug(f"[API] Engine stream ended badly after the answer: {e}")
+        async for b in out:
+            yield b
+        answered = getattr(source, "answered", None)
+        if answered is not None:
+            answered()
+        try:
+            async with asyncio.timeout(DRAIN_TIMEOUT_S):
+                async for _ in source:
+                    pass
+        except TimeoutError:
+            logger.debug("[API] Engine stream still open after the answer")
+        except Exception as e:  # the engine failed after its last event
+            logger.debug(
+                f"[API] Engine stream ended badly after the answer: {e}"
+            )
+    finally:
+        await events.aclose()
 
 
 async def events_from_response(resp: c.Response) -> AsyncIterator[Any]:

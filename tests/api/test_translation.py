@@ -372,6 +372,52 @@ async def test_translated_stream_reads_the_engine_body_to_its_end():
     assert read == ["end"]
 
 
+async def test_engine_that_keeps_its_stream_open_is_cut_off(monkeypatch):
+    """An engine may keep its body open after [DONE].
+
+    The client must not wait for it, and the request still counts as
+    completed.
+    """
+    import asyncio
+
+    from swarmpilot.api import translate
+    from swarmpilot.engines.base import EngineResponse
+    from swarmpilot.scheduler.services.async_worker_queue import _Relay
+
+    monkeypatch.setattr(translate, "DRAIN_TIMEOUT_S", 0.05)
+    tr = plan_request(
+        "v1/messages",
+        {
+            "max_tokens": 5,
+            "stream": True,
+            "messages": [{"role": "user", "content": "x"}],
+        },
+        CHAT,
+    )
+    closed = []
+
+    async def engine():
+        yield b'data: {"id":"c","choices":[{"delta":{"content":"a"}}]}\n\n'
+        yield b"data: [DONE]\n\n"
+        await asyncio.sleep(3600)
+
+    async def close():
+        closed.append(True)
+
+    relay = _Relay(
+        EngineResponse(200, chunks=engine(), close=close),
+        asyncio.get_running_loop().create_future(),
+    )
+    frames = await asyncio.wait_for(
+        collect(tr.stream_response(relay)), timeout=5
+    )
+    assert b"".join(frames).endswith(
+        b'event: message_stop\ndata: {"type":"message_stop"}\n\n'
+    )
+    assert closed == [True]
+    assert await relay.done is True
+
+
 async def test_chat_stream_state_machine_opens_and_closes_parts():
     chunks = [
         {"id": "c", "choices": [{"delta": {"reasoning_content": "hmm"}}]},

@@ -420,9 +420,11 @@ class AsyncWorkerQueue:
                     worker_id=self.worker_id,
                     status=status,
                     result=resp.body,
-                    error=None
-                    if status == "completed"
-                    else f"HTTP {resp.status_code}",
+                    error=(
+                        None
+                        if status == "completed"
+                        else f"HTTP {resp.status_code}"
+                    ),
                     execution_time_ms=elapsed,
                     http_status_code=resp.status_code,
                     response_headers=resp.headers,
@@ -469,6 +471,7 @@ class _Relay:
         self._resp = resp
         self._it = resp.chunks.__aiter__()
         self.done = done
+        self._answered = False
 
     def __aiter__(self) -> _Relay:
         return self
@@ -483,6 +486,14 @@ class _Relay:
             await self._close(ok=False)
             raise
 
+    def answered(self) -> None:
+        """Count the stream as complete even if it is closed early.
+
+        Called once the client has the whole answer, so a body that the
+        engine keeps open after its last event can be cut off.
+        """
+        self._answered = True
+
     async def aclose(self) -> None:
         """Stop reading and release the connection."""
         await self._close(ok=False)
@@ -494,4 +505,4 @@ class _Relay:
             if self._resp.close is not None:
                 await self._resp.close()
         finally:
-            self.done.set_result(ok)
+            self.done.set_result(ok or self._answered)

@@ -14,6 +14,10 @@ use swarmpilot_core::api::translate::{Translation, DROPPED_HEADER};
 
 use crate::dispatch::RelayStream;
 
+/// How long to keep reading an engine's stream after its last event, as
+/// `DRAIN_TIMEOUT_S` in `swarmpilot/api/translate.py`.
+pub const DRAIN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+
 /// Starlette's answer to an exception the handler did not catch.
 pub fn internal_error() -> Response {
     let mut resp = Response::new(Body::from("Internal Server Error"));
@@ -151,7 +155,14 @@ pub fn stream(
                         return Some((Err(std::io::Error::other(msg)), (chunks, st, Phase::Done)));
                     }
                     Phase::Draining => {
-                        while let Some(Ok(_)) = chunks.next().await {}
+                        // The client has the whole answer: it counts as
+                        // completed, and an engine that keeps its body
+                        // open is cut off rather than holding the client.
+                        chunks.answered();
+                        let drain = async { while let Some(Ok(_)) = chunks.next().await {} };
+                        if tokio::time::timeout(DRAIN_TIMEOUT, drain).await.is_err() {
+                            tracing::debug!("engine stream still open after the answer");
+                        }
                         return None;
                     }
                     Phase::Running => {

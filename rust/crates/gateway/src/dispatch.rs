@@ -457,6 +457,13 @@ pub struct RelayStream {
     guard: FinishGuard,
 }
 
+impl RelayStream {
+    /// Count the stream as complete even if it is dropped before its end.
+    pub fn answered(&mut self) {
+        self.guard.ok = true;
+    }
+}
+
 impl Stream for RelayStream {
     type Item = Result<Bytes, std::io::Error>;
 

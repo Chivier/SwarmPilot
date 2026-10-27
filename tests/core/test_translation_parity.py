@@ -193,6 +193,8 @@ def _scalar(rng: random.Random) -> Any:
             rng.choice(WORDS),
             rng.randint(-5, 5),
             round(rng.uniform(-3, 3), rng.choice([0, 2, 9])),
+            # 17-digit repr ties: Python rounds them to even.
+            rng.getrandbits(50) + rng.choice((0.25, 0.75)),
         ]
     )
 

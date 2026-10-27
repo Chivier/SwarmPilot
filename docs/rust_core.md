@@ -269,6 +269,14 @@ the engine's body was never read to the end and the request counted as
 failed (no throughput, no training sample). `Translation.stream_response`
 now reads the rest of the engine's body after the client's stream ends.
 
+That read has a deadline (R3c): once the client has the whole answer the
+request counts as completed, and an engine that keeps its body open is
+cut off after 2 s (`DRAIN_TIMEOUT_S` in `swarmpilot/api/translate.py`,
+`DRAIN_TIMEOUT` in the gateway) instead of holding the client until the
+proxy timeout. In Python the read used to be cut short anyway: the
+abandoned decoder was garbage collected and closed the engine's stream
+first, so its connection was never reused.
+
 ### Not yet in the gateway (R3a)
 
 - API styles that exist only as Python plugins (501, see above).
