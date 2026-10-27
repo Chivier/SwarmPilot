@@ -76,6 +76,12 @@ instance as that much capacity:
   that started serving less than ``min_age`` ago does not move, and each
   model keeps its floor on machines that do not move this round (removals
   drain before replacements start).
+* In an elastic pool, a model that takes several GPUs or one kind of
+  hardware can find no free place while smaller models hold the GPUs it
+  needs in pieces. When the model furthest below its share fits on no free
+  GPUs, the loop makes room (``_make_room``): it removes instances of
+  models that stay less short than it from one worker, and starts the
+  model there.
 
 Before every deployed model has reported once, the loop waits (up to
 ``stale_after`` seconds from its first round), so a model whose Scheduler
@@ -758,7 +764,23 @@ class AutoOptimizer:
 
         added: list[tuple[str, str | None, float]] = []
         victims: list[int] = []
+        room = None
         if self.elastic:
+            room = self._make_room(
+                instances,
+                speed,
+                gpus,
+                pool,
+                demand,
+                steady,
+                reqs,
+                floor,
+                young,
+            )
+        if room is not None:
+            m, w, v, victims = room
+            added = [(m, w, v)]
+        elif self.elastic:
             grow, victims = self._resize(
                 speed, bool(pool), demand, current, floor
             )
@@ -784,8 +806,11 @@ class AutoOptimizer:
 
         if added:
             # A growing round only adds: each new machine already has the
-            # model it was placed for.
+            # model it was placed for. Making room also drops the
+            # instances in its way.
             deployment = initial[:M] + [index[m] for m, _, _ in added]
+            for i in victims:
+                deployment[i] = -1
         elif victims:
             deployment = list(initial)
             for i in victims:
@@ -985,6 +1010,108 @@ class AutoOptimizer:
             have[m] = have.get(m, 0.0) + slot[2]
             capacity += slot[2]
         return added
+
+    def _make_room(
+        self,
+        instances: Sequence[_Instance],
+        speed: list[float],
+        gpus: list[int],
+        pool: dict[object, list],
+        demand: dict[str, float],
+        steady: dict[str, float],
+        reqs: dict[str, Requirement],
+        floor: dict[str, int],
+        young: set[int],
+    ) -> tuple[str, str, float, list[int]] | None:
+        """Room for the model furthest short that fits on no free GPUs.
+
+        That model's instance goes on the worker where the fewest GPUs
+        must be freed, by removing instances of other models. An
+        instance can go only if its model ends less short than this one
+        is now and keeps its floor, and only if it is not young, so the
+        largest shortfall always shrinks and two models do not take a
+        worker back and forth.
+
+        Returns:
+            (model, worker, speed of the new instance, instances to
+            remove by index), or None when the model is not short by a
+            whole instance, fits on free GPUs, or nowhere can be freed.
+        """
+        tc = self.target_concurrency
+        have: dict[str, float] = {}
+        count: Counter = Counter()
+        for inst, v in zip(instances, speed, strict=True):
+            have[inst.model_id] = have.get(inst.model_id, 0.0) + v
+            count[inst.model_id] += 1
+        reachable = sum(speed) + sum(p[2] * p[3] for p in pool.values())
+        goal = {
+            m: v / tc
+            for m, v in self._allocate(demand, steady, reachable * tc).items()
+        }
+        if not goal:
+            return None
+        m = max(goal, key=lambda x: goal[x] - have.get(x, 0.0))
+        short = goal[m] - have.get(m, 0.0)
+        req = reqs[m]
+        if req == _ANY or self._best_place(pool, req, short) is not None:
+            return None
+
+        # Workers, their hardware, free GPUs and instances.
+        workers: dict[str, list] = {}
+        for p in pool.values():
+            if p[0] is not None:
+                workers[p[0]] = [p[1], p[2], p[3], []]
+        for i, inst in enumerate(instances):
+            w = getattr(inst, "worker_id", None)
+            if w is None:
+                continue
+            if w not in workers:
+                hw = getattr(inst, "hardware", None)
+                workers[w] = [hw, speed[i], 0, []]
+            workers[w][3].append(i)
+
+        best = None
+        for w, (hw, v, free, members) in workers.items():
+            if short < v - 1e-9 or not _fits(req, req[0], hw):
+                continue
+            # Instances of the models with the most to spare go first.
+            spare = {}
+            for i in members:
+                x = instances[i].model_id
+                spare[i] = have[x] - goal.get(x, 0.0)
+            freed = free
+            lost: dict[str, float] = {}
+            gone: Counter = Counter()
+            chosen: list[int] = []
+            for i in sorted(members, key=lambda i: (-spare[i], speed[i])):
+                if freed >= req[0]:
+                    break
+                x = instances[i].model_id
+                if x == m or i in young:
+                    continue
+                if count[x] - gone[x] <= floor.get(x, 0):
+                    continue
+                left = have[x] - lost.get(x, 0.0) - speed[i]
+                if goal.get(x, 0.0) - left >= short - 1e-9:
+                    continue
+                chosen.append(i)
+                lost[x] = lost.get(x, 0.0) + speed[i]
+                gone[x] += 1
+                freed += gpus[i]
+            if freed < req[0] or not chosen:
+                continue
+            cost = (sum(gpus[i] for i in chosen), sum(lost.values()))
+            if best is None or cost < best[0]:
+                best = (cost, w, v, chosen)
+        if best is None:
+            return None
+        _, w, v, chosen = best
+        logger.info(
+            f"[AUTO_OPTIMIZE] making room for {m} on {w}: removing "
+            f"{len(chosen)} instance(s) of "
+            f"{sorted({instances[i].model_id for i in chosen})}"
+        )
+        return m, w, v, chosen
 
     @staticmethod
     def _best_place(

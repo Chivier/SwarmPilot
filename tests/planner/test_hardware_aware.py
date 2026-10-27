@@ -1,5 +1,6 @@
 """Hardware-aware auto-optimizer: learned speeds, victims and placement."""
 
+import time
 from dataclasses import dataclass
 
 import pytest
@@ -508,3 +509,49 @@ class TestShapeRegressions:
             )
             plan = opt.plan(service.instances, spare=4)
             assert plan is not None and plan.target_state["big"] > 1
+
+
+class TestMakeRoom:
+    """A starved multi-GPU model takes a worker from smaller models."""
+
+    @staticmethod
+    def _service(rates):
+        # Four small instances fill the A100 worker a4; big has one
+        # instance on b4; one small sits on a slow worker.
+        layout = [("small", FAST)] * 4 + [("small", SLOW), ("big", FAST)]
+        service = _ShapedService(layout, SHAPES)
+        for inst, w in zip(
+            service.instances, ["a4"] * 4 + ["s1", "b4"], strict=True
+        ):
+            inst.worker_id = w
+        return service, _store(service, SHAPED_EXEC, rates)
+
+    def test_removes_small_instances_to_fit_big(self):
+        service, store = self._service({"small": 0.5, "big": 10.0})
+        opt = _opt(store, service, elastic=True, target_concurrency=1)
+        plan = opt.plan(service.instances, slots=[("x1", SLOW)])
+        assert plan is not None
+        assert plan.place == {"big": ("a4",)}
+        assert sorted(plan.remove) == ["p0", "p1", "p2", "p3"]
+        assert plan.target_state == {"small": 1, "big": 2}
+
+    def test_no_room_taken_from_a_model_left_shorter(self):
+        # small is as starved as big: taking its worker would leave it
+        # further short than big is now.
+        service, store = self._service({"small": 20.0, "big": 10.0})
+        opt = _opt(store, service, elastic=True, target_concurrency=1)
+        plan = opt.plan(service.instances, slots=[])
+        assert plan is None or not plan.remove
+
+    def test_young_instances_stay(self):
+        service, store = self._service({"small": 0.5, "big": 10.0})
+        service.instances[0].created_at = time.time()
+        opt = _opt(store, service, elastic=True, target_concurrency=1)
+        plan = opt.plan(service.instances, slots=[])
+        assert plan is None or "a4" not in plan.place.get("big", ())
+
+    def test_fixed_pool_does_not_make_room(self):
+        service, store = self._service({"small": 0.5, "big": 10.0})
+        opt = _opt(store, service, target_concurrency=1)
+        plan = opt.plan(service.instances, slots=[])
+        assert plan is None or plan.target_state.get("big", 0) <= 1
