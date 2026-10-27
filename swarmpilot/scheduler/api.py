@@ -2356,16 +2356,7 @@ async def _update_single_task_metadata(
 
         # 5d. Get new prediction with updated metadata
         try:
-            # Determine prediction type based on current strategy
-            strategy_name = scheduling_strategy.__class__.__name__
-            if strategy_name == "MinimumExpectedTimeStrategy":
-                prediction_type = "expect_error"
-                quantiles = None
-            else:
-                prediction_type = "quantile"
-                quantiles = getattr(
-                    scheduling_strategy, "quantiles", list(DEFAULT_QUANTILES)
-                )
+            prediction_type, quantiles = _reprediction_params()
 
             try:
                 predictions = await predictor_client.predict(
@@ -2529,6 +2520,24 @@ async def repredict_all_tasks():
     )
 
 
+def _reprediction_params() -> tuple[str, list[float] | None]:
+    """Prediction type and quantiles that match the current queue sketches.
+
+    A re-prediction replaces a task's charge on its instance's sketch, so
+    it must ask for the kind of prediction that sketch keeps: expect-error
+    sketches need error margins, probabilistic ones need quantiles.
+
+    Returns:
+        ("expect_error", None) or ("quantile", quantiles).
+    """
+    strategy_name = get_current_strategy_info().strategy_name
+    if queue_info_type_for(strategy_name) == "expect_error":
+        return "expect_error", None
+    return "quantile", getattr(
+        scheduling_strategy, "quantiles", list(DEFAULT_QUANTILES)
+    )
+
+
 async def _repredict_single_task(task) -> bool:
     """Re-predict a single task without changing metadata.
 
@@ -2555,16 +2564,7 @@ async def _repredict_single_task(task) -> bool:
 
         # 3. Get new prediction with existing metadata (no change)
         try:
-            # Determine prediction type based on current strategy
-            strategy_name = scheduling_strategy.__class__.__name__
-            if strategy_name == "MinimumExpectedTimeStrategy":
-                prediction_type = "expect_error"
-                quantiles = None
-            else:
-                prediction_type = "quantile"
-                quantiles = getattr(
-                    scheduling_strategy, "quantiles", list(DEFAULT_QUANTILES)
-                )
+            prediction_type, quantiles = _reprediction_params()
 
             try:
                 predictions = await predictor_client.predict(
