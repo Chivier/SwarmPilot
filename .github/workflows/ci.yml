@@ -118,10 +118,13 @@ jobs:
       - name: Run conformance, control and routing A/B tests on the gateway
         # Every conformance test runs against the Python proxy and against
         # swarmpilot-gateway (phase R3); the A/B needs identical decisions.
+        # The API translation matrix too (R3b), with a byte-level A/B.
         working-directory: .
         env:
           SWARMPILOT_GATEWAY_BIN: rust/target/release/swarmpilot-gateway
-        run: uv run pytest tests/conformance/ -v --tb=short
+        run: |
+          uv run pytest tests/conformance/ -v --tb=short
+          uv run pytest tests/api/test_conformance_matrix.py -v --tb=short
 
   rust-core:
     # SCHEDULER_CORE=rust: the Rust scheduling core must match the Python

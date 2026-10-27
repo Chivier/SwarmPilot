@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n#swarmpilot/gateway/v1/control.proto\x12\x15swarmpilot.gateway.v1\"A\n\x11WatchStateRequest\x12\x12\n\ngateway_id\x18\x01 \x01(\t\x12\x18\n\x10protocol_version\x18\x02 \x01(\r\"\xee\x03\n\x05State\x12\x0f\n\x07version\x18\x01 \x01(\x04\x12\x18\n\x10protocol_version\x18\x02 \x01(\r\x12\x10\n\x08model_id\x18\x03 \x01(\t\x12\x10\n\x08strategy\x18\x04 \x01(\t\x12\x33\n\x05proxy\x18\x05 \x01(\x0b\x32$.swarmpilot.gateway.v1.ProxySettings\x12\x32\n\tinstances\x18\x06 \x03(\x0b\x32\x1f.swarmpilot.gateway.v1.Instance\x12>\n\tmanifests\x18\x07 \x03(\x0b\x32+.swarmpilot.gateway.v1.State.ManifestsEntry\x12;\n\tpredictor\x18\x08 \x01(\x0b\x32(.swarmpilot.gateway.v1.PredictorSettings\x12H\n\x0f\x61pi_style_paths\x18\t \x03(\x0b\x32/.swarmpilot.gateway.v1.State.ApiStylePathsEntry\x1a\x30\n\x0eManifestsEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\x1a\x34\n\x12\x41piStylePathsEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"f\n\rProxySettings\x12\x11\n\ttimeout_s\x18\x01 \x01(\x01\x12\x13\n\x0bmax_retries\x18\x02 \x01(\r\x12\x15\n\rretry_delay_s\x18\x03 \x01(\x01\x12\x16\n\x0ehttp_timeout_s\x18\x04 \x01(\x01\"\xa2\x04\n\x08Instance\x12\x13\n\x0binstance_id\x18\x01 \x01(\t\x12\x10\n\x08\x65ndpoint\x18\x02 \x01(\t\x12\x10\n\x08model_id\x18\x03 \x01(\t\x12H\n\rplatform_info\x18\x04 \x03(\x0b\x32\x31.swarmpilot.gateway.v1.Instance.PlatformInfoEntry\x12\x36\n\x06status\x18\x05 \x01(\x0e\x32&.swarmpilot.gateway.v1.Instance.Status\x12\x15\n\rmax_in_flight\x18\x06 \x01(\r\x12\x0f\n\x07servers\x18\x07 \x01(\r\x12H\n\rextra_headers\x18\x08 \x03(\x0b\x32\x31.swarmpilot.gateway.v1.Instance.ExtraHeadersEntry\x12\x14\n\x0cplatform_key\x18\t \x01(\t\x1a\x33\n\x11PlatformInfoEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\x1a\x33\n\x11\x45xtraHeadersEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"i\n\x06Status\x12\x16\n\x12STATUS_UNSPECIFIED\x10\x00\x12\n\n\x06\x41\x43TIVE\x10\x01\x12\x0c\n\x08\x44RAINING\x10\x02\x12\r\n\tUNHEALTHY\x10\x03\x12\x10\n\x0cINITIALIZING\x10\x04\x12\x0c\n\x08REMOVING\x10\x05\"\xae\x01\n\x11PredictorSettings\x12\x13\n\x0bstorage_dir\x18\x01 \x01(\t\x12\x18\n\x10sketch_quantiles\x18\x02 \x03(\x01\x12\x32\n\tplatforms\x18\x03 \x03(\x0b\x32\x1f.swarmpilot.gateway.v1.Platform\x12\x1a\n\x12preprocessor_rules\x18\x04 \x01(\x08\x12\x1a\n\x12\x65xperiment_normals\x18\x05 \x03(\x01\"\xfb\x01\n\x08Platform\x12\x14\n\x0cplatform_key\x18\x01 \x01(\t\x12\x1a\n\x12quantile_model_key\x18\x02 \x01(\t\x12\x1e\n\x16\x65xpect_error_model_key\x18\x03 \x01(\t\x12P\n\x11hardware_features\x18\x04 \x03(\x0b\x32\x35.swarmpilot.gateway.v1.Platform.HardwareFeaturesEntry\x12\x12\n\nexperiment\x18\x05 \x01(\x08\x1a\x37\n\x15HardwareFeaturesEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\x01:\x02\x38\x01\"\xd8\x01\n\x0f\x43ompletionBatch\x12\x36\n\x0b\x63ompletions\x18\x01 \x03(\x0b\x32!.swarmpilot.gateway.v1.Completion\x12\x10\n\x08\x61rrivals\x18\x02 \x01(\x04\x12I\n\ncalls_from\x18\x03 \x03(\x0b\x32\x35.swarmpilot.gateway.v1.CompletionBatch.CallsFromEntry\x1a\x30\n\x0e\x43\x61llsFromEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\x04:\x02\x38\x01\"\xa7\x04\n\nCompletion\x12\x0f\n\x07task_id\x18\x01 \x01(\t\x12\x13\n\x0binstance_id\x18\x02 \x01(\t\x12\x10\n\x08model_id\x18\x03 \x01(\t\x12\x0c\n\x04path\x18\x04 \x01(\t\x12\x41\n\x08\x66\x65\x61tures\x18\x05 \x03(\x0b\x32/.swarmpilot.gateway.v1.Completion.FeaturesEntry\x12\x1e\n\x11predicted_time_ms\x18\x06 \x01(\x01H\x00\x88\x01\x01\x12&\n\x19predicted_error_margin_ms\x18\x07 \x01(\x01H\x01\x88\x01\x01\x12V\n\x13predicted_quantiles\x18\x08 \x03(\x0b\x32\x39.swarmpilot.gateway.v1.Completion.PredictedQuantilesEntry\x12\x11\n\tsucceeded\x18\t \x01(\x08\x12\x13\n\x0bhttp_status\x18\n \x01(\r\x12\x19\n\x11\x65xecution_time_ms\x18\x0b \x01(\x01\x12\r\n\x05\x65rror\x18\x0c \x01(\t\x1a/\n\rFeaturesEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\x01:\x02\x38\x01\x1a\x39\n\x17PredictedQuantilesEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\x01:\x02\x38\x01\x42\x14\n\x12_predicted_time_msB\x1c\n\x1a_predicted_error_margin_ms\"7\n\x11UnreachableReport\x12\x13\n\x0binstance_id\x18\x01 \x01(\t\x12\r\n\x05\x65rror\x18\x02 \x01(\t\"\x0b\n\tReportAck2\xaa\x02\n\x0eGatewayControl\x12V\n\nWatchState\x12(.swarmpilot.gateway.v1.WatchStateRequest\x1a\x1c.swarmpilot.gateway.v1.State0\x01\x12_\n\x11ReportCompletions\x12&.swarmpilot.gateway.v1.CompletionBatch\x1a .swarmpilot.gateway.v1.ReportAck(\x01\x12_\n\x11ReportUnreachable\x12(.swarmpilot.gateway.v1.UnreachableReport\x1a .swarmpilot.gateway.v1.ReportAckb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n#swarmpilot/gateway/v1/control.proto\x12\x15swarmpilot.gateway.v1\"A\n\x11WatchStateRequest\x12\x12\n\ngateway_id\x18\x01 \x01(\t\x12\x18\n\x10protocol_version\x18\x02 \x01(\r\"\xee\x03\n\x05State\x12\x0f\n\x07version\x18\x01 \x01(\x04\x12\x18\n\x10protocol_version\x18\x02 \x01(\r\x12\x10\n\x08model_id\x18\x03 \x01(\t\x12\x10\n\x08strategy\x18\x04 \x01(\t\x12\x33\n\x05proxy\x18\x05 \x01(\x0b\x32$.swarmpilot.gateway.v1.ProxySettings\x12\x32\n\tinstances\x18\x06 \x03(\x0b\x32\x1f.swarmpilot.gateway.v1.Instance\x12>\n\tmanifests\x18\x07 \x03(\x0b\x32+.swarmpilot.gateway.v1.State.ManifestsEntry\x12;\n\tpredictor\x18\x08 \x01(\x0b\x32(.swarmpilot.gateway.v1.PredictorSettings\x12H\n\x0f\x61pi_style_paths\x18\t \x03(\x0b\x32/.swarmpilot.gateway.v1.State.ApiStylePathsEntry\x1a\x30\n\x0eManifestsEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\x1a\x34\n\x12\x41piStylePathsEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"\x83\x01\n\rProxySettings\x12\x11\n\ttimeout_s\x18\x01 \x01(\x01\x12\x13\n\x0bmax_retries\x18\x02 \x01(\r\x12\x15\n\rretry_delay_s\x18\x03 \x01(\x01\x12\x16\n\x0ehttp_timeout_s\x18\x04 \x01(\x01\x12\x1b\n\x13translation_lenient\x18\x05 \x01(\x08\"\xa2\x04\n\x08Instance\x12\x13\n\x0binstance_id\x18\x01 \x01(\t\x12\x10\n\x08\x65ndpoint\x18\x02 \x01(\t\x12\x10\n\x08model_id\x18\x03 \x01(\t\x12H\n\rplatform_info\x18\x04 \x03(\x0b\x32\x31.swarmpilot.gateway.v1.Instance.PlatformInfoEntry\x12\x36\n\x06status\x18\x05 \x01(\x0e\x32&.swarmpilot.gateway.v1.Instance.Status\x12\x15\n\rmax_in_flight\x18\x06 \x01(\r\x12\x0f\n\x07servers\x18\x07 \x01(\r\x12H\n\rextra_headers\x18\x08 \x03(\x0b\x32\x31.swarmpilot.gateway.v1.Instance.ExtraHeadersEntry\x12\x14\n\x0cplatform_key\x18\t \x01(\t\x1a\x33\n\x11PlatformInfoEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\x1a\x33\n\x11\x45xtraHeadersEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"i\n\x06Status\x12\x16\n\x12STATUS_UNSPECIFIED\x10\x00\x12\n\n\x06\x41\x43TIVE\x10\x01\x12\x0c\n\x08\x44RAINING\x10\x02\x12\r\n\tUNHEALTHY\x10\x03\x12\x10\n\x0cINITIALIZING\x10\x04\x12\x0c\n\x08REMOVING\x10\x05\"\xae\x01\n\x11PredictorSettings\x12\x13\n\x0bstorage_dir\x18\x01 \x01(\t\x12\x18\n\x10sketch_quantiles\x18\x02 \x03(\x01\x12\x32\n\tplatforms\x18\x03 \x03(\x0b\x32\x1f.swarmpilot.gateway.v1.Platform\x12\x1a\n\x12preprocessor_rules\x18\x04 \x01(\x08\x12\x1a\n\x12\x65xperiment_normals\x18\x05 \x03(\x01\"\xfb\x01\n\x08Platform\x12\x14\n\x0cplatform_key\x18\x01 \x01(\t\x12\x1a\n\x12quantile_model_key\x18\x02 \x01(\t\x12\x1e\n\x16\x65xpect_error_model_key\x18\x03 \x01(\t\x12P\n\x11hardware_features\x18\x04 \x03(\x0b\x32\x35.swarmpilot.gateway.v1.Platform.HardwareFeaturesEntry\x12\x12\n\nexperiment\x18\x05 \x01(\x08\x1a\x37\n\x15HardwareFeaturesEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\x01:\x02\x38\x01\"\xd8\x01\n\x0f\x43ompletionBatch\x12\x36\n\x0b\x63ompletions\x18\x01 \x03(\x0b\x32!.swarmpilot.gateway.v1.Completion\x12\x10\n\x08\x61rrivals\x18\x02 \x01(\x04\x12I\n\ncalls_from\x18\x03 \x03(\x0b\x32\x35.swarmpilot.gateway.v1.CompletionBatch.CallsFromEntry\x1a\x30\n\x0e\x43\x61llsFromEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\x04:\x02\x38\x01\"\xa7\x04\n\nCompletion\x12\x0f\n\x07task_id\x18\x01 \x01(\t\x12\x13\n\x0binstance_id\x18\x02 \x01(\t\x12\x10\n\x08model_id\x18\x03 \x01(\t\x12\x0c\n\x04path\x18\x04 \x01(\t\x12\x41\n\x08\x66\x65\x61tures\x18\x05 \x03(\x0b\x32/.swarmpilot.gateway.v1.Completion.FeaturesEntry\x12\x1e\n\x11predicted_time_ms\x18\x06 \x01(\x01H\x00\x88\x01\x01\x12&\n\x19predicted_error_margin_ms\x18\x07 \x01(\x01H\x01\x88\x01\x01\x12V\n\x13predicted_quantiles\x18\x08 \x03(\x0b\x32\x39.swarmpilot.gateway.v1.Completion.PredictedQuantilesEntry\x12\x11\n\tsucceeded\x18\t \x01(\x08\x12\x13\n\x0bhttp_status\x18\n \x01(\r\x12\x19\n\x11\x65xecution_time_ms\x18\x0b \x01(\x01\x12\r\n\x05\x65rror\x18\x0c \x01(\t\x1a/\n\rFeaturesEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\x01:\x02\x38\x01\x1a\x39\n\x17PredictedQuantilesEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\x01:\x02\x38\x01\x42\x14\n\x12_predicted_time_msB\x1c\n\x1a_predicted_error_margin_ms\"7\n\x11UnreachableReport\x12\x13\n\x0binstance_id\x18\x01 \x01(\t\x12\r\n\x05\x65rror\x18\x02 \x01(\t\"\x0b\n\tReportAck2\xaa\x02\n\x0eGatewayControl\x12V\n\nWatchState\x12(.swarmpilot.gateway.v1.WatchStateRequest\x1a\x1c.swarmpilot.gateway.v1.State0\x01\x12_\n\x11ReportCompletions\x12&.swarmpilot.gateway.v1.CompletionBatch\x1a .swarmpilot.gateway.v1.ReportAck(\x01\x12_\n\x11ReportUnreachable\x12(.swarmpilot.gateway.v1.UnreachableReport\x1a .swarmpilot.gateway.v1.ReportAckb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -55,36 +55,36 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_STATE_MANIFESTSENTRY']._serialized_end=570
   _globals['_STATE_APISTYLEPATHSENTRY']._serialized_start=572
   _globals['_STATE_APISTYLEPATHSENTRY']._serialized_end=624
-  _globals['_PROXYSETTINGS']._serialized_start=626
-  _globals['_PROXYSETTINGS']._serialized_end=728
-  _globals['_INSTANCE']._serialized_start=731
-  _globals['_INSTANCE']._serialized_end=1277
-  _globals['_INSTANCE_PLATFORMINFOENTRY']._serialized_start=1066
-  _globals['_INSTANCE_PLATFORMINFOENTRY']._serialized_end=1117
-  _globals['_INSTANCE_EXTRAHEADERSENTRY']._serialized_start=1119
-  _globals['_INSTANCE_EXTRAHEADERSENTRY']._serialized_end=1170
-  _globals['_INSTANCE_STATUS']._serialized_start=1172
-  _globals['_INSTANCE_STATUS']._serialized_end=1277
-  _globals['_PREDICTORSETTINGS']._serialized_start=1280
-  _globals['_PREDICTORSETTINGS']._serialized_end=1454
-  _globals['_PLATFORM']._serialized_start=1457
-  _globals['_PLATFORM']._serialized_end=1708
-  _globals['_PLATFORM_HARDWAREFEATURESENTRY']._serialized_start=1653
-  _globals['_PLATFORM_HARDWAREFEATURESENTRY']._serialized_end=1708
-  _globals['_COMPLETIONBATCH']._serialized_start=1711
-  _globals['_COMPLETIONBATCH']._serialized_end=1927
-  _globals['_COMPLETIONBATCH_CALLSFROMENTRY']._serialized_start=1879
-  _globals['_COMPLETIONBATCH_CALLSFROMENTRY']._serialized_end=1927
-  _globals['_COMPLETION']._serialized_start=1930
-  _globals['_COMPLETION']._serialized_end=2481
-  _globals['_COMPLETION_FEATURESENTRY']._serialized_start=2323
-  _globals['_COMPLETION_FEATURESENTRY']._serialized_end=2370
-  _globals['_COMPLETION_PREDICTEDQUANTILESENTRY']._serialized_start=2372
-  _globals['_COMPLETION_PREDICTEDQUANTILESENTRY']._serialized_end=2429
-  _globals['_UNREACHABLEREPORT']._serialized_start=2483
-  _globals['_UNREACHABLEREPORT']._serialized_end=2538
-  _globals['_REPORTACK']._serialized_start=2540
-  _globals['_REPORTACK']._serialized_end=2551
-  _globals['_GATEWAYCONTROL']._serialized_start=2554
-  _globals['_GATEWAYCONTROL']._serialized_end=2852
+  _globals['_PROXYSETTINGS']._serialized_start=627
+  _globals['_PROXYSETTINGS']._serialized_end=758
+  _globals['_INSTANCE']._serialized_start=761
+  _globals['_INSTANCE']._serialized_end=1307
+  _globals['_INSTANCE_PLATFORMINFOENTRY']._serialized_start=1096
+  _globals['_INSTANCE_PLATFORMINFOENTRY']._serialized_end=1147
+  _globals['_INSTANCE_EXTRAHEADERSENTRY']._serialized_start=1149
+  _globals['_INSTANCE_EXTRAHEADERSENTRY']._serialized_end=1200
+  _globals['_INSTANCE_STATUS']._serialized_start=1202
+  _globals['_INSTANCE_STATUS']._serialized_end=1307
+  _globals['_PREDICTORSETTINGS']._serialized_start=1310
+  _globals['_PREDICTORSETTINGS']._serialized_end=1484
+  _globals['_PLATFORM']._serialized_start=1487
+  _globals['_PLATFORM']._serialized_end=1738
+  _globals['_PLATFORM_HARDWAREFEATURESENTRY']._serialized_start=1683
+  _globals['_PLATFORM_HARDWAREFEATURESENTRY']._serialized_end=1738
+  _globals['_COMPLETIONBATCH']._serialized_start=1741
+  _globals['_COMPLETIONBATCH']._serialized_end=1957
+  _globals['_COMPLETIONBATCH_CALLSFROMENTRY']._serialized_start=1909
+  _globals['_COMPLETIONBATCH_CALLSFROMENTRY']._serialized_end=1957
+  _globals['_COMPLETION']._serialized_start=1960
+  _globals['_COMPLETION']._serialized_end=2511
+  _globals['_COMPLETION_FEATURESENTRY']._serialized_start=2353
+  _globals['_COMPLETION_FEATURESENTRY']._serialized_end=2400
+  _globals['_COMPLETION_PREDICTEDQUANTILESENTRY']._serialized_start=2402
+  _globals['_COMPLETION_PREDICTEDQUANTILESENTRY']._serialized_end=2459
+  _globals['_UNREACHABLEREPORT']._serialized_start=2513
+  _globals['_UNREACHABLEREPORT']._serialized_end=2568
+  _globals['_REPORTACK']._serialized_start=2570
+  _globals['_REPORTACK']._serialized_end=2581
+  _globals['_GATEWAYCONTROL']._serialized_start=2584
+  _globals['_GATEWAYCONTROL']._serialized_end=2882
 # @@protoc_insertion_point(module_scope)

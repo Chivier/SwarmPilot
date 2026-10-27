@@ -32,6 +32,7 @@ from pyinstrument.renderers.html import HTMLRenderer
 from pyinstrument.renderers.speedscope import SpeedscopeRenderer
 
 from swarmpilot.api.registry import get_style, style_names
+from swarmpilot.api.translate import strict_default
 from swarmpilot.predictor.models import PlatformInfo
 from swarmpilot.shared.loop_lag import EventLoopLagMonitor
 
@@ -1149,6 +1150,7 @@ def _gateway_sources() -> gateway_control.Sources:
             max_retries=getattr(worker_queue_manager, "_max_retries", 3),
             retry_delay_s=getattr(worker_queue_manager, "_retry_delay", 1.0),
             http_timeout_s=config.proxy.worker_http_timeout,
+            translation_lenient=not strict_default(),
         ),
         manifest=lambda software: resolve_adapter(software or None).manifest(),
         storage_dir=lambda: os.path.abspath(config.predictor.storage_dir),

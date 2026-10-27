@@ -59,6 +59,12 @@ struct Manifest {
     features: Option<Vec<FeatureExpr>>,
     #[serde(default)]
     native_styles: Vec<String>,
+    #[serde(default = "default_max_tokens")]
+    default_max_tokens: i64,
+}
+
+fn default_max_tokens() -> i64 {
+    4096
 }
 
 /// How the gateway computes an adapter's predictor features.
@@ -79,6 +85,8 @@ pub struct Adapter {
     pub features: Features,
     pub feature_names: Vec<String>,
     pub native_styles: Vec<String>,
+    /// Output limit for translated requests to engine styles that need one.
+    pub default_max_tokens: i64,
 }
 
 impl Adapter {
@@ -103,6 +111,7 @@ impl Adapter {
             features,
             feature_names: m.workload.feature_names,
             native_styles: m.native_styles,
+            default_max_tokens: m.default_max_tokens,
         })
     }
 
@@ -221,6 +230,8 @@ pub struct Snapshot {
     pub preprocessor_rules: bool,
     pub normals: Arc<Vec<f64>>,
     pub style_paths: HashMap<String, String>,
+    /// Refuse answer-changing fields that translation would drop.
+    pub translation_strict: bool,
     pub storage_dir: String,
 }
 
@@ -313,6 +324,7 @@ impl Snapshot {
             preprocessor_rules: predictor.preprocessor_rules,
             normals: Arc::new(predictor.experiment_normals),
             style_paths: s.api_style_paths,
+            translation_strict: !proxy.translation_lenient,
             storage_dir: predictor.storage_dir,
         })
     }

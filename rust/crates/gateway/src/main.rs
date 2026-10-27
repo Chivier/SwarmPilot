@@ -23,6 +23,7 @@ mod features;
 mod gateway;
 mod route;
 mod state;
+mod translate;
 
 pub mod pb {
     tonic::include_proto!("swarmpilot.gateway.v1");

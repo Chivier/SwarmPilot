@@ -1,0 +1,122 @@
+{
+  "benchmark": "proxy_overhead",
+  "commit": "5b582f4-dirty",
+  "date": "2026-10-27",
+  "host": {
+    "python": "3.13.17",
+    "machine": "x86_64",
+    "cpus": 4
+  },
+  "config": {
+    "data_plane": "python",
+    "client_style": "anthropic_messages",
+    "instances": 1,
+    "engine": "vllm",
+    "strategy": "round_robin",
+    "log_level": "WARNING",
+    "duration_s": 6.0,
+    "warmup_s": 1.0
+  },
+  "results": [
+    {
+      "stream": false,
+      "concurrency": 1,
+      "direct": {
+        "requests": 29468,
+        "errors": 0,
+        "rps": 4911.0,
+        "latency_p50_ms": 0.179,
+        "latency_p99_ms": 0.435,
+        "ttft_p50_ms": 0.175,
+        "ttft_p99_ms": 0.426
+      },
+      "proxy": {
+        "requests": 4315,
+        "errors": 0,
+        "rps": 719.0,
+        "latency_p50_ms": 1.351,
+        "latency_p99_ms": 2.181,
+        "ttft_p50_ms": 1.343,
+        "ttft_p99_ms": 2.17
+      },
+      "added_p50_ms": 1.172,
+      "added_p99_ms": 1.746,
+      "throughput_ratio": 0.1464
+    },
+    {
+      "stream": false,
+      "concurrency": 64,
+      "direct": {
+        "requests": 76310,
+        "errors": 0,
+        "rps": 12715.1,
+        "latency_p50_ms": 4.803,
+        "latency_p99_ms": 9.395,
+        "ttft_p50_ms": 4.8,
+        "ttft_p99_ms": 9.39
+      },
+      "proxy": {
+        "requests": 10649,
+        "errors": 0,
+        "rps": 1770.5,
+        "latency_p50_ms": 33.09,
+        "latency_p99_ms": 164.959,
+        "ttft_p50_ms": 33.085,
+        "ttft_p99_ms": 164.956
+      },
+      "added_p50_ms": 28.287,
+      "added_p99_ms": 155.564,
+      "throughput_ratio": 0.1392
+    },
+    {
+      "stream": true,
+      "concurrency": 1,
+      "direct": {
+        "requests": 16777,
+        "errors": 0,
+        "rps": 2796.1,
+        "latency_p50_ms": 0.313,
+        "latency_p99_ms": 0.848,
+        "ttft_p50_ms": 0.309,
+        "ttft_p99_ms": 0.838
+      },
+      "proxy": {
+        "requests": 2863,
+        "errors": 0,
+        "rps": 477.0,
+        "latency_p50_ms": 1.998,
+        "latency_p99_ms": 3.327,
+        "ttft_p50_ms": 1.987,
+        "ttft_p99_ms": 3.314
+      },
+      "added_p50_ms": 1.685,
+      "added_p99_ms": 2.479,
+      "throughput_ratio": 0.1706
+    },
+    {
+      "stream": true,
+      "concurrency": 64,
+      "direct": {
+        "requests": 32439,
+        "errors": 0,
+        "rps": 5397.3,
+        "latency_p50_ms": 11.671,
+        "latency_p99_ms": 17.933,
+        "ttft_p50_ms": 11.666,
+        "ttft_p99_ms": 17.928
+      },
+      "proxy": {
+        "requests": 6147,
+        "errors": 0,
+        "rps": 1017.7,
+        "latency_p50_ms": 57.624,
+        "latency_p99_ms": 219.735,
+        "ttft_p50_ms": 57.618,
+        "ttft_p99_ms": 219.726
+      },
+      "added_p50_ms": 45.953,
+      "added_p99_ms": 201.802,
+      "throughput_ratio": 0.1886
+    }
+  ]
+}

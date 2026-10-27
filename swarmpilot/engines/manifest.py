@@ -103,6 +103,9 @@ class EngineManifest(_Strict):
     python_features: bool
     #: API styles the engine serves itself (passed through untouched).
     native_styles: list[str] = Field(default_factory=list)
+    #: Output limit sent to engine styles that need one when a translated
+    #: request sets none (``default_max_tokens`` of the adapter).
+    default_max_tokens: int = 4096
     #: For each client API style that is translated into a native one,
     #: the same features as expressions over that style's body.
     style_features: dict[str, list[FeatureManifest]] = Field(
@@ -119,6 +122,8 @@ def build_manifest(adapter: EngineAdapter) -> dict[str, Any]:
     Returns:
         JSON-ready manifest.
     """
+    from swarmpilot.api.base import DEFAULT_MAX_OUTPUT_TOKENS
+
     spec = adapter.workload
     routes = adapter.routes()
     cap = adapter.capacity()
@@ -161,6 +166,9 @@ def build_manifest(adapter: EngineAdapter) -> dict[str, Any]:
         ),
         python_features=not pairs,
         native_styles=list(adapter.native_styles()),
+        default_max_tokens=getattr(
+            adapter, "default_max_tokens", DEFAULT_MAX_OUTPUT_TOKENS
+        ),
         style_features=_style_features(adapter),
     )
     return manifest.model_dump(mode="json")

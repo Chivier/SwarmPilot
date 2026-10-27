@@ -347,6 +347,31 @@ async def test_engine_stream_failure_becomes_error_event():
     assert b"message_stop" not in frames
 
 
+async def test_translated_stream_reads_the_engine_body_to_its_end():
+    """The relay must see the end, or the request counts as failed."""
+    tr = plan_request(
+        "v1/messages",
+        {
+            "max_tokens": 5,
+            "stream": True,
+            "messages": [{"role": "user", "content": "x"}],
+        },
+        CHAT,
+    )
+    read = []
+
+    async def engine():
+        yield b'data: {"id":"c","choices":[{"delta":{"content":"a"}}]}\n\n'
+        yield b"data: [DONE]\n\n"
+        read.append("end")
+
+    frames = b"".join(await collect(tr.stream_response(engine())))
+    assert frames.endswith(
+        b'event: message_stop\ndata: {"type":"message_stop"}\n\n'
+    )
+    assert read == ["end"]
+
+
 async def test_chat_stream_state_machine_opens_and_closes_parts():
     chunks = [
         {"id": "c", "choices": [{"delta": {"reasoning_content": "hmm"}}]},

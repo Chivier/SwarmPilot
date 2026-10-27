@@ -478,6 +478,96 @@ fn experiment_predict(
     })
 }
 
+/// One request through the API translation layer, for the parity tests
+/// (`tests/core/test_translation_parity.py`): plan the request, then
+/// convert the engine's answer, a one-body `response` or the SSE `chunks`
+/// (ending in an error when `fail`). Ids count up from 1 and the clock
+/// reads `now`. Returns the outcome as JSON text.
+#[pyfunction]
+#[pyo3(signature = (path, body, native_styles, strict, default_max_tokens, status = 200, response = None, chunks = None, fail = false, now = 1_700_000_000))]
+#[allow(clippy::too_many_arguments)]
+fn api_translate(
+    path: &str,
+    body: &str,
+    native_styles: Vec<String>,
+    strict: bool,
+    default_max_tokens: i64,
+    status: u16,
+    response: Option<&str>,
+    chunks: Option<Vec<Vec<u8>>>,
+    fail: bool,
+    now: i64,
+) -> PyResult<String> {
+    use serde_json::{json, Value};
+    use swarmpilot_core::api::base::{CountingEnv, TrError};
+    use swarmpilot_core::api::translate::plan_request;
+
+    let parse = |s: &str| {
+        serde_json::from_str::<Value>(s).map_err(|e| PyValueError::new_err(e.to_string()))
+    };
+    let body = parse(body)?;
+    let mut env = CountingEnv {
+        next: 0,
+        now: i128::from(now),
+    };
+    let tr = match plan_request(path, &body, &native_styles, strict, i128::from(default_max_tokens), &mut env) {
+        Ok(None) => return Ok(json!({"plan": "none"}).to_string()),
+        Ok(Some(tr)) => tr,
+        Err(TrError::Translation {
+            message,
+            param,
+            status,
+            error_type,
+        }) => {
+            return Ok(json!({"plan": "error", "status": status, "message": message, "param": param, "type": error_type})
+                .to_string())
+        }
+        Err(TrError::Py(_)) => return Ok(json!({"plan": "internal"}).to_string()),
+    };
+    let mut out = json!({
+        "plan": "ok",
+        "passthrough": tr.passthrough(),
+        "stream": tr.stream(),
+        "path": tr.path,
+        "body": tr.body,
+        "dropped": tr.ctx.dropped,
+    });
+    if tr.passthrough() {
+        return Ok(out.to_string());
+    }
+    let answer = if let Some(chunks) = chunks {
+        let mut st = tr.stream_translator();
+        let mut bytes = Vec::new();
+        for c in &chunks {
+            bytes.extend(st.feed(c, &mut env));
+        }
+        bytes.extend(if fail {
+            st.fail(&mut env)
+        } else {
+            st.end(&mut env)
+        });
+        json!({"sse": String::from_utf8_lossy(&bytes), "broken": st.broken().is_some()})
+    } else if let Some(resp) = response {
+        let resp = parse(resp)?;
+        match (&resp, tr.stream() && status < 400) {
+            (Value::Object(b), true) => match tr.stream_from_body(b, &mut env) {
+                Ok((bytes, broken)) => {
+                    json!({"sse": String::from_utf8_lossy(&bytes), "broken": broken.is_some()})
+                }
+                Err(_) => json!({"internal": true}),
+            },
+            _ => match tr.response(status, &resp, &mut env) {
+                Ok((s, b)) => json!({"status": s, "body": b}),
+                Err(_) => json!({"internal": true}),
+            },
+        }
+    } else {
+        Value::Null
+    };
+    out["answer"] = answer;
+    Ok(out.to_string())
+}
+
 #[pymodule]
 #[pyo3(name = "swarmpilot_core")]
 fn init_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -492,5 +582,6 @@ fn init_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(select_po2, m)?)?;
     m.add_function(wrap_pyfunction!(select_probabilistic, m)?)?;
     m.add_function(wrap_pyfunction!(experiment_predict, m)?)?;
+    m.add_function(wrap_pyfunction!(api_translate, m)?)?;
     Ok(())
 }
