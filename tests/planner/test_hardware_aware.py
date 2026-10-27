@@ -291,3 +291,46 @@ def test_removals_drain_side_by_side():
     result = executor.execute_plan(plan, wait_for_ready=False)
     assert time.monotonic() - start < 0.6
     assert sorted(result.removed_instances) == ["p0", "p1", "p2"]
+
+
+class TestChurn:
+    """Moves must pay for themselves."""
+
+    def test_new_instances_stay_put(self):
+        import time
+
+        service = _Service([("a", FAST)] * 2 + [("b", FAST)] * 2)
+        store = _store(
+            service, {("a", FAST): 1.0, ("b", FAST): 1.0}, {"a": 9, "b": 1}
+        )
+        for inst in service.instances:
+            inst.created_at = time.time()
+        assert _opt(store, service).plan(service.instances) is None
+        opt = _opt(store, service, min_age=0)
+        assert opt.plan(service.instances) is not None
+
+    def test_each_move_must_clear_the_threshold(self):
+        service = _Service([("a", FAST)] * 5 + [("b", FAST)] * 5)
+        store = _store(
+            service, {("a", FAST): 1.0, ("b", FAST): 1.0}, {"a": 6, "b": 4}
+        )
+        # One move gains 0.2 of share error: enough at 0.1, not at 0.25.
+        assert _opt(store, service, change_threshold=0.1).plan(
+            service.instances
+        )
+        assert (
+            _opt(store, service, change_threshold=0.25).plan(service.instances)
+            is None
+        )
+
+
+def test_light_model_is_not_starved_by_a_heavy_one():
+    # b's arrivals alone need far more than the pool; a's need little.
+    service = _Service([("a", FAST)] * 2 + [("b", FAST)] * 8)
+    store = _store(
+        service, {("a", FAST): 1.0, ("b", FAST): 1.0}, {"a": 2.0, "b": 100.0}
+    )
+    plan = _opt(store, service, target_concurrency=1).plan(service.instances)
+    # Proportional shares would give a 2% of 10 machines; max-min gives
+    # it the 2 it needs.
+    assert plan is None or plan.target_state.get("a", 0) >= 2

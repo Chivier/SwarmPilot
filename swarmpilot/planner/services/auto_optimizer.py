@@ -67,11 +67,14 @@ instance as that much capacity:
   ``sum(need) / target_concurrency`` units of the fastest hardware, grows
   into the fastest free GPUs first, and shrinks by its slowest instances,
   taken from the models with the most surplus capacity.
-* When the pool cannot carry all the need, each model first gets the
-  capacity its arrivals need (``rate * s``) and only what is left goes to
-  backlog, so a model whose backlog is already timing out cannot take the
-  machines a steady model needs to keep up.
+* When the pool cannot carry all the need, arrivals (``rate * s``) are
+  served before backlog, each split max-min fairly, so neither a model
+  whose backlog is already timing out nor one too heavy to serve can take
+  the machines a lighter model needs to keep up.
 * A model kept at ``min_replicas`` keeps its fastest instances.
+* A move costs a drain and a cold start, so each machine that moves must
+  improve the objective by ``change_threshold`` on its own, and an
+  instance younger than ``min_age`` does not move.
 
 Before every deployed model has reported once, the loop waits (up to
 ``stale_after`` seconds from its first round), so a model whose Scheduler
@@ -197,6 +200,18 @@ def _undo_needless_moves(
                     break
 
 
+def _water_fill(need: dict[str, float], supply: float) -> dict[str, float]:
+    """Max-min fair split of ``supply`` among ``need``."""
+    out: dict[str, float] = {}
+    left = supply
+    items = sorted(need.items(), key=lambda kv: kv[1])
+    for k, (m, v) in enumerate(items):
+        give = min(v, left / (len(items) - k))
+        out[m] = float(give)
+        left -= give
+    return out
+
+
 def _share_error(
     deployment: Sequence[int], speed: np.ndarray, target: np.ndarray
 ) -> float:
@@ -234,6 +249,7 @@ class AutoOptimizer:
         max_instances: int = 0,
         scale_down_rounds: int = 3,
         hardware_aware: bool = False,
+        min_age: float | None = None,
     ):
         """Initialize the loop.
 
@@ -262,6 +278,8 @@ class AutoOptimizer:
                 pool before it shrinks.
             hardware_aware: Weigh machines by learned hardware speed
                 (tail scaler only); see the module docstring.
+            min_age: Seconds a hardware-aware loop leaves a new instance
+                where it is. Defaults to three intervals.
         """
         if scaler not in SCALERS:
             raise ValueError(f"scaler must be one of {SCALERS}, got {scaler}")
@@ -288,7 +306,8 @@ class AutoOptimizer:
         self.max_instances = max(0, max_instances)
         self.scale_down_rounds = max(1, scale_down_rounds)
         self.hardware_aware = hardware_aware
-        self.speeds = HardwareSpeeds()
+        self.min_age = min_age if min_age is not None else 3 * interval
+        self.speeds = HardwareSpeeds(alpha=0.3)
         self._low_rounds = 0
         self._first_plan_at: float | None = None
         self.last_plan: AutoPlan | None = None
@@ -636,13 +655,21 @@ class AutoOptimizer:
             key=lambda s: -s[1],
         )
         floor = {m: min(self.min_replicas, n) for m, n in current.items()}
+        # A move costs a drain and a cold start; an instance that just
+        # arrived stays put until it has paid that back.
+        now = time.time()
+        young = {
+            i
+            for i, inst in enumerate(instances)
+            if now - (getattr(inst, "created_at", None) or 0.0) < self.min_age
+        }
 
         grow, victims = 0, []
         if self.elastic:
             grow, victims = self._resize(speed, free, demand, current, floor)
             if victims:
                 victims = self._pick_victims(
-                    instances, speed, demand, floor, len(victims)
+                    instances, speed, demand, floor, len(victims), young
                 )
         if not demand and not grow and not victims:
             return None
@@ -672,11 +699,14 @@ class AutoOptimizer:
                 if self.algorithm == "integer_programming":
                     moves += grow
                 a = min(1.0, (moves + 1e-9) / size)
+            B = np.tile(machine_speed[:, None], (1, len(models)))
+            for i in young:
+                B[i, [j for j in range(len(models)) if j != initial[i]]] = 0
             optimizer = create_optimizer(
                 self.algorithm,
                 M=size,
                 N=len(models),
-                B=np.tile(machine_speed[:, None], (1, len(models))),
+                B=B,
                 initial=np.array(initial),
                 a=a,
                 target=target,
@@ -695,8 +725,10 @@ class AutoOptimizer:
             return None
         before = _share_error(initial, machine_speed, target)
         after = _share_error(deployment, machine_speed, target)
+        # Every machine that moves must buy its share of the threshold.
         resized = bool(grow or victims)
-        if not resized and before - after < self.change_threshold:
+        moved = sum(1 for i in changed if initial[i] >= 0)
+        if not resized and before - after < self.change_threshold * moved:
             return None
 
         counts = Counter(models[j] for j in deployment if j >= 0)
@@ -782,8 +814,12 @@ class AutoOptimizer:
         demand: dict[str, float],
         floor: dict[str, int],
         count: int,
+        young: set[int] = frozenset(),
     ) -> list[int]:
-        """Slowest instances of the models with the most surplus capacity."""
+        """Slowest instances of the models with the most surplus capacity.
+
+        Instances that just arrived go last.
+        """
         alive = set(range(len(instances)))
         total = sum(demand.values())
         victims: list[int] = []
@@ -804,7 +840,7 @@ class AutoOptimizer:
             if not surplus:
                 break
             victim_model = max(surplus, key=lambda m: surplus[m])
-            i = min(members[victim_model], key=lambda i: speed[i])
+            i = min(members[victim_model], key=lambda i: (i in young, speed[i]))
             alive.discard(i)
             victims.append(i)
         return victims
@@ -815,22 +851,25 @@ class AutoOptimizer:
         steady: dict[str, float],
         supply: float,
     ) -> dict[str, float]:
-        """Need to aim for: arrivals first when the supply falls short."""
+        """Need to aim for when the supply falls short of it.
+
+        Arrivals come first, then backlog, each shared max-min fairly: a
+        model that needs less than an equal share gets all it needs, so a
+        light model is not starved by a heavy one that cannot be served
+        anyway.
+        """
         total = sum(demand.values())
         if total <= supply or supply <= 0:
             return dict(demand)
         base = {m: min(steady.get(m, 0.0), v) for m, v in demand.items()}
-        held = sum(base.values())
-        if held <= 0:
-            return dict(demand)
-        if held >= supply:
-            return base
-        backlog = {m: demand[m] - base[m] for m in demand}
-        rest = sum(backlog.values())
-        return {
-            m: float(base[m] + (supply - held) * backlog[m] / rest)
-            for m in demand
-        }
+        if sum(base.values()) <= 0:
+            return _water_fill(demand, supply)
+        got = _water_fill(base, supply)
+        left = supply - sum(got.values())
+        if left > 1e-9:
+            extra = _water_fill({m: demand[m] - got[m] for m in demand}, left)
+            got = {m: got[m] + extra[m] for m in demand}
+        return got
 
     def _keep_fastest(
         self,
