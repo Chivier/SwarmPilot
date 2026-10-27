@@ -53,6 +53,26 @@ class PlannerConfig:
             "AUTO_OPTIMIZE_SCALER", "tail"
         ).lower()
 
+        # Elastic pool (tail scaler): grow into free GPUs when the models
+        # need more than TARGET_CONCURRENCY tasks in flight per instance,
+        # shrink after SCALE_DOWN_ROUNDS rounds that want fewer.
+        self.auto_optimize_elastic: bool = os.getenv(
+            "AUTO_OPTIMIZE_ELASTIC", "false"
+        ).lower() in ("true", "1", "yes")
+        self.auto_optimize_target_concurrency: float = float(
+            os.getenv("AUTO_OPTIMIZE_TARGET_CONCURRENCY", "64")
+        )
+        self.auto_optimize_min_instances: int = int(
+            os.getenv("AUTO_OPTIMIZE_MIN_INSTANCES", "1")
+        )
+        # 0: no limit but the free GPUs.
+        self.auto_optimize_max_instances: int = int(
+            os.getenv("AUTO_OPTIMIZE_MAX_INSTANCES", "0")
+        )
+        self.auto_optimize_scale_down_rounds: int = int(
+            os.getenv("AUTO_OPTIMIZE_SCALE_DOWN_ROUNDS", "3")
+        )
+
         # PyLet configuration
         self.pylet_enabled: bool = os.getenv(
             "PYLET_ENABLED", "false"
@@ -218,6 +238,14 @@ class PlannerConfig:
             error_msg = (
                 "AUTO_OPTIMIZE_SCALER must be 'tail' or 'count', got "
                 f"{self.auto_optimize_scaler!r}"
+            )
+            logger.error(f"Configuration validation failed: {error_msg}")
+            raise ValueError(error_msg)
+
+        if self.auto_optimize_target_concurrency <= 0:
+            error_msg = (
+                "AUTO_OPTIMIZE_TARGET_CONCURRENCY must be positive, got "
+                f"{self.auto_optimize_target_concurrency}"
             )
             logger.error(f"Configuration validation failed: {error_msg}")
             raise ValueError(error_msg)

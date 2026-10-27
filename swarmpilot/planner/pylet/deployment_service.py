@@ -222,6 +222,17 @@ class PyLetDeploymentService:
 
         return state
 
+    def spare_capacity(self) -> int:
+        """Instances of the default GPU count that fit on free GPUs.
+
+        A model pinned to one kind of hardware or using more GPUs may fit
+        fewer; its extra replicas then wait in PyLet's queue and the
+        deploy reports them failed.
+        """
+        self._ensure_initialized()
+        per = max(1, self._default_gpu_count)
+        return self._instance_manager.free_gpus() // per
+
     def apply_deployment(
         self,
         target_state: dict[str, int],

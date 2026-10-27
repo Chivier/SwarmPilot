@@ -207,6 +207,11 @@ async def lifespan(app: FastAPI):
                 min_replicas=config.auto_optimize_min_replicas,
                 algorithm=config.auto_optimize_algorithm,
                 scaler=config.auto_optimize_scaler,
+                elastic=config.auto_optimize_elastic,
+                target_concurrency=config.auto_optimize_target_concurrency,
+                min_instances=config.auto_optimize_min_instances,
+                max_instances=config.auto_optimize_max_instances,
+                scale_down_rounds=config.auto_optimize_scale_down_rounds,
             )
             auto_optimizer.start()
 
