@@ -444,6 +444,40 @@ impl RuntimePredictor {
     }
 }
 
+/// Experiment-mode prediction for a request body's `exp_*` fields.
+///
+/// Returns `("expect_error", expected, error)` or `("quantile", pairs)`;
+/// raises ValueError where the Python code raises.
+#[pyfunction]
+#[pyo3(signature = (fields_json, prediction_type, quantiles, normals))]
+fn experiment_predict(
+    py: Python<'_>,
+    fields_json: &str,
+    prediction_type: &str,
+    quantiles: Option<Vec<f64>>,
+    normals: Vec<f64>,
+) -> PyResult<Py<PyAny>> {
+    use swarmpilot_core::experiment::{Params, Synthetic};
+    let fields: serde_json::Value =
+        serde_json::from_str(fields_json).map_err(|e| PyValueError::new_err(e.to_string()))?;
+    let fields = fields
+        .as_object()
+        .ok_or_else(|| PyValueError::new_err("fields must be an object"))?;
+    let out = Params::parse(fields)
+        .and_then(|p| p.predict(prediction_type, quantiles.as_deref(), &normals))
+        .map_err(|e| PyValueError::new_err(e.0))?;
+    Ok(match out {
+        Synthetic::ExpectError {
+            expected_ms,
+            error_ms,
+        } => ("expect_error", expected_ms, error_ms)
+            .into_pyobject(py)?
+            .into_any()
+            .unbind(),
+        Synthetic::Quantiles(pairs) => ("quantile", pairs).into_pyobject(py)?.into_any().unbind(),
+    })
+}
+
 #[pymodule]
 #[pyo3(name = "swarmpilot_core")]
 fn init_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -457,5 +491,6 @@ fn init_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(select_min_expected, m)?)?;
     m.add_function(wrap_pyfunction!(select_po2, m)?)?;
     m.add_function(wrap_pyfunction!(select_probabilistic, m)?)?;
+    m.add_function(wrap_pyfunction!(experiment_predict, m)?)?;
     Ok(())
 }

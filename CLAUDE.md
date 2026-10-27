@@ -110,7 +110,8 @@ swarmpilot-refresh/
 │   ├── sdk/                 # SDK client + model unit tests
 │   ├── integration/         # End-to-end SDK integration tests
 │   └── conftest.py          # Shared: --run-integration flag, PyLet fixtures
-├── rust/                    # Cargo workspace: core + core-py (scheduling core, PyO3), sim-core, sim-cluster, sim-cli (swarmpilot-sim)
+├── rust/                    # Cargo workspace: core + core-py (scheduling core, PyO3), gateway (swarmpilot-gateway), sim-core, sim-cluster, sim-cli (swarmpilot-sim)
+├── proto/                   # gRPC protos (gateway control channel)
 ├── examples/                # Example cluster configurations
 ├── docs/                    # Documentation
 ├── pyproject.toml           # Package config (hatchling build, uv tooling)
@@ -195,6 +196,9 @@ A refused connection marks a Scheduler instance `UNHEALTHY` (no new tasks; its u
 
 ### Rust Core
 `SCHEDULER_CORE=rust` runs queue sketches, strategy selection, feature extractors and predictor inference (MLP forward pass, within 1e-5 of torch) in Rust (`rust/crates/core`, module `swarmpilot_core`, `uv sync --extra core`). Results must match Python bit for bit: change both, regenerate `tests/golden/`, and keep `tests/core/` green. See `docs/rust_core.md`.
+
+### Rust Gateway
+`swarmpilot-gateway` (`rust/crates/gateway`) can serve the Scheduler's proxy port in Rust: start the Scheduler with `SCHEDULER_GATEWAY_SOCKET=<path>` and the gateway with `--control <path> --listen <addr>`. The Scheduler streams routing state and receives completions over gRPC on that Unix socket (`proto/swarmpilot/gateway/v1/control.proto`, Python side `swarmpilot/scheduler/gateway_control.py`; regenerate `swarmpilot/gateway/v1/*_pb2*` as in `swarmpilot/gateway/__init__.py`). Every test in `tests/conformance/` runs against both data planes when the binary is built. Gaps (API translation → 501, Python-only feature adapters) in `docs/rust_core.md`.
 
 ### Scheduling Strategies
 7 strategies available, selectable at runtime via `POST /v1/strategy/set` or `SCHEDULING_STRATEGY` env var:

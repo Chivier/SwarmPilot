@@ -1,0 +1,149 @@
+// Control channel between the Python Scheduler and swarmpilot-gateway.
+//
+// The Scheduler is the server and listens on a Unix socket
+// (SCHEDULER_GATEWAY_SOCKET). The gateway connects as a client, watches
+// the routing state, and reports every request it finished so the
+// Scheduler can train predictors, track throughput and mark instances
+// unhealthy. Nothing here is on the request path: the gateway routes and
+// dispatches from its last snapshot.
+//
+// Changes must stay wire compatible: add fields, never renumber them.
+syntax = "proto3";
+
+package swarmpilot.gateway.v1;
+
+service GatewayControl {
+  // The current state at once, then a new full snapshot whenever the
+  // instance set, strategy or predictor models change.
+  rpc WatchState(WatchStateRequest) returns (stream State);
+  // Finished requests, in batches, for as long as the gateway runs.
+  rpc ReportCompletions(stream CompletionBatch) returns (ReportAck);
+  // A connection to an instance could not be opened.
+  rpc ReportUnreachable(UnreachableReport) returns (ReportAck);
+}
+
+message WatchStateRequest {
+  // Identifies the gateway in Scheduler logs.
+  string gateway_id = 1;
+  // Highest state protocol version the gateway understands.
+  uint32 protocol_version = 2;
+}
+
+message State {
+  // Bumped on every change; snapshots arrive in increasing order.
+  uint64 version = 1;
+  uint32 protocol_version = 2;
+  // Model the Scheduler serves; empty while it is idle.
+  string model_id = 3;
+  // Scheduling strategy name, as POST /v1/strategy/set takes it.
+  string strategy = 4;
+  ProxySettings proxy = 5;
+  repeated Instance instances = 6;
+  // Engine adapter manifests (JSON, swarmpilot/engines/manifest.schema.json)
+  // keyed by platform software_name; the pass-through adapter is "".
+  map<string, string> manifests = 7;
+  PredictorSettings predictor = 8;
+  // Route path (no leading slash) to API style name, for every route of
+  // every registered style (`style_for_path`), so the gateway knows which
+  // requests need translation and how to shape its own errors.
+  map<string, string> api_style_paths = 9;
+}
+
+message ProxySettings {
+  // Seconds from arrival until the engine must have answered (504).
+  double timeout_s = 1;
+  // Connection attempts for retryable failures (max_retries).
+  uint32 max_retries = 2;
+  // First retry delay in seconds, doubling each attempt.
+  double retry_delay_s = 3;
+  // Seconds an engine may stay silent while answering (sock_read).
+  double http_timeout_s = 4;
+}
+
+message Instance {
+  string instance_id = 1;
+  string endpoint = 2;
+  string model_id = 3;
+  map<string, string> platform_info = 4;
+  // Only ACTIVE instances take new requests.
+  Status status = 5;
+  // Requests sent to the instance at once.
+  uint32 max_in_flight = 6;
+  // Servers the queue sketch models (InstanceRegistry capacity).
+  uint32 servers = 7;
+  // Headers added to every request (task headers win on conflict).
+  map<string, string> extra_headers = 8;
+  // json.dumps(platform_info, sort_keys=True): the Platform it shares
+  // predictions with.
+  string platform_key = 9;
+
+  enum Status {
+    STATUS_UNSPECIFIED = 0;
+    ACTIVE = 1;
+    DRAINING = 2;
+    UNHEALTHY = 3;
+    INITIALIZING = 4;
+    REMOVING = 5;
+  }
+}
+
+message PredictorSettings {
+  // Directory holding the portable model files ({key}.json + .safetensors).
+  string storage_dir = 1;
+  // Quantile levels of the probabilistic queue sketch.
+  repeated double sketch_quantiles = 2;
+  // One entry per distinct platform_info among the instances.
+  repeated Platform platforms = 3;
+  // A config-driven preprocessor chain applies to this model. The
+  // gateway cannot run one yet and routes cold while it is set.
+  bool preprocessor_rules = 4;
+  // numpy RandomState(42).normal(size=2000) as experiment mode draws it.
+  repeated double experiment_normals = 5;
+}
+
+message Platform {
+  // json.dumps(platform_info, sort_keys=True), as the predictor client
+  // groups instances.
+  string platform_key = 1;
+  // Model keys (ModelStorage.generate_model_key) per prediction type.
+  string quantile_model_key = 2;
+  string expect_error_model_key = 3;
+  // PlatformInfo.extract_gpu_specs(), added to every request's features.
+  map<string, double> hardware_features = 4;
+  // All of software_name, software_version, hardware_name are "exp".
+  bool experiment = 5;
+}
+
+message CompletionBatch {
+  repeated Completion completions = 1;
+  // Requests that arrived since the previous batch, and how many of them
+  // carried each X-SwarmPilot-Parent value (the Planner's arrival
+  // counter). Batches are sent at least every 100 ms while traffic flows.
+  uint64 arrivals = 2;
+  map<string, uint64> calls_from = 3;
+}
+
+message Completion {
+  string task_id = 1;
+  string instance_id = 2;
+  string model_id = 3;
+  string path = 4;
+  // Predictor features of the request (the adapter's feature names).
+  map<string, double> features = 5;
+  // What the strategy predicted for the chosen instance, if anything.
+  optional double predicted_time_ms = 6;
+  optional double predicted_error_margin_ms = 7;
+  map<string, double> predicted_quantiles = 8;
+  bool succeeded = 9;
+  // Engine HTTP status, 0 when no answer arrived.
+  uint32 http_status = 10;
+  double execution_time_ms = 11;
+  string error = 12;
+}
+
+message UnreachableReport {
+  string instance_id = 1;
+  string error = 2;
+}
+
+message ReportAck {}

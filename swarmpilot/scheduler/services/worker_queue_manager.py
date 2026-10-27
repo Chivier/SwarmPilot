@@ -317,6 +317,26 @@ class WorkerQueueManager:
             return 0, 0
         return worker.outstanding()
 
+    def dispatch_limits(
+        self, worker_id: str
+    ) -> tuple[int, dict[str, str]] | None:
+        """Return a worker's requests-in-flight limit and extra headers.
+
+        Args:
+            worker_id: Worker to inspect.
+
+        Returns:
+            ``(max_in_flight, extra_headers)``, or None for unknown workers.
+        """
+        with self._lock:
+            worker = self._workers.get(worker_id)
+        if worker is None:
+            return None
+        return (
+            getattr(worker, "max_in_flight", 1),
+            dict(getattr(worker, "_extra_headers", {})),
+        )
+
     def has_worker(self, worker_id: str) -> bool:
         """Check if a worker is registered.
 

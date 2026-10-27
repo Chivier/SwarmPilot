@@ -13,9 +13,12 @@
 //!   (`swarmpilot/engines/extractors.py`).
 //! - [`mlp`]: runtime predictor inference (`swarmpilot/predictor/predictor/`)
 //!   from the portable safetensors + JSON model file.
+//! - [`experiment`]: experiment-mode synthetic predictions
+//!   (`swarmpilot/predictor/utils/experiment.py`).
 //! - [`interp`] and [`fsum`]: bit-compatible ports of `numpy.interp` and
 //!   `math.fsum`, which the Python code relies on.
 
+pub mod experiment;
 pub mod extract;
 pub mod fsum;
 pub mod interp;

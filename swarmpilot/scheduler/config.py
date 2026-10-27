@@ -188,6 +188,10 @@ class ProxyConfig:
     # capacity() (256 for vLLM/SGLang, 1 for unknown engines).
     max_in_flight: int = int(os.getenv("PROXY_MAX_IN_FLIGHT", "0"))
 
+    # Unix socket of the control channel for swarmpilot-gateway (phase R3);
+    # unset keeps the Python proxy as the only data plane.
+    gateway_socket: str = os.getenv("SCHEDULER_GATEWAY_SOCKET", "")
+
 
 @dataclass
 class HealthConfig:
