@@ -412,7 +412,26 @@ pub async fn proxy(State(gw): State<Arc<Gateway>>, req: Request) -> Response {
     let (parts, body) = req.into_parts();
     let method = parts.method.clone();
     let path = parts.uri.path().trim_start_matches('/').to_string();
-    let query = parts.uri.query().map(str::to_string);
+    // The Python proxy's catch-all route takes these seven methods only.
+    if !matches!(
+        method,
+        Method::GET
+            | Method::POST
+            | Method::PUT
+            | Method::DELETE
+            | Method::PATCH
+            | Method::OPTIONS
+            | Method::HEAD
+    ) {
+        return json_response(
+            405,
+            &HeaderMap::new(),
+            Bytes::from_static(br#"{"detail":"Method Not Allowed"}"#),
+        );
+    }
+    // The Python proxy calls the engine on the path alone and drops the
+    // query string; the gateway does the same until both change together.
+    let query: Option<String> = None;
     let snap = match gw.snapshot() {
         Some(s) => s,
         None => {

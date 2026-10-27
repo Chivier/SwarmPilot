@@ -254,6 +254,13 @@ impl Worker {
         for (k, v) in &job.headers {
             headers.append(k.clone(), v.clone());
         }
+        // aiohttp's `json=` sets this when the client sent none.
+        if job.body.is_some() && !headers.contains_key(reqwest::header::CONTENT_TYPE) {
+            headers.insert(
+                reqwest::header::CONTENT_TYPE,
+                HeaderValue::from_static("application/json"),
+            );
+        }
         let mut rb = self
             .client
             .request(job.method.clone(), self.url(job))

@@ -1160,8 +1160,11 @@ def _gateway_sources() -> gateway_control.Sources:
         preprocessor_rules=lambda model_id: (
             predictor_client._chain_builder.get_chain(model_id) is not None
         ),
+        # Route path to style name, as ``style_for_path`` looks it up.
         style_paths=lambda: {
-            name: get_style(name).generate_path() for name in style_names()
+            route.path: name
+            for name in style_names()
+            for route in get_style(name).routes()
         },
         on_completion=_gateway_completion,
         on_arrivals=arrival_counter.add,

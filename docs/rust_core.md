@@ -226,6 +226,8 @@ of plan item 0.1, within this machine's noise.
   adaptive_bootstrap with trained models) use the gateway's own RNG, so
   their decisions match Python in distribution, not one for one.
 - State changes reach the gateway within 0.2 s.
+- Like the Python proxy, the gateway calls the engine on the path alone
+  and drops the query string; changing that means changing both.
 
 ## Phases
 

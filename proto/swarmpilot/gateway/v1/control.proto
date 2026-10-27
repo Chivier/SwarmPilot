@@ -43,9 +43,9 @@ message State {
   // keyed by platform software_name; the pass-through adapter is "".
   map<string, string> manifests = 7;
   PredictorSettings predictor = 8;
-  // Generation path (no leading slash) to API style name for every
-  // registered style, so the gateway knows which requests need
-  // translation.
+  // Route path (no leading slash) to API style name, for every route of
+  // every registered style (`style_for_path`), so the gateway knows which
+  // requests need translation and how to shape its own errors.
   map<string, string> api_style_paths = 9;
 }
 

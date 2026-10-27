@@ -85,10 +85,10 @@ async fn session(
             }
         }
     });
-    let report =
+    let mut report =
         tokio::spawn(async move { reporter.report_completions(ReceiverStream::new(rx)).await });
 
-    let result = async {
+    let states_loop = async {
         while let Some(state) = states.message().await? {
             if state.protocol_version > PROTOCOL_VERSION {
                 tracing::warn!(
@@ -111,8 +111,13 @@ async fn session(
             }
         }
         Ok::<(), Box<dyn std::error::Error + Send + Sync>>(())
-    }
-    .await;
+    };
+    // Either call ending ends the session, so completions are never
+    // dropped while the state stream stays up.
+    let result = tokio::select! {
+        r = states_loop => r,
+        r = &mut report => Err(format!("completion reports ended: {r:?}").into()),
+    };
     forward.abort();
     report.abort();
     result

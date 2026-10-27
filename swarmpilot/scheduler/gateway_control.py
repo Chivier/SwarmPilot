@@ -255,16 +255,22 @@ async def start_server(src: Sources, socket_path: str) -> grpc.aio.Server:
         The started server; stop it with ``await server.stop(grace)``.
     """
     path = Path(socket_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     with contextlib.suppress(FileNotFoundError):
         path.unlink()
     server = grpc.aio.server()
     pb_grpc.add_GatewayControlServicer_to_server(
         GatewayControlService(src), server
     )
-    server.add_insecure_port(f"unix:{path}")
-    await server.start()
-    # Only this user may talk to the Scheduler's control plane.
+    # Only this user may talk to the Scheduler's control plane (the state
+    # carries instance headers, which can hold API keys): the socket is
+    # created 0600 rather than tightened after it is already listening.
+    old_umask = os.umask(0o177)
+    try:
+        server.add_insecure_port(f"unix:{path}")
+        await server.start()
+    finally:
+        os.umask(old_umask)
     os.chmod(path, 0o600)
     logger.info(f"[GATEWAY] control channel on unix:{path}")
     return server

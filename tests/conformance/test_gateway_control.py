@@ -148,12 +148,67 @@ def test_no_instances_gives_503(stack):
     assert "error" in r.json()
 
 
+def test_styled_errors_match_python(stack):
+    """SwarmPilot's own errors take the shape of the route's API style."""
+    wait_gateway_instances(stack.gateway, 0)
+    body = {"model": "m", "max_tokens": 8, "messages": []}
+    for path, expect in (
+        (
+            "v1/messages",
+            {
+                "type": "error",
+                "error": {
+                    "type": "overloaded_error",
+                    "message": "No backend instances available",
+                },
+            },
+        ),
+        (
+            "v1/responses",
+            {
+                "error": {
+                    "message": "No backend instances available",
+                    "type": "service_unavailable",
+                    "param": None,
+                    "code": None,
+                }
+            },
+        ),
+    ):
+        gw = httpx.post(f"{stack.gateway}/{path}", json=body)
+        py = httpx.post(f"{stack.scheduler}/{path}", json=body)
+        assert gw.status_code == py.status_code == 503
+        assert gw.json() == py.json() == expect
+
+
+def test_unsupported_method_gives_405(stack):
+    r = httpx.request("TRACE", f"{stack.gateway}/v1/models")
+    assert r.status_code == 405
+
+
 def test_registration_reaches_gateway(stack):
     stack.register("fake-0", stack.engine)
     wait_gateway_instances(stack.gateway, 1)
     health = stack.gateway_health()
     assert health["model_id"] == "fake-model"
     assert health["strategy"] == "round_robin"
+
+
+def test_untranslated_style_gives_501(stack):
+    """A Messages request to a vLLM instance needs translation (R3b)."""
+    wait_gateway_instances(stack.gateway, 1)
+    r = httpx.post(
+        f"{stack.gateway}/v1/messages",
+        json={
+            "model": "fake-model",
+            "max_tokens": 8,
+            "messages": [{"role": "user", "content": "hi"}],
+        },
+    )
+    assert r.status_code == 501
+    body = r.json()
+    assert body["type"] == "error"
+    assert body["error"]["type"] == "api_error"
 
 
 def test_completions_are_counted_on_the_instance(stack):

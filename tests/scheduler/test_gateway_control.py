@@ -61,7 +61,7 @@ class Fake:
             model_key=lambda m, info, t: f"{m}-{info['hardware_name']}-{t}",
             hardware_features=hardware,
             preprocessor_rules=lambda m: False,
-            style_paths=lambda: {"openai_chat": "v1/chat/completions"},
+            style_paths=lambda: {"v1/messages": "anthropic_messages"},
             on_completion=on_completion,
             on_arrivals=lambda n, c: self.arrivals.append((n, c)),
             on_unreachable=on_unreachable,
@@ -92,6 +92,17 @@ async def test_build_state_describes_instances_and_platforms():
     assert exp.experiment and not exp.hardware_features
     assert len(state.predictor.experiment_normals) == 2000
     assert list(state.predictor.sketch_quantiles) == [0.5, 0.9]
+    assert dict(state.api_style_paths) == {"v1/messages": "anthropic_messages"}
+
+
+def test_scheduler_sends_style_by_route_path():
+    """The gateway looks styles up by the path a client called."""
+    from swarmpilot.scheduler import api
+
+    paths = api._gateway_sources().style_paths()
+    assert paths["v1/messages"] == "anthropic_messages"
+    assert paths["v1/chat/completions"] == "openai_chat"
+    assert paths["v1/responses"] == "openai_responses"
 
 
 async def test_build_state_without_instances_uses_configured_model():
