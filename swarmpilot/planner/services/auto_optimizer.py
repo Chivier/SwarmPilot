@@ -48,9 +48,11 @@ Knative use:
 * It grows at once, into GPUs no instance holds (``spare``), up to
   ``max_instances``.
 * It shrinks only after ``scale_down_rounds`` rounds in a row that want
-  fewer, by at most the change factor's share per round, taking instances
-  from the models with the most surplus, never below ``min_instances`` or
-  a model's ``min_replicas``.
+  fewer (then counts again from zero), by at most the change factor's
+  share per round, taking instances from the models with the most
+  surplus, never below ``min_instances`` or a model's ``min_replicas``.
+  Fresh reports of no traffic shrink it too; a pool above
+  ``max_instances`` shrinks without waiting.
 """
 
 from __future__ import annotations
@@ -255,13 +257,19 @@ class AutoOptimizer:
         else:
             demand = outstanding
         demand = {m: v for m, v in demand.items() if v > 0}
-        if not demand:
+        # Fresh reports of no traffic at all still size an elastic pool
+        # (down); stale ones fall back to the count scaler and change
+        # nothing.
+        elastic = self.elastic and scaler == "tail"
+        if not demand and not elastic:
             return None
         models = sorted(set(current) | set(demand))
         index = {m: j for j, m in enumerate(models)}
         size = M
-        if self.elastic and scaler == "tail":
+        if elastic:
             size = self._pool_size(M, demand, current, spare)
+        if not demand and size >= M:
+            return None
 
         if scaler == "tail":
             # Demand is already in instances; every machine supplies one.
@@ -273,22 +281,26 @@ class AutoOptimizer:
         if size < M:
             counts = self._shrink(current, demand, size)
         else:
-            # New machines start undeployed; placing them counts as a
-            # change, on top of the moves the change factor allows.
+            # New machines start undeployed. Integer programming counts
+            # placing one as a change, so it gets that many moves on top
+            # of what the change factor allows; simulated annealing places
+            # them before it starts counting.
             initial = np.array(
                 [index[inst.model_id] for inst in instances] + [-1] * (size - M)
             )
+            a = max(self.change_factor, 1.0 / M)
+            if size > M:
+                moves = a * M
+                if self.algorithm == "integer_programming":
+                    moves += size - M
+                a = min(1.0, (moves + 1e-9) / size)
             optimizer = create_optimizer(
                 self.algorithm,
                 M=size,
                 N=len(models),
                 B=np.tile(throughput, (size, 1)),
                 initial=initial,
-                a=min(
-                    1.0,
-                    max(self.change_factor, 1.0 / M) * M / size
-                    + (size - M) / size,
-                ),
+                a=a,
                 target=target,
             )
             deployment, _, _ = run_optimization(
@@ -296,8 +308,11 @@ class AutoOptimizer:
             )
             counts = Counter(models[j] for j in deployment if j >= 0)
             self._keep_min_replicas(counts, current)
-        before = self._score(current, models, throughput, target)
-        after = self._score(counts, models, throughput, target)
+        if target.any():
+            before = self._score(current, models, throughput, target)
+            after = self._score(counts, models, throughput, target)
+        else:
+            before = after = 0.0
         if counts == current:
             return None
         if size == M and before - after < self.change_threshold:
@@ -329,15 +344,19 @@ class AutoOptimizer:
         )
         ceiling = M + max(0, spare)
         if self.max_instances:
-            ceiling = min(ceiling, max(self.max_instances, M))
+            ceiling = min(ceiling, self.max_instances)
         wanted = math.ceil(sum(demand.values()) / self.target_concurrency)
-        wanted = min(max(wanted, floor), ceiling)
+        wanted = max(floor, min(wanted, ceiling))
         if wanted >= M:
             self._low_rounds = 0
             return wanted
+        # A pool above max_instances shrinks at once; one that is merely
+        # quiet waits, then counts its quiet rounds again from zero.
+        over_cap = bool(self.max_instances) and self.max_instances < M
         self._low_rounds += 1
-        if self._low_rounds < self.scale_down_rounds:
+        if self._low_rounds < self.scale_down_rounds and not over_cap:
             return M
+        self._low_rounds = 0
         step = max(1, int(self.change_factor * M))
         return max(wanted, M - step)
 
@@ -350,7 +369,8 @@ class AutoOptimizer:
         floor = {m: min(self.min_replicas, n) for m, n in current.items()}
         while sum(counts.values()) > size:
             share = {
-                m: counts[m] - size * demand.get(m, 0.0) / total
+                m: counts[m]
+                - (size * demand.get(m, 0.0) / total if total else 0)
                 for m in counts
                 if counts[m] > max(floor.get(m, 0), 0)
             }

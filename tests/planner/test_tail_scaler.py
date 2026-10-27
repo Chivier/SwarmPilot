@@ -14,7 +14,7 @@ from swarmpilot.planner.services.demand import (
     get_demand_store,
 )
 
-from .test_auto_optimizer import _Service
+from .test_auto_optimizer import _Clock, _Service
 
 
 def _store(service: _Service, exec_s: dict[str, float]) -> DemandStore:
@@ -363,3 +363,91 @@ class TestElasticPool:
         plan = await opt.run_once()
         assert plan is not None and plan.size_after == 5
         assert sum(service.counts().values()) == 5
+
+    def test_idle_pool_shrinks_on_zero_traffic(self):
+        # Review repro: fresh reports of no traffic at all.
+        service, store = self._loaded(0, 0, n=4)
+        opt = _opt(
+            store,
+            service,
+            elastic=True,
+            target_concurrency=4,
+            scale_down_rounds=1,
+            change_factor=1.0,
+        )
+        plan = opt.plan(service.instances)
+        assert plan is not None and plan.target_state == {"a": 1, "b": 1}
+
+    def test_stale_reports_change_nothing(self):
+        clock = _Clock()
+        service = _Service({"a": 4, "b": 4})
+        store = DemandStore(alpha=1.0, clock=clock)
+        store.submit_target("a", 0, arrival_rate=0)
+        store.submit_target("b", 0, arrival_rate=0)
+        clock.t = 1000
+        opt = _opt(
+            store, service, elastic=True, scale_down_rounds=1, change_factor=1.0
+        )
+        assert opt.plan(service.instances) is None
+
+    def test_quiet_rounds_count_again_after_a_shrink(self):
+        service, store = self._loaded(0.1, 0.1, n=4)
+        opt = _opt(
+            store,
+            service,
+            elastic=True,
+            target_concurrency=4,
+            scale_down_rounds=2,
+            change_factor=0.25,
+        )
+        assert opt.plan(service.instances) is None
+        assert opt.plan(service.instances).size_after == 6
+        service.apply_deployment({"a": 3, "b": 3})
+        assert opt.plan(service.instances) is None
+        assert opt.plan(service.instances).size_after < 6
+
+    def test_pool_above_max_shrinks_at_once(self):
+        service, store = self._loaded(30, 30, n=4)
+        opt = _opt(
+            store,
+            service,
+            elastic=True,
+            target_concurrency=1,
+            max_instances=6,
+            scale_down_rounds=5,
+            change_factor=0.25,
+        )
+        plan = opt.plan(service.instances, spare=10)
+        assert plan is not None and plan.size_after == 6
+
+    @pytest.mark.parametrize(
+        ("algorithm", "moves"),
+        [("integer_programming", 7), ("simulated_annealing", 1)],
+    )
+    def test_growth_move_budget(self, monkeypatch, algorithm, moves):
+        # 4 machines grow to 10 with change factor 0.25: one move among
+        # the existing machines, plus the 6 placements for integer
+        # programming, which counts placing an undeployed machine.
+        from swarmpilot.planner.services import auto_optimizer
+
+        made = []
+        real = auto_optimizer.create_optimizer
+
+        def spy(*args, **kwargs):
+            opt = real(*args, **kwargs)
+            made.append(opt)
+            return opt
+
+        monkeypatch.setattr(auto_optimizer, "create_optimizer", spy)
+        service, store = self._loaded(30, 10)
+        opt = _opt(
+            store,
+            service,
+            elastic=True,
+            target_concurrency=4,
+            algorithm=algorithm,
+            change_factor=0.25,
+        )
+        plan = opt.plan(service.instances, spare=10)
+        assert plan is not None and plan.size_after == 10
+        assert made[0].M == 10 and made[0].max_changes == moves

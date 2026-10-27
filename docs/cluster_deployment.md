@@ -492,7 +492,8 @@ is in tasks in flight, and the pool wants one instance per
 `AUTO_OPTIMIZE_TARGET_CONCURRENCY` of them. It grows at once into free
 GPUs (up to `AUTO_OPTIMIZE_MAX_INSTANCES`) and shrinks only after
 `AUTO_OPTIMIZE_SCALE_DOWN_ROUNDS` rounds in a row that want fewer, by at
-most the change factor per round, from the models with the most surplus.
+most the change factor per round, from the models with the most surplus
+(fresh reports of no traffic count as wanting the minimum).
 Set the target near the concurrency at which your engines' latency starts
 to climb (for 7-8B models on one A100 or L40S under vLLM continuous
 batching, roughly 50 to 100).
