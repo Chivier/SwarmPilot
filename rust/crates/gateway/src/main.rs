@@ -13,6 +13,7 @@ use std::time::Duration;
 
 use axum::extract::DefaultBodyLimit;
 use axum::routing::get;
+use axum::serve::ListenerExt;
 use axum::Router;
 use clap::Parser;
 use tokio::sync::{mpsc, Mutex};
@@ -92,7 +93,15 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         .fallback(gateway::proxy)
         .layer(DefaultBodyLimit::disable())
         .with_state(gw);
-    let listener = tokio::net::TcpListener::bind(args.listen).await?;
+    // Like uvicorn (asyncio sets TCP_NODELAY on every connection): without
+    // it, small SSE writes wait on the client's delayed ACK, ~40 ms each.
+    let listener = tokio::net::TcpListener::bind(args.listen)
+        .await?
+        .tap_io(|tcp| {
+            if let Err(e) = tcp.set_nodelay(true) {
+                tracing::debug!(error = %e, "could not set TCP_NODELAY");
+            }
+        });
     tracing::info!(listen = %args.listen, control = %args.control.display(), "swarmpilot-gateway started");
     axum::serve(listener, app)
         .with_graceful_shutdown(async {

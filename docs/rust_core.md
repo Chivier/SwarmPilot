@@ -190,6 +190,13 @@ The single-process Python fake engine limits throughput at high
 concurrency; the added P99 at concurrency 1 sits at the 0.5 ms budget
 of plan item 0.1, within this machine's noise.
 
+Streams: the gateway first accepted client connections without
+`TCP_NODELAY`, so from concurrency 8 up every SSE answer waited about
+40 ms on the client's delayed ACK (throughput 0.27 of direct at 64).
+uvicorn sets it on every connection; the gateway now does too (R3c), and
+streams at 64 add 1 ms P50 at 0.93 of direct
+(`tests/perf/baselines/proxy-r3c-gateway.json`, Messages clients).
+
 ### Drift guards for the gateway
 
 - **Dispatch conformance** (`tests/conformance/test_dispatch_conformance.py`):
