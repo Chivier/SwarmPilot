@@ -58,8 +58,23 @@ def workload(seed=0, n_tasks=None, load=None):
     return means, actual, arrivals
 
 
-async def run(strategy, mode, means, actual, arrivals, chosen_out=None):
-    """Route every task; ``chosen_out`` receives each task's instance."""
+async def run(
+    strategy,
+    mode,
+    means,
+    actual,
+    arrivals,
+    chosen_out=None,
+    predictor_client=None,
+    platform=None,
+    metadata_fn=None,
+):
+    """Route every task; ``chosen_out`` receives each task's instance.
+
+    By default the predictor runs in experiment mode. A test can pass a
+    ``predictor_client`` holding trained models for ``platform``, with
+    ``metadata_fn(t)`` giving task ``t``'s features.
+    """
     n_tasks = len(arrivals)
     qtype = (
         "probabilistic"
@@ -72,13 +87,15 @@ async def run(strategy, mode, means, actual, arrivals, chosen_out=None):
             instance_id=f"i{k}",
             model_id="m",
             endpoint=f"http://x{k}",
-            platform_info=PLAT,
+            platform_info=platform or PLAT,
         )
         for k in range(N_INST)
     ]
     for i in insts:
         await reg.register(i)
-    pc = PredictorClient(storage_dir=tempfile.mkdtemp(prefix="sim-models-"))
+    pc = predictor_client or PredictorClient(
+        storage_dir=tempfile.mkdtemp(prefix="sim-models-")
+    )
     strat = get_strategy(strategy, pc, reg, seed=1)
     free_at = [0.0] * N_INST
     pending = []  # heap of (finish_time, task index)
@@ -88,7 +105,11 @@ async def run(strategy, mode, means, actual, arrivals, chosen_out=None):
         while pending and pending[0][0] <= now:
             _, done = heapq.heappop(pending)
             await reg.release_charge(f"t{done}")
-        md = {"exp_runtime": float(means[t]), "exp_cv": 0.3}
+        md = (
+            metadata_fn(t)
+            if metadata_fn
+            else {"exp_runtime": float(means[t]), "exp_cv": 0.3}
+        )
         res = await strat.schedule_task("m", md, insts, task_id=f"t{t}")
         k = int(res.selected_instance_id[1:])
         start = max(now, free_at[k])
