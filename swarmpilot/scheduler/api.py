@@ -33,7 +33,7 @@ from pyinstrument.renderers.speedscope import SpeedscopeRenderer
 
 from swarmpilot.shared.loop_lag import EventLoopLagMonitor
 
-from .algorithms import get_strategy
+from .algorithms import get_strategy, queue_info_type_for
 from .algorithms.base import ScheduleResult
 from .config import config
 from .models import (
@@ -340,12 +340,8 @@ class ProfileMiddleware:
 app.add_middleware(ProfileMiddleware)
 
 
-# Determine queue info type based on scheduling strategy
-queue_info_type = (
-    "expect_error"
-    if config.scheduling.default_strategy == "min_time"
-    else "probabilistic"
-)
+# The queue sketch kind the startup strategy reads
+queue_info_type = queue_info_type_for(config.scheduling.default_strategy)
 
 # Global state - TODO: Consider dependency injection for better testability
 loop_lag_monitor = EventLoopLagMonitor()
@@ -2981,19 +2977,7 @@ async def reinitialize_instance_queues(
     Returns:
         Number of instances whose queue info was reinitialized
     """
-    # Determine the queue info type for the new strategy
-    if (
-        strategy_name == "min_time"
-        or strategy_name == "po2"
-        or strategy_name == "serverless"
-    ):
-        queue_info_type = "expect_error"
-    elif strategy_name in ("probabilistic", "adaptive_bootstrap"):
-        queue_info_type = "probabilistic"
-    else:  # round_robin
-        queue_info_type = (
-            "probabilistic"  # Default to probabilistic for round_robin
-        )
+    queue_info_type = queue_info_type_for(strategy_name)
 
     # Rebuild every sketch in the new kind from the tasks still charged
     # to it, so in-flight work is not forgotten by a strategy switch.
@@ -3026,6 +3010,12 @@ def get_current_strategy_info() -> StrategyInfo:
         parameters = {}
     elif strategy_class_name == "PowerOfTwoStrategy":
         strategy_name = "po2"
+        parameters = {}
+    elif strategy_class_name == "MinimumExpectedTimeServerlessStrategy":
+        strategy_name = "serverless"
+        parameters = {}
+    elif strategy_class_name == "RandomStrategy":
+        strategy_name = "random"
         parameters = {}
     elif strategy_class_name == "AdaptiveBootstrapStrategy":
         strategy_name = "adaptive_bootstrap"
