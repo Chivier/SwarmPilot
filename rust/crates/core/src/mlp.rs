@@ -107,8 +107,9 @@ impl Linear {
                     acc += w * v;
                 }
                 let y = acc + self.bias[o];
-                if relu {
-                    y.max(0.0)
+                // torch.relu keeps NaN; f32::max(NaN, 0.0) would give 0.
+                if relu && !(y.is_nan() || y > 0.0) {
+                    0.0
                 } else {
                     y
                 }
@@ -262,7 +263,7 @@ impl RuntimePredictor {
         }
         let head = if state.get("quantiles").is_some_and(|q| !q.is_null()) {
             let quantiles = f64_list(state, "quantiles")?;
-            if quantiles.len() != mlp.output_dim() {
+            if quantiles.is_empty() || quantiles.len() != mlp.output_dim() {
                 return invalid("quantiles and output_dim disagree");
             }
             Head::Quantile {
@@ -432,6 +433,37 @@ mod tests {
         assert_eq!(q[0], (0.5, 14.5));
         // softplus(-30) is below float32 resolution at 2.25.
         assert_eq!(q[1], (0.9, 14.5));
+        // NaN passes through ReLU as in torch, instead of becoming 0.
+        let Output::Quantiles(q) = p.predict(&[f32::NAN]).unwrap() else {
+            panic!()
+        };
+        assert!(q.iter().all(|(_, v)| v.is_nan()));
+    }
+
+    #[test]
+    fn rejects_empty_quantiles() {
+        let state = json!({
+            "model_config": {"input_dim": 1, "output_dim": 0, "hidden_layers": []},
+            "feature_names": ["x"], "feature_mean": [0.0], "feature_std": [1.0],
+            "quantiles": [], "target_mean": 0.0, "target_std": 1.0,
+        });
+        let t = HashMap::from([
+            (
+                "network.0.weight".to_string(),
+                Tensor {
+                    shape: vec![0, 1],
+                    data: vec![],
+                },
+            ),
+            (
+                "network.0.bias".to_string(),
+                Tensor {
+                    shape: vec![0],
+                    data: vec![],
+                },
+            ),
+        ]);
+        assert!(RuntimePredictor::from_state(&state, &t, false).is_err());
     }
 
     #[test]

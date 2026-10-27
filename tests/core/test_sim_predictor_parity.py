@@ -62,9 +62,28 @@ def trained_client():
     "strategy", ["probabilistic", "adaptive_bootstrap", "min_time", "po2"]
 )
 def test_trained_routing_matches_across_cores(
-    use_core, trained_client, strategy
+    use_core, trained_client, strategy, monkeypatch
 ):
     from loguru import logger
+
+    from swarmpilot.predictor.predictor import expect_error, quantile
+
+    rust_calls = {"python": 0, "rust": 0}
+    current = {"core": "python"}
+
+    def counting(module):
+        real = module.native_model
+
+        def wrapper(predictor):
+            native = real(predictor)
+            if native is not None:
+                rust_calls[current["core"]] += 1
+            return native
+
+        monkeypatch.setattr(module, "native_model", wrapper)
+
+    counting(expect_error)
+    counting(quantile)
 
     sim = _sim()
     means, actual, arrivals = sim.workload(seed=5, n_tasks=600, load=0.85)
@@ -73,6 +92,7 @@ def test_trained_routing_matches_across_cores(
     try:
         for name in ("python", "rust"):
             use_core(name)
+            current["core"] = name
             # Fresh predictor objects, so each core loads and caches its own.
             trained_client._low_level.clear_cache()
             chosen[name] = []
@@ -91,6 +111,9 @@ def test_trained_routing_matches_across_cores(
             )
     finally:
         logger.enable("swarmpilot")
+    # The Rust run really predicted in Rust, and the Python run did not.
+    assert rust_calls["python"] == 0
+    assert rust_calls["rust"] > 0
     same = np.mean(np.array(chosen["python"]) == np.array(chosen["rust"]))
     assert same >= 0.98, same
     for key in ("p50_s", "p95_s", "p99_s"):

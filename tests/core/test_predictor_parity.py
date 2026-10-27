@@ -9,6 +9,7 @@ right after training (float32 scaling), after a state round trip
 
 from __future__ import annotations
 
+import math
 import random
 
 import numpy as np
@@ -16,6 +17,7 @@ import pytest
 import torch
 
 from swarmpilot.predictor.predictor.expect_error import ExpectErrorPredictor
+from swarmpilot.predictor.predictor.native import native_model
 from swarmpilot.predictor.predictor.quantile import QuantilePredictor
 from swarmpilot.predictor.storage.model_storage import ModelStorage
 
@@ -76,6 +78,13 @@ def _probes(seed: int) -> list[dict[str, float]]:
         }
         for _ in range(150)
     ]
+    # Non-finite inputs and values that overflow float32: torch gives NaN
+    # or inf, and so must Rust.
+    for odd in (float("nan"), float("inf"), -float("inf"), 1e39, -1e39):
+        rows.append({"prompt_length": odd, "max_tokens": 128, "constant": 7.0})
+        rows.append(
+            {"prompt_length": 100.0, "max_tokens": odd, "constant": 7.0}
+        )
     return rows
 
 
@@ -88,6 +97,9 @@ def _values(out: dict) -> list[float]:
 def _assert_close(a: list[float], b: list[float]) -> float:
     worst = 0.0
     for x, y in zip(a, b, strict=True):
+        if not (math.isfinite(x) and math.isfinite(y)):
+            assert x == y or (math.isnan(x) and math.isnan(y)), (a, b)
+            continue
         rel = abs(x - y) / max(abs(x), 1e-9)
         worst = max(worst, rel)
     assert worst <= REL, (a, b)
@@ -108,6 +120,7 @@ def _predict_both(use_core, predictor, rows):
     use_core("python")
     want = [_values(predictor.predict(dict(r))) for r in rows]
     use_core("rust")
+    assert native_model(predictor) is not None
     got = [_values(predictor.predict(dict(r))) for r in rows]
     return want, got
 
@@ -155,6 +168,7 @@ def test_portable_file(use_core, trained, tmp_path):
 def test_retraining_rebuilds_the_rust_model(use_core, trained):
     _, cls, predictor = trained
     use_core("rust")
+    assert native_model(predictor) is not None
     row = _probes(4)[0]
     before = _values(predictor.predict(dict(row)))
     fresh = cls()
