@@ -438,6 +438,14 @@ pub async fn proxy(State(gw): State<Arc<Gateway>>, req: Request) -> Response {
     };
     let candidates = gw.candidates(&snap);
     if candidates.is_empty() {
+        // Still an arrival: the Planner sizes the model by its arrivals,
+        // and one it never sees again it never brings back.
+        gw.record_arrival(
+            parts
+                .headers
+                .get(PARENT_HEADER)
+                .and_then(|v| v.to_str().ok()),
+        );
         return error_response(
             Some(&snap),
             &path,

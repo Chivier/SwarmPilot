@@ -309,6 +309,40 @@ class TestProxyErrors:
         assert response.status_code == 503
         assert "No backend instances" in response.json()["error"]["message"]
 
+    def test_request_refused_for_no_instances_still_counts_as_arrival(
+        self,
+        mock_scheduling_strategy,
+        mock_instance_registry_empty,
+        mock_task_registry,
+        mock_callback,
+        mock_queue_manager,
+    ):
+        """A model left with no instances keeps reporting its traffic."""
+        from swarmpilot.scheduler.utils.arrival_counter import arrival_counter
+
+        app = FastAPI()
+        app.include_router(
+            ProxyRouter(
+                scheduling_strategy=mock_scheduling_strategy,
+                instance_registry=mock_instance_registry_empty,
+                task_registry=mock_task_registry,
+                task_result_callback=mock_callback,
+                worker_queue_manager=mock_queue_manager,
+                proxy_timeout=5.0,
+            ).router
+        )
+        arrival_counter.take()
+        client = TestClient(app)
+        client.post("/v1/chat/completions", json={"model": "test"})
+        client.post(
+            "/v1/chat/completions",
+            json={"model": "test"},
+            headers={"X-SwarmPilot-Parent": "planner-llm"},
+        )
+        window = arrival_counter.take()
+        assert window.arrivals == 2
+        assert window.calls_from == {"planner-llm": 1}
+
     def test_timeout_returns_504(
         self,
         mock_scheduling_strategy,

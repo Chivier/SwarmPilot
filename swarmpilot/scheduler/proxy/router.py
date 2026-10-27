@@ -186,6 +186,9 @@ class ProxyRouter:
             logger.warning(
                 f"[PROXY] No instances available for {method} /{path}"
             )
+            # Still an arrival: the Planner sizes the model by its
+            # arrivals, and one it never sees again it never brings back.
+            arrival_counter.record(request.headers.get(PARENT_HEADER))
             return _error_response(
                 path,
                 503,
