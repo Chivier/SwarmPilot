@@ -535,6 +535,16 @@ without a named worker (serve, scale, replacements) also go best fit:
 PyLet itself takes the first worker that fits, so 1-GPU replicas would
 fill an 8-GPU node and leave no room for a 4-GPU model.
 
+Best fit still runs out: after a busy night smaller models can hold every
+big node in pieces, and no free place holds a 4-GPU instance. In an
+elastic pool, when the model furthest below its share fits on no free
+GPUs, the loop makes room: it removes instances of other models from the
+one worker where the fewest GPUs must be freed, and starts the model
+there. It takes an instance only from a model that keeps its floor and
+ends less short than the starved model is now, never one younger than
+`min_age`, so the largest shortfall always shrinks and two models do not
+pass a worker back and forth.
+
 Hardware names come from `PLANNER_HARDWARE_MAP` (or the simulator's
 node list); the speeds are in the loop's log line.
 
