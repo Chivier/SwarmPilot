@@ -498,6 +498,28 @@ Set the target near the concurrency at which your engines' latency starts
 to climb (for 7-8B models on one A100 or L40S under vLLM continuous
 batching, roughly 50 to 100).
 
+On mixed hardware, also set `AUTO_OPTIMIZE_HARDWARE_AWARE=true`. Without
+it every machine counts the same, the deployment service removes the
+oldest instances of a model that shrinks, and new instances go wherever
+PyLet puts them, so a model can be left on one slow GPU while a fast one
+sits idle. With it the loop learns how fast each kind of hardware is from
+the execution times the Schedulers report (fitting `log t = model +
+hardware`, the fastest kind counting 1) and:
+
+- weighs each machine by that speed, so it chooses which instances move,
+  removes exactly those and starts their replacements on the workers they
+  freed (two models can trade machines);
+- sizes an elastic pool in units of the fastest hardware
+  (`AUTO_OPTIMIZE_TARGET_CONCURRENCY` tasks in flight each), grows into
+  the fastest free GPUs first and shrinks by the slowest instances;
+- when the pool cannot carry all the need, serves each model's arrivals
+  (`rate * s`) before anyone's backlog, so one model's backlog cannot take
+  the machines another needs to keep up;
+- leaves a model at `min_replicas` its fastest instances.
+
+Hardware names come from `PLANNER_HARDWARE_MAP` (or the simulator's
+node list); the speeds are in the loop's log line.
+
 When one model's tasks call another (an agent's LLM step calling a tool or
 a diffusion model), mark those calls with the calling model so the Planner
 can size the callee from the caller's traffic instead of waiting for calls
@@ -588,6 +610,7 @@ Source: `swarmpilot/planner/config.py`
 | `AUTO_OPTIMIZE_MIN_INSTANCES` | `1` | Smallest elastic pool |
 | `AUTO_OPTIMIZE_MAX_INSTANCES` | `0` | Largest elastic pool; 0 = as many as the free GPUs allow |
 | `AUTO_OPTIMIZE_SCALE_DOWN_ROUNDS` | `3` | Rounds in a row that must want fewer instances before the pool shrinks |
+| `AUTO_OPTIMIZE_HARDWARE_AWARE` | `false` | Weigh machines by hardware speed learned from execution times; choose which instances move and where (tail scaler only) |
 | `AUTO_OPTIMIZE_SCALER` | `tail` | `tail` sizes models by arrival rate, q0.9 backlog and calls between models; `count` by outstanding tasks only (see [Autoscaling agent workloads](#autoscaling-agent-workloads)) |
 | `PYLET_ENABLED` | `false` | Enable PyLet cluster integration |
 | `PYLET_HEAD_URL` | _(none)_ | PyLet head node URL (required when `PYLET_ENABLED=true`) |

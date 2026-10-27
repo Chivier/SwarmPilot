@@ -165,7 +165,7 @@ Each service uses a different config approach:
   - Supports `PYLET_LOCAL_MODE=true` to start a local PyLet cluster as subprocesses (no external cluster needed)
   - Supports `PYLET_SIM_MODE=true` to start a real PyLet head with simulated GPU nodes and virtual engines (`swarmpilot-sim up`, see `docs/simulator.md`)
   - Mixed hardware: `PLANNER_HARDWARE_MAP` maps PyLet worker id/host patterns to hardware names; instances register with their worker's hardware, `serve --hardware 'H100*'` pins a model (`swarmpilot/planner/pylet/hardware.py`)
-  - Auto-optimize loop (`AUTO_OPTIMIZE_ENABLED`, `swarmpilot/planner/services/auto_optimizer.py`) re-divides instances between models; `AUTO_OPTIMIZE_ELASTIC=true` also grows the pool into free GPUs and shrinks it when idle (`AUTO_OPTIMIZE_TARGET_CONCURRENCY` tasks in flight per instance)
+  - Auto-optimize loop (`AUTO_OPTIMIZE_ENABLED`, `swarmpilot/planner/services/auto_optimizer.py`) re-divides instances between models; `AUTO_OPTIMIZE_ELASTIC=true` also grows the pool into free GPUs and shrinks it when idle (`AUTO_OPTIMIZE_TARGET_CONCURRENCY` tasks in flight per instance); `AUTO_OPTIMIZE_HARDWARE_AWARE=true` weighs machines by hardware speed learned from execution times (`services/hardware_speed.py`) and names which instances move and where
   - Instance watcher (`PLANNER_INSTANCE_WATCH_INTERVAL`, default 2 s) removes instances PyLet reports FAILED and replaces them (`PLANNER_REPLACE_FAILED`)
 
 ### API Prefixes

@@ -24,6 +24,7 @@ from __future__ import annotations
 import asyncio
 import threading
 from collections import Counter
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -233,10 +234,23 @@ class PyLetDeploymentService:
         per = max(1, self._default_gpu_count)
         return self._instance_manager.free_gpus() // per
 
+    def free_slots(self) -> list[tuple[str, str]]:
+        """Free places for one instance of the default GPU count.
+
+        Returns:
+            One (worker id, hardware name) pair per place.
+        """
+        self._ensure_initialized()
+        return self._instance_manager.free_slots(
+            max(1, self._default_gpu_count)
+        )
+
     def apply_deployment(
         self,
         target_state: dict[str, int],
         wait_for_ready: bool = True,
+        remove: Sequence[str] = (),
+        place: dict[str, Sequence[str | None]] | None = None,
     ) -> DeploymentServiceResult:
         """Apply a deployment state computed by the optimizer.
 
@@ -246,6 +260,9 @@ class PyLetDeploymentService:
         Args:
             target_state: Target model counts {model_id: count}.
             wait_for_ready: Whether to wait for new instances to be ready.
+            remove: PyLet IDs to remove first, even when a model keeps its
+                count (it gets replacements).
+            place: Workers for each model's new instances, in order.
 
         Returns:
             DeploymentServiceResult with operation details.
@@ -261,6 +278,8 @@ class PyLetDeploymentService:
                 result = self._deployment_executor.reconcile(
                     target_state=target_state,
                     wait_for_ready=wait_for_ready,
+                    remove=remove,
+                    place=place,
                 )
 
             active = self._instance_manager.get_active_instances()

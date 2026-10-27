@@ -529,6 +529,28 @@ class InstanceManager:
         ]
         return sum(len(w.gpu_indices_available) for w in workers)
 
+    def free_slots(self, gpu_count: int = 1) -> list[tuple[str, str]]:
+        """Free places for one instance on the online workers.
+
+        Args:
+            gpu_count: GPUs one instance takes.
+
+        Returns:
+            One (worker id, hardware name) pair per place.
+        """
+        workers = [
+            w
+            for w in self.pylet_client.list_workers()
+            if getattr(w, "status", "ONLINE") == "ONLINE"
+        ]
+        self.hardware.observe_workers(workers)
+        per = max(1, gpu_count)
+        return [
+            (w.id, self.hardware.resolve(w.id, getattr(w, "host", None)))
+            for w in workers
+            for _ in range(len(w.gpu_indices_available) // per)
+        ]
+
     def _resolve_hardware(
         self, managed: ManagedInstance, info: InstanceInfo
     ) -> str:
