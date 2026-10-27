@@ -6,8 +6,12 @@ using mocked PyLet deployment services.
 
 from __future__ import annotations
 
+import asyncio
+import threading
+import time
 from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -518,3 +522,76 @@ class TestScaleEndpoint:
             json={"model": "m", "replicas": 1},
         )
         assert response.status_code == 503
+
+
+# ------------------------------------------------------------------ #
+# Deploys do not block the event loop
+# ------------------------------------------------------------------ #
+
+
+class TestDeployDoesNotBlockLoop:
+    """A deploy that waits for engines leaves the rest of the API up."""
+
+    @pytest.mark.parametrize(
+        ("method", "path", "body"),
+        [
+            (
+                "apply_deployment",
+                "/v1/serve",
+                {"model_or_command": "Qwen/Qwen3-0.6B", "replicas": 2},
+            ),
+            ("scale_model", "/v1/scale", {"model": "m", "replicas": 3}),
+            ("terminate_model", "/v1/terminate", {"model": "m"}),
+            (
+                "apply_deployment",
+                "/v1/pylet/deploy_manually",
+                {"target_state": {"m": 2}},
+            ),
+            (
+                "scale_model",
+                "/v1/pylet/scale",
+                {"model_id": "m", "target_count": 3},
+            ),
+        ],
+    )
+    async def test_health_answers_during_deploy(self, method, path, body):
+        entered, finished = threading.Event(), threading.Event()
+
+        def slow(*args, **kwargs):
+            entered.set()
+            time.sleep(1.0)
+            finished.set()
+            if method == "terminate_model":
+                return {}
+            return _make_deployment_result()
+
+        svc = MagicMock()
+        svc.initialized = True
+        svc.get_instances_by_model.return_value = []
+        getattr(svc, method).side_effect = slow
+        transport = httpx.ASGITransport(app=app)
+        with (
+            patch(
+                "swarmpilot.planner.routes.sdk_api.get_pylet_service_optional",
+                return_value=svc,
+            ),
+            patch(
+                "swarmpilot.planner.pylet_api.get_pylet_service_optional",
+                return_value=svc,
+            ),
+            patch("swarmpilot.planner.routes.sdk_api.config") as sdk_cfg,
+            patch("swarmpilot.planner.pylet_api.config") as pylet_cfg,
+        ):
+            sdk_cfg.pylet_enabled = pylet_cfg.pylet_enabled = True
+            async with httpx.AsyncClient(
+                transport=transport, base_url="http://planner"
+            ) as c:
+                deploy = asyncio.create_task(c.post(path, json=body))
+                while not entered.is_set():
+                    await asyncio.sleep(0.01)
+                health = await c.get("/v1/health")
+                # Answered while the deploy is still waiting.
+                assert health.status_code == 200
+                assert not finished.is_set()
+                response = await deploy
+        assert response.status_code == 200, response.text

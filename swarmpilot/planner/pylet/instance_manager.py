@@ -520,6 +520,15 @@ class InstanceManager:
             groups[best] += 1
         return dict(groups)
 
+    def free_gpus(self) -> int:
+        """GPUs no instance holds on the online workers."""
+        workers = [
+            w
+            for w in self.pylet_client.list_workers()
+            if getattr(w, "status", "ONLINE") == "ONLINE"
+        ]
+        return sum(len(w.gpu_indices_available) for w in workers)
+
     def _resolve_hardware(
         self, managed: ManagedInstance, info: InstanceInfo
     ) -> str:

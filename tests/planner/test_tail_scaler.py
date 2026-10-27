@@ -14,7 +14,7 @@ from swarmpilot.planner.services.demand import (
     get_demand_store,
 )
 
-from .test_auto_optimizer import _Service
+from .test_auto_optimizer import _Clock, _Service
 
 
 def _store(service: _Service, exec_s: dict[str, float]) -> DemandStore:
@@ -244,3 +244,210 @@ def test_pylet_endpoint_matches_scheduler_url():
     store = DemandStore(alpha=1.0)
     store.submit_throughput("http://127.0.0.1:15301/", 0.3, model_id="llm")
     assert store.execution_time("127.0.0.1:15301", model_id="llm") == 0.3
+
+
+class TestElasticPool:
+    """Pool sizing from tasks in flight per instance."""
+
+    @staticmethod
+    def _loaded(rate_a: float, rate_b: float, n: int = 2) -> tuple:
+        service = _Service({"a": n, "b": n})
+        store = _store(service, {"a": 1.0, "b": 1.0})
+        # need = rate * 1 s, no backlog.
+        store.submit_target("a", 0, arrival_rate=rate_a)
+        store.submit_target("b", 0, arrival_rate=rate_b)
+        return service, store
+
+    def test_fixed_pool_never_grows(self):
+        service, store = self._loaded(30, 10)
+        plan = _opt(store, service, target_concurrency=4).plan(
+            service.instances, spare=10
+        )
+        assert plan is not None and plan.size_after == 4
+
+    def test_grows_into_free_gpus(self):
+        service, store = self._loaded(30, 10)
+        opt = _opt(store, service, elastic=True, target_concurrency=4)
+        plan = opt.plan(service.instances, spare=10)
+        # 40 tasks in flight / 4 per instance = 10, split 3:1.
+        assert plan is not None and plan.size_after == 10
+        assert plan.target_state == {"a": 7, "b": 3} or plan.target_state == {
+            "a": 8,
+            "b": 2,
+        }
+
+    def test_growth_is_capped_by_spare_and_max(self):
+        service, store = self._loaded(30, 10)
+        opt = _opt(store, service, elastic=True, target_concurrency=4)
+        assert opt.plan(service.instances, spare=2).size_after == 6
+        opt = _opt(
+            store, service, elastic=True, target_concurrency=4, max_instances=5
+        )
+        assert opt.plan(service.instances, spare=10).size_after == 5
+
+    def test_grows_even_when_shares_already_match(self):
+        # Shares are right (1:1), so a fixed pool has nothing to gain.
+        service, store = self._loaded(20, 20)
+        assert (
+            _opt(store, service, target_concurrency=4).plan(
+                service.instances, spare=10
+            )
+            is None
+        )
+        opt = _opt(store, service, elastic=True, target_concurrency=4)
+        plan = opt.plan(service.instances, spare=10)
+        assert plan is not None and plan.target_state == {"a": 5, "b": 5}
+
+    def test_shrinks_after_quiet_rounds_from_the_surplus(self):
+        service, store = self._loaded(4, 1, n=4)
+        opt = _opt(
+            store,
+            service,
+            elastic=True,
+            target_concurrency=4,
+            scale_down_rounds=2,
+            change_factor=0.5,
+        )
+        # First quiet round: only a fixed-pool rebalance.
+        first = opt.plan(service.instances)
+        assert first is not None and first.size_after == 8
+        second = opt.plan(service.instances)
+        # Wants ceil(5 / 4) = 2, but sheds at most half the pool per round
+        # and keeps a replica per model; b has the most surplus.
+        assert second is not None and second.size_after == 4
+        assert second.target_state["b"] < second.target_state["a"]
+        assert min(second.target_state.values()) >= 1
+
+    def test_busy_round_resets_the_scale_down_count(self):
+        service, store = self._loaded(4, 1, n=4)
+        opt = _opt(
+            store,
+            service,
+            elastic=True,
+            target_concurrency=4,
+            scale_down_rounds=2,
+        )
+        opt.plan(service.instances)
+        store.submit_target("a", 0, arrival_rate=40)
+        opt.plan(service.instances)
+        store.submit_target("a", 0, arrival_rate=4)
+        plan = opt.plan(service.instances)
+        assert plan is None or plan.size_after == 8
+
+    def test_never_below_min_instances(self):
+        service, store = self._loaded(0.1, 0.1, n=3)
+        opt = _opt(
+            store,
+            service,
+            elastic=True,
+            target_concurrency=4,
+            scale_down_rounds=1,
+            change_factor=1.0,
+            min_instances=4,
+        )
+        plan = opt.plan(service.instances)
+        assert plan is not None and plan.size_after == 4
+
+    def test_count_scaler_is_never_elastic(self):
+        service, store = self._loaded(30, 10)
+        opt = _opt(
+            store, service, scaler="count", elastic=True, target_concurrency=4
+        )
+        plan = opt.plan(service.instances, spare=10)
+        assert plan is None or plan.size_after == 4
+
+    async def test_run_once_asks_the_service_for_spare(self):
+        service, store = self._loaded(30, 10)
+        service.spare_capacity = lambda: 1
+        opt = _opt(store, service, elastic=True, target_concurrency=4)
+        plan = await opt.run_once()
+        assert plan is not None and plan.size_after == 5
+        assert sum(service.counts().values()) == 5
+
+    def test_idle_pool_shrinks_on_zero_traffic(self):
+        # Review repro: fresh reports of no traffic at all.
+        service, store = self._loaded(0, 0, n=4)
+        opt = _opt(
+            store,
+            service,
+            elastic=True,
+            target_concurrency=4,
+            scale_down_rounds=1,
+            change_factor=1.0,
+        )
+        plan = opt.plan(service.instances)
+        assert plan is not None and plan.target_state == {"a": 1, "b": 1}
+
+    def test_stale_reports_change_nothing(self):
+        clock = _Clock()
+        service = _Service({"a": 4, "b": 4})
+        store = DemandStore(alpha=1.0, clock=clock)
+        store.submit_target("a", 0, arrival_rate=0)
+        store.submit_target("b", 0, arrival_rate=0)
+        clock.t = 1000
+        opt = _opt(
+            store, service, elastic=True, scale_down_rounds=1, change_factor=1.0
+        )
+        assert opt.plan(service.instances) is None
+
+    def test_quiet_rounds_count_again_after_a_shrink(self):
+        service, store = self._loaded(0.1, 0.1, n=4)
+        opt = _opt(
+            store,
+            service,
+            elastic=True,
+            target_concurrency=4,
+            scale_down_rounds=2,
+            change_factor=0.25,
+        )
+        assert opt.plan(service.instances) is None
+        assert opt.plan(service.instances).size_after == 6
+        service.apply_deployment({"a": 3, "b": 3})
+        assert opt.plan(service.instances) is None
+        assert opt.plan(service.instances).size_after < 6
+
+    def test_pool_above_max_shrinks_at_once(self):
+        service, store = self._loaded(30, 30, n=4)
+        opt = _opt(
+            store,
+            service,
+            elastic=True,
+            target_concurrency=1,
+            max_instances=6,
+            scale_down_rounds=5,
+            change_factor=0.25,
+        )
+        plan = opt.plan(service.instances, spare=10)
+        assert plan is not None and plan.size_after == 6
+
+    @pytest.mark.parametrize(
+        ("algorithm", "moves"),
+        [("integer_programming", 7), ("simulated_annealing", 1)],
+    )
+    def test_growth_move_budget(self, monkeypatch, algorithm, moves):
+        # 4 machines grow to 10 with change factor 0.25: one move among
+        # the existing machines, plus the 6 placements for integer
+        # programming, which counts placing an undeployed machine.
+        from swarmpilot.planner.services import auto_optimizer
+
+        made = []
+        real = auto_optimizer.create_optimizer
+
+        def spy(*args, **kwargs):
+            opt = real(*args, **kwargs)
+            made.append(opt)
+            return opt
+
+        monkeypatch.setattr(auto_optimizer, "create_optimizer", spy)
+        service, store = self._loaded(30, 10)
+        opt = _opt(
+            store,
+            service,
+            elastic=True,
+            target_concurrency=4,
+            algorithm=algorithm,
+            change_factor=0.25,
+        )
+        plan = opt.plan(service.instances, spare=10)
+        assert plan is not None and plan.size_after == 10
+        assert made[0].M == 10 and made[0].max_changes == moves

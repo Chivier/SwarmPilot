@@ -11,6 +11,10 @@ Endpoints:
     POST /migrate - Migrate an instance
     POST /optimize - Run optimizer and deploy via PyLet (simplified input)
     POST /terminate-all - Terminate all PyLet instances
+
+Endpoints that change the deployment are plain functions, so FastAPI runs
+them on its thread pool instead of blocking the event loop while engines
+start or drain.
 """
 
 from __future__ import annotations
@@ -116,7 +120,7 @@ async def pylet_status():
 
 
 @router.post("/deploy_manually", response_model=PyLetDeploymentOutput)
-async def pylet_deploy_manually(input_data: PyLetDeploymentInput):
+def pylet_deploy_manually(input_data: PyLetDeploymentInput):
     """Deploy instances to target state via PyLet (manual specification).
 
     This endpoint reconciles the current state to the target state,
@@ -174,7 +178,7 @@ async def pylet_deploy_manually(input_data: PyLetDeploymentInput):
 
 
 @router.post("/deploy", response_model=PyLetOptimizeOutput)
-async def pylet_deploy(input_data: PyLetDeployWithPlanInput):
+def pylet_deploy(input_data: PyLetDeployWithPlanInput):
     """Run optimization algorithm and deploy result via PyLet.
 
     This endpoint accepts the same parameters as /plan, runs the optimization
@@ -301,7 +305,7 @@ async def pylet_deploy(input_data: PyLetDeployWithPlanInput):
 
 
 @router.post("/scale", response_model=PyLetScaleOutput)
-async def pylet_scale(input_data: PyLetScaleInput):
+def pylet_scale(input_data: PyLetScaleInput):
     """Scale a specific model to target count.
 
     Args:
@@ -352,7 +356,7 @@ async def pylet_scale(input_data: PyLetScaleInput):
 
 
 @router.post("/migrate", response_model=PyLetMigrateOutput)
-async def pylet_migrate(input_data: PyLetMigrateInput):
+def pylet_migrate(input_data: PyLetMigrateInput):
     """Migrate an instance (cancel and resubmit).
 
     Args:
@@ -408,7 +412,7 @@ async def pylet_migrate(input_data: PyLetMigrateInput):
 
 
 @router.post("/optimize", response_model=PyLetOptimizeOutput)
-async def pylet_optimize(input_data: PyLetOptimizeInput):
+def pylet_optimize(input_data: PyLetOptimizeInput):
     """Run optimizer and deploy via PyLet.
 
     This endpoint runs the optimization algorithm to compute optimal
@@ -506,7 +510,7 @@ async def pylet_optimize(input_data: PyLetOptimizeInput):
 
 
 @router.post("/terminate-all")
-async def pylet_terminate_all(wait_for_drain: bool = False):
+def pylet_terminate_all(wait_for_drain: bool = False):
     """Terminate all PyLet-managed instances.
 
     Args:

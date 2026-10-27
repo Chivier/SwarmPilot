@@ -38,11 +38,27 @@ Two scalers turn reports into each model's share of the machines:
   outstanding tasks times ``s[j]``. The loop falls back to
   ``count`` while any reporting model sends no arrival rate (an older
   Scheduler).
+
+Without ``elastic`` the loop only re-divides the instances that exist. With
+it (tail scaler only) it also sizes the pool. ``need[j]`` is in tasks in
+flight, so the pool wants ``ceil(sum(need) / target_concurrency)``
+instances, the target concurrency per instance that autoscalers such as
+Knative use:
+
+* It grows at once, into GPUs no instance holds (``spare``), up to
+  ``max_instances``.
+* It shrinks only after ``scale_down_rounds`` rounds in a row that want
+  fewer (then counts again from zero), by at most the change factor's
+  share per round, taking instances from the models with the most
+  surplus, never below ``min_instances`` or a model's ``min_replicas``.
+  Fresh reports of no traffic shrink it too; a pool above
+  ``max_instances`` shrinks without waiting.
 """
 
 from __future__ import annotations
 
 import asyncio
+import math
 from collections import Counter
 from collections.abc import Sequence
 from contextlib import suppress
@@ -77,6 +93,9 @@ class DeploymentTarget(Protocol):
         """Reconcile to ``target_state`` (model -> replica count)."""
         ...
 
+    # Elastic pools also call ``spare_capacity() -> int``: instances that
+    # still fit on free GPUs. A service without it never grows the pool.
+
 
 @dataclass(frozen=True)
 class AutoPlan:
@@ -91,6 +110,8 @@ class AutoPlan:
         demand: Demand per model the plan was computed from: tasks for
             the count scaler, instances needed for the tail scaler.
         scaler: Which scaler produced the demand.
+        size_before: Instances before the change.
+        size_after: Instances after it; differs only in an elastic pool.
     """
 
     target_state: dict[str, int]
@@ -100,6 +121,8 @@ class AutoPlan:
     score_after: float
     demand: dict[str, float]
     scaler: str = "count"
+    size_before: int = 0
+    size_after: int = 0
 
 
 SCALERS = ("tail", "count")
@@ -121,6 +144,11 @@ class AutoOptimizer:
         stale_after: float | None = None,
         scaler: str = "tail",
         horizon: float | None = None,
+        elastic: bool = False,
+        target_concurrency: float = 64.0,
+        min_instances: int = 1,
+        max_instances: int = 0,
+        scale_down_rounds: int = 3,
     ):
         """Initialize the loop.
 
@@ -138,6 +166,15 @@ class AutoOptimizer:
             scaler: ``tail`` or ``count``; see the module docstring.
             horizon: Seconds the tail scaler allows to drain backlog.
                 Defaults to the interval.
+            elastic: Also size the pool (tail scaler only); see the
+                module docstring.
+            target_concurrency: Tasks in flight one instance should
+                carry in an elastic pool.
+            min_instances: Smallest elastic pool.
+            max_instances: Largest elastic pool; 0 for no limit but the
+                free GPUs.
+            scale_down_rounds: Rounds in a row that must want a smaller
+                pool before it shrinks.
         """
         if scaler not in SCALERS:
             raise ValueError(f"scaler must be one of {SCALERS}, got {scaler}")
@@ -154,6 +191,16 @@ class AutoOptimizer:
         )
         self.scaler = scaler
         self.horizon = horizon if horizon is not None else interval
+        if target_concurrency <= 0:
+            raise ValueError(
+                f"target_concurrency must be positive, got {target_concurrency}"
+            )
+        self.elastic = elastic
+        self.target_concurrency = target_concurrency
+        self.min_instances = max(1, min_instances)
+        self.max_instances = max(0, max_instances)
+        self.scale_down_rounds = max(1, scale_down_rounds)
+        self._low_rounds = 0
         self.last_plan: AutoPlan | None = None
         self._task: asyncio.Task | None = None
 
@@ -181,11 +228,15 @@ class AutoOptimizer:
             for m, ts in per_model.items()
         }
 
-    def plan(self, instances: Sequence[_Instance]) -> AutoPlan | None:
+    def plan(
+        self, instances: Sequence[_Instance], spare: int = 0
+    ) -> AutoPlan | None:
         """Decide this round's deployment, or None to leave it as is.
 
         Args:
             instances: Active instances.
+            spare: Instances that still fit on free GPUs; an elastic pool
+                grows into them.
 
         Returns:
             The plan to apply, or None when demand is unknown or the gain
@@ -206,42 +257,65 @@ class AutoOptimizer:
         else:
             demand = outstanding
         demand = {m: v for m, v in demand.items() if v > 0}
-        if not demand:
+        # Fresh reports of no traffic at all still size an elastic pool
+        # (down); stale ones fall back to the count scaler and change
+        # nothing.
+        elastic = self.elastic and scaler == "tail"
+        if not demand and not elastic:
             return None
         models = sorted(set(current) | set(demand))
         index = {m: j for j, m in enumerate(models)}
+        size = M
+        if elastic:
+            size = self._pool_size(M, demand, current, spare)
+        if not demand and size >= M:
+            return None
 
         if scaler == "tail":
             # Demand is already in instances; every machine supplies one.
             throughput = np.ones(len(models))
         else:
             throughput = np.array([1.0 / exec_times[m] for m in models])
-        B = np.tile(throughput, (M, 1))
         target = np.array([demand.get(m, 0.0) for m in models])
-        initial = np.array([index[inst.model_id] for inst in instances])
-        optimizer = create_optimizer(
-            self.algorithm,
-            M=M,
-            N=len(models),
-            B=B,
-            initial=initial,
-            a=max(self.change_factor, 1.0 / M),
-            target=target,
-        )
-        before = optimizer.objective_function(initial, self.objective_method)
-        deployment, _, _ = run_optimization(
-            optimizer, objective_method=self.objective_method
-        )
-        counts = Counter(models[j] for j in deployment if j >= 0)
-        self._keep_min_replicas(counts, current)
-        # Score the final counts even if keeping a replica took one more
-        # move than the optimizer's cap allows.
-        optimizer.max_changes = M
-        after = optimizer.objective_function(
-            self._as_deployment(counts, instances, index),
-            self.objective_method,
-        )
-        if counts == current or before - after < self.change_threshold:
+
+        if size < M:
+            counts = self._shrink(current, demand, size)
+        else:
+            # New machines start undeployed. Integer programming counts
+            # placing one as a change, so it gets that many moves on top
+            # of what the change factor allows; simulated annealing places
+            # them before it starts counting.
+            initial = np.array(
+                [index[inst.model_id] for inst in instances] + [-1] * (size - M)
+            )
+            a = max(self.change_factor, 1.0 / M)
+            if size > M:
+                moves = a * M
+                if self.algorithm == "integer_programming":
+                    moves += size - M
+                a = min(1.0, (moves + 1e-9) / size)
+            optimizer = create_optimizer(
+                self.algorithm,
+                M=size,
+                N=len(models),
+                B=np.tile(throughput, (size, 1)),
+                initial=initial,
+                a=a,
+                target=target,
+            )
+            deployment, _, _ = run_optimization(
+                optimizer, objective_method=self.objective_method
+            )
+            counts = Counter(models[j] for j in deployment if j >= 0)
+            self._keep_min_replicas(counts, current)
+        if target.any():
+            before = self._score(current, models, throughput, target)
+            after = self._score(counts, models, throughput, target)
+        else:
+            before = after = 0.0
+        if counts == current:
+            return None
+        if size == M and before - after < self.change_threshold:
             return None
         changes = sum(max(0, counts[m] - current[m]) for m in models)
         return AutoPlan(
@@ -252,7 +326,83 @@ class AutoOptimizer:
             score_after=float(after),
             demand=demand,
             scaler=scaler,
+            size_before=M,
+            size_after=sum(counts.values()),
         )
+
+    def _pool_size(
+        self,
+        M: int,
+        demand: dict[str, float],
+        current: Counter,
+        spare: int,
+    ) -> int:
+        """Instances an elastic pool should have after this round."""
+        floor = max(
+            self.min_instances,
+            sum(min(self.min_replicas, n) for n in current.values()),
+        )
+        ceiling = M + max(0, spare)
+        if self.max_instances:
+            ceiling = min(ceiling, self.max_instances)
+        wanted = math.ceil(sum(demand.values()) / self.target_concurrency)
+        wanted = max(floor, min(wanted, ceiling))
+        if wanted >= M:
+            self._low_rounds = 0
+            return wanted
+        # A pool above max_instances shrinks at once; one that is merely
+        # quiet waits, then counts its quiet rounds again from zero.
+        over_cap = bool(self.max_instances) and self.max_instances < M
+        self._low_rounds += 1
+        if self._low_rounds < self.scale_down_rounds and not over_cap:
+            return M
+        self._low_rounds = 0
+        step = max(1, int(self.change_factor * M))
+        return max(wanted, M - step)
+
+    def _shrink(
+        self, current: Counter, demand: dict[str, float], size: int
+    ) -> Counter:
+        """Drop instances from the models with the most surplus."""
+        counts = Counter(current)
+        total = sum(demand.values())
+        floor = {m: min(self.min_replicas, n) for m, n in current.items()}
+        while sum(counts.values()) > size:
+            share = {
+                m: counts[m]
+                - (size * demand.get(m, 0.0) / total if total else 0)
+                for m in counts
+                if counts[m] > max(floor.get(m, 0), 0)
+            }
+            if not share:
+                break
+            victim = max(share, key=lambda m: share[m])
+            counts[victim] -= 1
+        return +counts
+
+    def _score(
+        self,
+        counts: Counter,
+        models: list[str],
+        throughput: np.ndarray,
+        target: np.ndarray,
+    ) -> float:
+        """Objective of a deployment with these replica counts."""
+        deployment = np.array(
+            [j for j, m in enumerate(models) for _ in range(counts[m])]
+        )
+        if len(deployment) == 0:
+            return float("inf")
+        optimizer = create_optimizer(
+            self.algorithm,
+            M=len(deployment),
+            N=len(models),
+            B=np.tile(throughput, (len(deployment), 1)),
+            initial=deployment,
+            a=1.0,
+            target=target,
+        )
+        return optimizer.objective_function(deployment, self.objective_method)
 
     def _tail_demand(
         self,
@@ -323,25 +473,6 @@ class AutoOptimizer:
                 counts[donor] -= 1
                 counts[m] += 1
 
-    @staticmethod
-    def _as_deployment(
-        counts: Counter,
-        instances: Sequence[_Instance],
-        index: dict[str, int],
-    ) -> np.ndarray:
-        """A machine assignment with these counts and the fewest moves."""
-        spare = Counter(counts)
-        out = np.full(len(instances), -1)
-        for i, inst in enumerate(instances):
-            if spare[inst.model_id] > 0:
-                spare[inst.model_id] -= 1
-                out[i] = index[inst.model_id]
-        free = [i for i in range(len(instances)) if out[i] == -1]
-        for m, n in spare.items():
-            for _ in range(n):
-                out[free.pop()] = index[m]
-        return out
-
     # ------------------------------------------------------------------
     # Loop
     # ------------------------------------------------------------------
@@ -353,13 +484,17 @@ class AutoOptimizer:
             The plan applied, or None if nothing changed.
         """
         instances = list(self._service.get_active_instances())
-        plan = self.plan(instances)
+        spare = 0
+        if self.elastic and hasattr(self._service, "spare_capacity"):
+            spare = await asyncio.to_thread(self._service.spare_capacity)
+        plan = self.plan(instances, spare=spare)
         if plan is None:
             return None
         logger.info(
             f"[AUTO_OPTIMIZE] {plan.scaler} demand={plan.demand} "
             f"{plan.current_state} -> {plan.target_state} "
-            f"score {plan.score_before:.3f} -> {plan.score_after:.3f}"
+            f"score {plan.score_before:.3f} -> {plan.score_after:.3f} "
+            f"size {plan.size_before} -> {plan.size_after}"
         )
         # Reconciling blocks (deploys, drains); keep it off the loop.
         result = await asyncio.to_thread(
@@ -405,7 +540,7 @@ class AutoOptimizer:
                 f"Auto-optimize loop started (interval={self.interval}s, "
                 f"threshold={self.change_threshold}, "
                 f"change_factor={self.change_factor}, "
-                f"scaler={self.scaler})"
+                f"scaler={self.scaler}, elastic={self.elastic})"
             )
 
     async def stop(self) -> None:
