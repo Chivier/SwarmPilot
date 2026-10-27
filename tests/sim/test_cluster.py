@@ -280,6 +280,9 @@ def planner_stack(tmp_path_factory):
                     "PYLET_SIM_CONTROL_PORT": str(control),
                     "PYLET_LOCAL_PORT": str(_free_port()),
                     "PLANNER_PORT": str(planner_port),
+                    # Two nodes hold the replicas below only when they
+                    # share them by GPU.
+                    "PLANNER_WHOLE_NODES": "false",
                 },
                 tmp / "planner.log",
                 f"{planner_url}/v1/health",
