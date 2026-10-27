@@ -289,6 +289,9 @@ class InstanceManager:
 
         Submits to PyLet but does not wait for running state.
         Use wait_instance_ready() to wait for the instance to be ready.
+        With whole workers the instance takes the smallest free worker
+        with at least ``gpu_count`` GPUs (``target_worker`` if set, when
+        it is free) and all its GPUs.
 
         Args:
             model_id: Model identifier.
@@ -304,9 +307,19 @@ class InstanceManager:
             ManagedInstance in DEPLOYING status.
 
         Raises:
-            RuntimeError: If not initialized.
+            RuntimeError: If not initialized, or with whole workers when
+                no worker that fits is free.
         """
         self._ensure_initialized()
+
+        if self.whole_nodes:
+            nodes = self._place_nodes(None, gpu_count, 1, target_worker)
+            if not nodes:
+                raise RuntimeError(
+                    f"no free worker with {gpu_count} or more GPU(s)"
+                    + (f" ({target_worker})" if target_worker else "")
+                )
+            target_worker, gpu_count = nodes[0]
 
         # Deploy via PyLet (single instance)
         # deploy_model always returns a list now
@@ -332,6 +345,7 @@ class InstanceManager:
             model_id=model_id,
             backend=backend,
             gpu_count=gpu_count,
+            worker_id=target_worker,
             status=ManagedInstanceStatus.DEPLOYING,
         )
 

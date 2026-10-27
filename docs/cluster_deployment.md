@@ -542,7 +542,10 @@ is the fewest GPUs its worker must have. A free worker is one with every
 GPU free and no instance of ours on it, and a replica takes the smallest
 free worker that fits, so 1-GPU models fill 1-GPU workers first. In the
 hardware-aware loop a worker can then change to any model it holds, not
-only one of the same size.
+only one of the same size. Use whole workers with
+`AUTO_OPTIMIZE_HARDWARE_AWARE=true`: the count path plans replica counts
+without worker sizes, so it only re-divides counts among models of the
+same GPU count and leaves placement to the smallest free worker.
 
 Best fit still runs out: after a busy night smaller models can hold every
 big node, in pieces or whole, and no free place holds a 4-GPU instance. In an

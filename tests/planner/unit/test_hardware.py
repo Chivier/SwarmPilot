@@ -267,6 +267,33 @@ class TestWholeNodes:
         assert self._calls(mgr) == [("v", 2, 1)]
 
 
+def test_whole_nodes_migrate_takes_a_whole_free_worker():
+    """A migration places its new instance like any other replica."""
+    from swarmpilot.planner.pylet.migration_executor import MigrationExecutor
+
+    mgr = TestWholeNodes._mgr([_node("four", "a", 4), _node("eight", "b", 8)])
+    mgr._get_scheduler_client = MagicMock()
+    mgr.wait_instance_ready = MagicMock()
+    old = mgr.deploy_instances("big", count=1, gpu_count=4).deployed[0]
+    mgr.pylet_client.deploy_model.reset_mock()
+    mgr.pylet_client.list_workers.return_value = [
+        _node("four", "a", 4, free=0),
+        _node("eight", "b", 8),
+    ]
+    MigrationExecutor(mgr).migrate(old.pylet_id)
+    kw = mgr.pylet_client.deploy_model.call_args.kwargs
+    assert (kw["target_worker"], kw["gpu_count"]) == ("eight", 8)
+    # The pending instance holds its worker.
+    assert mgr.free_nodes() == []
+
+
+def test_whole_nodes_deploy_instance_needs_a_free_worker():
+    mgr = TestWholeNodes._mgr([_node("busy", "a", 4, free=2)])
+    with pytest.raises(RuntimeError, match="no free worker"):
+        mgr.deploy_instance("m", gpu_count=1)
+    mgr.pylet_client.deploy_model.assert_not_called()
+
+
 class TestReapFailed:
     """Removal of instances whose engine died."""
 
