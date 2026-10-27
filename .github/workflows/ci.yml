@@ -159,6 +159,11 @@ jobs:
           SCHEDULER_CORE: rust
         run: uv run pytest tests/scheduler/ --tb=short -q
 
+      - name: Run predictor tests on the Rust core
+        env:
+          SCHEDULER_CORE: rust
+        run: uv run pytest tests/predictor/ --tb=short -q
+
       - name: Run engine, API and regression tests on the Rust core
         env:
           SCHEDULER_CORE: rust

@@ -194,7 +194,7 @@ Clients may call the Scheduler proxy in any registered API style (`swarmpilot/ap
 A refused connection marks a Scheduler instance `UNHEALTHY` (no new tasks; its unsent tasks are re-routed at once). The health loop restores it when it answers (`SCHEDULER_HEALTH_CHECK_INTERVAL`) or removes it after `SCHEDULER_UNHEALTHY_REMOVE_AFTER` seconds. See "Engine Failures" in `docs/cluster_deployment.md`.
 
 ### Rust Core
-`SCHEDULER_CORE=rust` runs queue sketches, strategy selection and feature extractors in Rust (`rust/crates/core`, module `swarmpilot_core`, `uv sync --extra core`). Results must match Python bit for bit: change both, regenerate `tests/golden/`, and keep `tests/core/` green. See `docs/rust_core.md`.
+`SCHEDULER_CORE=rust` runs queue sketches, strategy selection, feature extractors and predictor inference (MLP forward pass, within 1e-5 of torch) in Rust (`rust/crates/core`, module `swarmpilot_core`, `uv sync --extra core`). Results must match Python bit for bit: change both, regenerate `tests/golden/`, and keep `tests/core/` green. See `docs/rust_core.md`.
 
 ### Scheduling Strategies
 7 strategies available, selectable at runtime via `POST /v1/strategy/set` or `SCHEDULING_STRATEGY` env var:

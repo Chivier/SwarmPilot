@@ -11,7 +11,10 @@ use pyo3::exceptions::{PyKeyError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyList, PyMapping, PyString};
 
+use std::collections::HashMap;
+
 use swarmpilot_core::extract::{Doc, Extractor as CoreExtractor};
+use swarmpilot_core::mlp::{Output, RuntimePredictor as CorePredictor, Tensor};
 use swarmpilot_core::sketch::{Charge, Ledger as CoreLedger, Sketch, SketchKind};
 use swarmpilot_core::strategy::{self, Prediction};
 
@@ -371,12 +374,83 @@ impl Ledger {
     }
 }
 
+/// A trained runtime predictor (`ExpectErrorPredictor` or
+/// `QuantilePredictor`) evaluated in Rust.
+#[pyclass(frozen, module = "swarmpilot_core")]
+struct RuntimePredictor {
+    inner: CorePredictor,
+}
+
+fn model_err(e: swarmpilot_core::mlp::ModelError) -> PyErr {
+    PyValueError::new_err(e.to_string())
+}
+
+#[pymethods]
+impl RuntimePredictor {
+    /// Build from `get_model_state()`: `state_json` is every field but
+    /// the state dict, `tensors` maps state-dict names to `(shape,
+    /// little-endian float32 bytes)`.
+    #[staticmethod]
+    #[pyo3(signature = (state_json, tensors, norm_f32 = false))]
+    fn from_state(
+        state_json: &str,
+        tensors: HashMap<String, (Vec<usize>, Vec<u8>)>,
+        norm_f32: bool,
+    ) -> PyResult<Self> {
+        let state: serde_json::Value =
+            serde_json::from_str(state_json).map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let mut parsed = HashMap::new();
+        for (name, (shape, bytes)) in tensors {
+            if bytes.len() % 4 != 0 {
+                return Err(PyValueError::new_err(format!("{name}: not float32 bytes")));
+            }
+            let data = bytes
+                .chunks_exact(4)
+                .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
+                .collect();
+            parsed.insert(name, Tensor { shape, data });
+        }
+        CorePredictor::from_state(&state, &parsed, norm_f32)
+            .map(|inner| RuntimePredictor { inner })
+            .map_err(model_err)
+    }
+
+    /// Load the portable model file written by `ModelStorage`.
+    #[staticmethod]
+    fn load_portable(sidecar: std::path::PathBuf) -> PyResult<Self> {
+        CorePredictor::load_portable(&sidecar)
+            .map(|inner| RuntimePredictor { inner })
+            .map_err(model_err)
+    }
+
+    #[getter]
+    fn feature_names(&self) -> Vec<String> {
+        self.inner.feature_names().to_vec()
+    }
+
+    /// `("expect_error", expected_ms, error_ms)` or `("quantile",
+    /// [(q, ms), ...])` for float32 feature values in model order.
+    fn predict(&self, py: Python<'_>, values: Vec<f32>) -> PyResult<Py<PyAny>> {
+        Ok(match self.inner.predict(&values).map_err(model_err)? {
+            Output::ExpectError {
+                expected_ms,
+                error_ms,
+            } => ("expect_error", expected_ms, error_ms)
+                .into_pyobject(py)?
+                .into_any()
+                .unbind(),
+            Output::Quantiles(q) => ("quantile", q).into_pyobject(py)?.into_any().unbind(),
+        })
+    }
+}
+
 #[pymodule]
 #[pyo3(name = "swarmpilot_core")]
 fn init_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     m.add_class::<Extractor>()?;
     m.add_class::<Ledger>()?;
+    m.add_class::<RuntimePredictor>()?;
     m.add_function(wrap_pyfunction!(charge_at, m)?)?;
     m.add_function(wrap_pyfunction!(apply_probabilistic, m)?)?;
     m.add_function(wrap_pyfunction!(apply_expect_error, m)?)?;

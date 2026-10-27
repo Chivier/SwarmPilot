@@ -11,12 +11,15 @@
 //!   (`swarmpilot/scheduler/algorithms/`).
 //! - [`extract`]: the declarative feature extractor grammar
 //!   (`swarmpilot/engines/extractors.py`).
+//! - [`mlp`]: runtime predictor inference (`swarmpilot/predictor/predictor/`)
+//!   from the portable safetensors + JSON model file.
 //! - [`interp`] and [`fsum`]: bit-compatible ports of `numpy.interp` and
 //!   `math.fsum`, which the Python code relies on.
 
 pub mod extract;
 pub mod fsum;
 pub mod interp;
+pub mod mlp;
 pub mod sketch;
 pub mod strategy;
 

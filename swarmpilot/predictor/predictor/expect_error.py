@@ -13,6 +13,10 @@ from torch import nn, optim
 
 from swarmpilot.predictor.predictor.base import BasePredictor
 from swarmpilot.predictor.predictor.mlp import MLP
+from swarmpilot.predictor.predictor.native import (
+    forget_native_model,
+    native_model,
+)
 from swarmpilot.predictor.utils.logging import get_logger
 
 logger = get_logger()
@@ -162,6 +166,11 @@ class ExpectErrorPredictor(BasePredictor):
         feature_values = [features[fname] for fname in self.feature_names]
         X = np.array([feature_values], dtype=np.float32)
 
+        native = native_model(self)
+        if native is not None:
+            _, expected, error = native.predict(X[0].tolist())
+            return {"expected_runtime_ms": expected, "error_margin_ms": error}
+
         # Normalize using training statistics
         X_normalized = (X - self.feature_mean) / self.feature_std
 
@@ -218,3 +227,4 @@ class ExpectErrorPredictor(BasePredictor):
         self.mean_error = state["mean_error"]
         self.feature_mean = np.array(state["feature_mean"])
         self.feature_std = np.array(state["feature_std"])
+        forget_native_model(self)
