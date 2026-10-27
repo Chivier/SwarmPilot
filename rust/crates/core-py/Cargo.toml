@@ -1,0 +1,24 @@
+[package]
+name = "swarmpilot-core-py"
+description = "Python bindings of the SwarmPilot scheduling core (the swarmpilot_core module)"
+version.workspace = true
+edition.workspace = true
+rust-version = "1.83"
+repository.workspace = true
+publish = false
+
+[lib]
+name = "swarmpilot_core"
+crate-type = ["cdylib"]
+# Linking test binaries needs libpython; the Python tests cover this crate.
+test = false
+doctest = false
+
+[features]
+# maturin turns this on; plain cargo builds link libpython instead.
+extension-module = ["pyo3/extension-module"]
+
+[dependencies]
+swarmpilot-core = { path = "../core" }
+pyo3 = { version = "0.29", features = ["abi3-py311"] }
+serde_json = { workspace = true, features = ["float_roundtrip"] }

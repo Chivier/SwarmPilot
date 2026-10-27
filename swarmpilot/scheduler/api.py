@@ -33,6 +33,7 @@ from pyinstrument.renderers.speedscope import SpeedscopeRenderer
 
 from swarmpilot.shared.loop_lag import EventLoopLagMonitor
 
+from . import core as scheduling_core
 from .algorithms import get_strategy, queue_info_type_for
 from .algorithms.base import ScheduleResult
 from .config import config
@@ -193,6 +194,7 @@ async def lifespan(app: FastAPI):
     logger.info("Scheduler service starting up...")
     logger.info(f"Configuration: {config}")
     logger.info(f"Scheduling strategy: {config.scheduling.default_strategy}")
+    logger.info(f"Scheduling core: {scheduling_core.core_name()}")
     logger.info(
         f"Auto-training enabled: {config.training.enable_auto_training}"
     )

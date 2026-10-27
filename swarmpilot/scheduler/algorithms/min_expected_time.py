@@ -6,6 +6,7 @@ considering both the current queue state and the predicted time for the new task
 
 from typing import TYPE_CHECKING
 
+from swarmpilot.scheduler import core
 from swarmpilot.scheduler.algorithms.base import SchedulingStrategy
 from swarmpilot.scheduler.clients.models import Prediction
 
@@ -48,6 +49,21 @@ class MinimumExpectedTimeStrategy(SchedulingStrategy):
 
         if not predictions:
             return None
+
+        rc = core.rust()
+        if rc is not None:
+            k = rc.select_min_expected(
+                [p.predicted_time_ms for p in predictions],
+                [
+                    (q.expected_time_ms, q.error_margin_ms)
+                    if isinstance(q, InstanceQueueExpectError)
+                    else None
+                    for q in (
+                        queue_info.get(p.instance_id) for p in predictions
+                    )
+                ],
+            )
+            return None if k is None else predictions[k].instance_id
 
         best_instance_id = None
         best_total_time = float("inf")

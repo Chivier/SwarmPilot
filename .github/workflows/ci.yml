@@ -95,7 +95,7 @@ jobs:
         run: cargo fmt --all --check
 
       - name: Run Clippy
-        run: cargo clippy --all-targets --locked -- -D warnings
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
       - name: Run Rust tests (calibration table printed)
         run: cargo test --release --locked -- --nocapture
@@ -114,6 +114,66 @@ jobs:
         run: |
           uv sync --dev
           uv run pytest tests/sim/ -v --tb=short
+
+  rust-core:
+    # SCHEDULER_CORE=rust: the Rust scheduling core must match the Python
+    # one bit for bit (golden vectors, differential tests, routing-sim
+    # A/B) and pass the Python suites and the emulated cluster run on it.
+    runs-on: ubuntu-latest
+    env:
+      # Keep the venv uv sync built with the core extra; a plain uv run
+      # would sync it back to the default extras.
+      UV_NO_SYNC: "1"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install dependencies with the Rust core
+        run: uv sync --dev --extra core
+
+      - name: Replay golden vectors in Rust
+        working-directory: rust
+        run: cargo test --release --locked -p swarmpilot-core
+
+      - name: Run Python-vs-Rust parity tests
+        env:
+          SWARMPILOT_REQUIRE_RUST_CORE: "1"
+        run: uv run pytest tests/core/ tests/golden/ -v --tb=short
+
+      - name: Run scheduler tests on the Rust core
+        env:
+          SCHEDULER_CORE: rust
+        run: uv run pytest tests/scheduler/ --tb=short -q
+
+      - name: Run engine, API and regression tests on the Rust core
+        env:
+          SCHEDULER_CORE: rust
+        run: |
+          uv run pytest tests/engines/ --tb=short -q
+          uv run pytest tests/api/ tests/conformance/ tests/regression/ tests/golden/ --tb=short -q
+
+      - name: Build simulator binary
+        working-directory: rust
+        run: cargo build --release --locked -p swarmpilot-sim
+
+      - name: Run the emulated cluster on the Rust core
+        env:
+          SCHEDULER_CORE: rust
+        run: uv run pytest tests/sim/ -v --tb=short
 
   lint:
     runs-on: ubuntu-latest

@@ -32,6 +32,11 @@ reserved for token counts and not implemented yet.
 Expressions are parsed once into closures, never evaluated with ``eval``,
 so a configuration file cannot run code, and the per-request cost is a few
 dictionary lookups.
+
+Names, paths and numbers are ASCII. ``area()`` reads 1 to 18 ASCII digits
+on each side, and values too large for a float count as missing. With
+``SCHEDULER_CORE=rust`` the Rust implementation in ``rust/crates/core``
+evaluates the expressions; ``tests/core/`` checks both agree.
 """
 
 from __future__ import annotations
@@ -43,8 +48,14 @@ from typing import Any
 
 _MISSING = object()
 _TOKEN = re.compile(
-    r"\s*(?:([A-Za-z_][\w.\[\]*-]*)|(-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)|(.))"
+    r"\s*(?:([A-Za-z_][\w.\[\]*-]*)|(-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)|(.))",
+    re.ASCII,
 )
+_AREA_SIDE = re.compile(r"[0-9]{1,18}")
+
+#: Deepest nesting of combiner calls, so a configuration cannot exhaust
+#: the stack (the Rust parser has the same limit).
+MAX_DEPTH = 64
 
 Getter = Callable[[Mapping[str, Any]], Any]
 Extractor = Callable[[Mapping[str, Any]], float]
@@ -58,12 +69,12 @@ def _parse_path(path: str) -> tuple[str | int | None, ...]:
     """Split ``a.b[*].c[0]`` into ``("a", "b", None, "c", 0)``."""
     steps: list[str | int | None] = []
     for part in path.split("."):
-        m = re.fullmatch(r"([^\[\]]*)((?:\[(?:\*|\d+)\])*)", part)
+        m = re.fullmatch(r"([^\[\]]*)((?:\[(?:\*|[0-9]+)\])*)", part)
         if not m or (not m.group(1) and not m.group(2)):
             raise ExtractorError(f"bad path {path!r}")
         if m.group(1):
             steps.append(m.group(1))
-        for idx in re.findall(r"\[(\*|\d+)\]", m.group(2)):
+        for idx in re.findall(r"\[(\*|[0-9]+)\]", m.group(2)):
             steps.append(None if idx == "*" else int(idx))
     return tuple(steps)
 
@@ -71,7 +82,11 @@ def _parse_path(path: str) -> tuple[str | int | None, ...]:
 def _number(value: Any) -> Any:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return _MISSING
-    return float(value) if math.isfinite(value) else _MISSING
+    try:
+        value = float(value)
+    except OverflowError:
+        return _MISSING
+    return value if math.isfinite(value) else _MISSING
 
 
 def _is_map(v: Any) -> bool:
@@ -179,7 +194,7 @@ def _area(path: str) -> Getter:
         for v in walk(body):
             if isinstance(v, str):
                 w, _, h = v.lower().partition("x")
-                if w.isdigit() and h.isdigit():
+                if _AREA_SIDE.fullmatch(w) and _AREA_SIDE.fullmatch(h):
                     return float(int(w) * int(h))
             return _MISSING
         return _MISSING
@@ -213,7 +228,10 @@ def _combine(fn: Callable[[list[float]], float]) -> Callable[..., Getter]:
                 if v is _MISSING:
                     return _MISSING
                 vals.append(v)
-            return fn(vals)
+            try:
+                return fn(vals)
+            except (OverflowError, ValueError):  # fsum overflow, inf - inf
+                return _MISSING
 
         return get
 
@@ -245,6 +263,7 @@ class _Parser:
             if name or num or op.strip()
         ]
         self.pos = 0
+        self.depth = 0
 
     def peek(self) -> tuple[str, str, str] | None:
         return self.tokens[self.pos] if self.pos < len(self.tokens) else None
@@ -292,11 +311,15 @@ class _Parser:
             self.expect(")")
             return getter
         if name in _COMBINERS:
+            self.depth += 1
+            if self.depth > MAX_DEPTH:
+                raise ExtractorError(f"nested too deeply in {self.text!r}")
             args = [self.expr()]
             while (tok := self.take())[2] == ",":
                 args.append(self.expr())
             if tok[2] != ")":
                 raise ExtractorError(f"expected ')' in {self.text!r}")
+            self.depth -= 1
             return _COMBINERS[name](*args)
         raise ExtractorError(f"unknown function {name!r} in {self.text!r}")
 
@@ -314,6 +337,14 @@ def compile_extractor(expr: str, default: float = 0.0) -> Extractor:
     Raises:
         ExtractorError: If the expression is malformed.
     """
+    from swarmpilot.scheduler import core
+
+    rc = core.rust()
+    if rc is not None:
+        try:
+            return rc.Extractor(expr, float(default))
+        except ValueError as e:
+            raise ExtractorError(str(e)) from None
     parser = _Parser(expr)
     getter = parser.expr()
     if parser.peek() is not None:

@@ -24,7 +24,8 @@ uv run pytest tests/predictor/ -v     # predictor only
 uv run pytest tests/planner/ -v       # planner only
 uv run pytest tests/sdk/ -v           # SDK only
 uv run pytest -k "test_name"          # single test
-cargo test --release --manifest-path rust/Cargo.toml   # simulator (Rust)
+cargo test --release --manifest-path rust/Cargo.toml   # simulator + core (Rust)
+uv sync --dev --extra core && SCHEDULER_CORE=rust uv run pytest tests/core/  # Rust core parity
 
 # Lint & format
 uv run ruff check --fix .             # lint + auto-fix
@@ -109,7 +110,7 @@ swarmpilot-refresh/
 │   ├── sdk/                 # SDK client + model unit tests
 │   ├── integration/         # End-to-end SDK integration tests
 │   └── conftest.py          # Shared: --run-integration flag, PyLet fixtures
-├── rust/                    # Cargo workspace: sim-core, sim-cluster, sim-cli (swarmpilot-sim)
+├── rust/                    # Cargo workspace: core + core-py (scheduling core, PyO3), sim-core, sim-cluster, sim-cli (swarmpilot-sim)
 ├── examples/                # Example cluster configurations
 ├── docs/                    # Documentation
 ├── pyproject.toml           # Package config (hatchling build, uv tooling)
@@ -191,6 +192,9 @@ Clients may call the Scheduler proxy in any registered API style (`swarmpilot/ap
 
 ### Unreachable Instances
 A refused connection marks a Scheduler instance `UNHEALTHY` (no new tasks; its unsent tasks are re-routed at once). The health loop restores it when it answers (`SCHEDULER_HEALTH_CHECK_INTERVAL`) or removes it after `SCHEDULER_UNHEALTHY_REMOVE_AFTER` seconds. See "Engine Failures" in `docs/cluster_deployment.md`.
+
+### Rust Core
+`SCHEDULER_CORE=rust` runs queue sketches, strategy selection and feature extractors in Rust (`rust/crates/core`, module `swarmpilot_core`, `uv sync --extra core`). Results must match Python bit for bit: change both, regenerate `tests/golden/`, and keep `tests/core/` green. See `docs/rust_core.md`.
 
 ### Scheduling Strategies
 7 strategies available, selectable at runtime via `POST /v1/strategy/set` or `SCHEDULING_STRATEGY` env var:
