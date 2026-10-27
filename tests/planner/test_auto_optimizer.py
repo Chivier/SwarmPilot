@@ -154,6 +154,7 @@ class TestPlan:
     def test_quiet_model_keeps_a_replica(self):
         store = DemandStore(alpha=1.0)
         store.submit_target("a", 10)
+        store.submit_target("b", 0)
         service = _Service({"a": 2, "b": 2})
         plan = _optimizer(store, service, change_factor=1.0).plan(
             service.instances

@@ -212,6 +212,7 @@ async def lifespan(app: FastAPI):
                 min_instances=config.auto_optimize_min_instances,
                 max_instances=config.auto_optimize_max_instances,
                 scale_down_rounds=config.auto_optimize_scale_down_rounds,
+                hardware_aware=config.auto_optimize_hardware_aware,
             )
             auto_optimizer.start()
 

@@ -84,6 +84,7 @@ class ManagedInstance:
         hardware: Hardware name of that worker, once known.
         error: Error message if failed.
         created_at: Creation timestamp.
+        active_since: When it started serving traffic, if it has.
     """
 
     pylet_id: str
@@ -97,6 +98,7 @@ class ManagedInstance:
     hardware: str | None = None
     error: str | None = None
     created_at: float = field(default_factory=time.time)
+    active_since: float | None = None
 
     @property
     def is_active(self) -> bool:
@@ -234,16 +236,18 @@ class InstanceManager:
             # No registry entry, use default
             return self.scheduler_client
 
-        # Use cached client or create new one
-        if scheduler_url not in self._scheduler_clients:
-            logger.info(
-                f"Creating scheduler client for {model_id} at {scheduler_url}"
-            )
-            self._scheduler_clients[scheduler_url] = SchedulerClient(
-                scheduler_url
-            )
-
-        return self._scheduler_clients[scheduler_url]
+        # Use cached client or create new one. Removals drain in parallel
+        # threads, so creating one is under the lock.
+        with self._lock:
+            if scheduler_url not in self._scheduler_clients:
+                logger.info(
+                    f"Creating scheduler client for {model_id} at "
+                    f"{scheduler_url}"
+                )
+                self._scheduler_clients[scheduler_url] = SchedulerClient(
+                    scheduler_url
+                )
+            return self._scheduler_clients[scheduler_url]
 
     def close(self) -> None:
         """Close client connections."""
@@ -529,6 +533,28 @@ class InstanceManager:
         ]
         return sum(len(w.gpu_indices_available) for w in workers)
 
+    def free_slots(self, gpu_count: int = 1) -> list[tuple[str, str]]:
+        """Free places for one instance on the online workers.
+
+        Args:
+            gpu_count: GPUs one instance takes.
+
+        Returns:
+            One (worker id, hardware name) pair per place.
+        """
+        workers = [
+            w
+            for w in self.pylet_client.list_workers()
+            if getattr(w, "status", "ONLINE") == "ONLINE"
+        ]
+        self.hardware.observe_workers(workers)
+        per = max(1, gpu_count)
+        return [
+            (w.id, self.hardware.resolve(w.id, getattr(w, "host", None)))
+            for w in workers
+            for _ in range(len(w.gpu_indices_available) // per)
+        ]
+
     def _resolve_hardware(
         self, managed: ManagedInstance, info: InstanceInfo
     ) -> str:
@@ -634,6 +660,7 @@ class InstanceManager:
                 if result.success:
                     old_status = managed.status
                     managed.status = ManagedInstanceStatus.ACTIVE
+                    managed.active_since = time.time()
                     # Log registration success
                     logger.info(
                         f"[INSTANCE_REGISTER] pylet_id={pylet_id} "
@@ -656,6 +683,7 @@ class InstanceManager:
                     )
             else:
                 managed.status = ManagedInstanceStatus.ACTIVE
+                managed.active_since = time.time()
 
         except Exception as e:
             managed.status = ManagedInstanceStatus.FAILED

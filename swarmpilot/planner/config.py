@@ -72,6 +72,12 @@ class PlannerConfig:
         self.auto_optimize_scale_down_rounds: int = int(
             os.getenv("AUTO_OPTIMIZE_SCALE_DOWN_ROUNDS", "3")
         )
+        # Weigh machines by hardware speed learned from execution times
+        # (tail scaler): name which instances move, size the pool in
+        # capacity, and serve arrivals before backlog when short.
+        self.auto_optimize_hardware_aware: bool = os.getenv(
+            "AUTO_OPTIMIZE_HARDWARE_AWARE", "false"
+        ).lower() in ("true", "1", "yes")
 
         # PyLet configuration
         self.pylet_enabled: bool = os.getenv(

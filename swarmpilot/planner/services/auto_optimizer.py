@@ -53,16 +53,44 @@ Knative use:
   surplus, never below ``min_instances`` or a model's ``min_replicas``.
   Fresh reports of no traffic shrink it too; a pool above
   ``max_instances`` shrinks without waiting.
+
+With ``hardware_aware`` (tail scaler only) machines are no longer equal.
+The loop learns each kind of hardware's speed from the execution times the
+Schedulers report (``HardwareSpeeds``; the fastest kind is 1) and counts an
+instance as that much capacity:
+
+* The optimizer sees each machine's speed, so it decides which machines
+  move, and the plan names them: the deployment service removes those
+  instances and starts their replacements on the same workers, instead of
+  removing the oldest instances and placing the new ones anywhere.
+* An elastic pool is sized in capacity: it wants
+  ``sum(need) / target_concurrency`` units of the fastest hardware, grows
+  into the fastest free GPUs first, and shrinks by its slowest instances,
+  taken from the models with the most surplus capacity.
+* When the pool cannot carry all the need, arrivals (``rate * s``) are
+  served before backlog, each split max-min fairly, so neither a model
+  whose backlog is already timing out nor one too heavy to serve can take
+  the machines a lighter model needs to keep up.
+* A move costs a drain and a cold start, so each machine that moves must
+  improve the objective by ``change_threshold`` on its own, an instance
+  that started serving less than ``min_age`` ago does not move, and each
+  model keeps its floor on machines that do not move this round (removals
+  drain before replacements start).
+
+Before every deployed model has reported once, the loop waits (up to
+``stale_after`` seconds from its first round), so a model whose Scheduler
+has not reported yet is not read as idle.
 """
 
 from __future__ import annotations
 
 import asyncio
 import math
+import time
 from collections import Counter
 from collections.abc import Sequence
 from contextlib import suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 import numpy as np
@@ -73,6 +101,7 @@ from swarmpilot.planner.core.optimizer_factory import (
     run_optimization,
 )
 from swarmpilot.planner.services.demand import DemandStore
+from swarmpilot.planner.services.hardware_speed import HardwareSpeeds
 
 
 class _Instance(Protocol):
@@ -95,6 +124,9 @@ class DeploymentTarget(Protocol):
 
     # Elastic pools also call ``spare_capacity() -> int``: instances that
     # still fit on free GPUs. A service without it never grows the pool.
+    # Hardware-aware pools call ``free_slots() -> [(worker, hardware)]``
+    # instead, and pass ``remove`` (PyLet IDs) and ``place`` (workers per
+    # model) to ``apply_deployment``.
 
 
 @dataclass(frozen=True)
@@ -112,6 +144,10 @@ class AutoPlan:
         scaler: Which scaler produced the demand.
         size_before: Instances before the change.
         size_after: Instances after it; differs only in an elastic pool.
+        remove: PyLet IDs of the instances to remove (hardware-aware).
+        place: Workers for each model's new instances (hardware-aware);
+            None lets PyLet choose.
+        speeds: Hardware speeds the plan used (hardware-aware).
     """
 
     target_state: dict[str, int]
@@ -123,9 +159,81 @@ class AutoPlan:
     scaler: str = "count"
     size_before: int = 0
     size_after: int = 0
+    remove: tuple[str, ...] = ()
+    place: dict[str, tuple[str | None, ...]] = field(default_factory=dict)
+    speeds: dict[str, float] = field(default_factory=dict)
 
 
 SCALERS = ("tail", "count")
+_DEFAULT_HW = "gpu"
+
+
+def _hardware(inst: _Instance) -> str:
+    return getattr(inst, "hardware", None) or _DEFAULT_HW
+
+
+def _undo_needless_moves(
+    deployment: list[int], initial: list[int], speed: np.ndarray
+) -> None:
+    """Keep machines where they are when an equal one could move instead.
+
+    The optimizer sees capacity only, so it may move machine ``i`` off
+    model ``m`` and give ``m`` an equally fast machine ``k`` in return.
+    Swapping the two assignments keeps every model's capacity and saves
+    a redeploy.
+    """
+    changed = True
+    while changed:
+        changed = False
+        for i in range(len(deployment)):
+            m = initial[i]
+            if m < 0 or deployment[i] == m:
+                continue
+            for k in range(len(deployment)):
+                if (
+                    k != i
+                    and deployment[k] == m
+                    and initial[k] != m
+                    and abs(speed[k] - speed[i]) < 1e-9
+                ):
+                    deployment[i], deployment[k] = m, deployment[i]
+                    changed = True
+                    break
+
+
+def _water_fill(need: dict[str, float], supply: float) -> dict[str, float]:
+    """Max-min fair split of ``supply`` among ``need``."""
+    out: dict[str, float] = {}
+    left = supply
+    items = sorted(need.items(), key=lambda kv: kv[1])
+    for k, (m, v) in enumerate(items):
+        give = min(v, left / (len(items) - k))
+        out[m] = float(give)
+        left -= give
+    return out
+
+
+def _serving_since(inst: _Instance) -> float:
+    """When an instance started serving, or was created if not known."""
+    since = getattr(inst, "active_since", None)
+    if since is None:
+        since = getattr(inst, "created_at", None)
+    return since or 0.0
+
+
+def _share_error(
+    deployment: Sequence[int], speed: np.ndarray, target: np.ndarray
+) -> float:
+    """Relative-error objective of a deployment of weighted machines."""
+    capacity = np.zeros(len(target))
+    for i, j in enumerate(deployment):
+        if j >= 0:
+            capacity[j] += speed[i]
+    if capacity.sum() <= 0 or target.sum() <= 0:
+        return 0.0 if target.sum() <= 0 else float("inf")
+    return float(
+        np.abs(capacity / capacity.sum() - target / target.sum()).sum()
+    )
 
 
 class AutoOptimizer:
@@ -149,6 +257,8 @@ class AutoOptimizer:
         min_instances: int = 1,
         max_instances: int = 0,
         scale_down_rounds: int = 3,
+        hardware_aware: bool = False,
+        min_age: float | None = None,
     ):
         """Initialize the loop.
 
@@ -175,6 +285,11 @@ class AutoOptimizer:
                 free GPUs.
             scale_down_rounds: Rounds in a row that must want a smaller
                 pool before it shrinks.
+            hardware_aware: Weigh machines by learned hardware speed
+                (tail scaler only); see the module docstring.
+            min_age: Seconds a hardware-aware loop leaves an instance
+                where it is after it starts serving. Defaults to four
+                intervals.
         """
         if scaler not in SCALERS:
             raise ValueError(f"scaler must be one of {SCALERS}, got {scaler}")
@@ -200,7 +315,11 @@ class AutoOptimizer:
         self.min_instances = max(1, min_instances)
         self.max_instances = max(0, max_instances)
         self.scale_down_rounds = max(1, scale_down_rounds)
+        self.hardware_aware = hardware_aware
+        self.min_age = min_age if min_age is not None else 4 * interval
+        self.speeds = HardwareSpeeds(alpha=0.3)
         self._low_rounds = 0
+        self._first_plan_at: float | None = None
         self.last_plan: AutoPlan | None = None
         self._task: asyncio.Task | None = None
 
@@ -229,7 +348,10 @@ class AutoOptimizer:
         }
 
     def plan(
-        self, instances: Sequence[_Instance], spare: int = 0
+        self,
+        instances: Sequence[_Instance],
+        spare: int = 0,
+        slots: Sequence[tuple[str | None, str | None]] | None = None,
     ) -> AutoPlan | None:
         """Decide this round's deployment, or None to leave it as is.
 
@@ -237,6 +359,8 @@ class AutoOptimizer:
             instances: Active instances.
             spare: Instances that still fit on free GPUs; an elastic pool
                 grows into them.
+            slots: (worker, hardware) of each free place, for a
+                hardware-aware pool; defaults to ``spare`` unknown places.
 
         Returns:
             The plan to apply, or None when demand is unknown or the gain
@@ -246,17 +370,27 @@ class AutoOptimizer:
         if M == 0:
             return None
         current = Counter(inst.model_id for inst in instances)
+        if self._waiting_for_reports(current):
+            return None
         outstanding = self._store.targets(max_age=self.stale_after)
         rates = self._store.arrival_rates(max_age=self.stale_after)
         known = sorted(set(current) | set(outstanding) | set(rates))
         exec_times = self._exec_times(instances, known)
         scaler = "count"
+        steady: dict[str, float] = {}
         if self.scaler == "tail" and rates and set(outstanding) <= set(rates):
             scaler = "tail"
-            demand = self._tail_demand(outstanding, rates, exec_times, current)
+            steady, backlog = self._tail_parts(
+                outstanding, rates, exec_times, current
+            )
+            demand = {m: steady[m] + backlog[m] for m in steady}
         else:
             demand = outstanding
         demand = {m: v for m, v in demand.items() if v > 0}
+        if self.hardware_aware and scaler == "tail":
+            if slots is None:
+                slots = [(None, None)] * max(0, spare)
+            return self._plan_by_speed(instances, slots, demand, steady)
         # Fresh reports of no traffic at all still size an elastic pool
         # (down); stale ones fall back to the count scaler and change
         # nothing.
@@ -412,6 +546,19 @@ class AutoOptimizer:
         current: Counter,
     ) -> dict[str, float]:
         """Instances each model needs, from rates, tail work and calls."""
+        steady, backlog = self._tail_parts(
+            outstanding, rates, exec_times, current
+        )
+        return {j: steady[j] + backlog[j] for j in steady}
+
+    def _tail_parts(
+        self,
+        outstanding: dict[str, float],
+        rates: dict[str, float],
+        exec_times: dict[str, float],
+        current: Counter,
+    ) -> tuple[dict[str, float], dict[str, float]]:
+        """The tail need split into arrivals (``rate * s``) and backlog."""
         k = self._store.call_ratios(max_age=self.stale_after)
         work = self._store.work(max_age=self.stale_after)
         models = list(exec_times)
@@ -456,12 +603,325 @@ class AutoOptimizer:
 
         # The sketches hold no work for tasks routed without a trained
         # predictor, so the backlog is never taken below its mean.
-        return {
-            j: rate[j] * exec_times[j]
-            + max(work.get(j, 0.0), outstanding.get(j, 0.0) * exec_times[j])
+        steady = {j: rate[j] * exec_times[j] for j in models}
+        backlog = {
+            j: max(work.get(j, 0.0), outstanding.get(j, 0.0) * exec_times[j])
             / self.horizon
             for j in models
         }
+        return steady, backlog
+
+    def _waiting_for_reports(self, current: Counter) -> bool:
+        """True while a deployed model has never reported, at first."""
+        now = time.monotonic()
+        if self._first_plan_at is None:
+            self._first_plan_at = now
+        if now - self._first_plan_at >= self.stale_after:
+            return False
+        return not set(current) <= set(self._store.targets())
+
+    # ------------------------------------------------------------------
+    # Hardware-aware planning
+    # ------------------------------------------------------------------
+
+    def _learn_speeds(self, instances: Sequence[_Instance]) -> None:
+        samples = []
+        for inst in instances:
+            if not inst.endpoint:
+                continue
+            t = self._store.execution_time(
+                inst.endpoint, max_age=self.stale_after, model_id=inst.model_id
+            )
+            if t is not None:
+                samples.append((inst.model_id, _hardware(inst), t))
+        self.speeds.observe(samples)
+
+    def _speed_of(self, hardware: str | None, default: float) -> float:
+        speed = self.speeds.speed(hardware or _DEFAULT_HW)
+        return default if speed is None else speed
+
+    def _plan_by_speed(
+        self,
+        instances: Sequence[_Instance],
+        slots: Sequence[tuple[str | None, str | None]],
+        demand: dict[str, float],
+        steady: dict[str, float],
+    ) -> AutoPlan | None:
+        """Plan with each machine weighted by its hardware's speed."""
+        M = len(instances)
+        current = Counter(inst.model_id for inst in instances)
+        models = sorted(set(current) | set(demand))
+        index = {m: j for j, m in enumerate(models)}
+        self._learn_speeds(instances)
+        known = [
+            v
+            for v in (self.speeds.speed(_hardware(i)) for i in instances)
+            if v is not None
+        ]
+        default = float(np.median(known)) if known else 1.0
+        speed = [self._speed_of(_hardware(i), default) for i in instances]
+        free = sorted(
+            ((w, self._speed_of(h, default)) for w, h in slots),
+            key=lambda s: -s[1],
+        )
+        floor = {m: min(self.min_replicas, n) for m, n in current.items()}
+        # A move costs a drain and a cold start; an instance that just
+        # arrived stays put until it has paid that back.
+        now = time.time()
+        young = {
+            i
+            for i, inst in enumerate(instances)
+            if now - _serving_since(inst) < self.min_age
+        }
+
+        grow, victims = 0, []
+        if self.elastic:
+            grow, victims = self._resize(speed, free, demand, current, floor)
+            if victims:
+                victims = self._pick_victims(
+                    instances, speed, demand, floor, len(victims), young
+                )
+        if not demand and not grow and not victims:
+            return None
+
+        initial = [index[i.model_id] for i in instances] + [-1] * grow
+        machine_speed = np.array(speed + [v for _, v in free[:grow]])
+        workers = [getattr(i, "worker_id", None) for i in instances] + [
+            w for w, _ in free[:grow]
+        ]
+        supply = machine_speed.sum() - sum(speed[i] for i in victims)
+        target_map = self._allocate(
+            demand, steady, supply * self.target_concurrency
+        )
+        target = np.array([target_map.get(m, 0.0) for m in models])
+
+        if victims:
+            deployment = list(initial)
+            for i in victims:
+                deployment[i] = -1
+        elif not target.any():
+            return None
+        else:
+            size = M + grow
+            a = max(self.change_factor, 1.0 / M)
+            if grow:
+                moves = a * M
+                if self.algorithm == "integer_programming":
+                    moves += grow
+                a = min(1.0, (moves + 1e-9) / size)
+            B = np.tile(machine_speed[:, None], (1, len(models)))
+            for i in young:
+                B[i, [j for j in range(len(models)) if j != initial[i]]] = 0
+            optimizer = create_optimizer(
+                self.algorithm,
+                M=size,
+                N=len(models),
+                B=B,
+                initial=np.array(initial),
+                a=a,
+                target=target,
+            )
+            result, _, _ = run_optimization(
+                optimizer, objective_method=self.objective_method
+            )
+            deployment = [int(j) for j in result]
+            self._keep_fastest(deployment, initial, machine_speed, floor, index)
+            _undo_needless_moves(deployment, initial, machine_speed)
+
+        changed = [
+            i for i in range(len(deployment)) if deployment[i] != initial[i]
+        ]
+        if not changed:
+            return None
+        before = _share_error(initial, machine_speed, target)
+        after = _share_error(deployment, machine_speed, target)
+        # Every machine that moves must buy its share of the threshold.
+        resized = bool(grow or victims)
+        moved = sum(1 for i in changed if initial[i] >= 0)
+        if not resized and before - after < self.change_threshold * moved:
+            return None
+
+        counts = Counter(models[j] for j in deployment if j >= 0)
+        remove = tuple(
+            pid
+            for i in changed
+            if i < M
+            and (pid := getattr(instances[i], "pylet_id", None)) is not None
+        )
+        place: dict[str, list[str | None]] = {}
+        for i in changed:
+            if deployment[i] >= 0:
+                place.setdefault(models[deployment[i]], []).append(workers[i])
+        return AutoPlan(
+            target_state={m: counts[m] for m in models if counts[m] > 0},
+            current_state=dict(current),
+            changes=sum(1 for i in changed if deployment[i] >= 0),
+            score_before=before,
+            score_after=after,
+            demand=target_map,
+            scaler="tail",
+            size_before=M,
+            size_after=sum(counts.values()),
+            remove=remove,
+            place={m: tuple(w) for m, w in place.items()},
+            speeds=self.speeds.snapshot(),
+        )
+
+    def _resize(
+        self,
+        speed: list[float],
+        free: list[tuple[str | None, float]],
+        demand: dict[str, float],
+        current: Counter,
+        floor: dict[str, int],
+    ) -> tuple[int, list[int]]:
+        """Free places to grow into, or instances to drop (by index).
+
+        The dropped instances returned here are only as many as the
+        pool should lose; ``_pick_victims`` chooses which.
+        """
+        M = len(speed)
+        capacity = sum(speed)
+        wanted = sum(demand.values()) / self.target_concurrency
+        ceiling = M + len(free)
+        if self.max_instances:
+            ceiling = min(ceiling, self.max_instances)
+        if wanted > capacity and ceiling > M:
+            self._low_rounds = 0
+            grow = 0
+            while M + grow < ceiling and capacity < wanted:
+                capacity += free[grow][1]
+                grow += 1
+            return grow, []
+
+        # The slowest instances above the floors could go.
+        smallest = max(self.min_instances, sum(floor.values()))
+        over_cap = bool(self.max_instances) and self.max_instances < M
+        drop: list[int] = []
+        left = capacity
+        for i in sorted(range(M), key=lambda i: speed[i]):
+            if M - len(drop) <= smallest:
+                break
+            must = over_cap and M - len(drop) > self.max_instances
+            if not must and left - speed[i] < wanted:
+                break
+            drop.append(i)
+            left -= speed[i]
+        if not drop:
+            self._low_rounds = 0
+            return 0, []
+        self._low_rounds += 1
+        if self._low_rounds < self.scale_down_rounds and not over_cap:
+            return 0, []
+        self._low_rounds = 0
+        step = max(1, int(self.change_factor * M))
+        return 0, drop[:step]
+
+    def _pick_victims(
+        self,
+        instances: Sequence[_Instance],
+        speed: list[float],
+        demand: dict[str, float],
+        floor: dict[str, int],
+        count: int,
+        young: set[int] = frozenset(),
+    ) -> list[int]:
+        """Slowest instances of the models with the most surplus capacity.
+
+        Instances that just arrived go last.
+        """
+        alive = set(range(len(instances)))
+        total = sum(demand.values())
+        victims: list[int] = []
+        for _ in range(count):
+            capacity: dict[str, float] = {}
+            members: dict[str, list[int]] = {}
+            for i in alive:
+                m = instances[i].model_id
+                capacity[m] = capacity.get(m, 0.0) + speed[i]
+                members.setdefault(m, []).append(i)
+            left = sum(capacity.values())
+            surplus = {
+                m: capacity[m]
+                - (left * demand.get(m, 0.0) / total if total else 0.0)
+                for m in members
+                if len(members[m]) > floor.get(m, 0)
+            }
+            if not surplus:
+                break
+            victim_model = max(surplus, key=lambda m: surplus[m])
+            i = min(members[victim_model], key=lambda i: (i in young, speed[i]))
+            alive.discard(i)
+            victims.append(i)
+        return victims
+
+    def _allocate(
+        self,
+        demand: dict[str, float],
+        steady: dict[str, float],
+        supply: float,
+    ) -> dict[str, float]:
+        """Need to aim for when the supply falls short of it.
+
+        Arrivals come first, then backlog, each shared max-min fairly: a
+        model that needs less than an equal share gets all it needs, so a
+        light model is not starved by a heavy one that cannot be served
+        anyway.
+        """
+        total = sum(demand.values())
+        if total <= supply or supply <= 0:
+            return dict(demand)
+        base = {m: min(steady.get(m, 0.0), v) for m, v in demand.items()}
+        if sum(base.values()) <= 0:
+            return _water_fill(demand, supply)
+        got = _water_fill(base, supply)
+        left = supply - sum(got.values())
+        if left > 1e-9:
+            extra = _water_fill({m: demand[m] - got[m] for m in demand}, left)
+            got = {m: got[m] + extra[m] for m in demand}
+        return got
+
+    def _keep_fastest(
+        self,
+        deployment: list[int],
+        initial: list[int],
+        speed: np.ndarray,
+        floor: dict[str, int],
+        index: dict[str, int],
+    ) -> None:
+        """Keep each model's floor on machines that do not move.
+
+        Removals drain before replacements start, so a model that trades
+        all its machines for others serves nothing in between. A model
+        below its floor of unmoved machines keeps its slowest outgoing
+        one, and the machine coming to it that is closest in speed goes
+        to that machine's new model instead, so both keep their capacity.
+        """
+        for m, need in floor.items():
+            j = index[m]
+            kept = sum(
+                1
+                for i in range(len(deployment))
+                if initial[i] == j and deployment[i] == j
+            )
+            for _ in range(max(0, need - kept)):
+                out = [
+                    i
+                    for i in range(len(deployment))
+                    if initial[i] == j and deployment[i] != j
+                ]
+                if not out:
+                    break
+                i = min(out, key=lambda i: speed[i])
+                incoming = [
+                    x
+                    for x in range(len(deployment))
+                    if deployment[x] == j and initial[x] != j
+                ]
+                if incoming:
+                    x = min(incoming, key=lambda x: abs(speed[x] - speed[i]))
+                    deployment[x] = deployment[i]
+                deployment[i] = j
 
     def _keep_min_replicas(self, counts: Counter, current: Counter) -> None:
         for m, have in current.items():
@@ -485,9 +945,21 @@ class AutoOptimizer:
         """
         instances = list(self._service.get_active_instances())
         spare = 0
-        if self.elastic and hasattr(self._service, "spare_capacity"):
-            spare = await asyncio.to_thread(self._service.spare_capacity)
-        plan = self.plan(instances, spare=spare)
+        slots = None
+        service = self._service
+        if (
+            self.elastic
+            and self.hardware_aware
+            and hasattr(service, "free_slots")
+        ):
+            slots = await asyncio.to_thread(service.free_slots)
+        if (
+            self.elastic
+            and slots is None
+            and hasattr(service, "spare_capacity")
+        ):
+            spare = await asyncio.to_thread(service.spare_capacity)
+        plan = self.plan(instances, spare=spare, slots=slots)
         if plan is None:
             return None
         logger.info(
@@ -495,11 +967,25 @@ class AutoOptimizer:
             f"{plan.current_state} -> {plan.target_state} "
             f"score {plan.score_before:.3f} -> {plan.score_after:.3f} "
             f"size {plan.size_before} -> {plan.size_after}"
+            + (
+                f" remove={len(plan.remove)} place={plan.place} "
+                f"speeds={plan.speeds}"
+                if self.hardware_aware
+                else ""
+            )
         )
         # Reconciling blocks (deploys, drains); keep it off the loop.
-        result = await asyncio.to_thread(
-            self._service.apply_deployment, plan.target_state
-        )
+        if plan.remove or plan.place:
+            result = await asyncio.to_thread(
+                self._service.apply_deployment,
+                plan.target_state,
+                remove=plan.remove,
+                place=plan.place,
+            )
+        else:
+            result = await asyncio.to_thread(
+                self._service.apply_deployment, plan.target_state
+            )
         self.last_plan = plan
         self._record(plan, getattr(result, "success", True))
         return plan

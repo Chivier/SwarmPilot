@@ -19,6 +19,9 @@ Example:
 
 from __future__ import annotations
 
+from collections import Counter
+from collections.abc import Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
 from loguru import logger
@@ -69,6 +72,8 @@ class DeploymentPlan:
         current_state: dict[str, int],
         target_state: dict[str, int],
         instances_by_model: dict[str, list[ManagedInstance]] | None = None,
+        remove: Sequence[str] = (),
+        place: dict[str, Sequence[str | None]] | None = None,
     ) -> DeploymentPlan:
         """Create deployment plan from state diff.
 
@@ -76,6 +81,13 @@ class DeploymentPlan:
             current_state: Current model counts {model_id: count}.
             target_state: Target model counts {model_id: count}.
             instances_by_model: Optional map of model_id to instances for removals.
+            remove: PyLet IDs to remove. They go even when a model keeps
+                its count (the model then gets replacements, so two
+                models can trade machines); further removals take the
+                oldest instances.
+            place: Workers for each model's new instances, in order; a
+                None entry, or an add beyond the list, goes wherever
+                PyLet puts it.
 
         Returns:
             DeploymentPlan with add/remove actions.
@@ -83,40 +95,26 @@ class DeploymentPlan:
         actions = []
         total_adds = 0
         total_removes = 0
+        chosen = set(remove)
+        place = place or {}
 
         # Get all model IDs
         all_models = set(current_state.keys()) | set(target_state.keys())
 
-        for model_id in all_models:
+        for model_id in sorted(all_models):
             current = current_state.get(model_id, 0)
             target = target_state.get(model_id, 0)
-            diff = target - current
+            # Victims first, then the oldest instances (FIFO).
+            candidates = sorted(
+                (instances_by_model or {}).get(model_id, []),
+                key=lambda i: (i.pylet_id not in chosen, i.created_at),
+            )
+            forced = sum(1 for c in candidates if c.pylet_id in chosen)
+            remove_count = max(current - target, min(forced, current))
+            add_count = target - (current - remove_count)
 
-            if diff > 0:
-                # Need to add instances
-                actions.append(
-                    DeploymentAction(
-                        action_type="add",
-                        model_id=model_id,
-                        count=diff,
-                    )
-                )
-                total_adds += diff
-
-            elif diff < 0:
-                # Need to remove instances
-                remove_count = abs(diff)
-
-                # Get PyLet IDs to remove if available
-                pylet_ids = []
-                if instances_by_model and model_id in instances_by_model:
-                    # Select instances to remove (FIFO - oldest first)
-                    candidates = sorted(
-                        instances_by_model[model_id],
-                        key=lambda i: i.created_at,
-                    )
-                    pylet_ids = [c.pylet_id for c in candidates[:remove_count]]
-
+            if remove_count > 0:
+                pylet_ids = [c.pylet_id for c in candidates[:remove_count]]
                 actions.append(
                     DeploymentAction(
                         action_type="remove",
@@ -126,6 +124,20 @@ class DeploymentPlan:
                     )
                 )
                 total_removes += remove_count
+
+            if add_count > 0:
+                workers = list(place.get(model_id, ()))[:add_count]
+                workers += [None] * (add_count - len(workers))
+                for worker, n in Counter(workers).items():
+                    actions.append(
+                        DeploymentAction(
+                            action_type="add",
+                            model_id=model_id,
+                            count=n,
+                            target_worker=worker,
+                        )
+                    )
+                total_adds += add_count
 
         return cls(
             actions=actions,
@@ -207,12 +219,18 @@ class DeploymentExecutor:
         self,
         current_state: dict[str, int],
         target_state: dict[str, int],
+        remove: Sequence[str] = (),
+        place: dict[str, Sequence[str | None]] | None = None,
     ) -> DeploymentPlan:
         """Create a deployment plan from state diff.
 
         Args:
             current_state: Current model counts {model_id: count}.
             target_state: Target model counts {model_id: count}.
+            remove: PyLet IDs to remove first; see
+                ``DeploymentPlan.from_diff``.
+            place: Workers for new instances; ignored for a model pinned
+                to a kind of hardware.
 
         Returns:
             DeploymentPlan with actions to execute.
@@ -225,8 +243,13 @@ class DeploymentExecutor:
                     instances_by_model[instance.model_id] = []
                 instances_by_model[instance.model_id].append(instance)
 
+        place = {
+            m: workers
+            for m, workers in (place or {}).items()
+            if not self.model_configs.get(m, {}).get("hardware")
+        }
         return DeploymentPlan.from_diff(
-            current_state, target_state, instances_by_model
+            current_state, target_state, instances_by_model, remove, place
         )
 
     def execute_plan(
@@ -262,7 +285,11 @@ class DeploymentExecutor:
             f"actions={len(plan.actions)}"
         )
 
-        # Execute remove actions first (free up resources)
+        # Execute remove actions first (free up resources). Each removal
+        # drains for up to the drain timeout, so they run side by side:
+        # one after another, a round that moves three machines would wait
+        # three drain timeouts before starting any replacement.
+        victims: list[str] = []
         for action in plan.actions:
             if action.action_type == "remove":
                 # Log remove action
@@ -270,20 +297,24 @@ class DeploymentExecutor:
                     f"[DEPLOY_ACTION] action=remove model_id={action.model_id} "
                     f"count={action.count} pylet_ids={action.pylet_ids}"
                 )
-                for pylet_id in action.pylet_ids:
-                    try:
-                        success = self.instance_manager.terminate_instance(
-                            pylet_id
-                        )
-                        if success:
-                            removed_instances.append(pylet_id)
-                        else:
-                            failed_removes.append(
-                                (pylet_id, "Termination failed")
-                            )
-                    except (RuntimeError, ConnectionError, TimeoutError) as e:
-                        failed_removes.append((pylet_id, str(e)))
-                        logger.error(f"Failed to remove {pylet_id}: {e}")
+                victims.extend(action.pylet_ids)
+
+        def remove(pylet_id: str) -> tuple[str, str | None]:
+            try:
+                if self.instance_manager.terminate_instance(pylet_id):
+                    return pylet_id, None
+                return pylet_id, "Termination failed"
+            except (RuntimeError, ConnectionError, TimeoutError) as e:
+                logger.error(f"Failed to remove {pylet_id}: {e}")
+                return pylet_id, str(e)
+
+        if victims:
+            with ThreadPoolExecutor(max_workers=len(victims)) as pool:
+                for pylet_id, error in pool.map(remove, victims):
+                    if error is None:
+                        removed_instances.append(pylet_id)
+                    else:
+                        failed_removes.append((pylet_id, error))
 
         # Execute add actions
         pending_instances: list[ManagedInstance] = []
@@ -349,6 +380,8 @@ class DeploymentExecutor:
         target_state: dict[str, int],
         wait_for_ready: bool = True,
         ready_timeout: float = 300.0,
+        remove: Sequence[str] = (),
+        place: dict[str, Sequence[str | None]] | None = None,
     ) -> ExecutionResult:
         """Plan and execute deployment changes.
 
@@ -359,11 +392,13 @@ class DeploymentExecutor:
             target_state: Target model counts.
             wait_for_ready: Whether to wait for added instances.
             ready_timeout: Timeout for instance readiness.
+            remove: PyLet IDs to remove first.
+            place: Workers for new instances, per model.
 
         Returns:
             ExecutionResult with success/failure details.
         """
-        plan = self.plan(current_state, target_state)
+        plan = self.plan(current_state, target_state, remove, place)
         return self.execute_plan(
             plan,
             wait_for_ready=wait_for_ready,
@@ -374,6 +409,8 @@ class DeploymentExecutor:
         self,
         target_state: dict[str, int],
         wait_for_ready: bool = True,
+        remove: Sequence[str] = (),
+        place: dict[str, Sequence[str | None]] | None = None,
     ) -> ExecutionResult:
         """Reconcile current state to target state.
 
@@ -382,6 +419,8 @@ class DeploymentExecutor:
         Args:
             target_state: Target model counts.
             wait_for_ready: Whether to wait for added instances.
+            remove: PyLet IDs to remove first.
+            place: Workers for new instances, per model.
 
         Returns:
             ExecutionResult with success/failure details.
@@ -402,7 +441,11 @@ class DeploymentExecutor:
         )
 
         return self.execute(
-            current_state, target_state, wait_for_ready=wait_for_ready
+            current_state,
+            target_state,
+            wait_for_ready=wait_for_ready,
+            remove=remove,
+            place=place,
         )
 
     def scale_model(
