@@ -70,6 +70,7 @@ class InstanceInfo:
         status: PyLet instance status (PENDING, RUNNING, COMPLETED, etc.).
         backend: Model backend (vllm, sglang).
         labels: Additional instance labels.
+        worker_id: PyLet worker the instance is assigned to, if any.
     """
 
     pylet_id: str
@@ -78,6 +79,7 @@ class InstanceInfo:
     status: str
     backend: str = "vllm"
     labels: dict[str, str] = field(default_factory=dict)
+    worker_id: str | None = None
 
     @classmethod
     def from_pylet_instance(cls, instance: Instance) -> InstanceInfo:
@@ -97,6 +99,8 @@ class InstanceInfo:
             status=instance.status,
             backend=labels.get("backend", "vllm"),
             labels=labels,
+            # Not exposed as a property by the pylet SDK.
+            worker_id=instance._data.get("assigned_to"),
         )
 
 
@@ -524,6 +528,11 @@ class PyLetClient:
         """
         all_instances = self.list_model_instances(model_id)
         return [i for i in all_instances if i.status == "RUNNING"]
+
+    def list_workers(self) -> list:
+        """List PyLet workers (``pylet.WorkerInfo`` objects)."""
+        self._ensure_initialized()
+        return pylet.workers()
 
     def _ensure_initialized(self) -> None:
         """Ensure PyLet client is initialized.

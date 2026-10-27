@@ -112,6 +112,7 @@ class WorkerQueueManager:
         on_task_started: Callable[[str], None] | None = None,
         async_dispatch: bool = False,
         max_in_flight: int = 0,
+        on_unreachable: Callable[[str, list[QueuedTask]], None] | None = None,
     ):
         """Initialize worker queue manager.
 
@@ -129,6 +130,9 @@ class WorkerQueueManager:
                 0 takes the engine adapter's ``capacity()``. Applies only
                 to instances with a registered engine adapter; online
                 endpoint slots and unknown engines keep one at a time.
+            on_unreachable: Async mode only: called on the event loop with
+                an instance id and its unsent tasks when the instance
+                cannot be connected to (see ``AsyncWorkerQueue``).
         """
         self._callback = callback
         self._http_timeout = http_timeout
@@ -137,6 +141,7 @@ class WorkerQueueManager:
         self._on_task_started = on_task_started
         self.async_dispatch = async_dispatch
         self._max_in_flight = max_in_flight
+        self._on_unreachable = on_unreachable
         self._session: aiohttp.ClientSession | None = None
 
         # Worker ID -> worker queue (thread or async)
@@ -221,6 +226,7 @@ class WorkerQueueManager:
                     retry_delay=self._retry_delay,
                     on_task_started=self._on_task_started,
                     extra_headers=extra_headers,
+                    on_unreachable=self._on_unreachable,
                 )
                 queue.start()
                 self._workers[worker_id] = queue

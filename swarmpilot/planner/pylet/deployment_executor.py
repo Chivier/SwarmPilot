@@ -194,7 +194,9 @@ class DeploymentExecutor:
             default_backend: Default model backend.
             default_gpu_count: Default GPUs per instance.
             model_configs: Per-model overrides, keyed by model_id.
-                Each value may contain ``gpu_count`` and ``extra_args``.
+                Each value may contain ``backend``, ``gpu_count``,
+                ``extra_args`` and ``hardware`` (a hardware name pattern
+                the model's instances must run on).
         """
         self.instance_manager = instance_manager
         self.default_backend = default_backend
@@ -301,6 +303,7 @@ class DeploymentExecutor:
                     gpu_count=mcfg.get("gpu_count", self.default_gpu_count),
                     target_worker=action.target_worker,
                     extra_args=mcfg.get("extra_args"),
+                    hardware=mcfg.get("hardware"),
                 )
                 pending_instances.extend(result.deployed)
                 failed_adds.extend(result.failed)

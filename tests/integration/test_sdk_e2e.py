@@ -49,6 +49,7 @@ def _make_managed_instance(
     inst.endpoint = endpoint
     inst.status.value = status_value
     inst.gpu_count = gpu_count
+    inst.hardware = None
     inst.error = error
     return inst
 
@@ -103,6 +104,7 @@ def _mock_pylet_service(
     svc.instance_manager.terminate_instances.return_value = {
         i.pylet_id: True for i in instances
     }
+    svc.terminate_model.return_value = {i.pylet_id: True for i in instances}
     return svc
 
 

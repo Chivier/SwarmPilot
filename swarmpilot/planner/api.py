@@ -159,6 +159,21 @@ async def lifespan(app: FastAPI):
                 model_configs=config.pylet_model_configs,
             )
             logger.info("PyLet service initialized successfully")
+            if config.pylet_sim_mode and local_cluster is not None:
+                from swarmpilot.planner.pylet.hardware import (
+                    sim_hardware_map,
+                )
+
+                # Simulated nodes have a GPU type each; register their
+                # instances with it, as a hardware map would on a real
+                # cluster.
+                pylet_service.instance_manager.hardware.update(
+                    sim_hardware_map(local_cluster.control_url)
+                )
+            pylet_service.start_watcher(
+                config.instance_watch_interval,
+                replace=config.replace_failed_instances,
+            )
         except Exception as e:
             logger.opt(exception=True).error(
                 f"Failed to initialize PyLet service: {e}"

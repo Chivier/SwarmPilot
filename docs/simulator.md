@@ -134,15 +134,17 @@ On `PYLET_SIM_CONTROL_PORT`:
   heartbeats stop (PyLet marks it offline after its 90 s timeout); on
   `up` it registers again with a new boot id.
 
-### Known gaps
+### What the Planner and Scheduler do with it
 
-- The Planner reports one hardware name for every instance
-  (`PLANNER_HARDWARE_NAME`), so per-GPU predictor keys collapse to one in
-  a mixed cluster.
-- A crashed engine stays registered with the Scheduler and Planner: PyLet
-  marks it FAILED, but nothing removes it, and requests routed there fail
-  after the proxy's retries. The simulator makes this reproducible; the
-  fix belongs in the Planner.
+- Each instance is registered with its node's GPU type: in sim mode the
+  Planner reads the node list from the control API into its hardware map
+  (see "Mixed Hardware" in `docs/cluster_deployment.md`), and
+  `splanner serve ... --hardware 'L40S*'` places replicas on one GPU type.
+- A crash costs no client errors when other replicas exist: the Scheduler
+  marks the instance unhealthy on the first refused connection and moves
+  its waiting requests to other replicas; the Planner then removes it and
+  deploys a replacement (see "Engine Failures" there).
+  `tests/sim/test_cluster.py` checks both.
 
 ## Engine models
 

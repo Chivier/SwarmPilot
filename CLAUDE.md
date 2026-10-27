@@ -163,6 +163,8 @@ Each service uses a different config approach:
 - **Planner:** Plain class with `os.getenv()` in `__init__`, global `config = PlannerConfig()`
   - Supports `PYLET_LOCAL_MODE=true` to start a local PyLet cluster as subprocesses (no external cluster needed)
   - Supports `PYLET_SIM_MODE=true` to start a real PyLet head with simulated GPU nodes and virtual engines (`swarmpilot-sim up`, see `docs/simulator.md`)
+  - Mixed hardware: `PLANNER_HARDWARE_MAP` maps PyLet worker id/host patterns to hardware names; instances register with their worker's hardware, `serve --hardware 'H100*'` pins a model (`swarmpilot/planner/pylet/hardware.py`)
+  - Instance watcher (`PLANNER_INSTANCE_WATCH_INTERVAL`, default 2 s) removes instances PyLet reports FAILED and replaces them (`PLANNER_REPLACE_FAILED`)
 
 ### API Prefixes
 - Scheduler endpoints: `/v1/...`
@@ -185,6 +187,9 @@ Each Scheduler process serves one model at a time. The model can be assigned dyn
 
 ### API Styles (Translation Layer)
 Clients may call the Scheduler proxy in any registered API style (`swarmpilot/api/styles/`: `openai_chat`, `anthropic_messages`, `openai_responses`; plugins via the `swarmpilot.api_styles` entry-point group). If the engine's adapter lists the client's style in `native_styles()` the body passes through untouched; otherwise it is decoded into `swarmpilot.api.canonical` and re-encoded in the engine's style, answers and SSE streams included. Answer-changing fields that cannot be translated give a 400 (set `SWARMPILOT_API_TRANSLATION=lenient` to drop them); dropped fields are listed in the `x-swarmpilot-dropped` header. Regenerate `swarmpilot/api/canonical.schema.json` with `python -m swarmpilot.api.canonical`.
+
+### Unreachable Instances
+A refused connection marks a Scheduler instance `UNHEALTHY` (no new tasks; its unsent tasks are re-routed at once). The health loop restores it when it answers (`SCHEDULER_HEALTH_CHECK_INTERVAL`) or removes it after `SCHEDULER_UNHEALTHY_REMOVE_AFTER` seconds. See "Engine Failures" in `docs/cluster_deployment.md`.
 
 ### Scheduling Strategies
 7 strategies available, selectable at runtime via `POST /v1/strategy/set` or `SCHEDULING_STRATEGY` env var:

@@ -30,7 +30,9 @@ Example:
 from __future__ import annotations
 
 import os
+import threading
 import time
+from collections import Counter
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -39,12 +41,16 @@ from loguru import logger
 from swarmpilot.engines import get_adapter
 from swarmpilot.engines.live import probe_platform_info
 from swarmpilot.errors import PartialDeploymentError
-from swarmpilot.planner.pylet.client import PyLetClient
+from swarmpilot.planner.pylet.client import InstanceInfo, PyLetClient
+from swarmpilot.planner.pylet.hardware import HardwareResolver, matches
 from swarmpilot.planner.pylet.scheduler_client import (
     SchedulerClient,
     default_platform_info,
 )
 from swarmpilot.planner.scheduler_registry import get_scheduler_registry
+
+# PyLet states in which the engine process is no longer running.
+_ENGINE_GONE = frozenset({"COMPLETED", "FAILED", "CANCELLED", "UNKNOWN"})
 
 
 class ManagedInstanceStatus(str, Enum):
@@ -75,6 +81,7 @@ class ManagedInstance:
         status: Current lifecycle status.
         gpu_count: Number of GPUs allocated.
         worker_id: PyLet worker where instance runs.
+        hardware: Hardware name of that worker, once known.
         error: Error message if failed.
         created_at: Creation timestamp.
     """
@@ -87,6 +94,7 @@ class ManagedInstance:
     status: ManagedInstanceStatus = ManagedInstanceStatus.DEPLOYING
     gpu_count: int = 1
     worker_id: str | None = None
+    hardware: str | None = None
     error: str | None = None
     created_at: float = field(default_factory=time.time)
 
@@ -154,6 +162,7 @@ class InstanceManager:
         reuse_cluster: bool = False,
         engine_ready_timeout: float | None = None,
         hardware_name: str | None = None,
+        hardware: HardwareResolver | None = None,
     ):
         """Initialize instance manager.
 
@@ -165,8 +174,11 @@ class InstanceManager:
             engine_ready_timeout: Seconds to wait for a new engine's health
                 path before registering it (env
                 ``PLANNER_ENGINE_READY_TIMEOUT``, default 600).
-            hardware_name: Hardware label in registered platform info (env
-                ``PLANNER_HARDWARE_NAME``, default "gpu").
+            hardware_name: Hardware label for workers the hardware map
+                does not cover (env ``PLANNER_HARDWARE_NAME``, default
+                "gpu").
+            hardware: Resolves each worker's hardware name; built from
+                ``PLANNER_HARDWARE_MAP`` if None.
         """
         self.pylet_client = PyLetClient(
             head_url=pylet_head_url,
@@ -184,9 +196,9 @@ class InstanceManager:
             if engine_ready_timeout is not None
             else float(os.getenv("PLANNER_ENGINE_READY_TIMEOUT", "600"))
         )
-        self._hardware_name = hardware_name or os.getenv(
-            "PLANNER_HARDWARE_NAME", "gpu"
-        )
+        self.hardware = hardware or HardwareResolver(default=hardware_name)
+        # The instance watcher removes instances from another thread.
+        self._lock = threading.RLock()
 
     def init(self) -> None:
         """Initialize connection to PyLet.
@@ -243,7 +255,8 @@ class InstanceManager:
     @property
     def instances(self) -> dict[str, ManagedInstance]:
         """Get all managed instances."""
-        return self._instances.copy()
+        with self._lock:
+            return self._instances.copy()
 
     def deploy_instance(
         self,
@@ -306,7 +319,8 @@ class InstanceManager:
             status=ManagedInstanceStatus.DEPLOYING,
         )
 
-        self._instances[info.pylet_id] = managed
+        with self._lock:
+            self._instances[info.pylet_id] = managed
         logger.info(
             f"Deployed instance {info.pylet_id} for {model_id} "
             f"(scheduler_id={scheduler_instance_id})"
@@ -322,6 +336,7 @@ class InstanceManager:
         gpu_count: int = 1,
         target_worker: str | None = None,
         extra_args: str | None = None,
+        hardware: str | None = None,
     ) -> DeploymentResult:
         """Deploy multiple model instances.
 
@@ -334,6 +349,10 @@ class InstanceManager:
             gpu_count: GPUs per instance.
             target_worker: Target worker (all instances go to same worker).
             extra_args: Additional CLI arguments for the launch command.
+            hardware: Only place instances on workers whose hardware name
+                matches this pattern (any case, e.g. ``"H100*"``).
+                Replicas that do not fit are reported as failed. Ignored
+                when ``target_worker`` is set.
 
         Returns:
             DeploymentResult with deployed and failed instances.
@@ -352,8 +371,74 @@ class InstanceManager:
             f"backend={backend} gpu_count={gpu_count}"
         )
 
-        deployed = []
-        failed = []
+        deployed: list[ManagedInstance] = []
+        failed: list[tuple[str, str]] = []
+
+        if hardware and target_worker is None:
+            groups = self._place(hardware, gpu_count, count)
+            placed = sum(groups.values())
+            for i in range(placed, count):
+                failed.append(
+                    (
+                        f"{model_id}-{i}",
+                        f"no worker with {gpu_count} free GPU(s) of "
+                        f"hardware {hardware!r}",
+                    )
+                )
+            if failed:
+                logger.warning(
+                    f"[INSTANCE_DEPLOY] only {placed} of {count} replicas of "
+                    f"{model_id} fit on {hardware!r} workers"
+                )
+        else:
+            groups = {target_worker: count}
+
+        for worker, n in groups.items():
+            self._submit_group(
+                model_id,
+                n,
+                backend,
+                gpu_count,
+                worker,
+                extra_args,
+                deployed,
+                failed,
+            )
+
+        return DeploymentResult(
+            model_id=model_id,
+            requested_count=count,
+            deployed=deployed,
+            failed=failed,
+        )
+
+    def _submit_group(
+        self,
+        model_id: str,
+        count: int,
+        backend: str,
+        gpu_count: int,
+        target_worker: str | None,
+        extra_args: str | None,
+        deployed: list[ManagedInstance],
+        failed: list[tuple[str, str]],
+    ) -> None:
+        """Submit ``count`` replicas to PyLet, recording the outcome."""
+        offset = len(deployed) + len(failed)
+
+        def track(info: InstanceInfo) -> None:
+            managed = ManagedInstance(
+                pylet_id=info.pylet_id,
+                instance_id=info.pylet_id,
+                model_id=model_id,
+                backend=backend,
+                gpu_count=gpu_count,
+                worker_id=target_worker,
+                status=ManagedInstanceStatus.DEPLOYING,
+            )
+            with self._lock:
+                self._instances[info.pylet_id] = managed
+            deployed.append(managed)
 
         try:
             # Deploy multiple instances (planner manages replicas now)
@@ -365,62 +450,91 @@ class InstanceManager:
                 count=count,
                 extra_args=extra_args,
             )
-
-            # deploy_model always returns list now
             for info in infos:
-                managed = ManagedInstance(
-                    pylet_id=info.pylet_id,
-                    instance_id=info.pylet_id,
-                    model_id=model_id,
-                    backend=backend,
-                    gpu_count=gpu_count,
-                    status=ManagedInstanceStatus.DEPLOYING,
-                )
-                self._instances[info.pylet_id] = managed
-                deployed.append(managed)
+                track(info)
 
             # Log PyLet response
             logger.debug(
                 f"[INSTANCE_PYLET_RESPONSE] model_id={model_id} "
-                f"pylet_ids={[i.pylet_id for i in deployed]} count={len(deployed)}"
+                f"pylet_ids={[i.pylet_id for i in infos]} count={len(infos)}"
             )
 
         except PartialDeploymentError as e:
             # Handle partial success - some instances deployed, some failed
             for info in e.succeeded:
-                managed = ManagedInstance(
-                    pylet_id=info.pylet_id,
-                    instance_id=info.pylet_id,
-                    model_id=model_id,
-                    backend=backend,
-                    gpu_count=gpu_count,
-                    status=ManagedInstanceStatus.DEPLOYING,
-                )
-                self._instances[info.pylet_id] = managed
-                deployed.append(managed)
-
+                track(info)
             for idx, error in e.failed:
-                failed.append((f"{model_id}-{idx}", error))
+                failed.append((f"{model_id}-{offset + idx}", error))
 
             logger.warning(
                 f"[INSTANCE_DEPLOY] partial success for {model_id}: "
-                f"{len(deployed)} deployed, {len(failed)} failed"
+                f"{len(e.succeeded)} deployed, {len(e.failed)} failed"
             )
 
         except Exception as e:
             # If all deployments failed, record all as failed
             for i in range(count):
-                failed.append((f"{model_id}-{i}", str(e)))
+                failed.append((f"{model_id}-{offset + i}", str(e)))
             logger.opt(exception=True).error(
                 f"All deployments failed for {model_id}: {e}"
             )
 
-        return DeploymentResult(
-            model_id=model_id,
-            requested_count=count,
-            deployed=deployed,
-            failed=failed,
-        )
+    def _place(
+        self, hardware: str, gpu_count: int, count: int
+    ) -> dict[str, int]:
+        """Pick workers of one kind of hardware for ``count`` replicas.
+
+        Each replica goes to the matching online worker with the most
+        free GPUs left, so replicas spread out the way PyLet spreads them.
+        GPUs held by instances PyLet has not placed yet are not visible
+        here, so a later submit can still wait in PyLet's queue.
+
+        Args:
+            hardware: Hardware name pattern.
+            gpu_count: GPUs per replica.
+            count: Replicas wanted.
+
+        Returns:
+            Worker id to replica count; fewer than ``count`` in total when
+            the matching workers are full.
+        """
+        workers = [
+            w
+            for w in self.pylet_client.list_workers()
+            if getattr(w, "status", "ONLINE") == "ONLINE"
+        ]
+        self.hardware.observe_workers(workers)
+        # PyLet's ``gpu_available`` is the count at registration; the free
+        # GPU indices are computed from current allocations.
+        free = {
+            w.id: len(w.gpu_indices_available)
+            for w in workers
+            if matches(self.hardware.resolve(w.id, w.host), hardware)
+        }
+        groups: Counter[str] = Counter()
+        for _ in range(count):
+            best = max(free, key=lambda k: free[k], default=None)
+            if best is None or free[best] < gpu_count:
+                break
+            free[best] -= gpu_count
+            groups[best] += 1
+        return dict(groups)
+
+    def _resolve_hardware(
+        self, managed: ManagedInstance, info: InstanceInfo
+    ) -> str:
+        """Find the hardware of the worker an instance landed on."""
+        worker = info.worker_id or managed.worker_id
+        host = None
+        if info.endpoint and "://" not in info.endpoint:
+            host = info.endpoint.rsplit(":", 1)[0]
+        if self.hardware.heterogeneous and worker and host is None:
+            try:
+                self.hardware.observe_workers(self.pylet_client.list_workers())
+            except Exception as e:
+                logger.debug(f"Could not list PyLet workers: {e}")
+        managed.worker_id = worker
+        return self.hardware.resolve(worker, host)
 
     def _platform_info(self, managed: ManagedInstance) -> dict[str, str]:
         """Wait for the engine to be healthy and read its live version.
@@ -428,16 +542,17 @@ class InstanceManager:
         Instances started from a custom command are not probed, because
         their adapter's health and version routes may not apply.
         """
+        hardware = managed.hardware or self.hardware.default
         if self._custom_command or not managed.endpoint:
-            return default_platform_info(managed.backend)
+            return default_platform_info(managed.backend, hardware)
         try:
             adapter = get_adapter(managed.backend)
         except KeyError:
-            return default_platform_info(managed.backend)
+            return default_platform_info(managed.backend, hardware)
         info = probe_platform_info(
             adapter,
             managed.endpoint,
-            hardware_name=self._hardware_name,
+            hardware_name=hardware,
             ready_timeout_s=self._engine_ready_timeout,
         )
         logger.info(
@@ -487,9 +602,11 @@ class InstanceManager:
             )
 
             managed.endpoint = info.endpoint
+            managed.hardware = self._resolve_hardware(managed, info)
             logger.debug(
                 f"[INSTANCE_HEALTH] pylet_id={pylet_id} "
-                f"status=running endpoint={info.endpoint}"
+                f"status=running endpoint={info.endpoint} "
+                f"worker={managed.worker_id} hardware={managed.hardware}"
             )
 
             # Register with scheduler if requested
@@ -636,7 +753,8 @@ class InstanceManager:
             managed.status = ManagedInstanceStatus.TERMINATED
 
             # Remove from managed instances so idle checks are accurate
-            del self._instances[pylet_id]
+            with self._lock:
+                self._instances.pop(pylet_id, None)
 
             # Log termination complete
             logger.info(
@@ -683,8 +801,10 @@ class InstanceManager:
         Returns:
             Dict mapping pylet_id to termination success.
         """
+        with self._lock:
+            pylet_ids = list(self._instances)
         return self.terminate_instances(
-            list(self._instances.keys()),
+            pylet_ids,
             wait_for_drain=wait_for_drain,
         )
 
@@ -710,11 +830,12 @@ class InstanceManager:
         Returns:
             List of active ManagedInstances.
         """
-        instances = [
-            i
-            for i in self._instances.values()
-            if i.status == ManagedInstanceStatus.ACTIVE
-        ]
+        with self._lock:
+            instances = [
+                i
+                for i in self._instances.values()
+                if i.status == ManagedInstanceStatus.ACTIVE
+            ]
 
         if model_id:
             instances = [i for i in instances if i.model_id == model_id]
@@ -730,7 +851,78 @@ class InstanceManager:
         Returns:
             List of ManagedInstances for the model.
         """
-        return [i for i in self._instances.values() if i.model_id == model_id]
+        with self._lock:
+            return [
+                i for i in self._instances.values() if i.model_id == model_id
+            ]
+
+    def reap_failed(self) -> list[ManagedInstance]:
+        """Drop active instances whose engine is gone.
+
+        PyLet marks an instance FAILED (or COMPLETED) when its process
+        exits, for example when the engine crashes, and forgets it if its
+        worker is deleted. Such an instance is removed from its Scheduler
+        at once, without draining (nothing can finish on a dead engine;
+        the Scheduler re-routes what was queued on it), its PyLet record
+        is deleted to free the GPUs, and it is dropped from the managed
+        set. Instances that are still starting, draining or terminating
+        are left to the code handling them.
+
+        Returns:
+            The removed instances, with status FAILED and an error.
+        """
+        self._ensure_initialized()
+        with self._lock:
+            active = [
+                m
+                for m in self._instances.values()
+                if m.status == ManagedInstanceStatus.ACTIVE
+            ]
+        if not active:
+            return []
+        seen = {i.pylet_id: i for i in self.pylet_client.list_model_instances()}
+        reaped = []
+        for managed in active:
+            info = seen.get(managed.pylet_id)
+            if info is not None and info.status not in _ENGINE_GONE:
+                continue
+            state = info.status if info is not None else "missing"
+            with self._lock:
+                if managed.status != ManagedInstanceStatus.ACTIVE:
+                    continue  # a terminate got there first
+                managed.status = ManagedInstanceStatus.FAILED
+                managed.error = f"engine {state.lower()} in PyLet"
+            logger.warning(
+                f"[INSTANCE_FAILED] pylet_id={managed.pylet_id} "
+                f"model_id={managed.model_id} endpoint={managed.endpoint} "
+                f"pylet_status={state}; removing it from the scheduler"
+            )
+            try:
+                # Nothing can drain from a dead engine; the Scheduler
+                # re-routes whatever was queued on it.
+                scheduler = self._get_scheduler_client(managed.model_id)
+                scheduler.remove_instance(managed.instance_id)
+            except Exception as e:
+                logger.warning(
+                    f"Could not deregister failed instance "
+                    f"{managed.instance_id}: {e}"
+                )
+            if info is not None:
+                try:
+                    self.pylet_client.cancel_instance(
+                        managed.pylet_id, delete=True
+                    )
+                except Exception as e:
+                    # Still dropped below, so it is replaced; PyLet keeps
+                    # the dead record until someone deletes it.
+                    logger.warning(
+                        f"Could not delete failed instance "
+                        f"{managed.pylet_id} in PyLet: {e}"
+                    )
+            with self._lock:
+                self._instances.pop(managed.pylet_id, None)
+            reaped.append(managed)
+        return reaped
 
     def refresh_instance(self, pylet_id: str) -> ManagedInstance | None:
         """Refresh instance state from PyLet.

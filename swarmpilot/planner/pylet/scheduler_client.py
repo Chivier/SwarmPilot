@@ -46,7 +46,9 @@ class RegistrationInfo:
     message: str
 
 
-def default_platform_info(backend: str) -> dict[str, str]:
+def default_platform_info(
+    backend: str, hardware_name: str = "gpu"
+) -> dict[str, str]:
     """Platform info for an instance whose live version was not read.
 
     The version is ``"unknown"`` rather than a guess, so predictor models
@@ -54,17 +56,18 @@ def default_platform_info(backend: str) -> dict[str, str]:
 
     Args:
         backend: Engine adapter name.
+        hardware_name: Hardware of the worker the instance runs on.
 
     Returns:
         Platform info dict.
     """
     try:
-        return get_adapter(backend).platform_info("unknown", "gpu")
+        return get_adapter(backend).platform_info("unknown", hardware_name)
     except KeyError:
         return {
             "software_name": backend,
             "software_version": "unknown",
-            "hardware_name": "gpu",
+            "hardware_name": hardware_name,
         }
 
 

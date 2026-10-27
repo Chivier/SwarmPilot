@@ -21,6 +21,8 @@ class ServeRequest(BaseModel):
         backend: Model backend ('vllm' or 'sglang').
         scheduler: Scheduler resolution: 'auto' looks up
             SchedulerRegistry, None skips, or a URL string.
+        hardware: Hardware name pattern the replicas must run on, e.g.
+            'H100*'; kept for later scaling and replacements.
     """
 
     model_or_command: str = Field(
@@ -34,6 +36,10 @@ class ServeRequest(BaseModel):
     backend: str = Field("vllm", description="Model backend")
     scheduler: str | None = Field(
         "auto", description="Scheduler: 'auto', None, or URL"
+    )
+    hardware: str | None = Field(
+        None,
+        description="Run only on workers whose hardware matches (e.g. 'H100*')",
     )
 
 
@@ -151,6 +157,7 @@ class InstanceDetailResponse(BaseModel):
         endpoint: HTTP endpoint when running.
         status: Current lifecycle status.
         gpu_count: Number of GPUs allocated.
+        hardware: Hardware name of the worker it runs on.
         error: Error message if failed.
     """
 
@@ -160,6 +167,7 @@ class InstanceDetailResponse(BaseModel):
     endpoint: str | None = None
     status: str
     gpu_count: int = 1
+    hardware: str | None = None
     error: str | None = None
 
 

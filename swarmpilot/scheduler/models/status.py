@@ -16,6 +16,7 @@ class InstanceStatus(str, Enum):
     )
     REMOVING = "removing"  # All tasks complete, safe to remove
     REDEPLOYING = "redeploying"  # Instance is being redeployed (no new tasks accepted, pending tasks returned)
+    UNHEALTHY = "unhealthy"  # Engine unreachable; no new tasks until a health check passes
 
 
 class TaskStatus(str, Enum):

@@ -46,6 +46,7 @@ def _make_managed_instance(
     inst = MagicMock()
     inst.pylet_id = pylet_id
     inst.instance_id = instance_id
+    inst.hardware = None
     inst.model_id = model_id
     inst.endpoint = endpoint
     inst.status.value = status_value
@@ -341,7 +342,7 @@ class TestTerminateEndpoint:
         svc = MagicMock()
         svc.initialized = True
         svc.get_instances_by_model.return_value = [inst]
-        svc.instance_manager.terminate_instances.return_value = {"p1": True}
+        svc.terminate_model.return_value = {"p1": True}
         mock_get_svc.return_value = svc
 
         response = client.post("/v1/terminate", json={"model": "model-a"})
@@ -350,6 +351,7 @@ class TestTerminateEndpoint:
         data = response.json()
         assert data["success"] is True
         assert data["terminated_count"] == 1
+        svc.terminate_model.assert_called_once_with("model-a")
 
     @patch("swarmpilot.planner.routes.sdk_api.get_pylet_service_optional")
     @patch("swarmpilot.planner.routes.sdk_api.config")
