@@ -57,7 +57,7 @@ class PlannerConfig:
         # need more than TARGET_CONCURRENCY tasks in flight per instance,
         # shrink after SCALE_DOWN_ROUNDS rounds that want fewer.
         self.auto_optimize_elastic: bool = os.getenv(
-            "AUTO_OPTIMIZE_ELASTIC", "false"
+            "AUTO_OPTIMIZE_ELASTIC", "true"
         ).lower() in ("true", "1", "yes")
         self.auto_optimize_target_concurrency: float = float(
             os.getenv("AUTO_OPTIMIZE_TARGET_CONCURRENCY", "64")
@@ -76,7 +76,7 @@ class PlannerConfig:
         # (tail scaler): name which instances move, size the pool in
         # capacity, and serve arrivals before backlog when short.
         self.auto_optimize_hardware_aware: bool = os.getenv(
-            "AUTO_OPTIMIZE_HARDWARE_AWARE", "false"
+            "AUTO_OPTIMIZE_HARDWARE_AWARE", "true"
         ).lower() in ("true", "1", "yes")
 
         # PyLet configuration

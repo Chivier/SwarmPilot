@@ -318,3 +318,28 @@ class TestPlannerConfigInit:
             assert config.planner_port == 8000
             assert config.auto_optimize_enabled is False
             assert config.auto_optimize_interval == 60.0
+
+    def test_auto_optimize_is_elastic_and_hardware_aware_by_default(self):
+        """Elastic and hardware-aware are on unless set to false."""
+        env = {
+            k: v
+            for k, v in os.environ.items()
+            if k
+            not in ["AUTO_OPTIMIZE_ELASTIC", "AUTO_OPTIMIZE_HARDWARE_AWARE"]
+        }
+        with patch.dict(os.environ, env, clear=True):
+            from swarmpilot.planner.config import PlannerConfig
+
+            config = PlannerConfig()
+            assert config.auto_optimize_elastic is True
+            assert config.auto_optimize_hardware_aware is True
+        off = {
+            "AUTO_OPTIMIZE_ELASTIC": "false",
+            "AUTO_OPTIMIZE_HARDWARE_AWARE": "false",
+        }
+        with patch.dict(os.environ, off, clear=False):
+            from swarmpilot.planner.config import PlannerConfig
+
+            config = PlannerConfig()
+            assert config.auto_optimize_elastic is False
+            assert config.auto_optimize_hardware_aware is False
