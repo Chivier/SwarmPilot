@@ -78,6 +78,12 @@ class PlannerConfig:
         self.auto_optimize_hardware_aware: bool = os.getenv(
             "AUTO_OPTIMIZE_HARDWARE_AWARE", "false"
         ).lower() in ("true", "1", "yes")
+        # Seconds the hardware-aware loop plans for a model's highest
+        # recent demand after it falls; empty: two intervals, 0: off.
+        hold = os.getenv("AUTO_OPTIMIZE_DEMAND_HOLD", "")
+        self.auto_optimize_demand_hold: float | None = (
+            float(hold) if hold else None
+        )
 
         # PyLet configuration
         self.pylet_enabled: bool = os.getenv(

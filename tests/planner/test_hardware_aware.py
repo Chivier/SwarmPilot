@@ -57,6 +57,7 @@ def _opt(store, service, **kw) -> AutoOptimizer:
     kw.setdefault("interval", 10.0)
     kw.setdefault("change_factor", 1.0)
     kw.setdefault("hardware_aware", True)
+    kw.setdefault("demand_hold", 0.0)
     return AutoOptimizer(store, service, **kw)
 
 
@@ -611,3 +612,49 @@ class TestWholeNodes:
         assert plan is not None
         assert plan.place == {"big": ("w0",)}
         assert plan.remove == ("p0",)
+
+
+class TestDemandHold:
+    """Demand rises at once but falls only after the hold."""
+
+    @staticmethod
+    def _setup(hold):
+        service = _Service([("a", FAST)] * 2 + [("b", FAST)] * 2)
+        store = _store(
+            service, {("a", FAST): 1.0, ("b", FAST): 1.0}, {"a": 1, "b": 1}
+        )
+        opt = _opt(store, service, demand_hold=hold, min_age=0.0)
+        return service, store, opt
+
+    def test_a_burst_that_ends_does_not_take_machines_back(self):
+        service, store, opt = self._setup(hold=60.0)
+        store.submit_target("a", 0, arrival_rate=1.0)
+        store.submit_target("b", 0, arrival_rate=1.0)
+        assert opt.plan(service.instances) is None
+        # b bursts: it may take a machine from a.
+        store.submit_target("b", 0, arrival_rate=9.0)
+        first = opt.plan(service.instances)
+        # The burst ends at once: within the hold, b's demand stays at
+        # its peak, so nothing moves back to a.
+        store.submit_target("b", 0, arrival_rate=1.0)
+        again = opt.plan(service.instances)
+        if first is not None:
+            assert again is None or again.target_state.get("b", 0) >= 2
+        assert opt._held({"b": 1.0}, {"b": 1.0}, {"a", "b"})[0]["b"] == 9.0
+
+    def test_demand_falls_after_the_hold(self):
+        _, _, opt = self._setup(hold=60.0)
+        opt._recent_demand.append((time.time() - 120, {"b": 9.0}, {"b": 9.0}))
+        held, steady = opt._held({"b": 1.0}, {"b": 1.0}, {"b"})
+        assert held == {"b": 1.0} and steady == {"b": 1.0}
+
+    def test_models_no_longer_deployed_are_not_held(self):
+        _, _, opt = self._setup(hold=60.0)
+        opt._held({"gone": 5.0}, {"gone": 5.0}, {"gone"})
+        held, _ = opt._held({"b": 1.0}, {"b": 1.0}, {"b"})
+        assert held == {"b": 1.0}
+
+    def test_zero_turns_it_off(self):
+        _, _, opt = self._setup(hold=0.0)
+        opt._held({"b": 9.0}, {"b": 9.0}, {"b"})
+        assert opt._held({"b": 1.0}, {"b": 1.0}, {"b"})[0] == {"b": 1.0}
