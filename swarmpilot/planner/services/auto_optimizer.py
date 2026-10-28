@@ -317,8 +317,9 @@ class AutoOptimizer:
             hardware_aware: Weigh machines by learned hardware speed
                 (tail scaler only); see the module docstring.
             min_age: Seconds a hardware-aware loop leaves an instance
-                where it is after it starts serving. Defaults to four
-                intervals.
+                where it is after it starts serving, and before its
+                execution time counts toward hardware speeds. Defaults
+                to four intervals.
         """
         if scaler not in SCALERS:
             raise ValueError(f"scaler must be one of {SCALERS}, got {scaler}")
@@ -346,7 +347,7 @@ class AutoOptimizer:
         self.scale_down_rounds = max(1, scale_down_rounds)
         self.hardware_aware = hardware_aware
         self.min_age = min_age if min_age is not None else 4 * interval
-        self.speeds = HardwareSpeeds(alpha=0.3)
+        self.speeds = HardwareSpeeds(alpha=0.15)
         self._low_rounds = 0
         self._first_plan_at: float | None = None
         self.last_plan: AutoPlan | None = None
@@ -681,9 +682,13 @@ class AutoOptimizer:
     # ------------------------------------------------------------------
 
     def _learn_speeds(self, instances: Sequence[_Instance]) -> None:
+        # A new instance's first completions are its shortest tasks, the
+        # long ones still running, so its mean reads fast until it has
+        # served for a while; it would make its hardware look fastest.
+        now = time.time()
         samples = []
         for inst in instances:
-            if not inst.endpoint:
+            if not inst.endpoint or now - _serving_since(inst) < self.min_age:
                 continue
             t = self._store.execution_time(
                 inst.endpoint, max_age=self.stale_after, model_id=inst.model_id
