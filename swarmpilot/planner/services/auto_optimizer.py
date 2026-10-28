@@ -93,7 +93,7 @@ from __future__ import annotations
 import asyncio
 import math
 import time
-from collections import Counter, deque
+from collections import Counter
 from collections.abc import Sequence
 from contextlib import suppress
 from dataclasses import dataclass, field
@@ -288,7 +288,6 @@ class AutoOptimizer:
         scale_down_rounds: int = 3,
         hardware_aware: bool = False,
         min_age: float | None = None,
-        demand_hold: float | None = None,
     ):
         """Initialize the loop.
 
@@ -320,9 +319,6 @@ class AutoOptimizer:
             min_age: Seconds a hardware-aware loop leaves an instance
                 where it is after it starts serving. Defaults to four
                 intervals.
-            demand_hold: Seconds a hardware-aware loop keeps planning
-                for a model's highest recent demand after it falls.
-                Defaults to two intervals; 0 turns it off.
         """
         if scaler not in SCALERS:
             raise ValueError(f"scaler must be one of {SCALERS}, got {scaler}")
@@ -350,12 +346,6 @@ class AutoOptimizer:
         self.scale_down_rounds = max(1, scale_down_rounds)
         self.hardware_aware = hardware_aware
         self.min_age = min_age if min_age is not None else 4 * interval
-        self.demand_hold = (
-            demand_hold if demand_hold is not None else 2 * interval
-        )
-        self._recent_demand: deque[
-            tuple[float, dict[str, float], dict[str, float]]
-        ] = deque()
         self.speeds = HardwareSpeeds(alpha=0.3)
         self._low_rounds = 0
         self._first_plan_at: float | None = None
@@ -429,7 +419,6 @@ class AutoOptimizer:
         if self.hardware_aware and scaler == "tail":
             if slots is None:
                 slots = [(None, None)] * max(0, spare)
-            demand, steady = self._held(demand, steady, set(current))
             return self._plan_by_speed(instances, slots, demand, steady)
         # Fresh reports of no traffic at all still size an elastic pool
         # (down); stale ones fall back to the count scaler and change
@@ -677,38 +666,6 @@ class AutoOptimizer:
             for j in models
         }
         return steady, backlog
-
-    def _held(
-        self,
-        demand: dict[str, float],
-        steady: dict[str, float],
-        deployed: set[str],
-    ) -> tuple[dict[str, float], dict[str, float]]:
-        """Each model's highest demand over the last ``demand_hold`` s.
-
-        Bursty traffic swings a model's backlog from round to round, and
-        a burst period near the interval aliases with the rounds: every
-        round then sees one model up and the other down and trades
-        machines back, each trade a drain and a cold start. Demand rises
-        at once but falls only after it has stayed down for the hold.
-        Only models that are deployed or report demand now are held.
-        """
-        if self.demand_hold <= 0:
-            return demand, steady
-        now = time.time()
-        recent = self._recent_demand
-        recent.append((now, dict(demand), dict(steady)))
-        while now - recent[0][0] > self.demand_hold + 1e-6:
-            recent.popleft()
-        live = deployed | set(demand)
-        held = {m: max(d.get(m, 0.0) for _, d, _ in recent) for m in live}
-        held_steady = {
-            m: max(s.get(m, 0.0) for _, _, s in recent) for m in live
-        }
-        return (
-            {m: v for m, v in held.items() if v > 0},
-            {m: v for m, v in held_steady.items() if m in steady or v > 0},
-        )
 
     def _waiting_for_reports(self, current: Counter) -> bool:
         """True while a deployed model has never reported, at first."""

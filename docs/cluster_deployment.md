@@ -521,11 +521,6 @@ hardware`, the fastest kind counting 1) and:
   (`rate * s`) before anyone's backlog, so one model's backlog cannot take
   the machines another needs to keep up;
 - leaves a model at `min_replicas` its fastest instances.
-- plans for each model's highest demand of the last
-  `AUTO_OPTIMIZE_DEMAND_HOLD` seconds (default two intervals): demand
-  rises at once but falls only after the hold, so traffic that bursts
-  about once a round does not make two models pass machines back and
-  forth, each pass costing a drain and a cold start.
 
 Models can take different GPU counts and kinds of hardware
 (`PYLET_MODEL_CONFIGS`, e.g. `{"meta-llama/Llama-3.1-70B-Instruct":
@@ -668,7 +663,6 @@ Source: `swarmpilot/planner/config.py`
 | `AUTO_OPTIMIZE_MAX_INSTANCES` | `0` | Largest elastic pool; 0 = as many as the free GPUs allow |
 | `AUTO_OPTIMIZE_SCALE_DOWN_ROUNDS` | `3` | Rounds in a row that must want fewer instances before the pool shrinks |
 | `AUTO_OPTIMIZE_HARDWARE_AWARE` | `false` | Weigh machines by hardware speed learned from execution times; choose which instances move and where (tail scaler only) |
-| `AUTO_OPTIMIZE_DEMAND_HOLD` | two intervals | Seconds the hardware-aware loop keeps planning for a model's highest recent demand after it falls; `0` turns it off |
 | `AUTO_OPTIMIZE_SCALER` | `tail` | `tail` sizes models by arrival rate, q0.9 backlog and calls between models; `count` by outstanding tasks only (see [Autoscaling agent workloads](#autoscaling-agent-workloads)) |
 | `PYLET_ENABLED` | `false` | Enable PyLet cluster integration |
 | `PYLET_HEAD_URL` | _(none)_ | PyLet head node URL (required when `PYLET_ENABLED=true`) |
