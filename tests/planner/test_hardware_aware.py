@@ -87,6 +87,28 @@ class TestHardwareSpeeds:
         assert speeds.speed(SLOW) == 0.1
 
 
+class TestLearnSpeeds:
+    """Which instances the loop learns hardware speed from."""
+
+    def test_a_new_instance_does_not_count(self):
+        service = _Service([("a", FAST), ("a", SLOW), ("a", SLOW)])
+        store = _store(service, EXEC, {"a": 1.0})
+        # Just started: only its shortest tasks have finished.
+        service.instances[2].active_since = time.time()
+        store.submit_throughput(service.instances[2].endpoint, 0.5)
+        opt = _opt(store, service)
+        opt._learn_speeds(service.instances)
+        assert opt.speeds.speed(SLOW) == pytest.approx(0.25)
+
+    def test_it_counts_once_it_has_served_a_while(self):
+        service = _Service([("a", FAST), ("a", SLOW)])
+        store = _store(service, EXEC, {"a": 1.0})
+        service.instances[1].active_since = time.time() - 41.0
+        opt = _opt(store, service)  # min_age: four 10 s intervals
+        opt._learn_speeds(service.instances)
+        assert opt.speeds.speed(SLOW) == pytest.approx(0.25)
+
+
 class TestShrink:
     """Which instances a shrinking pool drops."""
 
